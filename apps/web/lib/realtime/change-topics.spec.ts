@@ -12,6 +12,7 @@ import {
   changeTopic,
   type ChangeTable,
 } from "./change-topics";
+import { chapterPresenceTopic } from "./presence-topics";
 
 /**
  * Pins the database → client change-ping contract.
@@ -51,10 +52,13 @@ const MIGRATIONS_DIR = join(__dirname, "../../../../supabase/migrations");
 
 /**
  * What a hosted Supabase database has before the first migration, reduced to
- * what the migrations and these checks need. The `auth.*` stubs mirror
- * `scripts/check-pglite-migrations.mjs`. The `authenticated` role must exist
- * before the migrations run, because most of them grant or create policies
- * only `if exists (select 1 from pg_roles where rolname = 'authenticated')`.
+ * what the migrations and these checks need. The `authenticated` and `anon`
+ * roles must exist before the migrations run, because most of them grant,
+ * revoke or create policies only `if exists (select 1 from pg_roles where
+ * rolname = …)`, and a policy skipped here is one this test can't see.
+ * `scripts/check-pglite-migrations.mjs` builds its own, different substrate
+ * (no `anon`, fixed `auth.*` answers) for its own tiers: a migration that needs
+ * a new extension or role has to be registered in both.
  */
 const SUBSTRATE = `
   create schema auth;
@@ -65,10 +69,11 @@ const SUBSTRATE = `
   create function auth.jwt() returns jsonb language sql stable
     as $$ select '{}'::jsonb $$;
   create role authenticated nologin;
+  create role anon nologin;
 
   create schema realtime;
   create table realtime.messages (
-    id bigserial primary key,
+    id uuid primary key default gen_random_uuid(),
     topic text not null,
     extension text not null default 'broadcast',
     event text,
@@ -76,8 +81,8 @@ const SUBSTRATE = `
     private boolean not null default true
   );
   alter table realtime.messages enable row level security;
-  grant usage on schema realtime to authenticated;
-  grant select, insert on realtime.messages to authenticated;
+  grant usage on schema realtime to authenticated, anon;
+  grant select, insert on realtime.messages to authenticated, anon;
   create function realtime.topic() returns text language sql stable
     as $$ select nullif(current_setting('realtime.topic', true), '') $$;
   create table realtime.sent (payload jsonb, event text, topic text, private boolean);
@@ -142,13 +147,14 @@ const TABLES = Object.keys(SCOPES) as ChangeTable[];
  * The ping function sends one private `change` ping per distinct scope, on
  * the client's topic.
  *
- * Driven, not read: a temp table carrying only the scope column gets a
- * statement-level trigger on the effective function, and three rows over two
- * scopes go in. A function that reads another column errors on the missing
- * column (its handler turns that into a warning and no pings); a wrong prefix
- * or event shows in the recorded topic; and `private` must be `true`, because
- * a non-private ping bypasses `realtime.messages` RLS and reaches any client
- * that guessed the topic string.
+ * Driven, not read: a temp table carrying only the scope column gets the same
+ * three statement-level triggers the real tables have, and three rows over two
+ * scopes are inserted, updated and deleted, so a function that behaves
+ * differently per `tg_op` can't hide behind the insert path. A function that
+ * reads another column errors on the missing column (its handler turns that
+ * into a warning and no pings); a wrong prefix or event shows in the recorded
+ * topic; and `private` must be `true`, because a non-private ping bypasses
+ * `realtime.messages` RLS and reaches any client that guessed the topic string.
  */
 async function checkPingFunction(db: PGlite, table: ChangeTable) {
   const fn = `public.realtime_notify_${table}()`;
@@ -162,27 +168,32 @@ async function checkPingFunction(db: PGlite, table: ChangeTable) {
   const column = SCOPES[table].column;
   await db.exec(`
     create temp table ping_probe (${column} uuid);
-    create trigger ping_probe after insert on pg_temp.ping_probe
-      referencing new table as changed
-      for each statement execute function ${fn};
-    delete from realtime.sent;
+    create trigger ping_probe_ins after insert on pg_temp.ping_probe
+      referencing new table as changed for each statement execute function ${fn};
+    create trigger ping_probe_upd after update on pg_temp.ping_probe
+      referencing new table as changed for each statement execute function ${fn};
+    create trigger ping_probe_del after delete on pg_temp.ping_probe
+      referencing old table as changed for each statement execute function ${fn};
   `);
-  await db.query(`insert into ping_probe values ($1), ($1), ($2)`, [a, b]);
-  const sent = await db.query<{
-    event: string;
-    topic: string;
-    private: boolean;
-  }>(`select event, topic, private from realtime.sent order by topic`);
-  expect(sent.rows).toEqual(
-    [a, b]
-      .map((id) => changeTopic(table, id))
-      .sort()
-      .map((topic) => ({
-        event: CHANGE_EVENT,
-        topic,
-        private: true,
-      })),
-  );
+  const expected = [a, b]
+    .map((id) => changeTopic(table, id))
+    .sort()
+    .map((topic) => ({ event: CHANGE_EVENT, topic, private: true }));
+  const writes: [string, string, string[]][] = [
+    ["insert", `insert into ping_probe values ($1), ($1), ($2)`, [a, b]],
+    ["update", `update ping_probe set ${column} = ${column}`, []],
+    ["delete", `delete from ping_probe`, []],
+  ];
+  for (const [op, sql, params] of writes) {
+    await db.exec("delete from realtime.sent");
+    await db.query(sql, params);
+    const sent = await db.query<{
+      event: string;
+      topic: string;
+      private: boolean;
+    }>(`select event, topic, private from realtime.sent order by topic`);
+    expect(sent.rows, `pings sent on ${op}`).toEqual(expected);
+  }
 }
 
 const TG = { ROW: 1, BEFORE: 2, INSERT: 4, DELETE: 8, UPDATE: 16, INSTEAD: 64 };
@@ -201,7 +212,8 @@ const OPS = [
  * N subtransactions, N broadcast frames on one topic, and 2N client
  * invalidations that each cancel the in-flight refetch. Statement level with
  * `select distinct` collapses it to one ping per scope. A second trigger on the
- * same op would double every ping, and a disabled one silences it.
+ * same op would double every ping, and a disabled one, or one with a `WHEN`
+ * condition, silences it.
  */
 async function checkPingTriggers(db: PGlite) {
   const { rows } = await db.query<{
@@ -211,12 +223,13 @@ async function checkPingTriggers(db: PGlite) {
     fn_name: string;
     tgtype: number;
     tgenabled: string;
+    unconditional: boolean;
     oldtable: string | null;
     newtable: string | null;
   }>(`
     select tn.nspname as table_schema, c.relname as table_name,
            pn.nspname as fn_schema, p.proname as fn_name,
-           t.tgtype, t.tgenabled,
+           t.tgtype, t.tgenabled, t.tgqual is null as unconditional,
            t.tgoldtable as oldtable, t.tgnewtable as newtable
     from pg_trigger t
     join pg_class c on c.oid = t.tgrelid
@@ -232,6 +245,7 @@ async function checkPingTriggers(db: PGlite) {
         r.tgtype & TG.ROW ? "row" : "statement",
         r.tgtype & (TG.BEFORE | TG.INSTEAD) ? "before" : "after",
         r.tgenabled === "O" || r.tgenabled === "A" ? "enabled" : "disabled",
+        r.unconditional ? "always" : "when",
         r.newtable
           ? `new:${r.newtable}`
           : r.oldtable
@@ -245,44 +259,95 @@ async function checkPingTriggers(db: PGlite) {
     TABLES.flatMap((table) =>
       OPS.map(
         ([op]) =>
-          `public.${table} ${op} → public.realtime_notify_${table} (statement after enabled ${op === "delete" ? "old" : "new"}:changed)`,
+          `public.${table} ${op} → public.realtime_notify_${table} (statement after enabled always ${op === "delete" ? "old" : "new"}:changed)`,
       ),
     ).sort(),
   );
 }
 
 /**
- * `realtime_messages_scoped_select` lets a subscriber read a change topic
- * exactly when that topic's scope function says so, called with the id parsed
- * from the topic; every other topic is denied.
+ * Every topic family `realtime_messages_scoped_select` admits, with the scope
+ * function its arm must ask. The three change-ping families come from
+ * `change-topics.ts`; the other two share the policy, so an arm broken there
+ * breaks it for all. Directory presence is `presence-topics.ts`; the chat topic
+ * is built inline in `packages/chat-core/src/realtime-manager.ts`.
+ */
+const TOPIC_FAMILIES = [
+  ...TABLES.map((table) => ({
+    label: table,
+    topic: (id: string) => changeTopic(table, id),
+    authorise: SCOPES[table].authorise,
+    changePing: true,
+  })),
+  {
+    label: "Directory presence",
+    topic: chapterPresenceTopic,
+    authorise: "realtime_can_read_chapter_scope",
+    changePing: false,
+  },
+  {
+    label: "chat channel",
+    topic: (id: string) => `chat:channel:${id}`,
+    authorise: "can_read_chat_channel",
+    changePing: false,
+  },
+];
+
+/**
+ * `realtime.messages` lets a signed-in subscriber read a topic exactly when its
+ * family's scope function says so, called with the id parsed from the topic.
+ * Everything else is denied: other topics, the `anon` role, and any write to a
+ * change-ping topic, which only the database's own triggers send.
  *
- * Driven, not read. The three scope functions are swapped (inside the rolled-
- * back transaction) for stand-ins that log their call and return a chosen
- * answer, and a non-owner member of `authenticated` reads one
- * `realtime.messages` row per topic. So a policy that grants a prefix without
- * asking (`then true`, `or true`, an earlier catch-all arm, `else true`, a
- * second permissive policy), asks the wrong function, or reads the id from the
- * wrong offset (`substring(... from N)` is 1-indexed: the cast then raises on
- * every subscribe) all fail here. What the real scope functions decide is
- * theirs to pin, not this contract's.
+ * Driven, not read. The scope functions are swapped (inside the rolled-back
+ * transaction) for stand-ins that log their call and return a chosen answer,
+ * and non-owner members of `authenticated` and `anon` read one row per topic.
+ * So a policy that grants a family without asking (`then true`, `or true`, an
+ * earlier catch-all arm, `else true`, a second permissive policy, one for
+ * `anon`), asks the wrong function, or reads the id from the wrong offset
+ * (`substring(... from N)` is 1-indexed: the cast then raises on every
+ * subscribe) fails here. What the real scope functions decide is theirs to pin,
+ * not this contract's (#2755).
  */
 async function checkChangePolicy(db: PGlite) {
-  const answers = new Map<string, string>();
-  for (const { authorise } of Object.values(SCOPES)) {
+  const reads = await db.query<{
+    policyname: string;
+    cmd: string;
+    roles: string[];
+  }>(
+    `select policyname, cmd, roles from pg_policies
+     where schemaname = 'realtime' and tablename = 'messages'
+       and permissive = 'PERMISSIVE' and cmd in ('SELECT', 'ALL')`,
+  );
+  expect(
+    reads.rows,
+    "the only permissive read policy on realtime.messages",
+  ).toEqual([
+    {
+      policyname: "realtime_messages_scoped_select",
+      cmd: "SELECT",
+      roles: ["authenticated"],
+    },
+  ]);
+
+  const stubs = new Map<string, string>();
+  for (const { authorise } of TOPIC_FAMILIES) {
     const arg = await db.query<{ name: string }>(
       `select (proargnames)[1] as name from pg_proc
        where oid = to_regprocedure('public.' || $1 || '(uuid)')`,
       [authorise],
     );
     expect(arg.rows[0]?.name, `public.${authorise}(uuid) exists`).toBeTruthy();
-    answers.set(authorise, arg.rows[0]?.name as string);
+    stubs.set(authorise, arg.rows[0]?.name as string);
   }
   await db.exec(`
     create temp table scope_calls (fn text, id uuid);
-    create role rls_probe nologin;
-    grant authenticated to rls_probe;
+    create role signed_in_probe nologin;
+    grant authenticated to signed_in_probe;
+    create role anon_probe nologin;
+    grant anon to anon_probe;
     insert into realtime.messages (topic) values ('any');
-    ${[...answers]
+    ${[...stubs]
       .map(
         ([fn, arg]) => `
     create or replace function public.${fn}(${arg} uuid) returns boolean
@@ -293,15 +358,36 @@ async function checkChangePolicy(db: PGlite) {
       .join("\n")}
   `);
 
-  /** Rows the probe sees under `topic`, or the error the policy raised. */
-  const read = async (topic: string, answer: boolean) => {
+  type Outcome =
+    | { visible: number | undefined; calls: { fn: string; id: string }[] }
+    | { wrote: boolean }
+    | { error: string };
+  /** Runs `probe` as `role` under `topic`, and reports what it saw or did. */
+  const as = async (
+    role: "signed_in_probe" | "anon_probe",
+    topic: string,
+    answer: boolean,
+    probe: "read" | "broadcast" | "presence",
+  ): Promise<Outcome> => {
     await db.exec("savepoint probe; delete from scope_calls");
     try {
       await db.query(`select set_config('realtime.topic', $1, true)`, [topic]);
       await db.query(`select set_config('test.scope_answer', $1, true)`, [
         String(answer),
       ]);
-      await db.exec("set local role rls_probe");
+      await db.exec(`set local role ${role}`);
+      if (probe !== "read") {
+        try {
+          await db.query(
+            `insert into realtime.messages (topic, extension) values ($1, $2)`,
+            [topic, probe],
+          );
+          return { wrote: true };
+        } catch (error) {
+          if (/row-level security/.test(String(error))) return { wrote: false };
+          throw error;
+        }
+      }
       const seen = await db.query<{ n: number }>(
         `select count(*)::int as n from realtime.messages`,
       );
@@ -316,38 +402,55 @@ async function checkChangePolicy(db: PGlite) {
       await db.exec("rollback to savepoint probe; reset role");
     }
   };
+  const denied = { visible: 0, calls: [] };
 
-  for (const table of TABLES) {
+  for (const family of TOPIC_FAMILIES) {
     const id = randomUUID();
-    const topic = changeTopic(table, id);
-    const call = [{ fn: SCOPES[table].authorise, id }];
-    expect(await read(topic, true), `${topic} when its scope allows`).toEqual({
-      visible: 1,
-      calls: call,
-    });
-    expect(await read(topic, false), `${topic} when its scope denies`).toEqual({
-      visible: 0,
-      calls: call,
-    });
-    const prefix = changeTopic(table, "");
+    const topic = family.topic(id);
+    const call = [{ fn: family.authorise, id }];
+    expect(
+      await as("signed_in_probe", topic, true, "read"),
+      `${topic} when its scope allows`,
+    ).toEqual({ visible: 1, calls: call });
+    expect(
+      await as("signed_in_probe", topic, false, "read"),
+      `${topic} when its scope denies`,
+    ).toEqual({ visible: 0, calls: call });
+    expect(
+      await as("anon_probe", topic, true, "read"),
+      `${topic} for anon`,
+    ).toEqual(denied);
+    const prefix = family.topic("");
     for (const other of [
       `${prefix}not-a-uuid`,
       `${topic}x`,
       `x${topic}`,
-      `${prefix}`,
+      prefix,
     ]) {
-      expect(await read(other, true), `${other} is not a change topic`).toEqual(
-        {
-          visible: 0,
-          calls: [],
-        },
-      );
+      expect(
+        await as("signed_in_probe", other, true, "read"),
+        `${other} is not a ${family.label} topic`,
+      ).toEqual(denied);
+    }
+    if (family.changePing) {
+      for (const extension of ["broadcast", "presence"] as const) {
+        expect(
+          await as("signed_in_probe", topic, true, extension),
+          `a client ${extension} on ${topic}`,
+        ).toEqual({ wrote: false });
+      }
+    } else {
+      // The control: the same write where a client may make it, so a
+      // `wrote: false` above can't come from the harness refusing every write.
+      expect(
+        await as("signed_in_probe", topic, true, "presence"),
+        `a client presence on ${topic}`,
+      ).toEqual({ wrote: true });
     }
   }
-  expect(await read(`unknown:${randomUUID()}`, true)).toEqual({
-    visible: 0,
-    calls: [],
-  });
+  expect(
+    await as("signed_in_probe", `unknown:${randomUUID()}`, true, "read"),
+  ).toEqual(denied);
 }
 
 /**
@@ -367,12 +470,31 @@ const PUBLISHED_TABLES = [
 ];
 
 async function checkPublication(db: PGlite) {
-  const tables = await db.query<{ name: string }>(
-    `select schemaname || '.' || tablename as name from pg_publication_tables
-     where pubname = 'supabase_realtime'`,
+  // Whole rows, every change: a row filter or a column list would starve
+  // `payload.new` (or the worker's INSERTs) as silently as dropping the table.
+  const tables = await db.query<{
+    name: string;
+    rowfilter: string | null;
+    partial: boolean;
+  }>(
+    `select pt.schemaname || '.' || pt.tablename as name, pt.rowfilter,
+            pt.attnames <> array(
+              select a.attname from pg_attribute a
+              where a.attrelid = format('%I.%I', pt.schemaname, pt.tablename)::regclass
+                and a.attnum > 0 and not a.attisdropped and a.attgenerated = ''
+              order by a.attnum
+            )::name[] as partial
+     from pg_publication_tables pt
+     where pt.pubname = 'supabase_realtime'`,
   );
-  expect(tables.rows.map((r) => r.name)).toEqual(
-    expect.arrayContaining(PUBLISHED_TABLES.map((t) => `public.${t}`)),
+  expect(tables.rows).toEqual(
+    expect.arrayContaining(
+      PUBLISHED_TABLES.map((t) => ({
+        name: `public.${t}`,
+        rowfilter: null,
+        partial: false,
+      })),
+    ),
   );
   const publishes = await db.query(
     `select pubinsert, pubupdate, pubdelete from pg_publication
@@ -491,6 +613,16 @@ describe("change-ping topic contract", () => {
       ],
       ["renames the topic prefix", "'events:'", "'event:'"],
       ["sends the ping non-private", /,\s*true(\s*\))/, ", false$1"],
+      [
+        "skips deletes",
+        /\bbegin\b/,
+        "begin if tg_op = 'DELETE' then return null; end if;",
+      ],
+      [
+        "uses another prefix off the insert path",
+        "'events:'",
+        "case when tg_op = 'INSERT' then 'events:' else 'event:' end",
+      ],
     ] as const)("a ping function that %s", async (_case, from, to) => {
       const fixture = swap(await eventsFn(), from, to);
       await fails(fixture, () => checkPingFunction(db, "events"));
@@ -525,6 +657,13 @@ describe("change-ping topic contract", () => {
            end loop;
          end $$;`,
       ],
+      [
+        "re-creates one with a WHEN condition that never holds",
+        `drop trigger realtime_notify_events_ins on public.events;
+         create trigger realtime_notify_events_ins after insert on public.events
+           referencing new table as changed for each statement when (false)
+           execute function public.realtime_notify_events();`,
+      ],
     ])("a migration that %s", (_case, fixture) =>
       fails(fixture, () => checkPingTriggers(db)),
     );
@@ -551,6 +690,12 @@ describe("change-ping topic contract", () => {
         /CASE\s+WHEN/,
         "CASE WHEN (realtime.topic() ~* '^events:') THEN true WHEN",
       ],
+      ["reads a presence id from the wrong offset", "FROM 18)", "FROM 17)"],
+      [
+        "admits every chat channel",
+        /CASE\s+WHEN/,
+        "CASE WHEN (realtime.topic() ~* '^chat:channel:') THEN true WHEN",
+      ],
     ])("a change-ping policy that %s", async (_case, from, to) => {
       const fixture = recreatePolicy(swap(await changePolicyQual(), from, to));
       await fails(fixture, () => checkChangePolicy(db));
@@ -566,8 +711,25 @@ describe("change-ping topic contract", () => {
         "drops the change-ping policy",
         `drop policy "realtime_messages_scoped_select" on realtime.messages;`,
       ],
-    ])("a migration that %s", (_case, fixture) =>
-      fails(fixture, () => checkChangePolicy(db)),
+      [
+        "re-creates the policy for every command, so it also admits writes",
+        async () => `
+          drop policy "realtime_messages_scoped_select" on realtime.messages;
+          create policy "realtime_messages_scoped_select" on realtime.messages
+            for all to authenticated using (${await changePolicyQual()});`,
+      ],
+      [
+        "adds an anon read policy behind the usual role guard",
+        `do $x$ begin
+           if exists (select 1 from pg_roles where rolname = 'anon') then
+             execute 'create policy "anon_read" on realtime.messages for select to anon using (true)';
+           end if;
+         end $x$;`,
+      ],
+    ])("a migration that %s", async (_case, fixture) =>
+      fails(typeof fixture === "string" ? fixture : await fixture(), () =>
+        checkChangePolicy(db),
+      ),
     );
 
     test.each([
@@ -584,6 +746,16 @@ describe("change-ping topic contract", () => {
       [
         "stops publishing deletes",
         "alter publication supabase_realtime set (publish = 'insert, update');",
+      ],
+      [
+        "publishes a table behind a row filter",
+        `alter publication supabase_realtime drop table public.chat_messages;
+         alter publication supabase_realtime add table public.chat_messages where (false);`,
+      ],
+      [
+        "publishes only some columns",
+        `alter publication supabase_realtime drop table public.chapter_audit_log;
+         alter publication supabase_realtime add table public.chapter_audit_log (id);`,
       ],
       [
         "adds a second permissive chat read policy",

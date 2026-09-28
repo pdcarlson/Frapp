@@ -36,6 +36,11 @@
 // PGlite 0.5 that can also mean adding a dependency: only `contrib/*` still
 // ships inside the main package, and everything else lives in its own
 // `@electric-sql/pglite-*` package.
+//
+// `apps/web/lib/realtime/change-topics.spec.ts` replays the same migrations on
+// its own PGlite (with a stand-in `realtime` schema and an `anon` role), so a
+// new extension or pre-existing role has to be registered there as well. CI
+// runs that spec in this job, so a miss fails the same PR.
 
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
