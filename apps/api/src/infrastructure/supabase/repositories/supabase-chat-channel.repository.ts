@@ -128,4 +128,52 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     if (error) throw error;
     return (data ?? [])[0] ?? null;
   }
+
+  /**
+   * `array_append` in SQL rather than read-then-`update()`, for the reason
+   * {@link leaveGroupDm} gives: two officers adding different members at once
+   * would otherwise each write their own array and drop the other's add. See
+   * `20260928170000_chat_private_channel_members.sql`.
+   */
+  async addPrivateChannelMember(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel | null> {
+    const { data, error } = await this.supabase.rpc(
+      'add_private_channel_member',
+      { p_channel_id: channelId, p_chapter_id: chapterId, p_user_id: userId },
+    );
+    if (error) throw error;
+    return (data ?? [])[0] ?? null;
+  }
+
+  /**
+   * The RPC holds the last-member guard in its `WHERE`, so two concurrent
+   * removals of a channel's last two current members cannot both succeed.
+   */
+  async removePrivateChannelMember(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel | null> {
+    const { data, error } = await this.supabase.rpc(
+      'remove_private_channel_member',
+      { p_channel_id: channelId, p_chapter_id: chapterId, p_user_id: userId },
+    );
+    if (error) throw error;
+    return (data ?? [])[0] ?? null;
+  }
+
+  async removeUserFromPrivateChannels(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc(
+      'remove_user_from_private_channels',
+      { p_chapter_id: chapterId, p_user_id: userId },
+    );
+    if (error) throw error;
+    return data ?? [];
+  }
 }
