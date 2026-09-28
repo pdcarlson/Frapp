@@ -272,8 +272,12 @@ export function ImportWizard({
   // attention shows, so the step can never be blocked for a reason it does
   // not state. A same-name Frapp channel is an issue, never a merge:
   // `chat_channels` has no unique (chapter_id, name). Until the existing
-  // channels have loaded, a clash cannot be ruled out, so that is an issue
-  // too rather than a silent pass.
+  // channels have loaded once, a clash cannot be ruled out, so that is an
+  // issue too rather than a silent pass. A later refetch that fails keeps the
+  // list it already had, which is still good enough to check against.
+  // Retrying in place, never reloading: the whole wizard lives in this
+  // component's state, and a reload would throw every answer away.
+  const refetchChannels = existingChannels.refetch;
   const channelIssues = useMemo(() => {
     if (!staged) return [];
     const issues = mappingIssues(
@@ -283,17 +287,20 @@ export function ImportWizard({
         (channel) => channel.name,
       ),
     );
-    if (existingChannels.isError) {
-      issues.unshift({
-        channelId: null,
-        message:
-          "Frapp could not load your existing channels to check the new names against. Reload the page to try again.",
-      });
-    } else if (existingChannels.isPending) {
-      issues.unshift({
-        channelId: null,
-        message: "Checking the new names against your existing channels…",
-      });
+    if (existingChannels.data === undefined) {
+      issues.unshift(
+        existingChannels.isError
+          ? {
+              channelId: null,
+              message:
+                "Frapp could not load your existing channels to check the new names against.",
+              retry: () => void refetchChannels(),
+            }
+          : {
+              channelId: null,
+              message: "Checking the new names against your existing channels…",
+            },
+      );
     }
     return issues;
   }, [
@@ -301,7 +308,7 @@ export function ImportWizard({
     channelChoices,
     existingChannels.data,
     existingChannels.isError,
-    existingChannels.isPending,
+    refetchChannels,
   ]);
   const channelsReady = !!staged && channelIssues.length === 0;
 

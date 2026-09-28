@@ -147,6 +147,8 @@ export interface MappingIssue {
   /** The row to jump to; null for an issue about the whole mapping. */
   channelId: string | null;
   message: string;
+  /** For an issue about the whole mapping that a retry can clear. */
+  retry?: () => void;
 }
 
 /** Channel names compare case-insensitively and ignoring a leading `#`. */

@@ -21,8 +21,11 @@
 --                       one of new_channel_required_permissions). The same two
 --                       values chat_channels.type takes for them.
 --
--- All nullable or defaulted, so existing rows are untouched. An upload has no
--- permissions to read, so its new channels always carry an explicit choice.
+-- All nullable or defaulted, so existing rows are untouched, and keep PUBLIC:
+-- an import mapped before this migration is not re-checked when it starts
+-- (the promotion runbook lists them to cancel). From here on, an upload's new
+-- channels always carry an explicit choice, since an export has no
+-- permissions to read.
 
 alter table public.discord_import_channels
   add column if not exists readable boolean,

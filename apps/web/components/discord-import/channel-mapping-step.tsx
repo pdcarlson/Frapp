@@ -182,6 +182,23 @@ export function ChannelMappingStep({
     onChange(next);
   }
 
+  // A bulk answer settles the groups it covers: they go back to opening only
+  // for what is still unresolved. Without this, an export (where every row
+  // starts with something to answer) stays fully expanded after one
+  // "whole chapter" click answers all of it.
+  function bulk(
+    targets: StagedChannel[],
+    patch: (current: ChannelChoice, channel: StagedChannel) => ChannelChoice,
+  ) {
+    update(targets, patch);
+    const settled = new Set(
+      targets.map((channel) => channel.category ?? NO_CATEGORY),
+    );
+    setAutoOpened(
+      (previous) => new Set([...previous].filter((name) => !settled.has(name))),
+    );
+  }
+
   const asNew = asNewChannel;
   const asSkip = (current: ChannelChoice) => ({
     ...current,
@@ -208,7 +225,7 @@ export function ChannelMappingStep({
     readable,
     choices,
     (visibility, permissions) =>
-      update(readable, withVisibility(visibility, permissions)),
+      bulk(readable, withVisibility(visibility, permissions)),
   );
 
   if (channels.length === 0) {
@@ -264,14 +281,14 @@ export function ChannelMappingStep({
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => update(readable, asNew)}
+            onClick={() => bulk(readable, asNew)}
           >
             Import all as new
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => update(readable, asSkip)}
+            onClick={() => bulk(readable, asSkip)}
           >
             Skip all
           </Button>
@@ -300,7 +317,7 @@ export function ChannelMappingStep({
             }
             choices={choices}
             issuesByChannel={issuesByChannel}
-            onBulk={(patch) => update(group.channels, patch)}
+            onBulk={(patch) => bulk(group.channels, patch)}
             asNew={asNew}
             asSkip={asSkip}
             onRow={(channel, patch) =>
@@ -359,7 +376,24 @@ function NeedsAttention({
                 {issue.message}
               </button>
             ) : (
-              <span className="text-sm">{issue.message}</span>
+              <span className="text-sm">
+                {issue.message}
+                {issue.retry ? (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={issue.retry}
+                      className={cn(
+                        "text-accent-text underline-offset-2 hover:underline",
+                        FOCUS_RING,
+                      )}
+                    >
+                      Try again
+                    </button>
+                  </>
+                ) : null}
+              </span>
             )}
           </li>
         ))}
@@ -850,11 +884,12 @@ function UnreadableGroup({
           </p>
           <p className="text-sm text-muted-foreground">
             Discord hides them from the Frapp bot, so they will be skipped. To
-            import them, either allow the bot&apos;s own Frapp role on those
-            channels or their categories (Edit Channel → Permissions), which
-            keeps it read-only, or give the Frapp bot a role that can see them
-            (Server Settings → Members → Frapp), which is quicker but lends it
-            everything that role can do. Then scan again.
+            import them, either allow the bot&apos;s own Frapp role on each
+            channel (Edit Channel → Permissions; a category allow reaches only
+            the channels still synced to it), which keeps it read-only, or give
+            the Frapp bot a role that can see them (Server Settings → Members →
+            Frapp), which is quicker but lends it everything that role can do.
+            Then scan again.
           </p>
           <button
             type="button"

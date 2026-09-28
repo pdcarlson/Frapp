@@ -572,7 +572,7 @@ export class DiscordImportService {
       // Discord's own permissions at scan time.
       if (scanned.readable === false && decision.mapping_action !== 'skip') {
         throw new BadRequestException(
-          `Frapp cannot read #${scanned.discord_channel_name} in Discord. Allow the Frapp role on it (or give the Frapp bot a role that can see it) and scan again, or skip it.`,
+          `Frapp cannot read #${scanned.discord_channel_name} in Discord. Allow the Frapp role on the channel itself (or give the Frapp bot a role that can see it) and scan again, or skip it.`,
         );
       }
       // Nothing private in Discord becomes readable by the whole chapter by

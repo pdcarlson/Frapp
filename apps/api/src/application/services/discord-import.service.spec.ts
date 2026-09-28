@@ -1128,6 +1128,17 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
         },
       ]),
     ).rejects.toThrow(/An export does not say whether #cabinet was private/);
+    // The web client omits the key rather than sending null.
+    await expect(
+      svc.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: 'u1',
+          discord_channel_name: 'cabinet',
+          mapping_action: 'create_new',
+          new_channel_name: 'cabinet',
+        },
+      ]),
+    ).rejects.toThrow(/An export does not say whether #cabinet was private/);
     expect(repo.replaceChannels).not.toHaveBeenCalled();
   });
 

@@ -588,8 +588,9 @@ channel that reports a different one fails the import rather than being skipped.
   access per channel from Discord's permission overwrites rather than finding
   out by failing. A channel it cannot read is listed separately and can only be
   skipped until the chapter lets the bot see it and scans again: either by
-  allowing the bot's own Frapp role on the channel or its category, which
-  keeps the install read-only, or by giving the bot a role that can see it,
+  allowing the bot's own Frapp role on the channel (a category allow reaches
+  only channels still synced to it), which keeps the install read-only, or by
+  giving the bot a role that can see it,
   which is quicker but lends the shared bot token whatever else that role can
   do ([`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
   every refused request spends a rate-limit budget one bot token shares across

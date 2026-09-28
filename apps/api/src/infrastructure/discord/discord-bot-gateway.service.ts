@@ -410,7 +410,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     // everything an admin actually needed to read.
     if (unreadable.length > 0) {
       warnings.push(
-        `Frapp cannot read ${unreadable.length} channel(s) (${nameList(unreadable)}): Discord hides them from the bot. Allow the Frapp role on those channels or their categories (read-only), or give the Frapp bot a role that can see them, then scan again. Until then they can only be skipped.`,
+        `Frapp cannot read ${unreadable.length} channel(s) (${nameList(unreadable)}): Discord hides them from the bot. Allow the Frapp role on each of them (read-only; a category allow reaches only channels still synced to it), or give the Frapp bot a role that can see them, then scan again. Until then they can only be skipped.`,
       );
     }
     if (privateDenied.length > 0) {

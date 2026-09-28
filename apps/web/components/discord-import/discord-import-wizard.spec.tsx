@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // `vi.hoisted` runs before the hoisted `vi.mock` factory, so the spies exist
@@ -34,6 +35,7 @@ const {
       data: [{ id: "ch-1", name: "general" }] as unknown,
       isPending: false,
       isError: false,
+      refetch: (() => Promise.resolve()) as () => Promise<unknown>,
     },
   },
   connection: {
@@ -299,6 +301,7 @@ describe("ImportWizard — the bot path", () => {
       data: [{ id: "ch-1", name: "general" }],
       isPending: false,
       isError: false,
+      refetch: () => Promise.resolve(),
     };
   });
 
@@ -554,8 +557,7 @@ describe("ImportWizard — the bot path", () => {
     );
   });
 
-  it("holds Continue when the existing channels could not be loaded, since a clash cannot be ruled out", async () => {
-    channelsQuery.value = { data: undefined, isPending: false, isError: true };
+  function scanOneChannel() {
     discoverChannels.mockResolvedValue({
       channels: [
         {
@@ -570,15 +572,62 @@ describe("ImportWizard — the bot path", () => {
       roles: [],
       warnings: [],
     });
+  }
+  const continueDisabled = () =>
+    (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+      .disabled;
 
+  it("holds Continue while the existing channels are still loading, since a clash cannot be ruled out yet", async () => {
+    channelsQuery.value = {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    renderAtConsent();
+    expect(
+      await screen.findByText(/Checking the new names against your existing/),
+    ).toBeInTheDocument();
+    expect(continueDisabled()).toBe(true);
+  });
+
+  it("offers to retry, in place, when the existing channels could not be loaded", async () => {
+    const refetch = vi.fn(() => Promise.resolve());
+    channelsQuery.value = {
+      data: undefined,
+      isPending: false,
+      isError: true,
+      refetch,
+    };
+    scanOneChannel();
     renderAtConsent();
     expect(
       await screen.findByText(/could not load your existing channels/),
     ).toBeInTheDocument();
+    expect(continueDisabled()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps checking against the list it has when only a later refetch failed", async () => {
+    // A failed background refetch keeps its data (TanStack Query v5), and the
+    // names were already checked against it.
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general" }],
+      isPending: false,
+      isError: true,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    renderAtConsent();
+    // #general still clashes with the loaded list; nothing else is reported.
     expect(
-      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+      await screen.findAllByText(/#general already exists in Frapp/),
+    ).not.toHaveLength(0);
+    expect(
+      screen.queryByText(/could not load your existing channels/),
+    ).not.toBeInTheDocument();
   });
 
   it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {
@@ -769,7 +818,38 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(screen.getByText("#cabinet")).toBeInTheDocument();
   });
 
-  it("ticks a bulk permission only while every new channel in scope holds it", () => {
+  it("collapses the groups a bulk answer settles, so an answered export is not left fully expanded", () => {
+    // An export says nothing about privacy, so every row starts with a
+    // question and every group opens itself.
+    const exported = channels
+      .filter((channel) => channel.readable !== false)
+      .map(({ channelId, channelName, category }) => ({
+        channelId,
+        channelName,
+        category,
+      }));
+    function Harness() {
+      const [choices, setChoices] = useState(() => defaultChoices(exported));
+      return (
+        <ChannelMappingStep
+          channels={exported}
+          choices={choices}
+          onChange={setChoices}
+          issues={mappingIssues(exported, choices, [])}
+          knowsPrivacy={false}
+        />
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByText("#announcements")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Who can read every new channel"), {
+      target: { value: "chapter" },
+    });
+    expect(screen.getByText(/Nothing needs attention/)).toBeInTheDocument();
+    expect(screen.queryByText("#announcements")).not.toBeInTheDocument();
+  });
+
+  it("ticks a bulk permission only while every new channel in scope holds it, on the same open panel", () => {
     const restricted = {
       ...defaultChoices(channels),
       "3": {
@@ -779,48 +859,33 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
         requiredPermissions: ["chapter-config:manage"],
       },
     };
-    const { unmount } = render(
+    const step = (choices: typeof restricted) => (
       <ChannelMappingStep
         channels={channels}
-        choices={restricted}
+        choices={choices}
         onChange={vi.fn()}
-        issues={mappingIssues(channels, restricted, [])}
+        issues={mappingIssues(channels, choices, [])}
         knowsPrivacy
-      />,
+      />
     );
+    const { rerender } = render(step(restricted));
     fireEvent.change(
       screen.getByLabelText("Who can read the new channels in Exec"),
       { target: { value: "restricted" } },
     );
-    expect(
-      (screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement)
-        .checked,
-    ).toBe(true);
-    unmount();
+    const box = () =>
+      screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement;
+    expect(box().checked).toBe(true);
 
-    // Once the channels are whole-chapter again (from any control), the grid
-    // shows nothing ticked rather than a restriction nobody holds.
-    const open = {
-      ...restricted,
-      "3": { ...restricted["3"], visibility: "chapter" as const },
-    };
-    render(
-      <ChannelMappingStep
-        channels={channels}
-        choices={open}
-        onChange={vi.fn()}
-        issues={mappingIssues(channels, open, [])}
-        knowsPrivacy
-      />,
+    // Another control (the server-level one, or a row) makes the channel
+    // whole-chapter while this panel stays open: the tick must go with it.
+    rerender(
+      step({
+        ...restricted,
+        "3": { ...restricted["3"], visibility: "chapter" as const },
+      }),
     );
-    fireEvent.change(
-      screen.getByLabelText("Who can read the new channels in Exec"),
-      { target: { value: "restricted" } },
-    );
-    expect(
-      (screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement)
-        .checked,
-    ).toBe(false);
+    expect(box().checked).toBe(false);
   });
 
   it("restricts every new channel in a category at once, and nothing outside it", () => {
