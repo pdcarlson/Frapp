@@ -1114,9 +1114,11 @@ describe('ChatService', () => {
         );
 
         expect(result).toBe(privateChannel);
-        expect(
-          mockChannelRepo.removePrivateChannelMember,
-        ).toHaveBeenCalledWith('ch-chan-1', 'ch-1', 'user-2');
+        expect(mockChannelRepo.removePrivateChannelMember).toHaveBeenCalledWith(
+          'ch-chan-1',
+          'ch-1',
+          'user-2',
+        );
         expect(mockChannelCache.invalidate).toHaveBeenCalledWith('ch-chan-1');
       });
 

@@ -451,11 +451,11 @@ export class ChatService {
       // Seed the creator so a PRIVATE channel is readable by at least one
       // person. `canAccessChannel` resolves PRIVATE as membership of this list
       // with **no `"*"` wildcard bypass**, so a row landing with `member_ids`
-      // NULL is invisible to every user including its creator and a President —
-      // and there is no repair path, since `updateChannel` cannot write this
-      // column. That made the channel unreachable from every read surface once
-      // #1001 filtered the list, recoverable only from the create response's
-      // id or direct DB access (#1008).
+      // NULL is invisible to every user including its creator and a President.
+      // Before #1302 there was no repair path, since `updateChannel` cannot
+      // write this column, so such a channel was unreachable from every read
+      // surface once #1001 filtered the list (#1008). `addPrivateChannelMember`
+      // now repairs one, but only for an officer who already has its id.
       //
       // Only PRIVATE. PUBLIC and ROLE_GATED resolve access by chapter
       // membership and permissions respectively and never consult this column,
