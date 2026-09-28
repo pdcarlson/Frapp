@@ -442,6 +442,13 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading channels | — | `Loading chapter channels...` |
 | Loading messages | — | `Loading messages...` |
+| Loading older messages (above the oldest row, #1571) | — | `Loading earlier messages...` |
+| Older messages failed | — | `Couldn't load earlier messages.` · `Retry` |
+| Jump looking for its target (newer rows first, then older pages) | — | `Finding that message...` · `Dismiss` |
+| Jump target past the paging bound | — | `That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.` · `Dismiss` |
+| Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
+| Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
+| Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
@@ -591,7 +598,7 @@ names a control only one client has lives with that client, under `apps/mobile/`
 | Block list unavailable | `Couldn't load your block list` | `<N new messages are> held until it loads, so nothing from a member you blocked shows by mistake.` · action `Retry`, or `Retries when you're back online` in its place while the read waits for the network | `block-copy` (`blockListNotice`, `BLOCK_LIST_WAITING_FOR_NETWORK`) |
 | Block list loading, rows held | `Checking your block list` | `<N new messages are> held until it loads.` | `block-copy` (`blockListNotice`) |
 | Pinned panel, pins hidden (web) | — | A blocked member's pins: `<N> pinned message(s) is/are hidden by your block list.` Pins the list cannot vouch for yet: `<N> pinned message(s) is/are waiting on your block list.` Below any pins it may show, in place of "Nothing pinned yet" when every pin is hidden; the menu's Pinned count includes both | web `components/chat/pins-popover.tsx` (`hiddenPinsText`) |
-| Jump to a held message (web) | — | `That message is waiting on your block list. It opens once the list loads.` · action `Dismiss`, in place of "That message is older than the history loaded here." | web `components/chat/chat-shell.tsx` |
+| Jump to a held message (web) | — | `That message is waiting on your block list. It opens once the list loads.` · action `Dismiss`, in place of "Finding that message..." or any of the unreachable lines above (§ Chat (dashboard)) | web `components/chat/chat-shell.tsx` |
 | Blocked members, list | `Blocked members` | `Blocks apply in this chapter only.` above the rows, each with `Unblock` | `block-copy` (`BLOCKED_MEMBERS_TITLE`, `BLOCKED_MEMBERS_SCOPE`) |
 | Blocked members, empty (mobile) | `You haven't blocked anyone in this chapter` | `Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.` | title `block-copy`; body mobile `components/settings/blocked-members-sheet.tsx` |
 | Blocked members, empty (web) | `You haven't blocked anyone in this chapter` | `Block someone from a message or their profile in the mobile app. Their messages in this chapter's chat are hidden from you here too, and they aren't told.` | title `block-copy`; body web `components/profile/blocked-members-card.tsx` (`BLOCKED_MEMBERS_EMPTY_BODY_WEB`) |

@@ -15,20 +15,20 @@ import type { ReportedMessageTimeline } from "@repo/hooks";
  *
  * **Patch, don't refetch, when the channel is known.** `use-chat-channel.ts`
  * caches a timeline under `chatMessagesKey` with `staleTime: Infinity`, and its
- * `queryFn` rebuilds the cache from the server page alone (`emptyCache()` plus
- * the REST rows and the recorded notices). A refetch therefore drops the
- * member's unsent outbox rows from view until the next hydrate, which only runs
- * when the channel is opened again. `markMessageDeleted` writes the same
- * tombstone the server does into the one row, and leaves every other row —
- * outbox rows included — where it was. Only a channel the officer can read can
- * be cached here at all; a DM they are not in never is, and the patch is then a
- * no-op.
+ * `queryFn` returns the timeline to its newest page, dropping the older
+ * pages the officer had scrolled through (#1571). `markMessageDeleted` writes
+ * the same tombstone the server does into the one row, and leaves every other
+ * row — outbox rows included — where it was. Only a channel the officer can read can be cached here at all;
+ * a DM they are not in never is, and the patch is then a no-op.
  *
  * **Refetch only what holds the message when the outcome is unknown.** A 5xx or
  * a transport failure names no channel, and the removal may or may not have
  * landed, so a patch would be a guess. The timelines whose cache holds the
- * message are refetched; every other timeline, and its outbox rows, is left
- * alone.
+ * message are refetched. A refetch keeps no row it did not re-read, so the
+ * removed row either comes back as the server has it (it is in the newest
+ * page) or leaves the timeline until the officer scrolls back to it, when it
+ * loads fresh; the removed content is never kept. Every other timeline is
+ * left alone.
  */
 export const reportedMessageTimeline: ReportedMessageTimeline = {
   markRemoved(queryClient, channelId, messageId) {

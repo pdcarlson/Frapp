@@ -128,6 +128,26 @@ function matchMember(
 }
 
 /**
+ * Older pages a jump loads while looking for its target before it says the
+ * message is further back (#1571). Paging is contiguous, so reaching a message
+ * costs every page between it and the newest one: at `OLDER_PAGE_LIMIT` rows
+ * a page this is two thousand messages, a few seconds of reads, which covers
+ * any search hit or bookmark from ordinary use. Past it the target stays
+ * pending, so scrolling up still opens it once it loads.
+ */
+const JUMP_MAX_OLDER_PAGES = 20;
+
+type UnreachableReason = "far" | "missing" | "error" | "unloaded";
+
+/** `spec/ui/design-system/writing.md` § Chat (dashboard). */
+const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
+  far: "That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.",
+  missing: "That message isn't in this channel anymore.",
+  error: "Couldn't load the messages needed to reach that message.",
+  unloaded: "Couldn't load this channel's messages to reach that message.",
+};
+
+/**
  * Leading mark for the channel header.
  *
  * A plain channel takes a **text `#`**, not a glyph: `canvas-screens.dc.html`
@@ -330,10 +350,41 @@ export function ChatShell({
   // rail left it standing in a channel the message was never in, and a
   // `?message=` link with no channel (so no `pendingJumpChannelId` to gate on)
   // re-raised it in every channel visited until it was dismissed.
+  //
+  // `reason` is why, since older history can now be loaded (#1571): the
+  // target is past what a jump pages back (`far`), the channel's history ran
+  // out without it (`missing`), a read it needed failed (`error`), or the
+  // channel's messages failed to load and the timeline shows that (`unloaded`).
   const [unreachableTarget, setUnreachableTarget] = useState<{
     messageId: string;
     channelId: string | null;
+    reason: UnreachableReason;
   } | null>(null);
+  // The jump currently paging older history to reach its target, for the
+  // "Finding that message..." line. Keyed like the notice, by message.
+  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(
+    null,
+  );
+  // Older pages this jump has asked for, bounded by `JUMP_MAX_OLDER_PAGES`.
+  // Keyed on the attempt and the message, so a new request starts from zero.
+  // `caughtUp` records the one forward read (`loadNewer`) each request makes
+  // before paging back; `seekTick` re-runs the jump when that read lands.
+  const jumpSeek = useRef<{
+    attempt: number;
+    messageId: string;
+    channelId: string | null;
+    pages: number;
+    caughtUp: boolean;
+    forwardFailed: boolean;
+  }>({
+    attempt: -1,
+    messageId: "",
+    channelId: null,
+    pages: 0,
+    caughtUp: false,
+    forwardFailed: false,
+  });
+  const [seekTick, setSeekTick] = useState(0);
   // Bumped on every jump request so re-picking the SAME target re-runs the
   // effect. Without it, asking again for something already resolved as
   // unreachable changed no dependency, so the effect never re-ran: the notice
@@ -499,6 +550,12 @@ export function ChatShell({
 
   const channel = useChatChannel(activeChannelId);
   const { toast } = useToast();
+  // Stable for the timeline's load-at-top effect, which lists it as a
+  // dependency; the outcome is the hook's `olderError`/`hasOlder` to report.
+  const { loadOlder, loadNewer } = channel;
+  const loadOlderHistory = useCallback(() => {
+    void loadOlder();
+  }, [loadOlder]);
 
   // The viewer's block list, applied on top of the server's mask (#2313). The
   // server masks what it serves, but a row that arrived over the Realtime echo
@@ -796,7 +853,7 @@ export function ChatShell({
   // Channel-scoped: the notice belongs to the channel the jump was attempted
   // in, so it never follows the member into a channel the message was never in.
   // A pending jump whose target is loaded but held by the block list (#2313):
-  // not a miss, and not "older than the history loaded here". It shows the
+  // not a miss, and nothing to page history for. It shows the
   // same dismissible notice with words that are true, over any earlier miss's.
   const pendingTargetHeld =
     pendingMessageId !== null &&
@@ -807,6 +864,13 @@ export function ChatShell({
     pendingTargetHeld ||
     (unreachableTarget !== null &&
       unreachableTarget.channelId === activeChannelId);
+  // A jump paging older history toward its target (#1571). Said out loud
+  // because it can take a few seconds, and a silent wait reads as a dead row.
+  const showSeekingNotice =
+    !showUnreachableNotice &&
+    seekingMessageId !== null &&
+    seekingMessageId === pendingMessageId &&
+    (!pendingJumpChannelId || pendingJumpChannelId === activeChannelId);
   // Pins are a navigation affordance, not a list: the popover's rows were
   // rendered as buttons but `onJump` was never wired, so every one of them was
   // inert. The timeline exposes the scroll, the shell owns the wiring.
@@ -891,10 +955,12 @@ export function ChatShell({
   // definition) and is not for search or bookmarks, whose whole job is reaching
   // messages beyond the loaded window: every such row looked inert.
   //
-  // Note what this does NOT claim: nothing backfills older history today
-  // (`useChatChannel` fetches one window and exposes no pagination), so a
-  // genuinely old target is only reachable if a newer message happens to bring
-  // it into range. Actually reaching it needs real backfill (#1571).
+  // A miss with older history still to load pages back for it first (#1571),
+  // one page per run of this effect, up to `JUMP_MAX_OLDER_PAGES`. Each page
+  // changes `channel.messages` or settles `isLoadingOlder`, and either re-runs
+  // this, so the loop needs no timer. The notice is the fallback, not the
+  // normal path: the target is further back than the bound, the channel's
+  // history ran out without it, or the read failed.
   useEffect(() => {
     if (!pendingMessageId) return;
     // A named channel target must resolve to it first — a message id paired
@@ -913,8 +979,8 @@ export function ChatShell({
       viewer resolves (#2243), and `scrollToMessage` reports honestly that it
       could not scroll when there is no virtualizer attached. Without this the
       jump would run into that window and read the `false` as "this message is
-      outside the loaded window", painting "That message is older than the
-      history loaded here." over a message that is in fact loaded.
+      outside the loaded window", paging older history for it and then
+      painting the unreachable notice over a message that is in fact loaded.
 
       A warm cold-start with `?message=` hits it squarely: `seedFirstChunk`
       writes the tail straight into the query cache, so `channel.isLoading` is
@@ -923,9 +989,9 @@ export function ChatShell({
       the half that makes returning here a deferral rather than a silent drop.
 
       `liveUserId`, deliberately not the cached-or-live `userId` (#2249). What
-      this guard needs is the *live window*, not an identity: it reports
-      "That message is older than the history loaded here." when
-      `scrollToMessage` misses, and the cached tail is 30 rows that by
+      this guard needs is the *live window*, not an identity: it pages older
+      history and then reports the target unreachable when `scrollToMessage`
+      misses, and the cached tail is 30 rows that by
       definition predate the cache being written — so a deep link to a message
       posted while the member was away would miss against it and paint that
       copy over a message the backfill is seconds from delivering. It clears
@@ -944,18 +1010,94 @@ export function ChatShell({
       setPendingMessageId(null);
       setPendingJumpChannelId(null);
       setUnreachableTarget(null);
-    } else {
+      setSeekingMessageId(null);
+      return;
+    }
+    // The timeline could not load, so there is nothing to scroll or page:
+    // say that, not that the message is gone.
+    if (channel.loadError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect reports the outcome of the imperative scroll above, like every setter below it
+      setSeekingMessageId(null);
       setUnreachableTarget({
         messageId: pendingMessageId,
         channelId: activeChannelId,
+        reason: "unloaded",
       });
+      return;
     }
+    // Per channel as well as per request: a message-only link runs in
+    // whichever channel is active, and a budget spent in one must not starve
+    // the next.
+    const seek = jumpSeek.current;
+    if (
+      seek.attempt !== jumpAttempt ||
+      seek.messageId !== pendingMessageId ||
+      seek.channelId !== activeChannelId
+    ) {
+      jumpSeek.current = {
+        attempt: jumpAttempt,
+        messageId: pendingMessageId,
+        channelId: activeChannelId,
+        pages: 0,
+        caughtUp: false,
+        forwardFailed: false,
+      };
+    }
+    // The first move is forward, not back. A target can be newer than the
+    // cache as easily as older — a notification for a message posted during a
+    // Realtime gap — and paging back for it would spend the budget in the
+    // wrong direction and then call it gone. One read of what arrived after
+    // the newest row settles that; the tick re-runs this when it adds nothing.
+    if (!jumpSeek.current.caughtUp) {
+      const request = jumpSeek.current;
+      request.caughtUp = true;
+      setUnreachableTarget(null);
+      setSeekingMessageId(pendingMessageId);
+      void loadNewer().then((read) => {
+        // A failed forward read leaves "newer than the cache" unchecked, so
+        // no verdict below may claim the message is gone or further back.
+        if (read === null) request.forwardFailed = true;
+        setSeekTick((n) => n + 1);
+      });
+      return;
+    }
+    const { pages } = jumpSeek.current;
+    // A failure from before this request (a scroll-up that failed) does not
+    // stop it trying; only a page this request asked for does.
+    const failed = channel.olderError && pages > 0;
+    if (channel.hasOlder && pages < JUMP_MAX_OLDER_PAGES && !failed) {
+      setUnreachableTarget(null);
+      setSeekingMessageId(pendingMessageId);
+      if (!channel.isLoadingOlder) {
+        jumpSeek.current.pages += 1;
+        void loadOlder();
+      }
+      return;
+    }
+    setSeekingMessageId(null);
+    setUnreachableTarget({
+      messageId: pendingMessageId,
+      channelId: activeChannelId,
+      reason:
+        failed || jumpSeek.current.forwardFailed
+          ? "error"
+          : channel.hasOlder
+            ? "far"
+            : "missing",
+    });
   }, [
     pendingMessageId,
     activeChannelId,
     pendingJumpChannelId,
     channel.isLoading,
+    channel.loadError,
     channel.messages,
+    channel.hasOlder,
+    channel.isLoadingOlder,
+    channel.olderError,
+    loadOlder,
+    loadNewer,
+    seekTick,
     drawnMessageIds,
     pendingTargetHeld,
     jumpAttempt,
@@ -1050,8 +1192,8 @@ export function ChatShell({
     // vanishes from the send or re-attaches when the parent reappears.
     //
     // Reachable, not hypothetical, in two ways: root normalization can target a
-    // root older than the one window `useChatChannel` loads (#1571), and a jump
-    // or backfill can re-window the list under a reply already staged.
+    // root older than what `useChatChannel` has loaded so far (#1571), and a
+    // refetch can re-window the list under a reply already staged.
     if (!parent) {
       return { id: replyTarget.messageId, author: null, preview: null };
     }
@@ -1549,14 +1691,16 @@ export function ChatShell({
             </p>
           ) : null}
           <div aria-live="polite" role="status">
-            {showUnreachableNotice ? (
+            {showUnreachableNotice || showSeekingNotice ? (
               // Dismissible because it reports a past action, not a standing
               // condition of the channel.
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
                 <p className="text-[12.5px] text-muted-foreground">
                   {pendingTargetHeld
                     ? "That message is waiting on your block list. It opens once the list loads."
-                    : "That message is older than the history loaded here."}
+                    : showUnreachableNotice && unreachableTarget
+                      ? UNREACHABLE_COPY[unreachableTarget.reason]
+                      : "Finding that message..."}
                 </p>
                 <Button
                   variant="secondary"
@@ -1568,6 +1712,7 @@ export function ChatShell({
                     // re-raise this the moment any new message arrived - a
                     // dismiss that visibly un-dismisses itself.
                     setUnreachableTarget(null);
+                    setSeekingMessageId(null);
                     setPendingMessageId(null);
                     setPendingJumpChannelId(null);
                   }}
@@ -1755,6 +1900,20 @@ export function ChatShell({
             viewerId={userId}
             isLoading={channel.isLoading}
             loadError={channel.loadError}
+            hasOlder={channel.hasOlder}
+            isLoadingOlder={channel.isLoadingOlder}
+            olderError={channel.olderError}
+            onLoadOlder={loadOlderHistory}
+            // Only while the jump is still working. Once it has settled on a
+            // notice the target stays pending (so a late arrival still lands),
+            // but holding follow through that would stop new messages
+            // scrolling into view until the member dismissed it.
+            holdFollow={
+              pendingMessageId !== null &&
+              (pendingJumpChannelId === null ||
+                pendingJumpChannelId === activeChannelId) &&
+              !showUnreachableNotice
+            }
             onReact={channel.react}
             onUnreact={channel.unreact}
             onReply={canReplyHere ? startReply : undefined}

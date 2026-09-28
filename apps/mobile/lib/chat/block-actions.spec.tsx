@@ -33,6 +33,7 @@ vi.mock("@repo/hooks", async () => {
 
 import { BLOCK_FAILURE_BODY } from "@repo/chat-core/block-copy";
 import {
+  MASKED_REFRESH_PAGE_LIMIT,
   MASKED_REFRESH_RETRY_DELAYS_MS,
   maskedRefresh,
 } from "@repo/chat-core/blocks";
@@ -177,7 +178,10 @@ describe("useBlockActions", () => {
     expect(invalidate).not.toHaveBeenCalled();
     expect(api.GET).toHaveBeenCalledTimes(1);
     expect(api.GET).toHaveBeenCalledWith("/v1/channels/{id}/messages", {
-      params: { path: { id: "chan-1" }, query: { limit: 50 } },
+      params: {
+        path: { id: "chan-1" },
+        query: { limit: MASKED_REFRESH_PAGE_LIMIT },
+      },
     });
     expect(cacheOf(queryClient, "chan-1").byId["m1"]).toMatchObject({
       content: "the real words",
