@@ -36,6 +36,9 @@
 // gets muted, and a muted alert is worse than none. But it is rendered in the
 // step summary as SKIPPED with the reason, never folded into the pass count.
 //
+// A run where nothing failed is still red when its alert could not be read or
+// closed, because a green run would hide a P1 left open (conformanceExitCode).
+//
 // Env inputs:
 //   GITHUB_TOKEN                — required (issues: write) for the alert upsert
 //   GITHUB_REPOSITORY           — required, owner/repo
@@ -1392,24 +1395,29 @@ export async function runStagingConformance({
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
   });
 
-  // A failed lookup returns an empty list, which is indistinguishable from
-  // "no alert is open". Falling through on that would let a transient 5xx
-  // close an alert whose gated assertion was never proven — and because the
-  // unproven check is SKIPPED rather than FAIL, no later run would reopen it.
-  // "I could not read the alerts" must never mean "there are none".
+  // Falling through on a failed lookup would let a transient 5xx close an
+  // alert whose gated assertion was never proven — and because the unproven
+  // check is SKIPPED rather than FAIL, no later run would reopen it. "I could
+  // not read the alerts" must never mean "there are none", and it reds the
+  // run (conformanceExitCode): nothing failed, but nothing was closed either.
   if (!lookupOk) {
     writeSummary(buildRunSummary({ outcome, results, runUrl }));
-    logger.log?.(
-      "::warning::Could not read the alert issues, so no alert was closed this run. " +
-        "Nothing failed; retrying tomorrow.",
-    );
-    return { outcome, results, alert: { action: "none", closed: [] } };
+    logger.log?.(STAGING_ALERT_UNREAD);
+    return { outcome, results, alert: { action: "unread", closed: [] } };
   }
 
   const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
+  // The gate just read that nothing is open, so there is nothing to close.
+  // resolveAlert would look again, and a transient failure of that second read
+  // would red a run that already knows the answer.
+  if (openAlerts.length === 0) {
+    writeSummary(buildRunSummary({ outcome, results, runUrl }));
+    return { outcome, results, alert: { action: "none", closed: [] } };
+  }
+
   const failingIds = openAlerts.flatMap((issue) => parseFailingIds(issue.body));
-  if (openAlerts.length > 0 && !canResolveAlert({ results, failingIds })) {
+  if (!canResolveAlert({ results, failingIds })) {
     const unresolved = failingIds.filter(
       (id) => !results.some((r) => r.id === id && r.status === PASS),
     );
@@ -1467,8 +1475,29 @@ export async function runStagingConformance({
       "::error::Staging is conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
+  } else if (alert.action === "unread") {
+    // resolveAlert's own lookup failed after the gate's succeeded. Whether an
+    // alert is open is unknown, so the message must not say it is.
+    logger.log?.(STAGING_ALERT_UNREAD);
   }
   return { outcome, results, alert };
+}
+
+const STAGING_ALERT_UNREAD =
+  "::error::Staging is conformant, but the alert issues could not be read, so none was closed " +
+  "this run. The next run reads them again.";
+
+/**
+ * The run's exit code. This script IS the check (unlike deploy-alert, a
+ * watchdog over an already-red job), so a drifted environment reds the run.
+ * So does a conformant run whose alert could not be read or closed: exiting 0
+ * there would hide a P1 left open on a healthy environment, every day (#2627).
+ * An unproven recovery and an inconclusive run leave the alert open on purpose
+ * and exit 0 (docs/internal/ops/ALERT_ROUTING.md).
+ */
+export function conformanceExitCode({ outcome, alert }) {
+  if (outcome === "failed") return 1;
+  return alert?.action === "failed" || alert?.action === "unread" ? 1 : 0;
 }
 
 /** Base64url JWT payload decode. Returns null on anything malformed. */
@@ -1487,10 +1516,8 @@ export function decodeJwtPayload(token) {
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
-  const { outcome } = await runStagingConformance({ token, repo });
-  // Unlike deploy-alert (a watchdog over an already-red job), this script IS
-  // the check, so a drifted environment must red the run.
-  if (outcome === "failed") process.exit(1);
+  const code = conformanceExitCode(await runStagingConformance({ token, repo }));
+  if (code !== 0) process.exit(code);
 }
 
 if (isInvokedDirectly(import.meta.url)) {
