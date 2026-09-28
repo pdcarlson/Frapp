@@ -40,12 +40,9 @@ The four signed-upload-URL requests (chat, backwork, chapter documents, service-
 
 What each service does to a client filename before that is key hygiene, not the guard:
 
-- `ChapterDocumentService`, `BackworkService`, `ChatService` and `UserService` interpolate `path.basename(filename)`. It drops a `/`-separated directory part, but a backslash or `%2e` passes through to the guard.
-- `ServiceEntryService` takes `path.basename(filename)`, then replaces every character outside `[A-Za-z0-9._-]` with `_`, because storage-api refuses keys outside its ASCII set.
+- `ChapterDocumentService`, `BackworkService`, `ChatService`, `UserService` and `ServiceEntryService` build the key's last segment with `safeObjectFilename` (`apps/api/src/domain/constants/storage.ts`). It takes the posix basename, which drops a `/`-separated directory part, then replaces each character outside `[A-Za-z0-9._-]` with `_`, one for one, a backslash and `%` included. storage-api refuses keys outside its ASCII set, and storage-js puts the key into the request URL unencoded, so a raw `#` or `%` would cut or corrupt the key. The name a member sees is stored separately (a document's `title`, a chat attachment's `filename`), so only the key changes; existing objects keep the keys they were confirmed with.
 - `ChapterService` puts no filename in the path. The logo is always `chapters/<chapterId>/branding/logo.<ext>`, where `<ext>` has already passed `isAllowedUploadExtension('image', …)`.
 - The Discord import flattens the archive's relative path through `flattenArchiveRelativePath` (`apps/api/src/domain/constants/storage.ts`), which replaces every run of characters outside `[A-Za-z0-9._-]` with `_`, `/` included.
-
-The four routes that keep a raw basename break on a `#` or a non-ASCII name: the upload fails, or lands under a key cut at the `#`. #2697 moves all five onto one sanitizer.
 
 ## Error Handling
 If a content-type, extension or declared-size check (§§ 1–3) fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated. § 4's stripping never throws; the chokepoint does, with the same 400.

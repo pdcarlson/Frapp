@@ -1,4 +1,3 @@
-import * as path from 'path';
 import {
   Inject,
   Injectable,
@@ -43,7 +42,10 @@ import {
 } from '#domain/repositories/member.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
-import { CHAT_ARCHIVE_BUCKET } from '#domain/constants/storage';
+import {
+  CHAT_ARCHIVE_BUCKET,
+  safeObjectFilename,
+} from '#domain/constants/storage';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { instantOrThrow } from './instant-bound';
 import type {
@@ -1936,7 +1938,7 @@ export class ChatService {
     }
 
     const messageId = crypto.randomUUID();
-    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${path.basename(filename)}`;
+    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${safeObjectFilename(filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       CHAT_BUCKET,

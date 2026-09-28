@@ -3640,6 +3640,34 @@ describe('ChatService', () => {
   // ── File Upload ─────────────────────────────────────────────────────
 
   describe('requestChatUploadUrl', () => {
+    it('squashes storage-unsafe filename characters in the key (#2697)', async () => {
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'Résumé #3 50%.pdf',
+        'application/pdf',
+      );
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/chat\/ch-chan-1\/[0-9a-f-]{36}\/R_sum___3_50_\.pdf$/,
+      );
+    });
+
+    it('strips directory components from the filename before building the key', async () => {
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        '../../x.pdf',
+        'application/pdf',
+      );
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/chat\/ch-chan-1\/[0-9a-f-]{36}\/x\.pdf$/,
+      );
+    });
+
     it('should generate a signed upload URL for an allowed content type', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.example.com/signed-url',

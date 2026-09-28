@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 /**
  * Profile-photo storage layout, shared by the upload path
  * (UserService.requestAvatarUploadUrl) and the account-deletion purge
@@ -107,6 +109,40 @@ function archiveMediaPrefix(chapterId: string, importId: string): string {
  */
 export function flattenArchiveRelativePath(relativePath: string): string {
   return relativePath.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 180);
+}
+
+/**
+ * The last segment of a storage key built from a client-supplied filename.
+ *
+ * Every upload-URL route that puts the member's filename into the key
+ * (documents, backwork, chat attachments, avatars, service proof) goes through
+ * this, because the raw name breaks the upload in two ways the traversal guard
+ * does not catch:
+ *
+ * - storage-api accepts only keys matching `VALID_OBJECT_KEY`
+ *   (`[A-Za-z0-9_/!.*'() &$=@;:+,?-]`), so `Résumé.pdf` is refused: at the
+ *   mint, which `SupabaseStorageService.getSignedUploadUrl` turns into a 500,
+ *   or at the browser's PUT to the signed URL as a 400. Either way the upload
+ *   fails.
+ * - `@supabase/storage-js` interpolates the key into the request URL
+ *   unencoded, so a `#` starts a fragment and the object lands under a key cut
+ *   at it, while the API confirms the uncut path, and `%` is malformed
+ *   percent-encoding.
+ *
+ * `posix.basename` drops any `/`-separated directory part; the squash then
+ * replaces each character outside `[A-Za-z0-9._-]` with `_`, one for one
+ * (backslashes included). The key's parent folder is a fresh uuid, so it is
+ * already unique; the filename is there only so a human reading the bucket can
+ * tell objects apart, and the name a member sees is stored separately (a
+ * document's `title`, a chat attachment's `filename`). A `.` or `..` result is
+ * left for `assertSafeObjectPath` to refuse, and every caller's extension
+ * allowlist rejects those first anyway.
+ *
+ * Not reversible, and never reversed: only new keys are built this way, and an
+ * existing row keeps the key it was confirmed with.
+ */
+export function safeObjectFilename(filename: string): string {
+  return posix.basename(filename).replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
 /**

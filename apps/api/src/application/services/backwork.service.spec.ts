@@ -133,6 +133,30 @@ describe('BackworkService', () => {
   });
 
   describe('requestUploadUrl', () => {
+    it('squashes storage-unsafe filename characters in the key (#2697)', async () => {
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'Résumé #3 50%.pdf',
+        contentType: 'application/pdf',
+      });
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/backwork\/[0-9a-f-]{36}\/R_sum___3_50_\.pdf$/,
+      );
+    });
+
+    it('strips directory components from the filename before building the key', async () => {
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: '../../x.pdf',
+        contentType: 'application/pdf',
+      });
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/backwork\/[0-9a-f-]{36}\/x\.pdf$/,
+      );
+    });
+
     it('should return a signed upload URL and storage path', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.supabase.co/upload/signed',

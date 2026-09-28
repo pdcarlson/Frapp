@@ -645,24 +645,24 @@ describe('ServiceEntryService', () => {
     it('should strip directory components from the filename', async () => {
       const result = await service.requestProofUploadUrl({
         chapterId: 'ch-1',
-        filename: '../../etc/passwd.png',
-        contentType: 'image/png',
+        filename: '../../x.pdf',
+        contentType: 'application/pdf',
       });
 
       expect(result.storagePath).toMatch(
-        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/passwd\.png$/,
+        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/x\.pdf$/,
       );
     });
 
     it('should squash storage-unsafe filename characters to underscores', async () => {
       const result = await service.requestProofUploadUrl({
         chapterId: 'ch-1',
-        filename: 'café cleanup #2.jpg',
-        contentType: 'image/jpeg',
+        filename: 'Résumé #3 50%.pdf',
+        contentType: 'application/pdf',
       });
 
       expect(result.storagePath).toMatch(
-        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/caf__cleanup__2\.jpg$/,
+        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/R_sum___3_50_\.pdf$/,
       );
     });
 
