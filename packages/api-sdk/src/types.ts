@@ -2710,7 +2710,7 @@ export interface paths {
         };
         /**
          * Import detail and progress
-         * @description Poll this while an import is running: `imported_messages` / `total_messages` and per-channel status.
+         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`. A bot import reads Discord as it goes, so its message total grows with it; its progress is `channels_done` / `channels_total` (channel and thread rows being imported; null for an upload).
          */
         get: operations["DiscordImportController_get_v1"];
         put?: never;
@@ -2894,6 +2894,26 @@ export interface paths {
         put?: never;
         /** Stop a queued or running import */
         post: operations["DiscordImportController_cancel_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord-imports/{id}/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a finished import off the list
+         * @description Hides a completed, failed, cancelled or purged import from the list. Nothing it imported is touched; to remove that, delete the import. 409 while the import is queued, running or being purged.
+         */
+        post: operations["DiscordImportController_clear_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9081,6 +9101,25 @@ export interface operations {
         };
     };
     DiscordImportController_cancel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DiscordImportController_clear_v1: {
         parameters: {
             query?: never;
             header?: never;

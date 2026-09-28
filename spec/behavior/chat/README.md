@@ -563,6 +563,12 @@ channel that reports a different one fails the import rather than being skipped.
   put it somewhere else, not a duplicate. Re-running the wizard from the start
   therefore does not deduplicate against an earlier import; delete the first one
   instead.
+- **Deleting an import is not the same as clearing it.** Delete purges what the
+  import brought in and keeps the job row as the record that it happened.
+  Clear, offered once an import is finished (completed, failed, cancelled or
+  purged), only takes that row off the chapter's list and touches nothing it
+  imported (#2817). A bot import's progress is shown in channels and threads,
+  because its message total is only known once Discord has been read (#2816).
 - **Where it lands is the operator's choice, per channel, starting from a safe
   default.** Every channel the bot can read starts as a *new* Frapp channel
   with its Discord name, so a server with no conflicts needs no per-channel

@@ -179,6 +179,35 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     expect(harness.rows('discord_import_channels')).toHaveLength(before);
   });
 
+  it('findByChapter leaves out an import the chapter cleared', async () => {
+    await repo.findByChapter(CHAPTER_A);
+    expect(
+      harness.ops[0].filters.map((f) => [f.column, f.op, f.value]),
+    ).toContainEqual(['cleared_at', 'is', null]);
+  });
+
+  it('markCleared cannot reach another chapter row, and only clears a finished import', async () => {
+    // IMPORT_B is `ready` in the fixture: not finished, so nothing changes.
+    const result = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.markCleared(IMPORT_B, CHAPTER_B, ['completed'], 'now'),
+    );
+    expect(result).toBeNull();
+    expect(
+      harness.rows('discord_imports').find((r) => r.id === IMPORT_A)
+        ?.cleared_at,
+    ).toBeUndefined();
+  });
+
+  it('countChannels filters through the import embed', async () => {
+    await repo.countChannels(IMPORT_B, CHAPTER_B);
+    for (const op of harness.ops) {
+      expect(op.filters.map((f) => [f.column, f.value])).toContainEqual([
+        'discord_imports.chapter_id',
+        CHAPTER_B,
+      ]);
+    }
+  });
+
   it('findFiles is scoped to the caller chapter', async () => {
     const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.findFiles(IMPORT_A, CHAPTER_A),
@@ -283,6 +312,74 @@ describe('SupabaseDiscordImportRepository — findFiles paging', () => {
       [0, PAGE_SIZE - 1],
       [PAGE_SIZE, PAGE_SIZE * 2 - 1],
     ]);
+  });
+});
+
+describe('SupabaseDiscordImportRepository — channel rows past the response cap', () => {
+  /** Mirrors `CHANNEL_PAGE_SIZE` in the repository under test. */
+  const PAGE_SIZE = 500;
+
+  function repoWithChannelPages(pages: Array<{ data: unknown[] | null }>) {
+    const ranges: Array<[number, number]> = [];
+    const inserts: unknown[][] = [];
+    let index = 0;
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'order', 'delete', 'maybeSingle']) {
+      builder[method] = jest.fn(() => builder);
+    }
+    builder.range = jest.fn((from: number, to: number) => {
+      ranges.push([from, to]);
+      return Promise.resolve(pages[index++] ?? { data: [], error: null });
+    });
+    builder.insert = jest.fn((rows: unknown[]) => {
+      inserts.push(rows);
+      return Promise.resolve({ error: null });
+    });
+    // `delete().eq()` and `findById(...).maybeSingle()` resolve through `then`.
+    builder.then = (resolve: (value: unknown) => unknown) =>
+      resolve({ data: { id: IMPORT_A }, error: null });
+    const client = { from: jest.fn(() => builder) };
+    const repo = new SupabaseDiscordImportRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabaseDiscordImportRepository
+      >[0],
+    );
+    return { repo, ranges, inserts };
+  }
+
+  const channelRows = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `map-${i}`,
+      discord_imports: { chapter_id: CHAPTER_A },
+    }));
+
+  it('reads every channel row, not just the first response', async () => {
+    // A bot import keeps a row per thread: the first real server had 945.
+    const { repo, ranges } = repoWithChannelPages([
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(200) },
+      { data: [] },
+    ]);
+    const rows = await repo.findChannels(IMPORT_A, CHAPTER_A);
+    expect(rows).toHaveLength(1200);
+    expect(rows[0]).not.toHaveProperty('discord_imports');
+    expect(ranges[0]).toEqual([0, PAGE_SIZE - 1]);
+  });
+
+  it('inserts a large set in batches and answers with the paged read', async () => {
+    const { repo, inserts } = repoWithChannelPages([
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(PAGE_SIZE) },
+      { data: channelRows(200) },
+      { data: [] },
+    ]);
+    const rows = Array.from({ length: 1200 }, (_, i) => ({
+      discord_channel_id: String(i),
+    })) as unknown as Parameters<typeof repo.replaceChannels>[2];
+    const result = await repo.replaceChannels(IMPORT_A, CHAPTER_A, rows);
+    expect(inserts.map((batch) => batch.length)).toEqual([500, 500, 200]);
+    expect(result).toHaveLength(1200);
   });
 });
 

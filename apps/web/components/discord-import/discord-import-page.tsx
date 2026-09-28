@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import {
   DISCORD_CONNECT_MESSAGES,
   useCancelDiscordImport,
+  useClearDiscordImport,
   useDeleteDiscordImport,
   useDiscordImport,
   useDiscordImports,
@@ -30,20 +31,8 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
+import { importPercent, isClearable, type ImportRow } from "./import-progress";
 import type { ImportSource } from "./source-step";
-
-type ImportRow = {
-  id: string;
-  status: string;
-  guild_name: string | null;
-  total_messages: number;
-  imported_messages: number;
-  messages_skipped: number;
-  attachments_imported: number;
-  warnings: string[];
-  error: string | null;
-  created_at: string;
-};
 
 const STATUS_VARIANT: Record<
   string,
@@ -182,6 +171,7 @@ function DiscordImportBody({
   const active = useDiscordImport(activeId);
   const deleteImport = useDeleteDiscordImport();
   const cancelImport = useCancelDiscordImport();
+  const clearImport = useClearDiscordImport();
   const { toast } = useToast();
 
   const paused = imports.isPending && imports.fetchStatus === "paused";
@@ -207,6 +197,17 @@ function DiscordImportBody({
       toast({
         variant: "destructive",
         description: getErrorMessage(error, "Could not stop the import."),
+      });
+    }
+  }
+
+  async function clear(id: string) {
+    try {
+      await clearImport.mutateAsync({ id });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: getErrorMessage(error, "Could not clear the import."),
       });
     }
   }
@@ -268,14 +269,7 @@ function DiscordImportBody({
             <ul className="space-y-3">
               {rows.map((row) => {
                 const live = activeRow?.id === row.id ? activeRow : row;
-                const percent =
-                  live.total_messages === 0
-                    ? live.status === "completed"
-                      ? 100
-                      : 0
-                    : Math.round(
-                        (live.imported_messages / live.total_messages) * 100,
-                      );
+                const percent = importPercent(live);
                 return (
                   <li
                     key={row.id}
@@ -301,6 +295,10 @@ function DiscordImportBody({
                           {live.imported_messages} messages
                           {live.attachments_imported > 0
                             ? ` · ${live.attachments_imported} attachments`
+                            : ""}
+                          {typeof live.channels_total === "number" &&
+                          live.channels_total > 0
+                            ? ` · ${live.channels_done ?? 0} of ${live.channels_total} channels and threads`
                             : ""}
                         </span>
                         {/* The bar is aria-hidden; this is the accessible signal. */}
@@ -355,6 +353,18 @@ function DiscordImportBody({
                           disabled={cancelImport.isPending}
                         >
                           Stop import
+                        </Button>
+                      ) : null}
+                      {/* Clearing only takes the row off this list; what the
+                          import brought in stays. Delete is what removes it. */}
+                      {isClearable(live.status) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void clear(row.id)}
+                          disabled={clearImport.isPending}
+                        >
+                          Clear
                         </Button>
                       ) : null}
                       {live.status !== "purged" &&

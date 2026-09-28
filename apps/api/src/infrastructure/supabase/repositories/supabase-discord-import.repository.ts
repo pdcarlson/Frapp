@@ -45,6 +45,13 @@ const MESSAGE_BATCH_SIZE = 200;
 const FILE_PAGE_SIZE = 500;
 
 /**
+ * Channel-mapping rows read, or inserted, per round trip. A bot import holds a
+ * row per thread as well as per channel, so a chapter's first real server
+ * already had 945 of them, within sight of the cap; see the note above.
+ */
+const CHANNEL_PAGE_SIZE = 500;
+
+/**
  * The message `discord_import_register_files` raises on a ceiling, parsed back
  * into the domain error.
  *
@@ -124,9 +131,28 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .from('discord_imports')
       .select('*')
       .eq('chapter_id', chapterId)
+      .is('cleared_at', null)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return data ?? [];
+  }
+
+  async markCleared(
+    id: string,
+    chapterId: string,
+    finished: DiscordImportStatus[],
+    at: string,
+  ): Promise<DiscordImport | null> {
+    const { data, error } = await this.supabase
+      .from('discord_imports')
+      .update({ cleared_at: at, updated_at: at })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .in('status', finished)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
   }
 
   async update(
@@ -188,31 +214,71 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     const payload: TablesInsert<'discord_import_channels'>[] = rows.map(
       (row) => ({ ...row, import_id: importId }),
     );
-    const { data, error } = await this.supabase
-      .from('discord_import_channels')
-      .insert(payload)
-      .select();
-    if (error) throw error;
-    return data ?? [];
+    // Inserted in batches and read back through the paged read, never taken
+    // from `.insert().select()`: that answer is a response like any other, so
+    // past the cap it would hand discovery a silently shortened channel list.
+    for (let from = 0; from < payload.length; from += CHANNEL_PAGE_SIZE) {
+      const { error } = await this.supabase
+        .from('discord_import_channels')
+        .insert(payload.slice(from, from + CHANNEL_PAGE_SIZE));
+      if (error) throw error;
+    }
+    return this.findChannels(importId, chapterId);
   }
 
   async findChannels(
     importId: string,
     chapterId: string,
   ): Promise<DiscordImportChannel[]> {
-    const { data, error } = await this.supabase
-      .from('discord_import_channels')
-      .select('*, discord_imports!inner(chapter_id)')
-      .eq('import_id', importId)
-      .eq('discord_imports.chapter_id', chapterId)
-      // `position` then name. Upload-path rows all sit at the default 0, so
-      // they keep their original name ordering; bot-path rows carry a position
-      // pinned at discovery, which is what keeps a thread listed under its
-      // parent and keeps a resumed import walking the same sequence.
-      .order('position', { ascending: true })
-      .order('discord_channel_name', { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map(stripImportEmbed);
+    // Paged, because a bot import holds a row per thread: past the cap an
+    // unpaged read would drop the tail, the worker would never import those
+    // channels, and a re-map (which replaces the set from this read) would
+    // delete them.
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('discord_import_channels')
+          .select('*, discord_imports!inner(chapter_id)')
+          .eq('import_id', importId)
+          .eq('discord_imports.chapter_id', chapterId)
+          // `position` then name. Upload-path rows all sit at the default 0, so
+          // they keep their original name ordering; bot-path rows carry a
+          // position pinned at discovery, which is what keeps a thread listed
+          // under its parent and keeps a resumed import walking the same
+          // sequence. `id` breaks the remaining ties so `.range()` pages over a
+          // stable order.
+          .order('position', { ascending: true })
+          .order('discord_channel_name', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: CHANNEL_PAGE_SIZE },
+    );
+    return rows.map(stripImportEmbed);
+  }
+
+  async countChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<{ total: number; done: number }> {
+    // Counted, not listed: a progress poll every few seconds should not pull
+    // every mapping row to add them up.
+    const base = () =>
+      this.supabase
+        .from('discord_import_channels')
+        .select('id, discord_imports!inner(chapter_id)', {
+          count: 'exact',
+          head: true,
+        })
+        .eq('import_id', importId)
+        .eq('discord_imports.chapter_id', chapterId)
+        .neq('mapping_action', 'skip');
+    const [total, done] = await Promise.all([
+      base(),
+      base().eq('status', 'completed'),
+    ]);
+    if (total.error) throw total.error;
+    if (done.error) throw done.error;
+    return { total: total.count ?? 0, done: done.count ?? 0 };
   }
 
   async updateChannel(

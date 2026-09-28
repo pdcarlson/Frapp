@@ -81,7 +81,20 @@ export interface IDiscordImportRepository {
   ): Promise<DiscordImport>;
 
   findById(id: string, chapterId: string): Promise<DiscordImport | null>;
+  /** The chapter's imports, newest first, leaving out the ones it cleared. */
   findByChapter(chapterId: string): Promise<DiscordImport[]>;
+
+  /**
+   * Take a finished import off the list, but only while its status is one of
+   * `finished`, in the same write. Null when it is not (it moved on, or it
+   * was never finished).
+   */
+  markCleared(
+    id: string,
+    chapterId: string,
+    finished: DiscordImportStatus[],
+    at: string,
+  ): Promise<DiscordImport | null>;
 
   update(
     id: string,
@@ -127,6 +140,14 @@ export interface IDiscordImportRepository {
     importId: string,
     chapterId: string,
   ): Promise<DiscordImportChannel[]>;
+  /**
+   * How many of this import's rows (channels and threads) are being imported,
+   * and how many of those are done. Skipped rows are not counted.
+   */
+  countChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<{ total: number; done: number }>;
   updateChannel(
     id: string,
     importId: string,

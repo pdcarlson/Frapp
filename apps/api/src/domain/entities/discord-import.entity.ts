@@ -117,6 +117,11 @@ export interface DiscordImport {
   updated_at: string;
   completed_at: string | null;
   purged_at: string | null;
+  /**
+   * When the chapter took this finished import off its list. Clearing hides
+   * the row and nothing else: whatever the import brought in stays.
+   */
+  cleared_at: string | null;
 }
 
 export interface DiscordImportChannel {

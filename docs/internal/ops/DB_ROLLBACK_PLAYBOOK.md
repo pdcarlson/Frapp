@@ -2212,3 +2212,19 @@ Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewr
      drop column if exists private_in_discord,
      drop column if exists readable;
    ```
+
+## Rollback Discord import clearing (20260928183000)
+
+* **Migration**: `20260928183000_discord_import_cleared_at.sql`
+
+One nullable column on `discord_imports` (#2817). No data is rewritten.
+
+**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration filters the import list on `cleared_at`, so dropping the column under it fails the list. Revert the #2817 code on `main` and ship that, but keep `supabase/migrations/20260928183000_discord_import_cleared_at.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+Then drop the column in a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260928183000` as applied, so a later re-land would apply nothing:
+
+```sql
+alter table public.discord_imports drop column if exists cleared_at;
+```
+
+Imports a chapter cleared reappear on its list; nothing else changes.

@@ -45,6 +45,7 @@ import type {
   DiscordImportFile,
   DiscordImportNewChannelType,
   DiscordImportSource,
+  DiscordImportStatus,
   DiscordRoleMapping,
 } from '#domain/entities/discord-import.entity';
 import {
@@ -128,6 +129,23 @@ export interface RequestUploadInput {
   byte_size: number;
   part_index?: number;
 }
+
+/** Statuses in which an import is finished, and so can be cleared. */
+const CLEARABLE_STATUSES: DiscordImportStatus[] = [
+  'completed',
+  'failed',
+  'cancelled',
+  'purged',
+];
+
+/**
+ * An import as the API returns it: the row, plus a bot import's progress in
+ * channel rows (null for an upload, whose message counts are its progress).
+ */
+export type DiscordImportWithProgress = DiscordImport & {
+  channels_total: number | null;
+  channels_done: number | null;
+};
 
 export interface ChannelMappingInput {
   discord_channel_id: string;
@@ -271,14 +289,58 @@ export class DiscordImportService {
     });
   }
 
-  list(chapterId: string): Promise<DiscordImport[]> {
-    return this.importRepo.findByChapter(chapterId);
+  async list(chapterId: string): Promise<DiscordImportWithProgress[]> {
+    const imports = await this.importRepo.findByChapter(chapterId);
+    return Promise.all(imports.map((job) => this.withProgress(job)));
   }
 
-  async get(id: string, chapterId: string): Promise<DiscordImport> {
+  async get(id: string, chapterId: string): Promise<DiscordImportWithProgress> {
     const found = await this.importRepo.findById(id, chapterId);
     if (!found) throw new NotFoundException('Import not found');
-    return found;
+    return this.withProgress(found);
+  }
+
+  /**
+   * A bot import's progress, counted in channels and threads.
+   *
+   * Its message total cannot be known up front, because Discord is read as
+   * the import goes: the worker adds to `total_messages` as it reads, so
+   * `imported_messages / total_messages` is always 1 and read as 100% from the
+   * first slice (#2816). Rows are known from the scan, so they are the honest
+   * measure. An upload counts its messages from the export and needs neither.
+   */
+  private async withProgress(
+    job: DiscordImport,
+  ): Promise<DiscordImportWithProgress> {
+    if (job.source !== 'bot') {
+      return { ...job, channels_total: null, channels_done: null };
+    }
+    const { total, done } = await this.importRepo.countChannels(
+      job.id,
+      job.chapter_id,
+    );
+    return { ...job, channels_total: total, channels_done: done };
+  }
+
+  /**
+   * Take a finished import off the chapter's list (#2817). Nothing it brought
+   * in is touched: this is not the purge. Refused for an import that is still
+   * queued, running or being purged, which the list has to keep showing.
+   */
+  async clear(id: string, chapterId: string): Promise<DiscordImport> {
+    await this.get(id, chapterId);
+    const cleared = await this.importRepo.markCleared(
+      id,
+      chapterId,
+      CLEARABLE_STATUSES,
+      new Date().toISOString(),
+    );
+    if (!cleared) {
+      throw new ConflictException(
+        'Only a finished import can be cleared. Stop it, or wait for it to finish.',
+      );
+    }
+    return cleared;
   }
 
   getChannels(id: string, chapterId: string): Promise<DiscordImportChannel[]> {

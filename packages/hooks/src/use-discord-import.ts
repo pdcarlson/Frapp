@@ -139,6 +139,32 @@ export function useDiscordImportFiles(
  * the admin to cancel first, so without this the documented recovery path has
  * no button behind it and a misconfigured import runs to completion.
  */
+/**
+ * Take a finished import off the list. Nothing it imported is touched; the
+ * API refuses (409) an import that is queued, running or being purged.
+ */
+export function useClearDiscordImport() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+
+  return useMutation({
+    mutationFn: async (vars: { id: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/discord-imports/{id}/clear",
+        { params: { path: { id: vars.id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: discordImportKeys.list(chapterId),
+      });
+    },
+  });
+}
+
 export function useCancelDiscordImport() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
