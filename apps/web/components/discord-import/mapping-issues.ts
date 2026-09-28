@@ -1,5 +1,18 @@
-import type { ChannelChoice } from "./channel-mapping-step";
 import type { StagedChannel } from "./upload-step";
+
+export interface ChannelChoice {
+  action: "create_new" | "use_existing" | "skip";
+  targetChannelId?: string;
+  newName?: string;
+  readOnly?: boolean;
+  /**
+   * Who can read the channel `create_new` makes. Undefined means not chosen,
+   * which is where a channel that was private in Discord starts.
+   */
+  visibility?: "chapter" | "restricted";
+  /** For `restricted`: a member needs any one of these to read it. */
+  requiredPermissions?: string[];
+}
 
 /**
  * The starting answer for a channel, before the admin touches anything.

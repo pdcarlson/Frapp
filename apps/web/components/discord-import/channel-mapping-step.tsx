@@ -16,21 +16,9 @@ import {
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
 import type { StagedChannel } from "./upload-step";
-import type { MappingIssue } from "./mapping-issues";
+import type { ChannelChoice, MappingIssue } from "./mapping-issues";
 
-export interface ChannelChoice {
-  action: "create_new" | "use_existing" | "skip";
-  targetChannelId?: string;
-  newName?: string;
-  readOnly?: boolean;
-  /**
-   * Who can read the channel `create_new` makes. Undefined means not chosen,
-   * which is where a channel that was private in Discord starts.
-   */
-  visibility?: "chapter" | "restricted";
-  /** For `restricted`: a member needs any one of these to read it. */
-  requiredPermissions?: string[];
-}
+export type { ChannelChoice } from "./mapping-issues";
 
 const ACTIONS: { key: ChannelChoice["action"]; label: string }[] = [
   { key: "create_new", label: "New channel" },

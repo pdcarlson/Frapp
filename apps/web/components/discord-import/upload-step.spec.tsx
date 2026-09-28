@@ -82,9 +82,7 @@ describe("UploadStep — a refused registration", () => {
     await waitFor(() => {
       expect(screen.getByText(QUOTA_MESSAGE)).toBeInTheDocument();
     });
-    expect(
-      screen.queryByText(/Files over 100 MB cannot be imported/),
-    ).toBeNull();
+    expect(screen.queryByText(/Files over 100 MB cannot be imported/)).toBeNull();
   });
 
   it("stops asking after three consecutive refusals instead of grinding on", async () => {
