@@ -30,6 +30,11 @@ if (dsn) {
   Sentry.init({
     ...options,
     beforeSend: withPostHogSentryCorrelation(options.beforeSend),
+    // Added to the SDK defaults, not in place of them. SDK v11 moved
+    // `performance.mark`/`measure` spans out of `browserTracingIntegration`
+    // into this opt-in integration; without it the cold-load milestones in
+    // `lib/chat/cold-load-marks.ts` stop reaching Sentry with no error (#2722).
+    integrations: [Sentry.userTimingIntegration()],
   });
 }
 

@@ -59,7 +59,12 @@ export interface SentryDataCollection {
  *   Response headers are off, because no scrubber rule keeps one.
  * - `httpBodies: []`: same as v10. No body in either direction.
  * - `urlQueryParams: false`: stricter. The scrubber cuts every URL to its
- *   path and drops `query_string`, so the SDK no longer collects one.
+ *   path and drops `query_string`, so the SDK stops attaching a query where
+ *   this setting reaches: request data, `query_string` and span URLs. It does
+ *   not reach everywhere. The browser's `HttpContext` integration sets an
+ *   error's `request.url` from `location.href` regardless, and the SDK's
+ *   filter keeps a URL's `#fragment`, so on those the scrubber's path-only
+ *   rule is the only layer.
  * - `graphQL`: stricter. v10 always attached the document (literals
  *   redacted). No surface runs GraphQL, so this only matters if one is added.
  * - `genAI`, `databaseQueryData`: same as v10 (off).

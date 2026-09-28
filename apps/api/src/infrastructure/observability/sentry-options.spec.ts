@@ -29,8 +29,8 @@ describe('buildSentryOptions — Node tracer ownership', () => {
 
   it('does not register an OpenTelemetry tracer provider', () => {
     // ADR-22: Sentry owns the API's tracing, and under SDK v11 it needs no
-    // OpenTelemetry provider to do so. `true` would install Sentry's as the
-    // global one, which nothing in the API needs.
+    // OpenTelemetry provider to do so. `true` would also move request
+    // isolation onto OpenTelemetry context (see the option's comment).
     expect(options().enableOpenTelemetrySetup).toBe(false);
   });
 
@@ -74,8 +74,9 @@ describe('buildSentryOptions — Node tracer ownership', () => {
   it('builds the replacements with the safe option objects', () => {
     // The constants are asserted above; this proves they reach the SDK. A
     // swap to `Sentry.httpIntegration()` with no argument keeps the name and
-    // returns a new object, so the name checks alone pass it, while the SDK
-    // falls back to its own defaults (bodies up to 'medium').
+    // returns a new object, so the name checks alone pass it. Bodies would
+    // then rest on `dataCollection.httpBodies: []` alone, which the SDK reads
+    // only when the size is unset: one layer instead of two.
     const http = jest.mocked(Sentry.httpIntegration);
     const fetch = jest.mocked(Sentry.nativeNodeFetchIntegration);
     http.mockClear();

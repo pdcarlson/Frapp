@@ -81,7 +81,10 @@ spans through `@opentelemetry/api`, which is the only thing a provider would add
 itself stands: `@opentelemetry/sdk-node` is still not a dependency, and under v11 a
 user-installed provider would not compete with Sentry so much as be ignored by it (its spans
 never reach Sentry). v11 also streams spans by default, which skips `beforeSendTransaction`;
-every surface pins `traceLifecycle: 'static'` so the transaction scrubber keeps running.
+every surface pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
+does not cover the browser's INP span, which v11 (like v10) sends standalone past both event hooks;
+both Next builders scrub it with a `beforeSendSpan` wrapped in `withStaticSpan`
+(`docs/security/security-fixes.md` § v10 → v11).
 **Correction (2026-09-10):** API source maps are uploaded from `apps/api/Dockerfile` after
 `nest build`, not implied by `Sentry.init`. Live FRAPP-API-1 / FRAPP-API-3 showed
 `dist/*.js` ContextLines, not `.ts`. Upload targets `frapp-live` / `frapp-api` when

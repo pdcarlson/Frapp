@@ -13,6 +13,8 @@ function runtime(overrides: Record<string, unknown> = {}) {
   return {
     dsn: DSN,
     environment: "preview",
+    // Stands in for the SDK's `withStaticSpan`, which only marks the function.
+    withStaticSpan: <F>(callback: F) => callback,
     ...overrides,
   };
 }

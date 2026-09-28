@@ -25,9 +25,18 @@ export interface AnonymousNextSentryRuntime {
   release?: string;
   tracesSampleRateRaw?: string;
   tracePropagationTargets?: string[];
+  /**
+   * The SDK's `withStaticSpan`, passed in because this package does not
+   * depend on `@sentry/*`. Under `traceLifecycle: 'static'`, v11 **ignores**
+   * a `beforeSendSpan` that is not wrapped with it, and says so only in a
+   * debug build. Required, so an app cannot forget it and ship the INP span
+   * unscrubbed.
+   */
+  withStaticSpan: (callback: <T>(span: T) => T) => unknown;
 }
 
-const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
+const { scrubError, scrubTransaction, scrubStaticSpan } =
+  createNoPseudonymScrubHooks();
 
 function sharedRuntimeOptions(runtime: AnonymousNextSentryRuntime) {
   const release = runtime.release || undefined;
@@ -65,6 +74,12 @@ export function buildAnonymousBrowserSentryOptions(
     tracePropagationTargets: runtime.tracePropagationTargets ?? [],
     beforeSend: <T>(event: T) => scrubError(event),
     beforeSendTransaction: <T>(event: T) => scrubTransaction(event),
+    // The browser's INP span leaves as a standalone span even under the
+    // static lifecycle, past both hooks above (#2722). See
+    // `scrubSentryStaticSpan` for why every span is rebuilt.
+    beforeSendSpan: runtime.withStaticSpan(<T>(span: T) =>
+      scrubStaticSpan(span),
+    ),
   };
 }
 
@@ -80,5 +95,10 @@ export function buildAnonymousServerSentryOptions(
     ...sharedRuntimeOptions(runtime),
     beforeSend: <T>(event: T) => scrubError(event),
     beforeSendTransaction: <T>(event: T) => scrubTransaction(event),
+    // No INP on the server, but the same fail-closed hook covers any other
+    // standalone span the SDK starts sending there.
+    beforeSendSpan: runtime.withStaticSpan(<T>(span: T) =>
+      scrubStaticSpan(span),
+    ),
   };
 }

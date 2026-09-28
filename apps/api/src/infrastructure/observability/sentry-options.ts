@@ -109,8 +109,11 @@ export function buildSentryOptions(dsn: string): NodeOptions {
      * without an OpenTelemetry tracer provider: it isolates requests with
      * its own AsyncLocalStorage strategy and emits spans from its own
      * instrumentation. `false` is v11's Node default, set explicitly so the
-     * spec pins it. `true` would register Sentry's provider as the global
-     * one, which only matters for spans made through `@opentelemetry/api`,
+     * spec pins it. `true` is not a small switch: it registers Sentry's
+     * tracer provider and propagator as the OpenTelemetry globals, and moves
+     * request isolation (scopes, the per-request `request_id` tag) from the
+     * AsyncLocalStorage strategy onto OpenTelemetry context. The only thing
+     * it would add is capture of spans made through `@opentelemetry/api`,
      * and nothing here makes any.
      */
     enableOpenTelemetrySetup: false,

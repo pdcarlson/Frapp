@@ -8,8 +8,9 @@
 # Noise floor: every Dependabot PR costs agent babysitting (the normal PR
 # lifecycle in AGENTS.md), so minor+patch updates are collapsed into a single
 # weekly PR. Majors stay individual — they need to be read one at a time —
-# EXCEPT the vitest family, which is grouped at every level because its
-# packages peer-pin each other exactly. See the `vitest` group below.
+# EXCEPT two families whose packages pin each other exactly: vitest (grouped
+# at every level) and `@sentry/nestjs` + `@sentry/nextjs` (majors grouped;
+# their minors already share the weekly PR). See those groups below.
 #
 # Safety net: CI (`npm ci`, lint, type-check, unit + E2E suites) plus the
 # blocking high/critical audit gate (`npm run check:npm-audit`, #618) is what
@@ -26,7 +27,8 @@ updates:
       timezone: Etc/UTC
     # Grouped minor+patch = 1 PR; anything left is a major, and majors are
     # deliberately ungrouped so each gets its own reviewable diff — except the
-    # `vitest` group, which is grouped at every level (see its comment).
+    # `vitest` group (every level) and the `sentry` group (majors); see their
+    # comments.
     #
     # Raised 5 -> 6 when that group landed. It is guaranteed to fire on any
     # week vitest ships, so it permanently consumes one slot; at 5, a week with
@@ -117,6 +119,15 @@ updates:
           - "@sentry/nextjs"
         update-types:
           - major
+      # Security updates ignore groups unless one opts in (see
+      # `vitest-security`), so without this a security bump of one Sentry
+      # package would arrive alone, at any update type, and split the tree.
+      # Dormant while Dependabot alerts are disabled (#921).
+      sentry-security:
+        applies-to: security-updates
+        patterns:
+          - "@sentry/nestjs"
+          - "@sentry/nextjs"
       npm-minor-and-patch:
         patterns:
           - "*"

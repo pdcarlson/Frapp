@@ -9,8 +9,8 @@
  * those are already measured and two were not:
  *
  * - **Shell visible** is FCP, and **CLS** is CLS. Sentry collects both already.
- *   `@sentry/nextjs` passes no `integrations` array (`lib/sentry/options.ts`),
- *   so the SDK defaults apply and `browserTracingIntegration` attaches
+ *   `@sentry/nextjs` keeps its default integrations (`instrumentation-client.ts`
+ *   only adds `userTimingIntegration`), so `browserTracingIntegration` attaches
  *   LCP/CLS/FCP/TTFB/INP to the pageload transaction. Adding a second web-vitals
  *   pipeline would be two sources of one number, and the second one would be the
  *   one nobody checks.
@@ -26,10 +26,10 @@
  *
  * ## Where they go
  *
- * Nowhere new. The same Sentry integration turns `mark` and `measure` entries
- * into spans on the pageload transaction — `_addMeasureSpans` in
- * `@sentry/browser-utils`, which switches on `entryType` `"mark"`, `"paint"` and
- * `"measure"` alike. So a mark here is a span in Sentry on the sampled share of
+ * Nowhere new. `userTimingIntegration` turns `mark` and `measure` entries into
+ * spans on the pageload transaction. Under SDK v10 `browserTracingIntegration`
+ * did it by default (`_addMeasureSpans`); v11 made it an opt-in integration,
+ * which is why `instrumentation-client.ts` adds it (#2722). So a mark here is a span in Sentry on the sampled share of
  * pageloads, a row in the Performance panel for anyone with devtools open, and a
  * `performance.getEntriesByName` lookup for a future harness — with no reporting
  * code, no new event schema, and nothing to keep in sync.
@@ -37,7 +37,8 @@
  * The `measure` is what makes the milestone legible as a duration rather than a
  * timestamp — but read the note at the `measure` call before trusting the number
  * Sentry shows: the span it becomes is offset by `requestStart`, and the
- * authoritative value rides along in `detail` instead.
+ * authoritative value is meant to ride along in `detail` instead (it does not
+ * survive the span scrubber yet: #2735).
  *
  * ## Rules these follow
  *
@@ -157,8 +158,8 @@ export function markColdLoad(
       `detail` is not decoration, and this is the subtle part of the file.
 
       The obvious reading of the `measure` below is that Sentry receives the
-      from-origin interval. It does not. `_addMeasureSpans` in
-      `@sentry/browser-utils` starts the span at
+      from-origin interval. It does not. `userTimingIntegration` (SDK v11;
+      `_addMeasureSpans` under v10) starts the span at
       `timeOrigin + Math.max(startTime, requestStart)` and ends it at
       `timeOrigin + startTime + duration`, so for a measure anchored at 0 the
       span's duration comes out as `duration - requestStart` — short by however
@@ -169,9 +170,11 @@ export function markColdLoad(
       the connection was. A budget that looks better the slower the network is
       the one kind of wrong this file must not be.
 
-      So the authoritative number travels as `detail`, which
-      `_addDetailToSpanAttributes` copies onto the span verbatim: read
-      `sentry.browser.measure.detail.msFromTimeOrigin`, not the span duration.
+      So the authoritative number travels as `detail`, which the SDK copies
+      onto the span as `sentry.browser.measure.detail.msFromTimeOrigin`: read
+      that, not the span duration. Today the transaction scrubber drops that
+      attribute (its span `data` allowlist does not name it), so Sentry has
+      only the flattering duration until #2735 lands.
       Locally the `measure` entry's own `duration` is already correct, and that
       is what devtools and `getEntriesByName` show.
     */

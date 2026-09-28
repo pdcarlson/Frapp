@@ -889,3 +889,82 @@ describe("breadcrumb allowlist", () => {
   });
 });
 
+
+describe("static-lifecycle span hook (#2722)", () => {
+  // The browser's INP span as SDK v11 hands it to a static `beforeSendSpan`:
+  // the v1 span shape, with the clicked element's selector as its name and
+  // target, and the segment's scope attributes merged into `data`.
+  const inpSpan = () => ({
+    span_id: "span0001",
+    trace_id: "trace001",
+    start_timestamp: 1,
+    timestamp: 1.25,
+    op: "ui.interaction.click",
+    origin: "auto.http.browser.inp",
+    description:
+      'body > nav > button.row[aria-label="Hide conversation with Jordan Avery"]',
+    data: {
+      "browser.web_vital.inp.target":
+        'button.row[aria-label="Hide conversation with Jordan Avery"]',
+      "sentry.segment.name": "/chat?invite=abc",
+      "user.email": "jordan@example.edu",
+    },
+  });
+
+  it("drops the selector and every attribute off the allowlist", () => {
+    for (const scrubber of [browser, salted]) {
+      const out = scrubber.scrubSentryStaticSpan(inpSpan());
+      const json = JSON.stringify(out);
+      expect(json).not.toContain("Jordan");
+      expect(json).not.toContain("jordan@example.edu");
+      expect(json).not.toContain("invite=");
+      expect(out.description).toBe("Interaction to next paint");
+      // INP's value is the span's duration, so the timing has to survive.
+      expect(out).toMatchObject({
+        span_id: "span0001",
+        trace_id: "trace001",
+        start_timestamp: 1,
+        timestamp: 1.25,
+        op: "ui.interaction.click",
+        data: {},
+      });
+    }
+  });
+
+  it("rebuilds a non-interaction span with the transaction span rules", () => {
+    const out = browser.scrubSentryStaticSpan({
+      span_id: "span0002",
+      trace_id: "trace001",
+      start_timestamp: 1,
+      timestamp: 2,
+      op: "http.client",
+      description: "GET https://api.example.invalid/v1/members?email=a@b.co",
+      data: { "http.request.method": "GET", "url.query": "email=a@b.co" },
+    });
+    expect(out.description).toBe("GET /v1/members");
+    expect(out.data).toEqual({ "http.request.method": "GET" });
+  });
+
+  it("never throws and never hands the SDK the raw span", () => {
+    // The SDK sends a span UNMODIFIED when the hook throws, so a throw here
+    // would be a leak. A hostile getter is the simplest way to force one.
+    const hostile = {
+      span_id: "span0003",
+      trace_id: "trace001",
+      start_timestamp: 1,
+      timestamp: 2,
+      get description(): string {
+        throw new Error("boom");
+      },
+    };
+    const out = browser.scrubSentryStaticSpan(hostile);
+    expect(out).toEqual({
+      data: {},
+      span_id: "span0003",
+      trace_id: "trace001",
+      start_timestamp: 1,
+      timestamp: 2,
+    });
+    expect(browser.scrubSentryStaticSpan(null)).toEqual({ data: {} });
+  });
+});
