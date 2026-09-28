@@ -1243,12 +1243,19 @@ After any rollback event:
 ## Rollback the Realtime carrier repair
 
 * **Migration**: `20260816140000_realtime_carrier_repair.sql`
+* **Precondition**: roll back [the private presence topics](#rollback-the-private-presence-topics) first. Its `realtime_messages_scoped_insert` policy calls `realtime_can_read_chapter_scope`, so step 2's `DROP FUNCTION` fails while that policy exists. It also added the `presence:chapter:` and `chat:channel:` arms to `realtime_messages_scoped_select`, so dropping that policy here also denies Directory presence and private chat channels, not only the three change pings the notes below describe.
 * **Action**: everything this migration creates is additive and separately droppable. Full revert:
   ```sql
-  -- 1. stop the change pings
-  DROP TRIGGER IF EXISTS realtime_notify_notifications    ON public.notifications;
-  DROP TRIGGER IF EXISTS realtime_notify_events           ON public.events;
-  DROP TRIGGER IF EXISTS realtime_notify_event_attendance ON public.event_attendance;
+  -- 1. stop the change pings (three statement-level triggers per table)
+  DROP TRIGGER IF EXISTS realtime_notify_notifications_ins    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_notifications_upd    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_notifications_del    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_events_ins           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_events_upd           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_events_del           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance_ins ON public.event_attendance;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance_upd ON public.event_attendance;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance_del ON public.event_attendance;
   DROP FUNCTION IF EXISTS public.realtime_notify_notifications();
   DROP FUNCTION IF EXISTS public.realtime_notify_events();
   DROP FUNCTION IF EXISTS public.realtime_notify_event_attendance();
@@ -1259,13 +1266,14 @@ After any rollback event:
   DROP FUNCTION IF EXISTS public.realtime_can_read_chapter_scope(uuid);
   DROP FUNCTION IF EXISTS public.realtime_can_read_event_scope(uuid);
 
-  -- 3. un-publish chat and re-close the table
+  -- 3. un-publish chat and the audit log, and re-close the table
   ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_messages;
   ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_message_actions;
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.chapter_audit_log;
   DROP POLICY IF EXISTS "chat_messages_select" ON public.chat_messages;
   ```
-  **Order matters in one direction only, and it is the harmless one.** Rolling the database back without redeploying the web app does not error: the three dashboard subscriptions simply stop receiving pings (a private channel with no authorising policy is denied), and chat's `postgres_changes` handler goes quiet. That is *precisely* the pre-migration behavior — see the note below — so a DB-only rollback degrades to "realtime never worked", which is where `main` sat before this landed. There is no 500, no broken route, and no user-visible error; only staleness until a manual refresh.
-* **Note**: **rolling back does not re-open a vulnerability — it narrows access.** The only widening this migration performs is the `chat_messages_select` policy, which lets the browser read `chat_messages` scoped to channel membership (mirroring the precedent `chat_message_actions` already set). Dropping it returns the table to default-deny. The `realtime.messages` policy is likewise purely additive: that table had RLS on with *no* policy, denying every private channel, and this migration grants exactly three topic families. Nothing predating the migration can be lost — no column, constraint, or row is touched anywhere.
+  **Order matters in one direction only, and it is the harmless one** — for this migration alone. The precondition above rolls back the private presence topics first, and that one has its own clients-first order: follow [its section](#rollback-the-private-presence-topics) before this note applies. Rolling this migration back without redeploying the web app does not error: the three dashboard subscriptions simply stop receiving pings (a private channel with no authorising policy is denied), and chat's `postgres_changes` handler goes quiet. That is *precisely* the pre-migration behavior — see the note below — so a DB-only rollback degrades to "realtime never worked", which is where `main` sat before this landed. There is no 500, no broken route, and no user-visible error; only staleness until a manual refresh.
+* **Note**: **rolling back does not re-open a vulnerability — it narrows access.** The only widening this migration performs is the `chat_messages_select` policy, which lets the browser read `chat_messages` scoped to channel membership (mirroring the precedent `chat_message_actions` already set). Dropping it returns the table to default-deny. The `realtime.messages` policy is likewise purely additive: that table had RLS on with *no* policy, denying every private channel, and this migration grants exactly three topic families (`20260906203000` later added two more, which its own rollback removes first). Nothing predating the migration can be lost — no column, constraint, or row is touched anywhere.
 * **Prefer a roll-forward fix anyway.** Reverting restores the #867 defect in full: every `postgres_changes` subscription in the product receives nothing, in every environment, and does so *silently* — the channel joins, reports `SUBSCRIBED`, and never fires, which is indistinguishable from an idle one. That silence is what hid the bug from the first deploy until 2026-08-16. If you roll this back, say so loudly somewhere a human reads, because nothing in the app will tell you.
 * **Data caveat**: none. This migration stores no data. `realtime.messages` rows are ephemeral broadcast envelopes, partitioned by day and pruned by Realtime itself, and the pings carry only `{table, op}` — no row content — so there is nothing to snapshot before dropping and nothing to reconstruct after re-applying. Re-applying is fully idempotent: every block is guarded (`pg_publication_tables` membership, `pg_policies` existence, `create or replace` on the functions, `drop trigger if exists` before each `create trigger`).
 * **Partial rollback to avoid**: dropping `chat_messages_select` while leaving `chat_messages` in the publication. Realtime enforces RLS per subscriber, so the table stays replicated but every subscriber is denied — the WAL work is done and thrown away. If you want chat off, drop it from the publication too.
