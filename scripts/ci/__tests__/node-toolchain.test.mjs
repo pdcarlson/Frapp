@@ -270,7 +270,28 @@ test("the hook never downloads: with nothing cached it still writes the PATH lin
   const { context, envFile } = runHook(s);
   assert.deepEqual(curlCalls(s), []);
   assert.equal(envFile, `export PATH="${s.nodeDir}/bin:$PATH"\n`);
-  assert.match(context, /bringup is installing it/);
+  assert.match(context, /bringup installs it into/);
+});
+
+test("the hook writes the PATH line once, however often it fires", (t) => {
+  // It fires again on resume, /clear and /compact, against the same CLAUDE_ENV_FILE.
+  const s = scratch(t, { pathNode: "22.22.2", cachedNode: "24.21.0" });
+  const file = path.join(s.dir, "claude-env");
+  const env = {
+    ...s.env,
+    CLAUDE_PROJECT_DIR: s.root,
+    CLAUDE_ENV_FILE: file,
+    FRAPP_CLOUD_SANDBOX: "1",
+    FRAPP_CLOUD_MARKER: path.join(s.dir, "no-cloud-marker-here"),
+  };
+  writeFileSync(file, "");
+  for (let i = 0; i < 3; i++) {
+    assert.equal(spawnSync("bash", [HOOK], { env }).status, 0);
+  }
+  assert.equal(
+    readFileSync(file, "utf8"),
+    `export PATH="${s.nodeDir}/bin:$PATH"\n`,
+  );
 });
 
 test("the hook says so when there is no CLAUDE_ENV_FILE to hand PATH over", (t) => {

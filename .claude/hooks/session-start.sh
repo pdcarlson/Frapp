@@ -66,10 +66,13 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/lib/node-toolchain.sh" ]; then
   if node_toolchain_path_below_floor "$ROOT"; then
     PATH="$FRAPP_NODE_DIR/bin:$PATH"
     export PATH
+    # Once per file: the hook fires again on resume, /clear and /compact.
+    path_line="export PATH=\"${FRAPP_NODE_DIR}/bin:\$PATH\""
     if [ -n "${CLAUDE_ENV_FILE:-}" ] \
-      && printf 'export PATH="%s/bin:$PATH"\n' "$FRAPP_NODE_DIR" >>"$CLAUDE_ENV_FILE" 2>/dev/null; then
+      && { grep -qxF "$path_line" "$CLAUDE_ENV_FILE" 2>/dev/null \
+        || printf '%s\n' "$path_line" >>"$CLAUDE_ENV_FILE" 2>/dev/null; }; then
       if ! node_toolchain_cached "$ROOT"; then
-        msg="${msg} Node toolchain: this environment's cache has no Node 24, so bringup is installing it into ${FRAPP_NODE_DIR}, already first on PATH; until it lands, node is $(node --version 2>/dev/null || echo missing). Before running API tests, wait for .cloud-sandbox-up.done, whose WARN line says if the install failed."
+        msg="${msg} Node toolchain: this environment's cache has no Node 24, so bringup installs it into ${FRAPP_NODE_DIR}, already first on PATH; until it lands, node is $(node --version 2>/dev/null || echo missing). Before running API tests, wait for .cloud-sandbox-up.done, whose WARN line says if the install failed."
       fi
     else
       msg="${msg} Node toolchain: node on PATH is $(node --version 2>/dev/null || echo missing), below package.json engines.node, and this hook could not hand ${FRAPP_NODE_DIR}/bin to later commands (CLAUDE_ENV_FILE is unset or unwritable). Run 'export PATH=${FRAPP_NODE_DIR}/bin:\$PATH' in each command that runs node, and tell the user."
