@@ -319,7 +319,7 @@ describe("runWatchdog", () => {
     assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/42")));
   });
 
-  it("does not close an alert when the lookup itself failed", async () => {
+  it("does not close an alert when the lookup itself failed, and goes red", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       { method: "GET", path: "/issues?state=all", status: 500, body: {} },
     ]);
@@ -329,7 +329,7 @@ describe("runWatchdog", () => {
       repo: "org/repo",
       fetchImpl,
     });
-    assert.equal(out.outcome, "pass");
+    assert.equal(out.outcome, "fail");
     assert.equal(out.resolved, false);
     assert.equal(out.lookupOk, false);
     assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);

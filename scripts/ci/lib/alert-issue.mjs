@@ -277,11 +277,14 @@ export async function raiseAlert({
  *   open is unknown. A lookup that fails on a later page closes nothing either,
  *   not even the open matches an earlier page returned; the next run with a
  *   clean read closes them. "unread" is kept apart from "failed" because the
- *   callers' policies differ. check-migration-drift, production-guardrails and
- *   the two conformance watchdogs go red on it. production-uptime, the two
- *   backup-freshness watchdogs, production-backup-env and production-release-pin
- *   pass with a warning, as an unreadable tracker says nothing about what they
- *   watch. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
+ *   callers' policies differ. Every daily watchdog goes red on it (the
+ *   conformance pair, check-migration-drift, production-guardrails,
+ *   production-backup-env, both backup-freshness watchdogs and
+ *   production-release-pin): an unreadable tracker usually means the alert
+ *   token lost access, so the next real failure could not raise its alert
+ *   either. production-uptime passes with a warning, because at a 15-minute
+ *   cadence a blip would be constant noise and the dailies catch a lasting
+ *   break. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
  *   must never say an alert "is still open" when it could not look.
  */
 export async function resolveAlert({

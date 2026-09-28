@@ -188,11 +188,13 @@ export async function runWatchdog({
     buildRecoveryBody: () =>
       `production-backup has no required reviewers or wait timer again: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });
-  // An unreadable tracker is not a failure of the thing this watches, so the
-  // run passes and main() warns that nothing was closed. A close that left the
-  // alert open is: a green run would hide a P1 open on a healthy system.
+  // A clean run that cannot read or close its alert is red. An unreadable
+  // tracker usually means the alert token lost access, and then the next real
+  // failure cannot raise its alert either; this daily run is the only early
+  // signal of that. A close that left the alert open is red too: a green run
+  // would hide a P1 open on a healthy system.
   if (resolved.action === "unread") {
-    return { outcome: "pass", resolved: false, lookupOk: false };
+    return { outcome: "fail", resolved: false, lookupOk: false };
   }
   return {
     outcome: resolved.action === "failed" ? "fail" : "pass",
@@ -248,9 +250,8 @@ async function main() {
     console.error("::error::production-backup is protected and the alert issue could not be written");
   }
   if (verdict.ok && watchdog.lookupOk === false) {
-    console.error("::warning::Could not read the alert issues, so no alert was closed this run");
-  }
-  if (verdict.ok && watchdog.outcome === "fail") {
+    console.error("::error::Could not read the alert issues, so no alert was closed this run");
+  } else if (verdict.ok && watchdog.outcome === "fail") {
     console.error("::error::production-backup is clear but the alert issue could not be closed");
   }
   process.exit(watchdog.outcome === "pass" ? 0 : 1);
