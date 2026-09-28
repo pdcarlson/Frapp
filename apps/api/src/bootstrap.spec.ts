@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import request from 'supertest';
 import { configureApp, TRUST_PROXY_HOPS } from './bootstrap';
 import { enqueueSanitizedLog } from './infrastructure/analytics/posthog-runtime';
+import { getRequestId } from './infrastructure/observability/request-als';
 
 jest.mock('./infrastructure/analytics/posthog-runtime', () => ({
   enqueueSanitizedLog: jest.fn(),
@@ -267,6 +268,36 @@ describe('configureApp', () => {
         .expect(200);
 
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    });
+  });
+
+  describe('PostHog log records are emitted inside their request (#2374)', () => {
+    // The runtime samples on the request id it reads from AsyncLocalStorage,
+    // so a request's records share one verdict only if the store is still
+    // bound when the interceptor and the filter emit them.
+    let boundIds: Array<string | undefined>;
+
+    beforeEach(() => {
+      boundIds = [];
+      jest.mocked(enqueueSanitizedLog).mockImplementation(() => {
+        boundIds.push(getRequestId());
+      });
+    });
+
+    afterEach(() => {
+      jest.mocked(enqueueSanitizedLog).mockReset();
+    });
+
+    it.each([
+      ['a matched route, via the interceptor', '/v1/echo', 200],
+      ['an unmatched route, via the filter', '/v1/no-such-route', 404],
+    ])('binds the request id for %s', async (_label, path, status) => {
+      await request(app.getHttpServer())
+        .get(path)
+        .set('x-request-id', 'req-sampled-together')
+        .expect(status);
+
+      expect(boundIds).toEqual(['req-sampled-together']);
     });
   });
 

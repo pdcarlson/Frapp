@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -19,6 +19,7 @@ import { NoopFeatureFlagProvider } from './noop-feature-flags.provider';
 import { parsePosthogConfig, type PosthogConfig } from './posthog-config';
 import type { PosthogFetch } from './posthog-transport';
 import { logThrowable } from '../observability/log-throwable';
+import { getRequestId } from '../observability/request-als';
 
 export interface SanitizedLogRecord {
   body: string;
@@ -151,9 +152,9 @@ export class PosthogRuntime {
     });
   }
 
-  enqueueSanitizedLog(record: SanitizedLogRecord, sampleKey: string): void {
+  enqueueSanitizedLog(record: SanitizedLogRecord): void {
     if (this.shuttingDown) return;
-    if (!shouldSample(sampleKey, this.logsSampleRate)) return;
+    if (!this.sampleLog()) return;
     this.logQueue.push(record);
     if (this.logQueue.length >= 20) {
       void this.flushLogs();
@@ -165,6 +166,24 @@ export class PosthogRuntime {
         void this.flushLogs();
       }, 1_000);
     }
+  }
+
+  /**
+   * The sampling verdict for one log record. `shouldSample` is deterministic
+   * in its key, so the key must identify an occurrence, never a class of
+   * records: a key composed from the record's own fields (`push_delivery:
+   * billing:1:0`, `GET:/v1/members:404`) keeps or drops that whole class
+   * forever instead of sampling it (#2374). The request id is the key, so a
+   * request's records share one verdict; a record with no request (or an
+   * empty inbound `x-request-id`) gets a fresh key and is sampled on its own.
+   * Callers never choose the key. The HTTP client still can: the request id
+   * honours an inbound `x-request-id`, so a client that pins one gets one
+   * verdict for all its records (#2737).
+   */
+  private sampleLog(): boolean {
+    const rate = this.logsSampleRate;
+    if (rate >= 1) return true;
+    return shouldSample(getRequestId() || randomUUID(), rate);
   }
 
   async isFeatureEnabled(
@@ -396,12 +415,9 @@ export function captureSentryErrorCorrelated(
   }
 }
 
-export function enqueueSanitizedLog(
-  record: SanitizedLogRecord,
-  sampleKey: string,
-): void {
+export function enqueueSanitizedLog(record: SanitizedLogRecord): void {
   try {
-    singleton?.enqueueSanitizedLog(record, sampleKey);
+    singleton?.enqueueSanitizedLog(record);
   } catch {
     // Operational log export must never affect the request.
   }
