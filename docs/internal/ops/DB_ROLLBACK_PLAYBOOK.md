@@ -113,16 +113,17 @@ Action:
 ## Backup reality
 
 Established from the Supabase Management API and Supabase's own documentation on
-2026-08-27 (#852), not assumed:
+2026-08-27 (#852), not assumed. **Updated 2026-09-28:** the organization moved from Free to
+Pro, which changed the plan and backup rows below; the project rows are unchanged.
 
 | Fact | Value |
 | --- | --- |
 | Org | `Frapp Live` (`iouzvaszrnjlndtmookt`) |
-| **Plan** | **`free`** — holds *both* `frapp-staging` and `frapp-prod` |
+| **Plan** | **`pro`** since 2026-09-28 (was `free`); it covers *both* `frapp-staging` and `frapp-prod`. What Pro includes and costs: [`supabase.md` § Plan and quotas](deployment/supabase.md#plan-and-quotas) |
 | `frapp-staging` | `hnoyzpidbmizhbqaiity`, `us-east-1`, Postgres 17.6.1.063 |
 | `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
-| Supabase daily backups | **None available.** [Pro/Team/Enterprise only](https://supabase.com/docs/guides/platform/backups) |
-| Point-in-Time Recovery | **Not available.** Paid add-on, Pro and above |
+| Supabase daily backups | **Daily, per project, last 7 days restorable** from the dashboard (**Database → Backups**), a [Pro feature](https://supabase.com/docs/guides/platform/backups). They restore the whole project in place, with downtime. They cover the database only, **not Storage objects**, and Supabase deletes them with the project. Not yet seen in the dashboard: #1403 holds that check |
+| Point-in-Time Recovery | **Not enabled.** A paid add-on on Pro (about $100 a month per project for 7 days), which needs at least the Small compute size |
 
 > **Rotating either project touches every file that names its ref — `git grep` the old ref.** Among other places, the ref is recorded in
 > [`.github/environments.json`](../../../.github/environments.json) as well as in Infisical, in this table, and in
@@ -134,26 +135,20 @@ Established from the Supabase Management API and Supabase's own documentation on
 > last good snapshot, `migration-order` fails every migration-bearing PR. Update the file in the same
 > change.
 
-Supabase's guidance for the free tier is to do exactly what this repo now does:
+Until 2026-09-28 the organization was on Free, whose only recovery path was the one Supabase
+recommends for that plan: a nightly `db dump` kept off-site. Pro adds Supabase's own daily
+backups. The two now do different jobs:
 
-> We recommend that free tier plan projects regularly export their data using the
-> Supabase CLI `db dump` command and maintain off-site backups.
-
-Two consequences worth stating plainly:
-
-- **The offsite dump is not defence-in-depth. It is the only restorable backup
-  either project has.** What it covers, and since when, is
+- **Supabase's daily backup is the quick restore** for a bad migration or a data loss inside the
+  last 7 days. It restores the whole project in place. It covers only the database, not Storage
+  objects, and it is lost if the project is deleted.
+- **The offsite dump is still the only copy outside Supabase, and the only backup of Storage
+  files.** Keep it running. What it covers, and since when, is
   [§ Backups: what exists](#backups-what-exists). **Check the `production/`
-  prefix in the bucket for what actually exists, not this page.** Anything written to production after the
-  newest label there is not backed up anywhere, and a production restore into a
-  hosted project has not been rehearsed. If the workflow is not running, there is
-  no recovery path from data loss beyond replaying migrations into an empty
-  database.
-- Free-tier projects may have up to 7 daily backups taken internally, but
-  Supabase makes them accessible **only on upgrade**, and states it "might no
-  longer make daily backups for free projects in the future". That is not
-  something a recovery plan can depend on. Upgrading the org to Pro is the
-  single change that would most improve this posture.
+  prefix in the bucket for what actually exists, not this page.** A production restore into a
+  hosted project from the dump has not been rehearsed.
+- Either way, a restore loses up to a day of writes, since both are daily. Only point-in-time
+  recovery, not enabled, would narrow that.
 
 ## Backups: what exists
 
@@ -162,7 +157,7 @@ Two consequences worth stating plainly:
 | Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file. **A recovery pairs a database prefix with its Storage prefix**: `staging/<label>/` with `storage/`, `production/<label>/` with `storage-production/` |
-| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. Still open: #1403 (Supabase Pro / PITR). #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
+| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. The org moved to Pro on 2026-09-28 (#1403); point-in-time recovery is not enabled. #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
 | Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets for today's shared bucket and the separate-production-bucket target (do not copy the staging token into `prod`). The production jobs read the same four from `staging` (injected first) and their source credentials from `prod` (injected second). Empty `prod` `BACKUP_S3_*` values keep the staging destination (`preserve-nonempty` on that inject in `db-backup.yml`); non-empty prod values still win. Storage mirrors: `storage/` (staging) and `storage-production/` |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
 | First verified run | Staging: [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects. **Production: `production/2026-09-06T22-22-57Z/`, taken 2026-09-06 by hand from an agent session** with the same `scripts/db-backup.sh --linked` the nightly job runs, uploaded with read-back (4 objects, manifest byte-identical to the local copy), plus the Storage mirror manifest under `storage-production/` (0 objects — production Storage was empty). That dump held 54 ledger rows and one `public.users` row (the migration-seeded system sender) and nothing else: production had no sign-ups yet. It exists so that the first scheduled production run (#1794) is not also the first production backup |

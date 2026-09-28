@@ -355,8 +355,9 @@ Two other refusals, both deliberate:
       there is no recovery path for this promotion. Nothing takes one for you at
       promotion time: `db-backup.yml` dumps `frapp-prod` nightly since 2026-09-06
       (the most recent `production/<label>/` in the bucket may be up to a day old,
-      and the job is only as real as its last green run), and the free plan offers
-      neither a snapshot nor PITR
+      and the job is only as real as its last green run). Supabase's own daily backup, which
+      the org has on Pro since 2026-09-28, can be up to a day old too, and point-in-time
+      recovery is not enabled
       ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
       so this box cannot be ticked by having read it. This replaced an older item
       that asked you to _confirm_ Supabase backups: there were none to confirm, so
