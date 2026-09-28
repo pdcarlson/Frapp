@@ -5,6 +5,7 @@ import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 describe('ChatController', () => {
   let controller: ChatController;
@@ -25,6 +26,8 @@ describe('ChatController', () => {
       createChannel: jest.fn(),
       getMessages: jest.fn(),
       requestChatUploadUrl: jest.fn(),
+      addPrivateChannelMember: jest.fn(),
+      removePrivateChannelMember: jest.fn(),
     };
 
     const module: TestingModule = await createUnguardedTestingModule({
@@ -149,6 +152,43 @@ describe('ChatController', () => {
         name: 'Renamed',
       });
       expect(service.deleteCategory).toHaveBeenCalledWith('cat-1', 'ch-1');
+    });
+  });
+
+  describe('private channel membership (#1302)', () => {
+    // `PermissionsGuard` enforces whatever the metadata says; what can
+    // silently regress is the metadata. Without `channels:manage` here, any
+    // member holding the class floor (`members:view`, which every seeded role
+    // has) could add themselves to any private channel and read it.
+    it.each(['addChannelMember', 'removeChannelMember'] as const)(
+      '%s requires channels:manage on top of the class floor',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHANNELS_MANAGE]);
+      },
+    );
+
+    it('threads the chapter, channel and user to the add', async () => {
+      await controller.addChannelMember('ch-1', 'chan-1', {
+        user_id: 'user-2',
+      });
+
+      expect(service.addPrivateChannelMember).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-2',
+      );
+    });
+
+    it('threads the chapter, channel and user to the removal', async () => {
+      await controller.removeChannelMember('ch-1', 'chan-1', 'user-2');
+
+      expect(service.removePrivateChannelMember).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-2',
+      );
     });
   });
 

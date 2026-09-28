@@ -3442,6 +3442,131 @@ try {
   );
 }
 
+// ─── Add and remove a PRIVATE channel's members (#1302) ─────────────────────
+//
+// `add_private_channel_member` and `remove_private_channel_member` are called
+// only through mocked repositories in the Jest suites, so this is the one place
+// their SQL runs. What each check pins, and the edit it catches:
+// - an add appends once: dropping the `any(...)` guard lists a member twice;
+// - an add repairs a NULL list (a PRIVATE row from before #1008);
+// - the last-member guard: moving it out of the WHERE clause (or dropping the
+//   coalesce, since array_length of an empty array is NULL) lets a removal
+//   empty the channel, which is #1008's defect again;
+// - removing someone not listed is a no-op that still returns the row;
+// - both match only a PRIVATE channel in the named chapter.
+try {
+  const CH = "d0d0d0d0-0000-4000-8000-000000001302";
+  const CH_OTHER = "d0d0d0d0-0000-4000-8000-000000011302";
+  const U = {
+    a: "d1d1d1d1-0000-4000-8000-0000000013a0",
+    b: "d1d1d1d1-0000-4000-8000-0000000013b0",
+  };
+  const PRIV = "d2d2d2d2-0000-4000-8000-000000001302";
+  const PRIV_NULL = "d2d2d2d2-0000-4000-8000-000000011302";
+  const GROUP = "d2d2d2d2-0000-4000-8000-000000021302";
+  const PRIV_FOREIGN = "d2d2d2d2-0000-4000-8000-000000031302";
+  await db.exec(`
+    insert into chapters (id, name, university) values
+      ('${CH}', 'Private members', 'U'), ('${CH_OTHER}', 'Private members other', 'U');
+    insert into users (id, supabase_auth_id, email, display_name) values
+      ('${U.a}', gen_random_uuid(), 'priv-a@example.com', 'A'),
+      ('${U.b}', gen_random_uuid(), 'priv-b@example.com', 'B');
+    insert into chat_channels (id, chapter_id, name, type, member_ids) values
+      ('${PRIV}', '${CH}', 'exec', 'PRIVATE', array['${U.a}']::uuid[]),
+      ('${PRIV_NULL}', '${CH}', 'legacy', 'PRIVATE', null),
+      ('${GROUP}', '${CH}', 'group-dm', 'GROUP_DM', array['${U.a}', '${U.b}']::uuid[]),
+      ('${PRIV_FOREIGN}', '${CH_OTHER}', 'exec', 'PRIVATE', array['${U.a}']::uuid[]);
+  `);
+  const call = async (fn, channel, user, chapter = CH) =>
+    (
+      await db.query(`select member_ids::text[] as m from public.${fn}($1, $2, $3)`, [
+        channel,
+        chapter,
+        user,
+      ])
+    ).rows;
+  const add = (channel, user, chapter) =>
+    call("add_private_channel_member", channel, user, chapter);
+  const remove = (channel, user, chapter) =>
+    call("remove_private_channel_member", channel, user, chapter);
+  const members = async (channel) =>
+    (
+      await db.query(`select member_ids::text[] as m from chat_channels where id = $1`, [
+        channel,
+      ])
+    ).rows[0].m;
+  const same = (got, want) =>
+    Array.isArray(got) && got.join(",") === want.join(",");
+  const checks = [];
+
+  checks.push([
+    same((await add(PRIV, U.b))[0]?.m, [U.a, U.b]),
+    "an add appends the member",
+  ]);
+  checks.push([
+    same((await add(PRIV, U.b))[0]?.m, [U.a, U.b]),
+    "adding a listed member changes nothing and still returns the row",
+  ]);
+  checks.push([
+    same((await add(PRIV_NULL, U.b))[0]?.m, [U.b]),
+    "an add repairs a NULL list",
+  ]);
+  checks.push(
+    [(await add(GROUP, U.a)).length === 0, "an add never matches a Group DM"],
+    [
+      (await add(PRIV, U.b, CH_OTHER)).length === 0,
+      "an add never matches a channel named under another chapter",
+    ],
+    [
+      same(await members(PRIV_FOREIGN), [U.a]),
+      "the foreign chapter's channel is untouched",
+    ],
+  );
+
+  checks.push([
+    same((await remove(PRIV, U.b))[0]?.m, [U.a]),
+    "a removal drops the member",
+  ]);
+  checks.push([
+    same((await remove(PRIV, U.b))[0]?.m, [U.a]),
+    "removing someone not listed is a no-op that returns the row",
+  ]);
+  checks.push(
+    [
+      (await remove(PRIV, U.a)).length === 0,
+      "removing the last member is refused",
+    ],
+    [same(await members(PRIV), [U.a]), "the refused removal changed nothing"],
+    [
+      (await remove(GROUP, U.b)).length === 0,
+      "a removal never matches a Group DM",
+    ],
+    [
+      same(await members(GROUP), [U.a, U.b]),
+      "the Group DM's members are untouched",
+    ],
+  );
+
+  for (const [ok, name] of checks) {
+    if (ok) {
+      console.log(`OK    ${name} (#1302)`);
+    } else {
+      missing += 1;
+      console.log(`MISS  ${name} (#1302)`);
+    }
+  }
+
+  await db.exec(`
+    delete from chapters where id in ('${CH}', '${CH_OTHER}');
+    delete from users where id in ('${U.a}', '${U.b}');
+  `);
+} catch (e) {
+  missing += 1;
+  console.log(
+    `MISS  private channel members (#1302)\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+  );
+}
+
 // ─── Unread and mention counts skip a blocked sender (#2521) ─────────────────
 //
 // `get_channel_unread_counts` is called only through a mocked repository in the
