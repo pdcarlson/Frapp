@@ -82,11 +82,11 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
 | --- | --- |
 | [Prerequisites](prerequisites.md) | Accounts and the `frapp.live` domain. |
 | [Git branching model](branching.md) | One long-lived branch; production is a named commit. |
-| [Supabase Cloud](supabase.md) | Hosted projects, migrations, keys, and Auth settings. |
+| [Supabase Cloud](supabase.md) | Hosted projects, migrations, keys, and Auth settings, including the Sign in with Apple and Google console setup ([§ Auth OAuth providers](supabase.md#auth-oauth-providers-google-and-apple)). |
 | [Vercel](vercel.md) | Web and landing: CI-driven deploys, env scopes, DNS, `vercel.json` pins. |
 | [Render (API)](render.md) | API services, health check, in-process workers and scheduled jobs. |
 | [Mobile (EAS)](mobile.md) | EAS profiles, env vars, and store-bound configuration. |
-| [Integrations](integrations.md) | Stripe (test/live) and the Discord archive-importer bot. |
+| [Integrations](integrations.md) | Stripe (test/live, and what customers see) and the Discord archive-importer bot. |
 | [Launch checklist](launch.md) | Staging/production checklist and hobby-tier cost notes. |
 | [CI/CD pipeline](ci-cd.md) | How deployments are gated, required checks, deploy verification. |
 | [Troubleshooting](troubleshooting.md) | Common deploy failures and where to look. |
