@@ -21,7 +21,8 @@ import {
 export { serverMessageOf, statusOf };
 
 /**
- * Member copy for the module gate (`writing.md` § Study, "Module off").
+ * Member copy for the module gate (`writing.md` § Study session (mobile,
+ * s10), the "Module off" rows).
  *
  * The guard's own message tells an officer to "Re-enable it in Settings →
  * Modules", which a member can't do, so neither function below may let it
@@ -41,6 +42,29 @@ export const MODULE_OFF_COPY = {
   session:
     "Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on — study time tracked now may not be credited.",
 } as const;
+
+/**
+ * The member copy for a refusal nothing on this device can clear, or `null`.
+ *
+ * Two gates refuse study writes permanently: the subscription gate and the
+ * module gate. A caller that retries on failure (the pause/resume mirror) or
+ * swallows failures as transient (the heartbeat) must stop and say so for
+ * both, so the screen asks this once instead of naming each gate.
+ */
+export function permanentRefusalCopy(
+  error: unknown,
+  path: "start" | "session",
+): string | null {
+  if (subscriptionRefusalOf(error)) {
+    return path === "start"
+      ? SUBSCRIPTION_REFUSAL_COPY.study
+      : SUBSCRIPTION_REFUSAL_COPY.studySession;
+  }
+  if (moduleRefusalOf(error)) {
+    return path === "start" ? MODULE_OFF_COPY.start : MODULE_OFF_COPY.session;
+  }
+  return null;
+}
 
 /**
  * A 409 from `POST /start` means a genuinely live session, never a stale one.

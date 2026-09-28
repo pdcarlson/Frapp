@@ -371,6 +371,22 @@ every one of them, and both are the point rather than style:
 | Log service hours (s20) | `Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.` |
 | Study | See the two rows in *Study session (mobile, s10)* below — start and in-session differ, and the difference is load-bearing. |
 
+### Module off (mobile, cross-surface)
+
+`ChapterGuard` refuses a write to a module an officer has switched off with a
+sentence addressed to that officer ("Re-enable it in Settings → Modules to make
+changes"). A member can't follow it, so a mobile surface that would relay the
+server's message matches the refusal with `moduleRefusalOf`
+(`apps/mobile/lib/module-refusal.ts`) and shows its own row instead. The same
+two rules as the subscription refusal apply: point at an officer, and withdraw
+the control rather than invite a retry, since only an officer can turn the
+module back on ([#2393](https://github.com/pdcarlson/Frapp/issues/2393)).
+
+| Surface | Description |
+|---|---|
+| Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
+| Study | The two *Module off* rows in *Study session (mobile, s10)* below. |
+
 ### Study session (mobile, s10)
 
 The dashboard rows above are officer-flavoured — "Ask a chapter admin with

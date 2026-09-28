@@ -35,10 +35,7 @@ import {
 } from "@/lib/location";
 import { useFocusEffect } from "expo-router";
 import { statusOf } from "@repo/api-sdk";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import {
   clearStudyPausedNotification,
   notifyStudyPaused,
@@ -46,6 +43,7 @@ import {
 import {
   isActiveSessionConflict,
   MODULE_OFF_COPY,
+  permanentRefusalCopy,
   sessionErrorCopy,
   startErrorCopy,
 } from "@/lib/study/errors";
@@ -151,8 +149,9 @@ export default function StudyScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   /**
-   * The subscription gate refused a session write (#2297). Tracked separately
-   * from `failure` because it is the one failure that must not be retried.
+   * The subscription gate (#2297) or the module gate (#2393) refused a session
+   * write. Tracked separately from `failure` because those are the failures
+   * that must not be retried.
    *
    * Its only consumer is `isBlocked` on `StartCard`. The mirror-retry timer is
    * stopped by the local `refused` const in that effect's catch, NOT by this
@@ -160,7 +159,7 @@ export default function StudyScreen() {
    * timer on every tab return, and deleting the local guard on the belief that
    * this state covers it would spin the mirror against a permanent 403.
    */
-  const [subscriptionRefused, setSubscriptionRefused] = useState(false);
+  const [writeRefused, setWriteRefused] = useState(false);
   /**
    * Clear the latch whenever the member comes back to this screen.
    *
@@ -178,7 +177,7 @@ export default function StudyScreen() {
    */
   useFocusEffect(
     useCallback(() => {
-      setSubscriptionRefused(false);
+      setWriteRefused(false);
       // The copy goes with the latch, but ONLY the start-path copy. Clearing
       // that one without the latch would leave an enabled Start button sitting
       // directly under a sentence saying study sessions cannot be recorded —
@@ -192,7 +191,10 @@ export default function StudyScreen() {
       // failure's message survives a tab switch for the same reason, as it
       // always has.
       setFailure((current) =>
-        current === SUBSCRIPTION_REFUSAL_COPY.study ? null : current,
+        current === SUBSCRIPTION_REFUSAL_COPY.study ||
+        current === MODULE_OFF_COPY.start
+          ? null
+          : current,
       );
       return undefined;
     }, []),
@@ -313,9 +315,12 @@ export default function StudyScreen() {
    * with the same latch and cleared with it on focus.
    */
   const clearRefusalState = useCallback(() => {
-    setSubscriptionRefused(false);
+    setWriteRefused(false);
     setFailure((current) =>
-      current === SUBSCRIPTION_REFUSAL_COPY.studySession ? null : current,
+      current === SUBSCRIPTION_REFUSAL_COPY.studySession ||
+      current === MODULE_OFF_COPY.session
+        ? null
+        : current,
     );
   }, []);
 
@@ -394,14 +399,16 @@ export default function StudyScreen() {
         );
         return;
       }
-      // A subscription refusal is the one non-404 that is NOT transient, so
-      // the "stay quiet, the next tick is five minutes away" rule below would
-      // never end (#2297). Say why, once — the member otherwise watches the
-      // timer keep counting time the stale-heartbeat rule will later expire
-      // for zero, with only `isReportingStale` and no reason for it.
-      if (subscriptionRefusalOf(error)) {
-        setSubscriptionRefused(true);
-        setFailure(SUBSCRIPTION_REFUSAL_COPY.studySession);
+      // A subscription or module refusal is the non-404 that is NOT
+      // transient, so the "stay quiet, the next tick is five minutes away"
+      // rule below would never end (#2297, #2393). Say why, once — the member
+      // otherwise watches the timer keep counting time the stale-heartbeat
+      // rule will later expire for zero, with only `isReportingStale` and no
+      // reason for it.
+      const refusal = permanentRefusalCopy(error, "session");
+      if (refusal) {
+        setWriteRefused(true);
+        setFailure(refusal);
         return;
       }
       // Anything else is transient. The server's stale-heartbeat rule owns the
@@ -491,16 +498,17 @@ export default function StudyScreen() {
         applyResponse(response, seq);
       } catch (error) {
         if (cancelled) return;
-        const refused = subscriptionRefusalOf(error) !== null;
+        const refusal = permanentRefusalCopy(error, "session");
+        const refused = refusal !== null;
         if (refused) {
-          setSubscriptionRefused(true);
+          setWriteRefused(true);
           // Set here, not only inside `if (target)` below: a refused *pause*
           // (target === false) would otherwise grey out Start with nothing on
           // screen saying why. `StartCard`'s contract is that this `failure`
           // line carries the explanation and the prop only removes the
           // affordance — a silently dead control is the Guideline 2.1 shape
           // this issue exists to remove, not a smaller version of it.
-          setFailure(SUBSCRIPTION_REFUSAL_COPY.studySession);
+          setFailure(refusal);
         }
         if (target) {
           if (!refused) setFailure(sessionErrorCopy(error));
@@ -511,9 +519,10 @@ export default function StudyScreen() {
           // is still there and is the honest surface for a failed resume.
           void clearStudyPausedNotification();
         }
-        // A refusal is permanent until the chapter's subscription is sorted
-        // out, so re-arming here would spin the pause/resume mirror forever
-        // against a 403 nothing on this device can clear.
+        // A refusal is permanent until an officer sorts out the chapter's
+        // subscription or turns `hours` back on, so re-arming here would spin
+        // the pause/resume mirror forever against a 403 nothing on this
+        // device can clear.
         if (!refused) {
           retryTimer = setTimeout(
             () => setMirrorRetry((count) => count + 1),
@@ -594,7 +603,7 @@ export default function StudyScreen() {
       } else {
         setFailure(startErrorCopy(error));
       }
-      if (subscriptionRefusalOf(error)) setSubscriptionRefused(true);
+      if (permanentRefusalCopy(error, "start")) setWriteRefused(true);
     } finally {
       setIsStarting(false);
     }
@@ -771,7 +780,7 @@ export default function StudyScreen() {
             zone={selectedZone}
             canChooseZone={zones.length > 1}
             isStarting={isStarting}
-            isBlocked={subscriptionRefused}
+            isBlocked={writeRefused}
             graceCopy={graceWindowCopy(selectedZone)}
             onChooseZone={() => zoneSheetRef.current?.present()}
             onStart={handleStartPress}

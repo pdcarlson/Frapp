@@ -5,7 +5,8 @@
  * switched off, with a message addressed to that officer: "Re-enable it in
  * Settings → Modules to make changes." A member can't do that, so a member
  * surface that relays the server's 403 message has to catch this one first
- * and say it in the member's terms (`writing.md` § Study, "Module off").
+ * and say it in the member's terms (`writing.md` § Study session (mobile,
+ * s10), "Module off").
  *
  * The same two-condition shape as `subscriptionRefusalOf`, for the same
  * reasons:
@@ -29,3 +30,13 @@ export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
   if (statusOf(error) !== 403) return null;
   return moduleRefusalFromServerMessage(serverMessageOf(error));
 }
+
+/**
+ * Per-surface member copy (`writing.md` § Module off (mobile, cross-surface)).
+ * Study's two rows live with its other copy, as `MODULE_OFF_COPY` in
+ * `lib/study/errors.ts`.
+ */
+export const MODULE_REFUSAL_COPY = {
+  checkIn:
+    "Check-in is turned off for your chapter right now. An officer can turn events back on.",
+} as const;
