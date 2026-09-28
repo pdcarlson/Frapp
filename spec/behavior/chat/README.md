@@ -349,6 +349,17 @@ Three client rules complete the contract, each closing a way the rules above wou
 - **A block or unblock the server confirmed applies at once, in every list state** — a blocked member's rows tombstone, and an unblocked member's rows and reactions show, even while the list is loading or unavailable. It is kept beside the list rather than written into it, so it can neither flip an unavailable list to ready nor be undone by a read that was already in flight when it was made; a read that started after it is the server's answer again (`useBlockedUserIds` in `@repo/hooks`).
 - **A ready list contradicted by the server is re-read.** A REST row masked for a sender the ready list does not name is what a block made on another device looks like, so the client re-reads the list once per such set of masked rows, and forgets the set once a ready list stops being contradicted. A sender this client unblocked still counts: a masked row that arrives after the unblock is what the same member blocked again elsewhere looks like. A tombstone keeps offering Unblock unless this client itself confirmed the unblock.
 
+### No pre-post content filter
+
+**Decision (owner, 2026-09-28): nothing screens a message before it posts.** Guideline 1.2 lists "a method for filtering objectionable material from being posted" beside report and block. Frapp's answer is the combination it already ships, not a filter:
+
+- the Terms' zero-tolerance clause (#2302), which a member must accept to join a chapter. Members from before #2302 are asked by an in-app prompt that the server doesn't enforce ([`legal.md`](../legal.md#acceptance-record) § Acceptance record);
+- report (§ Report);
+- block (§ Block);
+- officer removal of a reported message (§ Officer action).
+
+The owner's reason: Frapp is chat for fraternities and sororities, and swearing is normal there. The App Review note states this answer ([`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md) § Review notes).
+
 ### Retention and authorization
 
 - `chat_message_reports` and `chat_member_blocks` both have RLS enabled with **zero policies**. No client reads either table directly; the API reaches them with the service-role key. For these two tables that default-deny is the safety guarantee rather than the convention — see the argument in `20260915210000_chat_reports_and_blocks.sql`.
