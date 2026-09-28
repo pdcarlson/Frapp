@@ -17,11 +17,15 @@ name: Deploy staging
 # starts when CI completes and deploys only a success, and it names the commit
 # CI verified (`workflow_run.head_sha`), never `main`'s moving tip.
 #
-# ── No secrets passed ──────────────────────────────────────────────────────
-# The call passes no `secrets:`. `_deploy.yml`'s job names the `staging`
-# environment itself and should get its secrets from there; that is derived
-# from GitHub's docs until the first run through it proves it (that header,
-# and #2804).
+# ── `secrets: inherit`, and why it is needed ───────────────────────────────
+# `_deploy.yml`'s job names the `staging` environment itself and reads that
+# environment's secrets. Without `secrets: inherit` here every one read empty
+# in that called job, `environment:` key and all (run 36479856561, the first
+# run through `_deploy.yml`, whose guard stopped it before anything shipped).
+# GitHub releases an environment's secrets to a called job only when the
+# caller passes `inherit` (actions/runner#4453); the first run with it proves
+# that here, recorded on #2804. No repository secret exists (#2583), so
+# inherit hands the called job nothing else.
 #
 # ── Names other things depend on ────────────────────────────────────────────
 # `migration-snapshot.yml` triggers on this workflow's NAME, "Deploy staging",
@@ -50,6 +54,9 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch == 'main'
     uses: ./.github/workflows/_deploy.yml
+    # Required for the called job to see the `staging` environment's secrets;
+    # see the header.
+    secrets: inherit
     with:
       environment: staging
       # The commit CI verified. `github.sha` on a `workflow_run` event is the
