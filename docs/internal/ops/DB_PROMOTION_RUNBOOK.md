@@ -1563,10 +1563,8 @@ Postgres stores the executed SQL, so a migration absent from git is still fully 
 
 **This class of drift now has a detector.** `.github/workflows/check-migration-drift.yml` runs
 daily (07:00 UTC) and compares `supabase_migrations.schema_migrations` on each deployed database
-against `supabase/migrations/`, reporting three sets — **pending** (in the repo, not applied),
-**foreign** (applied, absent from the repo), and **matched**. Foreign rows fail immediately;
-pending rows are tolerated for 24h after their own version timestamp so a just-merged migration is
-not an alert. A failure upserts one `incident` tracking issue and closes it once every
+against what it should hold. What each is judged against, what it classifies and when it
+tolerates a pending row: [`AGENT_INFRA.md` § Schema drift detection](../ci-cd/AGENT_INFRA.md#schema-drift-detection-scriptscicheck-migration-driftmjs). A failure upserts one `incident` tracking issue and closes it once every
 environment is back in sync, so "alert issue open" means "a deployed database is drifting right
 now". Semantics in `scripts/ci/check-migration-drift.mjs`; run it by hand from the Actions tab
 (`workflow_dispatch`, with an adjustable grace window) or via `npm run check:migration-drift`.

@@ -45,6 +45,41 @@ if [ -n "$in_cloud" ] && [ -f "$ROOT/.githooks/pre-push" ]; then
   fi
 fi
 
+# Node that satisfies package.json engines.node (#2823). The image puts Node 22 first on PATH,
+# and on 22 the API's Jest suites that load ESM-only packages die with "Must use import to
+# load ES Module" while the rest pass (scripts/lib/node-toolchain.sh). Here, after the review
+# gate is armed and before bringup launches, because bringup inherits this PATH.
+#
+# This hook never downloads: session start must not wait on nodejs.org, and a download that
+# failed here would be repeated by bringup anyway. It only puts FRAPP_NODE_DIR/bin first on
+# PATH, which costs nothing even when the directory does not exist yet: PATH is searched on
+# every command, so the session switches to Node 24 the moment one lands there. It is normally
+# already there, from cloud-sandbox-setup.sh's cached filesystem; when that cache predates it,
+# bringup installs it (it holds the bringup lock, so nothing else installs at the same time).
+#
+# CLAUDE_ENV_FILE is how a SessionStart hook sets the environment of the session's later
+# Bash commands; PATH set here reaches only this hook and what it launches. Cloud only: a
+# laptop's Node is its owner's to choose. Never fatal.
+if [ -n "$in_cloud" ] && [ -f "$ROOT/scripts/lib/node-toolchain.sh" ]; then
+  # shellcheck source=scripts/lib/node-toolchain.sh
+  . "$ROOT/scripts/lib/node-toolchain.sh"
+  if node_toolchain_path_below_floor "$ROOT"; then
+    PATH="$FRAPP_NODE_DIR/bin:$PATH"
+    export PATH
+    # Once per file: the hook fires again on resume, /clear and /compact.
+    path_line="export PATH=\"${FRAPP_NODE_DIR}/bin:\$PATH\""
+    if [ -n "${CLAUDE_ENV_FILE:-}" ] \
+      && { grep -qxF "$path_line" "$CLAUDE_ENV_FILE" 2>/dev/null \
+        || printf '%s\n' "$path_line" >>"$CLAUDE_ENV_FILE" 2>/dev/null; }; then
+      if ! node_toolchain_cached "$ROOT"; then
+        msg="${msg} Node toolchain: this environment's cache has no Node 24, so bringup installs it into ${FRAPP_NODE_DIR}, already first on PATH; until it lands, node is $(node --version 2>/dev/null || echo missing). Before running API tests, wait for .cloud-sandbox-up.done, whose WARN line says if the install failed."
+      fi
+    else
+      msg="${msg} Node toolchain: node on PATH is $(node --version 2>/dev/null || echo missing), below package.json engines.node, and this hook could not hand ${FRAPP_NODE_DIR}/bin to later commands (CLAUDE_ENV_FILE is unset or unwritable). Run 'export PATH=${FRAPP_NODE_DIR}/bin:\$PATH' in each command that runs node, and tell the user."
+    fi
+  fi
+fi
+
 # Render the egress capability manifest (scripts/cloud-sandbox-egress-probe.sh) as one
 # compact line, plus any warnings. Deliberately terse: the whole point of the manifest is to
 # save a session the tokens it would otherwise spend rediscovering the network policy, and a
