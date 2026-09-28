@@ -91,6 +91,11 @@ jobs:
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/check-pglite-migrations.mjs'
+              # The change-ping contract spec also applies every migration (see
+              # the job's last step), so its inputs re-run this job too.
+              - 'apps/web/lib/realtime/**'
+              - 'apps/web/vitest.config.ts'
+              - 'apps/web/tests/setup.ts'
               - 'packages/validation/**'
               - 'package-lock.json'
               # The PGlite job also loads the chapter directory seed, so a change
@@ -1008,6 +1013,12 @@ jobs:
         run: node scripts/scan-secrets.mjs --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
   # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
+  # Two steps. The first, below, is `check:pglite-migrations`. The second runs
+  # the change-ping contract spec (`apps/web/lib/realtime/change-topics.spec.ts`),
+  # which replays the migrations onto a stand-in `realtime` schema with an `anon`
+  # role, so it does reach the Realtime triggers and `realtime.messages`
+  # policies the "Out of reach" note below says the first step can't.
+  #
   # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
   # and asserts structural landmarks (unique indexes, generated columns) plus
   # an RLS smoke tier: every public table enables RLS (default-deny invariant)
@@ -1046,6 +1057,15 @@ jobs:
 
       - name: Apply migrations to PGlite + assert schema landmarks
         run: npm run check:pglite-migrations
+
+      # `apps/web/lib/realtime/change-topics.spec.ts` applies every migration to
+      # its own PGlite and checks the change-ping contract against what they
+      # leave in effect (#2593). `web-tests` runs it on web changes, but a PR
+      # that only adds a migration, the change it exists to catch, skips that
+      # job, and a skipped required job reports Success. So it runs here too.
+      - name: Change-ping contract against the applied migrations
+        working-directory: apps/web
+        run: npx vitest run lib/realtime/change-topics.spec.ts
 
   # ── 375px responsive floor (REQUIRED) ───────────────────────────────────
   #
