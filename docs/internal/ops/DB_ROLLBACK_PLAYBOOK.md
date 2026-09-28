@@ -2151,3 +2151,23 @@ A function body (#2521). It re-creates `get_channel_unread_counts` with one more
 The same PR removes the `#2521` landmark and the "Unread and mention counts skip a blocked sender" tier from `scripts/check-pglite-migrations.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
+
+## Rollback Discord import channel visibility (20260928160000)
+
+* **Migration**: `20260928160000_discord_import_channel_visibility.sql`
+
+Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewritten: existing rows took `PUBLIC` and nulls.
+
+**Roll back the API first.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. Deploy the previous API, then remove them with a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260928160000` as applied, so a later re-land would apply nothing:
+
+```sql
+alter table public.discord_import_channels
+  drop constraint if exists discord_import_channels_new_channel_type_check;
+alter table public.discord_import_channels
+  drop column if exists new_channel_required_permissions,
+  drop column if exists new_channel_type,
+  drop column if exists private_in_discord,
+  drop column if exists readable;
+```
+
+**This is a safety regression, not a neutral rollback.** Afterwards every channel an import creates is `PUBLIC` again, so a channel that was private in Discord (exec, bids, committees) becomes readable by the whole chapter when imported. Mapping rows already saved as `ROLE_GATED` lose that choice. Check `select count(*) from discord_import_channels where new_channel_type = 'ROLE_GATED' and status in ('pending','running');` first. A non-zero count means a queued import would create those channels public: cancel it, or re-map it after the rollback.

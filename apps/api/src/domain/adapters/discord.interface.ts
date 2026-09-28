@@ -92,6 +92,19 @@ export interface DiscordChannelRef {
    * the channel and silently dropping every post inside it.
    */
   holdsOnlyThreads: boolean;
+  /**
+   * Whether the bot can read this channel's history (View Channels and Read
+   * Message History after every overwrite). Null when the bot's own
+   * permissions could not be computed, in which case discovery falls back to
+   * probing. A thread carries its parent's answer.
+   */
+  readable: boolean | null;
+  /**
+   * Whether a member holding only `@everyone` could see this channel. False
+   * means the server keeps it behind a role (exec, bids, committees). Null
+   * when unknown.
+   */
+  privateInDiscord: boolean | null;
 }
 
 /** A role as the guild defines it, for the role worksheet. */

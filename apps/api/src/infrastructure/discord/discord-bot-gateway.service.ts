@@ -14,6 +14,15 @@ import {
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import { asRecord, asString } from '#domain/utils/json-guards';
+import {
+  basePermissions,
+  canReadHistory,
+  channelPermissions,
+  parseOverwrites,
+  visibleToEveryone,
+  type DiscordPermissionSubject,
+  type DiscordRolePermissions,
+} from '#domain/utils/discord-permissions';
 
 /**
  * Channel types that hold messages a chapter would want archived.
@@ -117,6 +126,8 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
    * the client's own state: only a restart with a new token recovers either.
    */
   private tokenRejected = false;
+
+  private cachedBotUserId: string | null = null;
 
   constructor(config: ConfigService) {
     const token = config.get<string>('DISCORD_BOT_TOKEN')?.trim();
@@ -229,6 +240,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     const warnings: string[] = [];
 
     const raw = (await rest.get(Routes.guildChannels(guildId))) as unknown[];
+    const access = await this.loadAccessContext(guildId);
 
     // Category names are resolved from the same response rather than fetched:
     // a category IS a channel row, so the mapping is already in hand.
@@ -244,6 +256,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     }
 
     const channels: DiscordChannelRef[] = [];
+    const unreadable: string[] = [];
     const parents: {
       id: string;
       name: string;
@@ -275,6 +288,20 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
       const name = asString(channel.name) ?? id;
       const parentId = asString(channel.parent_id);
+      const overwrites = parseOverwrites(channel.permission_overwrites);
+      const readable = access.subject
+        ? canReadHistory(
+            channelPermissions(
+              access.base,
+              guildId,
+              overwrites,
+              access.subject,
+            ),
+          )
+        : null;
+      const privateInDiscord = access.roles
+        ? !visibleToEveryone(guildId, access.roles, overwrites)
+        : null;
       // A forum IS offered as a destination — `#questions` is what an admin
       // recognises, and its posts inherit whatever they choose for it. What it
       // is not is message-fetchable, so it carries `holdsOnlyThreads` and the
@@ -289,7 +316,17 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         parentChannelId: null,
         isThread: false,
         holdsOnlyThreads: threadParentOnly,
+        readable,
+        privateInDiscord,
       });
+      // Discord lists every channel to a bot, readable or not. Asking one it
+      // cannot read for its threads only earns a 403, and each 403 is spent
+      // from the invalid-request budget every connected chapter shares. So an
+      // unreadable channel is listed, reported once below, and never probed.
+      if (readable === false) {
+        unreadable.push(name);
+        continue;
+      }
       parents.push({
         id,
         name,
@@ -353,19 +390,98 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     // The per-channel version flooded a bounded warning list — a guild with
     // more than fifty channels kept nothing but this boilerplate and evicted
     // everything an admin actually needed to read.
-    if (privateDenied.length > 0) {
-      const shown = privateDenied
-        .slice(0, 5)
-        .map((name) => `#${name}`)
-        .join(', ');
-      const rest =
-        privateDenied.length > 5 ? ` and ${privateDenied.length - 5} more` : '';
+    if (unreadable.length > 0) {
       warnings.push(
-        `Private archived threads were not read in ${privateDenied.length} channel(s) (${shown}${rest}): the Frapp bot is installed read-only, and Discord requires the "Manage Threads" permission to list them. Everything else in those channels — including public archived threads — was imported.`,
+        `Frapp cannot read ${unreadable.length} channel(s) (${nameList(unreadable)}): Discord hides them from the bot. Give the Frapp bot a role that can see them, then scan again. Until then they can only be skipped.`,
+      );
+    }
+    if (privateDenied.length > 0) {
+      warnings.push(
+        `Private archived threads cannot be read in ${privateDenied.length} channel(s) (${nameList(privateDenied)}): the Frapp bot is installed read-only, and Discord requires the "Manage Threads" permission to list them. Everything else in those channels, public archived threads included, will be imported.`,
       );
     }
 
+    // A thread carries its parent's answers: Discord computes a thread's
+    // access from its parent channel, and the mapping step asks only about
+    // parents.
+    const byId = new Map(
+      channels
+        .filter((channel) => !channel.isThread)
+        .map((channel) => [channel.id, channel]),
+    );
+    for (const channel of channels) {
+      if (!channel.isThread || !channel.parentChannelId) continue;
+      const parent = byId.get(channel.parentChannelId);
+      channel.readable = parent?.readable ?? null;
+      channel.privateInDiscord = parent?.privateInDiscord ?? null;
+    }
+
     return { channels, warnings };
+  }
+
+  /**
+   * What discovery needs to compute access itself: the guild's roles, and the
+   * bot's own roles in it.
+   *
+   * Each half degrades on its own. Without the roles nothing can be computed;
+   * without the bot's membership, readability cannot, but "private in
+   * Discord" (an `@everyone` question) still can. A failure here is never an
+   * error to the admin: discovery falls back to probing each channel, which is
+   * what it did before this existed.
+   */
+  private async loadAccessContext(guildId: string): Promise<{
+    roles: DiscordRolePermissions[] | null;
+    subject: DiscordPermissionSubject | null;
+    base: bigint;
+  }> {
+    const rest = this.client();
+    let roles: DiscordRolePermissions[] | null = null;
+    try {
+      const raw = (await rest.get(Routes.guildRoles(guildId))) as unknown[];
+      roles = [];
+      for (const entry of raw) {
+        const role = asRecord(entry);
+        const id = asString(role?.id);
+        if (!id) continue;
+        roles.push({ id, permissions: asString(role?.permissions) ?? '0' });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Could not read roles for guild ${guildId}: ${this.describe(error)}. Channel access will be probed instead.`,
+      );
+      return { roles: null, subject: null, base: 0n };
+    }
+
+    try {
+      const botUserId = await this.botUserId();
+      const member = asRecord(
+        await rest.get(Routes.guildMember(guildId, botUserId)),
+      );
+      const roleIds = Array.isArray(member?.roles)
+        ? member.roles.filter((id): id is string => typeof id === 'string')
+        : [];
+      const subject = { userId: botUserId, roleIds };
+      return {
+        roles,
+        subject,
+        base: basePermissions(guildId, roles, subject),
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the bot's membership in guild ${guildId}: ${this.describe(error)}. Channel readability will be probed instead.`,
+      );
+      return { roles, subject: null, base: 0n };
+    }
+  }
+
+  /** The bot's own user id, read once per process. */
+  private async botUserId(): Promise<string> {
+    if (this.cachedBotUserId) return this.cachedBotUserId;
+    const me = asRecord(await this.client().get(Routes.user()));
+    const id = asString(me?.id);
+    if (!id) throw new DiscordApiError('Discord returned no bot user id.');
+    this.cachedBotUserId = id;
+    return id;
   }
 
   private async collectActiveThreads(
@@ -386,7 +502,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       }
     } catch (error) {
       warnings.push(
-        `Could not list active threads: ${this.describe(error)}. Their messages were not imported.`,
+        `Could not list active threads: ${this.describe(error)}. Their messages will not be imported.`,
       );
     }
   }
@@ -430,7 +546,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
           return true;
         }
         warnings.push(
-          `Could not list ${visibility} archived threads in #${parent.name}: ${this.describe(error)}. Their messages were not imported.`,
+          `Could not list ${visibility} archived threads in #${parent.name}: ${this.describe(error)}. Their messages will not be imported.`,
         );
         return false;
       }
@@ -455,7 +571,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
       if (page === MAX_ARCHIVED_THREAD_PAGES - 1) {
         warnings.push(
-          `#${parent.name} has more archived ${visibility} threads than Frapp enumerates in one import (${MAX_ARCHIVED_THREAD_PAGES * 100}); the oldest were not imported.`,
+          `#${parent.name} has more archived ${visibility} threads than Frapp enumerates in one import (${MAX_ARCHIVED_THREAD_PAGES * 100}); the oldest will not be imported.`,
         );
       }
     }
@@ -495,6 +611,9 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       parentChannelId: parentId,
       isThread: true,
       holdsOnlyThreads: false,
+      // Filled from the parent once discovery has every parent in hand.
+      readable: null,
+      privateInDiscord: null,
     };
   }
 
@@ -565,6 +684,10 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       // before every message walk, and a channel's type is Discord's fact, not
       // ours to cache across a migration.
       holdsOnlyThreads: THREAD_PARENT_ONLY_TYPES.has(raw.type as number),
+      // It was just read, so the bot can see it; whether @everyone can is not
+      // asked here and does not matter to the export.
+      readable: true,
+      privateInDiscord: null,
     };
   }
 
@@ -699,4 +822,13 @@ function isDiscordCdnHost(hostname: string): boolean {
   ];
   if (exact.includes(host)) return true;
   return host.endsWith('.discordapp.net') || host.endsWith('.discordapp.com');
+}
+
+/** `#a, #b, #c, #d, #e and N more`, for a one-line warning. */
+function nameList(names: readonly string[]): string {
+  const shown = names
+    .slice(0, 5)
+    .map((name) => `#${name}`)
+    .join(', ');
+  return names.length > 5 ? `${shown} and ${names.length - 5} more` : shown;
 }

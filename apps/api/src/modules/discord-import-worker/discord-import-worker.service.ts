@@ -779,8 +779,15 @@ export class DiscordImportWorkerService {
       chapter_id: chapterId,
       name: mapping.new_channel_name,
       description: `Imported from Discord #${mapping.discord_channel_name}`,
-      type: 'PUBLIC',
-      required_permissions: null,
+      // The admin's choice, recorded on the mapping. A channel that was private
+      // in Discord could only reach here as PUBLIC by an explicit choice (the
+      // mapping route refuses the default), and ROLE_GATED always carries at
+      // least one permission (DB CHECK).
+      type: mapping.new_channel_type,
+      required_permissions:
+        mapping.new_channel_type === 'ROLE_GATED'
+          ? mapping.new_channel_required_permissions
+          : null,
       member_ids: null,
       category_id: null,
       is_read_only: mapping.new_channel_is_read_only,

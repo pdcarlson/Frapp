@@ -560,6 +560,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-28: Discord import channel visibility and scan readability (#2787)
+
+### 20260928160000_discord_import_channel_visibility.sql
+
+- **Purpose**: Adds four columns to `public.discord_import_channels`: `readable boolean` and `private_in_discord boolean` (what the bot saw when it scanned; null when unknown, as on the upload path), `new_channel_type text not null default 'PUBLIC'`, and `new_channel_required_permissions text[]`. Adds `discord_import_channels_new_channel_type_check`, which allows `PUBLIC` or `ROLE_GATED` and requires at least one permission for `ROLE_GATED`. Existing rows take `PUBLIC` and nulls, which is what every import created until now. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('readable','private_in_discord','new_channel_type','new_channel_required_permissions') order by 1;` returns four rows: `new_channel_required_permissions | ARRAY | YES`, `new_channel_type | text | NO | 'PUBLIC'::text`, `private_in_discord | boolean | YES`, `readable | boolean | YES`.
+  `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_new_channel_type_check';` names both `PUBLIC` and `ROLE_GATED` and `array_length`.
+- **Promoter notes**: Ship it before, or with, the API that writes the columns. An older API ignores them and keeps creating `PUBLIC` channels, which is its existing behaviour. A newer API against an unmigrated database fails discovery and mapping writes on the unknown columns. Re-applying is idempotent (`add column if not exists`, and the constraint is dropped and re-added). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-channel-visibility-20260928160000) § Rollback Discord import channel visibility.
+
 ## 2026-09-27: Unread and mention counts skip a blocked sender (#2521)
 
 ### 20260927050000_chat_unread_counts_skip_blocked.sql

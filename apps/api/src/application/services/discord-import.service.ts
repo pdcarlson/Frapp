@@ -43,6 +43,7 @@ import type {
   DiscordImportChannel,
   DiscordImportFileKind,
   DiscordImportFile,
+  DiscordImportNewChannelType,
   DiscordImportSource,
   DiscordRoleMapping,
 } from '#domain/entities/discord-import.entity';
@@ -136,7 +137,42 @@ export interface ChannelMappingInput {
   target_channel_id?: string | null;
   new_channel_name?: string | null;
   new_channel_is_read_only?: boolean;
+  /**
+   * Who can read the channel `create_new` makes. Omitted means "not chosen":
+   * allowed on a channel that was public in Discord (it defaults to the whole
+   * chapter), refused on one that was private there.
+   */
+  new_channel_visibility?: 'chapter' | 'restricted';
+  /** Required, and non-empty, when `new_channel_visibility` is `restricted`. */
+  new_channel_required_permissions?: string[] | null;
   message_count?: number;
+}
+
+/** The chat_channels type and gate a decision's new channel will get. */
+function newChannelShape(decision: ChannelMappingInput | undefined): {
+  new_channel_type: DiscordImportNewChannelType;
+  new_channel_required_permissions: string[] | null;
+} {
+  if (
+    decision?.mapping_action === 'create_new' &&
+    decision.new_channel_visibility === 'restricted'
+  ) {
+    return {
+      new_channel_type: 'ROLE_GATED',
+      new_channel_required_permissions: normalisedPermissions(decision),
+    };
+  }
+  return { new_channel_type: 'PUBLIC', new_channel_required_permissions: null };
+}
+
+function normalisedPermissions(decision: ChannelMappingInput): string[] {
+  return [
+    ...new Set(
+      (decision.new_channel_required_permissions ?? [])
+        .map((permission) => permission.trim())
+        .filter((permission) => permission.length > 0),
+    ),
+  ];
 }
 
 /**
@@ -421,6 +457,10 @@ export class DiscordImportService {
       cursor_before_snowflake: null,
       parent_discord_channel_id: channel.parentChannelId,
       position: index,
+      readable: channel.readable,
+      private_in_discord: channel.privateInDiscord,
+      new_channel_type: 'PUBLIC' as const,
+      new_channel_required_permissions: null,
     }));
 
     const channels = await this.importRepo.replaceChannels(id, chapterId, rows);
@@ -481,17 +521,37 @@ export class DiscordImportService {
         'Scan the Discord server before mapping its channels.',
       );
     }
-    const known = new Set(
+    const known = new Map(
       existing
         .filter((channel) => !channel.parent_discord_channel_id)
-        .map((channel) => channel.discord_channel_id),
+        .map((channel) => [channel.discord_channel_id, channel]),
     );
 
     const byId = new Map<string, ChannelMappingInput>();
     for (const decision of decisions) {
-      if (!known.has(decision.discord_channel_id)) {
+      const scanned = known.get(decision.discord_channel_id);
+      if (!scanned) {
         throw new BadRequestException(
           `#${decision.discord_channel_name} is not one of the channels found in this Discord server.`,
+        );
+      }
+      // What the scan saw, not what the caller says: the row is the record of
+      // Discord's own permissions at scan time.
+      if (scanned.readable === false && decision.mapping_action !== 'skip') {
+        throw new BadRequestException(
+          `Frapp cannot read #${scanned.discord_channel_name} in Discord. Give the Frapp bot a role that can see it and scan again, or skip it.`,
+        );
+      }
+      // Nothing private in Discord becomes readable by the whole chapter by
+      // default. A client that sends no visibility has not chosen one, and
+      // for this channel the default would publish it.
+      if (
+        scanned.private_in_discord === true &&
+        decision.mapping_action === 'create_new' &&
+        decision.new_channel_visibility === undefined
+      ) {
+        throw new BadRequestException(
+          `#${scanned.discord_channel_name} is private in Discord. Choose who can read it in Frapp before importing it.`,
         );
       }
       await this.assertDecisionResolvable(decision, chapterId);
@@ -533,6 +593,10 @@ export class DiscordImportService {
           cursor_before_snowflake: null,
           parent_discord_channel_id: channel.parent_discord_channel_id,
           position: channel.position,
+          // Scan facts are carried across a re-map, never taken from the caller.
+          readable: channel.readable,
+          private_in_discord: channel.private_in_discord,
+          ...newChannelShape(decision),
         };
       },
     );
@@ -577,6 +641,17 @@ export class DiscordImportService {
     ) {
       throw new BadRequestException(
         `Name the new channel for #${channel.discord_channel_name}.`,
+      );
+    }
+    // Mirrors the DB CHECK and chat's own rule (FRA-321): a ROLE_GATED channel
+    // that gates on nothing is readable by no one but a President.
+    if (
+      channel.mapping_action === 'create_new' &&
+      channel.new_channel_visibility === 'restricted' &&
+      normalisedPermissions(channel).length === 0
+    ) {
+      throw new BadRequestException(
+        `Choose at least one permission that can read the new channel for #${channel.discord_channel_name}.`,
       );
     }
   }
@@ -632,6 +707,10 @@ export class DiscordImportService {
         cursor_before_snowflake: null,
         parent_discord_channel_id: null,
         position: 0,
+        // An export carries no Discord permissions, so neither fact is known.
+        readable: null,
+        private_in_discord: null,
+        ...newChannelShape(channel),
       })),
     );
   }
