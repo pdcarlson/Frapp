@@ -11,13 +11,74 @@
  * cases a member can actually act on get their own copy.
  */
 
-import { codeOf, serverMessageOf, statusOf } from "@repo/api-sdk";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import { moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
 
 export { serverMessageOf, statusOf };
+
+/**
+ * Member copy for the module gate (`writing.md` § Study session (mobile,
+ * s10), the "Module off" rows).
+ *
+ * The guard's own message tells an officer to "Re-enable it in Settings →
+ * Modules", which a member can't do, so neither function below may let it
+ * reach the relaying 403 arm.
+ */
+export const MODULE_OFF_COPY = {
+  start:
+    "Your chapter isn't tracking study hours right now. An officer can turn the module back on.",
+  /**
+   * A session that is already running when an officer switches `hours` off.
+   * Pause, resume, heartbeat and stop are refused by the same gate, so this
+   * follows `SUBSCRIPTION_REFUSAL_COPY.studySession`: the session stays
+   * active server-side and a session whose heartbeats are refused expires
+   * with nothing credited, so it neither promises the time nor says it's
+   * gone.
+   */
+  session:
+    "Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on — study time tracked now may not be credited.",
+} as const;
+
+/**
+ * The member copy for a refusal nothing on this device can clear, or `null`.
+ *
+ * Two gates refuse study writes permanently: the subscription gate and the
+ * module gate. This is the one place that names them. `startErrorCopy` and
+ * `sessionErrorCopy` ask it first, and so do the screen's latch, the
+ * heartbeat (which otherwise swallows failures as transient) and the
+ * pause/resume mirror (which otherwise retries), so the copy and the latch
+ * cannot disagree about what counts as permanent.
+ *
+ * Both are matched on the message, not `codeOf`, which is `null` on every
+ * real response (#1020); the module branch used `codeOf` until #2393 and never
+ * fired. Both must be caught before a relaying 403 arm: the subscription
+ * gate's own words are "…complete checkout to use this feature.", a purchase
+ * instruction the store declaration forbids in this app (#2297), and the
+ * module gate's tell an officer to "Re-enable it in Settings → Modules".
+ *
+ * `path` picks start copy or in-session copy. They differ on purpose: every
+ * non-404 session failure leaves the session ACTIVE server-side and keeps the
+ * End button, so saying "study sessions can't be recorded" would tell the
+ * member their banked time was lost (see `SUBSCRIPTION_REFUSAL_COPY.studySession`).
+ */
+export function permanentRefusalCopy(
+  error: unknown,
+  path: "start" | "session",
+): string | null {
+  if (subscriptionRefusalOf(error)) {
+    return path === "start"
+      ? SUBSCRIPTION_REFUSAL_COPY.study
+      : SUBSCRIPTION_REFUSAL_COPY.studySession;
+  }
+  if (moduleRefusalOf(error)) {
+    return path === "start" ? MODULE_OFF_COPY.start : MODULE_OFF_COPY.session;
+  }
+  return null;
+}
 
 /**
  * A 409 from `POST /start` means a genuinely live session, never a stale one.
@@ -44,22 +105,10 @@ export function startErrorCopy(error: unknown): string {
   const status = statusOf(error);
   const serverMessage = serverMessageOf(error);
 
-  // The subscription gate, above the generic 403 arm because both arrive as
-  // 403 and the arm below relays the server's own words — which for an
-  // `incomplete` chapter are "…complete checkout to use this feature.", a
-  // purchase instruction the store declaration forbids in this app (#2297).
-  // Unlike the module-gate branch below this one is NOT keyed on `codeOf`,
-  // which is `null` on every real response (#1020).
-  if (subscriptionRefusalOf(error)) return SUBSCRIPTION_REFUSAL_COPY.study;
-
-  // The module gate speaks to officers: "Re-enable it in Settings → Modules to
-  // make changes." A member cannot do that and should not be told to. The
-  // structured code is the reliable discriminator — `ChapterGuard.enforceModule`
-  // throws `{ code: 'chapter.module.disabled' }`, and this branch has to sit
-  // above the generic 403 because both arrive as 403.
-  if (codeOf(error) === "chapter.module.disabled") {
-    return "Your chapter isn't tracking study hours right now. An officer can turn the module back on.";
-  }
+  // Above the generic 403 arm, which relays the server's own words (see
+  // `permanentRefusalCopy` for why neither gate's may reach a member).
+  const refusal = permanentRefusalCopy(error, "start");
+  if (refusal) return refusal;
 
   switch (status) {
     case 400:
@@ -94,21 +143,10 @@ export function sessionErrorCopy(error: unknown): string {
   const status = statusOf(error);
   const serverMessage = serverMessageOf(error);
 
-  // The subscription gate, above the generic 403 arm because both arrive as
-  // 403 and the arm below relays the server's own words — which for an
-  // `incomplete` chapter are "…complete checkout to use this feature.", a
-  // purchase instruction the store declaration forbids in this app (#2297).
-  // Unlike the module-gate branch in `startErrorCopy` this is NOT keyed on
-  // `codeOf`, which is `null` on every real response (#1020).
-  //
-  // `studySession`, not `study`: every non-404 failure here leaves the session
-  // ACTIVE server-side and `endSession` deliberately keeps the End button so
-  // the member can retry once billing is sorted. Saying "study sessions can't
-  // be recorded" would tell them their banked time was lost, and a member who
-  // walks away on that gets the session expired for zero.
-  if (subscriptionRefusalOf(error)) {
-    return SUBSCRIPTION_REFUSAL_COPY.studySession;
-  }
+  // Above the generic 403 arm, as in `startErrorCopy`. In-session copy: the
+  // session is still running server-side (see `permanentRefusalCopy`).
+  const refusal = permanentRefusalCopy(error, "session");
+  if (refusal) return refusal;
 
   switch (status) {
     case 404:

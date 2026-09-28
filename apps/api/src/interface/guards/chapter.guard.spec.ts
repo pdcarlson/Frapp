@@ -9,6 +9,7 @@ import {
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
+import { moduleRefusalFromServerMessage } from '@repo/validation';
 import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
 
 describe('ChapterGuard', () => {
@@ -645,6 +646,31 @@ describe('ChapterGuard', () => {
         response: { code: 'chapter.module.disabled' },
         status: 403,
       });
+    });
+
+    // The clients can't see `code` (#1020), so the message is what mobile
+    // matches to show a member their own copy instead of this officer
+    // instruction (#2393). It has to survive the trip through the matcher.
+    it('refuses with the message the clients recognise, naming the module', async () => {
+      withModules({ hours: false });
+      requiresModule('hours');
+
+      const refusal = await guard
+        .canActivate(mockExecutionContext(buildRequest({ method: 'POST' })))
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+
+      expect(refusal).toBeInstanceOf(ForbiddenException);
+      const body = (refusal as ForbiddenException).getResponse() as {
+        message?: unknown;
+      };
+      expect(
+        moduleRefusalFromServerMessage(
+          typeof body.message === 'string' ? body.message : null,
+        ),
+      ).toEqual({ moduleKey: 'hours' });
     });
 
     it.each(['POST', 'PATCH', 'PUT', 'DELETE'])(
