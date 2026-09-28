@@ -28,7 +28,6 @@ export interface DiscordExportUser {
   nickname?: string | null;
   color?: string | null;
   isBot?: boolean | null;
-  roles?: { id?: string | null; name?: string | null }[] | null;
   /** With `--media`, an export-relative path. Without it, a CDN URL. */
   avatarUrl?: string | null;
 }
@@ -229,21 +228,6 @@ export function buildImportPayload(
   if (stickers.length > 0) payload.sticker_names = stickers;
   if (embedCount > 0) payload.embed_count = embedCount;
   return payload;
-}
-
-/** Every distinct Discord role named on a message author in this part. */
-export function collectRoles(
-  messages: DiscordExportMessage[],
-): Map<string, string> {
-  const roles = new Map<string, string>();
-  for (const message of messages) {
-    for (const role of message.author?.roles ?? []) {
-      const id = asString(role?.id);
-      if (!id || roles.has(id)) continue;
-      roles.set(id, asString(role?.name) ?? id);
-    }
-  }
-  return roles;
 }
 
 /**

@@ -27,8 +27,9 @@
 //   assert the same values, but only this ratchet runs without `npm ci`.
 //
 // SCOPE. apps/api only. Identifiers are not copy and stay: the
-// `signet_role_key` field, the `--signet-*` roles, `SIGNET_ENGINE_VERSION`,
-// and the @frapp.live ICS UID host (ics-uid-host keeps that).
+// `--signet-*` roles, `SIGNET_ENGINE_VERSION`, and the @frapp.live ICS UID
+// host (ics-uid-host keeps that). (`signet_role_key`, once listed here, was
+// retired with the Discord role worksheet in #2818.)
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import { fetchAllPages } from '../supabase.utils';
 import type {
   FrappSupabaseClient,
   TablesInsert,
@@ -34,6 +35,29 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .order('created_at', { ascending: true });
     if (error) throw error;
     return data || [];
+  }
+
+  async findRoleGates(
+    chapterId: string,
+  ): Promise<{ id: string; required_permissions: string[] }[]> {
+    // Paged over the primary key: PostgREST caps a response at 1000 rows with
+    // no error, and a gate missed here is a permission string reissued to a
+    // role that then reads a channel nobody chose for it.
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chat_channels')
+          .select('id, required_permissions')
+          .eq('chapter_id', chapterId)
+          .eq('type', 'ROLE_GATED')
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: 1000 },
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      required_permissions: row.required_permissions ?? [],
+    }));
   }
 
   async findByIds(chapterId: string, ids: string[]): Promise<ChatChannel[]> {

@@ -67,6 +67,15 @@ export interface IChatChannelRepository {
    * Does not filter `archived_at` — that distinction stays with the caller (#348).
    */
   findByIds(chapterId: string, ids: string[]): Promise<ChatChannel[]>;
+  /**
+   * Every `ROLE_GATED` channel in the chapter with its gate, archived ones
+   * included, read whole (paged). A Discord import checks a read permission
+   * it is about to mint against these, because a gate outlives the role that
+   * held it: a string no role holds may still open a channel (#2818).
+   */
+  findRoleGates(
+    chapterId: string,
+  ): Promise<{ id: string; required_permissions: string[] }[]>;
   findDm(chapterId: string, memberIds: string[]): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
   update(

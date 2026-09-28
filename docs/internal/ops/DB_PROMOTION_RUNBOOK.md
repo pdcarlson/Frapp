@@ -570,6 +570,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-28: Discord roles gate the imported private channels (#2818)
+
+### 20260928203000_discord_import_role_gates.sql
+
+- **Purpose**: Adds two columns to `public.discord_import_channels`: `discord_reader_role_ids text[]` (the scan's record of which Discord roles could read a private channel; null otherwise, and on the upload path) and `new_channel_same_as_discord boolean not null default false` (the admin chose "Same as Discord"). Adds `discord_import_channels_same_as_discord_check`, which allows `new_channel_same_as_discord` only on a `ROLE_GATED` row, so the gate the worker reads is always the non-empty permission list the existing `discord_import_channels_new_channel_type_check` requires. The same release changes the shape the API writes into `discord_imports.role_mapping` (jsonb, no DDL): entries carry `action`, `frapp_role_id`, `new_role_name` and `read_permission` instead of `signet_role_key`, and an entry in the old shape reads as Ignore. Existing rows take null and `false`. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('discord_reader_role_ids','new_channel_same_as_discord') order by 1;` returns two rows: `discord_reader_role_ids | ARRAY | YES | null` and `new_channel_same_as_discord | boolean | NO | false`.
+  `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_same_as_discord_check';` names `new_channel_same_as_discord` and `ROLE_GATED`.
+- **Promoter notes**: Ship it before, or with, the API that writes the columns. A newer API against an unmigrated database fails every scan and mapping write on the unknown columns. An older API ignores them. Re-applying is idempotent (`add column if not exists`, and the constraint is dropped and re-added). Hosted projects are not applied from a cloud-agent session. **Deploy the web app with the API.** The role route's body changed: the new web sends `action` and the old API's validation pipe (`forbidNonWhitelisted`) rejects it, and the old web sends `signet_role_key`, which the new API rejects the same way. Either mismatch fails the role step with a 400 until both are deployed and the page is reloaded. Nothing mapped before this release changes meaning: its role entries read as Ignore and none of its channels is "Same as Discord", so starting it creates no role and grants nothing. Staging held no live import on 2026-09-28 (two bot imports, both `purged`).
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-role-gates-20260928203000) § Rollback Discord import role gates.
+
 ## 2026-09-28: Clear a deleted Discord import off the list (#2817)
 
 ### 20260928183000_discord_import_cleared_at.sql

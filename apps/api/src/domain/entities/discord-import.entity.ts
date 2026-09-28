@@ -16,8 +16,9 @@
  *
  * The upload path is **not** superseded. It is the fallback for the day one
  * shared bot gets throttled or refused across every chapter, and everything
- * downstream of the fetch — consent, channel mapping, the role worksheet, the
- * purge — is shared verbatim between the two.
+ * downstream of the fetch — consent, channel mapping, the purge — is shared
+ * verbatim between the two. Only the bot path maps roles (#2818): an export
+ * names no roles and carries no permissions.
  */
 
 /** Where an import's bytes came from. */
@@ -48,23 +49,42 @@ export type DiscordChannelMappingAction =
 export type DiscordImportChannelStatus =
   'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 
+/** What the admin chose for one Discord role. */
+export type DiscordRoleMappingAction = 'existing' | 'new' | 'ignore';
+
 /**
- * One Discord role as the export recorded it, paired with the Frapp role the
- * admin intends for its members.
+ * One Discord role, and the Frapp role it becomes (#2818).
  *
- * **This grants nothing.** Nothing reads `signet_role_key` to assign a role, and
- * the importer never touches a `members` row — every imported author is a name
- * on a message, not an account. It is a worksheet the admin fills in during the
- * wizard and reads back later when promoting people by hand, which is the
- * model Frapp's onboarding already uses. If a future change wants Discord data
- * to actually grant a permission, that is a new decision and a new review, not
- * a matter of wiring up a field that is already here.
+ * The mapping **gates channels and creates roles, but never assigns anyone.**
+ * A channel imported "Same as Discord" is readable by the Frapp roles mapped
+ * from the Discord roles that could read it, through each role's
+ * `read_permission`. Starting the import creates the `new` roles and grants
+ * each role the read permission of the channels gated on it; it never touches
+ * a `members` row, since every imported author is a name on a message, not an
+ * account. People are put into roles by hand afterwards.
+ *
+ * `ignore` maps to nothing: channels gated "Same as Discord" leave that role's
+ * members out. A row written before #2818 (it carried a `signet_role_key`
+ * worksheet note) reads as `ignore`.
  */
 export interface DiscordRoleMapping {
   discord_role_id: string;
   discord_role_name: string;
-  /** A Frapp system-role key. Defaults to the member role for every entry. */
-  signet_role_key: string;
+  action: DiscordRoleMappingAction;
+  /**
+   * `existing`: the chapter role it maps to. `new`: the role starting the
+   * import created (or found by name), null until then. Null for `ignore`.
+   */
+  frapp_role_id: string | null;
+  /** `new` only: the name the role is created with. */
+  new_role_name: string | null;
+  /**
+   * The permission a channel gated "Same as Discord" requires for this role,
+   * assigned by the API when the mapping is saved (never by the caller). Every
+   * entry mapping to the same Frapp role carries the same one. Null for
+   * `ignore`.
+   */
+  read_permission: string | null;
 }
 
 export interface DiscordImport {
@@ -192,6 +212,23 @@ export interface DiscordImportChannel {
   new_channel_type: DiscordImportNewChannelType;
   /** Non-empty exactly when `new_channel_type` is `ROLE_GATED` (DB CHECK). */
   new_channel_required_permissions: string[] | null;
+  /**
+   * The Discord roles that could read this channel's history, each on its own
+   * (`readerRoleIds`), leaving out `@everyone` and the managed roles Discord
+   * gives bots and boosters. Recorded by the scan for a top-level channel
+   * that was private in Discord, and empty when `@everyone` alone could read
+   * it (a deny hid it from someone); null otherwise, when the roles could not
+   * be read, and always on the upload path.
+   */
+  discord_reader_role_ids: string[] | null;
+  /**
+   * The admin chose "Same as Discord" for the channel `create_new` makes:
+   * `ROLE_GATED` on the read permissions of the Frapp roles mapped from
+   * `discord_reader_role_ids`. The permissions are resolved into
+   * `new_channel_required_permissions` when the channels are mapped, and
+   * starting the import refuses a row they no longer match.
+   */
+  new_channel_same_as_discord: boolean;
 }
 
 /** The two `chat_channels.type` values an import may create. */

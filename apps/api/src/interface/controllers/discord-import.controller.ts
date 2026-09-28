@@ -16,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { DiscordImportService } from '../../application/services/discord-import.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -58,7 +59,10 @@ import {
 @UseGuards(SupabaseAuthGuard, ChapterGuard)
 @Controller('discord-imports')
 export class DiscordImportController {
-  constructor(private readonly importService: DiscordImportService) {}
+  constructor(
+    private readonly importService: DiscordImportService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   @Post()
   @UseGuards(PermissionsGuard)
@@ -178,16 +182,30 @@ export class DiscordImportController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({
-    summary: 'Record the Discord role → Frapp role worksheet',
+    summary: 'Map each Discord role to a Frapp role',
     description:
-      'Informational only. Nothing reads this to grant a permission and the importer never assigns a role; everyone imports as a name on a message, and the admin promotes people by hand afterwards.',
+      'Each Discord role becomes an existing Frapp role, a new role, or nothing (#2818). The mapping decides who reads the channels imported "Same as Discord"; starting the import creates the new roles and grants each role the read permission of the channels gated on it. It never assigns anyone to a role. Mapping anything other than `ignore` also needs `roles:manage`, since it creates roles and grants permissions.',
   })
-  setRoleMapping(
+  async setRoleMapping(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: SetDiscordRoleMappingDto,
   ) {
-    return this.importService.setRoleMapping(id, chapterId, dto.roles);
+    // Resolved here rather than with @RequirePermissions: an all-Ignore
+    // mapping creates and grants nothing, so it stays open to anyone who can
+    // run the import.
+    const canManageRoles = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.ROLES_MANAGE],
+    );
+    return this.importService.setRoleMapping(
+      id,
+      chapterId,
+      dto.roles,
+      canManageRoles,
+    );
   }
 
   @Post(':id/discover')
@@ -196,7 +214,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Scan the connected Discord server (bot imports only)',
     description:
-      'Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the worksheet, and any warnings about what could not be read.',
+      'Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the role step (every role but `@everyone` and the managed bot and booster roles) and, on each private channel, which of them could read it; and any warnings about what could not be read.',
   })
   @ApiOkResponse({ type: DiscordDiscoveryResponseDto })
   discover(
@@ -232,13 +250,22 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route.',
+      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).',
   })
-  start(
+  async start(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.importService.start(id, chapterId);
+    // Resolved here, like the role route: starting creates roles and grants
+    // permissions only when the mapping asks for them, and an import that
+    // does neither stays open to anyone who can run it.
+    const canManageRoles = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.ROLES_MANAGE],
+    );
+    return this.importService.start(id, chapterId, canManageRoles);
   }
 
   @Post(':id/cancel')

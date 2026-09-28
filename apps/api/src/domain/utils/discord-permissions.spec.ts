@@ -7,6 +7,7 @@ import {
   channelPermissions,
   parseOverwrites,
   openToEveryone,
+  readerRoleIds,
   type DiscordPermissionOverwrite,
   type DiscordRolePermissions,
 } from './discord-permissions';
@@ -156,6 +157,41 @@ describe('Discord channel permissions', () => {
     expect(
       basePermissions(GUILD, [{ id: GUILD, permissions: 'lots' }], subject),
     ).toBe(0n);
+  });
+
+  it('names the roles that could read a channel, each on its own (#2818)', () => {
+    const PLEDGE = '600000000000000006';
+    const withPledge = [...roles, { id: PLEDGE, permissions: '0' }];
+    const candidates = [CABINET, BROTHER, PLEDGE, GUILD];
+    // The Tau Nu shape: only the roles the channel allows.
+    expect(
+      readerRoleIds(
+        GUILD,
+        withPledge,
+        [everyoneDenied, allow(BROTHER)],
+        candidates,
+      ),
+    ).toEqual([BROTHER]);
+    // "Hide it from pledges": @everyone reads it, so every role but the
+    // denied one reads it only by inheriting, colour roles included. None is
+    // an audience to copy.
+    expect(
+      readerRoleIds(
+        GUILD,
+        withPledge,
+        [{ id: PLEDGE, type: 0, allow: '0', deny: VIEW }],
+        candidates,
+      ),
+    ).toEqual([]);
+    // Administrator reads through every overwrite.
+    expect(
+      readerRoleIds(
+        GUILD,
+        [...withPledge, { id: CABINET, permissions: String(ADMINISTRATOR) }],
+        [everyoneDenied, allow(BROTHER)],
+        candidates,
+      ),
+    ).toEqual([CABINET, BROTHER]);
   });
 
   it('parses overwrites and drops malformed ones', () => {
