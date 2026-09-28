@@ -1388,6 +1388,28 @@ describe('ChatService', () => {
       ]);
     });
 
+    it('reads the block list once for the whole pinned list', async () => {
+      // A channel can hold 50 pins; a per-pin read would be 50 queries per
+      // panel open, and would still mask correctly (#2310).
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findPinnedByChannel.mockResolvedValue([
+        { ...baseMessage, id: 'msg-pinned-1', sender_id: 'user-blocked' },
+        { ...baseMessage, id: 'msg-pinned-2' },
+      ]);
+
+      const result = await service.getPinnedMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result.map((message) => message.sender_blocked)).toEqual([
+        true,
+        false,
+      ]);
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledTimes(1);
+    });
+
     it('fails the pinned read when the block list cannot be read', async () => {
       // The same fail-closed rule as `getMessages`, pinned separately because
       // it is a separate call site: a `.catch(() => [])` added to one and not
