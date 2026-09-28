@@ -34,8 +34,9 @@ import {
   selectMemberDetail,
 } from "@/lib/directory/member-detail";
 import {
-  canMessageMember,
   dmChannelIdOf,
+  messageRowDescription,
+  messageRowState,
   otherRealMemberId,
   START_DM_FAILED_BODY,
   startDmFailedTitle,
@@ -56,8 +57,9 @@ import {
  *
  * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
  * have. It comes before the profile's details because starting a DM is the
- * thing a member most often opens a profile to do. `lib/directory/start-dm.ts`
- * owns who it is offered for.
+ * thing a member most often opens a profile to do. Who it is offered for is
+ * `spec/ui/mobile/screens.md` s13's rule, implemented in
+ * `lib/directory/start-dm.ts`.
  *
  * **Block / Unblock** (#2257) sits at the foot of another member's profile,
  * because the directory is where a member you have blocked is still listed and
@@ -145,16 +147,17 @@ export const MemberDetailSheet = forwardRef<
   // the DM up when it lands, and a refetch that fails offline would otherwise
   // hold this request pending until the app is back online.
   const dmMutation = useGetOrCreateDm({ awaitRefetch: false });
-  const canMessage = canMessageMember({
-    memberId: otherMemberId,
-    blockList,
-  });
-  // Which member a DM request is in flight for. The ref closes a double tap
+  const messageRow = messageRowState({ memberId: otherMemberId, blockList });
+  // Every member a DM request is in flight for. The ref closes a double tap
   // inside one render (both taps would otherwise read the same state and send
-  // twice, and the API's find-then-create can make two DMs for one pair); the
-  // state disables that member's row only, not whoever the sheet shows next.
-  const dmInFlightRef = useRef<string | null>(null);
-  const [dmPendingFor, setDmPendingFor] = useState<string | null>(null);
+  // twice, and the API's find-then-create can make two DMs for one pair, #2788);
+  // the state disables those members' rows only. It is a set because the sheet
+  // can move to another member and start a second request while the first is
+  // still out, and neither may re-enable the other's row.
+  const dmInFlightRef = useRef(new Set<string>());
+  const [dmPending, setDmPending] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   // The sheet stays mounted and swaps `userId` as directory rows are tapped,
   // so a slow DM request for one member can resolve after the sheet has moved
   // to another. The ref lets that continuation see it is stale rather than
@@ -170,9 +173,9 @@ export const MemberDetailSheet = forwardRef<
   }
 
   async function startDm(memberUserId: string, name: string) {
-    if (dmInFlightRef.current === memberUserId) return;
-    dmInFlightRef.current = memberUserId;
-    setDmPendingFor(memberUserId);
+    if (dmInFlightRef.current.has(memberUserId)) return;
+    dmInFlightRef.current.add(memberUserId);
+    setDmPending(new Set(dmInFlightRef.current));
     try {
       const channelId = dmChannelIdOf(
         await dmMutation.mutateAsync({ member_id: memberUserId }),
@@ -185,10 +188,8 @@ export const MemberDetailSheet = forwardRef<
       if (openUserIdRef.current !== memberUserId) return;
       Alert.alert(startDmFailedTitle(name), START_DM_FAILED_BODY);
     } finally {
-      if (dmInFlightRef.current === memberUserId) {
-        dmInFlightRef.current = null;
-        setDmPendingFor(null);
-      }
+      dmInFlightRef.current.delete(memberUserId);
+      setDmPending(new Set(dmInFlightRef.current));
     }
   }
 
@@ -244,14 +245,22 @@ export const MemberDetailSheet = forwardRef<
               ) : null}
             </View>
 
-            {canMessage ? (
+            {messageRow.kind !== "hidden" ? (
               <ListSection>
                 <ListRow
                   label="Message"
-                  disabled={dmPendingFor === detail.userId}
-                  onPress={() =>
-                    void startDm(detail.userId, detail.displayName)
+                  description={messageRowDescription(messageRow)}
+                  disabled={
+                    messageRow.kind === "ready"
+                      ? dmPending.has(detail.userId)
+                      : messageRow.kind === "retry"
+                        ? blockList.isRetrying
+                        : true
                   }
+                  onPress={() => {
+                    if (messageRow.kind === "retry") blockList.retry();
+                    else void startDm(detail.userId, detail.displayName);
+                  }}
                 />
               </ListSection>
             ) : null}

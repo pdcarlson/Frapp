@@ -646,6 +646,13 @@ through a shared module is #2791.
 |---|---|---|---|
 | The control | — | `Message`: a row under the member's name, on another member's profile | mobile `components/directory/member-detail-sheet.tsx` |
 | Start failed | `Couldn't message <name>` | `The conversation couldn't be opened. Check your connection and try again.` (an alert) | mobile `lib/directory/start-dm.ts` (`startDmFailedTitle`, `START_DM_FAILED_BODY`) |
+| Block list loading | — | `Message` · `Checking your block list first.` (disabled) | mobile `lib/directory/start-dm.ts` (`MESSAGE_CHECKING_BLOCK_LIST`) |
+| Block list waiting for the network | — | `Message` · `Checking your block list first. Retries when you're back online.` (disabled) | mobile `lib/directory/start-dm.ts`, with `BLOCK_LIST_WAITING_FOR_NETWORK` from `block-copy` |
+| Block list read failed | — | `Message` · `Couldn't check your block list first. Tap to try again.` Tapping re-reads the list; it starts no DM | mobile `lib/directory/start-dm.ts` (`MESSAGE_BLOCK_LIST_FAILED`) |
+
+**The waiting rows say why rather than removing the action.** A failed read would
+otherwise take Message off every profile with no reason given, and nothing re-reads the
+list on its own while the member stays on the Directory tab.
 
 ### Alumni (dashboard)
 

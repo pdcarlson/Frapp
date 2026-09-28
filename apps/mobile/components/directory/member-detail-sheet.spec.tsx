@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SYSTEM_SENDER_ID, type BlockListStatus } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
+  MESSAGE_BLOCK_LIST_FAILED,
+  MESSAGE_CHECKING_BLOCK_LIST,
   START_DM_FAILED_BODY,
   startDmFailedTitle,
 } from "@/lib/directory/start-dm";
@@ -26,6 +28,8 @@ const state = vi.hoisted(() => ({
   viewer: "11111111-1111-4111-8111-111111111111" as string | null,
   blockStatus: "ready" as BlockListStatus,
   blocked: new Set<string>(),
+  blockPaused: false,
+  retryBlockList: vi.fn(),
   mutateAsync: vi.fn(),
   dmOptions: [] as unknown[],
 }));
@@ -72,6 +76,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     ids: state.blocked,
     unblocked: new Set<string>(),
     status: state.blockStatus,
+    isPaused: state.blockPaused,
+    retry: state.retryBlockList,
+    isRetrying: false,
   }),
   useGetOrCreateDm: (options: unknown) => {
     state.dmOptions.push(options);
@@ -140,6 +147,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     state.viewer = VIEWER;
     state.blockStatus = "ready";
     state.blocked = new Set();
+    state.blockPaused = false;
     state.dmOptions = [];
   });
 
@@ -178,15 +186,49 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
-  it.each(["loading", "unavailable"] as const)(
-    "withholds it while the block list is %s",
-    (status) => {
-      state.blockStatus = status;
-      const tree = render(ADA);
-      expect(messageRows(tree)).toHaveLength(0);
-      act(() => tree.unmount());
-    },
-  );
+  // The block list's ids are only a floor until it is read, so the row waits
+  // rather than starting a DM, and says why instead of disappearing.
+  it("waits, disabled, while the block list loads", () => {
+    state.blockStatus = "loading";
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.description).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    act(() => tree.unmount());
+  });
+
+  it("waits for the network while the read is paused offline", () => {
+    state.blockStatus = "unavailable";
+    state.blockPaused = true;
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.description).toBe(
+      "Checking your block list first. Retries when you're back online.",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("offers to re-read a block list whose read failed, and starts no DM", () => {
+    state.blockStatus = "unavailable";
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(false);
+    expect(row.props.description).toBe(MESSAGE_BLOCK_LIST_FAILED);
+
+    act(() => row.props.onPress());
+    expect(state.retryBlockList).toHaveBeenCalledTimes(1);
+    expect(state.mutateAsync).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("stays hidden for a member already on the list while it is unavailable", () => {
+    state.blockStatus = "unavailable";
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    expect(messageRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
 
   it("opens the DM's thread and dismisses the sheet", async () => {
     state.mutateAsync.mockResolvedValueOnce({ id: "dm-ada" });
@@ -287,6 +329,88 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       START_DM_FAILED_BODY,
     );
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("keeps each member's own request in flight when two overlap", async () => {
+    const ada = deferred<unknown>();
+    const bob = deferred<unknown>();
+    state.mutateAsync
+      .mockReturnValueOnce(ada.promise)
+      .mockReturnValueOnce(bob.promise);
+    const tree = render(ADA);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    act(() => tree.update(sheet(BOB)));
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+
+    // Back on Ada while both are out: her row is still disabled, and a tap
+    // sends nothing.
+    act(() => tree.update(sheet(ADA)));
+    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(state.mutateAsync).toHaveBeenCalledTimes(2);
+
+    // Ada's request settling must not release Bob's.
+    act(() => tree.update(sheet(BOB)));
+    await act(async () => {
+      ada.resolve({ id: "dm-ada" });
+    });
+    expect(messageRows(tree)[0].props.disabled).toBe(true);
+
+    await act(async () => {
+      bob.resolve({ id: "dm-bob" });
+    });
+    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+describe("MemberDetailSheet Block row (#2257)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+  });
+
+  function blockRows(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        typeof node.props.label === "string" &&
+        /^(Block|Unblock) /.test(node.props.label) &&
+        typeof node.type === "function",
+    );
+  }
+
+  it("offers Block on another member's profile", () => {
+    const tree = render(ADA);
+    expect(blockRows(tree).map((row) => row.props.label)).toEqual([
+      "Block Ada",
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["your own profile", VIEWER],
+    ["the system actor's profile", SYSTEM_SENDER_ID],
+  ])("withholds Block and Unblock on %s", (_, userId) => {
+    const tree = render(userId);
+    expect(blockRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("withholds them while the viewer is unknown", () => {
+    state.viewer = null;
+    const tree = render(ADA);
+    expect(blockRows(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

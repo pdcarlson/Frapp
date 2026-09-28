@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
-  canMessageMember,
   dmChannelIdOf,
+  MESSAGE_BLOCK_LIST_FAILED,
+  MESSAGE_CHECKING_BLOCK_LIST,
+  messageRowDescription,
+  messageRowState,
   otherRealMemberId,
 } from "./start-dm";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const MEMBER = "22222222-2222-4222-8222-222222222222";
-
-const READY_EMPTY = { status: "ready" as const, ids: new Set<string>() };
 
 describe("otherRealMemberId", () => {
   it("is the member's id on another member's profile", () => {
@@ -33,41 +34,75 @@ describe("otherRealMemberId", () => {
   });
 });
 
-describe("canMessageMember", () => {
-  it("offers Message for another member once the block list is ready", () => {
+describe("messageRowState", () => {
+  const list = (
+    status: "ready" | "loading" | "unavailable",
+    ids: string[] = [],
+    isPaused = false,
+  ) => ({ status, ids: new Set(ids), isPaused });
+
+  it("is ready for another member once the block list is ready", () => {
     expect(
-      canMessageMember({ memberId: MEMBER, blockList: READY_EMPTY }),
-    ).toBe(true);
+      messageRowState({ memberId: MEMBER, blockList: list("ready") }),
+    ).toEqual({ kind: "ready" });
   });
 
-  it("withholds it when there is no other member", () => {
-    expect(canMessageMember({ memberId: null, blockList: READY_EMPTY })).toBe(
-      false,
-    );
-  });
-
-  it("withholds it for a member the viewer blocked", () => {
+  it("is hidden when there is no other member", () => {
     expect(
-      canMessageMember({
-        memberId: MEMBER,
-        blockList: { status: "ready", ids: new Set([MEMBER]) },
-      }),
-    ).toBe(false);
+      messageRowState({ memberId: null, blockList: list("ready") }),
+    ).toEqual({ kind: "hidden" });
   });
 
-  // The ids are a floor: a block from an earlier session or another device is
-  // missing from them until the list is read, so an empty set proves nothing.
-  it.each(["loading", "unavailable"] as const)(
-    "withholds it while the block list is %s, since the ids are only a floor",
+  it.each(["ready", "loading", "unavailable"] as const)(
+    "is hidden for a member the viewer blocked, with the list %s",
     (status) => {
       expect(
-        canMessageMember({
-          memberId: MEMBER,
-          blockList: { status, ids: new Set<string>() },
-        }),
-      ).toBe(false);
+        messageRowState({ memberId: MEMBER, blockList: list(status, [MEMBER]) }),
+      ).toEqual({ kind: "hidden" });
     },
   );
+
+  // The ids are a floor: a block from an earlier session or another device is
+  // missing from them until the list is read, so an empty set proves nothing
+  // and the row waits rather than starting a DM.
+  it("waits while the block list loads", () => {
+    expect(
+      messageRowState({ memberId: MEMBER, blockList: list("loading") }),
+    ).toEqual({ kind: "checking" });
+  });
+
+  it("waits for the network while the read is paused offline", () => {
+    expect(
+      messageRowState({
+        memberId: MEMBER,
+        blockList: list("unavailable", [], true),
+      }),
+    ).toEqual({ kind: "waitingForNetwork" });
+  });
+
+  it("offers a retry when the read failed", () => {
+    expect(
+      messageRowState({ memberId: MEMBER, blockList: list("unavailable") }),
+    ).toEqual({ kind: "retry" });
+  });
+});
+
+describe("messageRowDescription", () => {
+  it("says nothing when the row is ready", () => {
+    expect(messageRowDescription({ kind: "ready" })).toBeNull();
+  });
+
+  it("says why the row is waiting", () => {
+    expect(messageRowDescription({ kind: "checking" })).toBe(
+      MESSAGE_CHECKING_BLOCK_LIST,
+    );
+    expect(messageRowDescription({ kind: "waitingForNetwork" })).toBe(
+      "Checking your block list first. Retries when you're back online.",
+    );
+    expect(messageRowDescription({ kind: "retry" })).toBe(
+      MESSAGE_BLOCK_LIST_FAILED,
+    );
+  });
 });
 
 describe("dmChannelIdOf", () => {

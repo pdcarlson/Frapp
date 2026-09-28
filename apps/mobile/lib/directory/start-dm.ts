@@ -1,3 +1,4 @@
+import { BLOCK_LIST_WAITING_FOR_NETWORK } from "@repo/chat-core/block-copy";
 import { isBlockableSender } from "@repo/chat-core/blocks";
 import type { BlockListStatus } from "@repo/validation";
 
@@ -34,33 +35,68 @@ export interface MessageTargetInput {
   /** {@link otherRealMemberId} for the member on screen. */
   memberId: string | null;
   /** The viewer's block list, as `useBlockedUserIds` returns it. */
-  blockList: { status: BlockListStatus; ids: ReadonlySet<string> };
+  blockList: {
+    status: BlockListStatus;
+    ids: ReadonlySet<string>;
+    isPaused: boolean;
+  };
 }
 
 /**
- * Whether the sheet offers Message.
+ * What the sheet's Message row shows. `spec/ui/mobile/screens.md` s13 owns the
+ * rule; this implements it.
  *
- * **Not for a member you blocked.** Their replies would never reach you
- * (spec/behavior/chat/README.md § Block), so the sheet offers Unblock instead.
- * It's the viewer's own block, so hiding the action reveals nothing; the member
- * you blocked still sees Message on your profile, since a block is enforced by
- * not delivering, never by refusing.
- *
- * **Only against a ready list.** `ids` is a floor, never a ceiling: while the
- * list is loading or unavailable it holds only the blocks this client confirmed
- * this session, so a block made earlier or on another device is missing from
- * it. Block can be offered off the floor, because the API treats a repeat block
- * as a no-op. Message cannot, because it would open a DM with that member.
- * Starting a DM needs the network anyway, so waiting for the list costs nothing.
+ * - `hidden`: no other real member, or one the viewer blocked. Their replies
+ *   would never reach you (spec/behavior/chat/README.md § Block), so the sheet
+ *   offers Unblock instead. It's the viewer's own block, so hiding the action
+ *   reveals nothing; the member you blocked still sees Message on your profile,
+ *   since a block is enforced by not delivering, never by refusing. The ids
+ *   count in every list state: anyone on them is blocked.
+ * - `ready`: the list is ready and they aren't on it. Tapping starts the DM.
+ * - `checking`, `waitingForNetwork`, `retry`: the list isn't ready, so the row
+ *   stays and says why it can't start a DM yet. The ids are a floor, never a
+ *   ceiling, so a block made earlier or on another device can be missing from
+ *   them until the list is read. Block can act off the floor, because a repeat
+ *   block is a no-op; Message cannot, because it would open a DM with that
+ *   member. A failed read would otherwise remove the action with no reason and
+ *   no way back, since nothing polls the list, so `retry` re-reads it.
  */
-export function canMessageMember({
+export type MessageRowState =
+  | { kind: "hidden" }
+  | { kind: "ready" }
+  | { kind: "checking" }
+  | { kind: "waitingForNetwork" }
+  | { kind: "retry" };
+
+export function messageRowState({
   memberId,
   blockList,
-}: MessageTargetInput): boolean {
-  if (memberId === null) return false;
-  if (blockList.status !== "ready") return false;
-  return !blockList.ids.has(memberId);
+}: MessageTargetInput): MessageRowState {
+  if (memberId === null || blockList.ids.has(memberId)) {
+    return { kind: "hidden" };
+  }
+  if (blockList.status === "ready") return { kind: "ready" };
+  if (blockList.status === "loading") return { kind: "checking" };
+  return { kind: blockList.isPaused ? "waitingForNetwork" : "retry" };
 }
+
+/** The Message row's second line while the block list isn't ready. */
+export function messageRowDescription(state: MessageRowState): string | null {
+  switch (state.kind) {
+    case "checking":
+      return MESSAGE_CHECKING_BLOCK_LIST;
+    case "waitingForNetwork":
+      return `${MESSAGE_CHECKING_BLOCK_LIST} ${BLOCK_LIST_WAITING_FOR_NETWORK}.`;
+    case "retry":
+      return MESSAGE_BLOCK_LIST_FAILED;
+    default:
+      return null;
+  }
+}
+
+export const MESSAGE_CHECKING_BLOCK_LIST = "Checking your block list first.";
+export const MESSAGE_BLOCK_LIST_FAILED =
+  "Couldn't check your block list first. Tap to try again.";
 
 /**
  * The channel id out of a `POST /v1/channels/dm` response, or `null` when the
