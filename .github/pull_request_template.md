@@ -8,10 +8,11 @@
 
 ## Diagram
 
-- Required when the change moves an arrow: a pipeline or workflow, a request or data path, who calls whom, a state machine, a schema relationship. Skip it (write "None: no flow changes") for copy, docs, or a fix inside one function.
+- Required when the change moves an arrow: a pipeline or workflow, a request or data path, who calls whom, a state machine, a schema relationship, or a process written in markdown (an agent command, a skill, a routine, a runbook's sequence). Write "None: no flow changes" only when nothing moves: copy, a fact corrected in a doc, a fix inside one function.
 - Draw **before and after** in a `mermaid` block (`flowchart`, `sequenceDiagram` or `stateDiagram-v2`), which GitHub renders in the PR body. Label the arrows with what they do, and mark what changed (a new edge, a removed one, a reordered step).
 - Follow it with 2–4 lines: what moved, and why that's the intended behavior.
-- For a change too big for one diagram (a redesign, a series of PRs), also link a published page that walks through it.
+- For a redesign or a series of PRs, an interactive session also publishes a walkthrough page as a private Claude artifact (only its owner can open it) and links it here. An unattended run puts the diagram in the epic's issue body instead, and doesn't publish a page.
+- When you update a PR body, write it whole from your own text. A body read back through the GitHub MCP can come back with `>` escaped, which breaks every mermaid arrow ([`GITHUB_PM.md` § Reading a body you intend to rewrite](https://github.com/pdcarlson/Frapp/blob/main/docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)).
 
 ## Docs / Spec impact
 
