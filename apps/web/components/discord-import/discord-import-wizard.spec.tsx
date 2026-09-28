@@ -19,6 +19,7 @@ const {
   connection,
   channelsQuery,
   myPermissions,
+  rolesFail,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -32,6 +33,7 @@ const {
   confirmConnect: vi.fn(),
   availability: { value: { available: true } as { available: boolean } },
   myPermissions: { value: ["*"] as string[] },
+  rolesFail: { value: false },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general" }] as unknown,
@@ -80,36 +82,39 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
     isError: false,
   }),
-  useRoles: () => ({
-    data: [
-      {
-        id: "role-president",
-        name: "President",
-        system_key: "PRESIDENT",
-        permissions: ["*"],
-      },
-      {
-        id: "role-treasurer",
-        name: "Treasurer",
-        system_key: "TREASURER",
-        permissions: ["chapter-config:manage"],
-      },
-      {
-        id: "role-secretary",
-        name: "Secretary",
-        system_key: "SECRETARY",
-        permissions: [],
-      },
-      {
-        id: "role-cabinet",
-        name: "Cabinet",
-        system_key: null,
-        permissions: ["cabinet:read"],
-      },
-    ],
-    isError: false,
-    refetch: () => Promise.resolve(),
-  }),
+  useRoles: () =>
+    rolesFail.value
+      ? { data: undefined, isError: true, refetch: () => Promise.resolve() }
+      : {
+          data: [
+            {
+              id: "role-president",
+              name: "President",
+              system_key: "PRESIDENT",
+              permissions: ["*"],
+            },
+            {
+              id: "role-treasurer",
+              name: "Treasurer",
+              system_key: "TREASURER",
+              permissions: ["chapter-config:manage"],
+            },
+            {
+              id: "role-secretary",
+              name: "Secretary",
+              system_key: "SECRETARY",
+              permissions: [],
+            },
+            {
+              id: "role-cabinet",
+              name: "Cabinet",
+              system_key: null,
+              permissions: ["cabinet:read"],
+            },
+          ],
+          isError: false,
+          refetch: () => Promise.resolve(),
+        },
   useMyPermissions: () => ({
     data: { permissions: myPermissions.value },
     isError: false,
@@ -333,6 +338,7 @@ describe("ImportWizard — the bot path", () => {
     setRoleMapping.mockReset();
     setRoleMapping.mockResolvedValue({});
     myPermissions.value = ["*"];
+    rolesFail.value = false;
     channelsQuery.value = {
       data: [{ id: "ch-1", name: "general" }],
       isPending: false,
@@ -842,6 +848,19 @@ describe("ImportWizard — the bot path", () => {
       expect(await screen.findByText(/New roles:/)).toBeInTheDocument();
     });
 
+    it("saves the roles again just before the channels, which are resolved through them", async () => {
+      scanWithRoles();
+      await renderAtChannels();
+      await screen.findByText(/Nothing needs attention/);
+      setRoleMapping.mockClear();
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+      expect(setRoleMapping).toHaveBeenCalledTimes(1);
+      expect(setRoleMapping.mock.invocationCallOrder[0]).toBeLessThan(
+        setDiscoveredMapping.mock.invocationCallOrder[0]!,
+      );
+    });
+
     it("asks who can read a private channel once every role that could read it is ignored", async () => {
       scanWithRoles();
       renderAtConsent();
@@ -853,7 +872,13 @@ describe("ImportWizard — the bot path", () => {
       await screen.findByRole("heading", { name: "Map the channels" });
 
       // #exec keeps Treasurer, so it stays Same as Discord, narrower than
-      // Discord; #rush has no mapped reader left and needs a choice.
+      // Discord, and says who it leaves out; #rush has no mapped reader left
+      // and needs a choice. (Its group is open already: it has an issue.)
+      expect(
+        await screen.findByText(
+          "Readable by Treasurer. Left out, because they are set to Ignore: Rush Chair.",
+        ),
+      ).toBeInTheDocument();
       expect(
         await screen.findByRole("button", {
           name: /#rush was private in Discord, and none of the roles/,
@@ -866,6 +891,24 @@ describe("ImportWizard — the bot path", () => {
         (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
           .disabled,
       ).toBe(true);
+    });
+
+    it("still lets the import go on, every role on Ignore, when the chapter's roles cannot be loaded", async () => {
+      // GET /v1/roles needs members:view, which channels:manage does not
+      // imply; an all-Ignore mapping needs no roles to map to.
+      rolesFail.value = true;
+      scanWithRoles();
+      renderAtConsent();
+      await screen.findByRole("heading", { name: "Map the roles" });
+      expect(
+        screen.getByText(/could not load your chapter.s roles/),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(setRoleMapping).toHaveBeenCalled());
+      const { roles } = setRoleMapping.mock.calls[0]![0] as {
+        roles: { action: string }[];
+      };
+      expect(roles.every((role) => role.action === "ignore")).toBe(true);
     });
 
     it("keeps every role on Ignore for a viewer who cannot manage roles", async () => {
@@ -1208,7 +1251,7 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
         privateReads={new Map([["r1", 2]])}
         frappRoles={frappRoles}
         issues={[]}
-        canManageRoles
+        lock={null}
         onChange={() => {}}
       />,
     );
@@ -1232,7 +1275,7 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
         issues={[
           { roleId: "r1", message: "Name the new role for Rush Chair." },
         ]}
-        canManageRoles
+        lock={null}
         onChange={onChange}
       />,
     );
@@ -1257,7 +1300,7 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
         privateReads={new Map()}
         frappRoles={frappRoles}
         issues={[]}
-        canManageRoles={false}
+        lock={{ reason: "permission" }}
         onChange={() => {}}
       />,
     );
@@ -1265,6 +1308,30 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
     expect(
       screen.getByText(/needs permission to manage roles/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("RoleMappingStep — when roles cannot be loaded (#2818)", () => {
+  it("holds every role on Ignore, says why, and offers a retry", () => {
+    const retry = vi.fn();
+    render(
+      <RoleMappingStep
+        roles={[{ roleId: "r1", roleName: "Exec" }]}
+        choices={{ r1: { action: "ignore" } }}
+        matches={{}}
+        privateReads={new Map()}
+        frappRoles={[]}
+        issues={[]}
+        lock={{ reason: "unavailable", retry }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Becomes")).toBeDisabled();
+    expect(
+      screen.getByText(/could not load your chapter.s roles/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 });
 

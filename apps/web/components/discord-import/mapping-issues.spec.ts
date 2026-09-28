@@ -46,10 +46,10 @@ describe("defaultChoice", () => {
     expect(defaultChoice({ ...exec, readerRoleIds: [] }).visibility).toBe(
       undefined,
     );
-    // A private thread was readable only by its own members, and would land
-    // where the whole channel's readers see it: a choice.
-    expect(defaultChoice({ ...exec, privateThreads: 1 }).visibility).toBe(
-      undefined,
+    // Every thread in a private channel reads as private (it inherits the
+    // channel's answer), so threads do not take the default away.
+    expect(defaultChoice({ ...exec, privateThreads: 3 }).visibility).toBe(
+      "discord",
     );
   });
 
@@ -346,6 +346,21 @@ describe("restageChoices", () => {
     expect(restageChoices(first, choices, [open("1", "exec")])).toEqual(
       choices,
     );
+  });
+
+  it("asks again about a Same as Discord channel whose readers the new scan cannot name", () => {
+    const exec = {
+      ...open("1", "exec"),
+      privateInDiscord: true,
+      readerRoleIds: ["r-exec"],
+    };
+    const next = restageChoices(
+      [exec],
+      { "1": { action: "create_new", newName: "exec", visibility: "discord" } },
+      // Now hidden only by a deny: no audience to copy.
+      [{ ...exec, readerRoleIds: [] }],
+    );
+    expect(next["1"]?.visibility).toBeUndefined();
   });
 
   it("keeps a restricted choice when the channel turns out private, since it is already safe", () => {

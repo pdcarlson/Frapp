@@ -21,8 +21,7 @@ import { can, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
 import { useToast } from "@/hooks/use-toast";
-import { asArray, cn, getErrorMessage } from "@/lib/utils";
-import { FOCUS_RING } from "@/components/ui/focus";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import { ConsentStep } from "./consent-step";
 import { SourceStep, type ImportSource } from "./source-step";
 import { ConnectStep } from "./connect-step";
@@ -33,7 +32,7 @@ import {
 } from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
 import { mappingIssues, restageChoices } from "./mapping-issues";
-import { RoleMappingStep } from "./role-mapping-step";
+import { RoleMappingStep, type RoleStepLock } from "./role-mapping-step";
 import {
   defaultRoleChoice,
   privateReads,
@@ -316,7 +315,22 @@ export function ImportWizard({
       ),
     [frappRolesQuery.data],
   );
-  const canManageRoles = can("roles:manage", myPermissions.data?.permissions);
+  // Mapping a role needs both the permission and the chapter's roles to map
+  // it to. Without either, every role stays on Ignore and the step says why:
+  // an all-Ignore mapping is still a valid one, so a viewer who cannot read
+  // the roles list (it needs members:view) can still finish the import.
+  const holdsRolesManage = can("roles:manage", myPermissions.data?.permissions);
+  const rolesLock: RoleStepLock | null = myPermissions.isError
+    ? { reason: "unavailable", retry: () => void myPermissions.refetch() }
+    : myPermissions.data !== undefined && !holdsRolesManage
+      ? { reason: "permission" }
+      : frappRolesQuery.data === undefined && frappRolesQuery.isError
+        ? {
+            reason: "unavailable",
+            retry: () => void frappRolesQuery.refetch(),
+          }
+        : null;
+  const canManageRoles = holdsRolesManage && frappRolesQuery.data !== undefined;
   const readsPrivate = useMemo(
     () => privateReads(staged?.channels ?? []),
     [staged],
@@ -352,11 +366,9 @@ export function ImportWizard({
       ),
     [staged, roleChoices, frappRoles],
   );
-  // Defaults are only right once both the roles and the viewer's own
-  // permissions have loaded; until then, Continue waits.
-  const rolesLoaded =
-    frappRolesQuery.data !== undefined && myPermissions.data !== undefined;
-  const rolesFailed = frappRolesQuery.isError || myPermissions.isError;
+  // Defaults are only right once it is settled whether roles can be mapped
+  // and, when they can, what they map to; until then, Continue waits.
+  const rolesLoaded = rolesLock !== null || canManageRoles;
   const readersOf = useCallback(
     (channel: StagedChannel) =>
       sameAsDiscordReaders(
@@ -607,28 +619,11 @@ export function ImportWizard({
               privateReads={readsPrivate}
               frappRoles={frappRoles}
               issues={roleProblems}
-              canManageRoles={canManageRoles}
+              lock={rolesLock}
               onChange={(roleId, next) =>
                 setRoleEdits((previous) => ({ ...previous, [roleId]: next }))
               }
             />
-          ) : rolesFailed ? (
-            <p className="text-sm">
-              Frapp could not load your roles to map these against.{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  void frappRolesQuery.refetch();
-                  void myPermissions.refetch();
-                }}
-                className={cn(
-                  "text-accent-text underline-offset-2 hover:underline",
-                  FOCUS_RING,
-                )}
-              >
-                Try again
-              </button>
-            </p>
           ) : (
             <p className="text-sm text-muted-foreground">
               Loading your Frapp roles…

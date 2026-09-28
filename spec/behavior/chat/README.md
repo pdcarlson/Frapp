@@ -600,10 +600,14 @@ channel that reports a different one fails the import rather than being skipped.
   on offer for it. Otherwise a channel that was private, holds a private
   thread (whose messages land in it), or whose privacy the scan could not
   read (the roles read failed, which the scan reports) starts with no
-  visibility, and the API refuses to create it until the admin chooses. A
-  channel holding a private thread never starts as Same as Discord: the thread
-  was readable only by its own members. Scanning again re-asks any
-  whole-chapter choice, or merge, whose channel has since turned private. An
+  visibility, and the API refuses to create it until the admin chooses.
+  Threads do not take a private channel's default away: every thread in one
+  reads as private, because it inherits the channel's answer, and it lands
+  with the channel's readers, who could see it in Discord. A genuinely private
+  thread is read only when the chapter gives the bot Manage Threads, and lands
+  there too. Scanning again re-asks any whole-chapter choice, or merge, whose
+  channel has since turned private, and any Same as Discord choice whose
+  readers the new scan no longer names. An
   uploaded export carries no permissions, so every new channel from one needs
   the same choice; "Set who can read…" answers a whole category, or the whole
   server, in one go.
@@ -630,11 +634,15 @@ channel that reports a different one fails the import rather than being skipped.
   - **Roles are mapped before channels**, bot path only (an export names no
     roles). Each Discord role becomes an existing Frapp role, a new role
     named after it, or nothing (Ignore). The default is the Frapp role with
-    the same name, ignoring case and punctuation; then a close match to a
+    the same name, ignoring case and punctuation (letters of any script
+    count, so "ΔΔ Class" and "ΓΓ Class" differ); then a close match to a
     seeded role, read from the end of the Discord name ("Recording Secretary"
     is a Secretary, "Pledges" are New Members, but "Pledge Educator" is not a
-    pledge); then a new role if it could read a private channel, and Ignore if
-    it could not, so colour, class-year and game roles create nothing.
+    pledge), except Member, the widest role, which matches only a whole name
+    ("Brothers", never "Board Member"); then a new role if it could read a
+    private channel, and Ignore if it could not, so colour, class-year and
+    game roles create nothing. A viewer who cannot manage roles, or cannot
+    load the chapter's roles, keeps every role on Ignore and can still import.
     `@everyone`, and the managed roles Discord gives bots and boosters, are
     not offered: the Frapp bot's own role is allowed on every channel it was
     let into.
@@ -655,14 +663,19 @@ channel that reports a different one fails the import rather than being skipped.
     Frapp.
   - **The gate is a permission per role.** `ROLE_GATED` gates on permission
     strings, so each mapped Frapp role gets its own `channels:read:<name>`,
-    held by that role alone, and the channel requires any of them. A chapter
-    edits the gate afterwards in chat admin like any other.
+    held by that role alone, and the channel requires any of them. A string
+    is never reissued while a role holds it, a channel is gated on it (its role
+    since deleted), or another import's saved mapping has it; starting the
+    import checks this again and refuses rather than open a channel to a role
+    nobody chose. A chapter edits the gate afterwards in chat admin like any
+    other, which lists these strings with the roles that hold them.
   - **Starting the import creates the new roles and grants the read
     permissions**, and nothing else: a new role gets only the read permissions
     of the imported channels gated on it. It never touches a `members` row;
     imported authors are names on messages, not accounts, and people are put
-    into roles by hand. Mapping anything but Ignore needs `roles:manage` as
-    well as `channels:manage`, since it creates roles and grants permissions.
+    into roles by hand. Mapping anything but Ignore, and starting an import
+    that creates a role or grants a permission, need `roles:manage` as well
+    as `channels:manage`, as Settings → Roles would.
     Deleting the import keeps the roles and permissions it made. Importing who
     holds each Discord role (account linking, and the bot's Server Members
     intent) is out of scope.

@@ -1019,11 +1019,36 @@ export class DiscordImportService {
       );
     }
 
-    const roles = mapsSomething ? await this.rbac.findByChapter(chapterId) : [];
+    let roles: Role[] = [];
+    const reserved = new Set<string>();
+    if (mapsSomething) {
+      // A string no role holds may still be spoken for: a channel gated on
+      // it (its role deleted since), or another import's saved mapping that
+      // has not started yet. Either would open that channel, or that
+      // import's channels, to the role this mapping names (#2818).
+      const [chapterRoles, gates, imports] = await Promise.all([
+        this.rbac.findByChapter(chapterId),
+        this.channelRepo.findRoleGates(chapterId),
+        this.importRepo.findByChapter(chapterId),
+      ]);
+      roles = chapterRoles;
+      for (const gate of gates) {
+        for (const permission of gate.required_permissions) {
+          reserved.add(permission);
+        }
+      }
+      for (const other of imports) {
+        if (other.id === id) continue;
+        for (const entry of parseRoleMapping(other.role_mapping)) {
+          if (entry.read_permission) reserved.add(entry.read_permission);
+        }
+      }
+    }
     const mapping = this.resolveRoleMapping(
       entries,
       roles,
       parseRoleMapping(job.role_mapping),
+      reserved,
     );
     return this.importRepo.update(id, chapterId, { role_mapping: mapping });
   }
@@ -1035,14 +1060,16 @@ export class DiscordImportService {
    * A read permission is held by one role alone, or it would gate a channel
    * to a second role nobody chose. So an existing role reuses a
    * `channels:read:` permission only it already holds (from an earlier import),
-   * and otherwise gets a new string no role in the chapter holds. Every entry
+   * and otherwise gets a new string that no role holds and nothing in
+   * `reserved` (a channel gate, another import's mapping) names. Every entry
    * mapping to the same role shares one, including two Discord roles mapped
-   * to the same new role name.
+   * to the same new role name. `provisionRoles` checks it all again at start.
    */
   private resolveRoleMapping(
     entries: readonly RoleMappingInput[],
     roles: readonly Role[],
     previous: readonly DiscordRoleMapping[],
+    reserved: ReadonlySet<string>,
   ): DiscordRoleMapping[] {
     const byId = new Map(roles.map((role) => [role.id, role]));
     const byName = new Map(roles.map((role) => [roleNameKey(role.name), role]));
@@ -1056,7 +1083,7 @@ export class DiscordImportService {
         holders.set(permission, (holders.get(permission) ?? 0) + 1);
       }
     }
-    const taken = new Set(holders.keys());
+    const taken = new Set([...holders.keys(), ...reserved]);
     const assigned = new Map<string, string>();
     const permissionFor = (target: string, name: string, role?: Role) => {
       const known = assigned.get(target);
@@ -1146,7 +1173,11 @@ export class DiscordImportService {
     });
   }
 
-  async start(id: string, chapterId: string): Promise<DiscordImport> {
+  async start(
+    id: string,
+    chapterId: string,
+    canManageRoles: boolean,
+  ): Promise<DiscordImport> {
     const job = await this.load(id, chapterId);
     this.assertMutable(job);
 
@@ -1199,9 +1230,11 @@ export class DiscordImportService {
     }
 
     const roleMapping = await this.provisionRoles(
+      id,
       chapterId,
       channels,
       parseRoleMapping(job.role_mapping),
+      canManageRoles,
     );
 
     return this.importRepo.update(id, chapterId, {
@@ -1222,16 +1255,30 @@ export class DiscordImportService {
    * again after the channels were mapped, and a gate that no longer matches
    * would be created on permissions nobody is granted.
    *
+   * Everything is checked before anything is written:
+   *
+   *  - a read permission stays with the roles the mapping gives it to. One
+   *    held by any other role, or newly granted while it already gates a
+   *    channel this import did not create, would open that channel to roles
+   *    nobody chose, so the start is refused and the roles are saved again,
+   *    which picks a fresh string;
+   *  - creating a role or granting a permission needs `roles:manage` from
+   *    whoever starts the import, not only from whoever saved the mapping,
+   *    as Settings → Roles would require.
+   *
    * A new role is created with only the read permissions that gate an
-   * imported channel, and nothing else (owner's decision on #2818). Re-running
-   * it is safe: a new role already created, by an earlier start that failed
-   * or by anyone since, is found by name and used, and a permission a role
-   * already holds is not added twice.
+   * imported channel, and nothing else (owner's decision on #2818). Its id is
+   * recorded on the import as soon as it exists, so a start that fails part
+   * way leaves a mapping that points at it. Re-running is safe: a new role
+   * that already exists by name is used, and a permission a role already
+   * holds is not added twice.
    */
   private async provisionRoles(
+    importId: string,
     chapterId: string,
     channels: readonly DiscordImportChannel[],
     mapping: DiscordRoleMapping[],
+    canManageRoles: boolean,
   ): Promise<DiscordRoleMapping[]> {
     const needed = new Set<string>();
     for (const channel of channels) {
@@ -1270,47 +1317,124 @@ export class DiscordImportService {
     const roles = await this.rbac.findByChapter(chapterId);
     const byId = new Map(roles.map((role) => [role.id, role]));
     const byName = new Map(roles.map((role) => [roleNameKey(role.name), role]));
-    let order = Math.max(0, ...roles.map((role) => role.display_order));
 
+    // A new role that already exists by name (an earlier start that failed,
+    // or one someone made since) is used rather than duplicated.
     const provisioned = mapping.map((entry) => ({ ...entry }));
     for (const entry of provisioned) {
       if (entry.action !== 'new' || entry.frapp_role_id !== null) continue;
-      const name = entry.new_role_name ?? entry.discord_role_name;
-      let role = byName.get(roleNameKey(name));
-      if (!role) {
-        const grant =
-          entry.read_permission && needed.has(entry.read_permission)
-            ? [entry.read_permission]
-            : [];
-        order += 1;
-        role = await this.rbac.create(chapterId, {
-          name,
-          permissions: grant,
-          display_order: order,
-          color: null,
-        });
-        byName.set(roleNameKey(name), role);
-      }
-      byId.set(role.id, role);
-      entry.frapp_role_id = role.id;
+      const existing = byName.get(
+        roleNameKey(entry.new_role_name ?? entry.discord_role_name),
+      );
+      if (existing) entry.frapp_role_id = existing.id;
     }
 
+    // The plan: roles to create, grants to add, and who may hold each
+    // permission once it is done.
+    const toCreate = new Map<string, { name: string; permissions: string[] }>();
+    const grants: { roleId: string; permission: string }[] = [];
+    const holdersAllowed = new Map<string, Set<string>>();
     for (const entry of provisioned) {
       const permission = entry.read_permission;
-      if (!permission || !needed.has(permission) || !entry.frapp_role_id) {
+      if (!permission || entry.action === 'ignore') continue;
+      if (entry.frapp_role_id === null) {
+        const name = entry.new_role_name ?? entry.discord_role_name;
+        toCreate.set(roleNameKey(name), {
+          name,
+          permissions: needed.has(permission) ? [permission] : [],
+        });
         continue;
       }
+      const allowed = holdersAllowed.get(permission) ?? new Set<string>();
+      allowed.add(entry.frapp_role_id);
+      holdersAllowed.set(permission, allowed);
+      if (!needed.has(permission)) continue;
       const role = byId.get(entry.frapp_role_id);
       if (!role) {
         throw new BadRequestException(
           `The Frapp role ${entry.discord_role_name} maps to no longer exists. Map the roles again, then start the import.`,
         );
       }
-      if (role.permissions.includes(permission)) continue;
+      if (
+        !role.permissions.includes(permission) &&
+        !grants.some(
+          (grant) =>
+            grant.roleId === role.id && grant.permission === permission,
+        )
+      ) {
+        grants.push({ roleId: role.id, permission });
+      }
+    }
+
+    const newlyGranted = new Set([
+      ...grants.map((grant) => grant.permission),
+      ...[...toCreate.values()].flatMap((plan) => plan.permissions),
+    ]);
+    const refuse = (permission: string) =>
+      new BadRequestException(
+        `The read permission ${permission} is already in use elsewhere in this chapter. Save the roles and the channels again so Frapp can pick a new one, then start the import.`,
+      );
+    for (const role of roles) {
+      for (const permission of role.permissions) {
+        if (
+          needed.has(permission) &&
+          !holdersAllowed.get(permission)?.has(role.id)
+        ) {
+          throw refuse(permission);
+        }
+      }
+    }
+    if (newlyGranted.size > 0) {
+      const own = new Set(
+        channels.flatMap((channel) =>
+          channel.target_channel_id ? [channel.target_channel_id] : [],
+        ),
+      );
+      for (const gate of await this.channelRepo.findRoleGates(chapterId)) {
+        if (own.has(gate.id)) continue;
+        const clash = gate.required_permissions.find((permission) =>
+          newlyGranted.has(permission),
+        );
+        if (clash) throw refuse(clash);
+      }
+    }
+
+    if ((toCreate.size > 0 || grants.length > 0) && !canManageRoles) {
+      throw new ForbiddenException(
+        'Starting this import creates roles or lets roles read the imported channels, which needs permission to manage roles. Ask someone who can manage roles to start it, or set every role to Ignore.',
+      );
+    }
+
+    let order = Math.max(0, ...roles.map((role) => role.display_order));
+    for (const [key, plan] of toCreate) {
+      order += 1;
+      const role = await this.rbac.create(chapterId, {
+        name: plan.name,
+        permissions: plan.permissions,
+        display_order: order,
+        color: null,
+      });
+      for (const entry of provisioned) {
+        if (
+          entry.action === 'new' &&
+          entry.frapp_role_id === null &&
+          roleNameKey(entry.new_role_name ?? entry.discord_role_name) === key
+        ) {
+          entry.frapp_role_id = role.id;
+        }
+      }
+      await this.importRepo.update(importId, chapterId, {
+        role_mapping: provisioned,
+      });
+    }
+
+    for (const grant of grants) {
+      const role = byId.get(grant.roleId);
+      if (!role || role.permissions.includes(grant.permission)) continue;
       byId.set(
         role.id,
         await this.rbac.update(role.id, chapterId, {
-          permissions: [...role.permissions, permission],
+          permissions: [...role.permissions, grant.permission],
         }),
       );
     }

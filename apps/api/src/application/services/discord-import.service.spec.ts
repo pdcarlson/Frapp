@@ -142,6 +142,7 @@ async function build(current: DiscordImport = job()) {
         : null,
     ),
     create: jest.fn(),
+    findRoleGates: jest.fn(async () => []),
   };
   rbac = {
     findByChapter: jest.fn(async () => []),
@@ -539,7 +540,7 @@ describe('DiscordImportService — channel mapping', () => {
 describe('DiscordImportService — starting', () => {
   it('refuses to start with no uploaded export', async () => {
     await build();
-    await expect(service.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
       /Upload the exported JSON/,
     );
   });
@@ -550,7 +551,7 @@ describe('DiscordImportService — starting', () => {
       { kind: 'export', uploaded_at: '2026-08-24T12:00:00Z' },
       { kind: 'media', uploaded_at: null },
     ]);
-    await expect(service.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
       /have not finished uploading/,
     );
   });
@@ -560,7 +561,7 @@ describe('DiscordImportService — starting', () => {
     repo.findFiles.mockResolvedValue([
       { kind: 'export', uploaded_at: '2026-08-24T12:00:00Z' },
     ]);
-    await expect(service.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
       /Map the exported channels/,
     );
   });
@@ -573,7 +574,7 @@ describe('DiscordImportService — starting', () => {
     ]);
     repo.findChannels.mockResolvedValue([{ id: 'map-1' }]);
 
-    await service.start(IMPORT_ID, CHAPTER);
+    await service.start(IMPORT_ID, CHAPTER, true);
 
     expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
       status: 'ready',
@@ -752,7 +753,7 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     repo.findChannels.mockResolvedValue([
       { id: 'map-1', mapping_action: 'create_new' },
     ]);
-    await service.start(IMPORT_ID, CHAPTER);
+    await service.start(IMPORT_ID, CHAPTER, true);
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 
@@ -1482,7 +1483,7 @@ describe('DiscordImportService — starting a bot import', () => {
       }),
     ]);
 
-    await svc.start(IMPORT_ID, CHAPTER);
+    await svc.start(IMPORT_ID, CHAPTER, true);
 
     expect(repo.findFiles).not.toHaveBeenCalled();
     expect(oauthService.requireGuildId).toHaveBeenCalledWith(CHAPTER);
@@ -1500,7 +1501,7 @@ describe('DiscordImportService — starting a bot import', () => {
     const svc = await build(job({ source: 'bot', guild_id: GUILD }));
     repo.findChannels.mockResolvedValue([botChannel()]);
 
-    await expect(svc.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+    await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
       /at least one Discord channel/,
     );
   });
@@ -1509,7 +1510,7 @@ describe('DiscordImportService — starting a bot import', () => {
     const svc = await build(job({ source: 'bot', guild_id: 'old-guild' }));
     repo.findChannels.mockResolvedValue([botChannel()]);
 
-    await expect(svc.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+    await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
       /different Discord server/,
     );
   });
@@ -1747,6 +1748,75 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
     });
   });
 
+  describe('saving the role step: strings already spoken for', () => {
+    const newRush = [
+      {
+        discord_role_id: D_RUSH,
+        discord_role_name: 'Rush Chair',
+        action: 'new' as const,
+        new_role_name: 'Rush Chair',
+      },
+    ];
+    const savedPermission = () =>
+      repo.update.mock.calls[0][2].role_mapping[0].read_permission;
+
+    it('never reissues a string that still gates a channel, though no role holds it', async () => {
+      // An earlier import's #rush is gated on channels:read:rush-chair, and
+      // the role that held it has since been deleted.
+      const svc = await build(job({ source: 'bot' }));
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      channelRepo.findRoleGates.mockResolvedValue([
+        { id: 'old-rush', required_permissions: ['channels:read:rush-chair'] },
+      ]);
+      await svc.setRoleMapping(IMPORT_ID, CHAPTER, newRush, true);
+      expect(savedPermission()).toBe('channels:read:rush-chair-2');
+    });
+
+    it("never reissues a string another import's saved mapping already gave out", async () => {
+      const svc = await build(job({ source: 'bot' }));
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      repo.findByChapter.mockResolvedValue([
+        job({ source: 'bot' }),
+        job({
+          id: 'other-import',
+          source: 'bot',
+          role_mapping: [
+            {
+              ...savedMapping()[1],
+              discord_role_id: 'someone-else',
+            },
+          ],
+        }),
+      ]);
+      await svc.setRoleMapping(IMPORT_ID, CHAPTER, newRush, true);
+      expect(savedPermission()).toBe('channels:read:rush-chair-2');
+    });
+
+    it('keeps pointing at the role an earlier, failed start of this import created', async () => {
+      const svc = await build(
+        job({
+          source: 'bot',
+          status: 'failed',
+          role_mapping: [{ ...savedMapping()[1], frapp_role_id: 'rush-role' }],
+        }),
+      );
+      rbac.findByChapter.mockResolvedValue([
+        ...chapterRoles(),
+        role({
+          id: 'rush-role',
+          name: 'Rush Chair',
+          permissions: ['channels:read:rush-chair'],
+        }),
+      ]);
+      await svc.setRoleMapping(IMPORT_ID, CHAPTER, newRush, true);
+      expect(repo.update.mock.calls[0][2].role_mapping[0]).toMatchObject({
+        action: 'new',
+        frapp_role_id: 'rush-role',
+        read_permission: 'channels:read:rush-chair',
+      });
+    });
+  });
+
   describe('mapping a channel "Same as Discord"', () => {
     const privateChannel = (overrides: Record<string, unknown> = {}) =>
       botChannel({
@@ -1875,7 +1945,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         ...data,
       }));
 
-      await svc.start(IMPORT_ID, CHAPTER);
+      await svc.start(IMPORT_ID, CHAPTER, true);
 
       expect(rbac.create).toHaveBeenCalledTimes(1);
       expect(rbac.create).toHaveBeenCalledWith(CHAPTER, {
@@ -1919,7 +1989,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         ...data,
       }));
 
-      await svc.start(IMPORT_ID, CHAPTER);
+      await svc.start(IMPORT_ID, CHAPTER, true);
 
       expect(rbac.create).toHaveBeenCalledWith(
         CHAPTER,
@@ -1947,7 +2017,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         }),
       ]);
 
-      await svc.start(IMPORT_ID, CHAPTER);
+      await svc.start(IMPORT_ID, CHAPTER, true);
 
       expect(rbac.create).not.toHaveBeenCalled();
       expect(rbac.update).not.toHaveBeenCalled();
@@ -1977,12 +2047,185 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       );
       repo.findChannels.mockResolvedValue([gated()]);
 
-      await expect(svc.start(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
         /role mapping changed after #exec was mapped/,
       );
       expect(rbac.create).not.toHaveBeenCalled();
       expect(rbac.update).not.toHaveBeenCalled();
       expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    const provisionable = () => {
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      rbac.create.mockImplementation(async (_chapter, data) => ({
+        ...role({ id: 'new-role-1' }),
+        ...data,
+      }));
+      rbac.update.mockImplementation(async (id, _chapter, data) => ({
+        ...role({ id }),
+        ...data,
+      }));
+    };
+
+    it('refuses, before writing anything, a read permission another role now holds', async () => {
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      provisionable();
+      rbac.findByChapter.mockResolvedValue([
+        ...chapterRoles(),
+        role({
+          id: 'alumni',
+          name: 'Alumni',
+          permissions: ['channels:read:exec'],
+        }),
+      ]);
+      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+        /channels:read:exec is already in use/,
+      );
+      expect(rbac.create).not.toHaveBeenCalled();
+      expect(rbac.update).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to grant a string that already gates a channel this import did not create', async () => {
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      provisionable();
+      channelRepo.findRoleGates.mockResolvedValue([
+        { id: 'old-exec', required_permissions: ['channels:read:exec'] },
+      ]);
+      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+        /channels:read:exec is already in use/,
+      );
+      expect(rbac.create).not.toHaveBeenCalled();
+    });
+
+    it('is not put off by the gate of a channel this import already created', async () => {
+      // A resumed import: #exec exists (and is gated) from the first run,
+      // #rush is still to come.
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([
+        gated({ id: 'row-exec', target_channel_id: 'created-exec' }),
+        gated({
+          id: 'row-rush',
+          discord_channel_id: '900000000000000009',
+          discord_channel_name: 'rush',
+        }),
+      ]);
+      provisionable();
+      channelRepo.findRoleGates.mockResolvedValue([
+        {
+          id: 'created-exec',
+          required_permissions: [
+            'channels:read:exec',
+            'channels:read:rush-chair',
+          ],
+        },
+      ]);
+      await svc.start(IMPORT_ID, CHAPTER, true);
+      expect(rbac.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('needs roles:manage from whoever starts it when it creates or grants, and says so', async () => {
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      provisionable();
+      await expect(svc.start(IMPORT_ID, CHAPTER, false)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(rbac.create).not.toHaveBeenCalled();
+      expect(rbac.update).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('needs nothing more when every role and grant is already in place', async () => {
+      const svc = await build(
+        job({
+          source: 'bot',
+          guild_id: GUILD,
+          role_mapping: savedMapping().map((entry) =>
+            entry.discord_role_id === D_RUSH
+              ? { ...entry, frapp_role_id: 'rush-role' }
+              : entry,
+          ),
+        }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      rbac.findByChapter.mockResolvedValue([
+        role({
+          id: EXEC_ROLE,
+          name: 'Exec',
+          permissions: ['channels:read:exec'],
+        }),
+        role({
+          id: 'rush-role',
+          name: 'Rush Chair',
+          permissions: ['channels:read:rush-chair'],
+        }),
+      ]);
+      await svc.start(IMPORT_ID, CHAPTER, false);
+      expect(repo.update).toHaveBeenCalledWith(
+        IMPORT_ID,
+        CHAPTER,
+        expect.objectContaining({ status: 'ready' }),
+      );
+    });
+
+    it('records each new role on the import as soon as it exists, so a failed start still points at it', async () => {
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      provisionable();
+      rbac.update.mockRejectedValue(new Error('roles table unavailable'));
+
+      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+        'roles table unavailable',
+      );
+      expect(repo.update).toHaveBeenCalledTimes(1);
+      const [, , patch] = repo.update.mock.calls[0];
+      expect(patch.status).toBeUndefined();
+      expect(
+        patch.role_mapping.find(
+          (entry: { discord_role_id: string }) =>
+            entry.discord_role_id === D_RUSH,
+        ),
+      ).toMatchObject({ frapp_role_id: 'new-role-1' });
+    });
+
+    it('does not re-check a channel already created, whose gate is already set', async () => {
+      // Resuming after the role step was saved again: #exec's Frapp channel
+      // exists, so its old gate is history, not a mismatch.
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([
+        gated({
+          target_channel_id: 'created-exec',
+          new_channel_required_permissions: ['channels:read:old'],
+        }),
+        gated({
+          id: 'row-done',
+          discord_channel_id: '900000000000000008',
+          status: 'completed',
+          new_channel_required_permissions: ['channels:read:old'],
+        }),
+      ]);
+      provisionable();
+      await svc.start(IMPORT_ID, CHAPTER, true);
+      expect(repo.update).toHaveBeenCalledWith(
+        IMPORT_ID,
+        CHAPTER,
+        expect.objectContaining({ status: 'ready' }),
+      );
     });
 
     it('reads a mapping saved before #2818 as granting nothing', async () => {
@@ -2006,7 +2249,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         }),
       ]);
 
-      await svc.start(IMPORT_ID, CHAPTER);
+      await svc.start(IMPORT_ID, CHAPTER, true);
 
       expect(rbac.findByChapter).not.toHaveBeenCalled();
       expect(rbac.create).not.toHaveBeenCalled();

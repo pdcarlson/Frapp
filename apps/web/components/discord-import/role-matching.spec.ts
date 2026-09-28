@@ -41,6 +41,26 @@ describe("matchFrappRole (#2818)", () => {
     expect(matched("Executive Vice President")).toEqual(["vp", "close"]);
   });
 
+  it("reads Member only from a whole name, since it is the widest role", () => {
+    expect(matched("Actives")).toEqual(["member", "close"]);
+    expect(matched("Active Members")).toEqual(["member", "close"]);
+    // Officer titles that end in "member" are not every member.
+    expect(matched("Board Member")).toBeNull();
+    expect(matched("Executive Board Member")).toBeNull();
+    expect(matched("Alumni Member")).toBeNull();
+  });
+
+  it("tells names in other scripts apart, and matches nothing on an emoji alone", () => {
+    const greek = [
+      ...frappRoles,
+      { id: "delta-class", name: "ΔΔ Class", system_key: null },
+      { id: "alpha-beta", name: "ΑΒ", system_key: null },
+    ];
+    expect(matchFrappRole("ΓΓ Class", greek)).toBeNull();
+    expect(matchFrappRole("δδ class", greek)?.role.id).toBe("delta-class");
+    expect(matchFrappRole("🎮", greek)).toBeNull();
+  });
+
   it("does not read an officer as the people they look after", () => {
     // "Pledge Educator" is an educator; matching New Member would let every
     // pledge read the officer channels.

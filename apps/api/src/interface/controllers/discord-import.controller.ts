@@ -250,13 +250,22 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route.',
+      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).',
   })
-  start(
+  async start(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.importService.start(id, chapterId);
+    // Resolved here, like the role route: starting creates roles and grants
+    // permissions only when the mapping asks for them, and an import that
+    // does neither stays open to anyone who can run it.
+    const canManageRoles = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.ROLES_MANAGE],
+    );
+    return this.importService.start(id, chapterId, canManageRoles);
   }
 
   @Post(':id/cancel')

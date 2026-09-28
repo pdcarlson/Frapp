@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useChannels, usePermissionsCatalog, useRoles } from "@repo/hooks";
+import { useChannels, usePermissionsCatalog } from "@repo/hooks";
 import { asArray, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
   PermissionCheckboxGrid,
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
+import { useGateCatalog } from "@/components/shared/use-gate-catalog";
 import type { StagedChannel } from "./upload-step";
 import {
   asNewChannel,
@@ -98,7 +99,6 @@ export function ChannelMappingStep({
 }) {
   const existingChannels = useChannels();
   const catalogQuery = usePermissionsCatalog();
-  const rolesQuery = useRoles();
 
   const readable = useMemo(
     () => channels.filter((channel) => channel.readable !== false),
@@ -110,34 +110,12 @@ export function ChannelMappingStep({
   );
   const groups = useMemo(() => groupByCategory(readable), [readable]);
 
-  const roles = useMemo(
-    () => asArray<{ name?: string; permissions?: string[] }>(rolesQuery.data),
-    [rolesQuery.data],
+  const { catalog, holders } = useGateCatalog(
+    useMemo(
+      () => asArray<PermissionCatalogEntry>(catalogQuery.data),
+      [catalogQuery.data],
+    ),
   );
-  // Custom permissions a role holds are gates too, and the system catalog
-  // does not list them.
-  const catalog = useMemo(() => {
-    const entries = asArray<PermissionCatalogEntry>(catalogQuery.data);
-    const known = new Set(entries.map((entry) => entry.permission));
-    const extra: PermissionCatalogEntry[] = [];
-    for (const role of roles) {
-      for (const permission of role.permissions ?? []) {
-        if (permission === "*" || known.has(permission)) continue;
-        known.add(permission);
-        extra.push({ key: permission, permission });
-      }
-    }
-    return [...entries, ...extra];
-  }, [catalogQuery.data, roles]);
-  const holders = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const role of roles) {
-      for (const permission of role.permissions ?? []) {
-        map.set(permission, [...(map.get(permission) ?? []), role.name ?? ""]);
-      }
-    }
-    return map;
-  }, [roles]);
 
   const issuesByChannel = useMemo(() => {
     const map = new Map<string, string[]>();

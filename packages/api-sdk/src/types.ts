@@ -2874,7 +2874,7 @@ export interface paths {
         put?: never;
         /**
          * Queue the import
-         * @description The background worker picks it up within a minute and reports progress on the detail route.
+         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).
          */
         post: operations["DiscordImportController_start_v1"];
         delete?: never;

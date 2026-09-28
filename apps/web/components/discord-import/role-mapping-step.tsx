@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EYEBROW } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import type { StagedRole } from "./upload-step";
 import type {
@@ -13,6 +14,15 @@ import type {
   RoleChoice,
   RoleIssue,
 } from "./role-matching";
+
+/**
+ * Why every role is held on Ignore: the viewer cannot manage roles, or the
+ * roles (or the viewer's permissions) could not be loaded, which a retry may
+ * fix. An all-Ignore mapping is always accepted, so either way the import can
+ * go on, with each private channel's readers chosen by hand.
+ */
+export type RoleStepLock =
+  { reason: "permission" } | { reason: "unavailable"; retry: () => void };
 
 const NEW = "__new__";
 const IGNORE = "__ignore__";
@@ -39,7 +49,7 @@ export function RoleMappingStep({
   privateReads,
   frappRoles,
   issues,
-  canManageRoles,
+  lock,
   onChange,
 }: {
   roles: StagedRole[];
@@ -50,7 +60,8 @@ export function RoleMappingStep({
   privateReads: ReadonlyMap<string, number>;
   frappRoles: FrappRole[];
   issues: RoleIssue[];
-  canManageRoles: boolean;
+  /** Set when every role is held on Ignore, and why. */
+  lock: RoleStepLock | null;
   onChange: (roleId: string, next: RoleChoice) => void;
 }) {
   const problems = new Map<string, string[]>();
@@ -74,13 +85,29 @@ export function RoleMappingStep({
         → Roles once the import finishes.
       </p>
 
-      {canManageRoles ? null : (
+      {lock?.reason === "permission" ? (
         <p className="rounded-lg border border-warning/40 bg-warning-tint p-3 text-sm">
           Mapping a role creates roles and gives them access, which needs
           permission to manage roles. Every role stays on Ignore, so you choose
           who can read each private channel yourself.
         </p>
-      )}
+      ) : null}
+      {lock?.reason === "unavailable" ? (
+        <p className="rounded-lg border border-warning/40 bg-warning-tint p-3 text-sm">
+          Frapp could not load your chapter&apos;s roles, so every role stays on
+          Ignore and you choose who can read each private channel yourself.{" "}
+          <button
+            type="button"
+            onClick={lock.retry}
+            className={cn(
+              "text-accent-text underline-offset-2 hover:underline",
+              FOCUS_RING,
+            )}
+          >
+            Try again
+          </button>
+        </p>
+      ) : null}
 
       {roles.length === 0 ? (
         <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
@@ -106,7 +133,7 @@ export function RoleMappingStep({
                 reads={privateReads.get(role.roleId) ?? 0}
                 frappRoles={frappRoles}
                 problems={problems.get(role.roleId) ?? []}
-                disabled={!canManageRoles}
+                disabled={lock !== null}
                 onChange={(next) => onChange(role.roleId, next)}
               />
             ))}

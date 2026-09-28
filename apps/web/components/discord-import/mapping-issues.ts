@@ -43,20 +43,21 @@ export function privacyReason(channel: StagedChannel): PrivacyReason | null {
  * Who reads a channel before the admin says otherwise: the whole chapter when
  * the scan saw it was public; "Same as Discord" when it was private and the
  * scan named the roles that could read it (owner's decision on #2818);
- * otherwise nobody until the admin chooses. A channel holding a private
- * thread is not "Same as Discord" by default: the thread was readable only by
- * its own members, and would land where the whole channel's readers see it.
+ * otherwise nobody until the admin chooses.
+ *
+ * Threads don't change a private channel's default. Every thread in a private
+ * channel reads as private (it inherits the channel's answer), so counting
+ * them would withhold the default from any private channel with a thread in
+ * it. A thread the bot can read lands with the channel's readers, which is
+ * who could see it in Discord; a genuinely private one the bot reads only
+ * when the chapter gives it Manage Threads, and it lands there too.
  */
-function defaultVisibility(
+export function defaultVisibility(
   channel: StagedChannel,
 ): "chapter" | "discord" | undefined {
   const reason = privacyReason(channel);
   if (reason === null) return "chapter";
-  if (
-    reason === "private" &&
-    (channel.privateThreads ?? 0) === 0 &&
-    (channel.readerRoleIds?.length ?? 0) > 0
-  ) {
+  if (reason === "private" && (channel.readerRoleIds?.length ?? 0) > 0) {
     return "discord";
   }
   return undefined;
@@ -122,11 +123,12 @@ export function asNewChannel(
  *  - a channel it can now read (it was skipped because it could not be)
  *    starts at its default, which is the point of scanning again;
  *  - when a channel's privacy changed (it became private, gained a private
- *    thread, can no longer be told, or turned out public after all), a new
- *    channel's visibility goes back to the default for what the scan sees
- *    now, unless it was restricted, which is safe either way; and a merge
- *    into an existing channel is asked again if the channel is now private,
- *    since it was decided for one that was not.
+ *    thread, can no longer be told, or turned out public after all), or
+ *    whether "Same as Discord" is on offer for it changed, a new channel's
+ *    visibility goes back to the default for what the scan sees now, unless
+ *    it was restricted, which is safe either way; and a merge into an
+ *    existing channel is asked again if the channel is now private, since it
+ *    was decided for one that was not.
  *
  * A name, a skip, or anything else decided while the facts held is kept.
  */
@@ -145,7 +147,12 @@ export function restageChoices(
     if (!was || !kept) continue;
     if (channel.readable === false || was.readable === false) continue;
     const reason = privacyReason(channel);
-    if (reason === privacyReason(was)) {
+    // "Same as Discord" is a fact of the scan too: a channel whose readers
+    // are no longer known (or are now none) goes back to its default.
+    if (
+      reason === privacyReason(was) &&
+      defaultVisibility(channel) === defaultVisibility(was)
+    ) {
       next[channel.channelId] = kept;
     } else if (kept.action === "create_new") {
       next[channel.channelId] =

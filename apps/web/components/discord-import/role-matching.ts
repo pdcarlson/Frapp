@@ -22,17 +22,28 @@ export interface FrappRole {
 /** Why a default was chosen, shown so a close match gets a second look. */
 export type MatchKind = "same-name" | "close" | null;
 
-/** `Vice-President` and `vice president` are the same name. */
+/**
+ * Letters and digits only, any case, accents folded: `Vice-President` and
+ * `vice president` are the same name. Letters are any script's, not only
+ * ASCII: "ΔΔ Class" and "ΓΓ Class" are different pledge classes, and
+ * dropping the Greek would make them one.
+ */
 export function nameKey(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 /** Words of a name, singular, without numbers: `Pledges 2026` → `pledge`. */
 function words(name: string): string[] {
   return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 0 && !/^\d+$/.test(word))
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 0 && !/^\p{N}+$/u.test(word))
     .map((word) =>
       word.length > 3 && word.endsWith("s") && !word.endsWith("ss")
         ? word.slice(0, -1)
@@ -41,27 +52,48 @@ function words(name: string): string[] {
 }
 
 /**
- * What a Discord role is commonly called, per seeded Frapp role, matched as
- * the END of the Discord name. The end is what a title is: "Recording
- * Secretary" is a secretary, but "Pledge Educator" is an educator, not a
- * pledge, and matching it to New Member would let every pledge read the
- * officer channels.
+ * What a Discord role is commonly called, per seeded Frapp role.
+ *
+ * Matched as the END of the Discord name, because the end is what a title
+ * is: "Recording Secretary" is a secretary, but "Pledge Educator" is an
+ * educator, not a pledge, and matching it to New Member would let every
+ * pledge read the officer channels.
+ *
+ * Member is the exception, matched only as the WHOLE name. It is the widest
+ * role a chapter has, and "member" ends too many officer titles ("Board
+ * Member", "Cabinet Member") for a suffix to be safe: a wrong guess there
+ * opens an exec channel to everyone.
  */
-const CLOSE_MATCHES: Record<string, string[]> = {
-  VICE_PRESIDENT: ["vice president", "vp", "vice pres"],
-  PRESIDENT: ["president", "pres"],
-  TREASURER: ["treasurer"],
-  SECRETARY: ["secretary"],
-  NEW_MEMBER: [
-    "new member",
-    "pledge",
-    "associate member",
-    "associate",
-    "neophyte",
-    "candidate",
-  ],
-  ALUMNI: ["alumni", "alum", "alumnus", "alumna", "alumnae", "graduate"],
-  MEMBER: ["member", "brother", "sister", "active"],
+const CLOSE_MATCHES: Record<string, { aliases: string[]; whole?: true }> = {
+  VICE_PRESIDENT: { aliases: ["vice president", "vp", "vice pres"] },
+  PRESIDENT: { aliases: ["president", "pres"] },
+  TREASURER: { aliases: ["treasurer"] },
+  SECRETARY: { aliases: ["secretary"] },
+  NEW_MEMBER: {
+    aliases: [
+      "new member",
+      "pledge",
+      "associate member",
+      "associate",
+      "neophyte",
+      "candidate",
+    ],
+  },
+  ALUMNI: {
+    aliases: ["alumni", "alum", "alumnus", "alumna", "alumnae", "graduate"],
+  },
+  MEMBER: {
+    aliases: [
+      "member",
+      "active member",
+      "brother",
+      "active brother",
+      "sister",
+      "active sister",
+      "active",
+    ],
+    whole: true,
+  },
 };
 
 function endsWith(name: readonly string[], alias: readonly string[]): boolean {
@@ -74,25 +106,28 @@ function endsWith(name: readonly string[], alias: readonly string[]): boolean {
  * The Frapp role a Discord role most plausibly is: the same name, ignoring
  * case and punctuation, then a close match to a seeded role by its
  * rename-proof `system_key`. The longest alias wins, so "Vice President" is
- * never read as President.
+ * never read as President. A name with no letters or digits at all (an
+ * emoji) matches nothing.
  */
 export function matchFrappRole(
   discordName: string,
   frappRoles: readonly FrappRole[],
 ): { role: FrappRole; kind: Exclude<MatchKind, null> } | null {
   const key = nameKey(discordName);
+  if (!key) return null;
   const same = frappRoles.find((role) => nameKey(role.name) === key);
   if (same) return { role: same, kind: "same-name" };
 
   const name = words(discordName);
   let best: { role: FrappRole; length: number } | null = null;
-  for (const [systemKey, aliases] of Object.entries(CLOSE_MATCHES)) {
+  for (const [systemKey, { aliases, whole }] of Object.entries(CLOSE_MATCHES)) {
     const role = frappRoles.find(
       (candidate) => candidate.system_key === systemKey,
     );
     if (!role) continue;
     for (const alias of aliases) {
       const aliasWords = words(alias);
+      if (whole && aliasWords.length !== name.length) continue;
       if (!endsWith(name, aliasWords)) continue;
       if (!best || aliasWords.length > best.length) {
         best = { role, length: aliasWords.length };
