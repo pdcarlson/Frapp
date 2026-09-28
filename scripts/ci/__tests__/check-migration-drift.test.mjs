@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
@@ -833,7 +834,7 @@ test("attachReleaseBaselines judges only the named targets against the release",
   const targets = [{ label: "staging" }, { label: "production" }];
   const result = attachReleaseBaselines({
     targets,
-    releasedSpec: "production",
+    env: { DRIFT_RELEASED_TARGETS: "production" },
     readBaseline: () => ({ ok: true, tag: "v1.3.0", migrations: released, error: null }),
   });
   assert.deepEqual(result, { ok: true, error: null });
@@ -848,7 +849,7 @@ test("attachReleaseBaselines marks an unread release as an error, never as no ba
   const targets = [{ label: "production" }];
   attachReleaseBaselines({
     targets,
-    releasedSpec: "production",
+    env: { DRIFT_RELEASED_TARGETS: "production" },
     readBaseline: () => ({ ok: false, tag: null, migrations: [], error: "the checkout holds no v* tag" }),
   });
   assert.equal(targets[0].released, undefined);
@@ -863,16 +864,16 @@ test("attachReleaseBaselines defaults to production when unset, and reads no tag
   };
 
   const handRun = [{ label: "staging" }, { label: "production" }];
-  attachReleaseBaselines({ targets: handRun, releasedSpec: undefined, readBaseline });
+  attachReleaseBaselines({ targets: handRun, env: {}, readBaseline });
   assert.equal(handRun[1].released.tag, "v1.3.0", "a hand run judges production like the schedule");
 
   const stagingOnly = [{ label: "staging" }];
-  assert.deepEqual(attachReleaseBaselines({ targets: stagingOnly, releasedSpec: undefined, readBaseline }), {
+  assert.deepEqual(attachReleaseBaselines({ targets: stagingOnly, env: {}, readBaseline }), {
     ok: true,
     error: null,
   });
   const none = [{ label: "production" }];
-  attachReleaseBaselines({ targets: none, releasedSpec: "", readBaseline });
+  attachReleaseBaselines({ targets: none, env: { DRIFT_RELEASED_TARGETS: "" }, readBaseline });
   assert.equal(none[0].released, undefined);
   assert.equal(reads, 1, "only the hand run needed the tag");
 });
@@ -880,7 +881,7 @@ test("attachReleaseBaselines defaults to production when unset, and reads no tag
 test("attachReleaseBaselines rejects a label DRIFT_TARGETS does not name", () => {
   const result = attachReleaseBaselines({
     targets: [{ label: "staging" }],
-    releasedSpec: "prod",
+    env: { DRIFT_RELEASED_TARGETS: "prod" },
     readBaseline: () => assert.fail("no tag is read for a bad spec"),
   });
   assert.equal(result.ok, false);
@@ -1038,4 +1039,41 @@ test("the workflow judges production against its release, and a failed tag fetch
   // must not kill the job before staging is checked.
   const fetchLine = workflow.slice(fetchTags, workflow.indexOf("\n", fetchTags));
   assert.match(fetchLine, /\|\| echo "::warning::/);
+});
+
+test("the CLI reads DRIFT_RELEASED_TARGETS from its environment", () => {
+  // main() must hand attachReleaseBaselines the real environment: a bad label
+  // is refused before any network call, which proves the read without one.
+  const run = spawnSync(process.execPath, ["scripts/ci/check-migration-drift.mjs"], {
+    encoding: "utf8",
+    env: {
+      PATH: process.env.PATH,
+      GITHUB_TOKEN: "unused",
+      GITHUB_REPOSITORY: "pdcarlson/Frapp",
+      DRIFT_TARGETS: "production=unused",
+      DRIFT_RELEASED_TARGETS: "prod",
+    },
+  });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /DRIFT_RELEASED_TARGETS names prod, which DRIFT_TARGETS does not/);
+});
+
+test("the alert body tells a renamed foreign version from a never-committed one", () => {
+  const body = buildAlertIssueBody({
+    results: [
+      {
+        label: "production",
+        status: "drift",
+        baseline: "v1.3.0",
+        overdue: [],
+        withinGrace: [],
+        unreleased: [],
+        foreign: [{ version: "20260809000050", name: "backdated" }],
+      },
+    ],
+    graceHours: 24,
+    runUrl: "",
+  });
+  assert.doesNotMatch(body, /never contained/);
+  assert.match(body, /mark the old version reverted and the new one applied, and delete nothing/);
 });

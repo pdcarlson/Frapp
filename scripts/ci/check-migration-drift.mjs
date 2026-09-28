@@ -266,14 +266,15 @@ export function parseTargets(spec) {
 export const DEFAULT_RELEASED_TARGETS = ["production"];
 
 /**
- * Marks each target named in `releasedSpec` (DRIFT_RELEASED_TARGETS) with the
+ * Marks each target named in DRIFT_RELEASED_TARGETS (read from `env`) with the
  * release baseline it is judged against: `released` when the tag was read,
  * `releaseError` when it was not, which leaves that target unverified rather
  * than judged against `main`. An unset spec means DEFAULT_RELEASED_TARGETS,
  * among the targets present; an explicit one must name only real targets.
  * Returns { ok, error }; mutates the targets.
  */
-export function attachReleaseBaselines({ targets, releasedSpec, readBaseline = readReleaseBaseline }) {
+export function attachReleaseBaselines({ targets, env = process.env, readBaseline = readReleaseBaseline }) {
+  const releasedSpec = env.DRIFT_RELEASED_TARGETS;
   const explicit = releasedSpec !== undefined;
   const labels = explicit
     ? releasedSpec
@@ -436,6 +437,17 @@ export function overallStatus(results) {
 
 // ── Reporting ───────────────────────────────────────────────────────────────
 
+// A foreign version has two causes with opposite fixes, so the guidance names
+// both. Deleting a renamed row makes the next `db push` re-run SQL the database
+// already ran.
+const FOREIGN_GUIDANCE =
+  "`supabase db push` refuses to run while one is present. First check whether the version ever " +
+  "existed in git (`git log --all --oneline -- 'supabase/migrations/<version>_*'`). If it shipped " +
+  "and `main` renamed it since, the SQL already ran: mark the old version reverted and the new one " +
+  "applied, and delete nothing. If git never held it, read the row's recorded `statements` before " +
+  "removing it — `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § reconciling a foreign migration row. " +
+  "The CLI suggests `migration repair --status reverted`; **do not run it blind**.";
+
 function migrationList(migrations, limit = 10) {
   const shown = migrations.slice(0, limit).map((m) => `\`${m.version}_${m.name}\``);
   const extra = migrations.length - shown.length;
@@ -490,13 +502,11 @@ export function buildRunSummary({ status, results, graceHours, runUrl }) {
     if (result.foreign.length > 0) {
       lines.push(
         "",
-        `**Foreign — applied but absent from this repository (${result.foreign.length}):**`,
+        `**Foreign — applied but not on \`main\` (${result.foreign.length}):**`,
         "",
         migrationList(result.foreign),
         "",
-        "`supabase db push` refuses to run while a foreign version is present. Read what the row " +
-          "actually did before removing it — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` " +
-          "§ reconciling a foreign migration row. **Do not** blind-run `migration repair`.",
+        FOREIGN_GUIDANCE,
       );
     }
     if (result.overdue.length > 0) {
@@ -569,11 +579,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "minted some other way (a `release.yml` dispatch, or by hand) on a commit whose migrations never",
     "shipped, or the history was changed by hand after the ship. Check how the tag was made first.",
     "",
-    "**Foreign** rows mean the database carries a version this repository has never contained.",
-    "`supabase db push` refuses to run in that state. The CLI suggests",
-    "`migration repair --status reverted`; **do not run it blind** — read the row's recorded",
-    "`statements` first. Full procedure:",
-    "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § reconciling a foreign migration row.",
+    `**Foreign** rows mean the database carries a version \`main\` does not. ${FOREIGN_GUIDANCE}`,
     "",
     `_Pending migrations are tolerated for ${graceHours}h after their version timestamp._`,
   ];
@@ -774,10 +780,7 @@ async function main() {
     process.exit(1);
   }
 
-  const released = attachReleaseBaselines({
-    targets,
-    releasedSpec: process.env.DRIFT_RELEASED_TARGETS,
-  });
+  const released = attachReleaseBaselines({ targets });
   if (!released.ok) {
     console.error(`Error: ${released.error}`);
     process.exit(1);
