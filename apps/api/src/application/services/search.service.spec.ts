@@ -558,6 +558,24 @@ describe('SearchService', () => {
         expect(result.messages[0].sender_blocked).toBe(true);
       });
 
+      it('reads the block list once per search, not once per hit', async () => {
+        // A per-hit read would still mask correctly, so only the call count
+        // catches it (#2310).
+        wireMessages([
+          hit(),
+          hit({ id: 'msg-2', sender_id: 'user-3', content: 'come away' }),
+        ]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-2']);
+
+        const result = await service.search('ch-1', 'user-1', 'away');
+
+        expect(result.messages.map((m) => m.sender_blocked)).toEqual([
+          true,
+          false,
+        ]);
+        expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledTimes(1);
+      });
+
       it('flags an unblocked hit rather than leaving the field absent', async () => {
         wireMessages([hit({ sender_id: 'user-3', content: 'come along' })]);
         mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-2']);
