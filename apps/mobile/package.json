@@ -27,7 +27,7 @@
     "@repo/theme": "^0.0.0",
     "@repo/validation": "*",
     "@sentry/react-native": "^8.28.0",
-    "@stripe/stripe-react-native": "0.77.0",
+    "@stripe/stripe-react-native": "0.78.0",
     "@supabase/supabase-js": "^2.117.1",
     "@tanstack/react-query": "^5.103.2",
     "expo": "~57.0.13",
