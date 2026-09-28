@@ -4,16 +4,22 @@ import { Logger } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 
 // Same shape `all-exceptions.filter.spec.ts` uses.
-jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 const captureException = Sentry.captureException as jest.Mock;
+const captureMessage = Sentry.captureMessage as jest.Mock;
 import {
   DEFAULT_RETURN_PATH,
   DiscordOAuthService,
+  apiBaseUrl,
   safeReturnPath,
 } from './discord-oauth.service';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
+  DiscordApiError,
 } from '#domain/adapters/discord.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
@@ -23,6 +29,8 @@ const OTHER_CHAPTER = 'chapter-2';
 const USER = 'user-1';
 const GUILD = '800000000000000001';
 const STATE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const CLIENT_ID = '1541430523090698250';
+const REDIRECT_URI = 'https://api.example.test/v1/discord/connect/callback';
 const NOW = new Date('2026-08-24T12:00:00Z');
 
 /** Manage Server (1 << 5). */
@@ -105,6 +113,7 @@ async function build(config: Record<string, string | undefined> = {}) {
   };
   oauth = {
     isConfigured: jest.fn(() => true),
+    clientId: jest.fn(() => CLIENT_ID),
     buildAuthorizeUrl: jest.fn(
       ({ state, redirectUri }: { state: string; redirectUri: string }) =>
         `https://discord.com/oauth2/authorize?state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`,
@@ -123,7 +132,14 @@ async function build(config: Record<string, string | undefined> = {}) {
     ]),
     revokeToken: jest.fn(async () => undefined),
   };
-  bot = { isConfigured: jest.fn(() => true) };
+  bot = {
+    isConfigured: jest.fn(() => true),
+    hasRejectedToken: jest.fn(() => false),
+    fetchApplication: jest.fn(async () => ({
+      id: CLIENT_ID,
+      redirectUris: [REDIRECT_URI],
+    })),
+  };
 
   const settings: Record<string, string | undefined> = {
     API_URL: 'https://api.example.test',
@@ -152,16 +168,18 @@ describe('DiscordOAuthService — availability', () => {
     // on a Discord page with nowhere to come back to.
     for (const missing of ['API_URL', 'APP_URL'] as const) {
       const service = await build({ [missing]: undefined });
-      expect(service.isAvailable()).toBe(false);
+      await expect(service.isAvailable()).resolves.toBe(false);
     }
 
     const noClient = await build();
     oauth.isConfigured.mockReturnValue(false);
-    expect(noClient.isAvailable()).toBe(false);
+    await expect(noClient.isAvailable()).resolves.toBe(false);
 
     const noBot = await build();
     bot.isConfigured.mockReturnValue(false);
-    expect(noBot.isAvailable()).toBe(false);
+    await expect(noBot.isAvailable()).resolves.toBe(false);
+    // Unconfigured never asks Discord anything.
+    expect(bot.fetchApplication).not.toHaveBeenCalled();
   });
 
   it('refuses to begin a connect it cannot finish', async () => {
@@ -197,6 +215,420 @@ describe('DiscordOAuthService — beginConnect', () => {
     expect(repo.createState).toHaveBeenCalledWith(
       expect.objectContaining({ return_path: DEFAULT_RETURN_PATH }),
     );
+  });
+});
+
+describe('DiscordOAuthService — the redirect URI it sends Discord', () => {
+  it('builds one /v1 when API_URL carries its own (staging, 2026-09-28)', async () => {
+    // Infisical `staging` held `https://api-staging.frapp.live/v1`. Appended
+    // verbatim that made `/v1/v1/discord/connect/callback`, which no portal
+    // row matched, and every "Add to Server" landed on Discord's
+    // "Invalid OAuth2 redirect_uri" page.
+    for (const apiUrl of [
+      'https://api.example.test/v1',
+      'https://api.example.test/v1/',
+      'https://api.example.test/',
+      ' https://api.example.test ',
+    ]) {
+      const service = await build({ API_URL: apiUrl });
+      const result = await service.beginConnect(CHAPTER, USER, null);
+      expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ redirectUri: REDIRECT_URI }),
+      );
+      expect(result.authorize_url).toContain(encodeURIComponent(REDIRECT_URI));
+    }
+  });
+
+  it('exchanges the code against the same URI it authorized with', async () => {
+    // Discord refuses a token exchange whose redirect_uri differs from the
+    // authorize request's, so the two must come from one derivation.
+    const service = await build({ API_URL: 'https://api.example.test/v1' });
+    await service.handleCallback({ code: 'c', state: STATE });
+    expect(oauth.exchangeCode).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectUri: REDIRECT_URI }),
+    );
+  });
+
+  it('says once at boot that API_URL has drifted from the documented origin', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      await build({ API_URL: 'https://api.example.test/v1' });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('ends in /v1'));
+      warn.mockClear();
+      await build();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('apiBaseUrl', () => {
+  it.each([
+    ['https://api.example.test', 'https://api.example.test'],
+    ['https://api.example.test/v1', 'https://api.example.test'],
+    ['https://api.example.test/v1//', 'https://api.example.test'],
+    // A genuine mount prefix survives, as it does in the SDK's rule.
+    ['https://host.example.test/api/v1', 'https://host.example.test/api'],
+    // Only a whole trailing segment: `/v10` is not `/v1`.
+    ['https://api.example.test/v10', 'https://api.example.test/v10'],
+  ])('%s → %s', (input, expected) => {
+    expect(apiBaseUrl(input)).toBe(expected);
+  });
+
+  it.each([undefined, '', '   ', '/v1'])('%p → null', (input) => {
+    expect(apiBaseUrl(input)).toBeNull();
+  });
+});
+
+describe('DiscordOAuthService — checking the setup against Discord', () => {
+  let errorLog: jest.SpyInstance;
+  let warnLog: jest.SpyInstance;
+
+  beforeEach(() => {
+    captureMessage.mockClear();
+    errorLog = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    warnLog = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    errorLog.mockRestore();
+    warnLog.mockRestore();
+  });
+
+  it('withdraws the flow when the redirect URI is not registered, before any state is minted', async () => {
+    // The #2318 shape: everything configured, the portal row missing. Before
+    // this, `POST /connect` succeeded and the admin met Discord's error page.
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({
+      id: CLIENT_ID,
+      redirectUris: ['https://api.example.test/v1/v1/discord/connect/callback'],
+    });
+
+    await expect(service.isAvailable()).resolves.toBe(false);
+    await expect(
+      service.beginConnect(CHAPTER, USER, null),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(repo.createState).not.toHaveBeenCalled();
+    expect(oauth.buildAuthorizeUrl).not.toHaveBeenCalled();
+  });
+
+  it('reports a misconfiguration to Sentry once, not on every check', async () => {
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({ id: CLIENT_ID, redirectUris: [] });
+
+    await service.isAvailable();
+    await expect(service.beginConnect(CHAPTER, USER, null)).rejects.toThrow();
+    await expect(service.beginConnect(CHAPTER, USER, null)).rejects.toThrow();
+
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(3);
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    expect(captureMessage).toHaveBeenCalledWith(
+      'Discord setup: redirect_unregistered',
+      expect.objectContaining({
+        level: 'error',
+        fingerprint: ['discord-application-check', 'redirect_unregistered'],
+      }),
+    );
+    // The operator line names the exact string to paste into the portal.
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    expect(errorLog.mock.calls[0][0]).toContain(REDIRECT_URI);
+  });
+
+  it('comes back on the next connect once the portal row is added', async () => {
+    const service = await build();
+    bot.fetchApplication.mockResolvedValueOnce({
+      id: CLIENT_ID,
+      redirectUris: [],
+    });
+    await expect(service.isAvailable()).resolves.toBe(false);
+
+    // Row added. The connect re-reads Discord rather than trusting the
+    // cached "broken", so no redeploy is needed.
+    const result = await service.beginConnect(CHAPTER, USER, null);
+    expect(result.authorize_url).toContain(encodeURIComponent(REDIRECT_URI));
+    await expect(service.isAvailable()).resolves.toBe(true);
+  });
+
+  it('withdraws the flow when the bot token belongs to a different application', async () => {
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({
+      id: '999999999999999999',
+      redirectUris: [REDIRECT_URI],
+    });
+    await expect(service.isAvailable()).resolves.toBe(false);
+    expect(captureMessage).toHaveBeenCalledWith(
+      'Discord setup: client_id_mismatch',
+      expect.anything(),
+    );
+  });
+
+  it('withdraws the flow when Discord rejects the bot token', async () => {
+    // Reset Token in the portal. While staging and production share one
+    // application (#2321), a reset for either kills both, silently.
+    const service = await build();
+    bot.fetchApplication.mockRejectedValue(
+      new DiscordApiError('Discord refused GET /applications/@me', 401),
+    );
+    await expect(service.isAvailable()).resolves.toBe(false);
+    expect(captureMessage).toHaveBeenCalledWith(
+      'Discord setup: bot_token_rejected',
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    ['a timeout', new DiscordApiError('The operation was aborted', null)],
+    ['a Discord 5xx', new DiscordApiError('Internal Server Error', 502)],
+    ['a rate limit', new DiscordApiError('Too Many Requests', 429)],
+    ['a thrown non-Discord error', new Error('socket hang up')],
+  ])(
+    'keeps the flow offered through %s — the guard failing is not the setup failing',
+    async (_label, error) => {
+      const service = await build();
+      bot.fetchApplication.mockRejectedValue(error);
+      await expect(service.isAvailable()).resolves.toBe(true);
+      await expect(
+        service.beginConnect(CHAPTER, USER, null),
+      ).resolves.toBeDefined();
+      expect(captureMessage).not.toHaveBeenCalled();
+      expect(warnLog).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps the flow offered when Discord does not report the Redirects list', async () => {
+    // `redirect_uris` is optional on the application object. Absent is not
+    // empty, and reading it as empty would withdraw a working flow.
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({
+      id: CLIENT_ID,
+      redirectUris: null,
+    });
+    await expect(service.isAvailable()).resolves.toBe(true);
+    expect(captureMessage).not.toHaveBeenCalled();
+    expect(warnLog.mock.calls[0][0]).toContain('could not be checked');
+  });
+
+  it('answers availability from cache and refreshes in the background once stale', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
+    try {
+      const service = await build();
+
+      await expect(service.isAvailable()).resolves.toBe(true);
+      await expect(service.isAvailable()).resolves.toBe(true);
+      expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+
+      // Eleven minutes on, the row has been deleted. The stale "verified" is
+      // still served this once; the refresh it starts is what flips it.
+      now.mockReturnValue(NOW.getTime() + 11 * 60_000);
+      bot.fetchApplication.mockResolvedValue({
+        id: CLIENT_ID,
+        redirectUris: [],
+      });
+      await expect(service.isAvailable()).resolves.toBe(true);
+      await new Promise((resolve) => setImmediate(resolve));
+      await expect(service.isAvailable()).resolves.toBe(false);
+      expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('shares one Discord request between concurrent callers', async () => {
+    const service = await build();
+    await Promise.all([
+      service.isAvailable(),
+      service.isAvailable(),
+      service.beginConnect(CHAPTER, USER, null),
+    ]);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks at boot when configured, and asks Discord nothing when not', async () => {
+    const configured = await build();
+    configured.onApplicationBootstrap();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+
+    const unconfigured = await build({ APP_URL: undefined });
+    unconfigured.onApplicationBootstrap();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(bot.fetchApplication).not.toHaveBeenCalled();
+  });
+
+  it('refuses the confirm step on a known misconfiguration without asking Discord again', async () => {
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({ id: CLIENT_ID, redirectUris: [] });
+    await service.isAvailable();
+
+    await expect(
+      service.confirmConnection(CHAPTER, USER, STATE),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+    expect(repo.consumeConfirmToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordOAuthService — how long a verdict is trusted', () => {
+  let now: jest.SpyInstance;
+
+  beforeEach(() => {
+    captureMessage.mockClear();
+    now = jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('holds a bad verdict for a minute, then re-reads Discord before answering', async () => {
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({ id: CLIENT_ID, redirectUris: [] });
+    await expect(service.isAvailable()).resolves.toBe(false);
+
+    // Row added in the portal half a minute later: still the cached answer,
+    // so a wizard mount does not cost a Discord call every time.
+    bot.fetchApplication.mockResolvedValue({
+      id: CLIENT_ID,
+      redirectUris: [REDIRECT_URI],
+    });
+    now.mockReturnValue(NOW.getTime() + 30_000);
+    await expect(service.isAvailable()).resolves.toBe(false);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+
+    // Past the minute, the FIRST reload already sees the fix. Serving the
+    // stale "broken" once more is what made an operator think the fix failed.
+    now.mockReturnValue(NOW.getTime() + 61_000);
+    await expect(service.isAvailable()).resolves.toBe(true);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves a stale "Discord unreachable" at once and refreshes behind it', async () => {
+    // It already leaves the flow offered, so re-reading before answering
+    // would make every wizard mount during an outage wait out the deadline.
+    const service = await build();
+    bot.fetchApplication.mockRejectedValue(
+      new DiscordApiError(
+        'GET /applications/@me did not answer within 5000 ms',
+      ),
+    );
+    await expect(service.isAvailable()).resolves.toBe(true);
+
+    let release: (value: unknown) => void = () => undefined;
+    bot.fetchApplication.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    now.mockReturnValue(NOW.getTime() + 61_000);
+    // Answers without waiting for the refresh that is still in flight.
+    await expect(service.isAvailable()).resolves.toBe(true);
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+    release({ id: CLIENT_ID, redirectUris: [REDIRECT_URI] });
+  });
+
+  it('treats "Discord did not list its redirects" as settled for ten minutes', async () => {
+    // No re-read changes that answer, so it is not worth one a minute.
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({
+      id: CLIENT_ID,
+      redirectUris: null,
+    });
+    await service.isAvailable();
+    now.mockReturnValue(NOW.getTime() + 9 * 60_000);
+    await service.isAvailable();
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+
+    // Settled is not forever: Discord may start listing them, or a bad row
+    // may appear, and that has to be seen without a restart.
+    now.mockReturnValue(NOW.getTime() + 11 * 60_000);
+    await service.isAvailable();
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(2);
+  });
+
+  it('withdraws at once when an import met a 401 after the setup was verified', async () => {
+    const service = await build();
+    await expect(service.isAvailable()).resolves.toBe(true);
+
+    // An import slice's 401 flips the gateway; the cached "verified" is
+    // two seconds old and would otherwise stand for ten minutes.
+    bot.hasRejectedToken.mockReturnValue(true);
+    bot.fetchApplication.mockRejectedValue(
+      new DiscordApiError('Discord refused DISCORD_BOT_TOKEN (401)', 401),
+    );
+    now.mockReturnValue(NOW.getTime() + 2_000);
+    await expect(service.isAvailable()).resolves.toBe(false);
+    expect(captureMessage).toHaveBeenCalledWith(
+      'Discord setup: bot_token_rejected',
+      expect.anything(),
+    );
+  });
+
+  it('holds a good verdict for ten minutes', async () => {
+    const service = await build();
+    await service.isAvailable();
+    now.mockReturnValue(NOW.getTime() + 9 * 60_000);
+    await service.isAvailable();
+    expect(bot.fetchApplication).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a misconfiguration again when its reason changes', async () => {
+    // The Redirects list edited from one wrong state to another: the operator
+    // needs the new list, not silence because the kind is the same.
+    const service = await build();
+    bot.fetchApplication.mockResolvedValueOnce({
+      id: CLIENT_ID,
+      redirectUris: ['https://api.example.test/v1/v1/discord/connect/callback'],
+    });
+    await service.isAvailable();
+    bot.fetchApplication.mockResolvedValueOnce({
+      id: CLIENT_ID,
+      redirectUris: ['https://api.example.test/v1/discord/connect/callback/'],
+    });
+    await expect(service.beginConnect(CHAPTER, USER, null)).rejects.toThrow();
+    expect(captureMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns once for an unsettled check whose error wording varies', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const service = await build();
+    bot.fetchApplication.mockRejectedValueOnce(
+      new DiscordApiError(
+        'GET /applications/@me did not answer within 5000 ms',
+      ),
+    );
+    await service.isAvailable();
+    bot.fetchApplication.mockRejectedValueOnce(
+      new DiscordApiError(
+        'Discord refused GET /applications/@me: 502 Bad Gateway',
+        502,
+      ),
+    );
+    await service.beginConnect(CHAPTER, USER, null);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('still answers false and 503 when Sentry itself throws', async () => {
+    // Reporting is a side effect of the verdict, never a condition of it.
+    captureMessage.mockImplementationOnce(() => {
+      throw new Error('Sentry transport down');
+    });
+    const service = await build();
+    bot.fetchApplication.mockResolvedValue({ id: CLIENT_ID, redirectUris: [] });
+    await expect(
+      service.beginConnect(CHAPTER, USER, null),
+    ).rejects.toMatchObject({ status: 503 });
+    await expect(service.isAvailable()).resolves.toBe(false);
   });
 });
 

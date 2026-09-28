@@ -38,9 +38,10 @@ const REQUIRED_ENV_VARS = [
 // SEPARATE path, not a fallback that switches on — it works identically whether
 // or not any of these are set.
 //
-// All four are needed together; three of the four are not enough to run the
-// flow, which is why `DiscordOAuthService.isAvailable()` checks all of them
-// rather than degrading:
+// All five are needed together; four of the five are not enough to run the
+// flow, which is why `DiscordOAuthService.isConfigured()` checks all of them
+// rather than degrading (`isAvailable()` then also asks Discord whether the
+// application behind them is set up right):
 //   - DISCORD_BOT_TOKEN      ONE global Frapp bot token (not per-tenant — the
 //                            per-chapter value is a guild id, in the database).
 //   - DISCORD_CLIENT_ID      the Discord application's client id, for the
@@ -49,8 +50,14 @@ const REQUIRED_ENV_VARS = [
 //                            what proves the authorizing human runs the server.
 //   - API_URL / APP_URL      the redirect URI must be registered in the Discord
 //                            Developer Portal EXACTLY as
-//                            `${API_URL}/v1/discord/connect/callback`, and the
-//                            callback sends the browser back to `APP_URL`.
+//                            `${API_URL}/v1/discord/connect/callback` (a stray
+//                            trailing `/v1` on API_URL is dropped first), and
+//                            the callback sends the browser back to `APP_URL`.
+//                            Whether it is registered is checked against
+//                            Discord at runtime (at boot, on a TTL, and before
+//                            each connect), and only where Discord's answer
+//                            lists the redirects; not here. See
+//                            `discord-application-check.ts`.
 //
 // Also optional, same reasoning (#238): email-based bulk invites. Unset,
 // `selectEmailProvider()` uses a no-op provider that logs instead of sending,

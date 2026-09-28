@@ -85,9 +85,12 @@ what keeps working if Discord ever throttles one shared bot across every chapter
 Everything below is **provider-side configuration that no repo state creates and
 no CI check can detect.** Two of the five steps produce Infisical values (step 2
 the bot token, step 3 the OAuth pair); the other three produce nothing a repo can
-see — step 1 an application, step 4 a text entry, step 5 a toggle — and getting
-any of those three wrong fails at runtime with an error that names neither this
-page nor the setting.
+see — step 1 an application, step 4 a text entry, step 5 a toggle. The running
+API checks some of it against Discord's own record of the application: step 4,
+and that the bot token is live and belongs to the application `DISCORD_CLIENT_ID`
+names (see "Verify after setup" below). It cannot see the client secret or step
+5, and getting either wrong fails at runtime with an error that names neither
+this page nor the setting.
 
 1. **Create the application.** https://discord.com/developers/applications → New
    Application, owned by **Frapp**, not by a chapter. Name the application and
@@ -111,8 +114,10 @@ page nor the setting.
    > and one valid token at a time, so resetting it to set up *any* environment
    > invalidates the token every other environment on that application is using.
    > Doing this for local or staging today would break production's importer
-   > with Discord 401s, and nothing in the product would name the reset as the
-   > cause. Check step 4's observation before clicking it.
+   > with Discord 401s. The API now names the cause (a `Discord setup:
+   > bot_token_rejected` report, table below), but only after the damage, and
+   > only a new token in Infisical plus a restart undoes it. Check step 4's
+   > observation before clicking it.
 
 3. **OAuth2 credentials.** OAuth2 → copy Client ID → `DISCORD_CLIENT_ID`; Reset
    Secret → copy → `DISCORD_CLIENT_SECRET`. The secret is what signs the
@@ -130,14 +135,19 @@ page nor the setting.
    | staging     | `https://api-staging.frapp.live/v1/discord/connect/callback` |
    | production  | `https://api.frapp.live/v1/discord/connect/callback`         |
 
-   It is `API_URL` + `/v1/discord/connect/callback` and Discord matches it
-   **character for character**. Get it wrong and every admin who clicks "Add to
+   It is `API_URL` (less any trailing `/v1`, which the API drops) +
+   `/v1/discord/connect/callback`, and Discord matches it **character for
+   character**. Get it wrong and every admin who clicks "Add to
    Server" gets Discord's own **`Invalid OAuth2 redirect_uri`** page, and the
    callback is never reached — Discord rejects at the authorize URL, before the
    consent screen, so the admin never even picks a server. The path is pinned in
    code as `DISCORD_CALLBACK_PATH`
    (`apps/api/src/application/services/discord-oauth.service.ts`); this table is
-   the third copy, and the one that drifts.
+   the third copy, and the one that drifts, which is why the API compares the
+   portal's list with the URI it actually sends rather than trusting it.
+   *2026-09-28: staging's `API_URL` in Infisical was
+   `https://api-staging.frapp.live/v1`, which built
+   `/v1/v1/discord/connect/callback` until the API began dropping the suffix.*
 
    **The Redirects list belongs to an application, not to an environment.**
    Discord validates `redirect_uri` against the list of the application named by
@@ -222,22 +232,51 @@ link to somebody else's Discord admin and end up reading that server. Do not
 
 **Verify after setup — and know what the check does not cover.**
 `GET /v1/discord/availability` (as an officer with `channels:manage`) must answer
-`{"available": true}`. If it answers `false`, one of the three secrets or
-`API_URL` / `APP_URL` is unset in that environment — see
-[`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings.
+`{"available": true}`. If it answers `false`, either one of the three secrets or
+`API_URL` / `APP_URL` is unset in that environment (see
+[`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings), or
+Discord's record of the application shows the setup wrong, and the API's log
+names which (table below).
 
-**`available: true` is not "Discord is set up".** `DiscordOAuthService.isAvailable()`
-reads the five variables named above and nothing else; it makes no call to
-Discord, so it cannot observe step 4 or step 5 at all. Neither is detected
-*before* an admin tries to use the flow: step 4 is never visible to Frapp, and
-step 5 only becomes visible once an import is already running. A fully green
-availability check therefore sits happily on top of either one being wrong. The
-three failures look nothing alike:
+**What `available` checks, and what it cannot.** `DiscordOAuthService.isAvailable()`
+needs the five variables named above, then reads Discord's own record of the
+application: `GET /applications/@me` under the bot token, once at boot, and fresh
+before every "Add to Server"
+(`apps/api/src/application/services/discord-application-check.ts`). In between,
+`availability` answers from a cached verdict: ten minutes for a verified setup or
+one Discord answered without listing its redirects ("unchecked"), one minute for
+a withdrawal or an unreachable Discord. A withdrawal is re-read before it is
+answered again; the others answer at once and refresh behind. A 401 the bot has
+met since, from an import say, skips the cache. Discord's record
+settles three things: the redirect URI is registered (step 4), the bot token is
+live (step 2), and the token and `DISCORD_CLIENT_ID` belong to one application
+(steps 2 and 3). A mistake in any of them withdraws the flow instead of sending
+an admin to Discord's error page. Three limits:
+
+- **The client secret is invisible to it.** The secret is only ever presented to
+  Discord on the callback's code exchange, so a reset or mistyped
+  `DISCORD_CLIENT_SECRET` still reads as verified (table below).
+- **Step 5 is invisible to it.** The Message Content Intent shows up only once
+  an import is already running, so `available: true` says nothing about it.
+- **Discord's answer may not list the redirects.** `redirect_uris` is optional
+  on Discord's application object, and whether it comes back to a bot token has
+  not yet been observed from a deployment. When it is absent the flow stays
+  offered and the API logs `Discord application setup unchecked`, and step 4 is
+  back to being checked by hand, as below. Which of the two a deployment got is
+  in its boot log, on the line starting `Discord application setup` (or
+  `Connect Discord withdrawn`), which lands a moment after the routes are
+  mapped.
+
+When Discord cannot be reached at all (a timeout, a 5xx, a rate limit) the flow
+also stays offered, with the same warning: the guard failing is not the setup
+failing. The failures look nothing alike:
 
 | What is wrong                        | How it presents                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A secret or `API_URL` / `APP_URL` unset | `availability` answers `false`, and the wizard still shows the "Connect Discord" card — greyed out, reading "Not available in this environment", not hidden. Only `POST /v1/discord/connect` and `POST /v1/discord/connect/confirm` 503; `GET`/`DELETE /v1/discord/connection` still answer 200, so a clean 200 there is **not** evidence the secrets are set.                    |
-| Redirect URI not registered (step 4) | Wizard offers "Connect Discord" normally and `POST /v1/discord/connect` **succeeds** — it mints a `discord_oauth_states` row and returns the authorize URL. The browser then hits Discord's **`Invalid OAuth2 redirect_uri`** page and the *callback* never fires, so there is no `?discord=` code and nothing on the callback path in logs or Sentry. Server-side evidence does exist: a pile of `discord_oauth_states` rows with `consumed_at IS NULL` and no matching `discord_connections` row is the fingerprint. Live, the `redirect_uri=` parameter in that page's address bar is the fastest check — compare it to the table above character for character. |
+| Redirect URI not registered (step 4) | `availability` answers `false` and the card greys out as above; `POST /v1/discord/connect` 503s before minting a state. The API logs `Connect Discord withdrawn. Discord application <id> has no OAuth2 redirect registered for <uri> … Registered: <list>` at error level, and Sentry gets one `Discord setup: redirect_unregistered` issue per change, not per request. Add the logged URI verbatim; no redeploy is needed, and a wizard loaded a minute or more later offers the flow again. **If Discord's answer carried no `redirect_uris`** (the limit above), the old presentation applies instead: `POST /v1/discord/connect` succeeds, the browser hits Discord's **`Invalid OAuth2 redirect_uri`** page, and the callback never fires. Its fingerprint is `discord_oauth_states` rows with `consumed_at IS NULL` and no matching `discord_connections` row, but only briefly: the hourly worker deletes every expired handshake, used or not, so look within the hour, or for its `Reaped N expired Discord OAuth handshakes` log line. The fastest live check is the `redirect_uri=` parameter in that page's address bar. |
+| Bot token reset, or from another application (steps 2–3) | Same withdrawal, logged and reported as `Discord setup: bot_token_rejected` or `Discord setup: client_id_mismatch`. A rejected token is Discord answering 401, to the check or to any import: someone clicked Reset Token, which while environments share an application breaks all of them. A 401 met by an import is remembered at once but reported by the check, so the withdrawal, log line and Sentry issue land on the next availability or connect request (or the next boot), not the instant the import fails; the import's own error carries the 401 meanwhile. It stays withdrawn until Infisical carries the new token **and the API restarts**, because the client discards a rejected token. A mismatch means `DISCORD_BOT_TOKEN` and `DISCORD_CLIENT_ID` name different applications, so the bot an admin installs is not the one that reads. |
+| Client secret reset or wrong (step 3) | **Not caught before use.** `availability` stays `true` and the boot log says verified. The admin gets through Discord's consent screen, then the callback's code exchange is refused and the wizard shows `?discord=failed`. The API logs `Discord connect failed for chapter <id>: Discord refused the authorization code: <Discord's error code>` at warn level. |
 | Message Content Intent off (step 5)  | Connecting succeeds and channel and role mapping succeed. The import fails with an error naming this toggle (`MISSING_MESSAGE_CONTENT_INTENT_ERROR`) **only once a slice has seen 25 authored messages with no content, attachment or embed between them** (`MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK`, `apps/api/src/domain/utils/discord-api-message.ts`). Under that threshold — a small or quiet archive — the import goes green and writes those messages empty. See the caveat below.                                  |
 
 **Two caveats on that last row, because it is the one that can pass while wrong.**
@@ -251,9 +290,11 @@ import on a small test server is not proof the intent is on** — verify the
 toggle in the portal directly. ([#2317](https://github.com/pdcarlson/Frapp/issues/2317)
 tracks tightening the detector and correcting its error string.)
 
-So the check that actually proves step 4 is clicking **Add to Server** once per
-environment and getting Discord's consent screen instead of its error page. It
-proves step 4 and nothing else — the consent screen renders happily with the
+So the proof of step 4 is the boot log line `Discord application setup verified:
+the redirect URI <uri> is registered`. Where the log says the setup is unchecked,
+the proof is clicking **Add to Server** once in that environment and reaching
+Discord's consent screen instead of its error page. Either proves step 4 and
+nothing else — the consent screen renders happily with the
 Message Content Intent off. Confirm step 5 by eye in the portal.
 
 ---

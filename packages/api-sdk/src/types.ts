@@ -2874,8 +2874,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Whether the bot path is configured in this environment
-         * @description The wizard offers "Connect Discord" only when this is true, and always offers the export-upload path regardless.
+         * Whether the bot path works in this environment
+         * @description True when the Discord settings are present and Discord has not reported the application misconfigured (an unregistered redirect URI, a bot token from another application, or a rejected token). The wizard offers "Connect Discord" only when this is true, and always offers the export-upload path regardless.
          */
         get: operations["DiscordConnectionController_availability_v1"];
         put?: never;
@@ -4481,7 +4481,7 @@ export interface components {
             warnings: string[];
         };
         DiscordAvailabilityDto: {
-            /** @description False when this environment has no Discord application configured. The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on. */
+            /** @description False when this environment has no Discord application configured, or when Discord reports that application set up so the connect flow cannot work (checked against Discord, not assumed). The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on. */
             available: boolean;
         };
         DiscordConnectionDto: {

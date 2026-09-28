@@ -1,11 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { REST } from '@discordjs/rest';
+import { REST, RESTEvents } from '@discordjs/rest';
 import { ChannelType, Routes } from 'discord-api-types/v10';
 import {
   DISCORD_MESSAGE_PAGE_LIMIT,
   DiscordApiError,
   DiscordNotConfiguredError,
+  type DiscordApplicationInfo,
   type DiscordAttachmentStream,
   type DiscordChannelDiscovery,
   type DiscordChannelRef,
@@ -74,6 +75,9 @@ const MAX_ARCHIVED_THREAD_PAGES = 50;
 /** Attachment fetches that hang must not hold a slice's whole budget. */
 const ATTACHMENT_FETCH_TIMEOUT_MS = 30_000;
 
+/** The setup check answers a wizard request; it gives up well before that does. */
+const APPLICATION_FETCH_TIMEOUT_MS = 5_000;
+
 /** The HTTP status behind a `@discordjs/rest` rejection, when it carried one. */
 function statusOf(error: unknown): number | null {
   const status = (error as { status?: unknown })?.status;
@@ -101,6 +105,19 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
   private readonly logger = new Logger(DiscordBotGatewayService.name);
   private readonly rest: REST | null;
 
+  /**
+   * Whether Discord has answered 401 to any bot request in this process.
+   *
+   * Recorded here because the client erases the evidence: on an authenticated
+   * 401, `@discordjs/rest` clears its own token, and every later request then
+   * fails with a plain "Expected token to be set" error carrying no status. A
+   * setup check that only looked at its own response would report a reset
+   * token once, then read the same dead token as "Discord unreachable" a minute
+   * later and offer the flow again. Sticky for the life of the process, like
+   * the client's own state: only a restart with a new token recovers either.
+   */
+  private tokenRejected = false;
+
   constructor(config: ConfigService) {
     const token = config.get<string>('DISCORD_BOT_TOKEN')?.trim();
     // Optional at boot, like the analytics and check-in secrets: local dev, CI
@@ -108,6 +125,16 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     // still start. Callers ask `isConfigured()` and answer 503; nothing here
     // throws on construction.
     this.rest = token ? new REST({ version: '10' }).setToken(token) : null;
+    if (this.rest) {
+      // Emitted for every response before the client handles errors, so this
+      // sees the 401 whichever call hit it first: an import slice as readily
+      // as the setup check.
+      this.rest.on(RESTEvents.Response, (request, response) => {
+        if (response.status === 401 && request.data.auth) {
+          this.tokenRejected = true;
+        }
+      });
+    }
     if (!token) {
       this.logger.log(
         'DISCORD_BOT_TOKEN is unset; the Discord bot import path is disabled.',
@@ -119,6 +146,10 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     return this.rest !== null;
   }
 
+  hasRejectedToken(): boolean {
+    return this.tokenRejected;
+  }
+
   private client(): REST {
     if (!this.rest) {
       throw new DiscordNotConfiguredError(
@@ -126,6 +157,69 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       );
     }
     return this.rest;
+  }
+
+  // ── setup check ───────────────────────────────────────────────────────────
+
+  async fetchApplication(): Promise<DiscordApplicationInfo> {
+    const rest = this.client();
+    if (this.tokenRejected) {
+      throw new DiscordApiError(
+        'Discord refused DISCORD_BOT_TOKEN (401) earlier in this process, and the client has discarded it.',
+        401,
+      );
+    }
+
+    let raw: unknown;
+    let timer: NodeJS.Timeout | undefined;
+    // A race, not just the signal: the client honours `signal` in its queue
+    // and in the fetch, but not in its rate-limit sleeps or its 429
+    // retry-after waits. The queue is shared with every running import, so
+    // without a deadline of our own the wizard's request could sit behind
+    // someone else's rate limit for as long as Discord says.
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new DiscordApiError(
+              `GET /applications/@me did not answer within ${APPLICATION_FETCH_TIMEOUT_MS} ms`,
+            ),
+          ),
+        APPLICATION_FETCH_TIMEOUT_MS,
+      );
+    });
+    try {
+      raw = await Promise.race([
+        rest.get(Routes.currentApplication(), {
+          signal: AbortSignal.timeout(APPLICATION_FETCH_TIMEOUT_MS),
+        }),
+        deadline,
+      ]);
+    } catch (error) {
+      if (error instanceof DiscordApiError) throw error;
+      throw new DiscordApiError(
+        `Discord refused GET /applications/@me: ${this.describe(error)}`,
+        // The 401 that cleared the token may have landed during this very
+        // call, in which case what reached here is the status-less
+        // "Expected token to be set" error.
+        this.tokenRejected ? 401 : statusOf(error),
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const body = asRecord(raw);
+    const id = asString(body?.id);
+    if (!id) {
+      throw new DiscordApiError('Discord returned no application id.');
+    }
+    const redirectUris = body?.redirect_uris;
+    return {
+      id,
+      redirectUris: Array.isArray(redirectUris)
+        ? redirectUris.filter((uri): uri is string => typeof uri === 'string')
+        : null,
+    };
   }
 
   // ── discovery ─────────────────────────────────────────────────────────────

@@ -484,6 +484,20 @@ channel that reports a different one fails the import rather than being skipped.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.
+- **It also withdraws itself when Discord proves the setup broken, and only
+  then.** The API reads Discord's own record of the application and answers
+  `available: false`, refusing to start a connect, when that record shows the
+  flow cannot work: the redirect URI is not registered, the bot token is
+  refused, or the token and the client id belong to different applications.
+  That is reported to operators, so an admin gets a sentence in the wizard
+  rather than Discord's error page. When Discord cannot be reached, or its answer
+  does not settle the question, the flow stays offered: an outage of the check
+  must not look like a broken setup. It comes back on its own once the setup is
+  fixed, with no redeploy, with one exception: a refused bot token needs the new
+  token and a restart of the API, because the token is only read at start and a
+  refused one is not retried. What each check covers is in
+  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md)
+  § 7A.
 - **The callback always answers with a redirect, never an error page.** Discord
   returns the admin to `/v1/discord/connect/callback` as a top-level browser
   navigation, so whatever happens there — success, a declined consent screen, a

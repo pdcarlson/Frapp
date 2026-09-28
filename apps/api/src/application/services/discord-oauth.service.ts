@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  OnApplicationBootstrap,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -24,6 +25,12 @@ import {
 import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { errorFingerprint } from '../../infrastructure/observability/error-fingerprint';
+import {
+  classifyApplicationFetchFailure,
+  evaluateDiscordApplication,
+  sameApplicationCheck,
+  type DiscordApplicationCheck,
+} from './discord-application-check';
 
 /**
  * The callback path, fixed in code.
@@ -31,11 +38,34 @@ import { errorFingerprint } from '../../infrastructure/observability/error-finge
  * Discord matches `redirect_uri` against the Developer Portal's registered list
  * **exactly**, so this string has to be identical in three places: the
  * authorize URL, the token exchange, and the portal. Two of the three are
- * derived from this constant; the third is a human copying `API_URL` + this
- * path once. Anything more configurable turns a one-time paste into a
- * `redirect_uri mismatch` nobody can debug from the error alone.
+ * derived from this constant; the third is a human pasting it into the portal,
+ * which `DiscordApplicationCheck` compares against Discord's own record rather
+ * than trusting the paste. Anything more configurable turns a one-time paste
+ * into a `redirect_uri mismatch` nobody can debug from the error alone.
  */
 export const DISCORD_CALLBACK_PATH = '/v1/discord/connect/callback';
+
+/**
+ * How long a verdict on the Discord application is reused.
+ *
+ * A settled answer (verified, or Discord not listing its redirects at all,
+ * which no re-read changes) for ten minutes. A withdrawal or an unreachable
+ * Discord for one, so a Redirects row added in the portal, or Discord coming
+ * back, shows within a minute rather than at the next deploy.
+ */
+const SETTLED_CHECK_TTL_MS = 10 * 60_000;
+const UNSETTLED_CHECK_TTL_MS = 60_000;
+
+function checkTtlMs(check: DiscordApplicationCheck): number {
+  if (check.status === 'verified') return SETTLED_CHECK_TTL_MS;
+  if (
+    check.status === 'unverified' &&
+    check.kind === 'redirects_not_reported'
+  ) {
+    return SETTLED_CHECK_TTL_MS;
+  }
+  return UNSETTLED_CHECK_TTL_MS;
+}
 
 /**
  * How long an admin has to finish the Discord consent screen.
@@ -215,10 +245,16 @@ class DiscordConnectFailure extends Error {
  * header the callback does not even carry.
  */
 @Injectable()
-export class DiscordOAuthService {
+export class DiscordOAuthService implements OnApplicationBootstrap {
   private readonly logger = new Logger(DiscordOAuthService.name);
   private readonly apiUrl: string | null;
   private readonly appUrl: string | null;
+  private applicationCheckResult: {
+    check: DiscordApplicationCheck;
+    at: number;
+  } | null = null;
+  private applicationCheckInFlight: Promise<DiscordApplicationCheck> | null =
+    null;
 
   constructor(
     @Inject(DISCORD_CONNECTION_REPOSITORY)
@@ -229,20 +265,40 @@ export class DiscordOAuthService {
     private readonly bot: IDiscordBotGateway,
     config: ConfigService,
   ) {
-    this.apiUrl = normaliseOrigin(config.get<string>('API_URL'));
+    const rawApiUrl = config.get<string>('API_URL');
+    this.apiUrl = apiBaseUrl(rawApiUrl);
     this.appUrl = normaliseOrigin(config.get<string>('APP_URL'));
+    if (this.apiUrl !== null && this.apiUrl !== normaliseOrigin(rawApiUrl)) {
+      // Harmless now, and said once per boot so the drift stays visible: the
+      // documented value is the bare origin (ENV_REFERENCE.md), and a stray
+      // `/v1` here is what built staging's `/v1/v1/...` redirect URI.
+      this.logger.warn(
+        `API_URL ends in /v1; the documented value is the bare origin. The Discord redirect URI is built from ${this.apiUrl}.`,
+      );
+    }
   }
 
   /**
-   * Whether this environment can run the flow at all.
+   * Check the Discord application once at boot, so a deploy onto a broken
+   * setup reports itself before any admin finds it.
    *
-   * All four are required and none is optional-with-a-degraded-mode: without
-   * `API_URL` there is no redirect URI to register, and without `APP_URL` the
-   * callback has nowhere to send the browser back to. Reporting that as
-   * "unavailable" is honest; half-running it would strand an admin on a blank
-   * page at Discord.
+   * Not awaited: Discord is optional and its outage must not hold the API's
+   * boot, or its health check, hostage.
    */
-  isAvailable(): boolean {
+  onApplicationBootstrap(): void {
+    if (!this.isConfigured()) return;
+    void this.currentApplicationCheck().catch(() => undefined);
+  }
+
+  /**
+   * Whether all five settings are present. Says nothing about Discord's side.
+   *
+   * None is optional-with-a-degraded-mode: without `API_URL` there is no
+   * redirect URI to register, and without `APP_URL` the callback has nowhere
+   * to send the browser back to. Half-running the flow would strand an admin
+   * on a blank page at Discord.
+   */
+  isConfigured(): boolean {
     return (
       this.oauth.isConfigured() &&
       this.bot.isConfigured() &&
@@ -251,11 +307,144 @@ export class DiscordOAuthService {
     );
   }
 
-  private assertAvailable(): void {
-    if (!this.isAvailable()) {
+  /**
+   * Whether this environment can run the flow: configured, and not proven
+   * broken by Discord's own record of the application.
+   *
+   * An `unverified` check still counts as available, on purpose: see
+   * `DiscordApplicationCheck`.
+   */
+  async isAvailable(): Promise<boolean> {
+    if (!this.isConfigured()) return false;
+    const check = await this.currentApplicationCheck();
+    return check.status !== 'misconfigured';
+  }
+
+  /**
+   * Refuse to start what cannot finish.
+   *
+   * `fresh` re-reads Discord first. Starting a handshake is rare and is the one
+   * moment a stale "verified" costs an admin a trip to Discord's error page, so
+   * it pays for one extra request; the confirm step, which runs after Discord
+   * already accepted the redirect, does not need to.
+   */
+  private async assertAvailable(opts: { fresh: boolean }): Promise<void> {
+    if (!this.isConfigured()) {
       throw new ServiceUnavailableException(
         'Connecting Discord is not configured in this environment. The DiscordChatExporter upload flow still works.',
       );
+    }
+    const check = opts.fresh
+      ? await this.refreshApplicationCheck()
+      : await this.currentApplicationCheck();
+    if (check.status === 'misconfigured') {
+      // The operator detail went to the log and Sentry; the admin gets a
+      // sentence they can act on, which is not "edit the Developer Portal".
+      throw new ServiceUnavailableException(
+        'Connecting Discord is switched off in this environment because its Discord setup is incomplete, and Frapp has been alerted. The DiscordChatExporter upload flow still works.',
+      );
+    }
+  }
+
+  /**
+   * The cached verdict, re-read from Discord once it has aged out.
+   *
+   * Only a withdrawal is re-read before answering. Serving a stale
+   * "misconfigured" once more would keep the card greyed on the first reload
+   * after someone fixes the portal, which is exactly when an operator is
+   * watching. Every other verdict already leaves the flow offered, so it is
+   * served as-is while a refresh runs behind it, and the wizard does not wait
+   * on Discord to be told what it would be told anyway.
+   *
+   * One thing short-circuits the TTL: a 401 the gateway has seen since, most
+   * likely from an import slice. That is news a cached "verified" does not
+   * have, and it costs no Discord call to act on.
+   */
+  private currentApplicationCheck(): Promise<DiscordApplicationCheck> {
+    const cached = this.applicationCheckResult;
+    if (!cached) return this.refreshApplicationCheck();
+    const withdrawn = cached.check.status === 'misconfigured';
+    if (!withdrawn && this.bot.hasRejectedToken()) {
+      return this.refreshApplicationCheck();
+    }
+    if (Date.now() - cached.at < checkTtlMs(cached.check)) {
+      return Promise.resolve(cached.check);
+    }
+    if (withdrawn) return this.refreshApplicationCheck();
+    // Never unhandled: a rejection here would take the process down.
+    void this.refreshApplicationCheck().catch(() => undefined);
+    return Promise.resolve(cached.check);
+  }
+
+  /** Ask Discord now. Concurrent callers share one request. */
+  private refreshApplicationCheck(): Promise<DiscordApplicationCheck> {
+    if (!this.applicationCheckInFlight) {
+      this.applicationCheckInFlight = this.runApplicationCheck().finally(() => {
+        this.applicationCheckInFlight = null;
+      });
+    }
+    return this.applicationCheckInFlight;
+  }
+
+  private async runApplicationCheck(): Promise<DiscordApplicationCheck> {
+    let check: DiscordApplicationCheck;
+    try {
+      const application = await this.bot.fetchApplication();
+      check = evaluateDiscordApplication({
+        application,
+        expectedClientId: this.oauth.clientId(),
+        redirectUri: this.redirectUri(),
+      });
+    } catch (error) {
+      check = classifyApplicationFetchFailure(error);
+    }
+    this.recordApplicationCheck(check);
+    return check;
+  }
+
+  /**
+   * Keep the verdict, and say so when it changes.
+   *
+   * On change only: this runs every few minutes for the life of the process,
+   * and a line per run would bury the one that matters. A misconfiguration
+   * goes to Sentry as well as the log, because the failure it describes
+   * otherwise leaves no trace on our side at all.
+   */
+  private recordApplicationCheck(check: DiscordApplicationCheck): void {
+    const previous = this.applicationCheckResult?.check ?? null;
+    this.applicationCheckResult = { check, at: Date.now() };
+    if (sameApplicationCheck(previous, check)) return;
+
+    switch (check.status) {
+      case 'verified':
+        this.logger.log(
+          `Discord application setup verified: the redirect URI ${this.redirectUri()} is registered.`,
+        );
+        return;
+      case 'unverified':
+        this.logger.warn(
+          `Discord application setup unchecked. ${check.reason}`,
+        );
+        return;
+      case 'misconfigured':
+        this.logger.error(`Connect Discord withdrawn. ${check.reason}`);
+        try {
+          Sentry.captureMessage(`Discord setup: ${check.kind}`, {
+            level: 'error',
+            tags: { integration: 'discord', discord_check: check.kind },
+            extra: { reason: check.reason },
+            fingerprint: ['discord-application-check', check.kind],
+          });
+        } catch (error) {
+          // Reporting must not change the verdict: the flow is withdrawn
+          // either way, and the log line above already carries the reason.
+          this.logger.warn(
+            `Sentry report failed for the Discord setup check: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        return;
     }
   }
 
@@ -294,7 +483,7 @@ export class DiscordOAuthService {
     userId: string,
     returnPath: string | null,
   ): Promise<{ authorize_url: string; expires_at: string }> {
-    this.assertAvailable();
+    await this.assertAvailable({ fresh: true });
 
     const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS);
     const state = await this.connectionRepo.createState({
@@ -618,7 +807,7 @@ export class DiscordOAuthService {
     userId: string,
     handshake: string,
   ): Promise<DiscordConnectionView> {
-    this.assertAvailable();
+    await this.assertAvailable({ fresh: false });
 
     if (!isUuid(handshake)) {
       throw new BadRequestException(
@@ -766,6 +955,29 @@ function normaliseOrigin(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
   return trimmed.replace(/\/+$/, '');
+}
+
+/**
+ * `API_URL` as the base the versioned routes hang off: trailing slashes and a
+ * trailing `/v1` removed.
+ *
+ * Every route here is versioned in its path (`/v1/...`), so a `/v1` left on
+ * `API_URL` doubles it. The SDK already strips it (`normalizeApiBaseUrl` in
+ * `packages/api-sdk/src/client.ts`, same rule), and the Stripe check reads only
+ * the origin, so a stale `/v1` in Infisical broke nothing else, and this was
+ * the one reader that turned it into `/v1/v1/discord/connect/callback`: a URI
+ * no portal row matched. Staging carried exactly that value on 2026-09-28.
+ *
+ * Stripping only `/v1`, not the whole path, keeps an API genuinely mounted
+ * under a prefix working, as the SDK does.
+ */
+export function apiBaseUrl(value: string | undefined): string | null {
+  const trimmed = normaliseOrigin(value);
+  if (trimmed === null) return null;
+  const base = trimmed.endsWith('/v1')
+    ? trimmed.slice(0, -'/v1'.length)
+    : trimmed;
+  return base.length > 0 ? base : null;
 }
 
 const UUID_RE =

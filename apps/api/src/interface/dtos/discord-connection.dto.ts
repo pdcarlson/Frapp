@@ -63,7 +63,7 @@ export class BeginDiscordConnectResponseDto {
 export class DiscordAvailabilityDto {
   @ApiProperty({
     description:
-      'False when this environment has no Discord application configured. The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on.',
+      'False when this environment has no Discord application configured, or when Discord reports that application set up so the connect flow cannot work (checked against Discord, not assumed). The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on.',
   })
   available: boolean;
 }

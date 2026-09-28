@@ -26,10 +26,15 @@ export const discordConnectionKeys = {
 };
 
 /**
- * Whether this environment has the Discord application configured at all.
+ * Whether the bot path works in this environment.
  *
- * Cached hard: it is a deployment fact, not chapter state, and it cannot change
- * without a redeploy. Polling it would be pure noise on every wizard mount.
+ * Not a pure deployment fact any more: the API also withdraws the flow when
+ * Discord reports its application set up wrong. An unregistered redirect URI
+ * comes back once it is added in the Developer Portal, without a redeploy (a
+ * reset bot token is the exception: it needs the new token and an API
+ * restart). So it is cached for a minute, matching how long the API itself
+ * holds a bad verdict, rather than for the life of a session. It is still not
+ * chapter state, so nothing polls it.
  */
 export function useDiscordAvailability(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -43,7 +48,7 @@ export function useDiscordAvailability(options?: { enabled?: boolean }) {
       return data ?? { available: false };
     },
     enabled: !!chapterId && (options?.enabled ?? true),
-    staleTime: 10 * 60_000,
+    staleTime: 60_000,
     // A 403 (not an officer) will not fix itself by asking again on a timer.
     retry: false,
   });
@@ -76,6 +81,8 @@ export function useDiscordConnection(options?: { enabled?: boolean }) {
  */
 export function useBeginDiscordConnect() {
   const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
 
   return useMutation({
     mutationFn: async (vars: { return_path?: string }) => {
@@ -85,6 +92,13 @@ export function useBeginDiscordConnect() {
       if (error) throw error;
       return data;
     },
+    // The API re-reads Discord before every connect, so a refusal here can be
+    // newer than the cached availability that enabled the button. Ask again,
+    // so the card greys out instead of offering a click that keeps failing.
+    onError: () =>
+      queryClient.invalidateQueries({
+        queryKey: discordConnectionKeys.availability(chapterId),
+      }),
   });
 }
 
@@ -234,7 +248,8 @@ export const DISCORD_CONNECT_MESSAGES: Record<
   },
   declined: {
     variant: "error",
-    message: "You cancelled the Discord authorization, so nothing was connected.",
+    message:
+      "You cancelled the Discord authorization, so nothing was connected.",
   },
   invalid: {
     variant: "error",
