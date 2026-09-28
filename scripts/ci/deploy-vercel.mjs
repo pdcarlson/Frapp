@@ -20,15 +20,13 @@
 // against and whether the deployment takes production traffic — both carried by
 // `target`, so the two channels cannot drift apart into two implementations.
 //
-// Where those variables come from differs by target too, and `appConfigSourceFor`
-// holds that one fact. Staging's syncs died with the Git link, and the owner
-// chose (#834, 2026-09-24) to have the staging job inject Infisical `staging` and
-// hand each build exactly the keys its app reads (`lib/vercel-build-env.mjs`).
-// Production has not moved yet (#2673): its CLI processes run on the whole job
-// environment, which `deploy-production.yml` has already filled with Infisical
-// `prod`, so a key that injection holds beats the Production row `vercel pull`
-// writes, and the rows only fill keys it lacks. Same code path, one more
-// per-project input.
+// Where those variables come from is the same for both targets. Each calling
+// job records its env var names, then injects Infisical (`staging` or `prod`),
+// and `buildEnvsFor` hands each build exactly the keys its app reads
+// (`lib/vercel-build-env.mjs`). No Vercel CLI process sees the rest of the
+// store, and no Vercel env row can supply an app key. The owner chose this for
+// staging on 2026-09-24 (#834) and for production on 2026-09-28 (#2673), in
+// place of the Infisical→Vercel syncs.
 //
 // ── Why a fresh build and not `promote` ────────────────────────────────────
 // Vercel's `POST /v10/projects/{id}/promote/{deploymentId}` re-points production
@@ -42,9 +40,10 @@
 // `preview` forever.
 //
 // `vercel pull --environment=production` + `vercel build --prod` is the
-// equivalent of the old `target: "production"` create call: it compiles the
-// commit against Production env vars. The guard on the returned deployment's
-// `target` below is what proves it actually did.
+// equivalent of the old `target: "production"` create call: it builds the
+// commit as a production deployment (`VERCEL_ENV=production` comes from the
+// pulled file), against the app keys Infisical `prod` supplied. The guard on the
+// returned deployment's `target` below is what proves it actually did.
 //
 // ── Why `CANCELED` is a FAILURE here ───────────────────────────────────────
 // This is the subtle one, and it is the reason this file exists rather than a
@@ -68,8 +67,8 @@
 //
 // ── Why there is a `DEPLOY_PHASE` ──────────────────────────────────────────
 // On the production path the build is the step most likely to fail for reasons
-// that have nothing to do with the commit — the OOM killer, a Production env
-// var the sync never delivered, a registry blip — and it used to run last,
+// that have nothing to do with the commit — the OOM killer, an app key missing
+// from Infisical `prod`, a registry blip — and it used to run last,
 // after the migration had applied and the Render API had shipped. Run
 // 33275321347 is what that looks like: a migrated database, a new API, old
 // frontends, no tag. `deploy-production.yml` therefore calls this script twice:
@@ -99,12 +98,14 @@
 //                               phase reads it back from (one subdirectory per
 //                               project label). Required for those two phases,
 //                               ignored by `all`
-//   VERCEL_BUILD_ENV_BASELINE — required for `preview`: the file
-//                               `record-env-baseline.mjs` wrote before the job
-//                               injected Infisical `staging`. Every CLI process
-//                               runs on those names alone, and `vercel build`
-//                               also gets its project's app keys
+//   VERCEL_BUILD_ENV_BASELINE — required: the file `record-env-baseline.mjs`
+//                               wrote before the job injected Infisical. Every
+//                               CLI process runs on those names alone, and
+//                               `vercel build` also gets its project's app keys
 //                               (`lib/vercel-build-env.mjs`)
+//   DRY_RUN                   — optional, `true` on a production rehearsal:
+//                               `SENTRY_AUTH_TOKEN` is withheld from the build
+//                               so it mints no Sentry release (#2275)
 //   DEPLOY_REF                — optional, the BRANCH stamped as
 //                               `meta.githubCommitRef` (default `main`). Both
 //                               current callers deploy `main` and leave it
@@ -241,7 +242,7 @@ export async function createVercelDeployment({
   teamId,
   cwd,
   stashDir = null,
-  buildEnv = null,
+  buildEnv,
   runCommand,
   stashFs,
   envFileFs,
@@ -457,7 +458,7 @@ export function stashDirFor(stashRoot, label) {
  * one `.vercel` in the working tree. The stash is what lets the second build
  * start without destroying the first's output.
  *
- * @param {{projects: Array<{projectId: string, label: string, buildEnv?: object}>}} input
+ * @param {{projects: Array<{projectId: string, label: string, buildEnv: object}>}} input
  */
 export async function buildVercelProjects({
   apiKey,
@@ -492,7 +493,7 @@ export async function buildVercelProjects({
         label: project.label,
         cwd,
         stashDir,
-        buildEnv: project.buildEnv ?? null,
+        buildEnv: project.buildEnv,
         runCommand,
         stashFs,
         envFileFs,
@@ -537,10 +538,10 @@ export async function buildVercelProjects({
  * expected to have been built and stashed by `buildVercelProjects` earlier, and
  * only the upload runs here.
  *
- * `project.buildEnv`, when set, is that project's `infisicalBuildEnv` result: the
- * source of its app config and of every CLI step's environment.
+ * `project.buildEnv` is that project's `buildEnvsFor` result: the source of its
+ * app config and of every CLI step's environment. It is required.
  *
- * @param {{projects: Array<{projectId: string, label: string, buildEnv?: object}>}} input
+ * @param {{projects: Array<{projectId: string, label: string, buildEnv: object}>}} input
  */
 export async function deployVercel({
   apiKey,
@@ -601,7 +602,7 @@ export async function deployVercel({
         teamId,
         cwd,
         stashDir: stashRoot ? stashDirFor(stashRoot, project.label) : null,
-        buildEnv: project.buildEnv ?? null,
+        buildEnv: project.buildEnv,
         runCommand,
         stashFs,
         envFileFs,
@@ -692,25 +693,6 @@ export function parseDeployPhase(raw) {
   );
 }
 
-/**
- * App config comes from the whole job environment, with the env `vercel pull`
- * writes filling whatever that lacks. Production today (#2673).
- */
-export const APP_CONFIG_AMBIENT = "ambient";
-/** App config comes from an Infisical injection earlier in the job. */
-export const APP_CONFIG_FROM_INFISICAL = "infisical";
-
-/**
- * Where a target's build takes its app config from.
- *
- * Production is still ambient: every CLI process sees the whole `prod` store
- * the job injected. Moving it (#2673) means recording a baseline before
- * `deploy-production.yml`'s `prod` injection and flipping this line.
- */
-export function appConfigSourceFor(target) {
-  return target === VERCEL_TARGET_PREVIEW ? APP_CONFIG_FROM_INFISICAL : APP_CONFIG_AMBIENT;
-}
-
 // ── The environment contract, as data ───────────────────────────────────────
 //
 // `main()` below is the only consumer at RUNTIME, and it reads perfectly well
@@ -734,6 +716,10 @@ export const REQUIRED_ENV_ALWAYS = Object.freeze([
   "VERCEL_LANDING_PROJECT_ID",
   "VERCEL_API_KEY",
   "VERCEL_TEAM_ID",
+  // Every CLI process's environment is built from these names, so no phase or
+  // target may fall back to the ambient job environment, which holds the whole
+  // injected store (#2673).
+  "VERCEL_BUILD_ENV_BASELINE",
   // The build phase needs this as genuinely as the upload does, which is the
   // detail #2265 turned on: it is injected as `VERCEL_GIT_COMMIT_SHA` during
   // `vercel build` so the web and landing Sentry `release` names the deployed
@@ -756,18 +742,6 @@ const REQUIRED_ENV_BY_PHASE = Object.freeze({
   [DEPLOY_PHASE_ALL]: Object.freeze([]),
 });
 
-/**
- * Required on top of the above, per app-config source.
- *
- * The baseline is what keeps the rest of the injected store out of every CLI
- * process, so a staging run without one must stop rather than fall back to the
- * ambient environment.
- */
-const REQUIRED_ENV_BY_SOURCE = Object.freeze({
-  [APP_CONFIG_AMBIENT]: Object.freeze([]),
-  [APP_CONFIG_FROM_INFISICAL]: Object.freeze(["VERCEL_BUILD_ENV_BASELINE"]),
-});
-
 /** Every environment variable this script requires when run in `phase` for `target`. */
 export function requiredEnvFor({ phase, target }) {
   const extra = REQUIRED_ENV_BY_PHASE[phase];
@@ -777,29 +751,43 @@ export function requiredEnvFor({ phase, target }) {
         `REQUIRED_ENV_BY_PHASE rather than letting the phase run unguarded.`,
     );
   }
-  return [
-    ...REQUIRED_ENV_ALWAYS,
-    ...extra,
-    ...REQUIRED_ENV_BY_SOURCE[appConfigSourceFor(parseDeployTarget(target))],
-  ];
+  // Validated even though no requirement differs by target any more: a call
+  // site with a typo in DEPLOY_TARGET must fail this contract, not pass it.
+  parseDeployTarget(target);
+  return [...REQUIRED_ENV_ALWAYS, ...extra];
 }
 
 /**
- * Each project's `buildEnv`: from the Infisical injection when the target's
- * app config comes from there, else `null` (the ambient env).
+ * The key a production rehearsal must not build with. `next.config.js` hands
+ * it to the Sentry plugin, which creates a release and uploads source maps for
+ * the commit it built, and a dry run's commit is not being deployed (#2275).
+ */
+export const DRY_RUN_WITHHELD_KEYS = Object.freeze(["SENTRY_AUTH_TOKEN"]);
+
+/**
+ * Each project's `buildEnv`, from the Infisical injection earlier in the job.
  *
  * Every project is checked before any is returned, so a missing required key
  * in landing stops the run before web has built, rather than after.
+ *
+ * With `dryRun`, `DRY_RUN_WITHHELD_KEYS` are dropped from each `appEnv` and
+ * listed in `withheld`. They stay in `appKeys`, so the pulled env file loses
+ * them too: neither channel can hand the build a Sentry token. `withheld` is
+ * what keeps the lost-key warning from calling a key Infisical did supply
+ * missing.
  */
-export function buildEnvsFor({ target, projects, env, readBaseline }) {
-  if (appConfigSourceFor(target) !== APP_CONFIG_FROM_INFISICAL) {
-    return projects.map((project) => ({ ...project, buildEnv: null }));
-  }
+export function buildEnvsFor({ projects, env, readBaseline, dryRun = false }) {
   const baselineNames = parseEnvBaseline(readBaseline());
   const errors = [];
   const withEnv = projects.map((project) => {
     try {
-      return { ...project, buildEnv: infisicalBuildEnv({ label: project.label, env, baselineNames }) };
+      const buildEnv = infisicalBuildEnv({ label: project.label, env, baselineNames });
+      // Withheld whether or not the key arrived: the workflow's shell `unset`
+      // usually removes it before this script runs, and the warning must
+      // still not call it lost.
+      buildEnv.withheld = dryRun ? [...DRY_RUN_WITHHELD_KEYS] : [];
+      for (const key of buildEnv.withheld) delete buildEnv.appEnv[key];
+      return { ...project, buildEnv };
     } catch (error) {
       errors.push(error.message);
       return project;
@@ -822,8 +810,12 @@ async function main() {
   const env = {};
   for (const name of requiredEnvFor({ phase, target })) env[name] = requireEnv(name);
 
+  const dryRun = process.env.DRY_RUN === "true";
+  if (dryRun) {
+    console.log(`Dry run: withholding ${DRY_RUN_WITHHELD_KEYS.join(", ")} so this build mints no Sentry release.`);
+  }
   const projects = buildEnvsFor({
-    target,
+    dryRun,
     projects: [
       { projectId: env.VERCEL_WEB_PROJECT_ID, label: "frapp-web" },
       { projectId: env.VERCEL_LANDING_PROJECT_ID, label: "frapp-landing" },
@@ -832,7 +824,6 @@ async function main() {
     readBaseline: () => readFileSync(env.VERCEL_BUILD_ENV_BASELINE, "utf8"),
   });
   for (const { label, buildEnv } of projects) {
-    if (!buildEnv) continue;
     // Names only. The values are masked in the log anyway, but a list of names
     // is what tells a reader which keys this build actually compiled against.
     console.log(

@@ -22,9 +22,9 @@
 //      `VERCEL_BUILD_STASH_DIR` — required by exactly the two phases that have
 //      one — was never asserted anywhere. The required set is now read from
 //      `requiredEnvFor`, the same table `main()` reads, so a `requireEnv`
-//      added to the script tightens this guard in the same commit. It is keyed
-//      on the target as well as the phase since #2672: a staging call site
-//      also needs `VERCEL_BUILD_ENV_BASELINE`, and a production one does not.
+//      added to the script tightens this guard in the same commit. Since #2673
+//      every call site, production and staging alike, also needs
+//      `VERCEL_BUILD_ENV_BASELINE`.
 //   3. No rehearsal reached the step, because the dry run skipped it by `if:`.
 //      That half is fixed in the workflow, not here.
 //
@@ -109,9 +109,8 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
       sites().some((s) => s.workflowFile === "deploy-vercel-staging.yml" && s.phase === DEPLOY_PHASE_ALL),
       "the staging caller should run the unphased (all) path",
     );
-    // The target half of the contract only bites if the sites really differ in
-    // target; a staging caller read as production would be held to the smaller
-    // set and pass without its baseline.
+    // Each workflow must be read as the target it ships to: a staging caller
+    // read as production would pass here while deploying to the wrong channel.
     assert.deepEqual(
       [...new Set(sites().map((s) => `${s.workflowFile}:${s.target}`))].sort(),
       [`deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`, `deploy-vercel-staging.yml:${VERCEL_TARGET_PREVIEW}`],
@@ -213,15 +212,16 @@ describe("the env contract table", () => {
     }
   });
 
-  // Without the baseline a staging run would have no way to keep the rest of
-  // the injected Infisical store out of the CLI processes, so its absence must
-  // stop the run, not fall back to the ambient environment (#2672).
-  it("requires the env baseline for preview in every phase, and never for production", () => {
+  // Without the baseline a run would have no way to keep the rest of the
+  // injected Infisical store out of the CLI processes, so its absence must stop
+  // the run, not fall back to the ambient environment: staging since #2672,
+  // production since #2673.
+  it("requires the env baseline for every target, in every phase", () => {
+    assert.ok(REQUIRED_ENV_ALWAYS.includes("VERCEL_BUILD_ENV_BASELINE"));
     for (const phase of [DEPLOY_PHASE_BUILD, DEPLOY_PHASE_UPLOAD, DEPLOY_PHASE_ALL]) {
-      assert.ok(
-        requiredEnvFor({ phase, target: VERCEL_TARGET_PREVIEW }).includes("VERCEL_BUILD_ENV_BASELINE"),
-      );
-      assert.ok(!forPhase(phase).includes("VERCEL_BUILD_ENV_BASELINE"));
+      for (const target of [VERCEL_TARGET_PRODUCTION, VERCEL_TARGET_PREVIEW]) {
+        assert.ok(requiredEnvFor({ phase, target }).includes("VERCEL_BUILD_ENV_BASELINE"));
+      }
     }
   });
 });
