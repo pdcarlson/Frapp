@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 /**
  * Profile-photo storage layout, shared by the upload path
  * (UserService.requestAvatarUploadUrl) and the account-deletion purge
@@ -107,6 +109,58 @@ function archiveMediaPrefix(chapterId: string, importId: string): string {
  */
 export function flattenArchiveRelativePath(relativePath: string): string {
   return relativePath.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 180);
+}
+
+/**
+ * Matches each character a storage key segment may not keep. What it may keep
+ * is storage-api's own `VALID_OBJECT_KEY` set,
+ * `[A-Za-z0-9_/!.*'() &$=@;:+,?-]` (`supabase/storage`
+ * `src/storage/limits.ts`), minus `/`, which would add a folder, and `?`,
+ * which `@supabase/storage-js` puts into the request URL unencoded, so the key
+ * would be cut at it.
+ */
+const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
+
+/**
+ * The last segment of a storage key built from a client-supplied filename.
+ *
+ * Every upload-URL route that puts the member's filename into the key
+ * (documents, backwork, chat attachments, avatars, service proof) goes through
+ * this, because a raw name breaks the upload in ways the traversal guard does
+ * not catch. storage-js interpolates the key into the request URL unencoded,
+ * and against storage-api:
+ *
+ * - `Résumé.pdf` (anything non-ASCII) mints, then the browser's PUT is refused
+ *   with `Invalid key`.
+ * - `Q1 50% growth.pdf` fails at the mint (a raw `%` is malformed
+ *   percent-encoding), which `SupabaseStorageService.getSignedUploadUrl` turns
+ *   into a 500.
+ * - `Rush #3.pdf` and `q?.pdf` succeed, but the object lands under a key cut
+ *   at the `#` or `?` (`Rush `, `q`) while the API confirms the uncut path, so
+ *   the row points at nothing.
+ *
+ * `posix.basename` drops any `/`-separated directory part; then each character
+ * `UNSAFE_OBJECT_KEY_CHAR` matches becomes `_`, one for one (a backslash
+ * included).
+ *
+ * **The squash is deliberately no wider than that.** A name storage-api
+ * already accepted (`Meeting notes (final).pdf`, `Bob's, A&B.pdf`) comes out
+ * unchanged, because the key's last segment is also the name a member's
+ * download is saved under: chat signs with `download: true`, which sends
+ * `Content-Disposition: attachment` with no filename, so the browser takes the
+ * URL's last segment, and documents and backwork sign with no `downloadAs`.
+ * Squashing spaces or parentheses would rename every such file on disk. It
+ * also keeps the avatar key, which sits directly in the member's profile folder
+ * with no uuid folder above it, from mapping two names that both worked before
+ * to one key. The stored display name (a document's `title`, a chat
+ * attachment's `filename`) is untouched either way.
+ *
+ * A `.` or `..` result is left for `assertSafeObjectPath` to refuse, and every
+ * caller's extension allowlist rejects those first anyway. Only new keys are
+ * built this way: an existing row keeps the key it was confirmed with.
+ */
+export function safeObjectFilename(filename: string): string {
+  return posix.basename(filename).replace(UNSAFE_OBJECT_KEY_CHAR, '_');
 }
 
 /**

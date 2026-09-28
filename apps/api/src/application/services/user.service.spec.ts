@@ -145,6 +145,32 @@ describe('UserService', () => {
   });
 
   describe('requestAvatarUploadUrl', () => {
+    it('squashes storage-unsafe filename characters in the key (#2697)', async () => {
+      const result = await service.requestAvatarUploadUrl(
+        'ch-1',
+        'user-1',
+        'Résumé #3 50%.jpg',
+        'image/jpeg',
+      );
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/profiles\/user-1\/R_sum_ _3 50_\.jpg$/,
+      );
+    });
+
+    it('strips directory components from the filename before building the key', async () => {
+      const result = await service.requestAvatarUploadUrl(
+        'ch-1',
+        'user-1',
+        '../../x.jpg',
+        'image/jpeg',
+      );
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/profiles\/user-1\/x\.jpg$/,
+      );
+    });
+
     it('should throw BadRequestException for invalid file extension', async () => {
       await expect(
         service.requestAvatarUploadUrl(

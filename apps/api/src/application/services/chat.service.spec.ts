@@ -1388,6 +1388,28 @@ describe('ChatService', () => {
       ]);
     });
 
+    it('reads the block list once for the whole pinned list', async () => {
+      // A channel can hold 50 pins; a per-pin read would be 50 queries per
+      // panel open, and would still mask correctly (#2310).
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findPinnedByChannel.mockResolvedValue([
+        { ...baseMessage, id: 'msg-pinned-1', sender_id: 'user-blocked' },
+        { ...baseMessage, id: 'msg-pinned-2' },
+      ]);
+
+      const result = await service.getPinnedMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result.map((message) => message.sender_blocked)).toEqual([
+        true,
+        false,
+      ]);
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledTimes(1);
+    });
+
     it('fails the pinned read when the block list cannot be read', async () => {
       // The same fail-closed rule as `getMessages`, pinned separately because
       // it is a separate call site: a `.catch(() => [])` added to one and not
@@ -3640,6 +3662,34 @@ describe('ChatService', () => {
   // ── File Upload ─────────────────────────────────────────────────────
 
   describe('requestChatUploadUrl', () => {
+    it('squashes storage-unsafe filename characters in the key (#2697)', async () => {
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'Résumé #3 50%.pdf',
+        'application/pdf',
+      );
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/chat\/ch-chan-1\/[0-9a-f-]{36}\/R_sum_ _3 50_\.pdf$/,
+      );
+    });
+
+    it('strips directory components from the filename before building the key', async () => {
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        '../../x.pdf',
+        'application/pdf',
+      );
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/chat\/ch-chan-1\/[0-9a-f-]{36}\/x\.pdf$/,
+      );
+    });
+
     it('should generate a signed upload URL for an allowed content type', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.example.com/signed-url',
