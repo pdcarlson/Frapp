@@ -131,7 +131,7 @@ function buildAlertIssueBody({ verdict, runUrl }) {
     "",
     `**${verdict.reason}**`,
     "",
-    "Launch bar 2 needs a recoverable production dump. Nightly Backup (`db-backup.yml`) `backup-production` is the only restorable copy of `frapp-prod` until a hosted restore is rehearsed. The reviewer watch (1956) only sees GitHub environment `production-backup`. The hosted restore leftover stays on its own issue (1861).",
+    "Launch bar 2 needs a recoverable production dump. Nightly Backup (`db-backup.yml`) `backup-production` is the only copy of `frapp-prod` outside Supabase: Supabase's own daily backups (7 days, Pro) are deleted with the project and hold no Storage files. The reviewer watch (1956) only sees GitHub environment `production-backup`. The hosted restore leftover stays on its own issue (1861).",
     "",
     "Do not change the dump cron to clear a red run. Inspect the latest `backup-production` job and recover the dump, then wait for a later freshness run.",
     "",
