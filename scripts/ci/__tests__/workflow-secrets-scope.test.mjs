@@ -30,7 +30,11 @@ import { fileURLToPath } from "node:url";
 //   B. Every job that references a secret names one of CREDENTIAL_ENVIRONMENTS
 //      as a literal. A computed name could select an unprotected environment,
 //      and a workflow that names an environment that doesn't exist makes GitHub
-//      create it with no rules.
+//      create it with no rules. One exception, for the shared deploy job
+//      (`_deploy.yml`, #2804): `${{ inputs.environment }}` in a workflow whose
+//      only trigger is `workflow_call`, when every caller in this repo passes
+//      a literal CREDENTIAL_ENVIRONMENTS name, so the name is still a literal,
+//      one call away.
 //   C. No secret is referenced outside a job. A workflow-level `env:` may read
 //      `secrets` and hands the value to every job, and no environment can gate
 //      it, because environment secrets exist only inside a job that named one.
@@ -158,6 +162,41 @@ function reusableCallOf(body) {
   return m ? m[1] : null;
 }
 
+/** The value a calling job passes for `key` under its `with:`, or null. */
+function withValueOf(body, key) {
+  const at = body.findIndex((l) => /^ {4}with:\s*$/.test(l));
+  if (at === -1) return null;
+  for (const line of body.slice(at + 1)) {
+    if (/^ {0,5}\S/.test(line)) break;
+    const m = line.replace(TRAILING_COMMENT, "").match(new RegExp(`^ {6}${key}:\\s*(.*)$`));
+    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+
+/**
+ * Why a called workflow's `${{ inputs.environment }}` is NOT held to a literal
+ * main-only environment, or [] when it is: it must be callable only, and every
+ * caller in this repo must pass a literal from CREDENTIAL_ENVIRONMENTS.
+ */
+function inputEnvironmentProblems(wf) {
+  const problems = [];
+  if (wf.triggers.join(",") !== "workflow_call") {
+    problems.push(`its triggers are ${wf.triggers.join(", ")}, not workflow_call alone`);
+  }
+  const callers = workflows.flatMap((other) =>
+    other.jobs.filter((j) => reusableCallOf(j.body) === wf.name).map((j) => ({ at: `${other.name} / ${j.id}`, body: j.body })),
+  );
+  if (callers.length === 0) problems.push("no workflow in this repo calls it");
+  for (const { at, body } of callers) {
+    const passed = withValueOf(body, "environment");
+    if (!passed || passed.includes("${{") || !CREDENTIAL_ENVIRONMENTS.includes(passed)) {
+      problems.push(`${at} passes environment ${passed ? `"${passed}"` : "(none)"}, not a literal main-only environment`);
+    }
+  }
+  return problems;
+}
+
 /**
  * Every `uses:` value in these lines: a step's (`- uses:`), a job's, or one in a
  * flow mapping (`- { uses: x@v1 }`). A block scalar (`uses: >-`) yields `>-`,
@@ -244,6 +283,15 @@ describe("workflow secrets scope (#2518)", () => {
     assert.ok(secretsOf(deploy.body).includes("RENDER_API_KEY"));
     assert.equal(environmentOf(deploy.body)?.name, "production");
 
+    // The one expression-named environment rule B admits, and its caller.
+    const shared = byName.get("_deploy.yml")?.jobs.find((j) => j.id === "deploy");
+    assert.ok(shared, "_deploy.yml's deploy job must be parsed");
+    assert.ok(secretsOf(shared.body).includes("RENDER_API_KEY"));
+    assert.deepEqual(environmentOf(shared.body), { name: "${{ inputs.environment }}", literal: false });
+    const caller = byName.get("deploy-staging.yml")?.jobs.find((j) => j.id === "deploy");
+    assert.equal(reusableCallOf(caller.body), "_deploy.yml");
+    assert.equal(withValueOf(caller.body, "environment"), "staging");
+
     const publish = byName.get("migration-snapshot.yml")?.jobs.find((j) => j.id === "publish");
     assert.ok(publish, "migration-snapshot.yml's publish job must be parsed");
     assert.equal(environmentOf(publish.body)?.name, "automation");
@@ -308,7 +356,8 @@ describe("workflow secrets scope (#2518)", () => {
         if (!env) {
           offenders.push(`${wf.name} / ${job.id}: ${secrets.join(", ")} with no environment`);
         } else if (!env.literal) {
-          offenders.push(`${wf.name} / ${job.id}: environment name is an expression`);
+          const problems = env.name === "${{ inputs.environment }}" ? inputEnvironmentProblems(wf) : ["is not inputs.environment"];
+          for (const problem of problems) offenders.push(`${wf.name} / ${job.id}: environment name is an expression, and ${problem}`);
         } else if (!CREDENTIAL_ENVIRONMENTS.includes(env.name)) {
           offenders.push(`${wf.name} / ${job.id}: environment "${env.name}" is not one of ${CREDENTIAL_ENVIRONMENTS.join(", ")}`);
         }

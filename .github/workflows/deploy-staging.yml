@@ -1,59 +1,25 @@
 name: Deploy staging
 
-# STAGING: database, API, web and landing, in one ordered job. Triggered ONLY
+# STAGING: database, API, web and landing, after every merge. Triggered ONLY
 # after the CI workflow completes successfully on `main`, so broken code never
 # deploys. Staging deploys on merge, never on a pull request: it is one shared
 # database and one API, so an unmerged PR's migrations would land in it and
 # PRs would overwrite each other.
 #
-# Production is `deploy-production.yml`, a manual dispatch that names an exact
-# commit. Epic #2802 moves both onto the same steps, with production's layers
-# around them.
-#
-# ── Why one job, in this order (#2803) ──────────────────────────────────────
-# Until #2803 this was two workflows fired side by side by the same CI run:
-# `deploy-api.yml` (migrate, then the Render API) and `deploy-vercel-staging.yml`
-# (web and landing). Nothing ordered them, so new frontends could go live
-# before the migration or the API they call, and a failed migration shipped
-# them anyway. Web and landing also built and uploaded in one phase, so a
-# build failure halfway left the two hosts on different commits.
-#
-# The order:
-#   install (no secrets yet) → record the env baseline → inject Infisical
-#   `staging` → plan what ships → BUILD web + landing → migrate (dry run,
-#   apply) → deploy the API by commit → verify it serves the commit → UPLOAD
-#   web + landing → point the staging hosts at them.
-# From the build on, that is production's order. Production still injects
-# before it installs (#2801); #2805 brings it onto this order.
-# A failure anywhere before the upload ships no frontend: a failed build before
-# anything is applied, a failed migration before the API, a failed API before
-# the frontends that call it. One job, because the built output lives in
-# `$RUNNER_TEMP` between the two Vercel phases.
-#
-# The plan (`scripts/ci/plan-staging-deploy.mjs`) decides the API and the
-# frontends separately, because different paths feed them. The API deploys
-# when something its image is built from changed since the commit staging
-# serves (`stale` when this isn't `main`'s tip and nothing moves it forward).
-# Web and landing upload only behind an API that carries the commit's API,
-# and then always for the tip, and for any other commit only when both
-# staging hostnames serve older commits: an upload never replaces a newer
-# frontend, and a green web-only change whose tip run never comes (its CI
-# failed) still ships. Nothing to upload means nothing is built.
+# This file only decides WHETHER to deploy, and reports the outcome. The
+# deploying itself is `_deploy.yml`, the job staging and production share
+# (epic #2802; since #2804), called with `environment: staging` and the commit
+# CI verified. Its header has the order and the plan. Production is
+# `deploy-production.yml`, a manual dispatch that names an exact commit.
 #
 # ── Why `workflow_run` and not `push` ───────────────────────────────────────
 # A push-triggered workflow starts immediately, before CI has passed. This one
 # starts when CI completes and deploys only a success, and it names the commit
 # CI verified (`workflow_run.head_sha`), never `main`'s moving tip.
 #
-# ── Where the config and secrets come from ─────────────────────────────────
-# Infisical `staging`, injected once, after every install (#834, #2672). Each
-# Vercel build gets only the keys its app reads, and every Vercel CLI process
-# runs on the names recorded just before the injection
-# (`scripts/ci/lib/vercel-build-env.mjs`). `RENDER_API_KEY`, `VERCEL_API_KEY`
-# and the Infisical bootstrap pair are `staging` environment secrets.
-# `API_HEALTHCHECK_URL` comes from the injection. Render auto-deploy must be off
-# (#2679; staging-conformance asserts it), so this job is the only thing that
-# deploys the staging API.
+# ── No secrets passed ──────────────────────────────────────────────────────
+# The call passes no `secrets:`. `_deploy.yml`'s job names the `staging`
+# environment itself and gets its secrets from there (see that header).
 #
 # ── Names other things depend on ────────────────────────────────────────────
 # `migration-snapshot.yml` triggers on this workflow's NAME, "Deploy staging",
@@ -81,245 +47,12 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-latest
-    environment: staging
-    # The steps' own ceilings: the Render poll 20 minutes, the served-commit
-    # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), on top
-    # of installs, two builds and the migrations (the old Deploy Vercel staging
-    # runs took 2.8 to 4.3 minutes for all of its work). 75, as production gives
-    # the same sequence, bounds the job past all of them.
-    timeout-minutes: 75
-    # One staging deploy at a time, queued, never cancelled. The group keeps the
-    # migration lock's name (`DB_PROMOTION_RUNBOOK.md` documents it), since
-    # this job is now the only thing that migrates staging.
-    #
-    # `cancel-in-progress: false` is the important half: cancelling mid-`db push`
-    # is how a database ends up half-migrated, and cancelling between the API
-    # and the upload leaves the hosts on different commits. GitHub still
-    # replaces a PENDING run when a third arrives; that job ends `cancelled`,
-    # which `deploy-outcome` reports as a failure. It closes on the next run,
-    # which plans from the served commit and so carries the replaced run's
-    # changes too.
-    #
-    # Honest limit: this lock covers GitHub Actions runs only. It cannot stop a
-    # human running `supabase db push` against staging from a laptop, which is
-    # why the runbook says not to and the drift gate catches it when someone
-    # does.
-    concurrency:
-      group: db-migrate-staging
-      cancel-in-progress: false
-    # `deploy-outcome` reads the plan: a successful `stale` run neither raises
-    # nor closes the alert, a successful `forward` one doesn't close it, a
-    # failed run of either raises it, and a `current` one isn't reported as an
-    # API deploy.
-    outputs:
-      plan: ${{ steps.plan.outputs.plan }}
-    steps:
-      # The commit CI verified. On a `workflow_run` event the default checkout
-      # is the default branch's TIP, and this job may queue behind the previous
-      # run, so without `ref:` a run could deploy a commit whose CI hasn't
-      # finished. The checkout also decides which `.github/actions/…` the local
-      # `uses:` below resolve.
-      - name: Checkout the commit CI verified
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          # Full history: the plan diffs from the commit staging serves, which
-          # can be any number of commits back.
-          fetch-depth: 0
-          # Nothing here talks to the remote after checkout; the plan's git
-          # calls are local. Third-party actions run below, and this job holds
-          # staging secrets.
-          persist-credentials: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      # `vercel build` runs each app's own build, which needs the workspace's
-      # dependencies: both apps import from `packages/`.
-      - name: Install dependencies
-        run: npm ci
-
-      # Pinned, like every other CLI this repo installs in CI. An unpinned
-      # `@latest` makes the deploy path depend on whatever Vercel published
-      # this morning.
-      - name: Install Vercel CLI
-        run: npm install --global vercel@59.11.7
-
-      # Before the injection too: a third-party action, and it needs no secret.
-      - name: Setup Supabase CLI
-        uses: ./.github/actions/supabase-cli
-
-      # Names only, never values. `deploy-vercel.mjs` runs every Vercel CLI
-      # process on these names alone and hands `vercel build` its project's app
-      # keys on top, so the rest of the store the next step injects stays out of
-      # them. It must run immediately BEFORE the injection: a baseline taken
-      # after it holds the whole store, and the script refuses one that
-      # contains an app key.
-      - name: Record the job's environment names before Infisical adds to them
-        env:
-          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
-        run: node scripts/ci/record-env-baseline.mjs
-
-      # After every install on purpose, so no package's install script runs
-      # with the staging store in its environment. That is all it buys: an
-      # install script can still leave something behind (a `$GITHUB_PATH`
-      # entry, an edited workspace file) that a later step runs with secrets.
-      # Production's one job has the same exposure; #2824 isolates the
-      # secret-bearing steps from install and build code for both.
-      - name: Inject staging secrets from Infisical
-        uses: ./.github/actions/infisical-secrets
-        with:
-          env-slug: "staging"
-          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-
-      # Decide what this run ships, before anything is built. Read-only: git,
-      # `/health` and two Vercel lookups. The API: compare this commit with the
-      # one staging serves (`/health`'s `commit`) and with `main`'s tip;
-      # `deploy` when anything the API image is built from changed since the
-      # served commit, `current` when nothing did (both only for the tip),
-      # `forward` for a newer non-tip commit with changes, and `stale`
-      # otherwise. Web and landing, only behind an API that carries this
-      # commit's API: the tip uploads; another commit uploads only when both
-      # staging hostnames serve older commits, so an upload never rolls a host
-      # back and a green change whose tip run never comes still ships. The
-      # reasoning is in the script header.
-      #
-      # First, so a run with nothing to upload doesn't build web and landing
-      # while it holds the queue.
-      - name: Plan the deploy
-        id: plan
-        env:
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
-          VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
-        run: node scripts/ci/plan-staging-deploy.mjs
-
-      # BUILD both bundles before anything is applied, so a failed build ships
-      # nothing. Each project's `.vercel` is stashed under $RUNNER_TEMP for the
-      # upload step (`scripts/ci/deploy-vercel.mjs`, `DEPLOY_PHASE`).
-      - name: Build the Vercel preview bundles (web + landing)
-        if: steps.plan.outputs.upload == 'true'
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
-          DEPLOY_TARGET: preview
-          DEPLOY_PHASE: build
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-          VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
-          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
-        run: node scripts/ci/deploy-vercel.mjs
-
-      # Every run migrates, not only runs whose push touched
-      # `supabase/migrations/`: `supabase db push` applies whatever is pending
-      # and is a no-op when nothing is, so every merge retries a skipped or
-      # failed apply instead of waiting for the next migration-bearing push. The
-      # dry run lists what WAS pending first, so a failed apply's log says what
-      # it was trying to do.
-      - name: Run migrations (dry-run)
-        run: node scripts/run-migration.mjs --env staging --dry-run
-
-      - name: Run migrations (apply)
-        run: node scripts/run-migration.mjs --env staging
-
-      # Deploy-by-commit through the Render API (#2505), the script
-      # `deploy-production.yml` uses. It polls the deploy it created to a
-      # terminal state, so a failed build fails this job.
-      - name: Deploy the commit to Render
-        if: steps.plan.outputs.deploy == 'true'
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
-          SERVICE_LABEL: frapp-api-staging
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: node scripts/ci/deploy-render-production.mjs
-
-      # Render's `live` only means `GET /health` answered, which the previous
-      # instance also does while the new one switches in. This polls
-      # `/health/ready` until it answers 2xx AND reports the planned commit
-      # (this run's when it deployed, else the one staging already served). It
-      # runs whenever anything ships, a `current` plan and a `stale` one that
-      # uploads included, so the API is seen serving and ready before any
-      # frontend that calls it ships. `verify_sha` is empty when nothing does.
-      - name: Verify staging serves the commit
-        if: steps.plan.outputs.verify_sha != ''
-        env:
-          SERVICE_LABEL: frapp-api-staging
-          DEPLOY_SHA: ${{ steps.plan.outputs.verify_sha }}
-        run: node scripts/ci/verify-served-commit.mjs
-
-      # UPLOAD the bundles built above, only once the API they call is verified,
-      # and only when the plan says so: always for `main`'s tip (a re-run of the
-      # tip's run re-uploads, which is how a rotated build-time value reaches
-      # staging), and for any other commit never over a host already serving it
-      # or a newer one. The deployment ids are captured from stdout for the
-      # alias step.
-      - name: Upload web + landing to staging
-        id: upload
-        if: steps.plan.outputs.upload == 'true'
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
-          DEPLOY_TARGET: preview
-          DEPLOY_PHASE: upload
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-          VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
-          VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
-        run: |
-          set -euo pipefail
-          node scripts/ci/deploy-vercel.mjs | tee "${RUNNER_TEMP:-/tmp}/vercel.log"
-          {
-            echo "web_id=$(grep -oP '^vercel_deployment_id\[frapp-web\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
-            echo "landing_id=$(grep -oP '^vercel_deployment_id\[frapp-landing\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
-          } >> "$GITHUB_OUTPUT"
-
-      # Vercel does not always attach the custom hostname to a new deployment,
-      # so the staging domain can lag a READY build.
-      #
-      # Keyed on the deployment IDs the upload created, NOT on a search by
-      # commit SHA. The search answers "no match" for reasons unrelated to the
-      # deployment being wrong (a list index that has not caught up, a lost
-      # `--meta` flag) and then exits 0, leaving the hostname on the previous
-      # build with this job green. It also has no channel filter, so for a
-      # commit deployed to both channels it could alias the staging hostname to
-      # the PRODUCTION build. See the header of the alias script.
-      #
-      # An empty id is a failure, not a skip, and the explicit `-z` check below
-      # is the only thing meant to make it one, so do not trim it as redundant.
-      # `set -u` does not help (the vars are set, to the empty string), and the
-      # upload step stays green when a `grep` matches nothing, because `echo`
-      # exits 0. Without the check the alias script would fall back to its
-      # SHA-search path. That path exits 1 today only because nothing sets its
-      # `VERCEL_PROJECT_ID`; a `VERCEL_PROJECT_ID` added to the staging store
-      # would let it exit 0 having aliased nothing.
-      - name: Point the staging hostnames at the new deployments
-        if: steps.plan.outputs.upload == 'true'
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          WEB_DEPLOYMENT_ID: ${{ steps.upload.outputs.web_id }}
-          LANDING_DEPLOYMENT_ID: ${{ steps.upload.outputs.landing_id }}
-        run: |
-          set -euo pipefail
-          if [ -z "${WEB_DEPLOYMENT_ID:-}" ] || [ -z "${LANDING_DEPLOYMENT_ID:-}" ]; then
-            echo "::error::The upload step reported no deployment id for one or both projects (web='${WEB_DEPLOYMENT_ID:-}', landing='${LANDING_DEPLOYMENT_ID:-}'). Refusing to alias a staging hostname without knowing what to point it at."
-            exit 1
-          fi
-          VERCEL_DEPLOYMENT_ID="$WEB_DEPLOYMENT_ID" \
-            VERCEL_STAGING_ALIAS=app.staging.frapp.live \
-            SERVICE_LABEL=frapp-web \
-            node scripts/ci/ensure-vercel-staging-alias.mjs
-          VERCEL_DEPLOYMENT_ID="$LANDING_DEPLOYMENT_ID" \
-            VERCEL_STAGING_ALIAS=staging.frapp.live \
-            SERVICE_LABEL=frapp-landing \
-            node scripts/ci/ensure-vercel-staging-alias.mjs
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      # The commit CI verified. `github.sha` on a `workflow_run` event is the
+      # default branch's TIP, which may be a commit whose CI hasn't finished.
+      sha: ${{ github.event.workflow_run.head_sha }}
 
   # ── Deploy outcome: alert on failure, state plainly what happened ──────────
   # A `workflow_run` failure lands on no commit and no PR, so without this a

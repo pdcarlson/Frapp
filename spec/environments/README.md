@@ -250,12 +250,12 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, one job in `deploy-staging.yml` deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
 ### Deploy Pipeline (on merge)
 
 ```text
-staging:     merge to main → CI passes → deploy-staging.yml, one job: vercel build (web, landing)
+staging:     merge to main → CI passes → deploy-staging.yml → _deploy.yml, one job: vercel build (web, landing)
              → DB migration (dry-run then apply) → API deploy (Render) → verify served commit
              → vercel deploy --prebuilt (web, landing) → alias the staging hostnames
 production:  dispatch a SHA → validate (ancestor of main + CI green) → provider preflight
@@ -331,7 +331,7 @@ secrets.
 
 ### Deploy Ordering
 
-**Default:** the frontends ship after the API. On staging, one job in `deploy-staging.yml` runs the migrations, deploys and verifies the Render API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
+**Default:** the frontends ship after the API. On staging, one job (`_deploy.yml`, called by `deploy-staging.yml`) runs the migrations, deploys and verifies the Render API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
 
 > **Corrected 2026-09-28 (#2803):** this default used to read "Vercel (frontends) and Render (API)
 > deployments run in parallel after merge", as two workflows both gated on CI success

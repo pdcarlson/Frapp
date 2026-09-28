@@ -3,9 +3,9 @@
 //
 // ── Why this file exists rather than one more assertion in the fence test ───
 // `deploy-vercel.mjs` is invoked from TWO workflows — `deploy-production.yml`
-// and `deploy-staging.yml`, each twice: a `build` phase and an `upload` phase
-// (staging since #2803; before it, one unphased call) — so the contract is not
-// a property of either file. The guard that came out of #2265 lived in
+// and `_deploy.yml` (the job `deploy-staging.yml` calls, since #2804), each
+// twice: a `build` phase and an `upload` phase (staging since #2803; before it,
+// one unphased call) — so the contract is not a property of either file. The guard that came out of #2265 lived in
 // `deploy-production-fence.test.mjs` and was production-only and
 // `DEPLOY_SHA`-only; the same class of bug in the staging caller had nothing
 // looking at it at all.
@@ -102,7 +102,7 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
     // Both callers run both phases, one call site each (#2803 for staging). A
     // caller missing its build ships whatever `.vercel` holds; one missing its
     // upload builds and ships nothing.
-    for (const workflowFile of ["deploy-production.yml", "deploy-staging.yml"]) {
+    for (const workflowFile of ["deploy-production.yml", "_deploy.yml"]) {
       const callSites = sites().filter((s) => s.workflowFile === workflowFile);
       assert.equal(callSites.length, 2, `${workflowFile} should have a build and an upload call site`);
       assert.deepEqual(
@@ -116,7 +116,7 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
     // read as production would pass here while deploying to the wrong channel.
     assert.deepEqual(
       [...new Set(sites().map((s) => `${s.workflowFile}:${s.target}`))].sort(),
-      [`deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`, `deploy-staging.yml:${VERCEL_TARGET_PREVIEW}`],
+      [`_deploy.yml:${VERCEL_TARGET_PREVIEW}`, `deploy-production.yml:${VERCEL_TARGET_PRODUCTION}`],
     );
   });
 

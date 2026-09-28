@@ -174,7 +174,7 @@ Workflows with specific audit concerns (the full set is `.github/workflows/`):
 | Workflow | File | Key concerns |
 |----------|------|--------------|
 | CI | `ci.yml` | Required jobs passing, correct triggers |
-| Deploy (staging) | `deploy-staging.yml` | Secret handling, migration gating, health checks, order (web and landing build before the migration, upload only after the API verify) |
+| Deploy (staging) | `deploy-staging.yml`, calling `_deploy.yml` | Secret handling (the called job names its environment; the call passes no secrets), migration gating, health checks, order (web and landing build before the migration, upload only after the API verify) |
 | Deploy (production) | `deploy-production.yml` | SHA must be an ancestor of `main` and CI-green, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, `CANCELED` treated as failure |
 | Production guardrails | `production-guardrails.yml` | Render `frapp-api-prod` auto-deploy off, tracking `main`, health check path `/health`; Vercel `frapp-web` and `frapp-landing` not linked to Git |
 | Release | `release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
