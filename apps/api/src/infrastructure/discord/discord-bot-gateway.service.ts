@@ -14,6 +14,15 @@ import {
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import { asRecord, asString } from '#domain/utils/json-guards';
+import {
+  basePermissions,
+  canReadHistory,
+  channelPermissions,
+  parseOverwrites,
+  openToEveryone,
+  type DiscordPermissionSubject,
+  type DiscordRolePermissions,
+} from '#domain/utils/discord-permissions';
 
 /**
  * Channel types that hold messages a chapter would want archived.
@@ -117,6 +126,8 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
    * the client's own state: only a restart with a new token recovers either.
    */
   private tokenRejected = false;
+
+  private cachedBotUserId: string | null = null;
 
   constructor(config: ConfigService) {
     const token = config.get<string>('DISCORD_BOT_TOKEN')?.trim();
@@ -229,6 +240,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     const warnings: string[] = [];
 
     const raw = (await rest.get(Routes.guildChannels(guildId))) as unknown[];
+    const access = await this.loadAccessContext(guildId, warnings);
 
     // Category names are resolved from the same response rather than fetched:
     // a category IS a channel row, so the mapping is already in hand.
@@ -244,10 +256,12 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     }
 
     const channels: DiscordChannelRef[] = [];
+    const unreadable: string[] = [];
     const parents: {
       id: string;
       name: string;
       canHavePrivateThreads: boolean;
+      ref: DiscordChannelRef;
     }[] = [];
 
     for (const entry of raw) {
@@ -275,13 +289,27 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
       const name = asString(channel.name) ?? id;
       const parentId = asString(channel.parent_id);
+      const overwrites = parseOverwrites(channel.permission_overwrites);
+      const readable = access.subject
+        ? canReadHistory(
+            channelPermissions(
+              access.base,
+              guildId,
+              overwrites,
+              access.subject,
+            ),
+          )
+        : null;
+      const privateInDiscord = access.roles
+        ? !openToEveryone(guildId, access.roles, overwrites)
+        : null;
       // A forum IS offered as a destination — `#questions` is what an admin
       // recognises, and its posts inherit whatever they choose for it. What it
       // is not is message-fetchable, so it carries `holdsOnlyThreads` and the
       // export skips its own message walk. Dropping it from this list instead
       // would orphan every post inside it: a forum post's only route to a
       // destination is inheriting its parent's.
-      channels.push({
+      const ref: DiscordChannelRef = {
         id,
         name,
         guildId,
@@ -289,7 +317,18 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         parentChannelId: null,
         isThread: false,
         holdsOnlyThreads: threadParentOnly,
-      });
+        readable,
+        privateInDiscord,
+      };
+      channels.push(ref);
+      // Discord lists every channel to a bot, readable or not. Asking one it
+      // cannot read for its threads only earns a 403, and each 403 is spent
+      // from the invalid-request budget every connected chapter shares. So an
+      // unreadable channel is listed, reported once below, and never probed.
+      if (readable === false) {
+        unreadable.push(name);
+        continue;
+      }
       parents.push({
         id,
         name,
@@ -297,6 +336,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         // channels cannot, so the private endpoint is pointless for them even
         // when the bot does hold Manage Threads.
         canHavePrivateThreads: type === TEXT_CHANNEL_TYPE,
+        ref,
       });
     }
 
@@ -320,13 +360,27 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     let privateRefused = false;
 
     for (const parent of parents) {
-      await this.collectArchivedThreads(
+      const listed = await this.collectArchivedThreads(
         guildId,
         parent,
         'public',
         channels,
         warnings,
       );
+      // Reading public archived threads needs exactly what reading history
+      // does, so Discord's answer settles a channel whose access could not be
+      // computed (the fallback when the roles or the bot's membership could
+      // not be read), and overrides the arithmetic if the two ever disagree.
+      // A refusal joins the one "cannot read" line below instead of adding a
+      // warning per channel.
+      if (listed === 'refused') {
+        parent.ref.readable = false;
+        unreadable.push(parent.name);
+        continue;
+      }
+      if (listed === 'listed' && parent.ref.readable === null) {
+        parent.ref.readable = true;
+      }
 
       // Only text channels can hold private threads at all — announcement and
       // forum channels cannot, so asking is wasted even WITH the permission.
@@ -336,13 +390,14 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         privateDenied.push(parent.name);
         continue;
       }
-      const refused = await this.collectArchivedThreads(
-        guildId,
-        parent,
-        'private',
-        channels,
-        warnings,
-      );
+      const refused =
+        (await this.collectArchivedThreads(
+          guildId,
+          parent,
+          'private',
+          channels,
+          warnings,
+        )) === 'refused';
       if (refused) {
         privateRefused = true;
         privateDenied.push(parent.name);
@@ -353,19 +408,114 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     // The per-channel version flooded a bounded warning list — a guild with
     // more than fifty channels kept nothing but this boilerplate and evicted
     // everything an admin actually needed to read.
-    if (privateDenied.length > 0) {
-      const shown = privateDenied
-        .slice(0, 5)
-        .map((name) => `#${name}`)
-        .join(', ');
-      const rest =
-        privateDenied.length > 5 ? ` and ${privateDenied.length - 5} more` : '';
+    if (unreadable.length > 0) {
       warnings.push(
-        `Private archived threads were not read in ${privateDenied.length} channel(s) (${shown}${rest}): the Frapp bot is installed read-only, and Discord requires the "Manage Threads" permission to list them. Everything else in those channels — including public archived threads — was imported.`,
+        `Frapp cannot read ${unreadable.length} channel(s) (${nameList(unreadable)}): Discord hides them from the bot. Allow the Frapp role on each of them (read-only; a category allow reaches only channels still synced to it), or give the Frapp bot a role that can see them, then scan again. Until then they can only be skipped.`,
+      );
+    }
+    if (privateDenied.length > 0) {
+      warnings.push(
+        `Private archived threads cannot be read in ${privateDenied.length} channel(s) (${nameList(privateDenied)}): the Frapp bot is installed read-only, and Discord requires the "Manage Threads" permission to list them. Everything else in those channels, public archived threads included, will be imported.`,
       );
     }
 
-    return { channels, warnings };
+    // A thread carries its parent's answers, because Discord computes a
+    // public thread's access from its parent channel and the mapping step asks
+    // only about parents. The exception is a PRIVATE thread, which Discord
+    // shows only to its members whatever the parent allows: it stays private,
+    // and the mapping treats the channel it lands in as private too.
+    const byId = new Map(
+      channels
+        .filter((channel) => !channel.isThread)
+        .map((channel) => [channel.id, channel]),
+    );
+    for (const channel of channels) {
+      if (!channel.isThread || !channel.parentChannelId) continue;
+      const parent = byId.get(channel.parentChannelId);
+      channel.readable = parent?.readable ?? null;
+      if (channel.privateInDiscord !== true) {
+        channel.privateInDiscord = parent?.privateInDiscord ?? null;
+      }
+    }
+
+    return { channels, warnings, roles: access.named };
+  }
+
+  /**
+   * What discovery needs to compute access itself: the guild's roles, and the
+   * bot's own roles in it.
+   *
+   * Each half degrades on its own. Without the roles nothing can be computed;
+   * without the bot's membership, readability cannot, but "private in
+   * Discord" (an `@everyone` question) still can. Neither failure stops the
+   * scan: readability falls back to probing each channel. Unknown privacy is
+   * told to the admin, because it means every new channel needs an explicit
+   * choice of who can read it.
+   */
+  private async loadAccessContext(
+    guildId: string,
+    warnings: string[],
+  ): Promise<{
+    roles: DiscordRolePermissions[] | null;
+    /** The same roles by name, for the role worksheet; empty on failure. */
+    named: DiscordRoleRef[];
+    subject: DiscordPermissionSubject | null;
+    base: bigint;
+  }> {
+    const rest = this.client();
+    let roles: DiscordRolePermissions[] | null = null;
+    const named: DiscordRoleRef[] = [];
+    try {
+      const raw = (await rest.get(Routes.guildRoles(guildId))) as unknown[];
+      roles = [];
+      for (const entry of raw) {
+        const role = asRecord(entry);
+        const id = asString(role?.id);
+        if (!id) continue;
+        roles.push({ id, permissions: asString(role?.permissions) ?? '0' });
+        named.push({ id, name: asString(role?.name) ?? id });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Could not read roles for guild ${guildId}: ${this.describe(error)}. Channel access will be probed instead.`,
+      );
+      warnings.push(
+        `Frapp could not read this server's roles (${this.describe(error)}), so it cannot tell which channels are private in Discord, and no roles are listed to map. Choose who can read each new channel, or scan again.`,
+      );
+      return { roles: null, named, subject: null, base: 0n };
+    }
+
+    try {
+      const botUserId = await this.botUserId();
+      const member = asRecord(
+        await rest.get(Routes.guildMember(guildId, botUserId)),
+      );
+      const roleIds = Array.isArray(member?.roles)
+        ? member.roles.filter((id): id is string => typeof id === 'string')
+        : [];
+      const subject = { userId: botUserId, roleIds };
+      return {
+        roles,
+        named,
+        subject,
+        base: basePermissions(guildId, roles, subject),
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the bot's membership in guild ${guildId}: ${this.describe(error)}. Channel readability will be probed instead.`,
+      );
+      return { roles, named, subject: null, base: 0n };
+    }
+  }
+
+  /** The bot's own user id, read once per process. */
+  private async botUserId(): Promise<string> {
+    if (this.cachedBotUserId) return this.cachedBotUserId;
+    const me = asRecord(await this.client().get(Routes.user()));
+    const id = asString(me?.id);
+    if (!id) throw new DiscordApiError('Discord returned no bot user id.');
+    this.cachedBotUserId = id;
+    return id;
   }
 
   private async collectActiveThreads(
@@ -386,7 +536,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       }
     } catch (error) {
       warnings.push(
-        `Could not list active threads: ${this.describe(error)}. Their messages were not imported.`,
+        `Could not list active threads: ${this.describe(error)}. Their messages will not be imported.`,
       );
     }
   }
@@ -394,9 +544,12 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
   /**
    * Walk one parent's archived threads.
    *
-   * Returns true when Discord REFUSED the private listing for lack of Manage
-   * Threads — the caller trips a per-guild breaker on that rather than asking
-   * again for every remaining channel, and reports it once at the end.
+   * Returns `refused` when Discord answered 403, with no warning: for the
+   * private listing that is the missing Manage Threads permission (the caller
+   * trips a per-guild breaker rather than asking again for every remaining
+   * channel), and for the public one a channel the bot cannot read. The
+   * caller reports either once, for every channel it applies to. `failed` is
+   * any other error, already warned about.
    */
   private async collectArchivedThreads(
     guildId: string,
@@ -404,7 +557,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     visibility: 'public' | 'private',
     out: DiscordChannelRef[],
     warnings: string[],
-  ): Promise<boolean> {
+  ): Promise<'listed' | 'refused' | 'failed'> {
     const parentNames = new Map([[parent.id, parent.name]]);
     let before: string | null = null;
 
@@ -418,21 +571,18 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
           ),
         );
       } catch (error) {
-        const status = statusOf(error);
-        // 403 on the private endpoint is EXPECTED and is not a failure: Discord
+        // 403 is EXPECTED and is not a failure. On the private endpoint Discord
         // gates it on Manage Threads, which this bot deliberately does not ask
-        // for (see DISCORD_BOT_PERMISSIONS). Say exactly what was skipped and
-        // why — a silent omission here is the difference between "we archived
-        // your server" and "we archived most of it".
-        if (status === 403 && visibility === 'private') {
-          // Expected on a read-only install. Reported once, by the caller,
-          // for the whole guild — see the breaker in `discoverChannels`.
-          return true;
-        }
+        // for (see DISCORD_BOT_PERMISSIONS); on the public one it means the
+        // bot cannot read the channel. Either way the caller says exactly
+        // what was skipped and why, once — a silent omission here is the
+        // difference between "we archived your server" and "we archived most
+        // of it".
+        if (statusOf(error) === 403) return 'refused';
         warnings.push(
-          `Could not list ${visibility} archived threads in #${parent.name}: ${this.describe(error)}. Their messages were not imported.`,
+          `Could not list ${visibility} archived threads in #${parent.name}: ${this.describe(error)}. Their messages will not be imported.`,
         );
-        return false;
+        return 'failed';
       }
 
       const threads = Array.isArray(response?.threads) ? response.threads : [];
@@ -443,7 +593,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
       // `has_more` is Discord's own answer; an empty page is the backstop for a
       // response that omitted it.
-      if (response?.has_more !== true || threads.length === 0) return false;
+      if (response?.has_more !== true || threads.length === 0) return 'listed';
 
       // The archived-thread cursor is a TIMESTAMP, not a snowflake — the list
       // is ordered by `archive_timestamp` descending, and paging it with an id
@@ -451,15 +601,15 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       const last = asRecord(threads[threads.length - 1]);
       const metadata = asRecord(last?.thread_metadata);
       before = asString(metadata?.archive_timestamp);
-      if (!before) return false;
+      if (!before) return 'listed';
 
       if (page === MAX_ARCHIVED_THREAD_PAGES - 1) {
         warnings.push(
-          `#${parent.name} has more archived ${visibility} threads than Frapp enumerates in one import (${MAX_ARCHIVED_THREAD_PAGES * 100}); the oldest were not imported.`,
+          `#${parent.name} has more archived ${visibility} threads than Frapp enumerates in one import (${MAX_ARCHIVED_THREAD_PAGES * 100}); the oldest will not be imported.`,
         );
       }
     }
-    return false;
+    return 'listed';
   }
 
   private toThreadRef(
@@ -495,21 +645,11 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       parentChannelId: parentId,
       isThread: true,
       holdsOnlyThreads: false,
+      // Filled from the parent once discovery has every parent in hand,
+      // except that a private thread is private whatever its parent is.
+      readable: null,
+      privateInDiscord: thread.type === ChannelType.PrivateThread ? true : null,
     };
-  }
-
-  async listRoles(guildId: string): Promise<DiscordRoleRef[]> {
-    const raw = (await this.client().get(
-      Routes.guildRoles(guildId),
-    )) as unknown[];
-    const roles: DiscordRoleRef[] = [];
-    for (const entry of raw) {
-      const role = asRecord(entry);
-      const id = asString(role?.id);
-      if (!id) continue;
-      roles.push({ id, name: asString(role?.name) ?? id });
-    }
-    return roles;
   }
 
   // ── reading ───────────────────────────────────────────────────────────────
@@ -565,6 +705,10 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       // before every message walk, and a channel's type is Discord's fact, not
       // ours to cache across a migration.
       holdsOnlyThreads: THREAD_PARENT_ONLY_TYPES.has(raw.type as number),
+      // It was just read, so the bot can see it; whether @everyone can is not
+      // asked here and does not matter to the export.
+      readable: true,
+      privateInDiscord: null,
     };
   }
 
@@ -699,4 +843,13 @@ function isDiscordCdnHost(hostname: string): boolean {
   ];
   if (exact.includes(host)) return true;
   return host.endsWith('.discordapp.net') || host.endsWith('.discordapp.com');
+}
+
+/** `#a, #b, #c, #d, #e and N more`, for a one-line warning. */
+function nameList(names: readonly string[]): string {
+  const shown = names
+    .slice(0, 5)
+    .map((name) => `#${name}`)
+    .join(', ');
+  return names.length > 5 ? `${shown} and ${names.length - 5} more` : shown;
 }

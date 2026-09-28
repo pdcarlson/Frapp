@@ -222,6 +222,24 @@ portal: the bitfield in the authorize URL is what the consent screen shows a
 chapter, and a read-only archiver has no business holding a permission that can
 change anything in someone's server.
 
+Those two permissions are granted at the server level, and a channel-level
+overwrite beats them. A server that denies View Channels to `@everyone` and
+grants it through roles (the usual fraternity setup) therefore shows the bot
+almost nothing: on the first real import it could read 2 of 78 channels. The
+scan works this out from Discord's permission overwrites and lists what the bot
+cannot read ([`spec/behavior/chat/README.md`](../../../../spec/behavior/chat/README.md#imported-archive-messages)
+§ Imported archive messages). A server admin fixes it in Discord, not here, in
+one of two ways:
+
+- **Give the bot an existing role** that sees the channels (Server Settings →
+  Members → Frapp → add role). Fastest, but the bot then also holds whatever
+  else that role grants, such as Send Messages. Frapp never uses them, but a
+  leaked `DISCORD_BOT_TOKEN` could.
+- **Allow the Frapp role per category** (Edit Category → Permissions → add the
+  Frapp role → allow View Channel and Read Message History). This keeps the
+  install read-only. Channels not synced to their category need the same
+  change individually.
+
 **One thing the portal cannot express, so it is worth knowing here.** Discord's
 consent screen names the Discord application (_Frapp_, step 1) — it does not
 name the chapter the connection will be bound to, and it cannot. Frapp closes that gap on its own side:
@@ -259,10 +277,11 @@ an admin to Discord's error page. Three limits:
 - **Step 5 is invisible to it.** The Message Content Intent shows up only once
   an import is already running, so `available: true` says nothing about it.
 - **Discord's answer may not list the redirects.** `redirect_uris` is optional
-  on Discord's application object, and whether it comes back to a bot token has
-  not yet been observed from a deployment. When it is absent the flow stays
-  offered and the API logs `Discord application setup unchecked`, and step 4 is
-  back to being checked by hand, as below. Which of the two a deployment got is
+  on Discord's application object. It does come back to a bot token: staging's
+  boot log read `Discord application setup verified` on 2026-09-28, after
+  #2778 (production not yet observed). If a deployment ever gets it absent, the
+  flow stays offered and the API logs `Discord application setup unchecked`,
+  and step 4 is back to being checked by hand, as below. Which of the two a deployment got is
   in its boot log, on the line starting `Discord application setup` (or
   `Connect Discord withdrawn`), which lands a moment after the routes are
   mapped.
