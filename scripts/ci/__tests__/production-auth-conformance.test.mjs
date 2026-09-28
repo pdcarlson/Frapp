@@ -12,6 +12,7 @@ import {
   PASS,
   SKIPPED,
   STAGING_COPY,
+  conformanceExitCode,
 } from "../staging-conformance.mjs";
 import {
   ALERT_ISSUE_TITLE,
@@ -632,11 +633,65 @@ describe("alert contract", () => {
       writeSummary: () => {},
       logger: quiet,
     });
-    assert.deepEqual(alert.closed, []);
+    assert.deepEqual(alert, { action: "unread", closed: [] });
     assert.equal(
       patches.filter((b) => /"state":"closed"/.test(b ?? "")).length,
       0,
     );
+  });
+
+  // #2627: a conformant run whose alert can't be read or closed is red.
+  const allPass = [async () => ({ id: "project-status", label: "status", status: PASS, detail: "" })];
+  function issueLookups(lookups, { closeStatus = 200 } = {}) {
+    let n = 0;
+    const fetchImpl = async (url, init = {}) => {
+      const method = init.method ?? "GET";
+      if (method === "GET" && String(url).includes("/issues?state=all")) {
+        const next = lookups[Math.min(n, lookups.length - 1)];
+        n += 1;
+        return typeof next === "number"
+          ? { ok: false, status: next, text: async () => "{}" }
+          : { ok: true, status: 200, text: async () => JSON.stringify(next) };
+      }
+      const status = method === "PATCH" ? closeStatus : 200;
+      return { ok: status < 300, status, text: async () => "{}" };
+    };
+    return fetchImpl;
+  }
+  async function run(fetchImpl, lines = []) {
+    return runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      checks: allPass,
+      writeSummary: () => {},
+      logger: { log: (line) => lines.push(line) },
+    });
+  }
+
+  it("a conformant run whose first alert lookup fails is red, and never says an alert is still open", async () => {
+    const lines = [];
+    const result = await run(issueLookups([502]), lines);
+    assert.equal(result.outcome, "healthy");
+    assert.deepEqual(result.alert, { action: "unread", closed: [] });
+    assert.equal(conformanceExitCode(result), 1);
+    assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
+    assert.ok(!lines.some((l) => /still open/.test(l)));
+  });
+
+  it("a conformant run whose second alert lookup (resolveAlert's) fails is red", async () => {
+    const lines = [];
+    const result = await run(issueLookups([[], 502]), lines);
+    assert.deepEqual(result.alert, { action: "unread", closed: [] });
+    assert.equal(conformanceExitCode(result), 1);
+    assert.ok(!lines.some((l) => /still open/.test(l)));
+  });
+
+  it("a conformant run whose alert close fails is red", async () => {
+    const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
+    const result = await run(issueLookups([open], { closeStatus: 502 }));
+    assert.deepEqual(result.alert, { action: "failed", closed: [] });
+    assert.equal(conformanceExitCode(result), 1);
   });
 
   it("alert body names production, not staging, and keeps the failing marker", () => {

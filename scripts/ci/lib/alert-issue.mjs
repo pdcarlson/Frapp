@@ -113,7 +113,9 @@ export async function findAlertIssues(options) {
  * exists" or "the lookup failed". That ambiguity is safe on the raise path —
  * it falls through to create, and a duplicate self-heals — but NOT on any path
  * that decides to close something, where "I could not read the alerts" must
- * never be treated as "there are none to worry about".
+ * never be treated as "there are none to worry about". `resolveAlert` uses this
+ * and reports a failed lookup as `unread`; a caller reads it directly only when
+ * it needs the issues themselves (a body marker, or whether one is already open).
  */
 export async function findAlertIssuesDetailed({
   token,
@@ -267,12 +269,15 @@ export async function raiseAlert({
  * Closes every open issue matching this alert. Closing them all (not just the
  * first) is what makes a duplicate created during an API blip self-heal.
  *
- * A close that left any match open is "failed", with `closed` listing the ones
- * that did close. A failed lookup still reads as "none" (see
- * findAlertIssuesDetailed), so a caller that must not read "I could not look"
- * as "nothing was open" pre-checks with findAlertIssuesDetailed and treats
- * `hadOpen && action === "none"` as a failed close. Making resolveAlert report
- * the failed lookup itself changes every caller at once, which is #2627.
+ * Returns { action, closed }, where action is:
+ * - "closed": every open match closed (`closed` lists them).
+ * - "none": the lookup worked and nothing was open.
+ * - "failed": a close left a match open; `closed` lists the ones that did close.
+ * - "unread": the lookup failed, so nothing was closed and whether an alert is
+ *   open is unknown. It is kept apart from "failed" because the callers'
+ *   policies differ: a watchdog whose run is the check goes red on it, while
+ *   production-uptime passes with a warning. And a caller must never say an
+ *   alert "is still open" when it could not look.
  */
 export async function resolveAlert({
   token,
@@ -282,9 +287,15 @@ export async function resolveAlert({
   lookupLabel = ALERT_LOOKUP_LABEL,
   buildRecoveryBody,
 }) {
-  const openIssues = (
-    await findAlertIssues({ token, repo, fetchImpl, title, lookupLabel })
-  ).filter((issue) => issue.state === "open");
+  const { issues, lookupOk } = await findAlertIssuesDetailed({
+    token,
+    repo,
+    fetchImpl,
+    title,
+    lookupLabel,
+  });
+  if (!lookupOk) return { action: "unread", closed: [] };
+  const openIssues = issues.filter((issue) => issue.state === "open");
   if (openIssues.length === 0) return { action: "none", closed: [] };
 
   const closed = [];
