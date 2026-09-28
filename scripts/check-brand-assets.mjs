@@ -68,12 +68,16 @@ const FAVICON_ICO = "packages/brand-assets/assets/signet-emblem-B.ico";
 const canonicalRaster = (size) =>
   `packages/brand-assets/assets/signet-emblem-B-${size}.png`;
 
-/** Every shipped vector. `requireField` is false for the crest-alone glyph. */
+/**
+ * Every shipped vector. `requireField` is false for the two that draw the crest
+ * alone: the glyph, and the lockup, which sits on the page background with no
+ * tile (spec/ui/assets.md §3).
+ */
 const vectors = [
   { rel: MASTER_SVG },
   { rel: GLYPH_SVG, requireField: false },
   { rel: "packages/brand-assets/assets/signet-emblem-B-rounded.svg" },
-  { rel: "packages/brand-assets/assets/frapp-lockup.svg" },
+  { rel: "packages/brand-assets/assets/frapp-lockup.svg", requireField: false },
 ];
 
 /**
@@ -327,7 +331,7 @@ if (failed) {
   process.exit(1);
 }
 console.log(
-  `brand-assets: ${vectors.length} vectors paint ${GOLD_HEX} on ${FIELD_HEX}; ` +
+  `brand-assets: ${vectors.length} vectors paint only ${GOLD_HEX} / ${FIELD_HEX}; ` +
     `${syncedCount} synced copies match canonical; ` +
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +

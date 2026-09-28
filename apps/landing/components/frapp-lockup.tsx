@@ -2,7 +2,13 @@ import Link from "next/link";
 import { SignetCrest } from "./signet-crest";
 
 /*
- * Signet wordmark + locked emblem B.
+ * Frapp wordmark + locked emblem B (ADR-25 step 5).
+ *
+ * The crest sits directly on the page background, with no tile behind it. A
+ * `surface-1` tile read as a second, slightly different dark square against
+ * `--background`, so the owner dropped it from page headers on 2026-09-28
+ * (#2580). The tile stays wherever the mark is a square icon on its own
+ * (`spec/ui/assets.md` §3).
  *
  * The crest is INLINED as one path rather than fetched as a raster (#2366).
  * Three reasons, in the order they bind:
@@ -12,7 +18,7 @@ import { SignetCrest } from "./signet-crest";
  *     request. The lockup sits in the sticky header, above the fold on every
  *     route including the legal pages, so an inline path removes a request
  *     from that critical path instead of merely keeping it un-`priority`.
- *  2. It scales. The same geometry serves the 32px header tile, the footer tile
+ *  2. It scales. The same geometry serves the 28px header crest, the footer tile
  *     and the 56/72px closing crest, with no second raster and no blur. There
  *     is no crest at the fold: D9 put the officer's chat frame there, and the
  *     signature moment that would have played on a hero crest went with it
@@ -31,17 +37,15 @@ export function FrappLockup() {
   return (
     <Link
       href="/"
-      aria-label="Signet"
+      aria-label="Frapp"
       className="inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
       <span
         className="inline-flex items-center gap-3 text-foreground"
         aria-hidden="true"
       >
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xs bg-surface-1">
-          <SignetCrest className="h-6 w-6" />
-        </span>
-        <span className="text-title leading-none">Signet</span>
+        <SignetCrest className="h-7 w-7" />
+        <span className="text-title leading-none">Frapp</span>
       </span>
     </Link>
   );

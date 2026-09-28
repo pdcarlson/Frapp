@@ -40,19 +40,20 @@ Canonical assets are named **`signet-emblem-B[-glyph|-rounded][-<size>].<svg|png
 | `signet-emblem-B.svg`            | SVG 1024²       | **Source of truth.** Every raster below renders from it.                    |
 | `signet-emblem-B-glyph.svg`      | SVG 1024²       | Crest alone on transparent — for surfaces that are not the charcoal field   |
 | `signet-emblem-B-rounded.svg`    | SVG 1024²       | Crest on a rounded charcoal tile                                            |
-| `frapp-lockup.svg`               | SVG 3360×1024   | Rounded tile + Signet wordmark; the word uses `currentColor`                |
+| `frapp-lockup.svg`               | SVG 2880×1024   | Crest alone (no tile) + Frapp wordmark; the word uses `currentColor`        |
 | `signet-emblem-B-1024.png`       | PNG 1024² RGB   | Square tile — Expo `icon.png` and the in-app tiles                          |
 | `signet-emblem-B-glyph-1024.png` | PNG 1024² RGBA  | Crest alone on transparent, no dark fringe on light surfaces                |
 | `signet-emblem-B-180.png`        | PNG 180² RGB    | Apple touch icon, synced into both Next apps                                |
 | `signet-emblem-B-48.png` / `-32` / `-16` | PNG RGB | Favicon sizes; `-32` is the Next App Router favicon source (`app/icon.png`) |
 | `signet-emblem-B.ico`            | ICO 16/32/48 RGBA | `apps/web/app/favicon.ico` — those three rasters with an opaque alpha channel. **RGBA is not optional:** Turbopack builds this file and its ICO decoder refuses a non-RGBA payload, failing the web production build |
 
-All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them. Only the viewBox *width* differs (`frapp-lockup.svg` is 3360 wide because it carries the wordmark beside the tile), and each file's intrinsic `width`/`height` must keep the viewBox's aspect or every raster renders distorted. `check:brand-assets` asserts all of it. That drift is exactly what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, authored in one commit, disagreeing from birth.
+All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them. Only the viewBox *width* differs (`frapp-lockup.svg` is 2880 wide because it carries the wordmark beside the crest), and each file's intrinsic `width`/`height` must keep the viewBox's aspect or every raster renders distorted. `check:brand-assets` asserts all of it. That drift is exactly what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, authored in one commit, disagreeing from birth.
 
 Requirements:
 
 - App icon MUST stay legible at 16px favicon scale.
-- Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply. The tile and crest stay `#1A1A1A` / `#DDB844`.
+- Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply. The crest stays `#DDB844`.
+- **Page headers draw the crest alone, with no tile** (owner, 2026-09-28, [#2580](https://github.com/pdcarlson/Frapp/issues/2580)). On `--background` (`#131211`) a charcoal or `surface-1` tile reads as a second, slightly different dark square, so the lockup and the landing header put the gold crest straight on the page. The `#1A1A1A` tile (`signet-emblem-B-1024.png`, `-rounded`) stays wherever the mark is a square icon on its own: app icon, favicon, Apple touch icon, and the Stripe and Google OAuth icons.
 - Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.png`) or any raster in this package — every one of them is generated. Edit the SVG master and re-run rasterize + sync.
 - Use the `-glyph` pair wherever the mark sits on a surface that is not the charcoal field: it is rendered against transparency rather than keyed out of the tile, so it carries no dark fringe.
 
@@ -65,7 +66,7 @@ Requirements:
 | Vector master                         | `packages/brand-assets/assets/signet-emblem-B.svg` (plus `signet-emblem-B-glyph.svg`) |
 | Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-1024.png`, `-180.png`, `-48.png`, `-32.png`, `-16.png`, `signet-emblem-B-glyph-1024.png`, and `signet-emblem-B.ico` (all generated) |
 | Synced copies | Every destination listed in `SYNCED` (`scripts/lib/brand-pixels.mjs`), the one list the sync copies along and the gate checks: the tab and Apple touch icons in both Next apps, `apps/web/app/favicon.ico` (the 16/32/48 container; `apps/landing` serves `icon.png` only), both apps' `public/brand/signet-emblem-B.png` tile, and `apps/landing/app/opengraph-emblem.png` |
-| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — Signet word plus the crest from [`signet-crest.tsx`](../../apps/landing/components/signet-crest.tsx), inlined as one path since #2366 and no longer a raster. Tile/crest are `#1A1A1A` / `#DDB844`. |
+| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — Frapp word plus the crest from [`signet-crest.tsx`](../../apps/landing/components/signet-crest.tsx), inlined as one path since #2366 and no longer a raster. The crest (`#DDB844`) sits on the page background with no tile since ADR-25 step 5. |
 | OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
 
 | Command | Effect |

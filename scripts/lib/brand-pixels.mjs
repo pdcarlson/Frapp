@@ -280,7 +280,7 @@ export function assertSvgLocked(svg, label, { requireField = true } = {}) {
     }
   }
   // The invariant is the COORDINATE SCALE AND ORIGIN, not the viewBox string:
-  // the lockup is `0 0 3360 1024` because it holds a wordmark beside the tile.
+  // the lockup is `0 0 2880 1024` because it holds a wordmark beside the crest.
   // What every file must share is the origin and the 1024-unit height, because
   // that is what lets the same `d` be copied between them verbatim.
   const viewBox = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) 1024"/);

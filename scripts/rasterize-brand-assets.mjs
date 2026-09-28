@@ -274,6 +274,7 @@ async function main() {
   assertSvgLocked(
     readFileSync(join(assets, "frapp-lockup.svg"), "utf8"),
     "frapp-lockup.svg",
+    { requireField: false },
   );
 
   mkdirSync(mobileImages, { recursive: true });

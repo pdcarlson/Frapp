@@ -1,7 +1,11 @@
-<svg width="210" height="64" viewBox="0 0 3360 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>Signet</title>
+<svg width="180" height="64" viewBox="0 0 2880 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Frapp</title>
   <!--
-    Locked emblem B — the shipping Signet crest, gold #DDB844 on charcoal #1A1A1A.
+    Locked emblem B, the shipping crest in gold #DDB844, beside the "Frapp"
+    wordmark. The lockup draws the crest alone, with no charcoal tile: it sits
+    in page headers on the dark page background, where a tile reads as a
+    second, slightly different dark square (owner, 2026-09-28, #2580). The
+    square tile stays wherever the mark stands alone as an icon.
     Treated as an abstract crest (brand-identity.md §2), never as an animal or mascot.
 
     signet-emblem-B.svg is the vector source of truth: every raster in this
@@ -10,11 +14,10 @@
 
     All four SVGs here are written in the SAME coordinate frame — origin 0 0,
     1024 units tall — so the same `d` string is reused verbatim and cannot drift
-    between them. Only the viewBox WIDTH differs: frapp-lockup.svg is 3360 wide
-    because it carries the wordmark beside the tile. Keep the intrinsic
+    between them. Only the viewBox WIDTH differs: frapp-lockup.svg is 2880 wide
+    because it carries the wordmark beside the crest. Keep the intrinsic
     width/height in step with the viewBox, or every raster renders distorted.
   -->
-  <rect width="1024" height="1024" rx="256" fill="#1A1A1A"/>
   <path
     fill="#DDB844"
     d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67
@@ -57,9 +60,9 @@
        C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"
   />
   <text
-    x="1216"
+    x="1024"
     y="704"
     fill="currentColor"
     style="font-family: ui-sans-serif, system-ui, sans-serif; font-size: 512px; font-weight: 700;"
-  >Signet</text>
+  >Frapp</text>
 </svg>

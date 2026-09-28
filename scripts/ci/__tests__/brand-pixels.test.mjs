@@ -258,18 +258,16 @@ test("coverageMask splits on the antialiasing midpoint", () => {
 // ── the committed vectors (text only — no decode) ───────────────────────────
 
 test("every shipped vector paints only the locked pair", () => {
-  for (const name of [
-    "signet-emblem-B.svg",
-    "signet-emblem-B-rounded.svg",
-    "frapp-lockup.svg",
-  ]) {
+  for (const name of ["signet-emblem-B.svg", "signet-emblem-B-rounded.svg"]) {
     assertSvgLocked(readFileSync(join(ASSETS, name), "utf8"), name);
   }
-  assertSvgLocked(
-    readFileSync(join(ASSETS, "signet-emblem-B-glyph.svg"), "utf8"),
-    "signet-emblem-B-glyph.svg",
-    { requireField: false },
-  );
+  // The crest alone: the glyph, and the lockup, which sits in page headers on
+  // the page background with no tile (spec/ui/assets.md §3).
+  for (const name of ["signet-emblem-B-glyph.svg", "frapp-lockup.svg"]) {
+    assertSvgLocked(readFileSync(join(ASSETS, name), "utf8"), name, {
+      requireField: false,
+    });
+  }
 });
 
 test("assertSvgLocked catches the three ways a vector goes off-brand", () => {
@@ -297,7 +295,7 @@ test("assertSvgLocked catches the three ways a vector goes off-brand", () => {
 
 test("every brand SVG reuses the master geometry verbatim", () => {
   // All four are written in the same 1024-tall coordinate frame — the lockup is
-  // 3360 wide because it holds a wordmark — so the same `d` copies between them.
+  // wider because it holds a wordmark — so the same `d` copies between them.
   // A rewritten path in one file is drift, which is how the superseded SVG came
   // to draw a different mark from the raster in the first place (#2153).
   const pathOf = (name) =>
