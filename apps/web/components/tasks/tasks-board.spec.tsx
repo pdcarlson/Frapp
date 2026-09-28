@@ -395,3 +395,26 @@ describe("TasksBoard overdue affordances", () => {
     expect(screen.getByText(/submit the ride-share list/i)).toBeInTheDocument();
   });
 });
+
+describe("TasksBoard assignee label", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("names an assignee missing from the roster with the shared member label", () => {
+    // #2422: a departed member keeps their tasks. They read `Member <first
+    // six of id>` here, the label the leaderboard and chat give them too.
+    tasksRef.current = [
+      {
+        ...TASKS[2],
+        id: "task-departed",
+        assignee_id: "2f4a1c9d-0000-4000-8000-000000000000",
+      },
+    ];
+    render(<TasksBoard />);
+
+    expect(screen.getByText(/Member 2f4a1c\b/)).toBeInTheDocument();
+    expect(screen.queryByText(/2f4a1c9d-0000/)).toBeNull();
+  });
+});

@@ -215,6 +215,31 @@ describe("Directory on the greenfield shell", () => {
     expect(grace).not.toHaveAccessibleName(/Treasurer/);
   });
 
+  it("labels a member whose name is only whitespace with the shared fallback", () => {
+    // `display_name` is NOT NULL DEFAULT '', and spaces are as unset as ''.
+    // The label is the one the leaderboard and chat use for this member
+    // (`Member <first six of id>`, #2422), so an officer comparing surfaces
+    // sees one person, not two.
+    Object.assign(
+      membersRead,
+      read([
+        MEMBERS[0],
+        {
+          ...MEMBERS[1],
+          id: "m-3",
+          user_id: "2f4a1c9d-0000-4000-8000-000000000000",
+          display_name: "   ",
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    expect(
+      screen.getByRole("button", { name: /^Member 2f4a1c,/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Member 2f4a1c9d/)).toBeNull();
+  });
+
   it("answers an empty roster, a filtered miss and a search miss differently", async () => {
     const user = userEvent.setup();
 

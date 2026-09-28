@@ -16,7 +16,7 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
   SEARCH_COMPLETED_EVENT,
 } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { asArray, cn } from "@/lib/utils";
@@ -142,7 +142,7 @@ export function FindBar({ className }: { className?: string }) {
       out.push({
         id: `member-${row.user_id ?? row.display_name ?? out.length}`,
         group: "Members",
-        label: displayNameOrNull(row.display_name) ?? "Unnamed member",
+        label: memberLabel(row.display_name, row.user_id),
         hint: row.email ?? undefined,
         href: "/members",
       });

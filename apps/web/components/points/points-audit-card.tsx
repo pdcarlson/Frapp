@@ -91,7 +91,7 @@ export function PointsAuditCard() {
   // reads the same hook and the same cache key, so /points issues one request
   // for both rather than the two it used to.
   //
-  // `nameFor` also replaces a local map with a `?? "Unnamed member"` default:
+  // `nameFor` also replaces a local map with a hand-written `??` default:
   // `display_name` is `NOT NULL DEFAULT ''`, and `??` passes the empty string
   // straight through, so a member who never set a name rendered a blank label.
   const { byId, nameFor } = useMemberDisplayNames();

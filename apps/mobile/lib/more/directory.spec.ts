@@ -50,8 +50,11 @@ describe("selectDirectoryRows", () => {
   });
 
   it("falls back for an unset display name rather than rendering blank", () => {
-    const [row] = selectDirectoryRows([{ user_id: "u-1", display_name: "" }]);
-    expect(row?.displayName).toBe("Unnamed member");
+    // The shared `Member <6>` label, the same words web renders for this member.
+    const [row] = selectDirectoryRows([
+      { user_id: "2f4a1c9d-0000-4000-8000-000000000000", display_name: "" },
+    ]);
+    expect(row?.displayName).toBe("Member 2f4a1c");
     expect(row?.initials).toBe("?");
   });
 

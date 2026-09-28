@@ -9,6 +9,7 @@ import {
   resolveAuthorLabel,
   resolveAuthorName,
   memberFallbackLabel,
+  memberLabel,
   resolveDisplayName,
   type DisplayNameMap,
 } from "./display-names";
@@ -48,6 +49,39 @@ describe("memberFallbackLabel", () => {
 
   it("tolerates an id shorter than the truncation", () => {
     expect(memberFallbackLabel("abc")).toBe("Member abc");
+  });
+});
+
+describe("memberLabel", () => {
+  const id = "8f14e45f-ceea-467a-9f1c-1a2b3c4d5e6f";
+
+  it("is the member's trimmed name when one is set", () => {
+    expect(memberLabel("  Rush Chair ", id)).toBe("Rush Chair");
+  });
+
+  it("falls back to memberFallbackLabel for an empty or whitespace name", () => {
+    // `display_name` is NOT NULL DEFAULT '', so '' is the real unset case,
+    // and a name of spaces is as unset as an empty one.
+    expect(memberLabel("", id)).toBe(memberFallbackLabel(id));
+    expect(memberLabel("   ", id)).toBe(memberFallbackLabel(id));
+    expect(memberLabel(null, id)).toBe(memberFallbackLabel(id));
+  });
+
+  it("reads 'Unknown member' when there is no id to fall back to", () => {
+    expect(memberLabel("", undefined)).toBe("Unknown member");
+    expect(memberLabel(undefined, null)).toBe("Unknown member");
+  });
+
+  it("treats a non-string name or id as absent rather than throwing", () => {
+    // Hand-narrowed rows (the Find bar's search results) can carry anything.
+    expect(memberLabel(42, id)).toBe(memberFallbackLabel(id));
+    expect(memberLabel("", 12345)).toBe("Unknown member");
+  });
+
+  it("uses the same words chat uses for an author it cannot name", () => {
+    expect(memberLabel("", null)).toBe(
+      resolveAuthorLabel({ sender_id: null }, () => null, null),
+    );
   });
 });
 
