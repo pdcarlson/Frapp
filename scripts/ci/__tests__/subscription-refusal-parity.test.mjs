@@ -442,9 +442,21 @@ test("the study refusal branch sits above the arms that relay the server string"
   // 403 arm returns the server's own words — for an `incomplete` chapter
   // "…complete checkout to use this feature.", a purchase instruction the
   // store declaration forbids in this app.
+  //
+  // Both functions reach the gate through `permanentRefusalCopy` (#2393), the
+  // one place that names the permanent refusals, so it must still ask the
+  // subscription detector, and each function must ask it above its 403 arm.
+  const dispatch = source.slice(
+    source.indexOf("export function permanentRefusalCopy"),
+    source.indexOf("export function isActiveSessionConflict"),
+  );
+  assert.ok(
+    dispatch.includes("subscriptionRefusalOf(error)"),
+    "permanentRefusalCopy no longer asks the subscription detector",
+  );
   for (const fn of ["startErrorCopy", "sessionErrorCopy"]) {
     const body = source.slice(source.indexOf(`export function ${fn}`));
-    const refusalAt = body.indexOf("subscriptionRefusalOf");
+    const refusalAt = body.indexOf("permanentRefusalCopy(error");
     const relayAt = body.indexOf("case 403:");
     assert.ok(refusalAt !== -1, `${fn} lost its subscription-refusal branch`);
     assert.ok(relayAt !== -1, `${fn} lost its 403 arm — this lock needs updating`);

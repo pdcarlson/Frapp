@@ -367,13 +367,20 @@ export default function StudyScreen() {
   }, [clearRefusalState]);
 
   /** Let go of a session the server says is gone, and say so. */
-  const releaseSession = useCallback((notice: string) => {
-    setSession(null);
-    sessionIdRef.current = null;
-    setNotice(notice);
-    void clearStudyPausedNotification();
-    void apiRef.current.refetchSessions();
-  }, []);
+  const releaseSession = useCallback(
+    (notice: string) => {
+      setSession(null);
+      sessionIdRef.current = null;
+      setNotice(notice);
+      // As in `applyResponse`'s ended branch: a refusal latched against this
+      // session goes with it. Left set, Start comes back greyed out with only
+      // the "already closed" notice on screen and no reason for it.
+      clearRefusalState();
+      void clearStudyPausedNotification();
+      void apiRef.current.refetchSessions();
+    },
+    [clearRefusalState],
+  );
 
   /** One tick per second, and only while there is something to tick. */
   useEffect(() => {

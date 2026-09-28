@@ -317,5 +317,47 @@ describe("Study on a module-off refusal (#2393)", () => {
       expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
       act(() => tree.unmount());
     });
+
+    it("drops the copy once a write succeeds again, after an officer turns hours back on", async () => {
+      api.heartbeat
+        .mockRejectedValueOnce(MODULE_OFF)
+        .mockResolvedValue(LIVE_SESSION[0]);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalledTimes(2);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      act(() => tree.unmount());
+    });
+
+    it("lets go of the refusal with the session when the server says it is gone", async () => {
+      // Refused, then the session is stopped elsewhere: the next beat 404s.
+      api.heartbeat
+        .mockRejectedValueOnce(MODULE_OFF)
+        .mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      sessions = NO_SESSIONS;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      });
+
+      // Without the release clearing the latch, Start comes back greyed out
+      // under nothing but the "already closed" notice.
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      expect(startButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    });
   });
 });

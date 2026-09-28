@@ -7,8 +7,9 @@
  * `apps/mobile/lib/api-error.ts` (study errors, dues pay errors, and check-in)
  * before being promoted here so web can share it without a second copy.
  *
- * `codeOf` reads a field no real response carries yet. The guards throw
- * structured codes (`chapter.module.disabled`, `legal.acceptance_required`),
+ * `codeOf` reads a field no real response carries yet. The API throws
+ * structured codes (`chapter.module.disabled` from `ChapterGuard`,
+ * `legal.acceptance_required` from `LegalAcceptanceService`),
  * but `AllExceptionsFilter` serialises only `{statusCode, error, message,
  * requestId}`, so `codeOf` is `null` in production until #1020 changes that
  * contract. A branch keyed on it alone typechecks, passes any test that
