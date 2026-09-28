@@ -114,6 +114,7 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 import { ImportWizard } from "./import-wizard";
 import { SourceStep } from "./source-step";
+import { ConnectStep } from "./connect-step";
 import { ChannelMappingStep } from "./channel-mapping-step";
 import { defaultChoices, mappingIssues } from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
@@ -1163,10 +1164,36 @@ describe("ConnectStep — confirming what the callback parked", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
+    // Still moving: the only thing between it and Continue is saying the bot
+    // has been given access to the channels.
+    fireEvent.click(screen.getByRole("checkbox"));
     expect(
       (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
+  });
+
+  it("asks for the bot to be given channel access before the scan, and holds Continue until it has", async () => {
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    const onConnected = vi.fn();
+    render(<ConnectStep onConnected={onConnected} />);
+    expect(
+      await screen.findByText(
+        /Give the bot access to the channels you want to import/,
+      ),
+    ).toBeInTheDocument();
+    const next = screen.getByRole("button", { name: "Continue" });
+    expect((next as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(next);
+    expect(onConnected).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /given the Frapp bot a role that can see the channels/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onConnected).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT confirm when there is no handshake — a plain visit binds nothing", async () => {

@@ -9,6 +9,10 @@ import {
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
+import {
+  dashboardCheckboxHitAreaClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -72,6 +76,10 @@ export function ConnectStep({
   // connection that succeeded.
   const attempted = useRef(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  // Asked before the scan, not discovered after it. Discord shows the bot only
+  // what its roles can see, and most chapter servers hide their channels from
+  // a newcomer: on the first real import the bot could read 2 of 78 (#2812).
+  const [accessGiven, setAccessGiven] = useState(false);
 
   useEffect(() => {
     if (!handshake || attempted.current) return;
@@ -138,9 +146,47 @@ export function ConnectStep({
             {connection.data?.connected_discord_username
               ? `Authorized by ${connection.data.connected_discord_username}.`
               : "Authorized."}{" "}
-            Frapp can read channel history in this server. It cannot post, edit,
-            or delete anything.
+            Frapp was added with permission to view channels and read their
+            history, and nothing else. It can do more only if you give it a role
+            that allows more.
           </p>
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border p-4">
+          <p className="text-sm font-medium">
+            Give the bot access to the channels you want to import
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Discord shows the Frapp bot only the channels its roles can see, and
+            most servers hide their channels from new members. Before Frapp
+            reads your server, give the bot a role that can see every channel
+            you want to import: in Discord, open{" "}
+            <strong className="font-medium text-foreground">
+              Server Settings → Members → Frapp
+            </strong>{" "}
+            and add the role.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            A role that can also moderate or manage the server lends those
+            powers to the bot, so take the role off Frapp once the import has
+            finished. To keep the bot read-only instead, allow the Frapp role on
+            each channel (Edit Channel → Permissions). Anything it still cannot
+            see is listed after the scan, and you can scan again.
+          </p>
+          <label className="flex cursor-pointer items-start gap-3 pt-1 text-sm">
+            <span className={dashboardCheckboxHitAreaClassName}>
+              <input
+                type="checkbox"
+                className={dashboardTableCheckboxClassName}
+                checked={accessGiven}
+                onChange={(event) => setAccessGiven(event.target.checked)}
+              />
+            </span>
+            <span>
+              I have given the Frapp bot a role that can see the channels I want
+              to import.
+            </span>
+          </label>
         </div>
 
         <p className="text-sm text-muted-foreground">
@@ -149,7 +195,9 @@ export function ConnectStep({
         </p>
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onConnected}>Continue</Button>
+          <Button onClick={onConnected} disabled={!accessGiven}>
+            Continue
+          </Button>
           <Button
             variant="ghost"
             onClick={() => void startConnect()}
@@ -194,8 +242,9 @@ export function ConnectStep({
         <strong className="font-medium text-foreground">
           Read Message History
         </strong>
-        . It cannot send messages, change anything, or remove anyone. You can
-        remove it from your server at any time.
+        . With only those it cannot send messages, change anything, or remove
+        anyone. You can remove it from your server at any time. After adding it,
+        you will give it a role that can see the channels to import.
       </p>
 
       {withdrawn ? (
