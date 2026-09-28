@@ -71,15 +71,17 @@ action file is not on disk yet when the runner resolves it.
   then — and had to gain one. It runs on `workflow_run` after merge, so no PR
   would ever have caught the failure.
 
-  The second half is the one that bites hardest. `deploy-production.yml` runs
-  `git checkout --detach "$DEPLOY_SHA"`, so **any local action called after that point is
-  loaded from the deployed commit's tree**: deploying a commit older than the action dies with
-  `Can't find 'action.yml'` — that is the rollback path, failing exactly when it is reached
-  for — and deploying a newer one silently uses *that commit's* copy of whatever the action
-  pins. Call local actions before the tree moves; that also puts them on the trusted ref, which
-  is what the job's own header argues for. A later `actions/checkout`, `git switch`,
-  `git reset --hard` and `git worktree` all count as moving the tree, and the guard rejects a
-  local-action call after any of them.
+  The second half is the one that bites hardest. The deploy job both environments share
+  (`_deploy.yml`) runs `git checkout --detach "$DEPLOY_SHA"`, so **any local action called after
+  that point is loaded from the deployed commit's tree**: deploying a commit older than the action
+  dies with `Can't find 'action.yml'` — that is the rollback path, failing exactly when it is
+  reached for — and deploying a newer one silently uses *that commit's* copy of whatever the action
+  pins. Call local actions from the trusted ref, which is what the job's own header argues for. A
+  later `actions/checkout`, a first one with a `ref:`, `git switch`, `git reset --hard` and
+  `git worktree` all count as moving the tree, and the guard rejects a local-action call after any
+  of them. The one move back it accepts is `_deploy.yml`'s: `git checkout --force --detach
+  "$TRUSTED_SHA"` with `TRUSTED_SHA: ${{ github.sha }}`, which that job uses to install on the
+  deployed commit before any secret and then run its local actions trusted (#2805).
 
 ## Why this directory has a README
 

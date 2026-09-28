@@ -300,21 +300,25 @@ describe("workflow secrets scope (#2518)", () => {
       ["migration-drift", "migration-order", "migration-replay"],
     );
 
-    const deploy = byName.get("deploy-production.yml")?.jobs.find((j) => j.id === "deploy");
-    assert.ok(deploy, "deploy-production.yml's deploy job must be parsed");
-    assert.ok(secretsOf(deploy.body).includes("RENDER_API_KEY"));
-    assert.equal(environmentOf(deploy.body)?.name, "production");
-
-    // The one expression-named environment rule B admits, and its caller.
+    // The one expression-named environment rule B admits, and its two
+    // callers. Production's deploy job has been this call since #2805: it
+    // reads no secret itself and names no environment.
     const shared = byName.get("_deploy.yml")?.jobs.find((j) => j.id === "deploy");
     assert.ok(shared, "_deploy.yml's deploy job must be parsed");
     assert.ok(secretsOf(shared.body).includes("RENDER_API_KEY"));
     assert.deepEqual(environmentOf(shared.body), { name: "${{ inputs.environment }}", literal: false });
-    const caller = byName.get("deploy-staging.yml")?.jobs.find((j) => j.id === "deploy");
-    assert.equal(reusableCallOf(caller.body), "_deploy.yml");
-    assert.equal(withValueOf(caller.body, "environment"), "staging");
-    // Rule E requires it: without it the called job reads its secrets empty.
-    assert.deepEqual(secretsOf(caller.body), ["(inherit)"]);
+    for (const [file, environment] of [["deploy-staging.yml", "staging"], ["deploy-production.yml", "production"]]) {
+      const caller = byName.get(file)?.jobs.find((j) => j.id === "deploy");
+      assert.ok(caller, `${file}'s deploy job must be parsed`);
+      assert.equal(reusableCallOf(caller.body), "_deploy.yml", file);
+      assert.equal(withValueOf(caller.body, "environment"), environment, file);
+      // Rule E requires it: without it the called job reads its secrets empty.
+      assert.deepEqual(secretsOf(caller.body), ["(inherit)"], `${file} passes secrets: inherit and names none`);
+    }
+    assert.deepEqual(
+      callersOf("_deploy.yml").map((c) => c.at).sort(),
+      ["deploy-production.yml / deploy", "deploy-staging.yml / deploy"],
+    );
 
     const publish = byName.get("migration-snapshot.yml")?.jobs.find((j) => j.id === "publish");
     assert.ok(publish, "migration-snapshot.yml's publish job must be parsed");

@@ -1,7 +1,9 @@
 // Pins staging's deploy: `deploy-staging.yml` (#2803), which decides whether
 // to deploy and reports the outcome, and the job it calls, `_deploy.yml`
 // (#2804), which deploys staging's database, API, web and landing in one
-// ordered job. Production moves onto `_deploy.yml` in #2805.
+// ordered job. Production calls the same job since #2805; its layers are
+// pinned in `deploy-production-fence.test.mjs`, and this file pins that
+// staging's path through the job is still staging's.
 //
 // It replaced `deploy-api.yml` and `deploy-vercel-staging.yml`, and carries
 // every assertion their tests made (`deploy-api-workflow.test.mjs`,
@@ -18,7 +20,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -192,13 +195,13 @@ describe("_deploy.yml: the shared job's interface", () => {
     assert.equal(sharedJob().keys.get("environment"), "${{ inputs.environment }}");
   });
 
-  it("refuses anything but staging, and staging's defaults, before it checks anything out", () => {
+  it("refuses an unknown environment, and staging anything but its defaults, before it checks anything out", () => {
     const guard = deploySteps()[0];
     assert.match(guard.name, /^Check the inputs/);
     assert.equal(guard.if, null);
-    assert.match(guard.body, /if \[ "\$TARGET_ENVIRONMENT" != "staging" \]; then/);
+    assert.match(guard.body, /case "\$TARGET_ENVIRONMENT" in/);
+    assert.match(guard.body, /^\s+staging\)\n\s+if \[ "\$DRY_RUN" != "false" \] \|\| \[ "\$SCOPE" != "full" \]; then/m);
     assert.match(guard.body, /\^\[0-9a-f\]\{40\}\$/, "the sha must be a full commit SHA");
-    assert.match(guard.body, /if \[ "\$DRY_RUN" != "false" \] \|\| \[ "\$SCOPE" != "full" \]; then/);
     assert.equal(guard.env.get("TARGET_ENVIRONMENT"), "${{ inputs.environment }}");
     assert.equal(guard.env.get("DRY_RUN"), "${{ inputs.dry_run }}");
     assert.equal(guard.env.get("SCOPE"), "${{ inputs.scope }}");
@@ -226,22 +229,48 @@ describe("_deploy.yml: the shared job's interface", () => {
       HAS_RENDER_API_KEY: "true",
       HAS_VERCEL_API_KEY: "true",
     };
-    const run = (overrides) =>
-      spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH, ...ok, ...overrides }, encoding: "utf8" });
+    // `started=true` goes to GITHUB_OUTPUT first, refusal or not (#2805: a
+    // rejected approval, where no step runs, must read apart from a failure).
+    const outputs = mkdtempSync(join(tmpdir(), "guard-"));
+    let runs = 0;
+    const run = (overrides) => {
+      const GITHUB_OUTPUT = join(outputs, `out-${(runs += 1)}`);
+      writeFileSync(GITHUB_OUTPUT, "");
+      const result = spawnSync("bash", ["-c", script], {
+        env: { PATH: process.env.PATH, GITHUB_OUTPUT, ...ok, ...overrides },
+        encoding: "utf8",
+      });
+      assert.equal(readFileSync(GITHUB_OUTPUT, "utf8"), "started=true\n", "the guard records that the job started");
+      return result;
+    };
     const PROOF = /secrets reached this called job \(its environment: key, and the caller's secrets: inherit\)/;
 
-    const green = run({});
-    assert.equal(green.status, 0, green.stdout + green.stderr);
-    assert.match(green.stdout, PROOF);
+    for (const [label, overrides] of [
+      ["staging", {}],
+      ["production", { TARGET_ENVIRONMENT: "production" }],
+      ["a production dry run", { TARGET_ENVIRONMENT: "production", DRY_RUN: "true" }],
+      ["production, migrations only", { TARGET_ENVIRONMENT: "production", SCOPE: "migrations-only" }],
+    ]) {
+      const green = run(overrides);
+      assert.equal(green.status, 0, `${label}: ${green.stdout}${green.stderr}`);
+      assert.match(green.stdout, PROOF, label);
+    }
 
     for (const [label, overrides] of [
-      ["production", { TARGET_ENVIRONMENT: "production" }],
+      ["an unknown environment", { TARGET_ENVIRONMENT: "preview" }],
+      ["no environment", { TARGET_ENVIRONMENT: "" }],
+      ["empty sha", { DEPLOY_SHA: "" }],
       ["short sha", { DEPLOY_SHA: "0123456" }],
       ["uppercase sha", { DEPLOY_SHA: "0123456789ABCDEF0123456789ABCDEF01234567" }],
-      ["dry run", { DRY_RUN: "true" }],
-      ["partial scope", { SCOPE: "migrations-only" }],
+      ["sha with a trailing space", { DEPLOY_SHA: "0123456789abcdef0123456789abcdef01234567 " }],
+      ["a staging dry run", { DRY_RUN: "true" }],
+      ["a staging partial scope", { SCOPE: "migrations-only" }],
+      ["a production scope it doesn't know", { TARGET_ENVIRONMENT: "production", SCOPE: "api-only" }],
+      ["an empty production scope", { TARGET_ENVIRONMENT: "production", SCOPE: "" }],
+      ["a production dry_run that isn't a boolean", { TARGET_ENVIRONMENT: "production", DRY_RUN: "yes" }],
       ["no Render key", { HAS_RENDER_API_KEY: "false" }],
       ["no Infisical id", { HAS_INFISICAL_MACHINE_IDENTITY_ID: "false" }],
+      ["production without its Vercel key", { TARGET_ENVIRONMENT: "production", HAS_VERCEL_API_KEY: "false" }],
     ]) {
       const refused = run(overrides);
       assert.equal(refused.status, 1, `${label}: ${refused.stdout}`);
@@ -249,6 +278,7 @@ describe("_deploy.yml: the shared job's interface", () => {
       assert.doesNotMatch(refused.stdout, PROOF, `${label}: no proof line on a refusal`);
     }
     assert.match(run({ HAS_VERCEL_API_KEY: "false" }).stdout, /did not reach this called job: VERCEL_API_KEY/);
+    rmSync(outputs, { recursive: true, force: true });
   });
 
   it("checks that the environment's secrets reached it, by name and never by value", () => {
@@ -289,16 +319,26 @@ describe("_deploy.yml: the deploy job", () => {
     // commit from its input only; the event is the caller's business.
     assert.doesNotMatch(sharedUncommented, /^\s*GITHUB_SHA:/m, "use DEPLOY_SHA");
     assert.doesNotMatch(sharedUncommented, /github\.event\./, "the shared job reads its inputs, not the caller's event");
-    for (const name of ["Build the Vercel preview bundles (web + landing)", "Plan the deploy", "Deploy the commit to Render", "Upload web + landing to staging"]) {
+    for (const name of ["Build the Vercel preview bundles (web + landing)", "Plan the deploy", "Deploy the commit to Render (staging)", "Upload web + landing to staging"]) {
       assert.equal(step(name).env.get("DEPLOY_SHA"), INPUT_SHA, `${name} must name the caller's commit`);
     }
   });
 
-  it("deploys to the preview channel, never production", () => {
-    for (const phase of ["build", "upload"]) {
-      assert.equal(deploySteps().find(runsVercel(phase)).env.get("DEPLOY_TARGET"), "preview");
+  // Staging's Vercel steps run on the plan, which runs only for staging; the
+  // production ones only for production. A production target reachable on a
+  // staging run would ship staging's build to app.frapp.live.
+  it("ships staging to the preview channel, and the production channel only for production", () => {
+    const vercel = deploySteps().filter((s) => s.body.includes("scripts/ci/deploy-vercel.mjs"));
+    assert.equal(vercel.length, 4);
+    for (const s of vercel) {
+      if (s.env.get("DEPLOY_TARGET") === "preview") {
+        assert.equal(s.if, "steps.plan.outputs.upload == 'true'", s.name);
+      } else {
+        assert.equal(s.env.get("DEPLOY_TARGET"), "production", s.name);
+        assert.match(s.if ?? "", /^\$\{\{ inputs\.environment == 'production' && /, s.name);
+      }
     }
-    assert.doesNotMatch(sharedUncommented, /DEPLOY_TARGET: production/);
+    assert.equal(step("Plan the deploy").if, "inputs.environment == 'staging'");
   });
 
   it("pins the Vercel CLI to an exact version", () => {
@@ -319,21 +359,25 @@ describe("deploy-staging.yml: the order", () => {
     supabase: indexOf((s) => /uses:\s*\.\/\.github\/actions\/supabase-cli/.test(s.body), "sets up the Supabase CLI"),
     baseline: indexOf((s) => s.body.includes("scripts/ci/record-env-baseline.mjs"), "records the env baseline"),
     inject: indexOf((s) => USES_INFISICAL.test(s.body), "injects Infisical"),
-    build: indexOf(runsVercel("build"), "builds web + landing (DEPLOY_PHASE build)"),
-    migrateDry: indexOf((s) => /run-migration\.mjs --env staging --dry-run/.test(s.body), "dry-runs the migrations"),
-    migrate: indexOf((s) => /run-migration\.mjs --env staging\s*$/m.test(s.body), "applies the migrations"),
+    build: indexOf((s) => runsVercel("build")(s) && s.env.get("DEPLOY_TARGET") === "preview", "builds web + landing (DEPLOY_PHASE build)"),
+    trusted: indexOf((s) => s.name === "Move the workspace to the trusted ref", "moves to the trusted ref"),
+    detach: indexOf((s) => s.name === "Check out the commit being deployed", "checks the deployed commit back out"),
+    migrateDry: indexOf((s) => /run-migration\.mjs --env "\$TARGET_ENVIRONMENT" --dry-run/.test(s.body), "dry-runs the migrations"),
+    migrate: indexOf((s) => /run-migration\.mjs --env "\$TARGET_ENVIRONMENT"\s*$/m.test(s.body), "applies the migrations"),
     plan: indexOf((s) => s.body.includes("scripts/ci/plan-staging-deploy.mjs"), "plans the deploy"),
-    render: indexOf((s) => s.body.includes("scripts/ci/deploy-render-production.mjs"), "deploys to Render"),
-    verify: indexOf((s) => s.body.includes("scripts/ci/verify-served-commit.mjs"), "verifies the served commit"),
-    upload: indexOf(runsVercel("upload"), "uploads web + landing (DEPLOY_PHASE upload)"),
+    render: indexOf((s) => s.name === "Deploy the commit to Render (staging)", "deploys staging's API to Render"),
+    verify: indexOf((s) => s.name === "Verify staging serves the commit", "verifies the served commit"),
+    upload: indexOf((s) => runsVercel("upload")(s) && s.env.get("DEPLOY_TARGET") === "preview", "uploads web + landing (DEPLOY_PHASE upload)"),
     alias: indexOf((s) => s.body.includes("scripts/ci/ensure-vercel-staging-alias.mjs"), "aliases the staging hosts"),
   });
 
-  it("runs install → baseline → inject → plan → build → migrate → Render → verify → upload → alias", () => {
+  it("runs install → trusted ref → baseline → inject → deployed commit → plan → build → migrate → Render → verify → upload → alias", () => {
     // The plan is read-only and comes first so a run with nothing to upload
     // builds nothing; every step that changes anything keeps #2803's order.
+    // The migration dry run lists what is pending ahead of the build, as
+    // production's does (#2805): it writes nothing.
     const o = order();
-    const sequence = ["npmCi", "baseline", "inject", "plan", "build", "migrateDry", "migrate", "render", "verify", "upload", "alias"];
+    const sequence = ["npmCi", "cli", "trusted", "supabase", "baseline", "inject", "detach", "plan", "migrateDry", "build", "migrate", "render", "verify", "upload", "alias"];
     for (let i = 1; i < sequence.length; i += 1) {
       assert.ok(
         o[sequence[i - 1]] < o[sequence[i]],
@@ -377,8 +421,12 @@ describe("deploy-staging.yml: the order", () => {
         assert.doesNotMatch(s.if ?? "", /always\(\)|failure\(\)|cancelled\(\)/, `${s.name} must not run past a failure`);
       }
     }
+    // Every staging run migrates: the dry run unconditionally, the apply on
+    // everything but a dry run, which the guard refuses for staging.
+    assert.equal(step("Run migrations (dry-run)").if, null, "the dry run runs on every eligible push");
+    assert.equal(step("Run migrations (apply)").if, "${{ !inputs.dry_run }}");
     for (const name of ["Run migrations (dry-run)", "Run migrations (apply)"]) {
-      assert.equal(step(name).if, null, `${name} runs on every eligible push`);
+      assert.equal(step(name).env.get("TARGET_ENVIRONMENT"), "${{ inputs.environment }}", name);
     }
     // Staging's plan runs on every staging run; the input names it a staging layer (#2804).
     assert.equal(step("Plan the deploy").if, "inputs.environment == 'staging'");
@@ -388,8 +436,10 @@ describe("deploy-staging.yml: the order", () => {
   });
 
   it("plans, deploys on the plan's say-so, and verifies what the plan named", () => {
-    const deploy = step("Deploy the commit to Render");
+    const deploy = step("Deploy the commit to Render (staging)");
     assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true'");
+    assert.equal(deploy.env.get("RENDER_SERVICE_ID"), "srv-d6lqsq75r7bs73c2fdc0");
+    assert.equal(deploy.env.get("SERVICE_LABEL"), "frapp-api-staging");
     const verify = step("Verify staging serves the commit");
     // `verify_sha` is set whenever anything ships (a current plan, or a stale
     // one that uploads), and empty only when nothing does.
@@ -517,11 +567,11 @@ describe("deploy-staging.yml: the rest of the repo keys on it", () => {
     assert.ok(names.includes(workflowKeys(WORKFLOW).get("name")), `migration-snapshot.yml triggers on ${list[1]}`);
   });
 
-  it("is the only workflow that calls the shared job, and it calls it for staging", () => {
+  it("is the only workflow that calls the shared job for staging; production's caller is the other", () => {
     // A second caller with `environment: staging` would migrate staging and
     // ship its frontends with none of the step text the test below looks for,
     // outside the run the snapshot publisher and the migration gates watch
-    // (#2804 review). #2805 adds deploy-production.yml, for production only.
+    // (#2804 review). The same holds for production: one dispatch, one caller.
     const callers = [];
     for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
       for (const j of workflowJobs(join(WORKFLOW_DIR, file))) {
@@ -530,7 +580,7 @@ describe("deploy-staging.yml: the rest of the repo keys on it", () => {
         callers.push(`${file}/${j.jobId}:${j.keys.get("with")?.get("environment")}`);
       }
     }
-    assert.deepEqual(callers, ["deploy-staging.yml/deploy:staging"]);
+    assert.deepEqual(callers.sort(), ["deploy-production.yml/deploy:production", "deploy-staging.yml/deploy:staging"]);
   });
 
   it("is the only workflow that migrates staging or ships its frontends", () => {

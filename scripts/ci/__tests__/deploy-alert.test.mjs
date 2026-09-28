@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 import {
   ALERT_CONFIGS,
+  DEPLOY_PRODUCTION_CONFIG,
   DEPLOY_STAGING_CONFIG,
   alertJobNames,
   buildAlertCommentBody,
@@ -92,6 +93,15 @@ const GATED_CONFIG = {
  */
 function stagingNeeds(result, plan) {
   return { deploy: { result, outputs: plan === undefined ? {} : { plan } } };
+}
+
+/** `toJSON(needs)` for deploy-production.yml's `deploy-outcome` job (#2805). */
+function productionNeeds(result) {
+  return {
+    validate: { result: "success", outputs: { sha: "4de96af" } },
+    deploy: { result, outputs: { started: "true" } },
+    release: { result: result === "success" ? "success" : "skipped", outputs: {} },
+  };
 }
 
 // `toJSON(needs)` for the stand-ins, in the retired deploy-api shape, modeled
@@ -884,7 +894,7 @@ test("resolveAlertConfig resolves every name and refuses everything else", () =>
   }
 
   // The error names what is valid, or it is not actionable at 3am.
-  assert.throws(() => resolveAlertConfig("nope"), /Known configurations: deploy-staging\./);
+  assert.throws(() => resolveAlertConfig("nope"), /Known configurations: deploy-staging, deploy-production\./);
 });
 
 test("the retired config names are refused, not resolved to their replacement", () => {
@@ -898,7 +908,7 @@ test("the retired config names are refused, not resolved to their replacement", 
       () => resolveAlertConfig(retired),
       (error) => {
         assert.ok(error.message.includes(`ALERT_CONFIG "${retired}"`), error.message);
-        assert.match(error.message, /Known configurations: deploy-staging\./);
+        assert.match(error.message, /Known configurations: deploy-staging, deploy-production\./);
         return true;
       },
       retired,
@@ -1061,6 +1071,7 @@ test("runDeployAlert files each config's alert under its own title, labels and b
   const cases = [
     { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("failure", "deploy"), priority: "P1", other: API_SHAPED_CONFIG },
     { config: API_SHAPED_CONFIG, needs: apiShapedFailedNeeds(), priority: "P3", other: DEPLOY_STAGING_CONFIG },
+    { config: DEPLOY_PRODUCTION_CONFIG, needs: productionNeeds("failure"), priority: "P1", other: DEPLOY_STAGING_CONFIG },
   ];
   for (const { config, needs, priority, other } of cases) {
     const { fetchImpl, calls } = makeFetchStub({ issues: [] });
@@ -1108,11 +1119,15 @@ test("a recovered run closes only its own alert, never another config's", async 
   const issues = [
     alertIssue(950, DEPLOY_STAGING_CONFIG.alertTitle),
     alertIssue(951, API_SHAPED_CONFIG.alertTitle),
+    alertIssue(952, DEPLOY_PRODUCTION_CONFIG.alertTitle),
     alertIssue(960, RETIRED_API_TITLE),
   ];
   const cases = [
     { config: DEPLOY_STAGING_CONFIG, needs: stagingNeeds("success", "deploy"), closes: [950, 960] },
     { config: API_SHAPED_CONFIG, needs: apiShapedDeployedNeeds(), closes: [951] },
+    // A production success closes production's alert and no staging one: the
+    // two environments fail independently.
+    { config: DEPLOY_PRODUCTION_CONFIG, needs: productionNeeds("success"), closes: [952] },
   ];
   for (const { config, needs, closes } of cases) {
     const { fetchImpl, calls } = makeFetchStub({ issues });
@@ -1314,11 +1329,12 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
     );
 
   // Guards the scan itself: a path typo would make the loop below vacuous.
-  // #2803 merged deploy-api.yml and deploy-vercel-staging.yml into this one.
+  // #2803 merged deploy-api.yml and deploy-vercel-staging.yml into
+  // deploy-staging.yml; #2805 added deploy-production.yml.
   assert.deepEqual(
     callers.map((c) => c.name).sort(),
-    ["deploy-staging.yml"],
-    "expected exactly the one known caller — add a new one to this list deliberately",
+    ["deploy-production.yml", "deploy-staging.yml"],
+    "expected exactly the known callers — add a new one to this list deliberately",
   );
 
   // Tolerates the forms a human will actually write: quoted or bare, with or
@@ -1355,8 +1371,9 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
     );
   }
 
-  // And the one caller selects its own config.
+  // And each caller selects its own config.
   assert.deepEqual([...claimedBy.get("deploy-staging")], ["deploy-staging.yml"]);
+  assert.deepEqual([...claimedBy.get("deploy-production")], ["deploy-production.yml"]);
 });
 
 test("an escalated no-op explains its own job table instead of contradicting it", () => {
@@ -1526,10 +1543,11 @@ test("every config's copy reads the same on every surface a responder reads", ()
   // without a plan closes on any successful deploy (the default).
   const closesOn = new Map([
     [DEPLOY_STAGING_CONFIG, "a later run for `main`'s tip deploys successfully or finds the API up to date"],
+    [DEPLOY_PRODUCTION_CONFIG, "a later real `full` Deploy production run ships successfully"],
     [GATED_CONFIG, "a later run deploys successfully"],
   ]);
   const escape = (text) => text.replace(/[.*+?^${}()|[\]\\`]/g, "\\$&");
-  for (const config of [DEPLOY_STAGING_CONFIG, GATED_CONFIG]) {
+  for (const config of [DEPLOY_STAGING_CONFIG, DEPLOY_PRODUCTION_CONFIG, GATED_CONFIG]) {
     const headline = buildHeadline({
       outcome: "failed",
       failed: ["deploy"],

@@ -77,9 +77,9 @@ the state that cannot be rebuilt is a foreign migration, and a foreign migration
 blocks `supabase db push` outright anyway, so the rehearsal was not the thing
 that would have failed. It was the thing that would have said so first.
 
-The workflow holds the `db-migrate-production` concurrency group with
-`cancel-in-progress: false`, so two dispatches queue instead of interleaving two
-`db push` runs against one database.
+The workflow's shipping job (the shared `_deploy.yml` job, since #2805) holds the
+`db-migrate-production` concurrency group with `cancel-in-progress: false`, so two
+dispatches queue instead of interleaving two `db push` runs against one database.
 
 > **The `production` environment's Required reviewers is now the ONLY human
 > gate, and it pauses the run.** Production migrations used to be gated by a

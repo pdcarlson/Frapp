@@ -66,7 +66,8 @@ reachable. The JSON body is the liveness payload in
 > deploy gating — it gated on "opened a port" rather than "answered HTTP". The page does not mention
 > the Dockerfile `HEALTHCHECK` directive at all, so whether Render reads it remains unestablished.
 > `/health` is the right value here because it is the plain liveness probe that always 2xxs; the
-> readiness half is the `/health/ready` smoke loop in `deploy-production.yml`.
+> readiness half is the `/health/ready` smoke loop in `deploy-production.yml`. *(Since #2805 that loop
+> is `verify-served-commit.mjs`, which also requires `/health/ready` to report the deployed commit.)*
 >
 > **2026-09-08:** `scripts/ci/production-guardrails.mjs` asserts the live
 > `serviceDetails.healthCheckPath` on `frapp-api-prod` is `/health`, daily at 07:15
@@ -130,7 +131,7 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
-No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)). A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
+No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)), both through the `_deploy.yml` job they call. A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
 
 The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 

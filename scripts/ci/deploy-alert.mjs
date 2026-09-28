@@ -18,7 +18,7 @@
 // #2803 merged the two staging workflows into `deploy-staging.yml`, one
 // ordered job, and their two configs into `DEPLOY_STAGING_CONFIG` below. The
 // config machinery stays general: `gateJob` and `gateOutputRows` have no user
-// today, and production's alert (#2805) is the next config.
+// today. #2805 added `DEPLOY_PRODUCTION_CONFIG`, for `deploy-production.yml`.
 //
 // Closes the visibility gap recorded in issue #763:
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
@@ -174,8 +174,60 @@ export const DEPLOY_STAGING_CONFIG = {
   ],
 };
 
+/**
+ * `.github/workflows/deploy-production.yml`, the only path to production
+ * (#2805). Its `deploy` job is `_deploy.yml` called with `environment:
+ * production`, so this reads the same one job staging's config does.
+ *
+ * Which runs reach this script is decided by the step's `if:` in that
+ * workflow, not here: a dry run never does (nothing was applied, and the
+ * dispatcher is watching), a cancelled run never does, a run whose `deploy`
+ * job never started (a rejected approval) never does, and a green
+ * `migrations-only` run never does, because the code didn't ship and so it
+ * can't close the alert. So every run that arrives either raises (the deploy
+ * job failed) or closes (a real `full` release succeeded).
+ *
+ * `gateJob` is null and `validate` is not a deploy job: a mistyped
+ * confirmation or a red-CI SHA fails before anyone approves and costs nothing,
+ * so it must never open an incident. The workflow skips `deploy` then, and the
+ * outcome job with it. The tag (`release`) is not watched either: its failure
+ * after a live ship reds the run's summary, and `production-release-pin.yml`
+ * raises its own P1 when the hosts are left untagged.
+ *
+ * P1, like every production alert in ALERT_ROUTING.md.
+ */
+export const DEPLOY_PRODUCTION_CONFIG = {
+  name: "deploy-production",
+  workflowLabel: "Deploy production",
+  workflowFile: ".github/workflows/deploy-production.yml",
+  gateJob: null,
+  deployJobs: ["deploy"],
+  gateOutputRows: [],
+  planOutput: null,
+  closesOn: "a later real `full` Deploy production run ships successfully",
+  alertTitle: "Deploy production failed — production may be partly deployed",
+  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
+  retiredAlertTitles: [],
+  noOpReason: "the deploy job did not run",
+  // Unreachable through the workflow (its outcome job skips a skipped
+  // `deploy`), and loud if that ever drifts.
+  noOpIsUnexpected: true,
+  noOpNote:
+    "The `deploy` job did not run, so nothing was migrated, deployed or verified. This is not " +
+    "expected: `deploy-outcome` runs only when `deploy` was attempted, so reaching this state " +
+    "means the workflow's conditions have drifted.",
+  whyLines: [
+    "`Deploy production` is dispatched by hand, and a failed dispatch reds one row in the Actions",
+    "list and emails only the person who ran it. Nothing durable recorded that production was left",
+    "half-shipped: a migrated database under the previous API, or a new API under the previous",
+    "frontends. The run log names the step that failed, and what each step leaves behind is in",
+    "`docs/internal/ops/ALERT_ROUTING.md`. Recovery: `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.",
+  ],
+};
+
 export const ALERT_CONFIGS = {
   [DEPLOY_STAGING_CONFIG.name]: DEPLOY_STAGING_CONFIG,
+  [DEPLOY_PRODUCTION_CONFIG.name]: DEPLOY_PRODUCTION_CONFIG,
 };
 
 /** When an alert closes, unless a config says otherwise (`closesOn`). */

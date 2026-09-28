@@ -83,7 +83,8 @@ jobs:
           # Passed rather than defaulted in the script: a watchdog that carries
           # its own copy of a service id keeps asserting against the old service
           # after a recreate, and reports green about an object nothing deploys
-          # to. Keep these in step with deploy-production.yml's `env:` block.
+          # to. The production deploy's preflight in `_deploy.yml` passes the same
+          # ids; deploy-production-fence.test.mjs pins them equal.
           RENDER_SERVICE_ID: srv-d6lqu41aae7s73f62df0
           VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
           VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy

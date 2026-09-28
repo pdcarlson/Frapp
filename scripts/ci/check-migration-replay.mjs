@@ -479,8 +479,8 @@ export async function runReplayGate({
 
   // Machine-readable, on purpose. A caller needs to distinguish "rehearsed the
   // pending set" from "there was nothing to rehearse" — both exit 0, and only
-  // one of them verified anything. deploy-production.yml reads this line for its
-  // run summary; parsing the human message instead is how that summary silently
+  // one of them verified anything. The production deploy (`_deploy.yml`) reads
+  // this line for deploy-production.yml's run summary; parsing the human message instead is how that summary silently
   // started claiming a rehearsal that never happened.
   console.log(`replay_outcome=${outcome.code}`);
 

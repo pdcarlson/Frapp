@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 // Deploy ONE named commit to a Render service, and watch that deploy — not "a
-// deploy" — to a terminal state. Both API environments deploy through it:
-// `deploy-production.yml` for `frapp-api-prod`, and `_deploy.yml`'s `deploy`
-// job, which `deploy-staging.yml` calls, for `frapp-api-staging` (#2505).
+// deploy" — to a terminal state. Both API environments deploy through it, from
+// `_deploy.yml`'s `deploy` job: `frapp-api-prod` when `deploy-production.yml`
+// calls it (#2805), `frapp-api-staging` when `deploy-staging.yml` does (#2505).
 //
 // ── Why it is still called `-production` ────────────────────────────────────
-// `deploy-production.yml` checks out the commit being deployed and runs THIS
-// file from that commit's tree. Renaming it would break the deploy of every
+// Production's deploy checks out the commit being deployed and runs THIS file
+// from that commit's tree. Renaming it would break the deploy of every
 // commit from before the rename, rollbacks to an older commit included, and
 // only after that run had already applied its migrations. Keep the name.
 //
