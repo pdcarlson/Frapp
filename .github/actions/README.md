@@ -43,6 +43,15 @@ action file is not on disk yet when the runner resolves it.
   or passing an expression, moves slugs out of the gate's reach while it keeps exiting 0.
   That is the vacuous green its own section 0 exists to refuse.
 
+- **A third-party action in a job that holds a secret is pinned by commit SHA** (#2647),
+  including inside every local action such a job calls, however deep, and a Docker
+  action's registry image by digest. A tag or branch is the publisher's to move, and the
+  moved code would run with the job's credentials unreviewed. Write
+  `uses: owner/action@<40-hex sha> # v1.2.3`, resolving the SHA with `git ls-remote` (for
+  an annotated tag, the `^{}` line). Enforced by rule D in
+  `scripts/ci/__tests__/workflow-secrets-scope.test.mjs`. Jobs holding only the
+  per-run `GITHUB_TOKEN` are outside it.
+
 - **`supabase-cli` takes no inputs on purpose.** A `version:` input would put the pin back
   at four call sites. The production apply and the `migration-replay` rehearsal exist to be
   *the same CLI code path*; a rehearsal on a different build than the apply proves nothing,

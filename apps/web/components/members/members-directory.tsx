@@ -14,7 +14,7 @@ import {
   useOrgConfig,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberLabel } from "@repo/hooks/display-names";
 import { parseInstant } from "@repo/formatting";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -111,10 +111,7 @@ function memberId(member: MemberProfile): string {
 }
 
 function displayNameOf(member: MemberProfile): string {
-  return (
-    displayNameOrNull(member.display_name) ??
-    `Member ${member.user_id.slice(0, 8)}`
-  );
+  return memberLabel(member.display_name, member.user_id);
 }
 
 /**

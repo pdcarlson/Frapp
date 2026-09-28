@@ -192,12 +192,12 @@ export default function Home() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "Signet",
+    name: "Frapp",
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, iOS, Android",
     url: "https://frapp.live",
     description:
-      "Signet is chat first. Free covers unlimited chat, members and chapters with no card; Chapter Pro adds events with check-in, the points ledger and dues invoicing for one flat price per chapter.",
+      "Frapp is chat first. Free covers unlimited chat, members and chapters with no card; Chapter Pro adds events with check-in, the points ledger and dues invoicing for one flat price per chapter.",
     offers: [
       {
         "@type": "Offer",
@@ -216,7 +216,7 @@ export default function Home() {
           "Flat monthly chapter plan. Events with check-in, points ledger, dues invoicing, backwork library, reports and exports.",
       },
     ],
-    brand: { "@type": "Brand", name: "Signet" },
+    brand: { "@type": "Brand", name: "Frapp" },
   };
 
   return (
@@ -285,7 +285,7 @@ export default function Home() {
               Run your chapter where it already talks.
             </h1>
             <p className="max-w-[616px] text-lead text-muted-foreground">
-              Signet is chat first. Events, check-in and points land in the
+              Frapp is chat first. Events, check-in and points land in the
               conversation your members already read. Officers stop chasing.
               Members stop asking where things are.
             </p>
@@ -330,7 +330,7 @@ export default function Home() {
             <div className="flex flex-col gap-3">
               <ChatFrame
                 variant="fold"
-                label="The Signet web app, the general channel: an event card in the conversation with a Check in button and a live count, an officer's reply, and a mention."
+                label="The Frapp web app, the general channel: an event card in the conversation with a Check in button and a live count, an officer's reply, and a mention."
               />
               <p className={`${FRAME_CAPTION} lg:pr-20`}>
                 Demo chapter, seen as an officer. Names and messages are
@@ -398,7 +398,7 @@ export default function Home() {
             <div className="lg:col-span-8">
               <ChatFrame
                 variant="full"
-                label="The Signet web app: a channel list beside the general channel, where an event card sits in the conversation with a Check in button and a live count."
+                label="The Frapp web app: a channel list beside the general channel, where an event card sits in the conversation with a Check in button and a live count."
               />
             </div>
           </div>
@@ -631,7 +631,7 @@ export default function Home() {
             >
               <SignetCrest className="h-5 w-5" />
             </span>
-            <span>© {new Date().getFullYear()} Signet</span>
+            <span>© {new Date().getFullYear()} Frapp</span>
           </p>
 
           <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-6">
@@ -1022,7 +1022,7 @@ function EventFrame() {
   return (
     <div
       role="img"
-      aria-label="The Signet mobile app: an event detail with check-in open, a Scan QR to check in button, and an Add to calendar action."
+      aria-label="The Frapp mobile app: an event detail with check-in open, a Scan QR to check in button, and an Add to calendar action."
       /*
        * Phone geometry is the base and desktop is the override, because the two
        * boards draw different frames rather than one frame at two widths:

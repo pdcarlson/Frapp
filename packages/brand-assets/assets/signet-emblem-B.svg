@@ -10,8 +10,8 @@
 
     All four SVGs here are written in the SAME coordinate frame — origin 0 0,
     1024 units tall — so the same `d` string is reused verbatim and cannot drift
-    between them. Only the viewBox WIDTH differs: frapp-lockup.svg is 3360 wide
-    because it carries the wordmark beside the tile. Keep the intrinsic
+    between them. Only the viewBox WIDTH differs: frapp-lockup.svg is 2880 wide
+    because it carries the wordmark beside the crest. Keep the intrinsic
     width/height in step with the viewBox, or every raster renders distorted.
   -->
   <rect width="1024" height="1024" fill="#1A1A1A"/>

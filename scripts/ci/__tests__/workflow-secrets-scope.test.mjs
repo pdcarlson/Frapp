@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +34,10 @@ import { fileURLToPath } from "node:url";
 //   C. No secret is referenced outside a job. A workflow-level `env:` may read
 //      `secrets` and hands the value to every job, and no environment can gate
 //      it, because environment secrets exist only inside a job that named one.
+//   D. A job that references a secret runs third-party actions only by commit
+//      SHA, including inside the local composite actions it calls (#2647). A
+//      tag or branch is the publisher's to move, and the moved code would run
+//      with the job's credentials without any review in this repo seeing it.
 //
 // "References a secret" includes the dynamic forms, `secrets['NAME']` and
 // `toJSON(secrets)`, which dump what a name would have picked out.
@@ -46,6 +50,9 @@ import { fileURLToPath } from "node:url";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOWS = join(REPO, ".github", "workflows");
+
+/** Owners whose actions are GitHub's own, and so held to no SHA rule here. */
+const FIRST_PARTY_OWNERS = ["actions", "github"];
 
 /**
  * The environments secrets may live in. Each admits `main` only (the owner's
@@ -149,6 +156,65 @@ function preambleOf(lines) {
 function reusableCallOf(body) {
   const m = body.map((l) => l.match(/^ {4}uses:\s*\.\/\.github\/workflows\/(\S+)\s*$/)).find(Boolean);
   return m ? m[1] : null;
+}
+
+/**
+ * Every `uses:` value in these lines: a step's (`- uses:`), a job's, or one in a
+ * flow mapping (`- { uses: x@v1 }`). A block scalar (`uses: >-`) yields `>-`,
+ * which no rule treats as pinned, so it fails loudly rather than being skipped.
+ */
+function usesOf(lines) {
+  return lines.flatMap((l) =>
+    [...l.replace(TRAILING_COMMENT, "").matchAll(/(?:^|[\s{,])uses:\s*["']?([^"'\s,}]+)/g)].map((m) => m[1]),
+  );
+}
+
+/** A Docker action's `runs.image`, when it names a registry image rather than a Dockerfile. */
+function dockerImagesOf(lines) {
+  return lines
+    .map((l) => l.replace(TRAILING_COMMENT, "").match(/^\s+image:\s*["']?(docker:\/\/[^"'\s]+)/)?.[1])
+    .filter(Boolean);
+}
+
+/**
+ * How a `uses:` value is held: `local` (this repo, reviewed here), `first-party`
+ * (GitHub's own), or `pinned` / `unpinned` for a third party. A third party is
+ * pinned only by a full commit SHA, or, for a container, an image digest.
+ */
+function pinningOf(ref) {
+  if (ref.startsWith("./")) return "local";
+  if (ref.startsWith("docker://")) return /@sha256:[0-9a-f]{64}$/.test(ref) ? "pinned" : "unpinned";
+  const [path, version = ""] = ref.split("@");
+  if (FIRST_PARTY_OWNERS.includes(path.split("/")[0])) return "first-party";
+  return /^[0-9a-f]{40}$/.test(version) ? "pinned" : "unpinned";
+}
+
+/**
+ * The non-local refs a job runs: its `uses:` values, following every local
+ * action it calls (any `./<path>` except a reusable workflow, which rule D
+ * checks as its own jobs) into that action's own steps and Docker image,
+ * however deep. `via` names the local action a ref was reached through.
+ */
+function actionRefsOf(lines, via = "", seen = new Set()) {
+  const refs = [];
+  for (const ref of usesOf(lines)) {
+    if (ref.startsWith("./.github/workflows/")) continue;
+    if (ref.startsWith("./")) {
+      const dir = ref.replace(/\/+$/, "");
+      if (seen.has(dir)) continue;
+      seen.add(dir);
+      const file = ["action.yml", "action.yaml"]
+        .map((f) => join(REPO, dir, f))
+        .find((f) => existsSync(f));
+      assert.ok(file, `${ref} names a local action with no action.yml`);
+      const action = codeLines(readFileSync(file, "utf8"));
+      for (const image of dockerImagesOf(action)) refs.push({ ref: image, via: ` (via ${ref})` });
+      refs.push(...actionRefsOf(action, ` (via ${ref})`, seen));
+    } else {
+      refs.push({ ref, via });
+    }
+  }
+  return refs;
 }
 
 const workflows = readdirSync(WORKFLOWS)
@@ -258,6 +324,34 @@ describe("workflow secrets scope (#2518)", () => {
     );
   });
 
+  it("D: a job that references a secret runs third-party actions only by commit SHA (#2647)", () => {
+    const offenders = [];
+    const seen = new Set();
+    for (const wf of workflows) {
+      for (const job of wf.jobs) {
+        if (secretsOf(job.body).length === 0) continue;
+        for (const { ref, via } of actionRefsOf(job.body)) {
+          seen.add(ref.split("@")[0]);
+          if (pinningOf(ref) === "unpinned") offenders.push(`${wf.name} / ${job.id}${via}: ${ref}`);
+        }
+      }
+    }
+    // Non-vacuity: the two actions #2647 pinned sit inside credential jobs, one
+    // level down in a local composite action, so the walk must reach them.
+    assert.ok(seen.has("Infisical/secrets-action"), "the Infisical inject must be seen in a credential job");
+    assert.ok(seen.has("supabase/setup-cli"), "setup-cli must be seen in a credential job");
+    assert.deepEqual(
+      offenders,
+      [],
+      "A job that holds credentials runs a third-party action by a tag or branch, which its " +
+        "publisher can move to new code that then runs with those credentials, unreviewed. Pin " +
+        "the full commit SHA with the version in a trailing comment " +
+        "(`uses: owner/action@<40-hex sha> # v1.2.3`), resolved with " +
+        "`git ls-remote https://github.com/<owner>/<action> refs/tags/<tag>` (take the `^{}` " +
+        "line for an annotated tag).",
+    );
+  });
+
   it("the parser reads the shapes it relies on", () => {
     const lines = codeLines(
       [
@@ -294,5 +388,45 @@ describe("workflow secrets scope (#2518)", () => {
     const withEnv = codeLines("on: push\nenv:\n  T: ${{ secrets.WORKFLOW_LEVEL }}\njobs:\n  a:\n    runs-on: x\n");
     assert.deepEqual(secretsOf(preambleOf(withEnv)), ["WORKFLOW_LEVEL"]);
     assert.deepEqual(secretsOf(jobsOf(withEnv)[0].body), []);
+
+    const steps = codeLines(
+      [
+        "    steps:",
+        "      - uses: actions/checkout@v4",
+        "      - uses: Owner/action@v1.0.12",
+        '      - uses: "owner/action/sub@0123456789abcdef0123456789abcdef01234567" # v2',
+        "      - uses: ./.github/actions/local-thing",
+        "      # - uses: commented/out@v1",
+        "      - name: x",
+        "        uses: docker://alpine:3",
+        "      - { name: flow, uses: flow/style@v1 }",
+        "      - uses: >-",
+      ].join("\n"),
+    );
+    assert.deepEqual(usesOf(steps), [
+      "actions/checkout@v4",
+      "Owner/action@v1.0.12",
+      "owner/action/sub@0123456789abcdef0123456789abcdef01234567",
+      "./.github/actions/local-thing",
+      "docker://alpine:3",
+      "flow/style@v1",
+      ">-",
+    ]);
+    assert.deepEqual(usesOf(steps).map(pinningOf), [
+      "first-party",
+      "unpinned",
+      "pinned",
+      "local",
+      "unpinned",
+      "unpinned",
+      "unpinned",
+    ]);
+    assert.deepEqual(dockerImagesOf(codeLines("runs:\n  using: docker\n  image: docker://foo:latest\n")), [
+      "docker://foo:latest",
+    ]);
+    assert.deepEqual(dockerImagesOf(codeLines("runs:\n  using: docker\n  image: Dockerfile\n")), []);
+    assert.equal(pinningOf("github/codeql-action/init@v3"), "first-party");
+    assert.equal(pinningOf(`docker://alpine@sha256:${"a".repeat(64)}`), "pinned");
+    assert.equal(pinningOf("owner/action@0123456"), "unpinned", "a short SHA is not a pin");
   });
 });

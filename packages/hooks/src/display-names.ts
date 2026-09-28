@@ -35,6 +35,8 @@ export type DisplayNameMap = Record<string, string>;
  *
  * `null` rather than a fallback string so each caller picks its own copy: a
  * message meta line wants `Member 2f4a1c`, a DM row wants `Direct message`.
+ * A caller naming a *member* (a row, a picker option, a heading) wants
+ * {@link memberLabel}, which owns that copy, not a fallback of its own.
  */
 export function resolveDisplayName(
   names: DisplayNameMap,
@@ -55,7 +57,9 @@ export function resolveDisplayName(
  * not a nicety — a name of spaces is as unset as an empty one.
  *
  * `null` rather than a fallback string for the reason {@link resolveDisplayName}
- * gives: each caller picks its own copy. This shares the *rule*, not the wording.
+ * gives. This shares the *rule*, not the wording; for a member, the wording is
+ * shared too, in {@link memberLabel}. Never write `displayNameOrNull(x) ?? "…"`
+ * for a member: that is how the tree grew four spellings of one person (#2422).
  *
  * Takes `string | null | undefined` rather than `string`, for the same reason
  * {@link resolveDisplayName} type-guards the value it reads out of the map: not
@@ -91,6 +95,41 @@ const FALLBACK_ID_CHARS = 6;
  */
 export function memberFallbackLabel(userId: string): string {
   return `Member ${userId.slice(0, FALLBACK_ID_CHARS)}`;
+}
+
+/** Rendered in a name slot when there is neither a name nor an id. */
+const UNKNOWN_MEMBER = "Unknown member";
+
+/**
+ * The label for a member row: their name, or {@link memberFallbackLabel}.
+ *
+ * The rule: **one fallback spelling for a member, on every surface, web and
+ * mobile.** A member with no name set reads `Member 2f4a1c` in the directory,
+ * on the leaderboard, in a task card, in a picker and in chat alike. The cost
+ * is that an unnamed member never gets a generic "no name" label anywhere; the
+ * gain is that an officer comparing two surfaces can see the rows are the same
+ * person, which a generic label on one and an id prefix on the other made
+ * impossible (#2422). A caller that shows extra identity beside the label (an
+ * email, the full id in a fine's picker) adds it around this, never instead of
+ * it.
+ *
+ * Both arguments are `unknown` because not every caller holds a contract-typed
+ * row: the Find bar's search results are hand-narrowed and the member detail
+ * sheet reads a loosely-typed record. A non-string is treated as absent. With
+ * neither a name nor an id, the row reads `Unknown member`, the same words chat
+ * uses for an author it cannot name.
+ */
+export function memberLabel(displayName: unknown, userId: unknown): string {
+  const name = displayNameOrNull(
+    typeof displayName === "string" ? displayName : null,
+  );
+  if (name) return name;
+  // `typeof`, not truthiness, for the reason `displayNameOrNull` guards its
+  // input: a hand-narrowed row can carry a non-string id, and `.slice` on it
+  // would throw mid-render.
+  return typeof userId === "string" && userId.length > 0
+    ? memberFallbackLabel(userId)
+    : UNKNOWN_MEMBER;
 }
 
 /**
@@ -199,9 +238,6 @@ export interface MessageAuthor {
 /** Resolves a `users.id` to a display name, or `null`. Matches `nameFor`. */
 export type NameResolver = (userId: string) => string | null;
 
-/** Rendered when a message names nobody at all. */
-const UNKNOWN_AUTHOR = "Unknown member";
-
 /**
  * The best available human name for a message's author, or `null`.
  *
@@ -248,7 +284,7 @@ export function authorInitialsFallback(author: MessageAuthor): string {
  * a message always has a Signet user behind it.
  *
  * Order: the viewer is "You", then a resolved name, then a truncated id for an
- * unresolvable member, then `UNKNOWN_AUTHOR`. The last branch is unreachable
+ * unresolvable member, then `UNKNOWN_MEMBER`. The last branch is unreachable
  * against a healthy database — `chat_messages_author_present` guarantees a null
  * `sender_id` comes with an `author_name` — but a label has to render something,
  * and a blank one reads as a broken layout rather than as missing data.
@@ -262,7 +298,7 @@ export function resolveAuthorLabel(
   const name = resolveAuthorName(author, nameFor);
   if (name) return name;
   if (author.sender_id) return memberFallbackLabel(author.sender_id);
-  return UNKNOWN_AUTHOR;
+  return UNKNOWN_MEMBER;
 }
 
 /**

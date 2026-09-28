@@ -13,7 +13,7 @@ import {
   useUpdateTaskStatus,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
-import { displayNameOrNull } from "@repo/hooks/display-names";
+import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { formatBareDate as formatDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
@@ -156,10 +156,7 @@ export function TasksBoard() {
     const map = new Map<string, string>();
     for (const m of members) {
       if (m.user_id)
-        map.set(
-          String(m.user_id),
-          displayNameOrNull(m.display_name) ?? "Unnamed member",
-        );
+        map.set(String(m.user_id), memberLabel(m.display_name, m.user_id));
     }
     return map;
   }, [members]);
@@ -472,8 +469,7 @@ export function TasksBoard() {
                               key={member.user_id ?? "unknown"}
                               value={String(member.user_id ?? "")}
                             >
-                              {displayNameOrNull(member.display_name) ??
-                                "Unnamed member"}
+                              {memberLabel(member.display_name, member.user_id)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -586,7 +582,7 @@ export function TasksBoard() {
                     list.map((task) => {
                       const assigneeName =
                         membersByUserId.get(task.assignee_id) ??
-                        `Member ${task.assignee_id.slice(0, 6)}`;
+                        memberFallbackLabel(task.assignee_id);
                       // Fails closed. `myUserId` is "" while `useCurrentUser`
                       // is in flight or errored, which would otherwise make
                       // `isMine` false for every row and put Confirm back on

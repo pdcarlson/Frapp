@@ -71,7 +71,7 @@ describe("landing marketing copy rules", () => {
     // D8. Scope is the body only; `brand-identity.md` §1 still locks it as the
     // brand tagline, which is what a title tag carries.
     expect(renderedPage).not.toContain("Ask your chapter anything");
-    expect(layoutSource).toContain("Signet. Ask your chapter anything.");
+    expect(layoutSource).toContain("Frapp. Ask your chapter anything.");
     expect(renderedPage).toContain(
       "Everything your chapter needs is already in chat.",
     );

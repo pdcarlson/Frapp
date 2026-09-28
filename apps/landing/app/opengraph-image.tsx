@@ -5,7 +5,7 @@ import { SIGNET_CREST_GOLD, SIGNET_CREST_PATH } from "../components/signet-crest
 
 export const runtime = "nodejs";
 
-export const alt = "Signet. Ask your chapter anything.";
+export const alt = "Frapp. Ask your chapter anything.";
 
 export const size = {
   width: 1200,
@@ -91,7 +91,7 @@ export default async function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#131211", // --background, the Signet stage
+        backgroundColor: "#131211", // --background, the page stage
         fontFamily: "Figtree",
       }}
     >
@@ -109,7 +109,7 @@ export default async function OpenGraphImage() {
           color: "#EDEAE3", // --foreground
         }}
       >
-        Signet
+        Frapp
       </div>
       <div
         style={{
