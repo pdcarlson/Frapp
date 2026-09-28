@@ -106,7 +106,8 @@ The apps that resolve with `moduleResolution: "Bundler"` mask it (`apps/web` and
 `types` first and, while that `dist/` file is missing, falls back to the `import` condition, which maps
 to source (once `dist/` exists it reads `dist/*.d.ts`). So the breakage shows up only where NodeNext
 resolution meets a dist-backed import: `apps/api`, and the CommonJS packages on
-`@repo/typescript-config/base.json` that import one (`packages/hooks`, `packages/chapter-theme`). The CI job `clean-checkout-typecheck` guards
+`@repo/typescript-config/base.json` that import one (`packages/chapter-theme`). `packages/hooks` resolves
+with `Bundler` like the apps, because it too is consumed as source and has no build. The CI job `clean-checkout-typecheck` guards
 this: it installs and runs both checks with nothing prebuilt, so a regression here fails there while
 every other job (all of which prebuild the packages) stays green.
 

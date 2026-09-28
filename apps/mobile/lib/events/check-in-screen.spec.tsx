@@ -7,6 +7,8 @@ import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { moduleDisabledMessage } from "@repo/validation";
 
 /**
  * s18's refusal wiring (#2297), rendered (#2416).
@@ -186,6 +188,40 @@ describe("Check-in on a subscription refusal (#2297)", () => {
     act(() => refocus());
 
     expect(screenText(tree)).not.toContain("You're checked in");
+    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in on a module-off refusal (#2393)", () => {
+  /** What `ChapterGuard` sends with `events` off: no `code` (#1020). */
+  const MODULE_OFF = {
+    statusCode: 403,
+    error: "Forbidden",
+    message: moduleDisabledMessage("events"),
+    requestId: "req_module_off",
+  };
+
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    checkIn.mockReset();
+  });
+
+  it("says it in the member's terms and switches the scanner and manual submit off", async () => {
+    checkIn.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await submitManualCode(tree);
+
+    expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.checkIn);
+    // The guard's own words tell an officer to go to Settings → Modules.
+    expect(screenText(tree)).not.toContain(MODULE_OFF.message);
+    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
+    expect(manualSubmit(tree).props.disabled).toBe(true);
+
+    act(() => refocus());
+
     expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     act(() => tree.unmount());
   });

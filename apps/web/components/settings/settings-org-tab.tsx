@@ -12,6 +12,11 @@ import {
   CHAPTER_PROFILE_PERMISSIONS,
   type PatchChapterConfig,
 } from "@repo/validation";
+import {
+  FOUNDED_YEAR_MIN,
+  latestFoundedYear,
+  parseFoundedYear,
+} from "@repo/hooks/chapter-identity";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -69,8 +74,6 @@ type Props = {
   savingConfig?: boolean;
 };
 
-const NOW_YEAR = new Date().getFullYear();
-
 export function SettingsOrgTab({
   archetypeKey,
   vocabulary,
@@ -122,14 +125,10 @@ export function SettingsOrgTab({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const foundedTrimmed = foundedYear.trim();
-  const foundedNum = foundedTrimmed
-    ? Number.parseInt(foundedTrimmed, 10)
-    : undefined;
-  const foundedValid =
-    foundedTrimmed === "" ||
-    (Number.isInteger(foundedNum) &&
-      (foundedNum as number) >= 1776 &&
-      (foundedNum as number) <= NOW_YEAR + 1);
+  // The same rule the chapter wizards apply, so a year either one stores never
+  // blocks this form's save.
+  const foundedNum = parseFoundedYear(foundedTrimmed);
+  const foundedValid = foundedTrimmed === "" || foundedNum !== undefined;
 
   function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -320,7 +319,7 @@ export function SettingsOrgTab({
                 />
                 {!foundedValid ? (
                   <p className="text-xs text-destructive">
-                    Enter a year between 1776 and {NOW_YEAR + 1}.
+                    Enter a year between {FOUNDED_YEAR_MIN} and {latestFoundedYear()}.
                   </p>
                 ) : null}
               </div>

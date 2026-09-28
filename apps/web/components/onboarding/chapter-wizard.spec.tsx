@@ -39,8 +39,14 @@ vi.mock("@repo/hooks", () => ({
     isError: false,
     refetch: vi.fn(),
   }),
-  useCreateInvite: () => ({ mutateAsync: createInviteMutate, isPending: false }),
-  useEmailInvites: () => ({ mutateAsync: emailInvitesMutate, isPending: false }),
+  useCreateInvite: () => ({
+    mutateAsync: createInviteMutate,
+    isPending: false,
+  }),
+  useEmailInvites: () => ({
+    mutateAsync: emailInvitesMutate,
+    isPending: false,
+  }),
   useOnboardChapter: () => ({ mutateAsync: onboardMutate, isPending: false }),
   // Consumed by useSelectChapter, which the wizard calls after creating the
   // chapter so the active_chapter_id claim is issued for the new chapter.
@@ -72,6 +78,10 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ setActiveChapterId: vi.fn() }),
 }));
 
+import {
+  DEFAULT_CHAPTER_ACCENT,
+  normalizeAccentInput,
+} from "@repo/hooks/chapter-identity";
 import { ChapterWizard } from "./chapter-wizard";
 
 /** Drive the wizard from the find step to the identity step via manual entry. */
@@ -161,6 +171,42 @@ describe("ChapterWizard legal acceptance gate", () => {
   });
 });
 
+describe("ChapterWizard accent", () => {
+  beforeEach(() => {
+    onboardMutate.mockReset();
+    onboardMutate.mockResolvedValue({ id: "ch-1" });
+  });
+
+  async function submittedAccent(): Promise<unknown> {
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+    return onboardMutate.mock.calls[0]?.[0]?.branding?.colors?.accent;
+  }
+
+  it("sends the Signet house seed when the founder leaves the colour alone (#2102)", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+
+    expect(await submittedAccent()).toBe(DEFAULT_CHAPTER_ACCENT);
+  });
+
+  it("stores a picked colour as the uppercase #RRGGBB mobile stores for the same input (#1642)", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    // A native colour input always reports lowercase. Mobile's typed field
+    // uppercases, and both now go through one parser, so the two surfaces
+    // store the same string for the same colour.
+    fireEvent.change(screen.getByLabelText("Accent color"), {
+      target: { value: "#8b0000" },
+    });
+
+    const accent = await submittedAccent();
+    expect(accent).toBe("#8B0000");
+    expect(accent).toBe(normalizeAccentInput("#8b0000"));
+  });
+});
+
 describe("the archetype card, at the call site", () => {
   it("paints the selection with the accent pair, never an opacity wash", () => {
     /*
@@ -222,7 +268,9 @@ describe("the archetype card, at the call site", () => {
     for (const cap of caps) {
       expect(cap.className).not.toMatch(/\bfont-mono\b/);
     }
-    expect(caps.some((cap) => /text-\[12\.5px\]/.test(cap.className))).toBe(true);
+    expect(caps.some((cap) => /text-\[12\.5px\]/.test(cap.className))).toBe(
+      true,
+    );
   });
 });
 
@@ -258,7 +306,10 @@ describe("the invite step's bulk-email path (#238)", () => {
   });
 
   it("de-dupes addresses case-insensitively before sending", async () => {
-    emailInvitesMutate.mockResolvedValue({ invites: [{ token: "t1" }], failed: [] });
+    emailInvitesMutate.mockResolvedValue({
+      invites: [{ token: "t1" }],
+      failed: [],
+    });
 
     render(<ChapterWizard onComplete={() => {}} />);
     await gotoInviteStep();
