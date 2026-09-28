@@ -498,7 +498,9 @@ channel that reports a different one fails the import rather than being skipped.
   legitimate admin is asked for nothing extra — their session already matches,
   so the dashboard confirms on arrival.
 - **The bot is installed read-only**: View Channels and Read Message History,
-  nothing else. It cannot post, edit, or remove anything. One visible
+  nothing else. With only those it cannot post, edit, or remove anything; it
+  gains more only if the chapter gives it a role that allows more, which the
+  connect step warns about (below). One visible
   consequence: Discord gates listing *private* archived threads behind Manage
   Threads, which is a permission that can also delete threads, so Frapp does
   not ask for it — private archived threads are reported as skipped, by name,
@@ -596,12 +598,14 @@ channel that reports a different one fails the import rather than being skipped.
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding
   out by failing. A channel it cannot read is listed separately and can only be
-  skipped until the chapter lets the bot see it and scans again: either by
-  allowing the bot's own Frapp role on the channel (a category allow reaches
-  only channels still synced to it), which keeps the install read-only, or by
-  giving the bot a role that can see it,
-  which is quicker but lends the shared bot token whatever else that role can
-  do ([`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
+  skipped until the chapter lets the bot see it and scans again. So that the
+  first scan is not mostly skips, the connect step asks the admin to confirm
+  they have given the bot a role that can see the channels to import before
+  anything is read (#2812). The bot is let in either by allowing its own Frapp
+  role on the channel (a category allow reaches only channels still synced to
+  it), which keeps the install read-only, or by giving it a role that can see
+  the channel, which is quicker but lends the shared bot token whatever else
+  that role can do, so the role comes off once the import is done ([`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
   every refused request spends a rate-limit budget one bot token shares across
   every chapter. When access cannot be worked out (the bot's roles could not be
   read), each channel is probed once and a refusal is reported the same way.
