@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  asNewChannel,
   defaultChoice,
   defaultChoices,
   mappingIssues,
   normaliseChannelName,
+  restageChoices,
 } from "./mapping-issues";
 
 const open = (id: string, name: string, category: string | null = null) => ({
@@ -37,6 +39,20 @@ describe("defaultChoice", () => {
     expect(defaultChoice({ ...open("1", "jboard"), readable: false })).toEqual({
       action: "skip",
     });
+  });
+
+  it("treats privacy the scan could not read as private, not public", () => {
+    // The roles read that answers "private?" can fail on its own; the API
+    // refuses the default for the same channel.
+    expect(
+      defaultChoice({ ...open("1", "exec"), privateInDiscord: null }),
+    ).toMatchObject({ action: "create_new", visibility: undefined });
+  });
+
+  it("asks about a public channel that holds a private thread, since the thread lands in it", () => {
+    expect(
+      defaultChoice({ ...open("1", "general"), privateThreads: 2 }),
+    ).toMatchObject({ visibility: undefined });
   });
 
   it("treats an upload's unknown privacy as public, which the step says out loud", () => {
@@ -106,6 +122,21 @@ describe("mappingIssues", () => {
     expect(mappingIssues([cabinet], choices, [])).toEqual([]);
   });
 
+  it("says why a channel needs its visibility chosen", () => {
+    const unknown = { ...open("7", "exec"), privateInDiscord: null };
+    const threaded = { ...open("8", "general"), privateThreads: 1 };
+    expect(
+      mappingIssues(
+        [unknown, threaded],
+        defaultChoices([unknown, threaded]),
+        [],
+      ).map((issue) => issue.message),
+    ).toEqual([
+      "Frapp could not tell whether #exec was private in Discord. Choose who can read it in Frapp.",
+      "#general holds 1 private thread in Discord, which will land in it. Choose who can read it in Frapp.",
+    ]);
+  });
+
   it("does not count a skipped or unreadable channel as a problem, but refuses to import nothing", () => {
     const skipped = { "1": { action: "skip" as const } };
     expect(mappingIssues([open("1", "memes")], skipped, ["memes"])).toEqual([
@@ -114,6 +145,118 @@ describe("mappingIssues", () => {
         message: "Every channel is skipped. Choose at least one to import.",
       },
     ]);
+  });
+});
+
+describe("asNewChannel", () => {
+  it("turns a skip into the same new channel the default would have made", () => {
+    expect(asNewChannel({ action: "skip" }, open("1", "memes"))).toEqual({
+      action: "create_new",
+      newName: "memes",
+      visibility: "chapter",
+    });
+    // Never a whole-chapter default for a channel that was private.
+    expect(
+      asNewChannel(
+        { action: "skip" },
+        { ...open("2", "cabinet"), privateInDiscord: true },
+      ),
+    ).toMatchObject({ action: "create_new", visibility: undefined });
+  });
+
+  it("keeps what the admin already set", () => {
+    expect(
+      asNewChannel(
+        {
+          action: "use_existing",
+          newName: "renamed",
+          visibility: "restricted",
+          requiredPermissions: ["cabinet:read"],
+        },
+        open("1", "memes"),
+      ),
+    ).toMatchObject({
+      action: "create_new",
+      newName: "renamed",
+      visibility: "restricted",
+      requiredPermissions: ["cabinet:read"],
+    });
+  });
+});
+
+describe("restageChoices", () => {
+  it("keeps a decision while the facts it was made under still hold", () => {
+    const before = [open("1", "memes")];
+    const choices = {
+      "1": {
+        action: "create_new" as const,
+        newName: "dank",
+        visibility: "chapter" as const,
+      },
+    };
+    expect(restageChoices(before, choices, [open("1", "memes")])).toEqual(
+      choices,
+    );
+  });
+
+  it("starts a channel the bot can now read at its default, not at the skip it was forced into", () => {
+    const hidden = {
+      ...open("1", "exec"),
+      readable: false,
+      privateInDiscord: true,
+    };
+    const choices = defaultChoices([hidden]);
+    expect(choices["1"]).toEqual({ action: "skip" });
+    const visible = { ...hidden, readable: true };
+    expect(restageChoices([hidden], choices, [visible])["1"]).toEqual({
+      action: "create_new",
+      newName: "exec",
+      visibility: undefined,
+    });
+  });
+
+  it("skips a channel the bot can no longer read, whatever was chosen", () => {
+    const choices = defaultChoices([open("1", "memes")]);
+    expect(
+      restageChoices([open("1", "memes")], choices, [
+        { ...open("1", "memes"), readable: false },
+      ])["1"],
+    ).toEqual({ action: "skip" });
+  });
+
+  it("asks again about a whole-chapter channel that turned out to be private", () => {
+    // The default (or the admin) chose "whole chapter" for a channel that
+    // looked public. Sent as-is, the API would take it as a real choice.
+    const first = [
+      { ...open("1", "exec"), privateInDiscord: false },
+      { ...open("2", "rush"), privateInDiscord: null },
+    ];
+    const choices = defaultChoices(first);
+    choices["2"] = { ...choices["2"]!, visibility: "chapter" };
+    const second = [
+      { ...open("1", "exec"), privateInDiscord: true },
+      { ...open("2", "rush"), privateInDiscord: true },
+    ];
+    const next = restageChoices(first, choices, second);
+    expect(next["1"]).toMatchObject({ newName: "exec", visibility: undefined });
+    expect(next["2"]).toMatchObject({ visibility: undefined });
+  });
+
+  it("keeps a restricted choice when the channel turns out private, since it is already safe", () => {
+    const first = [open("1", "exec")];
+    const choices = {
+      "1": {
+        action: "create_new" as const,
+        newName: "exec",
+        visibility: "restricted" as const,
+        requiredPermissions: ["cabinet:read"],
+      },
+    };
+    expect(
+      restageChoices(first, choices, [
+        { ...open("1", "exec"), privateInDiscord: true },
+      ]),
+    ).toEqual(choices);
   });
 });
 

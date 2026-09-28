@@ -14,6 +14,30 @@ export interface ChannelChoice {
   requiredPermissions?: string[];
 }
 
+/** Why a channel may not default to readable by the whole chapter. */
+export type PrivacyReason = "private" | "private-threads" | "unknown";
+
+/**
+ * Why a channel may not default to readable by the whole chapter, or null
+ * when it may.
+ *
+ * The API applies the same rule on the bot path: only a channel the scan SAW
+ * was public, holding no private thread, takes the whole-chapter default.
+ * Unknown counts as private, because the roles read that answers it can fail
+ * on its own. An upload (privacy absent) says nothing either way and defaults
+ * to the whole chapter, which the step says out loud.
+ */
+export function privacyReason(channel: StagedChannel): PrivacyReason | null {
+  if (channel.privateInDiscord === true) return "private";
+  if ((channel.privateThreads ?? 0) > 0) return "private-threads";
+  if (channel.privateInDiscord === null) return "unknown";
+  return null;
+}
+
+function defaultVisibility(channel: StagedChannel): "chapter" | undefined {
+  return privacyReason(channel) ? undefined : "chapter";
+}
+
 /**
  * The starting answer for a channel, before the admin touches anything.
  *
@@ -24,8 +48,8 @@ export interface ChannelChoice {
  * merging never is. Two exceptions:
  *
  *  - a channel the bot cannot read starts, and stays, skipped;
- *  - a channel that was private in Discord gets no visibility, which is a
- *    "Needs attention" item until the admin chooses. Nothing private becomes
+ *  - a channel with a `privacyReason` gets no visibility, which is a "Needs
+ *    attention" item until the admin chooses. Nothing private becomes
  *    readable by the whole chapter by default, and the API refuses it too.
  */
 export function defaultChoice(channel: StagedChannel): ChannelChoice {
@@ -33,7 +57,7 @@ export function defaultChoice(channel: StagedChannel): ChannelChoice {
   return {
     action: "create_new",
     newName: channel.channelName,
-    visibility: channel.privateInDiscord === true ? undefined : "chapter",
+    visibility: defaultVisibility(channel),
   };
 }
 
@@ -43,6 +67,63 @@ export function defaultChoices(
   return Object.fromEntries(
     channels.map((channel) => [channel.channelId, defaultChoice(channel)]),
   );
+}
+
+/**
+ * Turn a choice into a new channel, filling in what a skip or a merge left
+ * blank the same way the default would, so switching a row to New never
+ * invents a problem (or hides one) that the default would not have.
+ */
+export function asNewChannel(
+  current: ChannelChoice,
+  channel: StagedChannel,
+): ChannelChoice {
+  return {
+    ...current,
+    action: "create_new",
+    newName: current.newName?.trim() ? current.newName : channel.channelName,
+    visibility: current.visibility ?? defaultVisibility(channel),
+  };
+}
+
+/**
+ * The choices for a new scan of the same server.
+ *
+ * What the admin decided survives only while the facts it was decided under
+ * still hold, because `previous` holds untouched defaults as well as real
+ * decisions and nothing tells the two apart:
+ *
+ *  - a channel Frapp can no longer read is skipped, the only thing it can be;
+ *  - a channel it can now read (it was skipped because it could not be)
+ *    starts at its default, which is the point of scanning again;
+ *  - a "whole chapter" visibility is asked again when the channel's privacy
+ *    changed to a reason not to default (it became private, gained a private
+ *    thread, or can no longer be told). It was chosen, or defaulted, for a
+ *    channel that looked different.
+ */
+export function restageChoices(
+  previousChannels: readonly StagedChannel[],
+  previousChoices: Record<string, ChannelChoice>,
+  nextChannels: StagedChannel[],
+): Record<string, ChannelChoice> {
+  const before = new Map(
+    previousChannels.map((channel) => [channel.channelId, channel]),
+  );
+  const next = defaultChoices(nextChannels);
+  for (const channel of nextChannels) {
+    const was = before.get(channel.channelId);
+    const kept = previousChoices[channel.channelId];
+    if (!was || !kept) continue;
+    if (channel.readable === false || was.readable === false) continue;
+    const reason = privacyReason(channel);
+    next[channel.channelId] =
+      kept.visibility === "chapter" &&
+      reason !== null &&
+      reason !== privacyReason(was)
+        ? { ...kept, visibility: undefined, requiredPermissions: undefined }
+        : kept;
+  }
+  return next;
 }
 
 /** One thing that stops the mapping from being submitted. */
@@ -121,7 +202,7 @@ export function mappingIssues(
     if (choice.visibility === undefined) {
       issues.push({
         channelId: channel.channelId,
-        message: `${label} was private in Discord. Choose who can read it in Frapp.`,
+        message: visibilityPrompt(channel, label),
       });
     } else if (
       choice.visibility === "restricted" &&
@@ -141,4 +222,19 @@ export function mappingIssues(
     });
   }
   return issues;
+}
+
+function visibilityPrompt(channel: StagedChannel, label: string): string {
+  switch (privacyReason(channel)) {
+    case "private":
+      return `${label} was private in Discord. Choose who can read it in Frapp.`;
+    case "private-threads": {
+      const count = channel.privateThreads ?? 0;
+      return `${label} holds ${count} private thread${count === 1 ? "" : "s"} in Discord, which will land in it. Choose who can read it in Frapp.`;
+    }
+    case "unknown":
+      return `Frapp could not tell whether ${label} was private in Discord. Choose who can read it in Frapp.`;
+    default:
+      return `Choose who can read the new channel for ${label}.`;
+  }
 }

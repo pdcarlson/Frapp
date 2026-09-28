@@ -4454,7 +4454,7 @@ export interface components {
             /** @default true */
             new_channel_is_read_only: boolean;
             /**
-             * @description Who can read the channel `create_new` makes: the whole chapter, or only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel). Omitted means not chosen, which the bot path refuses for a channel that was private in Discord.
+             * @description Who can read the channel `create_new` makes: the whole chapter, or only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel). Omitted or null means not chosen, which the bot path refuses unless the scan saw the channel was public in Discord and holds no private thread.
              * @enum {string}
              */
             new_channel_visibility?: "chapter" | "restricted";
@@ -4479,7 +4479,7 @@ export interface components {
             discord_role_name: string;
         };
         DiscordDiscoveryResponseDto: {
-            /** @description Every channel and thread in the server, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped) and `private_in_discord` (hidden from @everyone; such a row needs an explicit `new_channel_visibility` to be created). */
+            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (hidden from @everyone, or for a thread a private thread; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. */
             channels: {
                 [key: string]: unknown;
             }[];

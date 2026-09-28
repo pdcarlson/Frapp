@@ -462,6 +462,59 @@ describe("ImportWizard — the bot path", () => {
       }),
     );
   });
+
+  it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {
+    const row = (
+      id: string,
+      name: string,
+      readable: boolean,
+      isPrivate: boolean,
+    ) => ({
+      discord_channel_id: id,
+      discord_channel_name: name,
+      discord_category: "Brothers",
+      parent_discord_channel_id: null,
+      readable,
+      private_in_discord: isPrivate,
+    });
+    discoverChannels
+      .mockResolvedValueOnce({
+        channels: [
+          row("c1", "rush", true, false),
+          row("c2", "exec", false, true),
+        ],
+        roles: [],
+        warnings: [],
+      })
+      .mockResolvedValueOnce({
+        // The admin gave the bot a role: #exec is readable now, and #rush has
+        // been made private in Discord since the first scan.
+        channels: [
+          row("c1", "rush", true, true),
+          row("c2", "exec", true, true),
+        ],
+        roles: [],
+        warnings: [],
+      });
+
+    renderAtConsent();
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+
+    expect(
+      await screen.findByRole("button", {
+        name: /#rush was private in Discord/,
+      }),
+    ).toBeInTheDocument();
+    // #exec is no longer the skip it was forced into; it is asked about.
+    expect(
+      screen.getByRole("button", { name: /#exec was private in Discord/ }),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
 });
 
 describe("SourceStep", () => {
@@ -551,10 +604,49 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     renderStep();
     const panel = screen.getByRole("region", { name: "Needs attention" });
     expect(panel).toHaveTextContent("Needs attention (1)");
+    // Collapse the group first: it opened itself because it has an issue.
+    fireEvent.click(screen.getByRole("button", { name: /^Exec/ }));
+    expect(screen.queryByText("#cabinet")).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /#cabinet was private in Discord/ }),
     );
     expect(screen.getByText("#cabinet")).toBeInTheDocument();
+  });
+
+  it("restricts every new channel in a category at once, and nothing outside it", () => {
+    const { onChange } = renderStep();
+    fireEvent.change(
+      screen.getByLabelText("Who can read the new channels in Exec"),
+      { target: { value: "restricted" } },
+    );
+    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    const next = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      { action: string; visibility?: string; requiredPermissions?: string[] }
+    >;
+    expect(next["3"]).toMatchObject({
+      visibility: "restricted",
+      requiredPermissions: ["chapter-config:manage"],
+    });
+    expect(next["4"]).toEqual({ action: "skip" });
+    expect(next["1"]!.visibility).toBe("chapter");
+  });
+
+  it("sets who can read every new channel in the server at once", () => {
+    const { onChange } = renderStep();
+    fireEvent.change(screen.getByLabelText("Who can read every new channel"), {
+      target: { value: "chapter" },
+    });
+    const next = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      { action: string; visibility?: string }
+    >;
+    expect(next["3"]).toMatchObject({
+      action: "create_new",
+      visibility: "chapter",
+    });
+    expect(next["4"]).toEqual({ action: "skip" });
+    expect(mappingIssues(channels, next as never, [])).toEqual([]);
   });
 
   it("skips a whole category in one click, and nothing outside it", () => {

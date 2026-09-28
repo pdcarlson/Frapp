@@ -16,7 +16,12 @@ import {
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
 import type { StagedChannel } from "./upload-step";
-import type { ChannelChoice, MappingIssue } from "./mapping-issues";
+import {
+  asNewChannel,
+  privacyReason,
+  type ChannelChoice,
+  type MappingIssue,
+} from "./mapping-issues";
 
 export type { ChannelChoice } from "./mapping-issues";
 
@@ -54,7 +59,8 @@ function rowId(channelId: string): string {
  * (`defaultChoice`), so a server with no clashes needs no per-row clicks.
  * What still needs a decision is listed in Needs attention, which is the same
  * list that keeps Continue disabled: a name clash, a merge with no target, or
- * a channel that was private in Discord with no visibility chosen yet.
+ * a channel that was (or may have been) private in Discord with no
+ * visibility chosen yet.
  *
  * Merging is never inferred. `chat_channels` has no unique (chapter_id, name),
  * so a same-name Frapp channel is listed as a clash to resolve, not treated as
@@ -83,8 +89,14 @@ export function ChannelMappingStep({
   const catalogQuery = usePermissionsCatalog();
   const rolesQuery = useRoles();
 
-  const readable = channels.filter((channel) => channel.readable !== false);
-  const unreadable = channels.filter((channel) => channel.readable === false);
+  const readable = useMemo(
+    () => channels.filter((channel) => channel.readable !== false),
+    [channels],
+  );
+  const unreadable = useMemo(
+    () => channels.filter((channel) => channel.readable === false),
+    [channels],
+  );
   const groups = useMemo(() => groupByCategory(readable), [readable]);
 
   const roles = useMemo(
@@ -154,11 +166,7 @@ export function ChannelMappingStep({
     onChange(next);
   }
 
-  const asNew = (current: ChannelChoice, channel: StagedChannel) => ({
-    ...current,
-    action: "create_new" as const,
-    newName: current.newName?.trim() ? current.newName : channel.channelName,
-  });
+  const asNew = asNewChannel;
   const asSkip = (current: ChannelChoice) => ({
     ...current,
     action: "skip" as const,
@@ -180,6 +188,10 @@ export function ChannelMappingStep({
     });
   }
 
+  const serverVisibility = useBulkVisibility((visibility, permissions) =>
+    update(readable, withVisibility(visibility, permissions)),
+  );
+
   if (channels.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -195,6 +207,12 @@ export function ChannelMappingStep({
   const existingNames = asArray<{ id: string; name: string }>(
     existingChannels.data,
   );
+  const permissionProps = {
+    catalog,
+    holders,
+    catalogLoading: catalogQuery.isPending,
+    catalogUnavailable: catalogQuery.isError,
+  };
 
   return (
     <div className="space-y-4">
@@ -221,7 +239,7 @@ export function ChannelMappingStep({
               : ""}
           </span>
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="secondary"
@@ -236,7 +254,16 @@ export function ChannelMappingStep({
           >
             Skip all
           </Button>
+          <BulkVisibilitySelect
+            label="Who can read every new channel"
+            bulk={serverVisibility}
+          />
         </div>
+        <BulkRestrictPanel
+          scope="every new channel"
+          bulk={serverVisibility}
+          {...permissionProps}
+        />
       </div>
 
       <NeedsAttention issues={issues} onJump={jump} />
@@ -259,10 +286,7 @@ export function ChannelMappingStep({
               update([channel], (current) => ({ ...current, ...patch }))
             }
             existingNames={existingNames}
-            catalog={catalog}
-            holders={holders}
-            catalogLoading={catalogQuery.isPending}
-            catalogUnavailable={catalogQuery.isError}
+            {...permissionProps}
           />
         ))}
       </div>
@@ -356,10 +380,15 @@ function CategoryGroup({
   catalogLoading: boolean;
   catalogUnavailable: boolean;
 }) {
-  const [groupPermissions, setGroupPermissions] = useState<Set<string>>(
-    new Set(),
+  const groupVisibility = useBulkVisibility((visibility, permissions) =>
+    onBulk(withVisibility(visibility, permissions)),
   );
-  const [restrictingGroup, setRestrictingGroup] = useState(false);
+  const permissionProps = {
+    catalog,
+    holders,
+    catalogLoading,
+    catalogUnavailable,
+  };
 
   const importing = group.channels.filter(
     (channel) => (choices[channel.channelId]?.action ?? "skip") !== "skip",
@@ -370,22 +399,6 @@ function CategoryGroup({
   const privateCount = group.channels.filter(
     (channel) => channel.privateInDiscord === true,
   ).length;
-
-  function applyVisibility(
-    visibility: "chapter" | "restricted",
-    permissions: Set<string>,
-  ) {
-    onBulk((current) =>
-      current.action === "create_new"
-        ? {
-            ...current,
-            visibility,
-            requiredPermissions:
-              visibility === "restricted" ? [...permissions] : undefined,
-          }
-        : current,
-    );
-  }
 
   return (
     <section className="rounded-lg border border-border">
@@ -428,51 +441,17 @@ function CategoryGroup({
           <Button size="sm" variant="ghost" onClick={() => onBulk(asSkip)}>
             Skip all
           </Button>
-          <select
-            aria-label={`Who can read the new channels in ${group.name}`}
-            className={cn(dashboardFormSelectClassName, "h-11 w-auto")}
-            value=""
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value === "chapter") {
-                setRestrictingGroup(false);
-                applyVisibility("chapter", new Set());
-              } else if (value === "restricted") {
-                setRestrictingGroup(true);
-              }
-            }}
-          >
-            <option value="">Set who can read…</option>
-            <option value="chapter">All: whole chapter</option>
-            <option value="restricted">All: restricted…</option>
-          </select>
-        </div>
-      </div>
-
-      {restrictingGroup ? (
-        <div className="border-t border-border p-3">
-          <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-            Restrict every new channel in {group.name}
-          </Label>
-          <p className="mt-1 text-xs text-muted-foreground">
-            A member needs at least one of these permissions to read them.
-          </p>
-          <PermissionCheckboxGrid
-            catalog={catalog}
-            catalogLoading={catalogLoading}
-            catalogUnavailable={catalogUnavailable}
-            selected={groupPermissions}
-            holders={holders}
-            onToggle={(permission) => {
-              const next = new Set(groupPermissions);
-              if (next.has(permission)) next.delete(permission);
-              else next.add(permission);
-              setGroupPermissions(next);
-              applyVisibility("restricted", next);
-            }}
+          <BulkVisibilitySelect
+            label={`Who can read the new channels in ${group.name}`}
+            bulk={groupVisibility}
           />
         </div>
-      ) : null}
+        <BulkRestrictPanel
+          scope={`every new channel in ${group.name}`}
+          bulk={groupVisibility}
+          {...permissionProps}
+        />
+      </div>
 
       {open ? (
         <div className="space-y-2 border-t border-border p-3">
@@ -484,15 +463,140 @@ function CategoryGroup({
               problems={issuesByChannel.get(channel.channelId) ?? []}
               onPatch={(patch) => onRow(channel, patch)}
               existingNames={existingNames}
-              catalog={catalog}
-              holders={holders}
-              catalogLoading={catalogLoading}
-              catalogUnavailable={catalogUnavailable}
+              {...permissionProps}
             />
           ))}
         </div>
       ) : null}
     </section>
+  );
+}
+
+const PRIVACY_BADGES = {
+  private: "Private in Discord",
+  "private-threads": "Has private threads",
+  unknown: "Privacy unknown",
+} as const;
+
+function PrivacyBadge({ channel }: { channel: StagedChannel }) {
+  const reason = privacyReason(channel);
+  return reason ? (
+    <Badge variant="outline">{PRIVACY_BADGES[reason]}</Badge>
+  ) : null;
+}
+
+/** A bulk patch setting who can read every new channel it reaches. */
+function withVisibility(
+  visibility: "chapter" | "restricted",
+  permissions: ReadonlySet<string>,
+) {
+  return (current: ChannelChoice): ChannelChoice =>
+    current.action === "create_new"
+      ? {
+          ...current,
+          visibility,
+          requiredPermissions:
+            visibility === "restricted" ? [...permissions] : undefined,
+        }
+      : current;
+}
+
+interface BulkVisibility {
+  restricting: boolean;
+  permissions: ReadonlySet<string>;
+  choose: (value: string) => void;
+  toggle: (permission: string) => void;
+}
+
+/**
+ * One "Set who can read…" control: the whole chapter applies at once;
+ * restricted opens a permission grid that applies on every tick.
+ */
+function useBulkVisibility(
+  apply: (
+    visibility: "chapter" | "restricted",
+    permissions: ReadonlySet<string>,
+  ) => void,
+): BulkVisibility {
+  const [restricting, setRestricting] = useState(false);
+  const [permissions, setPermissions] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  return {
+    restricting,
+    permissions,
+    choose(value) {
+      if (value === "chapter") {
+        setRestricting(false);
+        apply("chapter", new Set());
+      } else if (value === "restricted") {
+        setRestricting(true);
+      }
+    },
+    toggle(permission) {
+      const next = new Set(permissions);
+      if (next.has(permission)) next.delete(permission);
+      else next.add(permission);
+      setPermissions(next);
+      apply("restricted", next);
+    },
+  };
+}
+
+function BulkVisibilitySelect({
+  label,
+  bulk,
+}: {
+  label: string;
+  bulk: BulkVisibility;
+}) {
+  return (
+    <select
+      aria-label={label}
+      className={cn(dashboardFormSelectClassName, "h-11 w-auto")}
+      value=""
+      onChange={(event) => bulk.choose(event.target.value)}
+    >
+      <option value="">Set who can read…</option>
+      <option value="chapter">All: whole chapter</option>
+      <option value="restricted">All: restricted…</option>
+    </select>
+  );
+}
+
+function BulkRestrictPanel({
+  scope,
+  bulk,
+  catalog,
+  holders,
+  catalogLoading,
+  catalogUnavailable,
+}: {
+  scope: string;
+  bulk: BulkVisibility;
+  catalog: PermissionCatalogEntry[];
+  holders: ReadonlyMap<string, readonly string[]>;
+  catalogLoading: boolean;
+  catalogUnavailable: boolean;
+}) {
+  if (!bulk.restricting) return null;
+  return (
+    <div className="basis-full border-t border-border pt-3">
+      <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+        Restrict {scope}
+      </Label>
+      <p className="mt-1 text-xs text-muted-foreground">
+        A member needs at least one of these permissions to read them.
+      </p>
+      <PermissionCheckboxGrid
+        catalog={catalog}
+        catalogLoading={catalogLoading}
+        catalogUnavailable={catalogUnavailable}
+        selected={new Set(bulk.permissions)}
+        holders={holders}
+        onToggle={bulk.toggle}
+      />
+    </div>
   );
 }
 
@@ -531,9 +635,7 @@ function ChannelRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           <span className="truncate">#{channel.channelName}</span>
-          {channel.privateInDiscord === true ? (
-            <Badge variant="outline">Private in Discord</Badge>
-          ) : null}
+          <PrivacyBadge channel={channel} />
         </p>
         <div
           role="radiogroup"
@@ -551,12 +653,7 @@ function ChannelRow({
                 onClick={() =>
                   onPatch(
                     option.key === "create_new"
-                      ? {
-                          action: option.key,
-                          newName: choice?.newName?.trim()
-                            ? choice.newName
-                            : channel.channelName,
-                        }
+                      ? asNewChannel(choice ?? { action: "skip" }, channel)
                       : { action: option.key },
                   )
                 }

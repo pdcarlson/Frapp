@@ -24,7 +24,7 @@ import { SourceStep, type ImportSource } from "./source-step";
 import { ConnectStep } from "./connect-step";
 import { UploadStep, type StagedExport } from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
-import { defaultChoices, mappingIssues } from "./mapping-issues";
+import { mappingIssues, restageChoices } from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
 import { ReviewStep } from "./review-step";
 
@@ -151,46 +151,43 @@ export function ImportWizard({
   }
 
   /**
-   * Creating the import is what stamps the acknowledgement, so it happens on
-   * leaving the consent step rather than at the end — there is no window in
-   * which an import exists without it.
-   *
-   * On the bot path the same call also scans the connected server, because the
-   * channel list is something only the API can produce and the admin has
-   * nothing to do between the two.
-   */
-  /**
    * Stage a channel set and start every channel at its default answer.
    *
-   * A choice the admin already made survives a re-stage (a second scan after
-   * giving the bot access, or a resumed upload), unless the channel has become
-   * unreadable, which can only be skipped.
+   * On a re-stage (a second scan after giving the bot access, or a resumed
+   * upload) a choice survives only while the facts it was made under still
+   * hold; `restageChoices` says which.
    */
-  const stage = useCallback((next: StagedExport) => {
-    setStaged(next);
-    setChannelChoices((previous) => {
-      const merged = defaultChoices(next.channels);
-      for (const channel of next.channels) {
-        const kept = previous[channel.channelId];
-        if (kept && channel.readable !== false) {
-          merged[channel.channelId] = kept;
-        }
-      }
-      return merged;
-    });
-  }, []);
+  const stage = useCallback(
+    (next: StagedExport) => {
+      const previousChannels = staged?.channels ?? [];
+      setChannelChoices((previous) =>
+        restageChoices(previousChannels, previous, next.channels),
+      );
+      setStaged(next);
+    },
+    [staged],
+  );
 
   /** Scan the connected server and stage what it found. */
   const scan = useCallback(
     async (id: string) => {
       const discovery = await discoverChannels.mutateAsync({ id });
       setScanWarnings(discovery.warnings ?? []);
+      const found = discovery.channels ?? [];
+      // A private thread's messages land wherever its parent goes, so the
+      // parent is asked about as if it were private.
+      const privateThreads = new Map<string, number>();
+      for (const channel of found) {
+        const parent = channel.parent_discord_channel_id;
+        if (parent === null || channel.private_in_discord !== true) continue;
+        privateThreads.set(parent, (privateThreads.get(parent) ?? 0) + 1);
+      }
       stage({
         guildName: null,
         // Threads are deliberately not listed. Each one follows its parent's
         // destination server-side; asking about two hundred archived threads
         // one at a time is not a mapping step, it is a punishment.
-        channels: (discovery.channels ?? [])
+        channels: found
           .filter((channel) => channel.parent_discord_channel_id === null)
           .map((channel) => ({
             channelId: channel.discord_channel_id,
@@ -198,6 +195,7 @@ export function ImportWizard({
             category: channel.discord_category,
             readable: channel.readable ?? null,
             privateInDiscord: channel.private_in_discord ?? null,
+            privateThreads: privateThreads.get(channel.discord_channel_id) ?? 0,
           })),
         roles: (discovery.roles ?? []).map((role) => ({
           roleId: role.discord_role_id,
@@ -224,6 +222,15 @@ export function ImportWizard({
     }
   }
 
+  /**
+   * Creating the import is what stamps the acknowledgement, so it happens on
+   * leaving the consent step rather than at the end — there is no window in
+   * which an import exists without it.
+   *
+   * On the bot path the same call also scans the connected server, because the
+   * channel list is something only the API can produce and the admin has
+   * nothing to do between the two.
+   */
   const beginImport = useCallback(async () => {
     if (!acknowledged || !source) return;
     try {
@@ -294,8 +301,9 @@ export function ImportWizard({
         target_channel_id: choice.targetChannelId ?? undefined,
         new_channel_name: choice.newName?.trim() || undefined,
         new_channel_is_read_only: choice.readOnly ?? true,
-        // Only a new channel has a visibility; the API refuses a channel that
-        // was private in Discord without one, so it is sent as chosen.
+        // Only a new channel has a visibility; the API refuses one that was
+        // (or may have been) private in Discord without one, so it is sent
+        // as chosen.
         new_channel_visibility:
           choice.action === "create_new" ? choice.visibility : undefined,
         new_channel_required_permissions:

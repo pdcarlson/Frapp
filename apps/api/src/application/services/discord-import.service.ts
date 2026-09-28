@@ -138,11 +138,13 @@ export interface ChannelMappingInput {
   new_channel_name?: string | null;
   new_channel_is_read_only?: boolean;
   /**
-   * Who can read the channel `create_new` makes. Omitted means "not chosen":
-   * allowed on a channel that was public in Discord (it defaults to the whole
-   * chapter), refused on one that was private there.
+   * Who can read the channel `create_new` makes. Omitted, or null, means "not
+   * chosen": allowed on a channel the scan saw was public in Discord (it
+   * defaults to the whole chapter), refused on the bot path for one that was
+   * private there, holds private threads, or whose privacy the scan could not
+   * read.
    */
-  new_channel_visibility?: 'chapter' | 'restricted';
+  new_channel_visibility?: 'chapter' | 'restricted' | null;
   /** Required, and non-empty, when `new_channel_visibility` is `restricted`. */
   new_channel_required_permissions?: string[] | null;
   message_count?: number;
@@ -163,6 +165,25 @@ function newChannelShape(decision: ChannelMappingInput | undefined): {
     };
   }
   return { new_channel_type: 'PUBLIC', new_channel_required_permissions: null };
+}
+
+/**
+ * Why a discovered channel may not take the whole-chapter default, or null
+ * when the scan saw it was public and holds no private thread.
+ */
+function needsVisibilityChoice(
+  scanned: DiscordImportChannel,
+  holdsPrivateThreads: boolean,
+): string | null {
+  const name = `#${scanned.discord_channel_name}`;
+  if (scanned.private_in_discord === true) {
+    return `${name} is private in Discord.`;
+  }
+  if (holdsPrivateThreads) return `${name} holds private threads in Discord.`;
+  if (scanned.private_in_discord === null) {
+    return `Frapp could not tell whether ${name} is private in Discord.`;
+  }
+  return null;
 }
 
 function normalisedPermissions(decision: ChannelMappingInput): string[] {
@@ -526,6 +547,15 @@ export class DiscordImportService {
         .filter((channel) => !channel.parent_discord_channel_id)
         .map((channel) => [channel.discord_channel_id, channel]),
     );
+    // A thread's messages land wherever its parent goes, so a channel holding
+    // a private thread is as private as that thread.
+    const holdsPrivateThreads = new Set(
+      existing.flatMap((channel) =>
+        channel.parent_discord_channel_id && channel.private_in_discord === true
+          ? [channel.parent_discord_channel_id]
+          : [],
+      ),
+    );
 
     const byId = new Map<string, ChannelMappingInput>();
     for (const decision of decisions) {
@@ -543,16 +573,23 @@ export class DiscordImportService {
         );
       }
       // Nothing private in Discord becomes readable by the whole chapter by
-      // default. A client that sends no visibility has not chosen one, and
-      // for this channel the default would publish it.
+      // default. A client that sends no visibility (omitted or null) has not
+      // chosen one, and the default would publish the channel. Only a scan
+      // that SAW the channel was public lets the default stand: unknown is
+      // treated as private, because the roles read that answers it can fail.
       if (
-        scanned.private_in_discord === true &&
         decision.mapping_action === 'create_new' &&
-        decision.new_channel_visibility === undefined
+        decision.new_channel_visibility == null
       ) {
-        throw new BadRequestException(
-          `#${scanned.discord_channel_name} is private in Discord. Choose who can read it in Frapp before importing it.`,
+        const reason = needsVisibilityChoice(
+          scanned,
+          holdsPrivateThreads.has(scanned.discord_channel_id),
         );
+        if (reason) {
+          throw new BadRequestException(
+            `${reason} Choose who can read it in Frapp before importing it.`,
+          );
+        }
       }
       await this.assertDecisionResolvable(decision, chapterId);
       byId.set(decision.discord_channel_id, decision);

@@ -550,17 +550,24 @@ channel that reports a different one fails the import rather than being skipped.
   clicked through one by one.* A new channel is the default because it cannot
   interleave anything into a live one. **Merging is still never inferred**:
   `chat_channels` has no unique constraint on `(chapter_id, name)`, so a new
-  name that matches an existing Frapp channel, or another channel in the same
-  import, is listed as something to resolve, never treated as consent to
-  merge. Everything that blocks the step is listed in one place (Needs
-  attention), and that list is also what keeps Continue disabled.
+  name that matches another channel in the same import, or a Frapp channel the
+  admin can see, is listed as something to resolve, never treated as consent
+  to merge. The check runs against the admin's own channel list, so a clash
+  with a channel hidden from them (a `PRIVATE` channel they are not in, or a
+  `ROLE_GATED` one they cannot read) goes unflagged, and a second channel with
+  that name is created. Everything that blocks the step is listed in one place
+  (Needs attention), and that list is also what keeps Continue disabled.
 - **Nothing private in Discord becomes readable by the whole chapter by
   default.** A new channel is either *whole chapter* (`PUBLIC`) or *restricted*
   (`ROLE_GATED`, readable by members holding any of the permissions the admin
   picks). The scan records which channels were hidden from `@everyone` in
-  Discord. Those start with no visibility, and the API refuses to create one
-  until the admin chooses. An uploaded export carries no permissions, so
-  there the wizard says plainly that every new channel is chapter-wide unless
+  Discord, and which threads were private threads. A channel that was private,
+  holds a private thread (whose messages land in it), or whose privacy the
+  scan could not read (the roles read failed, which the scan reports) starts
+  with no visibility, and the API refuses to create it until the admin
+  chooses. Scanning again re-asks any whole-chapter choice whose channel has
+  since turned private. An uploaded export carries no permissions, so there
+  the wizard says plainly that every new channel is chapter-wide unless
   restricted.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
@@ -569,7 +576,8 @@ channel that reports a different one fails the import rather than being skipped.
   skipped; the chapter gives the Frapp bot a role that can see it in Discord
   and scans again. Nothing is probed that is already known unreadable, because
   every refused request spends a rate-limit budget one bot token shares across
-  every chapter.
+  every chapter. When access cannot be worked out (the bot's roles could not be
+  read), each channel is probed once and a refusal is reported the same way.
 - **The Discord → Frapp role mapping grants nothing.** The wizard records which
   Frapp role each Discord role corresponds to, and shows it back to the admin as
   a worksheet for promoting people by hand. Nothing reads it to grant a

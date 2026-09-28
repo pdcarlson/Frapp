@@ -779,10 +779,12 @@ export class DiscordImportWorkerService {
       chapter_id: chapterId,
       name: mapping.new_channel_name,
       description: `Imported from Discord #${mapping.discord_channel_name}`,
-      // The admin's choice, recorded on the mapping. A channel that was private
-      // in Discord could only reach here as PUBLIC by an explicit choice (the
-      // mapping route refuses the default), and ROLE_GATED always carries at
-      // least one permission (DB CHECK).
+      // The admin's choice, recorded on the mapping. On the bot path a channel
+      // that was private in Discord, held a private thread, or whose privacy
+      // the scan could not read reaches here as PUBLIC only by an explicit
+      // choice (the mapping route refuses the default); an upload has no
+      // privacy to go on. ROLE_GATED always carries at least one permission
+      // (DB CHECK).
       type: mapping.new_channel_type,
       required_permissions:
         mapping.new_channel_type === 'ROLE_GATED'

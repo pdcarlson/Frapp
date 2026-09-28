@@ -2158,16 +2158,32 @@ The same PR removes the `#2521` landmark and the "Unread and mention counts skip
 
 Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewritten: existing rows took `PUBLIC` and nulls.
 
-**Roll back the API first.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. Deploy the previous API, then remove them with a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260928160000` as applied, so a later re-land would apply nothing:
+**This is a safety regression, not a neutral rollback.** Afterwards every channel an import creates is `PUBLIC` again, so a channel that was private in Discord (exec, bids, committees) becomes readable by the whole chapter when imported, and mapping rows saved as `ROLE_GATED` lose that choice. Work in this order.
 
-```sql
-alter table public.discord_import_channels
-  drop constraint if exists discord_import_channels_new_channel_type_check;
-alter table public.discord_import_channels
-  drop column if exists new_channel_required_permissions,
-  drop column if exists new_channel_type,
-  drop column if exists private_in_discord,
-  drop column if exists readable;
-```
+1. **Before deploying anything, find the imports that would publish a restricted channel.** The import worker runs inside the API process on a one-minute cron, and the previous worker creates every channel `PUBLIC`, so once the previous API is live it is too late to look. List the imports that still have `ROLE_GATED` channels to create. `failed` is included because a failed import can be started again:
 
-**This is a safety regression, not a neutral rollback.** Afterwards every channel an import creates is `PUBLIC` again, so a channel that was private in Discord (exec, bids, committees) becomes readable by the whole chapter when imported. Mapping rows already saved as `ROLE_GATED` lose that choice. Check `select count(*) from discord_import_channels where new_channel_type = 'ROLE_GATED' and status in ('pending','running');` first. A non-zero count means a queued import would create those channels public: cancel it, or re-map it after the rollback.
+   ```sql
+   select i.id, i.chapter_id, i.status, count(*) as restricted_channels
+   from public.discord_import_channels c
+   join public.discord_imports i on i.id = c.import_id
+   where c.new_channel_type = 'ROLE_GATED'
+     and c.status in ('pending', 'running')
+     and i.status in ('draft', 'ready', 'running', 'failed')
+   group by i.id, i.chapter_id, i.status;
+   ```
+
+   Cancel each one it lists: the chapter's admin presses Cancel on the Discord import page (`POST /v1/discord-imports/{id}/cancel`). Rows in `cancelled`, `completed` or `purged` imports are never picked up, so they do not count. After the rollback a cancelled import can only be mapped again without restrictions, so tell the chapter before cancelling.
+
+2. **Roll back the web app and the API together.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. The web client that ships with it sends `new_channel_visibility` on every new channel, and the previous API's validation pipe rejects unknown properties (`forbidNonWhitelisted`), so that client against the previous API fails every mapping save with a 400. Deploy the previous build of both.
+
+3. **Remove the columns with a new forward migration**, not by hand. Hand DDL leaves the ledger recording `20260928160000` as applied, so a later re-land would apply nothing:
+
+   ```sql
+   alter table public.discord_import_channels
+     drop constraint if exists discord_import_channels_new_channel_type_check;
+   alter table public.discord_import_channels
+     drop column if exists new_channel_required_permissions,
+     drop column if exists new_channel_type,
+     drop column if exists private_in_discord,
+     drop column if exists readable;
+   ```
