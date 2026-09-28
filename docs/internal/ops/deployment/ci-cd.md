@@ -34,7 +34,7 @@ production** with a commit SHA:
 > ℹ️ **Since 2026-09-06 the Vercel BUILD happens before the apply.** `deploy-vercel.mjs` runs twice:
 > `DEPLOY_PHASE=build` in step 5, before a byte of production has changed, and `DEPLOY_PHASE=upload`
 > in step 6. The build is the half that fails for reasons unrelated to the commit — the OOM killer,
-> a Production env var the Infisical sync never delivered, a registry blip — and it used to run last,
+> an app key missing from Infisical `prod`, a registry blip — and it used to run last,
 > which is how run 33275321347 left a migrated database and a new API under six-month-old frontends
 > with no tag. Now a build failure costs nothing; only the upload, a far smaller surface, can still
 > fail after the apply. That residual is a property of the shipping path's one-job design
@@ -105,11 +105,14 @@ production** with a commit SHA:
 > and `NEXT_PUBLIC_POSTHOG_HOST` are absent from that scope too; they degrade silently (analytics
 > off) rather than failing the build.
 >
-> **Do not read "written to the Production scope" as a reason to rule the sync out** when a
-> production build fails on a `NEXT_PUBLIC_*`: open the Vercel Production scope and look. And do not
-> read a `server.ts` throw as naming the absent variable — cross-check it against the build-step
-> environment. The fix is still a human edit in Infisical `prod` at path `/` — the repo cannot make
-> it, and #834 tracks the sync itself.
+> **Corrected 2026-09-28 (#2673):** a production build no longer reads the Vercel Production scope
+> at all. It takes each app's keys from Infisical `prod` and strips them from the pulled file, and a
+> required key Infisical lacks fails the build before anything compiles, naming the key
+> (`The Infisical injection supplied no value for …`). So when a production build fails on a
+> `NEXT_PUBLIC_*`, look in Infisical `prod`, not in Vercel, and read the build log's
+> `App config from Infisical:` line for the keys each build received. Do not read a `server.ts` throw
+> as naming the absent variable. The fix is a human edit in Infisical `prod` at path `/`: the repo
+> cannot make it.
 
 > **Deploying an OLDER commit.** That intersection in step 2 is deliberate, and it is what
 > keeps an incident rollback possible. A required check added _after_ a commit was made could

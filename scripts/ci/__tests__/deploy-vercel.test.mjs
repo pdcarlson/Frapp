@@ -993,6 +993,7 @@ describe("buildEnvsFor", () => {
     for (const project of buildEnvsFor({ projects, env: withToken, readBaseline: baseline, dryRun: true })) {
       assert.equal(project.buildEnv.appEnv.SENTRY_AUTH_TOKEN, undefined, project.label);
       assert.ok(project.buildEnv.appKeys.includes("SENTRY_AUTH_TOKEN"), `${project.label} must still strip it`);
+      assert.deepEqual(project.buildEnv.withheld, ["SENTRY_AUTH_TOKEN"], "so the lost-key warning skips it");
     }
   });
 
@@ -1002,6 +1003,7 @@ describe("buildEnvsFor", () => {
     const withToken = { ...env, SENTRY_AUTH_TOKEN: "sntrys_realtoken" };
     for (const project of buildEnvsFor({ projects, env: withToken, readBaseline: baseline })) {
       assert.equal(project.buildEnv.appEnv.SENTRY_AUTH_TOKEN, "sntrys_realtoken", project.label);
+      assert.deepEqual(project.buildEnv.withheld, []);
     }
   });
 

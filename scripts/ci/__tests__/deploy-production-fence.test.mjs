@@ -477,13 +477,48 @@ describe("the production Vercel steps run on the pre-injection env baseline", ()
     }
   });
 
-  // The dry-run Sentry guard lives in deploy-vercel.mjs now (`buildEnvsFor`'s
-  // `dryRun`, tested there), where it covers the pulled env file as well as the
-  // job env; the shell `unset` it replaced covered only the job env (#2275).
-  it("runs the build step's script with no shell-side token handling left to drift", () => {
-    const build = steps().find((s) => s.name === "Build the Vercel production bundles (web + landing)");
-    assert.ok(build, "the Vercel build step is missing");
-    assert.doesNotMatch(build.body, /unset\s+SENTRY_AUTH_TOKEN/);
+});
+
+// The dry-run Sentry guard has two halves. `deploy-vercel.mjs` withholds the
+// token from the build and strips it from the pulled file (tested in
+// deploy-vercel.test.mjs), but that script runs from the DEPLOYED commit's
+// tree, so a dry run of a commit from before #2673 gets an old copy that
+// ignores DRY_RUN. The shell `unset` in the build step comes from the
+// dispatched ref and covers the job-env copy whatever commit is built.
+describe("the dry-run Sentry guard on the Vercel build step", () => {
+  const BUILD_STEP = "Build the Vercel production bundles (web + landing)";
+
+  /** The step's script, with the real deploy swapped for a probe. */
+  function runBuildStep(dryRun) {
+    const path = join(workspace, "build-step.sh");
+    const script = extractStepScript(BUILD_STEP)
+      .replace(/\$\{\{[^}]*\}\}/g, "")
+      .replace(
+        "node scripts/ci/deploy-vercel.mjs",
+        'printf "token=%s\\n" "${SENTRY_AUTH_TOKEN-__UNSET__}"',
+      );
+    writeFileSync(path, script);
+    try {
+      return execFileSync("bash", [path], {
+        encoding: "utf8",
+        stdio: "pipe",
+        env: { ...process.env, DRY_RUN: dryRun, SENTRY_AUTH_TOKEN: "sntrys_realtoken" },
+      });
+    } catch (error) {
+      return `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    }
+  }
+
+  it("clears SENTRY_AUTH_TOKEN on a dry run, whatever deploy-vercel.mjs the commit carries", () => {
+    const output = runBuildStep("true");
+    assert.match(output, /token=__UNSET__/);
+    assert.doesNotMatch(output, /sntrys_realtoken/);
+  });
+
+  // The other half: a guard that cleared the token unconditionally would stop
+  // every real production release from reaching Sentry.
+  it("leaves SENTRY_AUTH_TOKEN alone on a real ship", () => {
+    assert.match(runBuildStep("false"), /token=sntrys_realtoken/);
   });
 });
 

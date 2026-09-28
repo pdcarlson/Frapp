@@ -770,18 +770,24 @@ export const DRY_RUN_WITHHELD_KEYS = Object.freeze(["SENTRY_AUTH_TOKEN"]);
  * Every project is checked before any is returned, so a missing required key
  * in landing stops the run before web has built, rather than after.
  *
- * With `dryRun`, `DRY_RUN_WITHHELD_KEYS` are dropped from each `appEnv`. They
- * stay in `appKeys`, so the pulled env file loses them too: neither channel
- * can hand the build a Sentry token.
+ * With `dryRun`, `DRY_RUN_WITHHELD_KEYS` are dropped from each `appEnv` and
+ * listed in `withheld`. They stay in `appKeys`, so the pulled env file loses
+ * them too: neither channel can hand the build a Sentry token. `withheld` is
+ * what keeps the lost-key warning from calling a key Infisical did supply
+ * missing.
  */
 export function buildEnvsFor({ projects, env, readBaseline, dryRun = false }) {
   const baselineNames = parseEnvBaseline(readBaseline());
   const errors = [];
   const withEnv = projects.map((project) => {
     try {
-      const buildEnv = infisicalBuildEnv({ label: project.label, env, baselineNames });
+      const buildEnv = { ...infisicalBuildEnv({ label: project.label, env, baselineNames }), withheld: [] };
       if (dryRun) {
-        for (const key of DRY_RUN_WITHHELD_KEYS) delete buildEnv.appEnv[key];
+        for (const key of DRY_RUN_WITHHELD_KEYS) {
+          if (!(key in buildEnv.appEnv)) continue;
+          delete buildEnv.appEnv[key];
+          buildEnv.withheld.push(key);
+        }
       }
       return { ...project, buildEnv };
     } catch (error) {

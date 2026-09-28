@@ -621,10 +621,20 @@ jobs:
           # A dry run's build must not mint a Sentry release for a commit that is
           # not being deployed. `deploy-vercel.mjs` withholds SENTRY_AUTH_TOKEN
           # from the build's app keys and strips it from the pulled env file, so
-          # neither channel can hand it to `next build` (#2275). An `unset` in
-          # this shell used to cover only the first.
+          # neither channel can hand it to `next build` (#2275).
           DRY_RUN: ${{ inputs.dry_run_only }}
-        run: node scripts/ci/deploy-vercel.mjs
+        run: |
+          set -euo pipefail
+          # Kept although deploy-vercel.mjs withholds the token itself: that
+          # script runs from the DEPLOYED commit's tree, and a commit from before
+          # #2673 (a rollback rehearsal, say) carries a copy that ignores DRY_RUN
+          # and builds on the whole job env. This unset is the part of the guard
+          # that comes from the dispatched ref, whatever commit is being built.
+          if [ "${DRY_RUN:-}" = "true" ]; then
+            echo "Dry run: clearing SENTRY_AUTH_TOKEN so this build mints no Sentry release."
+            unset SENTRY_AUTH_TOKEN
+          fi
+          node scripts/ci/deploy-vercel.mjs
 
       # The summary states what the rehearsal DID and, as carefully, what it
       # still did not. A dry run that overstates its own coverage is how the
@@ -658,9 +668,10 @@ jobs:
               echo ""
               echo "One difference inside the build itself: a real run compiles with"
               echo "\`SENTRY_AUTH_TOKEN\` when Infisical \`prod\` holds it, and then uploads source"
-              echo "maps and creates a Sentry release. This run withheld it, so it minted no"
-              echo "release, and a green build here does not prove the real build's Sentry"
-              echo "upload will succeed."
+              echo "maps and creates a Sentry release. This run withheld it, so a green build here"
+              echo "does not prove the real build's Sentry upload will succeed. For a commit from"
+              echo "before #2673 only the job-env copy was withheld, and a Production row"
+              echo "\`vercel pull\` wrote could still have minted a release."
             else
               echo ""
               echo "Scope is \`migrations-only\`, so no frontend bundle was built. The Vercel build"

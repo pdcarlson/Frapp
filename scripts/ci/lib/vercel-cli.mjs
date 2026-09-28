@@ -49,7 +49,7 @@
 //
 // ── Why build and upload are separable ─────────────────────────────────────
 // `vercel build` is the step that can fail for reasons unrelated to the commit
-// — the OOM killer, a missing Production env var, a registry blip during
+// — the OOM killer, an app key missing from Infisical, a registry blip during
 // `next build` — and on the production path it used to run AFTER the migration
 // had applied and the Render API had shipped. A failure there left a migrated
 // database under a half-updated production with no tag naming what was live:
@@ -126,8 +126,9 @@ export function vercelPullArgs({ target }) {
 /**
  * `vercel build` — produce `.vercel/output` from the checked-out tree.
  *
- * `--prod` is what makes the build compile against the Production environment
- * variables that `vercel pull --environment=production` just wrote. Omitting it
+ * `--prod` is what makes the build a production build, against the project
+ * settings and `VERCEL_ENV=production` that `vercel pull --environment=production`
+ * just wrote (the app keys come from Infisical, not that file). Omitting it
  * on the production path would build a preview bundle and then ship it to the
  * production hostname — the exact "promoted preview" failure the production
  * deploy path was written to prevent.
@@ -380,10 +381,9 @@ async function runVercelStep({ label, args, env, cwd, cliCommand, runCommand, lo
  * `pulledEnvFileFor` does not look, and `vercel build` would then load a file
  * nobody stripped: a Vercel row could fill any app key Infisical left empty,
  * with the log still saying the config came from Infisical. That is the strip
- * that silently matches nothing, which `deploy-production.yml`'s build step
- * declines to write for exactly this reason; here it fails instead.
+ * that silently matches nothing, and it fails here instead.
  */
-async function dropPulledAppKeys({ label, cwd, target, keys, supplied, envFileFs, logger }) {
+async function dropPulledAppKeys({ label, cwd, target, keys, supplied, withheld, envFileFs, logger }) {
   const file = pulledEnvFileFor(cwd, target);
   const text = await envFileFs.read(file);
   if (text === null) {
@@ -405,8 +405,9 @@ async function dropPulledAppKeys({ label, cwd, target, keys, supplied, envFileFs
   );
   // A key Vercel held but the injection did not supply is one this build now
   // goes without. Required keys already failed the run, so these are optional
-  // ones: loud, not fatal, because the app has a default for each.
-  const lost = removed.filter((key) => !(key in supplied));
+  // ones: loud, not fatal, because the app has a default for each. A key the
+  // injection supplied and a dry run withheld on purpose is not lost.
+  const lost = removed.filter((key) => !(key in supplied) && !withheld.includes(key));
   if (lost.length > 0) {
     logger.warn?.(
       `::warning::[${label}] Vercel's ${vercelEnvironmentFor(target)} env holds ${lost.join(", ")}, ` +
@@ -462,7 +463,7 @@ export async function buildVercelProject({
   envFileFs = defaultEnvFileFs,
   logger = console,
 }) {
-  const { baseEnv, appEnv, appKeys } = requireBuildEnv(buildEnv, label);
+  const { baseEnv, appEnv, appKeys, withheld = [] } = requireBuildEnv(buildEnv, label);
   const identity = { token, orgId, projectId, gitSha: sha };
   const common = { label, cwd, cliCommand, runCommand, logger };
 
@@ -477,7 +478,7 @@ export async function buildVercelProject({
     args: vercelPullArgs({ target }),
   });
 
-  await dropPulledAppKeys({ label, cwd, target, keys: appKeys, supplied: appEnv, envFileFs, logger });
+  await dropPulledAppKeys({ label, cwd, target, keys: appKeys, supplied: appEnv, withheld, envFileFs, logger });
 
   await runVercelStep({
     ...common,

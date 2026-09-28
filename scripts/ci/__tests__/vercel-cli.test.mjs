@@ -843,6 +843,20 @@ describe("buildVercelProject with an Infisical build env", () => {
     assert.ok(!warned[0].includes("phc_stale"), "the warning printed a value");
   });
 
+  it("does not call a key a dry run withheld on purpose lost", async () => {
+    // Infisical supplied it; `buildEnvsFor` withheld it from a dry run (#2275).
+    // Calling it missing would tell the owner to add a key Infisical holds.
+    const t = setup();
+    const warned = [];
+    await buildVercelProject({
+      ...t.options,
+      buildEnv: { ...buildEnv, withheld: ["NEXT_PUBLIC_POSTHOG_KEY"] },
+      logger: { log: () => {}, warn: (line) => warned.push(line) },
+    });
+    assert.deepEqual(warned, []);
+    assert.doesNotMatch(t.envFiles.files.get(ENV_FILE), /^NEXT_PUBLIC_POSTHOG_KEY=/m, "still stripped");
+  });
+
   it("builds production the same way: stripped file, base env, app keys", async () => {
     await inAmbient(async () => {
       const t = setup();

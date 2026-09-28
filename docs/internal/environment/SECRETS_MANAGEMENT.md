@@ -36,7 +36,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
 │  Syncs: Render ×2, Vercel ×2 (Production only) — §5               │
-│  Staging web/landing: built from an Infisical injection — §5      │
+│  Web/landing (both envs): built from an Infisical injection — §5  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -93,7 +93,7 @@ dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` 
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
-that name serves `apps/api` (Render sync) and `apps/web` (Vercel Production sync; injected into the staging build); it never reaches EAS. The live syncs are Render + Vercel only (next section).
+that name serves `apps/api` (Render sync) and `apps/web` (injected into the staging and production builds); it never reaches EAS. The live syncs are Render + Vercel only (next section).
 
 ### 5. Configure Secret Syncs
 
@@ -184,8 +184,8 @@ invisible to it and the gate would go green having checked nothing.
 
 Because the action exports every secret in the resolved environment as a job env var, **adding a
 secret to the right Infisical environment is sufficient to make it available to CI** — no workflow
-change is needed. The one exception is the staging web and landing build, which hands each app only
-the keys it is listed as reading (next section).
+change is needed. The one exception is the web and landing build, staging and production alike, which
+hands each app only the keys it is listed as reading (next section).
 
 #### Staging web and landing: injected at build, not synced
 
@@ -423,7 +423,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
 | R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); neither project's Preview env holds a copy (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
-**All rotations happen in one place (Infisical).** Syncs propagate changes to Render and to Vercel Production automatically; the staging web and landing builds read Infisical directly, so they pick up a change on their next deploy.
+**All rotations happen in one place (Infisical).** Syncs propagate changes to Render automatically. The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only on their next deploy: a merge for staging, a **Deploy production** dispatch for production. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
 
 ## Emergency Procedures
 
@@ -431,7 +431,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 1. **Immediately** rotate the secret in the source provider (Supabase/Stripe/etc.)
 2. Update the canonical value in Infisical (one place)
-3. Syncs propagate automatically — verify all services are healthy
+3. The Render syncs propagate automatically; web and landing need a redeploy (staging: re-run **Deploy Vercel staging**; production: dispatch **Deploy production**). Verify all services are healthy
 4. If committed to git: notify team, consider force-push to remove
 
 ### Infisical Down
