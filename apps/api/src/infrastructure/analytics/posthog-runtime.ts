@@ -176,7 +176,9 @@ export class PosthogRuntime {
    * forever instead of sampling it (#2374). The request id is the key, so a
    * request's records share one verdict; a record with no request (or an
    * empty inbound `x-request-id`) gets a fresh key and is sampled on its own.
-   * Callers never choose the key, so no caller can get it wrong.
+   * Callers never choose the key. The HTTP client still can: the request id
+   * honours an inbound `x-request-id`, so a client that pins one gets one
+   * verdict for all its records (#2737).
    */
   private sampleLog(): boolean {
     const rate = this.logsSampleRate;
