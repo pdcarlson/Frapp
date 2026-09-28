@@ -531,10 +531,10 @@ jobs:
       # (NEXT_PUBLIC_* are inlined at build time — see the header of
       # deploy-vercel.mjs for why a promoted preview is not an option). `vercel
       # pull --environment=production` still runs, for the project settings and
-      # `VERCEL_ENV=production`, but every app key is removed from the file it
-      # writes, so no Vercel Production row can supply one (#2673,
-      # lib/vercel-build-env.mjs). A required key missing from Infisical fails
-      # here, naming the key. Each project's `.vercel` directory is stashed under
+      # `VERCEL_ENV=production`, but the file it writes keeps only Vercel's
+      # system variables, so no Vercel Production row can supply an app key
+      # (#2673, #2810, lib/vercel-build-env.mjs). A required key missing from
+      # Infisical fails here, naming the key. Each project's `.vercel` directory is stashed under
       # $RUNNER_TEMP so the second build cannot overwrite the first and the
       # upload step can find both.
       #

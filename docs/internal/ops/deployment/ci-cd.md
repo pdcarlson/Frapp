@@ -106,8 +106,9 @@ production** with a commit SHA:
 > off) rather than failing the build.
 >
 > **Corrected 2026-09-28 (#2673):** a production build no longer reads the Vercel Production scope
-> at all. It takes each app's keys from Infisical `prod` and strips them from the pulled file, and a
-> required key Infisical lacks fails the build before anything compiles, naming the key
+> at all. It takes each app's keys from Infisical `prod`, the pulled file keeps only Vercel's system
+> variables (#2810), and a required key Infisical lacks fails the build before anything compiles,
+> naming the key
 > (`The Infisical injection supplied no value for …`). So when a production build fails on a
 > `NEXT_PUBLIC_*`, look in Infisical `prod`, not in Vercel, and read the build log's
 > `App config from Infisical:` line for the keys each build received. Do not read a `server.ts` throw
