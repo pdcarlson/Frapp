@@ -597,6 +597,34 @@ describe("BackworkPage upload allowlist", () => {
     );
   });
 
+  it("shows the storage status when the bucket refuses the file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 400 } as Response),
+    );
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["GIF89a"], "notes.gif", { type: "image/gif" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't upload backwork",
+          description: "Storage rejected upload (400).",
+        }),
+      ),
+    );
+    expect(mockConfirmUpload).not.toHaveBeenCalled();
+  });
+
   it("toasts when the upload-URL ticket omits the signed URL", async () => {
     mockRequestUpload.mockResolvedValue({
       storage_path: "chapters/chap-1/backwork/res-1/notes.pdf",

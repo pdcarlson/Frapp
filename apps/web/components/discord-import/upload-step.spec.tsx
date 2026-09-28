@@ -225,3 +225,30 @@ describe("UploadStep — a refused registration", () => {
     });
   });
 });
+
+describe("UploadStep — the storage PUT", () => {
+  it("sends the type the API resolved, not the browser's empty one, with x-upsert", async () => {
+    // Browsers report an empty type for .heic (and .mkv, .avif). The bucket
+    // allowlist rejects that, and the file could then never be marked uploaded.
+    // x-upsert lets a re-picked folder overwrite a half-written object.
+    const heic = new File(["x"], "photo.heic", { type: "" });
+    const requestUrls = vi.fn().mockResolvedValueOnce([
+      {
+        relative_path: "photo.heic",
+        storage_path: "p/photo.heic",
+        upload_url: "https://signed.example/put",
+        content_type: "image/heic",
+      },
+    ]);
+    const { confirmUploads } = renderStep({ requestUrls });
+
+    pick([heic]);
+
+    await waitFor(() => expect(confirmUploads).toHaveBeenCalled());
+    expect(fetch).toHaveBeenCalledWith("https://signed.example/put", {
+      method: "PUT",
+      body: heic,
+      headers: { "content-type": "image/heic", "x-upsert": "true" },
+    });
+  });
+});
