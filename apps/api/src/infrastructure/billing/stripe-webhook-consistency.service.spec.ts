@@ -116,13 +116,12 @@ describe('StripeWebhookConsistencyService', () => {
   });
 
   it('WARNS but does not refuse boot on a missing event type', async () => {
-    // Deliberate, and still a warning: every registered endpoint is missing one
-    // handled type today — the test-mode pair `payment_intent.payment_failed`
-    // (#1978), the live-mode endpoint `customer.subscription.updated` (#2285) —
-    // so making this fatal would refuse boot on production. #2287 tracks
-    // tightening it and is blocked on both. The fixture below is the TEST-mode
-    // shape only; #2287 adds the live-mode one, so do not read a green suite
-    // here as evidence that flipping the guard is safe.
+    // Deliberate, and still a warning: until 2026-09-28 every registered endpoint
+    // was missing one handled type — test mode `payment_intent.payment_failed`
+    // (#1978), live mode `customer.subscription.updated` (#2285). #2287 weighs
+    // tightening it. The fixture below is the TEST-mode shape only; #2287 adds
+    // the live-mode one, so do not read a green suite here as evidence that
+    // flipping the guard is safe.
     const fiveOfSix = [...HANDLED_WEBHOOK_EVENT_TYPES].filter(
       (t) => t !== 'payment_intent.payment_failed',
     );

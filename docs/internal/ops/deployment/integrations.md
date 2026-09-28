@@ -22,7 +22,7 @@
    update this step if it ever changes. Anything not on the list is dropped by the
    allowlist before the database is touched, so enabling extras is noise rather than
    risk; enabling **fewer** is the failure that keeps happening. Every endpoint
-   registered so far has been missing at least one type, each a different one
+   registered before 2026-09-28 was missing at least one type, each a different one
    (#1978, #2285), because this step used to name none of them. `StripeWebhookConsistencyService`
    warns at boot when the registered endpoint is missing one — read the API's startup
    log after creating an endpoint, and do not treat a green deploy as confirmation.
@@ -42,11 +42,18 @@
 Same steps but toggle to Live mode in Stripe dashboard. Requires business verification.
 
 **Live mode is a separate object graph.** Its webhook endpoints, products and prices are
-distinct from test mode's, and a test-mode endpoint can be registered against the
-production URL — one is, today. So "an endpoint exists at `api.frapp.live`" seen in test
+distinct from test mode's. So "an endpoint exists at `api.frapp.live`" seen in test
 mode says nothing about live mode, and the six event types above must be enabled again,
 by hand, on the live endpoint. Agent sessions cannot check this: their Stripe access is
 test-mode only.
+
+**Never register a test-mode endpoint against the production URL.** Production verifies
+with the live endpoint's secret, so every test-mode event sent there fails with 401,
+Stripe retries it for days, and then emails the owner that the endpoint is failing. The
+test-mode endpoint `we_1U9Qrn3Dzz3XLCb6VQw047AJ` sat on `api.frapp.live` from
+2026-08-28. Once production moved to the live endpoint's secret on 2026-09-15, every
+staging billing event it carried got a 401. It was deleted on 2026-09-28. Test mode now
+holds one endpoint, staging's.
 
 ### 7.3 What customers see (live mode)
 

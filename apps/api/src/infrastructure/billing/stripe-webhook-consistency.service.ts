@@ -46,16 +46,13 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
    *     (`frapp-api-prod.onrender.com` before `api.frapp.live`'s DNS is live —
    *     see bootstrap.ts). Deliveries succeed; only this string comparison
    *     disagrees.
-   *   - A subscribed-events gap. Every registered endpoint has one today: the
-   *     TEST-mode pair is missing `payment_intent.payment_failed` (#1978), and
-   *     the live-mode endpoint is missing `customer.subscription.updated`
-   *     (#2285) — so fatal here would refuse boot on PRODUCTION right now.
-   *     That is the immediate reason, but not the only one: a type added to
-   *     `HANDLED_WEBHOOK_EVENT_TYPES` before the dashboards are updated is
-   *     exactly how #1978 happened, and making that sequence a total outage is
-   *     the same bad trade the paragraph below describes. #2287 tracks
-   *     tightening it and is blocked on both; whoever takes it should weigh
-   *     that, not just wait for the two issues to close.
+   *   - A subscribed-events gap. Until 2026-09-28 every registered endpoint had
+   *     one (#1978, #2285), so fatal here would have refused boot on
+   *     production. Those are fixed by hand in the dashboards, but the
+   *     standing reason remains: a type added to `HANDLED_WEBHOOK_EVENT_TYPES`
+   *     before the dashboards are updated is exactly how #1978 happened, and
+   *     making that sequence a total outage is the same bad trade the
+   *     paragraph below describes. #2287 weighs tightening it.
    *
    * Trading silent billing breakage for a possible outage is the wrong trade
    * whenever the guard might be the stale party rather than the config.
