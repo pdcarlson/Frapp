@@ -96,6 +96,11 @@ others) come from **AWS ECR Public** (`public.ecr.aws/supabase/*`), served via
 enough for `npm ci` and `docker login`, but **not** ECR Public + CloudFront, so a
 Trusted-only policy fails image pulls with `403 Forbidden` / `Host not in allowlist`.
 
+Node 24 comes from **`nodejs.org`** ([Node comes from `/opt/node24`](#how-it-works-two-phases)).
+It is not on the list above and needs no line there: this environment reached it on 2026-09-28,
+under "include default list". If a policy change drops it, bringup's sentinel carries a
+`WARN` naming the failed download, and the remedy is adding `nodejs.org`.
+
 **Full** also works for image pulls, and is the wrong choice here: it grants prod egress
 too, which the allowlist above deliberately withholds.
 
@@ -128,12 +133,32 @@ The filesystem is cached but running processes are not, so work is split:
 
 | Phase | Script | Runs | Does |
 |-------|--------|------|------|
-| Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; `npm ci`; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
-| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | build the workspace packages (`packages/*`), non-fatally and before any Docker step; start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` + `apps/web/.env.local`; verify `node_modules` is usable (**last**, so a broken npm never costs the database) |
+| Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; installs Node 24 into `/opt/node24` (see below); `npm ci` on it; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
+| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | put Node 24 on `PATH`, installing it when the setup cache lacks it; build the workspace packages (`packages/*`), non-fatally and before any Docker step; start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` + `apps/web/.env.local`; verify `node_modules` is usable (**last**, so a broken npm never costs the database) |
 
 Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_log`, `cs_ensure_docker_daemon`,
 `cs_docker_login_if_creds`, `cs_supabase`, `cs_retry`, `cs_classify_failure`,
 `cs_failure_hint`, `cs_node_deps_ok`, `cs_verify_node_deps`).
+
+**Node comes from `/opt/node24`, not the image.** The image puts Node 22 first on `PATH`, and
+the repo needs the root `package.json` `engines.node` (Node 24.9+). Nothing failed loudly on 22:
+API Jest suites that load ESM-only packages died with "Must use import to load ES Module" while
+the rest passed ([why 24.9+](../../guides/testing.md#2a-esm-only-dependencies-break-the-unit-suite-and-only-the-unit-suite)).
+`scripts/lib/node-toolchain.sh` fixes it; when `node --version` already meets the floor, every
+step below does nothing.
+
+- **Setup** downloads the latest release of that major line from `nodejs.org` into
+  `/opt/node24`, checksum-verified, before `npm ci`, and writes
+  `/etc/profile.d/zz-frapp-node24.sh`, which sorts after the image's `nodejs.sh` and puts
+  `/opt/node24/bin` first. Both are in the cached filesystem, so sessions start on Node 24.
+- **The SessionStart hook** never downloads, so session start never waits on `nodejs.org`. It
+  puts `/opt/node24/bin` first on `PATH` for bringup, and hands the same line to the session's
+  later commands through `CLAUDE_ENV_FILE`. That covers an environment whose setup cache
+  predates this, until the cache is rebuilt.
+- **Bringup** installs it, after the egress probe, when the cache lacks it. Until the cache is
+  rebuilt that happens in every session, and costs about 5 seconds. `PATH` is searched on every
+  command, so the session moves to Node 24 once it lands. A failed install is a `WARN` line in
+  the sentinel, with the reason.
 
 **Bringup never writes to `node_modules`.** It reports on it and lets the session run `npm ci`
 itself. The session's own gates and `npm install` are sanctioned to run while bringup is still

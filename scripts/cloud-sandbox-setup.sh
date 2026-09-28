@@ -23,6 +23,31 @@ cd "$ROOT"
 # Written first so per-session bringup is gated even if the image pre-pull below fails.
 touch /etc/frapp-cloud-sandbox 2>/dev/null || cs_log "WARN: could not write /etc/frapp-cloud-sandbox marker (set FRAPP_CLOUD_SANDBOX=1 instead)."
 
+# Node that satisfies engines.node, installed into the cached filesystem (/opt/node24) so
+# sessions find it instead of downloading it, and put on PATH BEFORE `npm ci` so the tree is
+# installed by the engine it runs on. The image puts Node 22 first; see
+# scripts/lib/node-toolchain.sh for what that breaks. Non-fatal: the session-start hook
+# retries the install and reports if it still fails.
+# shellcheck source=scripts/lib/node-toolchain.sh
+. "$ROOT/scripts/lib/node-toolchain.sh"
+if ensure_node_toolchain "$ROOT"; then
+  cs_log "Node toolchain: $(node --version 2>/dev/null) (${NODE_TOOLCHAIN_STATUS})."
+  # And for the session's own shells, which do not inherit this script's PATH. Claude Code
+  # snapshots PATH from a login shell, which runs /etc/profile.d/*.sh in name order, so this
+  # file lands after the image's nodejs.sh (the line that puts /opt/node22 first) and wins.
+  # It is part of the cached filesystem, so it does not depend on the SessionStart hook's
+  # CLAUDE_ENV_FILE line, which covers an environment whose cache predates this file.
+  if [ "$NODE_TOOLCHAIN_STATUS" = cached ] || [ "$NODE_TOOLCHAIN_STATUS" = installed ]; then
+    printf '%s\n' \
+      '# Written by scripts/cloud-sandbox-setup.sh: the repo needs package.json engines.node (Node 24.9+).' \
+      "case \":\$PATH:\" in *\":${FRAPP_NODE_DIR}/bin:\"*) ;; *) export PATH=\"${FRAPP_NODE_DIR}/bin:\$PATH\" ;; esac" \
+      >/etc/profile.d/zz-frapp-node24.sh 2>/dev/null \
+      || cs_log "WARN: could not write /etc/profile.d/zz-frapp-node24.sh; sessions rely on the SessionStart hook's PATH line instead."
+  fi
+else
+  cs_log "WARN: could not install a Node that satisfies package.json engines.node into ${FRAPP_NODE_DIR}; npm ci runs on $(node --version 2>/dev/null || echo 'no node')."
+fi
+
 cs_log "Installing node dependencies..."
 npm ci || npm install || cs_log "WARN: dependency install failed; the session may need 'npm install'."
 
