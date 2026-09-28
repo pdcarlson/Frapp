@@ -10,6 +10,7 @@ import {
   useDepartments,
   useProfessors,
   useRequestBackworkUploadUrl,
+  putSignedUpload,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -304,14 +305,13 @@ export function BackworkPage() {
       });
       const { signedUrl, storagePath } = readSignedUpload(signed);
 
-      const response = await fetch(signedUrl, {
-        method: "PUT",
+      await putSignedUpload({
+        signedUrl,
         body: file,
-        headers: { "content-type": contentType, "x-upsert": "true" },
+        contentType,
+        upsert: true,
+        describeRejection: (status) => `Storage rejected upload (${status}).`,
       });
-      if (!response.ok) {
-        throw new Error(`Storage rejected upload (${response.status}).`);
-      }
 
       await confirmUpload.mutateAsync({
         storage_path: storagePath,

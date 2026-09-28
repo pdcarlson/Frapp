@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useChannelUnreadCounts,
@@ -8,6 +8,7 @@ import {
   useAuthorAvatars,
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
+  useUploadSignedUrl,
   channelSetFingerprint,
   CHANNEL_NOTIFICATION_PREFERENCES_KEY,
 } from "./use-chat";
@@ -537,6 +538,37 @@ describe("useSetChannelNotificationLevel", () => {
     expect(result.current.error).toEqual(mockError);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+    });
+  });
+});
+
+describe("useUploadSignedUrl", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("PUTs with the type the URL was minted for, not the browser's empty one", async () => {
+    // A legacy .doc usually arrives with `type: ""`. The chat bucket's MIME
+    // allowlist rejects an empty Content-Type, so the resolved type the
+    // composer requested the URL with is the one that must go on the PUT.
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["bytes"], "minutes.doc", { type: "" });
+
+    const { result } = renderHook(() => useUploadSignedUrl(), {
+      wrapper: createWrapper(createTestQueryClient(), {}),
+    });
+    await result.current.mutateAsync({
+      signedUrl: "https://storage.example/put",
+      file,
+      contentType: "application/msword",
+    });
+
+    // No x-upsert: every chat upload is minted a fresh path.
+    expect(fetchMock).toHaveBeenCalledWith("https://storage.example/put", {
+      method: "PUT",
+      body: file,
+      headers: { "content-type": "application/msword" },
     });
   });
 });
