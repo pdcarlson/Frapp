@@ -144,10 +144,12 @@ Three things the split makes true, none of them visible from the number alone:
   before it. So a rise in this number can mean the navigation mix changed rather than that the
   shell got slower; `composer-editor-ready` is what separates the two.
 
-They need no reporting code. `@sentry/nextjs` is initialized with no `integrations` array, so the
-SDK defaults apply and `browserTracingIntegration` turns `mark` and `measure` entries into spans on
-the pageload transaction (`_addMeasureSpans` in `@sentry/browser-utils`). The same integration is
-already the source of FCP, LCP, CLS, TTFB and INP — which is why this repo does **not** add a
+They need no reporting code. `apps/web` adds `userTimingIntegration` to the SDK's default
+integrations, which turns `mark` and `measure` entries into spans on the pageload transaction. (It
+also replaces the default `browserTracingIntegration` with one that has INP off; see
+`SENTRY_BROWSER_TRACING_OPTIONS`. Dropping that replacement turns INP back on.) **Correction (2026-09-28, #2722):** this used to say the SDK defaults alone did it;
+that was SDK v10 (`_addMeasureSpans` inside `browserTracingIntegration`), and v11 made it opt-in.
+`browserTracingIntegration` is still the source of FCP, LCP, CLS and TTFB (INP is off until #2736) — which is why this repo does **not** add a
 `web-vitals` dependency or a second reporting path. Sampling is `tracesSampleRate` (0.1) and
 initialization is skipped entirely without `NEXT_PUBLIC_SENTRY_DSN`, so these are field metrics: they
 report nothing locally or in CI, by design.
@@ -158,7 +160,9 @@ yields both a `mark` and a `measure`, and the second argument is what picks one.
 
 That `duration` is the honest local number, because the measure is anchored at `start: 0`. The
 Sentry *span* it becomes is not: it is short by `requestStart`, which is why the true interval also
-travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmetic.
+travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmetic. **Correction
+(2026-09-28):** the transaction scrubber's span `data` allowlist drops that attribute, and always
+has, so today Sentry holds only the short span duration; #2735 tracks it.
 
 ## Cached channel readable
 

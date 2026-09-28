@@ -198,7 +198,7 @@ The API surface is instrumented for observability:
 
 - Structured logging with request ID, user ID, chapter ID, method, path, status, latency. Nest `Logger` records from services include the request id via `RequestContextLogger` + ALS (`spec/behavior/observability.md` § Structured Logging / Request Tracing).
 - Health routes, what each returns, and which one Render and the deploy smoke checks poll: [`spec/behavior/observability.md` § Health Check](../../spec/behavior/observability.md#health-check).
-- Sentry init in `apps/api/src/instrument.ts` (first import from `main.ts`); 5xx via `AllExceptionsFilter` + `toReportableError`. Sentry owns the Node OpenTelemetry tracer (`skipOpenTelemetrySetup: false`). Do not add `SentryGlobalFilter`.
+- Sentry init in `apps/api/src/instrument.ts` (first import from `main.ts`); 5xx via `AllExceptionsFilter` + `toReportableError`. Sentry owns tracing with no OpenTelemetry tracer provider (`enableOpenTelemetrySetup: false`, ADR-22). Do not add `SentryGlobalFilter`.
 
 When you add new modules:
 

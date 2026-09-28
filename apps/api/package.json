@@ -53,7 +53,7 @@
     "@repo/observability": "*",
     "@repo/org-archetypes": "*",
     "@repo/validation": "*",
-    "@sentry/nestjs": "^10.75.3",
+    "@sentry/nestjs": "^11.0.0",
     "@supabase/supabase-js": "^2.117.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",

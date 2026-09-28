@@ -26,6 +26,7 @@ export {
   NO_PSEUDONYMS,
   stripAuthority,
 } from "./sentry-scrubbing";
+export { sentryDataCollection } from "./sentry-data-collection";
 export type {
   ScrubbableEvent,
   SentryPseudonymizer,

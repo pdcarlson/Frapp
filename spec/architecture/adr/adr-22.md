@@ -3,7 +3,8 @@
 **Decision (2026-09-09):** Split observability by signal, not by vendor convenience.
 
 - **Sentry** is the system of record for unhandled exceptions, crashes, 5xx, and distributed
-  performance traces. It owns the Node trace provider on the API. Do not install a second global
+  performance traces. It owns tracing on the API (under SDK v11, without registering an
+  OpenTelemetry tracer provider; see the 2026-09-27 correction). Do not install a second global
   tracer. Do not enable Sentry Replay.
 - **PostHog** is the system of record for product analytics, feature flags, chapter groups,
   session replay / heatmaps, and searchable **sanitized** logs. Disable PostHog exception
@@ -69,6 +70,22 @@ parser via `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE`.
 import from `main.ts`). `skipOpenTelemetrySetup` is explicitly `false` so Sentry owns
 the Node tracer; `@opentelemetry/sdk-node` is not a dependency. Request-correlation
 context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer.
+**Correction (2026-09-27):** the paragraph above describes Sentry SDK v10. SDK v11 (#2722)
+removed `skipOpenTelemetrySetup`, and its Node SDK no longer registers an OpenTelemetry tracer
+provider by default. It isolates requests with its own AsyncLocalStorage strategy and records
+spans from its own instrumentation (diagnostics channels, injected into modules such as Express
+at load time).
+The API sets `enableOpenTelemetrySetup: false` explicitly, so "Sentry owns the Node tracer" now
+means Sentry owns the API's tracing with no OTel provider at all. Nothing in the API creates
+spans through `@opentelemetry/api`, which is the only thing a provider would add. The decision
+itself stands: `@opentelemetry/sdk-node` is still not a dependency, and under v11 a
+user-installed provider would not compete with Sentry so much as be ignored by it (its spans
+never reach Sentry). v11 also streams spans by default, which skips `beforeSendTransaction`;
+every surface pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
+does not cover the browser's INP span, which v11 (like v10) sends standalone past both event hooks,
+named after the clicked element's selector. INP is therefore off on both Next browsers
+(`webVitals: { ignore: ['inp'] }`) until selector text is scrubbed (#2736); the other web vitals are unaffected
+(`docs/security/security-fixes.md` § v10 → v11).
 **Correction (2026-09-10):** API source maps are uploaded from `apps/api/Dockerfile` after
 `nest build`, not implied by `Sentry.init`. Live FRAPP-API-1 / FRAPP-API-3 showed
 `dist/*.js` ContextLines, not `.ts`. Upload targets `frapp-live` / `frapp-api` when
@@ -132,7 +149,9 @@ breached the jscpd ratchet; the package is the cutover, not a second copy.
   traces are a different identifier space. Collapsing them loses either inbound honor or
   vendor trace continuity.
 - **A second global OpenTelemetry tracer beside Sentry.** Competing providers corrupt
-  context propagation. Integrate with Sentry's OTEL context.
+  context propagation. Integrate with Sentry's OTEL context. (Corrected 2026-09-27: under SDK
+  v11 the API runs no Sentry OTel context to integrate with, and a second provider's spans
+  would simply never reach Sentry. Still rejected.)
 - **Aliasing landing visitors onto later authenticated distinct ids.** Landing is a public
   marketing surface; aliasing would attach pre-auth browsing to a member record.
 - **Tailing Render stdout into PostHog.** Internal logs lawfully carry raw `userId` /

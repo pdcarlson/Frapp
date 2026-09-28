@@ -42,8 +42,8 @@ export interface PosthogRuntimeOptions {
  * One PostHog Node client for the process: product events, sanitized logs,
  * and server-side flags. Init once. No-op without a valid project key.
  *
- * Do **not** install `@opentelemetry/sdk-node` here. Sentry owns the Node
- * tracer (ADR-22). Logs are an independent HTTP transform to
+ * Do **not** install `@opentelemetry/sdk-node` here. Sentry owns the API's
+ * tracing (ADR-22). Logs are an independent HTTP transform to
  * `{host}/i/v1/logs`, not a pipe from Render stdout and not a second OTEL SDK.
  */
 export class PosthogRuntime {

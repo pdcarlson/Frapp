@@ -1,5 +1,6 @@
-// First import: Sentry Node OTEL patches Nest/HTTP before other modules load.
-import './instrument';
+// First import: `Sentry.init` must register its load-time module hooks before
+// any `@nestjs/*` module loads, or Nest's decorators are never instrumented.
+import { sentryReportsWithoutPseudonyms } from './instrument';
 import { NestFactory } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
 import { Logger } from '@nestjs/common';
@@ -9,6 +10,17 @@ import { buildOpenApiConfig } from './openapi-config';
 import { configureApp } from './bootstrap';
 
 async function bootstrap() {
+  if (sentryReportsWithoutPseudonyms) {
+    // Logged here, not in `instrument.ts`, because `Logger` would load
+    // `@nestjs/common` ahead of `Sentry.init` (see that file's header).
+    Logger.warn(
+      'SENTRY_DSN is set but ANALYTICS_HMAC_SALT is not — events will be ' +
+        'reported with identifiers removed rather than pseudonymized. Set ' +
+        'ANALYTICS_HMAC_SALT to make Sentry events attributable.',
+      'Bootstrap',
+    );
+  }
+
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });

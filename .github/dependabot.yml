@@ -8,8 +8,9 @@
 # Noise floor: every Dependabot PR costs agent babysitting (the normal PR
 # lifecycle in AGENTS.md), so minor+patch updates are collapsed into a single
 # weekly PR. Majors stay individual — they need to be read one at a time —
-# EXCEPT the vitest family, which is grouped at every level because its
-# packages peer-pin each other exactly. See the `vitest` group below.
+# EXCEPT two families whose packages pin each other exactly: vitest (grouped
+# at every level) and `@sentry/nestjs` + `@sentry/nextjs` (majors grouped;
+# their minors already share the weekly PR). See those groups below.
 #
 # Safety net: CI (`npm ci`, lint, type-check, unit + E2E suites) plus the
 # blocking high/critical audit gate (`npm run check:npm-audit`, #618) is what
@@ -26,7 +27,8 @@ updates:
       timezone: Etc/UTC
     # Grouped minor+patch = 1 PR; anything left is a major, and majors are
     # deliberately ungrouped so each gets its own reviewable diff — except the
-    # `vitest` group, which is grouped at every level (see its comment).
+    # `vitest` group (every level) and the `sentry` group (majors); see their
+    # comments.
     #
     # Raised 5 -> 6 when that group landed. It is guaranteed to fire on any
     # week vitest ships, so it permanently consumes one slot; at 5, a week with
@@ -103,6 +105,29 @@ updates:
         patterns:
           - "vitest"
           - "@vitest/coverage-v8"
+      # `@sentry/nestjs` and `@sentry/nextjs` each pin `@sentry/core` and
+      # `@sentry/node` EXACTLY, so moving one alone installs a second SDK tree.
+      # Their minors and patches already travel together in
+      # `npm-minor-and-patch` below. This group does the same for MAJORS,
+      # which that group excludes: #2712 and #2714 arrived as two
+      # single-package Sentry 11 PRs, and neither could go green (#2722).
+      # `@sentry/react-native` is on its own line (8.x on `@sentry/core` 10)
+      # and stays out. Majors only, so no package can match two groups.
+      sentry:
+        patterns:
+          - "@sentry/nestjs"
+          - "@sentry/nextjs"
+        update-types:
+          - major
+      # Security updates ignore groups unless one opts in (see
+      # `vitest-security`), so without this a security bump of one Sentry
+      # package would arrive alone, at any update type, and split the tree.
+      # Dormant while Dependabot alerts are disabled (#921).
+      sentry-security:
+        applies-to: security-updates
+        patterns:
+          - "@sentry/nestjs"
+          - "@sentry/nextjs"
       npm-minor-and-patch:
         patterns:
           - "*"
@@ -282,13 +307,14 @@ updates:
       - dependency-name: "postcss"
 
       # ── The NestJS 12 hold ───────────────────────────────────────────────
-      # Majors only. Blocked on `@sentry/nestjs`: the 10.x line the API runs
-      # peer-requires `@nestjs/core`/`@nestjs/common` at `^8||^9||^10||^11`.
-      # Only its 11.x line adds `^12.0.0`, and moving to 11 is the migration
-      # held below (#2722). (Corrected 2026-09-27: this used to read "blocked
-      # on a dependency, not on our own code", when 11.x existed only as
-      # `11.0.0-rc.0` and running the API's error reporting pre-release was the
-      # wrong trade.)
+      # Majors only. It was blocked on `@sentry/nestjs`: the 10.x line
+      # peer-requires `@nestjs/core`/`@nestjs/common` at `^8||^9||^10||^11`,
+      # and only 11.x adds `^12.0.0`. The API moved to `@sentry/nestjs` 11 in
+      # #2722, so that blocker is gone and the hold now waits only on the
+      # NestJS 12 upgrade itself (#2357). (Corrected 2026-09-27, twice: this
+      # first read "blocked on a dependency, not on our own code", when 11.x
+      # existed only as `11.0.0-rc.0` and running the API's error reporting
+      # pre-release was the wrong trade; then it waited on #2722.)
       #
       # The four packages move as a set: `@nestjs/platform-express` and
       # `@nestjs/testing` peer-require `@nestjs/core@^12` from 12.0.1 onward
@@ -305,8 +331,8 @@ updates:
       # Check the peer range before adding a fifth entry; "starts with
       # @nestjs/" is not the rule.
       #
-      # Lift it in the PR after #2722 lands (`@sentry/nestjs@11.0.0` is stable
-      # and peers `^8 … ^12`). Tracking: #2357.
+      # Lift it in the PR that does the upgrade (`@sentry/nestjs@11.0.0` peers
+      # `^8 … ^12`). Tracking: #2357.
       - dependency-name: "@nestjs/core"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@nestjs/common"
@@ -316,28 +342,6 @@ updates:
       - dependency-name: "@nestjs/testing"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@nestjs/swagger"
-        update-types: ["version-update:semver-major"]
-
-      # ── The Sentry 11 hold ───────────────────────────────────────────────
-      # Majors only. Blocked on our own code, not on an upstream release (the
-      # NestJS 12 hold above waits on this one): v11 replaces `sendDefaultPii`
-      # with a `dataCollection` object whose categories all default to ON
-      # (cookies, headers, HTTP bodies, stack-frame locals). A bump that only fixes the compile errors
-      # would widen what the API and both Next surfaces send to Sentry. That is
-      # a privacy migration, tracked in #2722 with the full break list.
-      #
-      # The two move as a set: both hard-pin `@sentry/core` and `@sentry/node`
-      # exactly, so #2712 and #2714 each left a second SDK tree installed as
-      # well as failing on their own. `@sentry/react-native` is on its own 8.x
-      # line and is not part of this hold.
-      #
-      # Security: 10.x minors and patches still flow. `ignore` also suppresses
-      # Dependabot SECURITY updates, so a CVE fixed only in 11.x opens no PR;
-      # `check:npm-audit` is the backstop, as for the holds above. Drop both
-      # entries in the PR that closes #2722.
-      - dependency-name: "@sentry/nestjs"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@sentry/nextjs"
         update-types: ["version-update:semver-major"]
 
       # ── The ESLint 10 hold ───────────────────────────────────────────────
