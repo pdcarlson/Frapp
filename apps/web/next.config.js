@@ -1,4 +1,4 @@
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env.js";
 
@@ -129,10 +129,10 @@ const nextConfig = {
  * - **`silent` when there is no auth token** so laptops and CI without a token
  *   stay quiet. With a token, failures are visible.
  *
- * `disableLogger` is deliberately absent: the SDK deprecates it in favour of
- * `webpack.treeshake.removeDebugLogging`, and that replacement is not supported
- * under Turbopack, which is what Next 16 builds with here. Setting it only
- * bought a deprecation warning on every typecheck.
+ * `disableLogger` is deliberately absent: SDK v11 removed it (v10 had
+ * deprecated it), so setting it would now be silently ignored, since nothing
+ * type-checks this file. Its replacement, `webpack.treeshake.removeDebugLogging`,
+ * has no effect under Turbopack, which is what Next 16 builds with here.
  *
  * Note this wrapper applies regardless of whether a DSN is configured: it is
  * build-time plumbing. The *runtime* no-op when `NEXT_PUBLIC_SENTRY_DSN` is

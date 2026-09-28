@@ -18,13 +18,24 @@ function runtime(overrides: Record<string, unknown> = {}) {
 }
 
 describe("anonymous Next Sentry options", () => {
-  it("never enables sendDefaultPii, on either runtime", () => {
-    expect(buildAnonymousBrowserSentryOptions(runtime()).sendDefaultPii).toBe(
-      false,
-    );
-    expect(buildAnonymousServerSentryOptions(runtime()).sendDefaultPii).toBe(
-      false,
-    );
+  it("sets dataCollection and static traces explicitly, on either runtime", () => {
+    // v11 defaults every collection category to on and streams spans past
+    // `beforeSendTransaction`, so both must be set on both runtimes (#2722).
+    // The values themselves are pinned against the live SDK in
+    // `apps/landing/lib/sentry/integration.spec.ts`.
+    for (const options of [
+      buildAnonymousBrowserSentryOptions(runtime()),
+      buildAnonymousServerSentryOptions(runtime()),
+    ]) {
+      expect(options.dataCollection).toMatchObject({
+        userInfo: false,
+        cookies: false,
+        httpBodies: [],
+        urlQueryParams: false,
+        stackFrameVariables: false,
+      });
+      expect(options.traceLifecycle).toBe("static");
+    }
   });
 
   it("falls back to 0.1 for malformed traces sample rates on both runtimes", () => {

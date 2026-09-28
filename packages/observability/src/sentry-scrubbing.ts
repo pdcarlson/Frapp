@@ -123,8 +123,20 @@ export interface ScrubbableEvent {
   [key: string]: unknown;
 }
 
-/** Request headers worth keeping. Everything else is dropped unread. */
-const HEADER_ALLOWLIST = new Set(['content-type', 'x-request-id']);
+/**
+ * Request headers worth keeping, matched by exact name. Everything else is
+ * dropped unread.
+ *
+ * Exported for `sentryDataCollection()`, which hands the same list to the SDK
+ * as its `httpHeaders.request` allowlist. The SDK matches that list by
+ * substring, so it collects a little more than this keeps; the exact match
+ * here is the one that decides.
+ */
+export const SENTRY_REQUEST_HEADER_ALLOWLIST = [
+  'content-type',
+  'x-request-id',
+] as const;
+const HEADER_ALLOWLIST = new Set<string>(SENTRY_REQUEST_HEADER_ALLOWLIST);
 
 /**
  * Top-level event keys that may survive. Sentry's own envelope metadata plus

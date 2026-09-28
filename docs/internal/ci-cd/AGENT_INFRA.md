@@ -115,7 +115,7 @@ summary before running anything from this family.
 | PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main]`. GitHub matches that list against the PR **base**. A PR whose base is anything else skips every required check. See [`pr-babysitting.md` → CI branch filters](pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch). |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`) — **that bare form is a LIVE apply and a human step**; from an agent session run only `npm run configure:branch-protection:verify`. See **Branch protection script** below and `CONTRIBUTING.md`. |
 | AI code review      | **Repository-managed Git pre-push gate**, not CI — [`.githooks/pre-push`](../../../.githooks/pre-push) is installed through the root `prepare` script for agents and humans. A push of unreviewed work is blocked until `.cache/diff-review/<SHA>` exists (a clean merge of `main` needs none) — `/diff-review` writes the marker; `/code-review` adds coverage but replaces nothing: it is only conditionally model-invocable and does not write the marker (the `claude-review.yml` CI workflow was removed 2026-06-04; the advisory `codex-review.yml` was removed 2026-09-21). See `AI_CODE_REVIEW_RUNBOOK.md` |
-| Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
+| Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual, except the `vitest` and `sentry` groups. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
 | Vercel              | Auto-deploys from `main` only (PR previews disabled via repo config). Production deployments are created by `deploy-production.yml` through the API, not by a push. **Auto-deploy from `main` ended per project — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02**: both projects are unlinked from Git, so no push deploys anything and staging web and landing are frozen at their last Git builds — landing `2bf143b` (2026-09-01T20:19Z), web `0372c6d` (2026-09-02T02:41:42Z). See the note directly below. |
 
 > **Vercel Git integration retired — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02; canonical
@@ -307,7 +307,13 @@ patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are de
 ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
 the [Autonomous PR lifecycle](../../../AGENTS.md), which is why grouping is aggressive.
 
-**The one exception to "majors arrive alone": the `vitest` group.** `vitest` and
+**The exceptions to "majors arrive alone": the `vitest` and `sentry` groups.** The `sentry` group
+(`@sentry/nestjs` + `@sentry/nextjs`, which pin `@sentry/core` and `@sentry/node` exactly) groups
+majors only, since their minors already share `npm-minor-and-patch`; its `sentry-security` twin
+covers the security lane at every update type. It replaced the Sentry 11 hold when #2722 landed:
+Sentry 11 had arrived as two single-package PRs (#2712, #2714), and neither could go green.
+
+**The `vitest` group.** `vitest` and
 `@vitest/coverage-v8` are grouped at *every* update type, because they peer-require each other at an
 exact version. Moving one half alone does not fail — npm silently lands a **second** vitest and
 leaves half the tree on the old version, *which* half depending on which package moved — so a patch
