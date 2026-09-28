@@ -1,4 +1,3 @@
-import * as path from 'path';
 import {
   ConflictException,
   Inject,
@@ -29,6 +28,7 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
+import { safeObjectFilename } from '#domain/constants/storage';
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -88,7 +88,7 @@ export class ChapterDocumentService {
     }
 
     const documentId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/documents/${documentId}/${path.basename(input.filename)}`;
+    const storagePath = `chapters/${input.chapterId}/documents/${documentId}/${safeObjectFilename(input.filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       DOCUMENTS_BUCKET,

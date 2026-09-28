@@ -40,12 +40,9 @@ The four signed-upload-URL requests (chat, backwork, chapter documents, service-
 
 What each service does to a client filename before that is key hygiene, not the guard:
 
-- `ChapterDocumentService`, `BackworkService`, `ChatService` and `UserService` interpolate `path.basename(filename)`. It drops a `/`-separated directory part, but a backslash or `%2e` passes through to the guard.
-- `ServiceEntryService` takes `path.basename(filename)`, then replaces every character outside `[A-Za-z0-9._-]` with `_`, because storage-api refuses keys outside its ASCII set.
+- `ChapterDocumentService`, `BackworkService`, `ChatService`, `UserService` and `ServiceEntryService` build the key's last segment with `safeObjectFilename` (`apps/api/src/domain/constants/storage.ts`). It takes the posix basename, which drops a `/`-separated directory part, then replaces each character storage-api would refuse (anything outside its `VALID_OBJECT_KEY` set: non-ASCII, `#`, `%`, `"`, a backslash) or that would cut the URL (`?`) with `_`, one for one. `@supabase/storage-js` puts the key into the request URL unencoded, so without it `Résumé.pdf` is refused at the PUT, `Q1 50% growth.pdf` fails at the mint, and `Rush #3.pdf` lands under a key cut at the `#` while the row points at the uncut path. A name storage-api already accepted, such as `Meeting notes (final).pdf`, comes out unchanged. That is deliberate: the key's last segment is the name a download is saved under (chat signs with `download: true`, which sends `Content-Disposition: attachment` with no filename, and documents and backwork pass no `downloadAs`), so a wider squash would rename files on members' disks. Existing objects keep the keys they were confirmed with.
 - `ChapterService` puts no filename in the path. The logo is always `chapters/<chapterId>/branding/logo.<ext>`, where `<ext>` has already passed `isAllowedUploadExtension('image', …)`.
 - The Discord import flattens the archive's relative path through `flattenArchiveRelativePath` (`apps/api/src/domain/constants/storage.ts`), which replaces every run of characters outside `[A-Za-z0-9._-]` with `_`, `/` included.
-
-The four routes that keep a raw basename break on a `#` or a non-ASCII name: the upload fails, or lands under a key cut at the `#`. #2697 moves all five onto one sanitizer.
 
 ## Error Handling
 If a content-type, extension or declared-size check (§§ 1–3) fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated. § 4's stripping never throws; the chokepoint does, with the same 400.

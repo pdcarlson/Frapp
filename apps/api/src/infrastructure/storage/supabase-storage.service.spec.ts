@@ -462,9 +462,11 @@ describe('SupabaseStorageService', () => {
     });
 
     it('allows a filename containing a bare % (malformed encoding is not a traversal)', async () => {
-      // Server-built keys embed path.basename(userFilename), so "Q1 50% growth"
-      // is a legitimate object name. decodeURIComponent throws on it; the raw
-      // check must still pass it through.
+      // This guard is a traversal check, not a charset gate: which characters
+      // a key may hold is `safeObjectFilename`'s job at the mint and
+      // storage-api's after it, and the guard also sees client-claimed chat
+      // paths and stored row paths. decodeURIComponent throws on a bare `%`;
+      // the raw check must still pass it through rather than 500.
       await expect(
         service.uploadFile(
           'documents',
@@ -487,8 +489,11 @@ describe('SupabaseStorageService', () => {
       // Normalizing %2f splits this into two harmless segments, not a traversal.
       'chapters/a/documents/doc-1/weird%2fname.png',
     ])('accepts the realistic uploaded filename %p', async (path) => {
-      // Keys embed path.basename(userFilename); a guard that rejects these
-      // breaks real uploads, which is as much a defect as letting a traversal by.
+      // Spaces, parens, `+` and `&` survive `safeObjectFilename`, and keys
+      // confirmed before it hold them too; the `%` and non-ASCII cases never
+      // reach storage, but rejecting them would make this traversal guard a
+      // charset gate. A guard that refuses these breaks real downloads and
+      // deletes, which is as much a defect as letting a traversal by.
       await expect(
         service.uploadFile(
           'documents',
