@@ -61,8 +61,8 @@ layers are that job's steps named `inputs.environment == 'production'`:
 > `vercel build --prod` on the runner followed by `vercel deploy --prebuilt --prod`.
 >
 > ℹ️ **Since 2026-09-06 the Vercel BUILD happens before the apply.** `deploy-vercel.mjs` runs twice:
-> `DEPLOY_PHASE=build` in step 5, before a byte of production has changed, and `DEPLOY_PHASE=upload`
-> in step 6. The build is the half that fails for reasons unrelated to the commit — the OOM killer,
+> `DEPLOY_PHASE=build` in step 6, before a byte of production has changed, and `DEPLOY_PHASE=upload`
+> in step 7. The build is the half that fails for reasons unrelated to the commit — the OOM killer,
 > an app key missing from Infisical `prod`, a registry blip — and it used to run last,
 > which is how run 33275321347 left a migrated database and a new API under six-month-old frontends
 > with no tag. Now a build failure costs nothing; only the upload, a far smaller surface, can still

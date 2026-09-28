@@ -411,7 +411,8 @@ schema.
 ## Production promotion
 
 Pick a deploy window and notify stakeholders first. Then run **Deploy production**
-with the SHA you want live — start with **Stop after the dry run** checked, to
+with the SHA you want live — start with the dry-run box (`dry_run_only`, labelled
+*Validate, rehearse the migration, BUILD both frontends, and stop*) checked, to
 read the pending list and let the replay rehearse the apply before anything
 touches the database.
 

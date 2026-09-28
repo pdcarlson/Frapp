@@ -400,6 +400,41 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
   });
 });
 
+// The order is what makes a failure cheap. A `full` release builds both
+// bundles before it migrates (run 33275321347 migrated, shipped the API, then
+// failed the frontend build), a dry run stops after that build and before the
+// apply, and the frontends ship only once production serves the new API.
+describe("production's steps run in the order that fails before it writes", () => {
+  const ORDER = [
+    "Provider guardrail preflight",
+    "Inject production secrets from Infisical",
+    "Check out the commit being deployed",
+    "Start disposable Supabase stack",
+    "Rehearse the migration against production's applied state",
+    STEP_NAME,
+    "Stop the disposable Supabase stack",
+    "Run migrations (dry-run)",
+    "Build the Vercel production bundles (web + landing)",
+    "Stop here (dry run only)",
+    "Run migrations (apply)",
+    "Assert supabase config was not rewritten by link",
+    "Deploy the commit to Render (production)",
+    "Verify production serves the commit",
+    "Deploy the commit to Vercel production (web + landing)",
+  ];
+
+  it("preflight, rehearse, build, stop on a dry run, then apply, API, verify, frontends", () => {
+    const names = sharedSteps().map((s) => s.name);
+    const at = ORDER.map((name) => {
+      assert.ok(names.includes(name), `step "${name}" not found`);
+      return names.indexOf(name);
+    });
+    for (let k = 1; k < ORDER.length; k += 1) {
+      assert.ok(at[k - 1] < at[k], `"${ORDER[k - 1]}" must run before "${ORDER[k]}"`);
+    }
+  });
+});
+
 // ── What the dry run rehearses, held in place ──────────────────────────────
 //
 // The rehearsal/ship split is only these `if:` conditions, in both directions:
@@ -544,10 +579,12 @@ describe("installs run before any secret, and the trust split holds", () => {
   it("moves to the trusted ref, forced and without repo hooks, before any local action", () => {
     const move = sharedSteps()[at("Move the workspace to the trusted ref")];
     assert.equal(move.env.get("TRUSTED_SHA"), "${{ github.sha }}");
-    assert.match(move.body, /^\s*git config --local --unset-all core\.hooksPath \|\| true$/m);
+    // Off, not unset: unset, git falls back to `.git/hooks`, which an install
+    // script could have written.
+    assert.match(move.body, /^\s*git config --local core\.hooksPath \/dev\/null$/m);
     assert.match(move.body, /^\s*git checkout --force --detach "\$TRUSTED_SHA"$/m);
     const hooks = move.body.indexOf("core.hooksPath");
-    assert.ok(hooks < move.body.indexOf("git checkout"), "the hooks are unset after the checkout they would run in");
+    assert.ok(hooks < move.body.indexOf("git checkout"), "the hooks are turned off after the checkout they would run in");
   });
 
   it("runs the local actions and the trusted checks between the move and the detach", () => {
@@ -621,8 +658,28 @@ describe("the preflight asserts against the services production ships to", () =>
       }
     }
     const guardrails = withoutComments(readFileSync(join(REPO_ROOT, ".github", "workflows", "production-guardrails.yml"), "utf8"));
-    assert.match(guardrails, new RegExp(`RENDER_SERVICE_ID:\\s*${preflight.env.get("RENDER_SERVICE_ID")}\\b`));
+    for (const key of ["RENDER_SERVICE_ID", "VERCEL_WEB_PROJECT_ID", "VERCEL_LANDING_PROJECT_ID", "VERCEL_TEAM_ID"]) {
+      assert.match(preflight.env.get(key), /^[\w-]+$/, `${key} is a literal id`);
+      assert.match(guardrails, new RegExp(`${key}:\\s*${preflight.env.get(key)}\\b`), `${key} differs from production-guardrails.yml's`);
+    }
     assert.match(preflight.body, /production-guardrails\.mjs --preflight --migrations-only/);
+  });
+
+  // `--migrations-only` drops frapp-landing's Git-link check, which only a run
+  // that ships no frontend may skip. Run with a stub `node` that echoes its
+  // arguments, so the branch the step takes is what's asserted.
+  it("drops the frontend check only on a migrations-only run", () => {
+    const script = extractStepScript(SHARED, "Provider guardrail preflight");
+    const bin = mkdtempSync(join(tmpdir(), "preflight-"));
+    writeFileSync(join(bin, "node"), '#!/bin/sh\necho "$@"\n', { mode: 0o755 });
+    const run = (SCOPE) =>
+      execFileSync("bash", ["-c", script], { env: { PATH: `${bin}:${process.env.PATH}`, SCOPE }, encoding: "utf8" }).trim();
+    try {
+      assert.equal(run("full"), "scripts/ci/production-guardrails.mjs --preflight");
+      assert.equal(run("migrations-only"), "scripts/ci/production-guardrails.mjs --preflight --migrations-only");
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+    }
   });
 });
 
@@ -781,6 +838,11 @@ describe("SHA validation runs before the production environment (run 34234768094
     const names = workflowSteps(CALLER).filter((s) => s.jobId === "validate").map((s) => s.name);
     assert.deepEqual(names.slice(0, 2), ["Verify confirmation phrase", "Trim the SHA"]);
     assert.ok(names.includes("Validate the commit"));
+    // The commit it checks is the one the call deploys. Pointed at
+    // `github.sha`, it would pass main's own tip and wave any SHA through.
+    const check = workflowSteps(CALLER).find((s) => s.jobId === "validate" && s.name === "Validate the commit");
+    assert.equal(check.env.get("DEPLOY_SHA"), "${{ steps.sha.outputs.sha }}");
+    assert.equal(callerJob("deploy").keys.get("with").get("sha"), VALIDATED_SHA);
     assert.equal(sharedSteps().some((s) => s.name === "Verify confirmation phrase"), false);
   });
 
@@ -809,7 +871,7 @@ describe("SHA validation runs before the production environment (run 34234768094
 describe("deploy-outcome alerts on a failed production deploy", () => {
   const outcomeSteps = () => workflowSteps(CALLER).filter((s) => s.jobId === "deploy-outcome");
   const ALERT_IF =
-    "${{ !cancelled() && !inputs.dry_run_only && needs.deploy.outputs.started == 'true' && " +
+    "${{ !cancelled() && !inputs.dry_run_only && " +
     "(inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}";
 
   it("runs whenever deploy was attempted, with the permissions the alert needs", () => {
@@ -818,10 +880,12 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.equal(job.keys.get("needs"), "[validate, deploy, release]");
     assert.equal(job.keys.get("permissions").get("issues"), "write");
     assert.equal(job.keys.get("permissions").get("contents"), "read");
+    assert.equal(job.keys.get("permissions").get("actions"), "read", "the approval history, for a rejected approval");
   });
 
-  // Never on a dry run, a cancel, a rejected approval (deploy never started),
-  // or a green migrations-only run (the code didn't ship, so it can't close).
+  // Never on a dry run, a cancel, or a green migrations-only run (the code
+  // didn't ship, so it can't close). A rejected approval reaches the script,
+  // which reads the run's approval history and files nothing.
   it("raises or closes only on a real ship, or a failed migrations-only run", () => {
     const [checkout, alert, summary] = outcomeSteps();
     assert.equal(checkout.if, ALERT_IF);
@@ -833,6 +897,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.equal(alert.env.get("ALERT_CONFIG"), "deploy-production");
     assert.equal(alert.env.get("DEPLOY_NEEDS"), "${{ toJSON(needs) }}");
     assert.equal(alert.env.get("HEAD_SHA"), VALIDATED_SHA);
+    assert.equal(alert.env.get("RUN_ID"), "${{ github.run_id }}");
     // Last: it exits 1 on a failed deploy or tag, which would skip a later step.
     assert.equal(summary.name, "Summarise what actually happened");
     assert.equal(summary.if, "always()");
@@ -852,16 +917,14 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.ok(routing.includes(`*${config.alertTitle}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
   });
 
-  // `started` is written first in the guard, so a refusal still reads as a
-  // deploy that ran and failed, and a rejected approval (no step ran) doesn't.
-  it("reads `started` from the shared job's first step, through both outputs", () => {
-    const guard = sharedSteps()[0];
-    assert.match(guard.body, /^\s*id: guard$/m);
-    const lines = extractStepScript(SHARED, guard.name).split("\n").filter((l) => l.trim() && !l.trim().startsWith("#"));
-    assert.equal(lines[1].trim(), 'echo "started=true" >> "$GITHUB_OUTPUT"');
-    const shared = workflowJobs(SHARED)[0];
-    assert.equal(shared.keys.get("outputs").get("started"), "${{ steps.guard.outputs.started }}");
-    assert.match(readFileSync(SHARED, "utf8"), /started:\n\s+description: [^\n]+\n\s+value: \$\{\{ jobs\.deploy\.outputs\.started \}\}/);
+  // A rejected approval fails `deploy` with no step run, which reads like a
+  // deploy that failed before it began. The alert tells them apart by the
+  // run's approval history, not by an output of the called job: a failed call
+  // may not carry its outputs back.
+  it("files nothing for a rejected approval, and reads that from the run, not the called job", () => {
+    assert.equal(ALERT_CONFIGS["deploy-production"].skipWhenApprovalRejected, true);
+    assert.doesNotMatch(withoutComments(readFileSync(CALLER, "utf8")), /needs\.deploy\.outputs\.started/);
+    assert.equal(workflowJobs(SHARED)[0].keys.get("outputs").has("started"), false);
   });
 });
 

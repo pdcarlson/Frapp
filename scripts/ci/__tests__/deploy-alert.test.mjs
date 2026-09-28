@@ -9,6 +9,7 @@ import {
   DEPLOY_PRODUCTION_CONFIG,
   DEPLOY_STAGING_CONFIG,
   alertJobNames,
+  approvalRejected,
   buildAlertCommentBody,
   buildAlertIssueBody,
   buildHeadline,
@@ -1758,4 +1759,88 @@ test("readPlan and isSuperseded ignore a config without planOutput", () => {
   assert.equal(readPlan(needs, DEPLOY_STAGING_CONFIG), "stale");
   assert.equal(isSuperseded(needs, DEPLOY_STAGING_CONFIG), true);
   assert.equal(readPlan(needs, API_SHAPED_CONFIG), "stale");
+});
+
+// ── A rejected production approval (#2805) ──────────────────────────────────
+// A reviewer declining the deployment fails `deploy` with nothing run. That is
+// a decision, not an outage, so it must not open a P1; everything else that
+// fails still must. The review history decides, not an output of the called
+// job, which a failed call may not carry to the caller.
+
+/** makeFetchStub, plus the run's review history at /actions/runs/77/approvals. */
+function withApprovals(reviews, base = makeFetchStub({ issues: [] })) {
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith("/repos/o/r/actions/runs/77/approvals")) {
+      base.calls.push({ method: "GET", path: "/repos/o/r/actions/runs/77/approvals", body: null });
+      return reviews === null ? jsonResponse(403, { message: "Resource not accessible" }) : jsonResponse(200, reviews);
+    }
+    return base.fetchImpl(url, options);
+  };
+  return { fetchImpl, calls: base.calls };
+}
+
+test("approvalRejected reads the run's review history, and says when it can't", async () => {
+  const read = (reviews, runId = "77") =>
+    approvalRejected({ token: "t", repo: "o/r", runId, fetchImpl: withApprovals(reviews).fetchImpl });
+  assert.equal(await read([{ state: "rejected", environments: [{ name: "production" }] }]), true);
+  assert.equal(await read([{ state: "approved" }]), false);
+  assert.equal(await read([]), false);
+  assert.equal(await read(null), null, "an unreadable history is not a verdict");
+  assert.equal(await read([{ state: "rejected" }], ""), null, "no run id, no read");
+});
+
+test("a rejected production approval neither raises nor closes the alert", async () => {
+  const { fetchImpl, calls } = withApprovals([{ state: "rejected" }]);
+  let summary = "";
+  const result = await runDeployAlert({
+    ...RUN,
+    runId: "77",
+    needs: productionNeeds("failure"),
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+    config: DEPLOY_PRODUCTION_CONFIG,
+  });
+  assert.equal(result.outcome, "rejected");
+  assert.deepEqual(result.alert, { action: "none" });
+  assert.deepEqual(calls.map((c) => c.path), ["/repos/o/r/actions/runs/77/approvals"], "no issue read or written");
+  assert.match(summary, /REJECTED — a reviewer declined the deployment; nothing ran/);
+  assert.doesNotMatch(summary, /FAILED/);
+});
+
+test("a failed production deploy still raises when approved, or when the history can't be read", async () => {
+  for (const reviews of [[{ state: "approved" }], null]) {
+    const { fetchImpl, calls } = withApprovals(reviews);
+    const result = await runDeployAlert({
+      ...RUN,
+      runId: "77",
+      needs: productionNeeds("failure"),
+      fetchImpl,
+      writeSummary: () => {},
+      logger: silentLogger,
+      config: DEPLOY_PRODUCTION_CONFIG,
+    });
+    assert.equal(result.outcome, "failed", JSON.stringify(reviews));
+    assert.equal(result.alert.action, "created", JSON.stringify(reviews));
+    assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
+  }
+});
+
+test("only the production config consults the approval history", async () => {
+  assert.equal(DEPLOY_PRODUCTION_CONFIG.skipWhenApprovalRejected, true);
+  assert.notEqual(DEPLOY_STAGING_CONFIG.skipWhenApprovalRejected, true, "staging has no approval to reject");
+  const { fetchImpl, calls } = withApprovals([{ state: "rejected" }]);
+  const result = await runDeployAlert({
+    ...RUN,
+    runId: "77",
+    needs: stagingNeeds("failure", "deploy"),
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config: DEPLOY_STAGING_CONFIG,
+  });
+  assert.equal(result.outcome, "failed");
+  assert.ok(!calls.some((c) => c.path.endsWith("/approvals")));
 });

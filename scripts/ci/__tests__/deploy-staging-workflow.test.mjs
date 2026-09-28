@@ -20,8 +20,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -229,20 +228,11 @@ describe("_deploy.yml: the shared job's interface", () => {
       HAS_RENDER_API_KEY: "true",
       HAS_VERCEL_API_KEY: "true",
     };
-    // `started=true` goes to GITHUB_OUTPUT first, refusal or not (#2805: a
-    // rejected approval, where no step runs, must read apart from a failure).
-    const outputs = mkdtempSync(join(tmpdir(), "guard-"));
-    let runs = 0;
-    const run = (overrides) => {
-      const GITHUB_OUTPUT = join(outputs, `out-${(runs += 1)}`);
-      writeFileSync(GITHUB_OUTPUT, "");
-      const result = spawnSync("bash", ["-c", script], {
-        env: { PATH: process.env.PATH, GITHUB_OUTPUT, ...ok, ...overrides },
+    const run = (overrides) =>
+      spawnSync("bash", ["-c", script], {
+        env: { PATH: process.env.PATH, ...ok, ...overrides },
         encoding: "utf8",
       });
-      assert.equal(readFileSync(GITHUB_OUTPUT, "utf8"), "started=true\n", "the guard records that the job started");
-      return result;
-    };
     const PROOF = /secrets reached this called job \(its environment: key, and the caller's secrets: inherit\)/;
 
     for (const [label, overrides] of [
@@ -278,7 +268,6 @@ describe("_deploy.yml: the shared job's interface", () => {
       assert.doesNotMatch(refused.stdout, PROOF, `${label}: no proof line on a refusal`);
     }
     assert.match(run({ HAS_VERCEL_API_KEY: "false" }).stdout, /did not reach this called job: VERCEL_API_KEY/);
-    rmSync(outputs, { recursive: true, force: true });
   });
 
   it("checks that the environment's secrets reached it, by name and never by value", () => {

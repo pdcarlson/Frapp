@@ -189,7 +189,7 @@ test("a missing token or ref is refused before anything runs", () => {
 test("a missing SUPABASE_DB_PASSWORD is refused before the CLI can mislead", () => {
   // Without it the pinned CLI dies as `42501: permission denied to alter role`
   // (supabase/cli#5091) — which reads as a privilege problem on the production
-  // database and is not one. deploy-production.yml's fence already checked it;
+  // database and is not one. The production deploy's fence already checked it;
   // the documented human recovery run had nothing checking it at all, so an
   // operator following the runbook mid-incident would spend the incident
   // debugging the wrong thing.

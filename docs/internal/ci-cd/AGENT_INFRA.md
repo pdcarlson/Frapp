@@ -912,8 +912,8 @@ job runs on every eligible push. `incident` is what keeps
 From #2431 to #2505 it also served `verify-deployments.yml`, a push-triggered observer of the
 staging API's Render deploy; since #2505 the staging workflow creates and polls that deploy itself.
 #2803 replaced both staging workflows with `deploy-staging.yml` and their two configs with one,
-`deploy-staging`, so today one workflow uses it. Which workflow a run is
-reporting on is chosen by the **`ALERT_CONFIG`** env var, set explicitly in each workflow's
+`deploy-staging`, and #2805 added `deploy-production`, so today two workflows use it. Which
+workflow a run is reporting on is chosen by the **`ALERT_CONFIG`** env var, set explicitly in each workflow's
 `deploy-outcome` step and resolved against the `ALERT_CONFIGS` table in the script. There is **no
 default**: an absent or unknown value throws, because resolving to the wrong config would report one
 workflow's job results into another's alert issue — or reopen the live P1 staging alert from an
@@ -941,6 +941,11 @@ Consequences worth knowing before editing the script:
   reads it to report a `current` run as up to date rather than deployed, and to leave the alert
   alone on a `stale` run or a successful `forward` one (a failed `forward` deploy still raises).
   `closesOn` makes the issue text say which runs close it.
+- **A rejected approval is not a failed deploy.** When a reviewer declines production's approval,
+  `deploy` fails with no step run. `skipWhenApprovalRejected` has the script read the run's
+  approval history (`GET /repos/{repo}/actions/runs/{id}/approvals`, so `deploy-outcome` holds
+  `actions: read`) and report `rejected`, raising and closing nothing. When the history can't be
+  read it raises, so an unreadable history never hides a real failure.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the

@@ -66,8 +66,9 @@ reachable. The JSON body is the liveness payload in
 > deploy gating — it gated on "opened a port" rather than "answered HTTP". The page does not mention
 > the Dockerfile `HEALTHCHECK` directive at all, so whether Render reads it remains unestablished.
 > `/health` is the right value here because it is the plain liveness probe that always 2xxs; the
-> readiness half is the `/health/ready` smoke loop in `deploy-production.yml`. *(Since #2805 that loop
-> is `verify-served-commit.mjs`, which also requires `/health/ready` to report the deployed commit.)*
+> readiness half is the deploy's served-commit check (`verify-served-commit.mjs`), which requires
+> `/health/ready` to answer 2xx and report the deployed commit. *(Corrected 2026-09-28, #2805: this
+> named a `/health/ready` smoke loop in `deploy-production.yml`, which accepted any 2xx.)*
 >
 > **2026-09-08:** `scripts/ci/production-guardrails.mjs` asserts the live
 > `serviceDetails.healthCheckPath` on `frapp-api-prod` is `/health`, daily at 07:15

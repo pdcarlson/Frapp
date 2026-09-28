@@ -105,9 +105,6 @@ on:
         default: full
         type: string
     outputs:
-      started:
-        description: "true once this job's first step ran (so a rejected approval reads apart from a failed deploy)"
-        value: ${{ jobs.deploy.outputs.started }}
       plan:
         description: "Staging: plan-staging-deploy.mjs's API verdict: deploy, current, forward or stale"
         value: ${{ jobs.deploy.outputs.plan }}
@@ -163,13 +160,11 @@ jobs:
     concurrency:
       group: db-migrate-${{ inputs.environment }}
       cancel-in-progress: false
-    # `started` lets production's `deploy-outcome` tell a rejected approval (the
-    # job never ran) from a failed deploy. `plan` is staging's: a successful
-    # `stale` run neither raises nor closes the alert, a successful `forward`
-    # one doesn't close it, a failed run of either raises it, and a `current`
-    # one isn't reported as an API deploy. The rest feed production's summary.
+    # `plan` is staging's: a successful `stale` run neither raises nor closes
+    # the alert, a successful `forward` one doesn't close it, a failed run of
+    # either raises it, and a `current` one isn't reported as an API deploy.
+    # The rest feed production's summary.
     outputs:
-      started: ${{ steps.guard.outputs.started }}
       plan: ${{ steps.plan.outputs.plan }}
       render-deploy-id: ${{ steps.render.outputs.deploy_id }}
       replay-outcome: ${{ steps.replay.outputs.outcome }}
@@ -199,8 +194,6 @@ jobs:
           HAS_VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY != '' }}
         run: |
           set -euo pipefail
-          # First, so a refusal below still reads as a deploy that ran and failed.
-          echo "started=true" >> "$GITHUB_OUTPUT"
           case "$TARGET_ENVIRONMENT" in
             staging)
               if [ "$DRY_RUN" != "false" ] || [ "$SCOPE" != "full" ]; then
@@ -282,13 +275,20 @@ jobs:
       # the two commits share, and an install script's edit to an action file
       # must not survive into the trusted window. `npm ci` ran the root
       # `prepare`, which points `core.hooksPath` at the deployed commit's
-      # `.githooks`; unset first, so neither checkout here runs a repo hook.
+      # `.githooks`. Pointing it at `/dev/null` turns every hook off for the
+      # rest of the job, so neither checkout here runs one, including one an
+      # install script left in `.git/hooks`.
+      #
+      # Honest limit: an install script can still leave something the trusted
+      # steps run, such as other `.git/config` keys or a directory appended to
+      # `$GITHUB_PATH`. The install runs before any secret; taking it out of
+      # this job is #2824's fix, not another check here.
       - name: Move the workspace to the trusted ref
         env:
           TRUSTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          git config --local --unset-all core.hooksPath || true
+          git config --local core.hooksPath /dev/null
           git checkout --force --detach "$TRUSTED_SHA"
           git --no-pager log -1 --format='Trusted ref for the local actions and checks: %H%n%s'
 
@@ -313,7 +313,7 @@ jobs:
       # database-only run can honestly skip.
       #
       # The identifiers are the ones the production steps below deploy to, and
-      # `production-guardrails.yml`'s (a test pins all three equal), so the
+      # `production-guardrails.yml`'s (a test pins them equal), so the
       # preflight asserts against the services this run ships.
       - name: Provider guardrail preflight
         if: inputs.environment == 'production'
@@ -644,7 +644,7 @@ jobs:
               echo "is rehearsed only on a \`full\` dry run."
             fi
             echo ""
-            echo "Re-run with **Stop after the dry run** unchecked to deploy it."
+            echo "Re-run with the dry-run box (\`dry_run_only\`) unchecked to deploy it."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Every run migrates, not only runs whose commit touched

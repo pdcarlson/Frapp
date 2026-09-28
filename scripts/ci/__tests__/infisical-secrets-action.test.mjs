@@ -583,10 +583,11 @@ describe("local actions resolve at every call site", () => {
       }
       if (STEP_START.test(line)) stepStart = i;
       if (/uses:\s*actions\/checkout@/.test(line)) {
-        // The step's own `ref:`, if any, bounded by the next step.
+        // The step's own `ref:`, if any: the whole step, since `with:` may
+        // come before `uses:`, bounded by the next step.
         let next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
         if (next === -1) next = lines.length;
-        const ref = lines.slice(i, next).map((l) => l.match(/^\s+ref:\s*(.+?)\s*$/)?.[1]).find(Boolean);
+        const ref = lines.slice(stepStart, next).map((l) => l.match(/^\s+ref:\s*(.+?)\s*$/)?.[1]).find(Boolean);
         const own = !ref || /^\$\{\{\s*github\.sha\s*\}\}$/.test(ref);
         // Only the FIRST checkout can establish trust; a later one moves the
         // workspace like `git checkout --detach` does, and must read that way.
@@ -599,7 +600,9 @@ describe("local actions resolve at every call site", () => {
         let next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
         if (next === -1) next = lines.length;
         const step = lines.slice(stepStart, next);
-        if (step.some((l) => TRUSTED_REF.test(l))) {
+        // A move under an `if:` leaves the workspace on the deployed commit
+        // whenever the condition is false.
+        if (step.some((l) => TRUSTED_REF.test(l)) && !step.some((l) => /^\s+if:/.test(l))) {
           state = "trusted";
           movedAt = null;
         } else {
@@ -666,6 +669,25 @@ describe("local actions resolve at every call site", () => {
       const mutated = deploy.replace('git checkout --force --detach "$TRUSTED_SHA"', 'git checkout --detach "$TRUSTED_SHA"');
       assert.notEqual(mutated, deploy);
       assert.ok(verdicts(mutated).every((v) => v === "untrusted"));
+    });
+
+    it("fails when the move runs only on some runs", () => {
+      const mutated = deploy.replace(
+        /(- name: Move the workspace to the trusted ref\n)/,
+        "$1        if: inputs.environment == 'production'\n",
+      );
+      assert.notEqual(mutated, deploy);
+      assert.ok(verdicts(mutated).every((v) => v === "untrusted"));
+    });
+
+    it("reads a checkout's ref wherever it sits in the step", () => {
+      const job = (checkout) =>
+        ["jobs:", "  x:", "    runs-on: ubuntu-latest", "    steps:", ...checkout, "      - uses: ./.github/actions/supabase-cli"].join("\n");
+      const refFirst = ["      - name: co", "        with:", "          ref: ${{ inputs.sha }}", "        uses: actions/checkout@v4"];
+      const usesFirst = ["      - name: co", "        uses: actions/checkout@v4", "        with:", "          ref: ${{ inputs.sha }}"];
+      assert.deepEqual(verdicts(job(refFirst)), ["untrusted"]);
+      assert.deepEqual(verdicts(job(usesFirst)), ["untrusted"]);
+      assert.deepEqual(verdicts(job(["      - uses: actions/checkout@v4"])), ["trusted"]);
     });
 
     it("fails on a local action after the detach to the deployed commit", () => {

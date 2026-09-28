@@ -600,10 +600,10 @@ describe("deployVercel", () => {
 
 // ── The two phases every deploy runs ───────────────────────────────────────
 //
-// deploy-production.yml, and deploy-staging.yml since #2803, build both bundles
-// BEFORE the migration applies and upload them AFTER the API is healthy, so a
-// build failure can no longer leave a migrated database under half-updated
-// frontends. These tests pin the contract between the two phases: what `build`
+// Both deploys build both bundles BEFORE the migration applies and upload them
+// AFTER the API is healthy (production since 2026-09-06, staging since #2803,
+// one `_deploy.yml` job since #2805), so a build failure can no longer leave a
+// migrated database under half-updated frontends. These tests pin the contract between the two phases: what `build`
 // leaves behind is exactly what `upload` consumes, per project, and nothing
 // else is ever uploaded.
 describe("parseDeployPhase", () => {

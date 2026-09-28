@@ -83,6 +83,7 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
@@ -180,12 +181,14 @@ export const DEPLOY_STAGING_CONFIG = {
  * production`, so this reads the same one job staging's config does.
  *
  * Which runs reach this script is decided by the step's `if:` in that
- * workflow, not here: a dry run never does (nothing was applied, and the
- * dispatcher is watching), a cancelled run never does, a run whose `deploy`
- * job never started (a rejected approval) never does, and a green
- * `migrations-only` run never does, because the code didn't ship and so it
- * can't close the alert. So every run that arrives either raises (the deploy
- * job failed) or closes (a real `full` release succeeded).
+ * workflow: a dry run never does (nothing was applied, and the dispatcher is
+ * watching), a cancelled run never does, and a green `migrations-only` run
+ * never does, because the code didn't ship and so it can't close the alert.
+ * The one case decided here is a rejected approval: `deploy` then fails with
+ * nothing run, and `approvalRejected` reads the run's review history rather
+ * than an output of the called job, which a failed call may not carry to the
+ * caller. So every other run that arrives either raises (the deploy job
+ * failed) or closes (a real `full` release succeeded).
  *
  * `gateJob` is null and `validate` is not a deploy job: a mistyped
  * confirmation or a red-CI SHA fails before anyone approves and costs nothing,
@@ -208,6 +211,8 @@ export const DEPLOY_PRODUCTION_CONFIG = {
   alertTitle: "Deploy production failed — production may be partly deployed",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   retiredAlertTitles: [],
+  // A reviewer declining the deployment is a decision, not a failure.
+  skipWhenApprovalRejected: true,
   noOpReason: "the deploy job did not run",
   // Unreachable through the workflow (its outcome job skips a skipped
   // `deploy`), and loud if that ever drifts.
@@ -249,6 +254,7 @@ export const OUTCOME_COPY = {
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
     superseded: "⏭️ **SUPERSEDED — a newer run decides**",
+    rejected: "⏭️ **REJECTED — a reviewer declined the deployment; nothing ran**",
   },
   brokenLines: (label, closesOn = DEFAULT_CLOSES_ON) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
@@ -400,6 +406,9 @@ export function buildHeadline({
   const label = config.workflowLabel;
   if (outcome === "superseded") {
     return `${label} on ${ref} is superseded: ${supersededReason}. It neither raises nor closes the alert; the run for the newest commit decides.`;
+  }
+  if (outcome === "rejected") {
+    return `${label} on ${ref} was not approved: a reviewer rejected the deployment, so nothing ran. It neither raises nor closes the alert.`;
   }
   if (outcome === "failed") {
     // An escalated no-op needs its own sentence. Saying "did not succeed" of a
@@ -719,6 +728,24 @@ function defaultWriteSummary(summary) {
 }
 
 /**
+ * Whether a reviewer rejected this run's environment deployment (#2805): true,
+ * false, or null when the review history can't be read.
+ *
+ * A rejected approval fails the `deploy` job before any step runs, which a job
+ * result can't tell apart from a deploy that failed. The run's review history
+ * can (`GET /actions/runs/{id}/approvals`, `actions: read`). An output the
+ * called job's first step writes could too, but a reusable workflow's outputs
+ * may not reach its caller when its job fails, and a lost output would drop a
+ * real failure's alert. Unreadable reads as not rejected: the alert is raised.
+ */
+export async function approvalRejected({ token, repo, runId, fetchImpl = fetch }) {
+  if (!runId) return null;
+  const res = await ghRequest({ token, fetchImpl, path: `/repos/${repo}/actions/runs/${runId}/approvals` });
+  if (!res.ok || !Array.isArray(res.data)) return null;
+  return res.data.some((review) => review?.state === "rejected");
+}
+
+/**
  * Full flow for one completed run of the watched workflow. Everything network-bound goes
  * through fetchImpl, and the summary write through writeSummary, so tests run
  * offline with no filesystem side effects.
@@ -728,6 +755,7 @@ export async function runDeployAlert({
   repo,
   needs,
   runUrl,
+  runId = "",
   headBranch,
   headSha,
   fetchImpl = fetch,
@@ -788,6 +816,33 @@ export async function runDeployAlert({
       needs?.[config.gateJob]?.outputs?.[output] === "true",
     ]),
   );
+  if (outcome === "failed" && config.skipWhenApprovalRejected && !escalated) {
+    const rejected = await approvalRejected({ token, repo, runId, fetchImpl });
+    if (rejected === true) {
+      const rejectedHeadline = buildHeadline({ outcome: "rejected", failed, deployed, headBranch, config });
+      writeSummary(
+        buildRunSummary({
+          outcome: "rejected",
+          failed,
+          deployed,
+          jobResults,
+          headBranch,
+          headSha,
+          runUrl,
+          gateOutputs,
+          gateSucceeded: false,
+          plan,
+          config,
+        }),
+      );
+      logger.log?.(`::notice::${rejectedHeadline}`);
+      return { outcome: "rejected", failed, deployed, alert: { action: "none" } };
+    }
+    if (rejected === null) {
+      logger.log?.("::warning::[deploy-alert] could not read this run's approval history; treating the failure as a failed deploy");
+    }
+  }
+
   // `escalated` matters here, not only in the summary: this headline is what
   // the annotation and the ALERT ISSUE carry. Omitting it put the escalated
   // sentence on the step summary alone — the one surface this script's own
@@ -917,6 +972,7 @@ async function main() {
     repo,
     needs,
     runUrl: process.env.RUN_URL ?? "",
+    runId: process.env.RUN_ID ?? "",
     headBranch: process.env.HEAD_BRANCH ?? "",
     headSha: process.env.HEAD_SHA ?? "",
     config,

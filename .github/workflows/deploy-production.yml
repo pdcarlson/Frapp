@@ -307,28 +307,32 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # The run's approval history, so a rejected approval files no alert.
+      actions: read
     steps:
       # The alert steps run on a real ship or a migrations-only run that
       # FAILED; never on a dry run (nothing was applied, and the dispatcher is
-      # watching), never on a cancelled run (a human stopped it), and never
-      # when `deploy` never started (a rejected approval). A green
+      # watching) and never on a cancelled run (a human stopped it). A green
       # migrations-only run doesn't run them either: the code didn't ship, so
-      # it can't close the alert. The tag is not the alert's: a failed `release`
-      # reds the summary below, and `production-release-pin.yml`'s P1 alert
-      # catches hosts left untagged.
+      # it can't close the alert. A rejected approval fails `deploy` with no
+      # step run; deploy-alert.mjs reads the run's approval history
+      # (`actions: read`) and files nothing for it. The tag is not the alert's:
+      # a failed `release` reds the summary below, and
+      # `production-release-pin.yml`'s P1 alert catches hosts left untagged.
       - name: Checkout
-        if: ${{ !cancelled() && !inputs.dry_run_only && needs.deploy.outputs.started == 'true' && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
+        if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Report deploy outcome and alert on failure
-        if: ${{ !cancelled() && !inputs.dry_run_only && needs.deploy.outputs.started == 'true' && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
+        if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALERT_CONFIG: deploy-production
           DEPLOY_NEEDS: ${{ toJSON(needs) }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
           HEAD_BRANCH: ${{ github.ref_name }}
           HEAD_SHA: ${{ needs.validate.outputs.sha }}
         run: node scripts/ci/deploy-alert.mjs
@@ -369,9 +373,11 @@ jobs:
             echo "| Dry run | \`$DRY_RUN\` |"
             echo "| Scope | \`$SCOPE\` |"
             echo "| Migrate + deploy | \`$DEPLOY_RESULT\` |"
-            echo "| Migrations applied | \`${APPLIED:-not reached}\` |"
-            echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reached}\` |"
-            echo "| Render deploy id | \`${RENDER_DEPLOY_ID:-none}\` |"
+            # "not reported", not "not reached": these come through the called
+            # workflow's outputs, which a failed call may not carry back.
+            echo "| Migrations applied | \`${APPLIED:-not reported}\` |"
+            echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reported}\` |"
+            echo "| Render deploy id | \`${RENDER_DEPLOY_ID:-not reported}\` |"
             echo "| Release tag | \`${RELEASE_RESULT:-skipped}\` |"
             echo ""
             if [ "$REPLAY_OUTCOME" = "nothing-pending" ]; then
