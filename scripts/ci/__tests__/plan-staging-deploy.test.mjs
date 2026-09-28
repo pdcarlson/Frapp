@@ -481,7 +481,7 @@ describe("gitResolve", () => {
 describe("formatPlanOutputs", () => {
   const frontends = { upload: true, uploadReason: "u", verifySha: SERVED };
 
-  // The keys deploy-staging.yml reads (`steps.plan.outputs.plan|deploy|upload|verify_sha`,
+  // The keys _deploy.yml reads (`steps.plan.outputs.plan|deploy|upload|verify_sha`,
   // pinned from that side by deploy-staging-workflow.test.mjs).
   it("writes the keys the workflow reads", () => {
     const out = formatPlanOutputs({ plan: "stale", deploy: false, verifySha: "", reason: "r" }, frontends);

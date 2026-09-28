@@ -20,27 +20,23 @@ name: Deploy
 # the frontends that call it. One job, because the built output lives in
 # `$RUNNER_TEMP` between the two Vercel phases.
 #
-# The plan (`scripts/ci/plan-staging-deploy.mjs`) decides the API and the
-# frontends separately, because different paths feed them. The API deploys
-# when something its image is built from changed since the commit the
-# environment serves (`stale` when this isn't `main`'s tip and nothing moves it
-# forward). Web and landing upload only behind an API that carries the
-# commit's API, and then always for the tip, and for any other commit only
-# when both hostnames serve older commits: an upload never replaces a newer
-# frontend, and a green web-only change whose tip run never comes (its CI
-# failed) still ships. Nothing to upload means nothing is built.
+# Staging-only layers are named by `inputs.environment == 'staging'`: the plan
+# (`scripts/ci/plan-staging-deploy.mjs`, whose rules the plan step's comment
+# summarises) and the staging hostnames. The build, verify and upload follow
+# the plan's outputs. #2805 adds production's layers the same way.
 #
 # ── Secrets: through this job's own `environment:` (#2804) ──────────────────
 # A called workflow sees none of its caller's secrets unless the caller passes
 # them, and `workflow_call` has no environment of its own. This job declares
-# `environment: ${{ inputs.environment }}`, so GitHub releases that
+# `environment: ${{ inputs.environment }}`, so GitHub should release that
 # environment's secrets to it directly, after the environment's main-only rule
 # (and, for production, its reviewers). Callers pass no secrets, on purpose:
-# every secret this job reads is an environment secret. That much is derived
-# from GitHub's reusable-workflow docs; the first step checks it on every run,
-# and the first staging run through this file is the proof recorded on #2804.
-# `workflow-secrets-scope.test.mjs` pins that every caller names a main-only
-# environment literally, since the name here is an expression.
+# every secret this job reads is an environment secret. That is derived from
+# GitHub's reusable-workflow docs, not yet seen here. The first step checks it
+# on every run, and the first staging run through this file is to prove it
+# (recorded on #2804 once it has run). `workflow-secrets-scope.test.mjs` pins
+# that every caller names a main-only environment literally and runs on no
+# pull-request trigger, since the name here is an expression.
 #
 # ── Where the config comes from ─────────────────────────────────────────────
 # Infisical, injected once, after every install (#834, #2672). Each Vercel
@@ -48,14 +44,12 @@ name: Deploy
 # the names recorded just before the injection
 # (`scripts/ci/lib/vercel-build-env.mjs`). `RENDER_API_KEY`, `VERCEL_API_KEY`
 # and the Infisical bootstrap pair are environment secrets.
-# `API_HEALTHCHECK_URL` comes from the injection. Render auto-deploy must be off
-# (#2679; staging-conformance asserts it), so this job is the only thing that
-# deploys the API.
+# `API_HEALTHCHECK_URL` comes from the injection. For staging, Render
+# auto-deploy must be off (#2679; staging-conformance asserts it), so this job
+# is the only thing that deploys the staging API.
 #
-# ── Names other things depend on ────────────────────────────────────────────
-# The job id `deploy` and its `plan` output: the callers' `deploy-outcome`
-# reads `needs.deploy.outputs.plan` through this file's `plan` output, and
-# `scripts/ci/deploy-alert.mjs` keys on the caller's job name `deploy`.
+# The caller's names that other things key on (its workflow name, file and
+# job ids) are listed in `deploy-staging.yml`'s header.
 
 on:
   workflow_call:
@@ -101,10 +95,10 @@ jobs:
     # the same sequence, bounds the job past all of them.
     timeout-minutes: 75
     # One deploy per environment at a time, queued, never cancelled. The group
-    # is the migration lock's name (`db-migrate-staging`, which
-    # `DB_PROMOTION_RUNBOOK.md` documents; production's is
-    # `db-migrate-production`), since this job is the only thing that migrates
-    # the environment.
+    # is the environment's migration lock (`db-migrate-staging`, which
+    # `DB_PROMOTION_RUNBOOK.md` documents; `deploy-production.yml` holds
+    # `db-migrate-production` until #2805 brings production here). For staging
+    # this job is the only thing that migrates the database.
     #
     # `cancel-in-progress: false` is the important half: cancelling mid-`db push`
     # is how a database ends up half-migrated, and cancelling between the API
@@ -244,9 +238,10 @@ jobs:
       # reasoning is in the script header.
       #
       # First, so a run with nothing to upload doesn't build web and landing
-      # while it holds the queue.
+      # while it holds the queue. Staging only: it reads the staging hostnames.
       - name: Plan the deploy
         id: plan
+        if: inputs.environment == 'staging'
         env:
           DEPLOY_SHA: ${{ inputs.sha }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
@@ -356,7 +351,7 @@ jobs:
       # `VERCEL_PROJECT_ID`; a `VERCEL_PROJECT_ID` added to the staging store
       # would let it exit 0 having aliased nothing.
       - name: Point the staging hostnames at the new deployments
-        if: steps.plan.outputs.upload == 'true'
+        if: inputs.environment == 'staging' && steps.plan.outputs.upload == 'true'
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           WEB_DEPLOYMENT_ID: ${{ steps.upload.outputs.web_id }}

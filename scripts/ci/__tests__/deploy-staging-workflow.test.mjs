@@ -17,6 +17,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -203,6 +204,52 @@ describe("_deploy.yml: the shared job's interface", () => {
     assert.ok(deploySteps().findIndex((s) => /uses: actions\/checkout@/.test(s.body)) > 0);
   });
 
+  // Run the step's own bash, not a regex over it: a refusal that prints an
+  // error and carries on would pass any text match (#2804 review).
+  it("fails the job on every refusal, and prints the proof line only when all four secrets arrived", () => {
+    const guard = deploySteps()[0];
+    const script = guard.body
+      .split("\n")
+      .slice(guard.body.split("\n").findIndex((l) => /^\s*run: \|\s*$/.test(l)) + 1)
+      .filter((l) => l.trim() !== "")
+      .map((l) => l.replace(/^ {10}/, ""))
+      .join("\n");
+    assert.match(script, /^set -euo pipefail/, "the whole run block, from its first line");
+    const ok = {
+      TARGET_ENVIRONMENT: "staging",
+      DEPLOY_SHA: "0123456789abcdef0123456789abcdef01234567",
+      DRY_RUN: "false",
+      SCOPE: "full",
+      HAS_INFISICAL_MACHINE_IDENTITY_ID: "true",
+      HAS_INFISICAL_CLIENT_SECRET: "true",
+      HAS_RENDER_API_KEY: "true",
+      HAS_VERCEL_API_KEY: "true",
+    };
+    const run = (overrides) =>
+      spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH, ...ok, ...overrides }, encoding: "utf8" });
+    const PROOF = /secrets reached this called job through its own environment: key/;
+
+    const green = run({});
+    assert.equal(green.status, 0, green.stdout + green.stderr);
+    assert.match(green.stdout, PROOF);
+
+    for (const [label, overrides] of [
+      ["production", { TARGET_ENVIRONMENT: "production" }],
+      ["short sha", { DEPLOY_SHA: "0123456" }],
+      ["uppercase sha", { DEPLOY_SHA: "0123456789ABCDEF0123456789ABCDEF01234567" }],
+      ["dry run", { DRY_RUN: "true" }],
+      ["partial scope", { SCOPE: "migrations-only" }],
+      ["no Render key", { HAS_RENDER_API_KEY: "false" }],
+      ["no Infisical id", { HAS_INFISICAL_MACHINE_IDENTITY_ID: "false" }],
+    ]) {
+      const refused = run(overrides);
+      assert.equal(refused.status, 1, `${label}: ${refused.stdout}`);
+      assert.match(refused.stdout, /::error::/, label);
+      assert.doesNotMatch(refused.stdout, PROOF, `${label}: no proof line on a refusal`);
+    }
+    assert.match(run({ HAS_VERCEL_API_KEY: "false" }).stdout, /did not reach this called job: VERCEL_API_KEY/);
+  });
+
   it("checks that the environment's secrets reached it, by name and never by value", () => {
     const guard = deploySteps()[0];
     for (const name of ["INFISICAL_MACHINE_IDENTITY_ID", "INFISICAL_CLIENT_SECRET", "RENDER_API_KEY", "VERCEL_API_KEY"]) {
@@ -329,9 +376,11 @@ describe("deploy-staging.yml: the order", () => {
         assert.doesNotMatch(s.if ?? "", /always\(\)|failure\(\)|cancelled\(\)/, `${s.name} must not run past a failure`);
       }
     }
-    for (const name of ["Run migrations (dry-run)", "Run migrations (apply)", "Plan the deploy"]) {
+    for (const name of ["Run migrations (dry-run)", "Run migrations (apply)"]) {
       assert.equal(step(name).if, null, `${name} runs on every eligible push`);
     }
+    // Staging's plan runs on every staging run; the input names it a staging layer (#2804).
+    assert.equal(step("Plan the deploy").if, "inputs.environment == 'staging'");
     // The build runs on the plan alone: a skipped build must mean nothing
     // uploads, never an upload with nothing built.
     assert.equal(step("Build the Vercel preview bundles (web + landing)").if, "steps.plan.outputs.upload == 'true'");
@@ -352,13 +401,14 @@ describe("deploy-staging.yml: the order", () => {
     // the frontends on it skipped a non-tip web-only commit even when nothing
     // newer was live (#2803 review). `plan-staging-deploy.mjs` decides `upload`
     // against what the staging hostnames serve.
-    for (const name of [
-      "Build the Vercel preview bundles (web + landing)",
-      "Upload web + landing to staging",
-      "Point the staging hostnames at the new deployments",
-    ]) {
+    for (const name of ["Build the Vercel preview bundles (web + landing)", "Upload web + landing to staging"]) {
       assert.equal(step(name).if, "steps.plan.outputs.upload == 'true'", name);
     }
+    // The staging hostnames are a staging layer, named by the input (#2804).
+    assert.equal(
+      step("Point the staging hostnames at the new deployments").if,
+      "inputs.environment == 'staging' && steps.plan.outputs.upload == 'true'",
+    );
   });
 
   it("gives the plan what it needs to read the staging hostnames", () => {
@@ -464,6 +514,22 @@ describe("deploy-staging.yml: the rest of the repo keys on it", () => {
     assert.ok(list, "migration-snapshot.yml has no workflow_run list");
     const names = list[1].split(",").map((n) => n.trim().replace(/^"|"$/g, ""));
     assert.ok(names.includes(workflowKeys(WORKFLOW).get("name")), `migration-snapshot.yml triggers on ${list[1]}`);
+  });
+
+  it("is the only workflow that calls the shared job, and it calls it for staging", () => {
+    // A second caller with `environment: staging` would migrate staging and
+    // ship its frontends with none of the step text the test below looks for,
+    // outside the run the snapshot publisher and the migration gates watch
+    // (#2804 review). #2805 adds deploy-production.yml, for production only.
+    const callers = [];
+    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
+      for (const j of workflowJobs(join(WORKFLOW_DIR, file))) {
+        const uses = String(j.keys.get("uses") ?? "").replace(/^["']|["']$/g, "");
+        if (!/\.github\/workflows\/_deploy\.yml(@|$)/.test(uses)) continue;
+        callers.push(`${file}/${j.jobId}:${j.keys.get("with")?.get("environment")}`);
+      }
+    }
+    assert.deepEqual(callers, ["deploy-staging.yml/deploy:staging"]);
   });
 
   it("is the only workflow that migrates staging or ships its frontends", () => {

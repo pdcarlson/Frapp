@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-// Decide what `deploy-staging.yml`'s `deploy` job ships for this run's commit:
+// Decide what the staging deploy job (`_deploy.yml`, called by
+// `deploy-staging.yml`) ships for this run's commit:
 // whether it deploys the API, by comparing the commit with the one
 // `frapp-api-staging` serves now (#2505), and whether it uploads web and
 // landing, by comparing it with the commits the two staging hostnames serve
@@ -286,7 +287,7 @@ export async function readServedCommit(healthUrl, { fetchImpl = resilientFetch }
 }
 
 /**
- * The step outputs `deploy-staging.yml` reads: `plan`, `deploy`, `upload`,
+ * The step outputs `_deploy.yml` reads: `plan`, `deploy`, `upload`,
  * `verify_sha`. `reason` quotes a changed path, which git (with `-z`,
  * unquoted) can hand back containing a newline; written raw, that would start
  * a new output line such as `plan=stale`. Control characters become spaces.

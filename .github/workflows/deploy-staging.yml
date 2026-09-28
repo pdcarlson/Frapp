@@ -19,7 +19,9 @@ name: Deploy staging
 #
 # ── No secrets passed ──────────────────────────────────────────────────────
 # The call passes no `secrets:`. `_deploy.yml`'s job names the `staging`
-# environment itself and gets its secrets from there (see that header).
+# environment itself and should get its secrets from there; that is derived
+# from GitHub's docs until the first run through it proves it (that header,
+# and #2804).
 #
 # ── Names other things depend on ────────────────────────────────────────────
 # `migration-snapshot.yml` triggers on this workflow's NAME, "Deploy staging",

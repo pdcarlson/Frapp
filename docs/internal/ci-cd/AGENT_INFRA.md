@@ -229,12 +229,12 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 Two rules follow. Both are pinned by [`workflow-secrets-scope.test.mjs`](../../../scripts/ci/__tests__/workflow-secrets-scope.test.mjs):
 
 1. **Nothing a pull request triggers references a secret.** The migration gates read a published snapshot instead (below).
-2. **Every job that references a secret names one of the four environments below, as a literal.** A computed name could select an unprotected environment, and naming one that does not exist makes GitHub create it with no rules. A new environment gets its `main` rule before its first secret, and then joins `CREDENTIAL_ENVIRONMENTS` in that test.
+2. **Every job that references a secret names one of the four environments below, as a literal.** A computed name could select an unprotected environment, and naming one that does not exist makes GitHub create it with no rules. A new environment gets its `main` rule before its first secret, and then joins `CREDENTIAL_ENVIRONMENTS` in that test. One exception, for the shared deploy job ([`_deploy.yml`](../../../.github/workflows/_deploy.yml), #2804): its job names `${{ inputs.environment }}`, which the test admits only because the file is callable only and every caller in this repo passes a literal from that list and runs on no pull-request trigger. Rule 1 also follows a call: a pull-request job may not call a workflow that reads secrets.
 
 | Environment | Secrets | Consumers |
 | --- | --- | --- |
 | `automation` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `RENDER_API_KEY`, `VERCEL_API_KEY`, `RELEASE_GITHUB_TOKEN`, `PR_BASE_SYNC_APP_CLIENT_ID`, `PR_BASE_SYNC_APP_PRIVATE_KEY` | the table above |
-| `staging` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `RENDER_API_KEY`, `VERCEL_API_KEY`; optional `STAGING_SMOKE_USER_EMAIL`, `STAGING_SMOKE_USER_PASSWORD` | `_deploy.yml` (called by `deploy-staging.yml`; its job names the environment, so the call passes no secrets), `db-backup.yml` (staging jobs), `staging-conformance.yml` |
+| `staging` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `RENDER_API_KEY`, `VERCEL_API_KEY`; optional `STAGING_SMOKE_USER_EMAIL`, `STAGING_SMOKE_USER_PASSWORD` | `_deploy.yml` (called by `deploy-staging.yml`, which passes no secrets: the called job names the environment; derived from GitHub's docs until the first run proves it, #2804), `db-backup.yml` (staging jobs), `staging-conformance.yml` |
 | `production` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `RENDER_API_KEY`, `VERCEL_API_KEY` | `deploy-production.yml` (`deploy`) |
 | `production-backup` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET` | `db-backup.yml` (production jobs) |
 
