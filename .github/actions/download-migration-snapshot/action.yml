@@ -38,12 +38,17 @@ description: >
 # after the latest finished `Deploy staging` or `Deploy production` run on `main`,
 # with no `Deploy staging` run in flight. Those are the only workflows that apply
 # migrations, and each triggers a publish when it finishes. While that is not
-# yet true, the step waits, polling every 45 seconds for up to 15 minutes. The
-# budget has to cover the rest of an in-flight Deploy staging run, the time GitHub
-# takes to mark that run complete (which is what fires the chained publish: run
-# 35876748928's `updated_at` trailed its last job by over five minutes), and the
-# publish itself. None of those has been measured end to end, because the
-# publisher has not yet run on `main`. If the snapshot is still stale
+# yet true, the step waits, polling every 45 seconds for up to 25 minutes. The
+# budget has to cover the rest of an in-flight Deploy staging run, and of one
+# queued behind it (the wait holds while any run is in progress, and merges
+# land minutes apart), the time GitHub takes to mark that run complete (which
+# is what fires the chained publish: run 35876748928's `updated_at` trailed its
+# last job by over five minutes), and the publish itself. Since #2803 a run
+# carries the web and landing builds and uploads as well as the migrations and
+# the API: about 6 to 7 minutes, derived from the two workflows it replaced
+# (Deploy API 0.9 to 3.4 minutes, Deploy Vercel staging 2.8 to 4.3, on
+# 2026-09-28), so two chained runs plus the lag and a publish of 14 to 37
+# seconds fit in 25 where they would not in the 15 this used to allow. If the snapshot is still stale
 # after that, the step fails and names the publisher. Without this, a failed
 # post-deploy publish would leave the gates judging a PR against the
 # pre-deploy state until the 24-hour age limit ran out. The worst case is a PR
@@ -101,7 +106,7 @@ inputs:
     description: >
       `wait` (the default) or `use`. What to do while the newest trusted snapshot
       predates a finished deploy on main, or a Deploy staging run is in flight: wait
-      up to 15 minutes and then fail, or take it as it is. Pass `wait` only where
+      up to 25 minutes and then fail, or take it as it is. Pass `wait` only where
       the snapshot gates a pull request's merge; see the header comment. Any
       value but `use` waits, so a typo errs toward the stricter check.
     required: false
@@ -122,7 +127,7 @@ runs:
         RUNS="${RUNNER_TEMP}/migration-snapshot-runs.json"
         CANDIDATES="${RUNNER_TEMP}/migration-snapshot-candidates.txt"
         DEPLOYS="${RUNNER_TEMP}/migration-snapshot-deploys.json"
-        DEADLINE=$(( $(date +%s) + 900 ))
+        DEADLINE=$(( $(date +%s) + 1500 ))
 
         # `gh api` under scripts/ci/lib/http.mjs's retry policy: three attempts,
         # backing off 1s then 5s, and no retry of a 4xx other than 429, which
@@ -293,7 +298,7 @@ runs:
             break
           fi
           if (( $(date +%s) >= DEADLINE )); then
-            echo "::error::Waited 15 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
+            echo "::error::Waited 25 minutes: ${WAIT_FOR}. Re-run this check once Migration snapshot has published; if it is failing, its log names the cause: ${GITHUB_SERVER_URL}/${REPO}/actions/workflows/migration-snapshot.yml"
             exit 1
           fi
           echo "Waiting 45s: ${WAIT_FOR}."

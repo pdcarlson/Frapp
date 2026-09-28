@@ -144,8 +144,8 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
     triggered by `workflow_run` fails without turning any PR check red. Read its job log
     (`get_job_logs`), and check for an open `incident` on it before filing anything.
   - Render MCP: `list_deploys` (`limit: 5`) for `frapp-api-staging` and `frapp-api-prod`. A
-    green `Deploy staging` run verified the API serving its commit unless its plan was `stale`;
-    the run summary names the plan.
+    green `Deploy staging` run verified the API serving its commit unless nothing shipped
+    (`verify_sha` empty); the run summary names the plan and whether web and landing uploaded.
     Pass `workspaceId` on every call; the id is in
     [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Resolve
     each service's `srv-…` id with `list_services` rather than from memory

@@ -188,7 +188,7 @@ endpoint that
 [`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml)
 publishes from `main` after every deploy. Off `main` (a pull request, or a
 dispatch on a branch), when the snapshot predates the latest deploy,
-`migration-order` and `migration-replay` wait up to 15 minutes for the next
+`migration-order` and `migration-replay` wait up to 25 minutes for the next
 publish, then fail and name the publisher
 ([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
 `migration-drift` never waits: it judges the newest snapshot as it is, and says

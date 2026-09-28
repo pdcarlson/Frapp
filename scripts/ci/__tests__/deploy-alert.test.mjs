@@ -1637,7 +1637,8 @@ test("a deploy cancelled after it planned is still a failure", async () => {
 test("a current plan closes the alert but never claims DEPLOYED", async () => {
   // `current` is only published for main's tip, after verifying the API serves
   // and is ready, so it may close an alert. The API deployed nothing, and the
-  // summary must say so at a glance (#763).
+  // summary must say so at a glance (#763), without claiming nothing shipped:
+  // the same run uploads web and landing (#2803 review).
   const { fetchImpl } = makeFetchStub({ issues: [OPEN_ALERT] });
   let summary = "";
   const result = await runDeployAlert({
@@ -1651,8 +1652,9 @@ test("a current plan closes the alert but never claims DEPLOYED", async () => {
   });
   assert.equal(result.outcome, "deployed");
   assert.deepEqual(result.alert.closed, [900]);
-  assert.match(summary, /UP TO DATE — nothing needed deploying/);
-  assert.match(summary, /Nothing needed deploying; staging was verified/);
+  assert.match(summary, /API UP TO DATE — no API deploy needed/);
+  assert.match(summary, /The API needed no deploy; staging was verified serving it/);
+  assert.doesNotMatch(summary, /nothing needed deploying/i);
   assert.doesNotMatch(summary, /✅ \*\*DEPLOYED\*\*/);
 });
 

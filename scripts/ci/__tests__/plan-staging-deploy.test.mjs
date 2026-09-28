@@ -13,8 +13,10 @@ import {
   gitChangedPaths,
   gitResolve,
   gitIsAncestor,
+  planFrontendUpload,
   planStagingDeploy,
   readServedCommit,
+  readStagingFrontends,
 } from "../plan-staging-deploy.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -54,7 +56,7 @@ describe("planStagingDeploy", () => {
     }
   });
 
-  // `main` usually moves on while a run waits for CI and migrate-staging, and
+  // `main` usually moves on while a run waits for CI and the run ahead, and
   // the tip's own run may never deploy (its CI can fail). A run that isn't the
   // tip but is newer than what staging serves still ships its change.
   it("moves a non-tip run forward when it is newer than the served commit and the image changed", () => {
@@ -89,6 +91,8 @@ describe("planStagingDeploy", () => {
       assert.equal(plan.plan, "stale", `${label}: ${plan.reason}`);
       assert.equal(plan.deploy, false, label);
       assert.equal(plan.verifySha, "", label);
+      // Only "nothing changed" leaves an API that carries this commit's API.
+      assert.equal(plan.readyApi, label === "nothing changed" ? SERVED : null, label);
     }
   });
 
@@ -122,6 +126,7 @@ describe("planStagingDeploy", () => {
     assert.equal(plan.plan, "stale");
     assert.equal(plan.deploy, false);
     assert.equal(plan.verifySha, "");
+    assert.equal(plan.readyApi, null, "an API already past this commit is no API to upload behind");
     assert.match(plan.reason, /roll staging back/);
     assert.equal(changedPaths.calls.length, 0);
   });
@@ -144,6 +149,7 @@ describe("planStagingDeploy", () => {
     assert.deepEqual(seen, [[SERVED, HEAD]], "diffs from the served commit, not HEAD~1");
     assert.equal(plan.plan, "deploy");
     assert.equal(plan.verifySha, HEAD);
+    assert.equal(plan.readyApi, HEAD);
     assert.match(plan.reason, /apps\/api\/src\/main\.ts/);
   });
 
@@ -158,6 +164,7 @@ describe("planStagingDeploy", () => {
     assert.equal(plan.plan, "current");
     assert.equal(plan.deploy, false);
     assert.equal(plan.verifySha, SERVED);
+    assert.equal(plan.readyApi, SERVED);
   });
 
   it("deploys the tip when git can't relate the two commits", () => {
@@ -188,6 +195,136 @@ describe("planStagingDeploy", () => {
       changedPaths: () => { throw new Error("fatal: bad revision"); },
     });
     assert.equal(plan.plan, "deploy");
+  });
+});
+
+describe("planFrontendUpload", () => {
+  const TIP = "3333333333333333333333333333333333333333";
+  const OLD = "4444444444444444444444444444444444444444";
+  const WEB = "app.staging.frapp.live";
+  const LANDING = "staging.frapp.live";
+  const api = (overrides = {}) => ({ plan: "stale", deploy: false, verifySha: "", readyApi: SERVED, reason: "r", ...overrides });
+  const hosts = (web, landing = web) => [
+    { host: WEB, sha: web },
+    { host: LANDING, sha: landing },
+  ];
+
+  // The tip is the newest commit: its frontends ship whatever the hosts serve,
+  // exactly as its API does. The hosts are never read for it.
+  it("uploads the tip without reading the hosts", () => {
+    for (const plan of ["deploy", "current"]) {
+      const isAncestor = never();
+      const result = planFrontendUpload({
+        head: HEAD,
+        tip: HEAD,
+        api: api({ plan, verifySha: SERVED, readyApi: SERVED }),
+        live: null,
+        isAncestor,
+      });
+      assert.equal(result.upload, true, plan);
+      assert.equal(result.verifySha, SERVED, plan);
+      assert.equal(isAncestor.calls.length, 0, plan);
+    }
+  });
+
+  it("treats the run as the tip when main's tip can't be read", () => {
+    const result = planFrontendUpload({ head: HEAD, tip: null, api: api({ plan: "deploy", verifySha: HEAD }), live: null, isAncestor: never() });
+    assert.equal(result.upload, true);
+  });
+
+  // The review finding this rule exists for: a web-only commit that isn't the
+  // tip plans `stale` for the API, yet nothing newer is live. If the tip's CI
+  // fails, its run never comes, so skipping here would strand a green change.
+  it("moves a non-tip commit's frontends forward when both hosts serve older commits", () => {
+    const result = planFrontendUpload({
+      head: HEAD,
+      tip: TIP,
+      api: api(),
+      live: hosts(OLD, SERVED),
+      isAncestor: linearHistory(OLD, SERVED, HEAD, TIP),
+    });
+    assert.equal(result.upload, true, result.uploadReason);
+    assert.equal(result.verifySha, SERVED, "a stale API plan verifies the served commit before anything ships");
+    assert.match(result.uploadReason, /moving them forward/);
+  });
+
+  it("verifies the forward-deployed commit when the API moves forward too", () => {
+    const result = planFrontendUpload({
+      head: HEAD,
+      tip: TIP,
+      api: api({ plan: "forward", deploy: true, verifySha: HEAD, readyApi: HEAD }),
+      live: hosts(OLD),
+      isAncestor: linearHistory(OLD, HEAD, TIP),
+    });
+    assert.equal(result.upload, true);
+    assert.equal(result.verifySha, HEAD);
+  });
+
+  // CI can finish out of order: the tip's run may already have uploaded. An
+  // upload of this older commit would roll the hosts back.
+  it("never uploads over a host that already serves this commit or a newer one", () => {
+    for (const [label, live, isAncestor] of [
+      ["web newer", hosts(TIP, OLD), linearHistory(OLD, HEAD, TIP)],
+      ["landing newer", hosts(OLD, TIP), linearHistory(OLD, HEAD, TIP)],
+      ["already this commit", hosts(HEAD), linearHistory(HEAD, TIP)],
+    ]) {
+      const result = planFrontendUpload({ head: HEAD, tip: TIP, api: api(), live, isAncestor });
+      assert.equal(result.upload, false, label);
+      assert.equal(result.verifySha, "", label);
+      assert.match(result.uploadReason, /already serves/, label);
+    }
+  });
+
+  it("does not upload when a host can't be read or sits on another history", () => {
+    const cases = [
+      ["not read", null, linearHistory(OLD, HEAD, TIP)],
+      ["no hosts", [], linearHistory(OLD, HEAD, TIP)],
+      ["web unread", hosts(null, OLD), linearHistory(OLD, HEAD, TIP)],
+      ["no meta sha", hosts("not-a-sha", OLD), linearHistory(OLD, HEAD, TIP)],
+      ["off history", hosts(OLD), () => false],
+      ["git can't relate", hosts(OLD), () => { throw new Error("bad object"); }],
+    ];
+    for (const [label, live, isAncestor] of cases) {
+      const result = planFrontendUpload({ head: HEAD, tip: TIP, api: api(), live, isAncestor });
+      assert.equal(result.upload, false, `${label}: ${result.uploadReason}`);
+      assert.match(result.uploadReason, /its run uploads/, label);
+    }
+  });
+
+  // A stale API plan that isn't "nothing changed" (staging's API is past this
+  // commit, or can't be read) leaves no API known to carry this commit's.
+  it("does not upload behind an API that doesn't carry this commit's API", () => {
+    const isAncestor = never();
+    const result = planFrontendUpload({ head: HEAD, tip: TIP, api: api({ readyApi: null }), live: hosts(OLD), isAncestor });
+    assert.equal(result.upload, false);
+    assert.equal(isAncestor.calls.length, 0);
+  });
+
+  // End to end through both functions: the scenario the review traced.
+  it("ships a non-tip web-only commit's frontends, which the API plan alone would skip", () => {
+    const isAncestor = linearHistory(SERVED, HEAD, TIP);
+    const plan = planStagingDeploy({ head: HEAD, served: SERVED, tip: TIP, isAncestor, changedPaths: () => ["apps/web/app/page.tsx"] });
+    assert.equal(plan.plan, "stale");
+    const result = planFrontendUpload({ head: HEAD, tip: TIP, api: plan, live: hosts(SERVED), isAncestor });
+    assert.equal(result.upload, true, result.uploadReason);
+    assert.equal(result.verifySha, SERVED);
+  });
+});
+
+describe("readStagingFrontends", () => {
+  it("reads each host's commit from its deployment's meta, and never throws", async () => {
+    const asked = [];
+    const fetchImpl = async (url) => {
+      asked.push(url);
+      if (url.includes("broken.example")) return new Response("nope", { status: 403 });
+      return Response.json({ id: "dpl_1", target: null, url: "x.vercel.app", meta: { githubCommitSha: SERVED } });
+    };
+    const live = await readStagingFrontends(["app.staging.frapp.live", "broken.example"], { apiKey: "k", teamId: "team_1", fetchImpl });
+    assert.deepEqual(live, [
+      { host: "app.staging.frapp.live", sha: SERVED },
+      { host: "broken.example", sha: null },
+    ]);
+    assert.ok(asked[0].startsWith("https://api.vercel.com/v13/deployments/app.staging.frapp.live?teamId=team_1"), asked[0]);
   });
 });
 
@@ -302,20 +439,28 @@ describe("gitResolve", () => {
 });
 
 describe("formatPlanOutputs", () => {
-  // The keys deploy-staging.yml reads (`steps.plan.outputs.plan|deploy|verify_sha`,
+  const frontends = { upload: true, uploadReason: "u", verifySha: SERVED };
+
+  // The keys deploy-staging.yml reads (`steps.plan.outputs.plan|deploy|upload|verify_sha`,
   // pinned from that side by deploy-staging-workflow.test.mjs).
   it("writes the keys the workflow reads", () => {
-    const out = formatPlanOutputs({ plan: "deploy", deploy: true, verifySha: HEAD, reason: "r" });
-    assert.match(out, /^plan=deploy$/m);
-    assert.match(out, /^deploy=true$/m);
-    assert.match(out, new RegExp(`^verify_sha=${HEAD}$`, "m"));
+    const out = formatPlanOutputs({ plan: "stale", deploy: false, verifySha: "", reason: "r" }, frontends);
+    assert.match(out, /^plan=stale$/m);
+    assert.match(out, /^deploy=false$/m);
+    assert.match(out, /^upload=true$/m);
+    // The verify step checks what the upload runs behind, not the API plan's own sha.
+    assert.match(out, new RegExp(`^verify_sha=${SERVED}$`, "m"));
   });
 
   // With `-z` a changed path comes back verbatim, newline and all; written raw
   // into `reason`, it would start a new output line.
-  it("can't be made to write a second output line through the reason", () => {
-    const out = formatPlanOutputs({ plan: "deploy", deploy: true, verifySha: HEAD, reason: "first: apps/api/a\nplan=stale\r" });
+  it("can't be made to write a second output line through either reason", () => {
+    const out = formatPlanOutputs(
+      { plan: "deploy", deploy: true, verifySha: HEAD, reason: "first: apps/api/a\nplan=stale\r" },
+      { ...frontends, uploadReason: "x\nupload=false" },
+    );
     assert.equal(out.split("\n").filter((line) => line.startsWith("plan=")).length, 1, out);
+    assert.equal(out.split("\n").filter((line) => line.startsWith("upload=")).length, 1, out);
     assert.match(out, /^reason=first: apps\/api\/a plan=stale $/m);
   });
 });
@@ -338,7 +483,7 @@ describe("CLI", () => {
    * throwaway repo because CI's checkout is shallow: the real repo has no
    * `HEAD~1` there.
    */
-  async function runInTwoCommitRepo(env) {
+  async function runInTwoCommitRepo(env, { serveTip = false } = {}) {
     const root = mkdtempSync(join(tmpdir(), "plan-tip-"));
     const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
     let server;
@@ -355,10 +500,11 @@ describe("CLI", () => {
       git("add", "-A");
       git("commit", "-qm", "tip");
       git("update-ref", "refs/remotes/origin/main", "HEAD");
+      const tip = git("rev-parse", "HEAD");
       git("checkout", "-q", "--detach", head);
       server = createServer((req, res) => {
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ status: "ok", commit: head }));
+        res.end(JSON.stringify({ status: "ok", commit: serveTip ? tip : head }));
       });
       await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
       const output = join(root, ".output");
@@ -367,6 +513,11 @@ describe("CLI", () => {
         ...process.env,
         DEPLOY_SHA: head,
         API_HEALTHCHECK_URL: `http://127.0.0.1:${server.address().port}/health`,
+        // Required, but unread in these cases: a tip run and a run staging's API
+        // has already passed never read the hosts, so nothing leaves the box.
+        VERCEL_API_KEY: "unused",
+        VERCEL_TEAM_ID: "team_unused",
+        VERCEL_STAGING_HOSTS: "app.staging.frapp.live staging.frapp.live",
         GITHUB_OUTPUT: output,
         ...env,
       };
@@ -390,10 +541,29 @@ describe("CLI", () => {
   // lookup that broke would make every run "the tip" and silently disable the
   // stale verdict.
   it("reads the tip from origin/main by default", async () => {
-    const { status, log, written } = await runInTwoCommitRepo({ TIP_REF: undefined });
+    const { status, log, written } = await runInTwoCommitRepo({ TIP_REF: undefined }, { serveTip: true });
     assert.equal(status, 0, log);
     assert.match(written, /^plan=stale$/m, log);
+    assert.match(written, /^upload=false$/m, written);
     assert.match(written, /^verify_sha=$/m, written);
+  });
+
+  it("exits 1 when the Vercel inputs the host read needs are missing", () => {
+    for (const key of ["VERCEL_API_KEY", "VERCEL_TEAM_ID", "VERCEL_STAGING_HOSTS"]) {
+      const env = {
+        ...process.env,
+        DEPLOY_SHA: HEAD,
+        API_HEALTHCHECK_URL: "http://127.0.0.1:9/health",
+        VERCEL_API_KEY: "k",
+        VERCEL_TEAM_ID: "t",
+        VERCEL_STAGING_HOSTS: "h",
+      };
+      delete env[key];
+      delete env.GITHUB_OUTPUT;
+      const run = spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "ci", "plan-staging-deploy.mjs")], { env, encoding: "utf8" });
+      assert.equal(run.status, 1, `${key}: ${run.stdout}${run.stderr}`);
+      assert.match(run.stderr + run.stdout, new RegExp(key), key);
+    }
   });
 
   it("takes the tip from TIP_REF when it is set", async () => {
@@ -401,6 +571,7 @@ describe("CLI", () => {
     assert.equal(status, 0, log);
     assert.match(written, /^plan=current$/m, log);
     assert.match(written, /^deploy=false$/m, written);
+    assert.match(written, /^upload=true$/m, written);
     assert.match(written, new RegExp(`^verify_sha=${head}$`, "m"), written);
   });
 });

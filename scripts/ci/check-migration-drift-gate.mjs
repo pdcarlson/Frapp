@@ -52,10 +52,12 @@
 // Deploy API runs on main before 16:32Z on 2026-09-23 (each paired with the CI run that
 // finished just before it was created: a `workflow_run` run's `head_sha` is
 // main's tip when it fired, not the commit that triggered it). Since #2803
-// `Deploy staging` does that work and also builds web and landing before it
-// migrates, which adds a few minutes to the leg; unmeasured, and still well
-// inside the grace. The publish leg is unmeasured until the publisher runs on
-// main.
+// `Deploy staging` does that work plus all of the old Deploy Vercel staging
+// run's: installs and both builds before it migrates, both uploads and the
+// alias after the API, and the publish waits for all of it. Those runs took
+// 2.8 to 4.3 minutes on 2026-09-28, so the leg is about 14 minutes at worst,
+// derived rather than measured and still inside the grace. The publish itself
+// took 14 to 37 seconds in the same sample.
 //
 // `--first-parent` is what makes that true rather than merely intended: see
 // the comment at the call site. Without it the grace was measured from the
@@ -364,7 +366,7 @@ export function buildGateSummary({
       bullets(result.overdue, describeLanded),
       "",
       "Fix: re-run the `Deploy staging` workflow against the latest commit on main —",
-      "`migrate-staging` applies whatever is pending. See",
+      "its `deploy` job's migration steps apply whatever is pending. See",
       "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.",
       "",
     );

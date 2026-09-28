@@ -832,7 +832,7 @@ test("render-auto-deploy fails when auto-deploy is on — it builds before CI an
   });
   assert.equal(result.status, FAIL);
   assert.match(result.detail, /autoDeploy='yes' \(expected 'no'\)/);
-  assert.match(result.detail, /before CI and migrate-staging/);
+  assert.match(result.detail, /before CI and the staging migrations/);
   assert.match(result.detail, /Auto-Deploy → Off/);
   assert.doesNotMatch(result.detail, /branch=/);
 });

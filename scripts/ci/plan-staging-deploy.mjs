@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
-// Decide whether `deploy-staging.yml`'s `deploy` job deploys this run's commit,
-// by comparing it with the commit `frapp-api-staging` is serving now (#2505).
+// Decide what `deploy-staging.yml`'s `deploy` job ships for this run's commit:
+// whether it deploys the API, by comparing the commit with the one
+// `frapp-api-staging` serves now (#2505), and whether it uploads web and
+// landing, by comparing it with the commits the two staging hostnames serve
+// (#2803).
 //
 // ── Why the served commit, not `HEAD~1` ─────────────────────────────────────
 // Staging deploys only by commit from this job; Render auto-deploy must be off
@@ -25,16 +28,16 @@
 //             ready, and let the run speak for staging.
 //   forward — not the tip, but newer than the served commit and something
 //             changed: deploy it anyway. `main` usually moves on while a run
-//             waits for CI and migrate-staging, and the tip's own run may
-//             never deploy (its CI can fail), so skipping this commit would
-//             leave a green change unshipped with no alert. It deploys and
+//             waits for CI and for the run ahead of it, and the tip's own run
+//             may never deploy (its CI can fail), so skipping this commit
+//             would leave a green change unshipped with no alert. It deploys and
 //             verifies like `deploy`; `deploy-alert.mjs` raises the alert if it
 //             fails but never closes it, because the tip's run decides that.
 //   stale   — not the tip, and nothing to move forward to: staging already
 //             serves this commit or a newer one (deploying it would roll
 //             staging back), nothing changed, or it can't tell. It deploys
-//             and verifies nothing, and `deploy-alert.mjs` leaves the alert
-//             alone.
+//             no API, and `deploy-alert.mjs` leaves the alert alone. Web and
+//             landing may still move forward (below).
 //
 // ── When it can't tell ─────────────────────────────────────────────────────
 // For the tip, it deploys: an unreadable `/health`, a served commit git
@@ -43,14 +46,33 @@
 // For any other run it doesn't: without knowing what staging serves, a
 // deploy could be a rollback, and the tip's run will deploy.
 //
+// ── Web and landing (#2803) ─────────────────────────────────────────────────
+// The same job uploads web and landing after the API is verified, and the same
+// two risks apply: uploading an older commit over a newer one, and skipping a
+// green change whose tip run never comes. The API verdict can't answer for
+// them. It reads only the paths the image is built from, so a web-only commit
+// that isn't the tip plans `stale` though nothing newer is live. So the upload
+// has its own rule, read against what `app.staging.frapp.live` and
+// `staging.frapp.live` serve (each deployment's `meta.githubCommitSha`):
+//   * the tip uploads, like the tip's API;
+//   * any other commit uploads only when both hosts serve commits strictly
+//     older than it (a move forward, never a rollback), and only when the API
+//     staging will serve carries this commit's API: it deploys it (`forward`),
+//     or nothing the image is built from changed since the served commit.
+//     A host it can't read, or one on another history, means no upload: the
+//     tip's run uploads.
+// A `stale` API plan can therefore still upload. Its verify step then checks
+// the served commit, as for `current`, before the upload.
+//
 // Outputs (GITHUB_OUTPUT): `plan` (deploy|current|forward|stale), `deploy`
-// (true|false), `verify_sha` (the commit the verify step must find served;
-// empty when stale), `reason`. Unit tests:
-// `scripts/ci/__tests__/plan-staging-deploy.test.mjs`.
+// (true|false), `upload` (true|false), `verify_sha` (the commit the verify
+// step must find served; empty when nothing ships), `reason`, `upload_reason`.
+// Unit tests: `scripts/ci/__tests__/plan-staging-deploy.test.mjs`.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
+import { resolveDeploymentByHost } from "./deploy-vercel.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -67,27 +89,39 @@ export const API_IMAGE_PATHS =
 
 const SHA = /^[0-9a-f]{7,40}$/i;
 
+const short = (sha) => sha.slice(0, 12);
+const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+
 /**
  * The pure decision. `tip` is `main`'s tip (null when unreadable).
  * `isAncestor(a, b)` answers whether `a` is `b` or an ancestor of it, and
  * `changedPaths(base, head)` lists the files between two commits; either may
  * throw, which reads as "can't tell".
+ *
+ * `readyApi` is the commit the API will serve that carries this commit's API:
+ * `head` when it deploys, the served commit when nothing the image is built
+ * from changed since it, and null otherwise. `planFrontendUpload` reads it.
  */
 export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths }) {
-  const short = (sha) => sha.slice(0, 12);
-  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
-
   const isTip = !tip || same(tip, head);
   const notTip = () => `\`main\` has moved on to ${short(tip)}`;
-  const stale = (reason) => ({ plan: "stale", deploy: false, verifySha: "", reason });
+  const stale = (reason, readyApi = null) => ({ plan: "stale", deploy: false, verifySha: "", readyApi, reason });
   // Deploy when the tip, or move forward when not; unsure is a deploy only for the tip.
   const deploy = (reason) =>
     isTip
-      ? { plan: "deploy", deploy: true, verifySha: head, reason }
-      : { plan: "forward", deploy: true, verifySha: head, reason: `${reason}; ${notTip()}, so its run decides the alert` };
+      ? { plan: "deploy", deploy: true, verifySha: head, readyApi: head, reason }
+      : {
+          plan: "forward",
+          deploy: true,
+          verifySha: head,
+          readyApi: head,
+          reason: `${reason}; ${notTip()}, so its run decides the alert`,
+        };
   const unsure = (reason) => (isTip ? deploy(`${reason}, so deploying`) : stale(`${reason} and ${notTip()}, so not risking a rollback`));
   const current = (reason) =>
-    isTip ? { plan: "current", deploy: false, verifySha: served, reason } : stale(`${reason}; ${notTip()}`);
+    isTip
+      ? { plan: "current", deploy: false, verifySha: served, readyApi: served, reason }
+      : stale(`${reason}; ${notTip()}`, served);
 
   if (!served || !SHA.test(served)) {
     return unsure("staging's served commit could not be read");
@@ -127,6 +161,70 @@ export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths 
     );
   }
   return current(`nothing the API image is built from changed since ${short(served)}`);
+}
+
+/**
+ * Whether this run uploads web and landing. The tip always does. Any other
+ * commit does only when the API behind it is ready (`api.readyApi`) and every
+ * staging host serves a commit strictly older than it, so the upload moves
+ * each host forward and never back. `live` is `[{ host, sha }]` from the
+ * staging hostnames (`sha` null when unread), or null when not read.
+ *
+ * Returns `{ upload, uploadReason, verifySha }`: the verify step checks
+ * `verifySha` before anything ships, so a `stale` API plan that uploads
+ * verifies the served commit, as `current` does.
+ */
+export function planFrontendUpload({ head, tip, api, live, isAncestor }) {
+  const isTip = !tip || same(tip, head);
+  if (isTip) {
+    return { upload: true, uploadReason: "this is `main`'s tip, so its web and landing ship", verifySha: api.verifySha };
+  }
+  const skip = (why) => ({
+    upload: false,
+    uploadReason: `${why}; \`main\` has moved on to ${short(tip)}, so its run uploads`,
+    verifySha: api.verifySha,
+  });
+  if (!api.readyApi) return skip("the API staging will serve does not carry this commit's API");
+  if (!Array.isArray(live) || live.length === 0) return skip("what the staging hostnames serve was not read");
+
+  for (const { host, sha } of live) {
+    if (!sha || !SHA.test(sha)) return skip(`the commit ${host} serves could not be read`);
+    let hostIsNewer;
+    let hostIsOlder;
+    try {
+      hostIsNewer = isAncestor(head, sha);
+      hostIsOlder = isAncestor(sha, head);
+    } catch {
+      return skip(`git could not relate ${short(sha)} (${host}) to ${short(head)}`);
+    }
+    if (hostIsNewer) return skip(`${host} already serves ${short(sha)}, which contains ${short(head)}`);
+    if (!hostIsOlder) return skip(`${host} serves ${short(sha)}, which is not on this commit's history`);
+  }
+  return {
+    upload: true,
+    uploadReason:
+      `${live.map(({ host, sha }) => `${host} serves ${short(sha)}`).join(" and ")}, older than ${short(head)}; ` +
+      `\`main\` has moved on to ${short(tip)}, whose run may never deploy (its CI can fail), so moving them forward`,
+    verifySha: api.readyApi,
+  };
+}
+
+/**
+ * The commit each staging hostname serves, read from its deployment's
+ * `meta.githubCommitSha` (`vercel-cli.mjs` sets it on every upload). A host
+ * that can't be read comes back with `sha: null`, never a throw.
+ */
+export async function readStagingFrontends(hosts, { apiKey, teamId, fetchImpl = resilientFetch }) {
+  return Promise.all(
+    hosts.map(async (host) => {
+      try {
+        const { sha } = await resolveDeploymentByHost({ apiKey, host, teamId, fetchImpl });
+        return { host, sha };
+      } catch {
+        return { host, sha: null };
+      }
+    }),
+  );
 }
 
 /** `a` is `b` or an ancestor of it. Throws when git can't answer (an unknown commit). */
@@ -176,15 +274,19 @@ export async function readServedCommit(healthUrl, { fetchImpl = resilientFetch }
 }
 
 /**
- * The step outputs `deploy-staging.yml` reads: `plan`, `deploy`, `verify_sha`.
- * `reason` quotes a changed path, which git (with `-z`, unquoted) can hand
- * back containing a newline; written raw, that would start a new output line
- * such as `plan=stale`. Control characters become spaces.
+ * The step outputs `deploy-staging.yml` reads: `plan`, `deploy`, `upload`,
+ * `verify_sha`. `reason` quotes a changed path, which git (with `-z`,
+ * unquoted) can hand back containing a newline; written raw, that would start
+ * a new output line such as `plan=stale`. Control characters become spaces.
  */
-export function formatPlanOutputs(plan) {
+export function formatPlanOutputs(plan, frontends) {
   // eslint-disable-next-line no-control-regex
-  const reason = String(plan.reason).replace(/[\u0000-\u001f\u007f]/g, " ");
-  return `plan=${plan.plan}\ndeploy=${plan.deploy}\nverify_sha=${plan.verifySha}\nreason=${reason}\n`;
+  const oneLine = (text) => String(text).replace(/[\u0000-\u001f\u007f]/g, " ");
+  return (
+    `plan=${plan.plan}\ndeploy=${plan.deploy}\nupload=${frontends.upload}\n` +
+    `verify_sha=${frontends.verifySha}\nreason=${oneLine(plan.reason)}\n` +
+    `upload_reason=${oneLine(frontends.uploadReason)}\n`
+  );
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
@@ -194,26 +296,36 @@ async function main() {
   const healthUrl = requireEnv("API_HEALTHCHECK_URL", {
     hint: "It comes from Infisical (docs/internal/environment/SECRETS_MANAGEMENT.md).",
   });
+  const apiKey = requireEnv("VERCEL_API_KEY");
+  const teamId = requireEnv("VERCEL_TEAM_ID");
+  const hosts = requireEnv("VERCEL_STAGING_HOSTS").split(/\s+/).filter(Boolean);
   const served = await readServedCommit(healthUrl);
   // `origin/main` as the checkout fetched it (full history). TIP_REF exists for
   // the tests, which run on branches whose `origin/main` is elsewhere.
   const tip = gitResolve(process.env.TIP_REF || "origin/main");
+  const isAncestor = (a, b) => gitIsAncestor(a, b);
   const plan = planStagingDeploy({
     head,
     served,
     tip,
-    isAncestor: (a, b) => gitIsAncestor(a, b),
+    isAncestor,
     changedPaths: (base, tip) => gitChangedPaths(base, tip),
   });
+  // Only a non-tip commit whose API is ready needs the hosts read.
+  const needsHosts = Boolean(tip) && !same(tip, head) && Boolean(plan.readyApi);
+  const live = needsHosts ? await readStagingFrontends(hosts, { apiKey, teamId }) : null;
+  const frontends = planFrontendUpload({ head, tip, api: plan, live, isAncestor });
 
   console.log(`Plan for ${head}: ${plan.plan} — ${plan.reason}.`);
+  console.log(`Web and landing: ${frontends.upload ? "upload" : "no upload"} — ${frontends.uploadReason}.`);
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, formatPlanOutputs(plan));
+    appendFileSync(process.env.GITHUB_OUTPUT, formatPlanOutputs(plan, frontends));
   }
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `### Staging deploy plan\n\n**${plan.plan}** for \`${head}\`: ${plan.reason}.\n`,
+      `### Staging deploy plan\n\n**${plan.plan}** for \`${head}\`: ${plan.reason}.\n\n` +
+        `Web and landing: **${frontends.upload ? "upload" : "no upload"}**, ${frontends.uploadReason}.\n`,
     );
   }
 }

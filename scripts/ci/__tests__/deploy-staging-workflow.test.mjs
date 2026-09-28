@@ -159,9 +159,11 @@ describe("deploy-staging.yml: the order", () => {
     alias: indexOf((s) => s.body.includes("scripts/ci/ensure-vercel-staging-alias.mjs"), "aliases the staging hosts"),
   });
 
-  it("runs install → baseline → inject → build → migrate → plan → Render → verify → upload → alias", () => {
+  it("runs install → baseline → inject → plan → build → migrate → Render → verify → upload → alias", () => {
+    // The plan is read-only and comes first so a run with nothing to upload
+    // builds nothing; every step that changes anything keeps #2803's order.
     const o = order();
-    const sequence = ["npmCi", "baseline", "inject", "build", "migrateDry", "migrate", "plan", "render", "verify", "upload", "alias"];
+    const sequence = ["npmCi", "baseline", "inject", "plan", "build", "migrateDry", "migrate", "render", "verify", "upload", "alias"];
     for (let i = 1; i < sequence.length; i += 1) {
       assert.ok(
         o[sequence[i - 1]] < o[sequence[i]],
@@ -205,22 +207,45 @@ describe("deploy-staging.yml: the order", () => {
         assert.doesNotMatch(s.if ?? "", /always\(\)|failure\(\)|cancelled\(\)/, `${s.name} must not run past a failure`);
       }
     }
-    for (const name of ["Build the Vercel preview bundles (web + landing)", "Run migrations (dry-run)", "Run migrations (apply)", "Plan the deploy"]) {
+    for (const name of ["Run migrations (dry-run)", "Run migrations (apply)", "Plan the deploy"]) {
       assert.equal(step(name).if, null, `${name} runs on every eligible push`);
     }
+    // The build runs on the plan alone: a skipped build must mean nothing
+    // uploads, never an upload with nothing built.
+    assert.equal(step("Build the Vercel preview bundles (web + landing)").if, "steps.plan.outputs.upload == 'true'");
   });
 
   it("plans, deploys on the plan's say-so, and verifies what the plan named", () => {
     const deploy = step("Deploy the commit to Render");
     assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true'");
     const verify = step("Verify staging serves the commit");
-    assert.equal(verify.if, "steps.plan.outputs.plan != 'stale'", "verifies on a current plan too, never on a stale one");
+    // `verify_sha` is set whenever anything ships (a current plan, or a stale
+    // one that uploads), and empty only when nothing does.
+    assert.equal(verify.if, "steps.plan.outputs.verify_sha != ''");
     assert.equal(verify.env.get("DEPLOY_SHA"), "${{ steps.plan.outputs.verify_sha }}");
   });
 
-  it("skips the upload and the alias on a stale plan, so an older frontend never replaces a newer one", () => {
-    assert.equal(step("Upload web + landing to staging").if, "steps.plan.outputs.plan != 'stale'");
-    assert.equal(step("Point the staging hostnames at the new deployments").if, "steps.plan.outputs.plan != 'stale'");
+  it("builds, uploads and aliases on the plan's upload verdict, never the API's", () => {
+    // The API verdict reads only the paths its image is built from, so gating
+    // the frontends on it skipped a non-tip web-only commit even when nothing
+    // newer was live (#2803 review). `plan-staging-deploy.mjs` decides `upload`
+    // against what the staging hostnames serve.
+    for (const name of [
+      "Build the Vercel preview bundles (web + landing)",
+      "Upload web + landing to staging",
+      "Point the staging hostnames at the new deployments",
+    ]) {
+      assert.equal(step(name).if, "steps.plan.outputs.upload == 'true'", name);
+    }
+  });
+
+  it("gives the plan what it needs to read the staging hostnames", () => {
+    const plan = step("Plan the deploy");
+    assert.equal(plan.env.get("VERCEL_API_KEY"), "${{ secrets.VERCEL_API_KEY }}");
+    assert.ok(plan.env.get("VERCEL_TEAM_ID"), "the plan names the Vercel team");
+    // The same two hostnames the alias step points, so the plan reads what the
+    // upload would replace.
+    assert.deepEqual(plan.env.get("VERCEL_STAGING_HOSTS").split(/\s+/).sort(), ["app.staging.frapp.live", "staging.frapp.live"]);
   });
 });
 
@@ -249,7 +274,7 @@ describe("deploy-staging.yml: the staging hosts", () => {
 
   it("refuses to alias when the upload reported no deployment id", () => {
     const alias = step("Point the staging hostnames at the new deployments").body;
-    assert.match(alias, /if \[ -z "\$\{WEB_DEPLOYMENT_ID:-\}" \]/);
+    assert.match(alias, /if \[ -z "\$\{WEB_DEPLOYMENT_ID:-\}" \] \|\| \[ -z "\$\{LANDING_DEPLOYMENT_ID:-\}" \]/);
     assert.match(alias, /Refusing to alias a staging hostname/);
   });
 });

@@ -284,9 +284,9 @@ export async function checkRenderHealthCheckPath({
 /**
  * Render `frapp-api-staging` does NOT auto-deploy, and tracks `main`.
  *
- * Since #2505 staging deploys by commit (`deploy-staging.yml` since #2803), after CI and
- * `migrate-staging`, through the Render API. Auto-deploy fires on push,
- * before either: it builds a commit CI may yet fail, against a schema its
+ * Since #2505 staging deploys by commit (`deploy-staging.yml` since #2803),
+ * after CI and the staging migrations, through the Render API. Auto-deploy
+ * fires on push, before either: it builds a commit CI may yet fail, against a schema its
  * migration has not reached, and every API commit builds twice. The deploy
  * `deploy-staging.yml` then creates is superseded by, or supersedes, the one
  * auto-deploy started, and a cancelled deploy fails that job. So auto-deploy
@@ -327,7 +327,7 @@ export async function checkRenderAutoDeploy({
   if (autoDeploy !== "no") {
     findings.push(
       `autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'no'). ` +
-        `With auto-deploy on, every push builds before CI and migrate-staging, and races the ` +
+        `With auto-deploy on, every push builds before CI and the staging migrations, and races the ` +
         `deploy Deploy staging creates for the same commit. Render dashboard → frapp-api-staging → ` +
         `Settings → Auto-Deploy → Off.`,
     );

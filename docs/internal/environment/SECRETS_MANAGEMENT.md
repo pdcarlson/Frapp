@@ -444,7 +444,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 1. **Immediately** rotate the secret in the source provider (Supabase/Stripe/etc.)
 2. Update the canonical value in Infisical (one place)
-3. The Render syncs propagate automatically; web and landing need a redeploy (staging: re-run the **Deploy staging** run for `main`'s tip, because an older run plans `stale` and uploads nothing; production: dispatch **Deploy production**). Verify all services are healthy
+3. The Render syncs propagate automatically; web and landing need a redeploy (staging: re-run the **Deploy staging** run for `main`'s tip, the only run that rebuilds the commit the staging hosts already serve. If the tip's CI failed, it has no deploy run to re-run: re-run that CI if it failed on a flake, otherwise the next green merge rebuilds, and until then the staging frontends keep the old value. Production: dispatch **Deploy production**). Verify all services are healthy
 4. If committed to git: notify team, consider force-push to remove
 
 ### Infisical Down

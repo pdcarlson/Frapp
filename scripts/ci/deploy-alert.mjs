@@ -122,13 +122,15 @@ export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
  *   current — the API needed no deploy and this is main's tip: a green job
  *             means the API was verified serving and ready and the frontends
  *             uploaded, which may close the alert, but the summary must not
- *             say the API DEPLOYED.
+ *             say the API DEPLOYED (nor that nothing shipped: web and landing
+ *             did).
  *   forward — not main's tip, but deployed forward: a failure raises the
  *             alert like any deploy, but success doesn't close it, since
  *             main's tip may still be failing. The tip's run decides.
- *   stale   — not main's tip, and nothing deployed (API or frontends): its
- *             verdict is about an old commit, so it neither raises nor closes
- *             the alert.
+ *   stale   — not main's tip, and no API deployed. Web and landing may still
+ *             have moved forward (the plan's `upload` rule), but the verdict
+ *             is about a non-tip commit, so a green one neither raises nor
+ *             closes the alert; a failed one raises it like any failure.
  *
  * `retiredAlertTitles` are the two old configs' titles. A successful run
  * closes an issue still open under either, so neither is orphaned by the
@@ -358,7 +360,7 @@ export function buildHeadline({
   }
   if (outcome === "deployed") {
     if (plan === "current") {
-      return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed. Nothing needed deploying; staging was verified serving and ready.`;
+      return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed. The API needed no deploy; staging was verified serving it and ready.`;
     }
     return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed.`;
   }
@@ -392,7 +394,7 @@ export function buildRunSummary({
   const badge = escalated
     ? "❌ **NOTHING RAN — nothing deployed**"
     : outcome === "deployed" && plan === "current"
-      ? "✅ **UP TO DATE — nothing needed deploying; staging verified**"
+      ? "✅ **API UP TO DATE — no API deploy needed; staging verified**"
       : OUTCOME_COPY.badges[outcome];
 
   // When the gate job itself did not succeed, its outputs are empty — which is
@@ -686,14 +688,14 @@ export async function runDeployAlert({
 
   // A `stale` run, or a successful `forward` one, is not for main's tip.
   // Classifying it would close the alert on a run that verified an old or
-  // non-tip commit (or on migrate-staging's success alone), while the tip's
+  // non-tip commit (or on its migrations' success alone), while the tip's
   // own run may be failing. The tip's run decides; this one only reports. A
   // failed `forward` deploy is not superseded: it raises like any failure.
   if (isSuperseded(needs, config)) {
     const reason =
       plan === "forward"
         ? "it deployed this commit forward, but it is not main's tip, so the tip's run decides the alert"
-        : "its deploy plan is `stale`: this run is not for main's tip and deployed nothing";
+        : "its deploy plan is `stale`: this run is not for main's tip and deployed no API";
     const headline = buildHeadline({
       outcome: "superseded",
       failed: [],
