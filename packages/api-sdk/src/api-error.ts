@@ -7,9 +7,16 @@
  * `apps/mobile/lib/api-error.ts` (study errors, dues pay errors, and check-in)
  * before being promoted here so web can share it without a second copy.
  *
- * `codeOf` matters more than it looks: the API's structured error codes are the
- * only reliable way to tell two failures with the same status apart — a module
- * gate and a permission denial are both 403, and they need opposite copy.
+ * `codeOf` reads a field no real response carries yet. The API throws
+ * structured codes (`chapter.module.disabled` from `ChapterGuard`,
+ * `legal.acceptance_required` from `LegalAcceptanceService`),
+ * but `AllExceptionsFilter` serialises only `{statusCode, error, message,
+ * requestId}`, so `codeOf` is `null` in production until #1020 changes that
+ * contract. A branch keyed on it alone typechecks, passes any test that
+ * hand-builds a body with `code`, and never fires: mobile study's module-gate
+ * copy was dead that way until #2393. To tell two 403s apart today, match the
+ * server's exact message with a shared matcher from `@repo/validation`
+ * (`subscriptionRefusalFromServerMessage`, `moduleRefusalFromServerMessage`).
  *
  * Hand-written. OpenAPI codegen overwrites only `src/types.ts`; this module
  * is re-exported from `src/index.ts` (the package `exports` map has no
@@ -51,7 +58,10 @@ export function serverMessageOf(error: unknown): string | null {
   return null;
 }
 
-/** The API's structured error code (e.g. `chapter.module.disabled`), or `null`. */
+/**
+ * The API's structured error code (e.g. `chapter.module.disabled`), or `null`,
+ * which is what every real response gives today (#1020; see the header).
+ */
 export function codeOf(error: unknown): string | null {
   const candidate = (error ?? {}) as ApiErrorShape;
   return typeof candidate.code === "string" && candidate.code.length > 0

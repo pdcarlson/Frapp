@@ -20,7 +20,7 @@ import {
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
-import { isModuleEnabled } from '@repo/validation';
+import { isModuleEnabled, moduleDisabledMessage } from '@repo/validation';
 import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
@@ -296,7 +296,9 @@ export class ChapterGuard implements CanActivate {
     if (!isModuleEnabled(enabledModules, moduleKey)) {
       throw new ForbiddenException({
         code: 'chapter.module.disabled',
-        message: `The "${moduleKey}" module is disabled for this chapter. Re-enable it in Settings → Modules to make changes.`,
+        // Built by `@repo/validation` because the clients recognise this
+        // refusal by its message: `code` never reaches them (#1020).
+        message: moduleDisabledMessage(moduleKey),
       });
     }
   }

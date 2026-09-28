@@ -23,6 +23,7 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
+import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -52,8 +53,8 @@ type Status =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string }
   /**
-   * The subscription gate refused the write (#2297). Terminal for as long as
-   * the chapter is not active, so — unlike `error` — it re-arms neither the
+   * The subscription gate (#2297) or the module gate (#2393) refused the
+   * write. Terminal until an officer acts, so — unlike `error` — it re-arms neither the
    * scanner nor the manual field. A separate variant rather than a flag on
    * `error`, so "no retry" is structural and a future branch cannot forget it.
    */
@@ -69,14 +70,19 @@ function errorMessage(error: unknown, fallback: string): string {
 /**
  * Which terminal state a failed check-in lands in.
  *
- * A subscription refusal must not fall through to `errorMessage`, which
- * relays the server string verbatim — for an `incomplete` chapter that reads
- * "…complete checkout to use this feature.", i.e. a purchase instruction
- * rendered inside the iOS app, which the store declaration forbids.
+ * Neither gate refusal may fall through to `errorMessage`, which relays the
+ * server string verbatim. For an `incomplete` chapter that reads "…complete
+ * checkout to use this feature.", a purchase instruction rendered inside the
+ * iOS app, which the store declaration forbids. With `events` switched off it
+ * reads "Re-enable it in Settings → Modules", an instruction a member can't
+ * follow.
  */
 function failureStatus(error: unknown): Status {
   if (subscriptionRefusalOf(error)) {
     return { kind: "blocked", message: SUBSCRIPTION_REFUSAL_COPY.checkIn };
+  }
+  if (moduleRefusalOf(error)) {
+    return { kind: "blocked", message: MODULE_REFUSAL_COPY.checkIn };
   }
   return {
     kind: "error",
