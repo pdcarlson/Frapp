@@ -873,13 +873,14 @@ first and third are what the `deploy-outcome` job fixes:
 In `deploy-staging.yml` the terminal `deploy-outcome` job `needs` the `deploy` job (the call into `_deploy.yml`) and runs under
 `always()` plus that job's own eligibility conditions, so it sees the whole run's shape.
 `deploy-production.yml` has one too since #2805 (`ALERT_CONFIG: deploy-production`), gated by its
-step `if:` so a dry run, a cancel, a rejected approval or a green `migrations-only` run never reaches
-the script. Per run it does two things:
+step `if:` so a dry run, a cancel or a green `migrations-only` run never reaches the script; a
+deploy job that never started reaches it and files nothing (below). Per run it does two things:
 
 - **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
   whether the run **deployed** something, **failed**, found the API **up to date** (a `current`
   plan: the API needed no deploy and was verified, and the frontends still uploaded), or was
-  **superseded**, with a per-job result table and the deploy plan. `cancelled` and `timed_out` count as failures, including a
+  **superseded**, or (production only) **never started** its deploy job, with a per-job result
+  table and the deploy plan. `cancelled` and `timed_out` count as failures, including a
   pending job GitHub replaced in its concurrency queue (rare, and closed by the next run).
 - **Raises or clears one alert issue.** On failure it upserts a single tracking issue titled
   *"Deploy staging is failing — merges are not reaching staging"* (`incident`, `area:ci`,
@@ -941,11 +942,16 @@ Consequences worth knowing before editing the script:
   reads it to report a `current` run as up to date rather than deployed, and to leave the alert
   alone on a `stale` run or a successful `forward` one (a failed `forward` deploy still raises).
   `closesOn` makes the issue text say which runs close it.
-- **A rejected approval is not a failed deploy.** When a reviewer declines production's approval,
-  `deploy` fails with no step run. `skipWhenApprovalRejected` has the script read the run's
-  approval history (`GET /repos/{repo}/actions/runs/{id}/approvals`, so `deploy-outcome` holds
-  `actions: read`) and report `rejected`, raising and closing nothing. When the history can't be
-  read it raises, so an unreadable history never hides a real failure.
+- **A deploy job that never started is not a failed deploy.** A declined or expired approval, the
+  environment's branch rule and a pending run replaced in the queue all end production's `deploy`
+  with no step run and a result a real failure also has. `quietWhenNeverStarted` names the
+  caller's deploy job, and the script reads **this attempt's** jobs
+  (`GET /repos/{repo}/actions/runs/{id}/attempts/{n}/jobs`, so `deploy-outcome` holds
+  `actions: read`). A job with no steps never got a runner: it reports `not-started` and raises and
+  closes nothing, and the summary says production is unchanged. Not the run's approval history:
+  a re-run keeps the run id, so an earlier attempt's rejection would quiet a later attempt's real
+  failure. Not an output of the called job: a failed call may not carry its outputs back. When the
+  jobs can't be read, or none has that name, it raises.
 
 The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
 [`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the

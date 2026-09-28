@@ -307,18 +307,20 @@ jobs:
     permissions:
       contents: read
       issues: write
-      # The run's approval history, so a rejected approval files no alert.
+      # This attempt's jobs, so a deploy job that never started files no alert.
       actions: read
     steps:
       # The alert steps run on a real ship or a migrations-only run that
       # FAILED; never on a dry run (nothing was applied, and the dispatcher is
       # watching) and never on a cancelled run (a human stopped it). A green
       # migrations-only run doesn't run them either: the code didn't ship, so
-      # it can't close the alert. A rejected approval fails `deploy` with no
-      # step run; deploy-alert.mjs reads the run's approval history
-      # (`actions: read`) and files nothing for it. The tag is not the alert's:
-      # a failed `release` reds the summary below, and
-      # `production-release-pin.yml`'s P1 alert catches hosts left untagged.
+      # it can't close the alert. A `deploy` job that never ran a step (a
+      # declined or expired approval, the environment's branch rule, a pending
+      # run replaced in the queue) fails or cancels with production unchanged;
+      # deploy-alert.mjs reads this attempt's jobs (`actions: read`) and files
+      # nothing for it. The tag is not the alert's: a failed `release` reds the
+      # summary below, and `production-release-pin.yml`'s P1 alert catches
+      # hosts left untagged.
       - name: Checkout
         if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
         uses: actions/checkout@v4
@@ -326,6 +328,7 @@ jobs:
           persist-credentials: false
 
       - name: Report deploy outcome and alert on failure
+        id: alert
         if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -333,6 +336,7 @@ jobs:
           DEPLOY_NEEDS: ${{ toJSON(needs) }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
           HEAD_BRANCH: ${{ github.ref_name }}
           HEAD_SHA: ${{ needs.validate.outputs.sha }}
         run: node scripts/ci/deploy-alert.mjs
@@ -351,6 +355,8 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run_only }}
           SCOPE: ${{ inputs.scope }}
           SHA: ${{ needs.validate.outputs.sha }}
+          # `not-started` when the alert step found the deploy job ran no step.
+          ALERT_OUTCOME: ${{ steps.alert.outputs.outcome }}
         run: |
           {
             # The heading, not just a row: this summary gets linked and
@@ -394,6 +400,10 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+          if [ "$ALERT_OUTCOME" = "not-started" ]; then
+            echo "::error::Production deploy did not start ($DEPLOY_RESULT): the deploy job ran no step (a declined or expired approval, the environment's branch rule, or a pending run replaced in the queue). Nothing ran; production is unchanged."
+            exit 1
+          fi
           if [ "$DEPLOY_RESULT" != "success" ]; then
             echo "::error::Production deploy did not succeed ($DEPLOY_RESULT). Read the failing step above; if migrations were applied, docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md owns recovery."
             exit 1

@@ -9,7 +9,7 @@ import {
   DEPLOY_PRODUCTION_CONFIG,
   DEPLOY_STAGING_CONFIG,
   alertJobNames,
-  approvalRejected,
+  deployNeverStarted,
   buildAlertCommentBody,
   buildAlertIssueBody,
   buildHeadline,
@@ -1761,80 +1761,103 @@ test("readPlan and isSuperseded ignore a config without planOutput", () => {
   assert.equal(readPlan(needs, API_SHAPED_CONFIG), "stale");
 });
 
-// ── A rejected production approval (#2805) ──────────────────────────────────
-// A reviewer declining the deployment fails `deploy` with nothing run. That is
-// a decision, not an outage, so it must not open a P1; everything else that
-// fails still must. The review history decides, not an output of the called
-// job, which a failed call may not carry to the caller.
+// ── A production deploy job that never started (#2805) ──────────────────────
+// A declined or expired approval, the environment's branch rule and a pending
+// run replaced in the queue all fail or cancel `deploy` with nothing run. That
+// changed nothing, so it must not open a P1; everything else that fails still
+// must. This attempt's jobs decide, not an output of the called job (a failed
+// call may not carry it back) and not the run's review history (a re-run keeps
+// the run id, so an earlier attempt's rejection would quiet a later failure).
 
-/** makeFetchStub, plus the run's review history at /actions/runs/77/approvals. */
-function withApprovals(reviews, base = makeFetchStub({ issues: [] })) {
+const JOBS_PATH = "/repos/o/r/actions/runs/77/attempts/2/jobs?per_page=100";
+const DEPLOY_JOB = DEPLOY_PRODUCTION_CONFIG.quietWhenNeverStarted;
+const ranSteps = [{ name: "Set up job", status: "completed", conclusion: "success" }];
+
+/** makeFetchStub, plus attempt 2's jobs. `jobs === null` answers 403. */
+function withJobs(jobs, base = makeFetchStub({ issues: [] })) {
   const fetchImpl = async (url, options = {}) => {
-    if (url.endsWith("/repos/o/r/actions/runs/77/approvals")) {
-      base.calls.push({ method: "GET", path: "/repos/o/r/actions/runs/77/approvals", body: null });
-      return reviews === null ? jsonResponse(403, { message: "Resource not accessible" }) : jsonResponse(200, reviews);
+    if (url.endsWith(JOBS_PATH)) {
+      base.calls.push({ method: "GET", path: JOBS_PATH, body: null });
+      return jobs === null ? jsonResponse(403, { message: "Resource not accessible" }) : jsonResponse(200, { jobs });
     }
     return base.fetchImpl(url, options);
   };
   return { fetchImpl, calls: base.calls };
 }
 
-test("approvalRejected reads the run's review history, and says when it can't", async () => {
-  const read = (reviews, runId = "77") =>
-    approvalRejected({ token: "t", repo: "o/r", runId, fetchImpl: withApprovals(reviews).fetchImpl });
-  assert.equal(await read([{ state: "rejected", environments: [{ name: "production" }] }]), true);
-  assert.equal(await read([{ state: "approved" }]), false);
-  assert.equal(await read([]), false);
-  assert.equal(await read(null), null, "an unreadable history is not a verdict");
-  assert.equal(await read([{ state: "rejected" }], ""), null, "no run id, no read");
+test("deployNeverStarted reads this attempt's deploy job, and says when it can't", async () => {
+  const read = (jobs, overrides = {}) =>
+    deployNeverStarted({
+      token: "t",
+      repo: "o/r",
+      runId: "77",
+      runAttempt: "2",
+      jobName: DEPLOY_JOB,
+      fetchImpl: withJobs(jobs).fetchImpl,
+      ...overrides,
+    });
+  const validate = { name: "Confirm and validate the SHA", steps: ranSteps };
+  // The expanded call's name, with no steps: it never got a runner.
+  assert.equal(await read([validate, { name: `${DEPLOY_JOB} / deploy`, conclusion: "failure" }]), true);
+  assert.equal(await read([validate, { name: `${DEPLOY_JOB} / deploy`, steps: [] }]), true);
+  assert.equal(await read([validate, { name: DEPLOY_JOB, conclusion: "cancelled" }]), true, "the unexpanded name too");
+  assert.equal(await read([validate, { name: `${DEPLOY_JOB} / deploy`, steps: ranSteps }]), false);
+  // Every job by that name must be step-less: one that ran is enough to raise.
+  assert.equal(await read([{ name: DEPLOY_JOB }, { name: `${DEPLOY_JOB} / deploy`, steps: ranSteps }]), false);
+  assert.equal(await read([validate]), null, "no deploy job is not a verdict");
+  assert.equal(await read(null), null, "an unreadable list is not a verdict");
+  assert.equal(await read([], { runAttempt: "" }), null, "no attempt, no read");
+  assert.equal(await read([], { runId: "" }), null, "no run id, no read");
 });
 
-test("a rejected production approval neither raises nor closes the alert", async () => {
-  const { fetchImpl, calls } = withApprovals([{ state: "rejected" }]);
+const productionFailure = (jobs) => {
+  const stub = withJobs(jobs);
+  return {
+    stub,
+    run: (overrides = {}) =>
+      runDeployAlert({
+        ...RUN,
+        runId: "77",
+        runAttempt: "2",
+        needs: productionNeeds("failure"),
+        fetchImpl: stub.fetchImpl,
+        writeSummary: () => {},
+        logger: silentLogger,
+        config: DEPLOY_PRODUCTION_CONFIG,
+        ...overrides,
+      }),
+  };
+};
+
+test("a production deploy job that never started neither raises nor closes the alert", async () => {
+  const { stub, run } = productionFailure([{ name: `${DEPLOY_JOB} / deploy`, conclusion: "failure" }]);
   let summary = "";
-  const result = await runDeployAlert({
-    ...RUN,
-    runId: "77",
-    needs: productionNeeds("failure"),
-    fetchImpl,
-    writeSummary: (text) => {
-      summary = text;
-    },
-    logger: silentLogger,
-    config: DEPLOY_PRODUCTION_CONFIG,
-  });
-  assert.equal(result.outcome, "rejected");
+  const result = await run({ writeSummary: (text) => (summary = text) });
+  assert.equal(result.outcome, "not-started");
   assert.deepEqual(result.alert, { action: "none" });
-  assert.deepEqual(calls.map((c) => c.path), ["/repos/o/r/actions/runs/77/approvals"], "no issue read or written");
-  assert.match(summary, /REJECTED — a reviewer declined the deployment; nothing ran/);
+  assert.deepEqual(stub.calls.map((c) => c.path), [JOBS_PATH], "no issue read or written");
+  assert.match(summary, /NOT STARTED — the deploy job never ran a step/);
   assert.doesNotMatch(summary, /FAILED/);
 });
 
-test("a failed production deploy still raises when approved, or when the history can't be read", async () => {
-  for (const reviews of [[{ state: "approved" }], null]) {
-    const { fetchImpl, calls } = withApprovals(reviews);
-    const result = await runDeployAlert({
-      ...RUN,
-      runId: "77",
-      needs: productionNeeds("failure"),
-      fetchImpl,
-      writeSummary: () => {},
-      logger: silentLogger,
-      config: DEPLOY_PRODUCTION_CONFIG,
-    });
-    assert.equal(result.outcome, "failed", JSON.stringify(reviews));
-    assert.equal(result.alert.action, "created", JSON.stringify(reviews));
-    assert.ok(calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
+test("a failed production deploy still raises when its job ran, or when that can't be read", async () => {
+  for (const jobs of [[{ name: `${DEPLOY_JOB} / deploy`, steps: ranSteps }], [], null]) {
+    const { stub, run } = productionFailure(jobs);
+    const result = await run();
+    assert.equal(result.outcome, "failed", JSON.stringify(jobs));
+    assert.equal(result.alert.action, "created", JSON.stringify(jobs));
+    assert.ok(stub.calls.some((c) => c.method === "POST" && c.path === "/repos/o/r/issues"));
   }
 });
 
-test("only the production config consults the approval history", async () => {
-  assert.equal(DEPLOY_PRODUCTION_CONFIG.skipWhenApprovalRejected, true);
-  assert.notEqual(DEPLOY_STAGING_CONFIG.skipWhenApprovalRejected, true, "staging has no approval to reject");
-  const { fetchImpl, calls } = withApprovals([{ state: "rejected" }]);
+test("only the production config asks whether the deploy job started", async () => {
+  assert.equal(typeof DEPLOY_PRODUCTION_CONFIG.quietWhenNeverStarted, "string");
+  assert.equal(DEPLOY_STAGING_CONFIG.quietWhenNeverStarted, undefined, "staging has no gate before its job");
+  const { fetchImpl, calls } = withJobs([{ name: "deploy / deploy", conclusion: "failure" }]);
   const result = await runDeployAlert({
     ...RUN,
     runId: "77",
+    runAttempt: "2",
     needs: stagingNeeds("failure", "deploy"),
     fetchImpl,
     writeSummary: () => {},
@@ -1842,5 +1865,5 @@ test("only the production config consults the approval history", async () => {
     config: DEPLOY_STAGING_CONFIG,
   });
   assert.equal(result.outcome, "failed");
-  assert.ok(!calls.some((c) => c.path.endsWith("/approvals")));
+  assert.ok(!calls.some((c) => c.path.includes("/jobs")));
 });

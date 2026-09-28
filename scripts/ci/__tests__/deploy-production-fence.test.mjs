@@ -880,12 +880,12 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.equal(job.keys.get("needs"), "[validate, deploy, release]");
     assert.equal(job.keys.get("permissions").get("issues"), "write");
     assert.equal(job.keys.get("permissions").get("contents"), "read");
-    assert.equal(job.keys.get("permissions").get("actions"), "read", "the approval history, for a rejected approval");
+    assert.equal(job.keys.get("permissions").get("actions"), "read", "this attempt's jobs, for a deploy that never started");
   });
 
   // Never on a dry run, a cancel, or a green migrations-only run (the code
-  // didn't ship, so it can't close). A rejected approval reaches the script,
-  // which reads the run's approval history and files nothing.
+  // didn't ship, so it can't close). A deploy job that never started reaches
+  // the script, which reads this attempt's jobs and files nothing.
   it("raises or closes only on a real ship, or a failed migrations-only run", () => {
     const [checkout, alert, summary] = outcomeSteps();
     assert.equal(checkout.if, ALERT_IF);
@@ -898,6 +898,8 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.equal(alert.env.get("DEPLOY_NEEDS"), "${{ toJSON(needs) }}");
     assert.equal(alert.env.get("HEAD_SHA"), VALIDATED_SHA);
     assert.equal(alert.env.get("RUN_ID"), "${{ github.run_id }}");
+    assert.equal(alert.env.get("RUN_ATTEMPT"), "${{ github.run_attempt }}");
+    assert.match(alert.body, /^\s*id: alert$/m);
     // Last: it exits 1 on a failed deploy or tag, which would skip a later step.
     assert.equal(summary.name, "Summarise what actually happened");
     assert.equal(summary.if, "always()");
@@ -917,14 +919,24 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.ok(routing.includes(`*${config.alertTitle}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
   });
 
-  // A rejected approval fails `deploy` with no step run, which reads like a
-  // deploy that failed before it began. The alert tells them apart by the
-  // run's approval history, not by an output of the called job: a failed call
+  // A deploy job that never ran a step fails or cancels like one that broke.
+  // The alert tells them apart from this attempt's jobs, found by the caller
+  // job's display name, not from an output of the called job: a failed call
   // may not carry its outputs back.
-  it("files nothing for a rejected approval, and reads that from the run, not the called job", () => {
-    assert.equal(ALERT_CONFIGS["deploy-production"].skipWhenApprovalRejected, true);
+  it("files nothing for a deploy job that never started, found by the caller's job name", () => {
+    assert.equal(ALERT_CONFIGS["deploy-production"].quietWhenNeverStarted, callerJob("deploy").keys.get("name"));
     assert.doesNotMatch(withoutComments(readFileSync(CALLER, "utf8")), /needs\.deploy\.outputs\.started/);
     assert.equal(workflowJobs(SHARED)[0].keys.get("outputs").has("started"), false);
+  });
+
+  // The summary must not send a run where nothing ran to the rollback playbook.
+  it("the summary reads the alert's outcome and says nothing ran when the job never started", () => {
+    const summary = outcomeSteps().at(-1);
+    assert.equal(summary.env.get("ALERT_OUTCOME"), "${{ steps.alert.outputs.outcome }}");
+    const body = summary.body;
+    const notStarted = body.indexOf('if [ "$ALERT_OUTCOME" = "not-started" ]; then');
+    assert.ok(notStarted > 0 && notStarted < body.indexOf('if [ "$DEPLOY_RESULT" != "success" ]; then'));
+    assert.match(body.slice(notStarted, body.indexOf("fi", notStarted)), /production is unchanged/);
   });
 });
 

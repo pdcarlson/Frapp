@@ -184,11 +184,13 @@ export const DEPLOY_STAGING_CONFIG = {
  * workflow: a dry run never does (nothing was applied, and the dispatcher is
  * watching), a cancelled run never does, and a green `migrations-only` run
  * never does, because the code didn't ship and so it can't close the alert.
- * The one case decided here is a rejected approval: `deploy` then fails with
- * nothing run, and `approvalRejected` reads the run's review history rather
- * than an output of the called job, which a failed call may not carry to the
- * caller. So every other run that arrives either raises (the deploy job
- * failed) or closes (a real `full` release succeeded).
+ * The one case decided here is a deploy job that never ran a step: a declined
+ * or expired approval, the environment's branch rule, or a pending run
+ * replaced in the queue. Its result is `failure` or `cancelled` like a real
+ * one, and production is unchanged, so `deployNeverStarted` reads this
+ * attempt's jobs and the script files nothing. Every other run that arrives
+ * either raises (the deploy job failed) or closes (a real `full` release
+ * succeeded).
  *
  * `gateJob` is null and `validate` is not a deploy job: a mistyped
  * confirmation or a red-CI SHA fails before anyone approves and costs nothing,
@@ -211,8 +213,10 @@ export const DEPLOY_PRODUCTION_CONFIG = {
   alertTitle: "Deploy production failed — production may be partly deployed",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   retiredAlertTitles: [],
-  // A reviewer declining the deployment is a decision, not a failure.
-  skipWhenApprovalRejected: true,
+  // A deploy job that never ran a step changed nothing, so it isn't an
+  // outage. Its display name as the jobs API lists it: the caller job's
+  // `name:`, then ` / deploy` once the call to `_deploy.yml` expands.
+  quietWhenNeverStarted: "Migrate, then ship Render + Vercel",
   noOpReason: "the deploy job did not run",
   // Unreachable through the workflow (its outcome job skips a skipped
   // `deploy`), and loud if that ever drifts.
@@ -254,7 +258,9 @@ export const OUTCOME_COPY = {
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
     superseded: "⏭️ **SUPERSEDED — a newer run decides**",
-    rejected: "⏭️ **REJECTED — a reviewer declined the deployment; nothing ran**",
+    "not-started":
+      "⏭️ **NOT STARTED — the deploy job never ran a step (a declined or expired approval, the " +
+      "environment's branch rule, or a pending run replaced in the queue); production is unchanged**",
   },
   brokenLines: (label, closesOn = DEFAULT_CLOSES_ON) => [
     `deploy path is broken: the most recent \`${label}\` run that actually tried to deploy did`,
@@ -407,8 +413,8 @@ export function buildHeadline({
   if (outcome === "superseded") {
     return `${label} on ${ref} is superseded: ${supersededReason}. It neither raises nor closes the alert; the run for the newest commit decides.`;
   }
-  if (outcome === "rejected") {
-    return `${label} on ${ref} was not approved: a reviewer rejected the deployment, so nothing ran. It neither raises nor closes the alert.`;
+  if (outcome === "not-started") {
+    return `${label} on ${ref} never started its deploy job, so nothing ran and production is unchanged. It neither raises nor closes the alert.`;
   }
   if (outcome === "failed") {
     // An escalated no-op needs its own sentence. Saying "did not succeed" of a
@@ -728,21 +734,31 @@ function defaultWriteSummary(summary) {
 }
 
 /**
- * Whether a reviewer rejected this run's environment deployment (#2805): true,
- * false, or null when the review history can't be read.
+ * Whether this attempt's deploy job never ran a step (#2805): true, false, or
+ * null when that can't be read.
  *
- * A rejected approval fails the `deploy` job before any step runs, which a job
- * result can't tell apart from a deploy that failed. The run's review history
- * can (`GET /actions/runs/{id}/approvals`, `actions: read`). An output the
- * called job's first step writes could too, but a reusable workflow's outputs
- * may not reach its caller when its job fails, and a lost output would drop a
- * real failure's alert. Unreadable reads as not rejected: the alert is raised.
+ * A declined or expired approval, the environment's branch rule and a pending
+ * run replaced in the queue all end the job before any step, with a result a
+ * real failure also has. The jobs API tells them apart: a job that never got
+ * a runner lists no steps. It is read for THIS attempt
+ * (`/actions/runs/{id}/attempts/{n}/jobs`, `actions: read`), because a re-run
+ * keeps the run id and an earlier attempt's never-started job must not quiet a
+ * later attempt's real failure. An output the called job's first step writes
+ * would say the same, but a reusable workflow's outputs may not reach the
+ * caller when its job fails, and a lost output would drop a real alert.
+ * Unreadable, or no job by that name, reads as started: the alert is raised.
  */
-export async function approvalRejected({ token, repo, runId, fetchImpl = fetch }) {
-  if (!runId) return null;
-  const res = await ghRequest({ token, fetchImpl, path: `/repos/${repo}/actions/runs/${runId}/approvals` });
-  if (!res.ok || !Array.isArray(res.data)) return null;
-  return res.data.some((review) => review?.state === "rejected");
+export async function deployNeverStarted({ token, repo, runId, runAttempt, jobName, fetchImpl = fetch }) {
+  if (!runId || !runAttempt || !jobName) return null;
+  const res = await ghRequest({
+    token,
+    fetchImpl,
+    path: `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
+  });
+  if (!res.ok || !Array.isArray(res.data?.jobs)) return null;
+  const jobs = res.data.jobs.filter((job) => job?.name === jobName || String(job?.name ?? "").startsWith(`${jobName} / `));
+  if (jobs.length === 0) return null;
+  return jobs.every((job) => !Array.isArray(job.steps) || job.steps.length === 0);
 }
 
 /**
@@ -756,6 +772,7 @@ export async function runDeployAlert({
   needs,
   runUrl,
   runId = "",
+  runAttempt = "",
   headBranch,
   headSha,
   fetchImpl = fetch,
@@ -816,13 +833,19 @@ export async function runDeployAlert({
       needs?.[config.gateJob]?.outputs?.[output] === "true",
     ]),
   );
-  if (outcome === "failed" && config.skipWhenApprovalRejected && !escalated) {
-    const rejected = await approvalRejected({ token, repo, runId, fetchImpl });
-    if (rejected === true) {
-      const rejectedHeadline = buildHeadline({ outcome: "rejected", failed, deployed, headBranch, config });
+  if (outcome === "failed" && config.quietWhenNeverStarted && !escalated) {
+    const neverStarted = await deployNeverStarted({
+      token,
+      repo,
+      runId,
+      runAttempt,
+      jobName: config.quietWhenNeverStarted,
+      fetchImpl,
+    });
+    if (neverStarted === true) {
       writeSummary(
         buildRunSummary({
-          outcome: "rejected",
+          outcome: "not-started",
           failed,
           deployed,
           jobResults,
@@ -835,11 +858,11 @@ export async function runDeployAlert({
           config,
         }),
       );
-      logger.log?.(`::notice::${rejectedHeadline}`);
-      return { outcome: "rejected", failed, deployed, alert: { action: "none" } };
+      logger.log?.(`::notice::${buildHeadline({ outcome: "not-started", failed, deployed, headBranch, config })}`);
+      return { outcome: "not-started", failed, deployed, alert: { action: "none" } };
     }
-    if (rejected === null) {
-      logger.log?.("::warning::[deploy-alert] could not read this run's approval history; treating the failure as a failed deploy");
+    if (neverStarted === null) {
+      logger.log?.("::warning::[deploy-alert] could not read whether this attempt's deploy job started; treating the failure as a failed deploy");
     }
   }
 
@@ -967,16 +990,20 @@ async function main() {
   // absent ALERT_CONFIG would otherwise write the staging alert's issue from
   // the wrong workflow's job results.
   const config = resolveAlertConfig(requireEnv("ALERT_CONFIG"));
-  await runDeployAlert({
+  const { outcome } = await runDeployAlert({
     token,
     repo,
     needs,
     runUrl: process.env.RUN_URL ?? "",
     runId: process.env.RUN_ID ?? "",
+    runAttempt: process.env.RUN_ATTEMPT ?? "",
     headBranch: process.env.HEAD_BRANCH ?? "",
     headSha: process.env.HEAD_SHA ?? "",
     config,
   });
+  // For a later step: production's summary reads it to tell a deploy that
+  // never started from one that failed.
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${outcome}\n`);
 }
 
 if (isInvokedDirectly(import.meta.url)) {
