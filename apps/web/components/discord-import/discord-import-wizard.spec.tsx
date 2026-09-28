@@ -859,7 +859,9 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
         requiredPermissions: ["chapter-config:manage"],
       },
     };
-    const step = (choices: typeof restricted) => (
+    const step = (
+      choices: Parameters<typeof ChannelMappingStep>[0]["choices"],
+    ) => (
       <ChannelMappingStep
         channels={channels}
         choices={choices}
