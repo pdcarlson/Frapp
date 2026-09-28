@@ -1,5 +1,7 @@
-// Pins `deploy-staging.yml` (#2803): the one workflow that deploys staging's
-// database, API, web and landing, in one ordered job.
+// Pins staging's deploy: `deploy-staging.yml` (#2803), which decides whether
+// to deploy and reports the outcome, and the job it calls, `_deploy.yml`
+// (#2804), which deploys staging's database, API, web and landing in one
+// ordered job. Production moves onto `_deploy.yml` in #2805.
 //
 // It replaced `deploy-api.yml` and `deploy-vercel-staging.yml`, and carries
 // every assertion their tests made (`deploy-api-workflow.test.mjs`,
@@ -15,6 +17,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,20 +27,28 @@ import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-ya
 
 const WORKFLOW_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".github", "workflows");
 const WORKFLOW = join(WORKFLOW_DIR, "deploy-staging.yml");
+const SHARED = join(WORKFLOW_DIR, "_deploy.yml");
 const HEAD_SHA = "${{ github.event.workflow_run.head_sha }}";
+const INPUT_SHA = "${{ inputs.sha }}";
 
+const withoutComments = (raw) =>
+  raw
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
 const text = readFileSync(WORKFLOW, "utf8");
-const uncommented = text
-  .split("\n")
-  .filter((line) => !/^\s*#/.test(line))
-  .join("\n");
+const uncommented = withoutComments(text);
+const sharedText = readFileSync(SHARED, "utf8");
+const sharedUncommented = withoutComments(sharedText);
 
-const job = (id) => {
-  const found = workflowJobs(WORKFLOW).find((j) => j.jobId === id);
-  assert.ok(found, `deploy-staging.yml has no job "${id}"`);
+const jobIn = (file, id) => {
+  const found = workflowJobs(file).find((j) => j.jobId === id);
+  assert.ok(found, `${file.split("/").pop()} has no job "${id}"`);
   return found;
 };
-const deploySteps = () => workflowSteps(WORKFLOW).filter((s) => s.jobId === "deploy");
+const job = (id) => jobIn(WORKFLOW, id);
+const sharedJob = () => jobIn(SHARED, "deploy");
+const deploySteps = () => workflowSteps(SHARED).filter((s) => s.jobId === "deploy");
 const step = (name) => {
   const found = deploySteps().find((s) => s.name === name);
   assert.ok(found, `the deploy job has no step named "${name}"`);
@@ -48,6 +59,44 @@ const indexOf = (predicate, what) => {
   assert.ok(index >= 0, `the deploy job has no step that ${what}`);
   return index;
 };
+/**
+ * `_deploy.yml`'s `on.workflow_call` block as `{ triggers, inputs, outputs }`:
+ * the trigger names under `on:`, and each input or output as a Map of its own
+ * keys. `workflowKeys` reads one level of nesting only, and this block has
+ * three.
+ */
+function workflowCall() {
+  const lines = sharedUncommented.split("\n");
+  const under = (start, indent) => {
+    const body = [];
+    for (const line of lines.slice(start + 1)) {
+      if (line.trim() === "") continue;
+      if (line.search(/\S/) <= indent) break;
+      body.push(line);
+    }
+    return body;
+  };
+  const keyed = (body, indent) => {
+    const out = new Map();
+    let current = null;
+    for (const line of body) {
+      const depth = line.search(/\S/);
+      const m = line.match(/^\s*([A-Za-z_-]+):\s*(.*)$/);
+      if (!m) continue;
+      if (depth === indent) out.set(m[1], (current = new Map()));
+      else if (depth === indent + 2 && current) current.set(m[1], m[2].replace(/^["']|["']$/g, ""));
+    }
+    return out;
+  };
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const triggers = under(on, 0).filter((l) => /^ {2}\S/.test(l)).map((l) => l.trim().replace(/:.*$/, ""));
+  const call = lines.findIndex((l) => /^ {2}workflow_call:\s*$/.test(l));
+  const section = (name) => {
+    const at = lines.findIndex((l, i) => i > call && new RegExp(`^ {4}${name}:\\s*$`).test(l));
+    return at === -1 ? new Map() : keyed(under(at, 4), 6);
+  };
+  return { triggers, inputs: section("inputs"), outputs: section("outputs") };
+}
 const USES_INFISICAL = /uses:\s*\.\/\.github\/actions\/infisical-secrets/;
 const runsVercel = (phase) => (s) => s.body.includes("scripts/ci/deploy-vercel.mjs") && s.env.get("DEPLOY_PHASE") === phase;
 
@@ -86,35 +135,161 @@ describe("deploy-staging.yml: the trigger", () => {
   });
 });
 
-describe("deploy-staging.yml: the deploy job", () => {
-  it("names the staging environment, literally", () => {
-    assert.equal(job("deploy").keys.get("environment"), "staging");
+// ── The call (#2804) ─────────────────────────────────────────────────────────
+describe("deploy-staging.yml: the call into _deploy.yml", () => {
+  it("calls the shared job for staging, with the commit CI verified", () => {
+    const deploy = job("deploy");
+    assert.equal(deploy.keys.get("uses"), "./.github/workflows/_deploy.yml");
+    const args = deploy.keys.get("with");
+    assert.equal(args.get("environment"), "staging");
+    // `github.sha` on a workflow_run event is main's tip, which may not have
+    // passed CI yet.
+    assert.equal(args.get("sha"), HEAD_SHA);
+    // Staging has no dry run and no partial scope; the defaults stand.
+    assert.equal(args.has("dry_run"), false);
+    assert.equal(args.has("scope"), false);
   });
 
-  it("queues rather than cancels, under the staging migration lock", () => {
+  it("passes no secrets: the called job gets staging's from its own environment", () => {
+    // The premise #2804 proves on a real run. Passing `secrets: inherit` (or a
+    // list) would hide a broken `environment:` key behind the caller's copies,
+    // and repository secrets are gone since #2583 anyway.
+    assert.equal(job("deploy").keys.has("secrets"), false);
+    assert.doesNotMatch(uncommented, /secrets:\s*inherit/);
+  });
+
+  it("keeps no deploy step in the caller", () => {
+    // A step here would run outside the shared job's order and lock.
+    assert.equal(workflowSteps(WORKFLOW).filter((s) => s.jobId === "deploy").length, 0);
+    assert.doesNotMatch(uncommented, /run-migration\.mjs|deploy-vercel\.mjs|deploy-render-production\.mjs/);
+  });
+});
+
+describe("_deploy.yml: the shared job's interface", () => {
+  it("is callable only, with the four inputs #2805 needs", () => {
+    const { triggers, inputs } = workflowCall();
+    assert.deepEqual(triggers, ["workflow_call"], "no trigger but a caller in this repo");
+    assert.deepEqual([...inputs.keys()].sort(), ["dry_run", "environment", "scope", "sha"]);
+    assert.equal(inputs.get("environment").get("required"), "true");
+    assert.equal(inputs.get("sha").get("required"), "true");
+    assert.equal(inputs.get("dry_run").get("type"), "boolean");
+    assert.equal(inputs.get("dry_run").get("default"), "false");
+    assert.equal(inputs.get("scope").get("default"), "full");
+  });
+
+  it("exposes the plan as a workflow output, for deploy-alert.mjs", () => {
+    // A stale run or a successful forward one leaves the alert alone, and a
+    // current one isn't reported as an API deploy. The caller's
+    // `needs.deploy.outputs.plan` reads this.
+    assert.equal(workflowCall().outputs.get("plan").get("value"), "${{ jobs.deploy.outputs.plan }}");
+    assert.equal(sharedJob().keys.get("outputs").get("plan"), "${{ steps.plan.outputs.plan }}");
+  });
+
+  it("names the caller's environment, so it gets that environment's secrets and rules", () => {
+    // workflow-secrets-scope.test.mjs holds every caller to a literal
+    // main-only environment (rule B), since this name is an expression.
+    assert.equal(sharedJob().keys.get("environment"), "${{ inputs.environment }}");
+  });
+
+  it("refuses anything but staging, and staging's defaults, before it checks anything out", () => {
+    const guard = deploySteps()[0];
+    assert.match(guard.name, /^Check the inputs/);
+    assert.equal(guard.if, null);
+    assert.match(guard.body, /if \[ "\$TARGET_ENVIRONMENT" != "staging" \]; then/);
+    assert.match(guard.body, /\^\[0-9a-f\]\{40\}\$/, "the sha must be a full commit SHA");
+    assert.match(guard.body, /if \[ "\$DRY_RUN" != "false" \] \|\| \[ "\$SCOPE" != "full" \]; then/);
+    assert.equal(guard.env.get("TARGET_ENVIRONMENT"), "${{ inputs.environment }}");
+    assert.equal(guard.env.get("DRY_RUN"), "${{ inputs.dry_run }}");
+    assert.equal(guard.env.get("SCOPE"), "${{ inputs.scope }}");
+    assert.ok(deploySteps().findIndex((s) => /uses: actions\/checkout@/.test(s.body)) > 0);
+  });
+
+  // Run the step's own bash, not a regex over it: a refusal that prints an
+  // error and carries on would pass any text match (#2804 review).
+  it("fails the job on every refusal, and prints the proof line only when all four secrets arrived", () => {
+    const guard = deploySteps()[0];
+    const script = guard.body
+      .split("\n")
+      .slice(guard.body.split("\n").findIndex((l) => /^\s*run: \|\s*$/.test(l)) + 1)
+      .filter((l) => l.trim() !== "")
+      .map((l) => l.replace(/^ {10}/, ""))
+      .join("\n");
+    assert.match(script, /^set -euo pipefail/, "the whole run block, from its first line");
+    const ok = {
+      TARGET_ENVIRONMENT: "staging",
+      DEPLOY_SHA: "0123456789abcdef0123456789abcdef01234567",
+      DRY_RUN: "false",
+      SCOPE: "full",
+      HAS_INFISICAL_MACHINE_IDENTITY_ID: "true",
+      HAS_INFISICAL_CLIENT_SECRET: "true",
+      HAS_RENDER_API_KEY: "true",
+      HAS_VERCEL_API_KEY: "true",
+    };
+    const run = (overrides) =>
+      spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH, ...ok, ...overrides }, encoding: "utf8" });
+    const PROOF = /secrets reached this called job through its own environment: key/;
+
+    const green = run({});
+    assert.equal(green.status, 0, green.stdout + green.stderr);
+    assert.match(green.stdout, PROOF);
+
+    for (const [label, overrides] of [
+      ["production", { TARGET_ENVIRONMENT: "production" }],
+      ["short sha", { DEPLOY_SHA: "0123456" }],
+      ["uppercase sha", { DEPLOY_SHA: "0123456789ABCDEF0123456789ABCDEF01234567" }],
+      ["dry run", { DRY_RUN: "true" }],
+      ["partial scope", { SCOPE: "migrations-only" }],
+      ["no Render key", { HAS_RENDER_API_KEY: "false" }],
+      ["no Infisical id", { HAS_INFISICAL_MACHINE_IDENTITY_ID: "false" }],
+    ]) {
+      const refused = run(overrides);
+      assert.equal(refused.status, 1, `${label}: ${refused.stdout}`);
+      assert.match(refused.stdout, /::error::/, label);
+      assert.doesNotMatch(refused.stdout, PROOF, `${label}: no proof line on a refusal`);
+    }
+    assert.match(run({ HAS_VERCEL_API_KEY: "false" }).stdout, /did not reach this called job: VERCEL_API_KEY/);
+  });
+
+  it("checks that the environment's secrets reached it, by name and never by value", () => {
+    const guard = deploySteps()[0];
+    for (const name of ["INFISICAL_MACHINE_IDENTITY_ID", "INFISICAL_CLIENT_SECRET", "RENDER_API_KEY", "VERCEL_API_KEY"]) {
+      assert.equal(guard.env.get(`HAS_${name}`), `\${{ secrets.${name} != '' }}`, name);
+      assert.match(guard.body, new RegExp(`missing\\+=\\(${name}\\)`), name);
+    }
+    // No secret value in this step's environment: only the comparisons.
+    assert.doesNotMatch(guard.body, /: \$\{\{ secrets\.[A-Z_]+ \}\}/);
+  });
+});
+
+describe("_deploy.yml: the deploy job", () => {
+  it("queues rather than cancels, under the environment's migration lock", () => {
     // Cancelling mid-`db push` half-migrates the database; cancelling between
-    // the API and the upload splits the hosts across commits. The group keeps
-    // the name DB_PROMOTION_RUNBOOK.md documents.
-    const concurrency = job("deploy").keys.get("concurrency");
-    assert.equal(concurrency.get("group"), "db-migrate-staging");
+    // the API and the upload splits the hosts across commits. For staging the
+    // group is `db-migrate-staging`, the name DB_PROMOTION_RUNBOOK.md
+    // documents; production's is `db-migrate-production`.
+    const concurrency = sharedJob().keys.get("concurrency");
+    assert.equal(concurrency.get("group"), "db-migrate-${{ inputs.environment }}");
     assert.equal(concurrency.get("cancel-in-progress"), "false");
+    assert.equal(job("deploy").keys.get("with").get("environment"), "staging", "so the staging lock is db-migrate-staging");
   });
 
-  it("checks out full history at the CI-verified commit, for the plan's diff", () => {
-    const checkout = deploySteps()[0];
-    assert.match(checkout.body, /uses: actions\/checkout@/);
-    assert.match(checkout.body, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  it("checks out full history at the caller's commit, for the plan's diff", () => {
+    const checkout = deploySteps().find((s) => /uses: actions\/checkout@/.test(s.body));
+    assert.ok(checkout, "the deploy job checks out the commit");
+    assert.match(checkout.body, /ref: \$\{\{ inputs\.sha \}\}/);
     assert.match(checkout.body, /fetch-depth: 0/);
     assert.match(checkout.body, /persist-credentials: false/, "third-party actions run in this job, which holds staging secrets");
   });
 
-  it("names the commit with DEPLOY_SHA, never a step-level GITHUB_SHA", () => {
+  it("names the commit with DEPLOY_SHA, never a step-level GITHUB_SHA or the event", () => {
     // `GITHUB_` is a reserved prefix: `env: GITHUB_SHA:` in a step is silently
     // ignored, and on a `workflow_run` event the ambient value is the default
-    // branch's tip, not the commit CI verified.
-    assert.doesNotMatch(uncommented, /^\s*GITHUB_SHA:/m, "use DEPLOY_SHA");
+    // branch's tip, not the commit CI verified. The shared job takes the
+    // commit from its input only; the event is the caller's business.
+    assert.doesNotMatch(sharedUncommented, /^\s*GITHUB_SHA:/m, "use DEPLOY_SHA");
+    assert.doesNotMatch(sharedUncommented, /github\.event\./, "the shared job reads its inputs, not the caller's event");
     for (const name of ["Build the Vercel preview bundles (web + landing)", "Plan the deploy", "Deploy the commit to Render", "Upload web + landing to staging"]) {
-      assert.equal(step(name).env.get("DEPLOY_SHA"), HEAD_SHA, `${name} must name the CI-verified commit`);
+      assert.equal(step(name).env.get("DEPLOY_SHA"), INPUT_SHA, `${name} must name the caller's commit`);
     }
   });
 
@@ -122,19 +297,13 @@ describe("deploy-staging.yml: the deploy job", () => {
     for (const phase of ["build", "upload"]) {
       assert.equal(deploySteps().find(runsVercel(phase)).env.get("DEPLOY_TARGET"), "preview");
     }
-    assert.doesNotMatch(uncommented, /DEPLOY_TARGET: production/);
+    assert.doesNotMatch(sharedUncommented, /DEPLOY_TARGET: production/);
   });
 
   it("pins the Vercel CLI to an exact version", () => {
-    const match = uncommented.match(/npm install --global vercel@(\S+)/);
+    const match = sharedUncommented.match(/npm install --global vercel@(\S+)/);
     assert.ok(match, "must install a pinned Vercel CLI");
     assert.match(match[1], /^\d+\.\d+\.\d+$/, `expected an exact version, got ${match[1]}`);
-  });
-
-  it("publishes the plan as a job output, for deploy-alert.mjs", () => {
-    // A stale run or a successful forward one leaves the alert alone, and a
-    // current one isn't reported as an API deploy.
-    assert.equal(job("deploy").keys.get("outputs").get("plan"), "${{ steps.plan.outputs.plan }}");
   });
 });
 
@@ -207,9 +376,11 @@ describe("deploy-staging.yml: the order", () => {
         assert.doesNotMatch(s.if ?? "", /always\(\)|failure\(\)|cancelled\(\)/, `${s.name} must not run past a failure`);
       }
     }
-    for (const name of ["Run migrations (dry-run)", "Run migrations (apply)", "Plan the deploy"]) {
+    for (const name of ["Run migrations (dry-run)", "Run migrations (apply)"]) {
       assert.equal(step(name).if, null, `${name} runs on every eligible push`);
     }
+    // Staging's plan runs on every staging run; the input names it a staging layer (#2804).
+    assert.equal(step("Plan the deploy").if, "inputs.environment == 'staging'");
     // The build runs on the plan alone: a skipped build must mean nothing
     // uploads, never an upload with nothing built.
     assert.equal(step("Build the Vercel preview bundles (web + landing)").if, "steps.plan.outputs.upload == 'true'");
@@ -230,13 +401,14 @@ describe("deploy-staging.yml: the order", () => {
     // the frontends on it skipped a non-tip web-only commit even when nothing
     // newer was live (#2803 review). `plan-staging-deploy.mjs` decides `upload`
     // against what the staging hostnames serve.
-    for (const name of [
-      "Build the Vercel preview bundles (web + landing)",
-      "Upload web + landing to staging",
-      "Point the staging hostnames at the new deployments",
-    ]) {
+    for (const name of ["Build the Vercel preview bundles (web + landing)", "Upload web + landing to staging"]) {
       assert.equal(step(name).if, "steps.plan.outputs.upload == 'true'", name);
     }
+    // The staging hostnames are a staging layer, named by the input (#2804).
+    assert.equal(
+      step("Point the staging hostnames at the new deployments").if,
+      "inputs.environment == 'staging' && steps.plan.outputs.upload == 'true'",
+    );
   });
 
   it("gives the plan what it needs to read the staging hostnames", () => {
@@ -251,8 +423,8 @@ describe("deploy-staging.yml: the order", () => {
 
 describe("deploy-staging.yml: the staging hosts", () => {
   it("aliases both staging hostnames", () => {
-    assert.match(uncommented, /VERCEL_STAGING_ALIAS=app\.staging\.frapp\.live/);
-    assert.match(uncommented, /VERCEL_STAGING_ALIAS=staging\.frapp\.live/);
+    assert.match(sharedUncommented, /VERCEL_STAGING_ALIAS=app\.staging\.frapp\.live/);
+    assert.match(sharedUncommented, /VERCEL_STAGING_ALIAS=staging\.frapp\.live/);
   });
 
   it("aliases by DEPLOYMENT ID from the upload, never by a search for the commit SHA", () => {
@@ -295,7 +467,10 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
     assert.equal(config.workflowLabel, workflowKeys(WORKFLOW).get("name"));
     for (const name of config.deployJobs) job(name);
     assert.equal(config.planOutput.job, "deploy");
-    assert.ok(job("deploy").keys.get("outputs").has(config.planOutput.output));
+    // The caller's `deploy` job is the call; its outputs are the called
+    // workflow's.
+    assert.equal(job(config.planOutput.job).keys.get("uses"), "./.github/workflows/_deploy.yml");
+    assert.ok(workflowCall().outputs.has(config.planOutput.output));
     assert.ok(config.alertLabels.includes("P1"), "a failed staging deploy is P1 (owner decision on #2803)");
   });
 
@@ -303,6 +478,8 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
     // The deploy job handles every staging credential; it stays read-only.
     assert.equal(workflowKeys(WORKFLOW).get("permissions").get("contents"), "read");
     assert.equal((uncommented.match(/issues: write/g) ?? []).length, 1, "exactly one job may hold issues: write");
+    assert.equal(workflowKeys(SHARED).get("permissions").get("contents"), "read");
+    assert.doesNotMatch(sharedUncommented, /: write/, "the shared deploy job writes nothing on GitHub");
     assert.equal(job("deploy-outcome").keys.get("permissions").get("issues"), "write");
   });
 
@@ -339,9 +516,25 @@ describe("deploy-staging.yml: the rest of the repo keys on it", () => {
     assert.ok(names.includes(workflowKeys(WORKFLOW).get("name")), `migration-snapshot.yml triggers on ${list[1]}`);
   });
 
+  it("is the only workflow that calls the shared job, and it calls it for staging", () => {
+    // A second caller with `environment: staging` would migrate staging and
+    // ship its frontends with none of the step text the test below looks for,
+    // outside the run the snapshot publisher and the migration gates watch
+    // (#2804 review). #2805 adds deploy-production.yml, for production only.
+    const callers = [];
+    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
+      for (const j of workflowJobs(join(WORKFLOW_DIR, file))) {
+        const uses = String(j.keys.get("uses") ?? "").replace(/^["']|["']$/g, "");
+        if (!/\.github\/workflows\/_deploy\.yml(@|$)/.test(uses)) continue;
+        callers.push(`${file}/${j.jobId}:${j.keys.get("with")?.get("environment")}`);
+      }
+    }
+    assert.deepEqual(callers, ["deploy-staging.yml/deploy:staging"]);
+  });
+
   it("is the only workflow that migrates staging or ships its frontends", () => {
     // A second staging deployer is the race #2803 removed.
-    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "deploy-staging.yml")) {
+    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
       const other = readFileSync(join(WORKFLOW_DIR, file), "utf8")
         .split("\n")
         .filter((line) => !/^\s*#/.test(line))

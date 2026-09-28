@@ -13,7 +13,7 @@ looking for the command to push migrations to staging, there isn't one any more
 | Environment    | How migrations get applied                                                                                                                                                                                                                                       | Who triggers it                           |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | **Local**      | `npx supabase db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
-| **Staging**    | **Automatic.** The migration steps of the `deploy` job in [`deploy-staging.yml`](../../../.github/workflows/deploy-staging.yml) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
+| **Staging**    | **Automatic.** The migration steps of the shared `deploy` job ([`_deploy.yml`](../../../.github/workflows/_deploy.yml), which [`deploy-staging.yml`](../../../.github/workflows/deploy-staging.yml) calls) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
 | **Production** | **Manual.** The [`Deploy production`](../../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations _without_ shipping code, for recovery and backlogs | A human, deliberately                     |
 
 ### Staging: do not push by hand
@@ -28,9 +28,9 @@ to `main` and were never applied to staging, because the job was gated on a
 path filter computed with `git diff HEAD~1 … || echo ""` — any git failure read
 as "no migrations changed" and the job skipped, green and silent.
 
-**Do not run `supabase db push` against staging from a laptop.** The `deploy` job
-of `deploy-staging.yml` serializes its runs with a `db-migrate-staging`
-concurrency group, and that lock cannot see a run on your machine — nothing in GitHub can. A hand-applied
+**Do not run `supabase db push` against staging from a laptop.** The shared `deploy` job
+([`_deploy.yml`](../../../.github/workflows/_deploy.yml), which `deploy-staging.yml` calls) serializes its runs with the
+`db-migrate-staging` concurrency group (`db-migrate-${{ inputs.environment }}` there), and that lock cannot see a run on your machine — nothing in GitHub can. A hand-applied
 migration also becomes a _foreign_ migration the moment its file changes or is
 renamed before merge, and a foreign row makes `supabase db push` refuse to run
 **at all** until someone reconciles it by hand.

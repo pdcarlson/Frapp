@@ -52,7 +52,7 @@
 //   STAGING_SMOKE_USER_EMAIL    — optional; enables the end-to-end sign-in probe
 //   STAGING_SMOKE_USER_PASSWORD
 //   RENDER_API_KEY             — optional; enables the Render healthCheckPath and auto-deploy assertions
-//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as deploy-staging.yml's deploy job)
+//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as _deploy.yml's deploy job)
 //   RUN_URL                     — html_url of this run, for the alert body
 
 import { appendFileSync, readFileSync } from "node:fs";

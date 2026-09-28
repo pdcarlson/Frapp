@@ -174,7 +174,7 @@ that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
 `INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6). This is universal
 auth, not OIDC. Every workflow that calls the composite action below does this — today
-`deploy-staging.yml`, `deploy-production.yml`, `db-backup.yml`,
+`_deploy.yml` (the job `deploy-staging.yml` calls), `deploy-production.yml`, `db-backup.yml`,
 `check-migration-drift.yml`, `migration-snapshot.yml`, `staging-conformance.yml` and
 `production-auth-conformance.yml` (re-derive with
 `git grep -l 'actions/infisical-secrets' .github/workflows`) — not the deploy workflows alone. No pull-request job is among them: `migration-drift-gate.yml` reads the snapshot

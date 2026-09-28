@@ -20,9 +20,10 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // PRs, in migration-drift-gate.yml, now read a published snapshot instead, and
 // `workflow-secrets-scope.test.mjs` keeps every `secrets.*` out of PR jobs.
 //
-//   * ONE is `workflow_run`, firing after merge (deploy-staging.yml, which
-//     replaced deploy-api.yml's two and deploy-vercel-staging.yml's one in
-//     #2803), and so is the snapshot publisher (migration-snapshot.yml), which
+//   * ONE runs after merge, in `_deploy.yml` (since #2804), the shared job
+//     `deploy-staging.yml` calls on `workflow_run` (it replaced deploy-api.yml's
+//     two and deploy-vercel-staging.yml's one in #2803), and so does the
+//     snapshot publisher (migration-snapshot.yml), which
 //     proves the MECHANISM after every staging deploy: a composite-nested
 //     `secrets-action` still exports to the calling job.
 //   * The rest are scheduled or dispatch-only, two of them on the
@@ -311,7 +312,10 @@ describe("Infisical call sites", () => {
       // the API deploy and the web and landing builds all read it. The job
       // hands each build only its app's keys; the rest of the store stays out
       // of the Vercel CLI (`lib/vercel-build-env.mjs`, #834 option b, #2672).
-      ["deploy-staging.yml", "deploy", "staging"],
+      // In `_deploy.yml` since #2804, the job `deploy-staging.yml` calls. Its
+      // slug stays the literal `staging` while that job refuses every other
+      // environment; #2805 maps production to `prod`.
+      ["_deploy.yml", "deploy", "staging"],
       // The migration gates on pull_request read the published snapshot and
       // inject nothing (#2518). This is the read that publishes it, in the
       // `automation` environment (main-only, #2583). It injects both, because

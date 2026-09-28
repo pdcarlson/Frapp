@@ -30,7 +30,11 @@ import { fileURLToPath } from "node:url";
 //   B. Every job that references a secret names one of CREDENTIAL_ENVIRONMENTS
 //      as a literal. A computed name could select an unprotected environment,
 //      and a workflow that names an environment that doesn't exist makes GitHub
-//      create it with no rules.
+//      create it with no rules. One exception, for the shared deploy job
+//      (`_deploy.yml`, #2804): `${{ inputs.environment }}` in a workflow whose
+//      only trigger is `workflow_call`, when every caller in this repo passes
+//      a literal CREDENTIAL_ENVIRONMENTS name, so the name is still a literal,
+//      one call away.
 //   C. No secret is referenced outside a job. A workflow-level `env:` may read
 //      `secrets` and hands the value to every job, and no environment can gate
 //      it, because environment secrets exist only inside a job that named one.
@@ -152,10 +156,67 @@ function preambleOf(lines) {
   return at === -1 ? lines : lines.slice(0, at);
 }
 
-/** A job that calls a reusable workflow in this repo: `./.github/workflows/<file>`. */
+/**
+ * The workflow file a job calls, or null: its job-level `uses:`, with a
+ * trailing comment and quotes removed, as `./.github/workflows/<file>` or
+ * `<owner>/<repo>/.github/workflows/<file>@<ref>`. The second form is read as
+ * a call to this repo's file of that name whatever the owner, which errs
+ * toward holding the caller to the rules: a caller the parser missed would
+ * escape them (#2804 review).
+ */
 function reusableCallOf(body) {
-  const m = body.map((l) => l.match(/^ {4}uses:\s*\.\/\.github\/workflows\/(\S+)\s*$/)).find(Boolean);
-  return m ? m[1] : null;
+  for (const line of body) {
+    const m = line.replace(TRAILING_COMMENT, "").match(/^ {4}uses:\s*["']?([^"'\s]+)["']?\s*$/);
+    if (!m) continue;
+    const call = m[1].match(/^(?:\.|[^/\s]+\/[^/\s]+)\/\.github\/workflows\/([^@/\s]+)(?:@\S+)?$/);
+    return call ? call[1] : null;
+  }
+  return null;
+}
+
+/** The value a calling job passes for `key` under its `with:`, or null. */
+function withValueOf(body, key) {
+  const at = body.findIndex((l) => /^ {4}with:\s*$/.test(l));
+  if (at === -1) return null;
+  for (const line of body.slice(at + 1)) {
+    if (/^ {0,5}\S/.test(line)) break;
+    const m = line.replace(TRAILING_COMMENT, "").match(new RegExp(`^ {6}${key}:\\s*(.*)$`));
+    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+
+/** Every job in the repo that calls `file`, as `{ at, body, triggers }`. */
+function callersOf(file) {
+  return workflows.flatMap((other) =>
+    other.jobs
+      .filter((j) => reusableCallOf(j.body) === file)
+      .map((j) => ({ at: `${other.name} / ${j.id}`, body: j.body, triggers: other.triggers })),
+  );
+}
+
+/**
+ * Why a called workflow's `${{ inputs.environment }}` is NOT held to a literal
+ * main-only environment, or [] when it is: it must be callable only, and every
+ * caller in this repo must pass a literal from CREDENTIAL_ENVIRONMENTS and run
+ * on no pull-request trigger (rule A's reach, one call away).
+ */
+function inputEnvironmentProblems(wf) {
+  const problems = [];
+  if (wf.triggers.join(",") !== "workflow_call") {
+    problems.push(`its triggers are ${wf.triggers.join(", ")}, not workflow_call alone`);
+  }
+  const callers = callersOf(wf.name);
+  if (callers.length === 0) problems.push("no workflow in this repo calls it");
+  for (const { at, body, triggers } of callers) {
+    const pr = triggers.filter((t) => PR_TRIGGERS.includes(t));
+    if (pr.length > 0) problems.push(`${at} runs on ${pr.join(", ")}`);
+    const passed = withValueOf(body, "environment");
+    if (!passed || passed.includes("${{") || !CREDENTIAL_ENVIRONMENTS.includes(passed)) {
+      problems.push(`${at} passes environment ${passed ? `"${passed}"` : "(none)"}, not a literal main-only environment`);
+    }
+  }
+  return problems;
 }
 
 /**
@@ -244,6 +305,15 @@ describe("workflow secrets scope (#2518)", () => {
     assert.ok(secretsOf(deploy.body).includes("RENDER_API_KEY"));
     assert.equal(environmentOf(deploy.body)?.name, "production");
 
+    // The one expression-named environment rule B admits, and its caller.
+    const shared = byName.get("_deploy.yml")?.jobs.find((j) => j.id === "deploy");
+    assert.ok(shared, "_deploy.yml's deploy job must be parsed");
+    assert.ok(secretsOf(shared.body).includes("RENDER_API_KEY"));
+    assert.deepEqual(environmentOf(shared.body), { name: "${{ inputs.environment }}", literal: false });
+    const caller = byName.get("deploy-staging.yml")?.jobs.find((j) => j.id === "deploy");
+    assert.equal(reusableCallOf(caller.body), "_deploy.yml");
+    assert.equal(withValueOf(caller.body, "environment"), "staging");
+
     const publish = byName.get("migration-snapshot.yml")?.jobs.find((j) => j.id === "publish");
     assert.ok(publish, "migration-snapshot.yml's publish job must be parsed");
     assert.equal(environmentOf(publish.body)?.name, "automation");
@@ -256,6 +326,11 @@ describe("workflow secrets scope (#2518)", () => {
       for (const job of wf.jobs) {
         const secrets = secretsOf(job.body);
         if (secrets.length > 0) offenders.push(`${wf.name} / ${job.id}: ${secrets.join(", ")}`);
+        // A call reaches the called workflow's secrets without naming one here
+        // (`_deploy.yml` reads its environment's own, #2804).
+        const called = reusableCallOf(job.body);
+        const reached = (byName.get(called)?.jobs ?? []).flatMap((j) => secretsOf(j.body));
+        if (reached.length > 0) offenders.push(`${wf.name} / ${job.id}: calls ${called}, which reads ${[...new Set(reached)].join(", ")}`);
       }
     }
     assert.deepEqual(
@@ -308,7 +383,8 @@ describe("workflow secrets scope (#2518)", () => {
         if (!env) {
           offenders.push(`${wf.name} / ${job.id}: ${secrets.join(", ")} with no environment`);
         } else if (!env.literal) {
-          offenders.push(`${wf.name} / ${job.id}: environment name is an expression`);
+          const problems = env.name === "${{ inputs.environment }}" ? inputEnvironmentProblems(wf) : ["is not inputs.environment"];
+          for (const problem of problems) offenders.push(`${wf.name} / ${job.id}: environment name is an expression, and ${problem}`);
         } else if (!CREDENTIAL_ENVIRONMENTS.includes(env.name)) {
           offenders.push(`${wf.name} / ${job.id}: environment "${env.name}" is not one of ${CREDENTIAL_ENVIRONMENTS.join(", ")}`);
         }
@@ -384,6 +460,20 @@ describe("workflow secrets scope (#2518)", () => {
     assert.deepEqual(secretsOf(b.body), ["(inherit)"]);
     assert.equal(environmentOf(b.body).literal, false);
     assert.equal(reusableCallOf(b.body), "release.yml");
+    // Every shape a caller could be written in counts as a call (#2804 review):
+    // a trailing comment, quotes, and the owner/repo@ref form.
+    for (const uses of [
+      "./.github/workflows/_deploy.yml",
+      "./.github/workflows/_deploy.yml # the shared job",
+      '"./.github/workflows/_deploy.yml"',
+      "'./.github/workflows/_deploy.yml'",
+      "pdcarlson/Frapp/.github/workflows/_deploy.yml@main",
+      "someone/Fork/.github/workflows/_deploy.yml@0123456789abcdef0123456789abcdef01234567",
+    ]) {
+      assert.equal(reusableCallOf([`    uses: ${uses}`]), "_deploy.yml", uses);
+    }
+    assert.equal(reusableCallOf(["    uses: actions/checkout@v4"]), null);
+    assert.equal(withValueOf(["    with:", "      environment: staging # the one", "      sha: x"], "environment"), "staging");
     assert.deepEqual(triggersOf(codeLines("on: [push, pull_request]\njobs:\n")), ["push", "pull_request"]);
     const withEnv = codeLines("on: push\nenv:\n  T: ${{ secrets.WORKFLOW_LEVEL }}\njobs:\n  a:\n    runs-on: x\n");
     assert.deepEqual(secretsOf(preambleOf(withEnv)), ["WORKFLOW_LEVEL"]);
