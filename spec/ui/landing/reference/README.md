@@ -6,7 +6,7 @@
 > are the rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md)
 > § Precedence, rule 1). Drift between them and
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is a filable bug now rather
-> than an expected gap, with four standing exceptions, none of them drift:
+> than an expected gap, with five standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);
 > - the signature moment, which is **cut** from the shipped page until brand sign-off clears
@@ -15,7 +15,11 @@
 >   what the product does;
 > - the product name. The boards draw "Signet", and the shipped page says whatever
 >   [`brand-identity.md` § 1](../../brand-identity.md#1-identity) says, which is Frapp from
->   [ADR-25](../../../architecture/adr/adr-25.md) step 5.
+>   [ADR-25](../../../architecture/adr/adr-25.md) step 5;
+> - the header lockup's tile. The boards draw the crest on a `#1A1A1A` tile; the owner dropped the
+>   tile from page headers on 2026-09-28 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)),
+>   so the shipped lockup draws the crest straight on the page background
+>   ([`assets.md` § 3](../../assets.md#3-canonical-package)). The footer keeps its tile.
 
 ## What this is
 

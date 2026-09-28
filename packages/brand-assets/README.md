@@ -1,6 +1,6 @@
 # @repo/brand-assets
 
-Canonical **Signet** product marks (not chapter logos).
+Canonical Frapp product marks (not chapter logos). The files keep their `signet-` names until ADR-25's post-beta internals rename.
 
 The shipping mark is **locked emblem B** — gold `#DDB844` on charcoal `#1A1A1A`, neck break, treated as an abstract crest ([`spec/ui/brand-identity.md`](../../spec/ui/brand-identity.md) §2). It never takes a chapter accent.
 
@@ -36,7 +36,7 @@ Names written into `apps/` are **not** ours: `app/icon.png`, `app/apple-icon.png
 | `signet-emblem-B.svg`          | SVG 1024²      | **Vector master.** Everything below renders from it.       |
 | `signet-emblem-B-glyph.svg`    | SVG 1024²      | Crest alone, transparent — for non-charcoal surfaces       |
 | `signet-emblem-B-rounded.svg`  | SVG 1024²      | Crest on a rounded charcoal tile                           |
-| `frapp-lockup.svg`             | SVG 3360×1024  | Rounded tile + "Signet" wordmark (`currentColor`)          |
+| `frapp-lockup.svg`             | SVG 2880×1024  | Crest alone (no tile) + "Frapp" wordmark (`currentColor`)  |
 | `signet-emblem-B-1024.png`     | PNG 1024² RGB  | Square tile; source for the in-app tile and Expo `icon.png` |
 | `signet-emblem-B-glyph-1024.png` | PNG 1024² RGBA | Crest alone, transparent                                 |
 | `signet-emblem-B-180.png`      | PNG 180² RGB   | Apple touch icon                                           |
@@ -45,7 +45,7 @@ Names written into `apps/` are **not** ours: `app/icon.png`, `app/apple-icon.png
 | `signet-emblem-B-16.png`       | PNG 16² RGB    | Favicon                                                    |
 | `signet-emblem-B.ico`          | ICO 16/32/48 RGBA | Next `app/favicon.ico`; those three rasters with an opaque alpha channel — Turbopack's ICO decoder requires RGBA |
 
-All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them; the test asserts byte-equal path strings. Only the viewBox *width* differs: the lockup is `0 0 3360 1024` because it carries the wordmark beside the tile, and each file's intrinsic `width`/`height` must keep its viewBox aspect or every raster renders distorted. That drift is what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, in the same commit, from birth.
+All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them; the test asserts byte-equal path strings. Only the viewBox *width* differs: the lockup is `0 0 2880 1024` because it carries the wordmark beside the crest, and each file's intrinsic `width`/`height` must keep its viewBox aspect or every raster renders distorted. That drift is what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, in the same commit, from birth.
 
 ### Which one to reach for
 
@@ -56,7 +56,7 @@ All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 un
 ## Consumers
 
 - **Next.js:** `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root updates `app/icon.png`, `app/apple-icon.png`, `public/brand/signet-emblem-B.png`, and `web`'s `app/favicon.ico`. Both apps also run sync on `prebuild`. What gets copied where is `SYNCED` in [`scripts/lib/brand-pixels.mjs`](../../scripts/lib/brand-pixels.mjs) — the sync script and the CI gate both walk that one list, so a destination cannot be copied without also being gated.
-- **Landing header:** `apps/landing/components/frapp-lockup.tsx` (tile + Signet word).
+- **Landing header:** `apps/landing/components/frapp-lockup.tsx` (crest on the page background, no tile, + Frapp word).
 - **Web auth:** `apps/web/components/auth/signet-mark.tsx`.
 - **Expo:** rasters under `apps/mobile/assets/images/` — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §7.
 

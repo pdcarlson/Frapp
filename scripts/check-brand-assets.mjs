@@ -45,6 +45,7 @@ import {
   GOLD_HEX,
   ICO_SIZES,
   RENDER_AGREEMENT_MIN,
+  SHIPPED_VECTORS,
   SYNCED,
   assertGlyphCoverage,
   assertFullyOpaque,
@@ -62,19 +63,16 @@ const root = join(__dirname, "..");
 const repo = (rel) => join(root, rel);
 
 const MASTER_SVG = "packages/brand-assets/assets/signet-emblem-B.svg";
-const GLYPH_SVG = "packages/brand-assets/assets/signet-emblem-B-glyph.svg";
 const MASTER_RASTER = "packages/brand-assets/assets/signet-emblem-B-1024.png";
 const FAVICON_ICO = "packages/brand-assets/assets/signet-emblem-B.ico";
 const canonicalRaster = (size) =>
   `packages/brand-assets/assets/signet-emblem-B-${size}.png`;
 
-/** Every shipped vector. `requireField` is false for the crest-alone glyph. */
-const vectors = [
-  { rel: MASTER_SVG },
-  { rel: GLYPH_SVG, requireField: false },
-  { rel: "packages/brand-assets/assets/signet-emblem-B-rounded.svg" },
-  { rel: "packages/brand-assets/assets/frapp-lockup.svg" },
-];
+/** Every shipped vector: `SHIPPED_VECTORS`, the one list (scripts/lib/brand-pixels.mjs). */
+const vectors = SHIPPED_VECTORS.map(({ name, requireField }) => ({
+  rel: `packages/brand-assets/assets/${name}`,
+  requireField,
+}));
 
 /**
  * Opaque RGB rasters. All of them, not a sample: the 16px favicon is the one
@@ -327,7 +325,7 @@ if (failed) {
   process.exit(1);
 }
 console.log(
-  `brand-assets: ${vectors.length} vectors paint ${GOLD_HEX} on ${FIELD_HEX}; ` +
+  `brand-assets: ${vectors.length} vectors paint only ${GOLD_HEX} / ${FIELD_HEX}; ` +
     `${syncedCount} synced copies match canonical; ` +
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +

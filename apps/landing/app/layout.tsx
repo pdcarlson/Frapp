@@ -26,7 +26,7 @@ const figtree = localFont({
  * in the tag search engines and link previews read. They now match the hero
  * lead, which is what the Spec sheet's copy deck asks for.
  *
- * The titles keep "Signet. Ask your chapter anything." deliberately. D8 holds
+ * The titles keep "Frapp. Ask your chapter anything." deliberately. D8 holds
  * that tagline off the page BODY until Ask can answer, and scopes itself to the
  * body: `spec/ui/brand-identity.md` §1 still locks it as the brand tagline, and
  * a brand tagline in a title tag is not a product claim about a shipped
@@ -34,15 +34,15 @@ const figtree = localFont({
  * chat." instead.
  */
 const ogDescription =
-  "Signet is chat first. Events, check-in and points land in the conversation your chapter already reads.";
+  "Frapp is chat first. Events, check-in and points land in the conversation your chapter already reads.";
 
 export const metadata: Metadata = {
-  title: "Signet. Ask your chapter anything.",
+  title: "Frapp. Ask your chapter anything.",
   description:
-    "Signet is chat first. Events, check-in and points land in the conversation your members already read. Free for chat and members, with no card.",
+    "Frapp is chat first. Events, check-in and points land in the conversation your members already read. Free for chat and members, with no card.",
   metadataBase: new URL("https://frapp.live"),
   openGraph: {
-    title: "Signet. Ask your chapter anything.",
+    title: "Frapp. Ask your chapter anything.",
     description: ogDescription,
     type: "website",
     url: "https://frapp.live",
@@ -51,13 +51,13 @@ export const metadata: Metadata = {
         url: "/opengraph-image",
         width: 1200,
         height: 630,
-        alt: "Signet. Ask your chapter anything.",
+        alt: "Frapp. Ask your chapter anything.",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Signet. Ask your chapter anything.",
+    title: "Frapp. Ask your chapter anything.",
     description: ogDescription,
     images: ["/opengraph-image"],
   },

@@ -1,4 +1,13 @@
+import type { Metadata } from "next";
+import { routeMetadata } from "../../lib/route-metadata";
 import { LegalDocument } from "../components/legal-document";
+
+export const metadata: Metadata = routeMetadata({
+  title: "Privacy Policy · Frapp",
+  description:
+    "What the Frapp mobile app and web dashboard collect, how it is used, which providers process it, how long it is kept, and how to reach us.",
+  path: "/privacy",
+});
 
 // A material change here moves `lastUpdated` below and bumps
 // `LEGAL_POLICY_VERSION` in `@repo/validation`, which asks every user to accept
@@ -10,10 +19,10 @@ const sections = [
   {
     heading: "1. Information We Collect",
     paragraphs: [
-      "Signet collects account and profile information such as name, email, role metadata, and chapter membership details.",
-      "Depending on feature usage, Signet may process chat content, uploaded files, event participation data, and study session location signals.",
-      "The mobile app asks for device permissions only for the feature that needs them, and only when you use it: the camera to scan an event check-in code; your photo library to pick a photo you send in chapter chat; your precise location, only while the app is open, to confirm you are inside a chapter study zone or at an event you are checking in to. Signet never tracks location in the background. Notifications, if you turn them on, store a push token for your device so the chapter can reach you.",
-      "Signet collects crash and error diagnostics so we can fix problems. On signed-in product surfaces, identifiers in those reports are pseudonymized before they leave our systems. On the public marketing site (frapp.live), crash reports and page or call-to-action analytics are anonymous: they are not tied to a Signet account and are not linked to you after you sign in. Diagnostic reports contain no chat or document content. Signet does not use advertising identifiers and does not track you across other companies' apps or websites.",
+      "Frapp collects account and profile information such as name, email, role metadata, and chapter membership details.",
+      "Depending on feature usage, Frapp may process chat content, uploaded files, event participation data, and study session location signals.",
+      "The mobile app asks for device permissions only for the feature that needs them, and only when you use it: the camera to scan an event check-in code; your photo library to pick a photo you send in chapter chat; your precise location, only while the app is open, to confirm you are inside a chapter study zone or at an event you are checking in to. Frapp never tracks location in the background. Notifications, if you turn them on, store a push token for your device so the chapter can reach you.",
+      "Frapp collects crash and error diagnostics so we can fix problems. On signed-in product surfaces, identifiers in those reports are pseudonymized before they leave our systems. On the public marketing site (frapp.live), crash reports and page or call-to-action analytics are anonymous: they are not tied to a Frapp account and are not linked to you after you sign in. Diagnostic reports contain no chat or document content. Frapp does not use advertising identifiers and does not track you across other companies' apps or websites.",
     ],
   },
   {
@@ -26,7 +35,7 @@ const sections = [
   {
     heading: "3. Service Providers",
     paragraphs: [
-      "Signet uses trusted infrastructure providers such as Supabase (data/auth/storage), Render and Vercel (hosting), Stripe (billing), Expo (push delivery), Resend (sign-in and invite email delivery), Sentry (crash and error diagnostics), and PostHog (product and marketing analytics) to deliver core functionality.",
+      "Frapp uses trusted infrastructure providers such as Supabase (data/auth/storage), Render and Vercel (hosting), Stripe (billing), Expo (push delivery), Resend (sign-in and invite email delivery), Sentry (crash and error diagnostics), and PostHog (product and marketing analytics) to deliver core functionality.",
       "On the marketing site, Sentry receives anonymous crash reports and PostHog receives anonymous page views and call-to-action clicks. Session replay is not recorded in production. These providers process data only as needed to operate the service under contractual protections.",
     ],
   },
@@ -40,7 +49,7 @@ const sections = [
   {
     heading: "5. Security and Controls",
     paragraphs: [
-      "Signet uses role-based access controls, tenant isolation patterns, and secure transport to protect chapter data.",
+      "Frapp uses role-based access controls, tenant isolation patterns, and secure transport to protect chapter data.",
       "No internet service is perfectly secure, but we continuously monitor and improve controls against evolving threats.",
     ],
   },
@@ -48,7 +57,7 @@ const sections = [
     heading: "6. Contact",
     paragraphs: [
       "For privacy requests or questions, contact team@frapp.live.",
-      "If policy terms materially change, Signet will provide notice before those changes take effect.",
+      "If policy terms materially change, Frapp will provide notice before those changes take effect.",
     ],
   },
 ];

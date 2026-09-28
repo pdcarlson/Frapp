@@ -125,8 +125,8 @@ describe("infisical-secrets composite action", () => {
     }
     assert.match(
       infisicalAction,
-      /uses:\s*Infisical\/secrets-action@v1\.0\.12/,
-      "the pinned third-party action version must not drift silently",
+      /uses:\s*Infisical\/secrets-action@a663da43e1541832614bfd9dcf9ab67381ea2b98 # v1\.0\.12$/m,
+      "the pinned third-party action commit (#2647) must not drift silently",
     );
   });
 
@@ -136,8 +136,9 @@ describe("infisical-secrets composite action", () => {
     // treatment as scripts/db-backup.sh's deliberate duplicate: keep the copy
     // (a reader debugging a 401 wants the version in front of them) and let a
     // test, rather than a habit, keep it equal.
-    const pin = infisicalAction.match(/uses:\s*Infisical\/secrets-action@(\S+)/)?.[1];
-    assert.ok(pin, "the action must pin a secrets-action version");
+    // The version is the pin's trailing comment; the ref itself is a commit SHA.
+    const pin = infisicalAction.match(/uses:\s*Infisical\/secrets-action@[0-9a-f]{40} # (\S+)/)?.[1];
+    assert.ok(pin, "the action must pin a secrets-action commit with its version in a comment");
     const doc = readFileSync(
       join(REPO, "docs", "internal", "environment", "SECRETS_MANAGEMENT.md"),
       "utf8",
@@ -625,7 +626,7 @@ describe("preserve-nonempty on Infisical inject", () => {
   });
 
   it("snapshots before secrets-action and restores after", () => {
-    const injectAt = infisicalAction.indexOf("uses: Infisical/secrets-action@v1.0.12");
+    const injectAt = infisicalAction.indexOf("uses: Infisical/secrets-action@");
     const snapAt = infisicalAction.indexOf("preserve-nonempty-env.sh\" snapshot");
     const restoreAt = infisicalAction.indexOf("preserve-nonempty-env.sh\" restore");
     assert.ok(injectAt > 0 && snapAt > 0 && restoreAt > 0, "all three steps must exist");

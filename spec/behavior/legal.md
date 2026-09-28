@@ -22,7 +22,7 @@
 ## FERPA Notice
 
 - A specific callout (frapp.live/ferpa) that Backwork materials are shared voluntarily by members.
-- Signet is not an educational institution and does not access student education records.
+- Frapp is not an educational institution and does not access student education records.
 - Members are responsible for ensuring they have the right to share uploaded materials.
 - Members are told to remove identifying details themselves before uploading. The page must not point at a redaction tool: the one in [`backwork.md` § PDF Redaction](backwork.md#pdf-redaction-phase-v2) is v2 and unbuilt (nothing rasterizes, and web writes `is_redacted: false`). It used to say "Signet encourages use of redaction workflows", which implied one (#2262). When redaction ships, the page may name it.
 

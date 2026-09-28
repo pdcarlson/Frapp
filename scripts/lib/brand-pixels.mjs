@@ -241,6 +241,20 @@ export function assertInsetTile(fraction, label) {
 }
 
 /**
+ * Every shipped SVG in `packages/brand-assets/assets`, and whether it must
+ * paint the charcoal field. The glyph and the lockup draw the crest alone (the
+ * lockup sits in page headers with no tile, spec/ui/assets.md §3). The
+ * rasterizer, `check:brand-assets` and brand-pixels.test.mjs all walk this one
+ * list, so a vector can't be checked in one place and missed in another.
+ */
+export const SHIPPED_VECTORS = [
+  { name: "signet-emblem-B.svg", requireField: true },
+  { name: "signet-emblem-B-glyph.svg", requireField: false },
+  { name: "signet-emblem-B-rounded.svg", requireField: true },
+  { name: "frapp-lockup.svg", requireField: false },
+];
+
+/**
  * The locked pair, asserted against the SVG source rather than the pixels.
  *
  * Every shipped SVG goes through this, not just the two the rasters render
@@ -280,7 +294,7 @@ export function assertSvgLocked(svg, label, { requireField = true } = {}) {
     }
   }
   // The invariant is the COORDINATE SCALE AND ORIGIN, not the viewBox string:
-  // the lockup is `0 0 3360 1024` because it holds a wordmark beside the tile.
+  // the lockup is `0 0 2880 1024` because it holds a wordmark beside the crest.
   // What every file must share is the origin and the 1024-unit height, because
   // that is what lets the same `d` be copied between them verbatim.
   const viewBox = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) 1024"/);

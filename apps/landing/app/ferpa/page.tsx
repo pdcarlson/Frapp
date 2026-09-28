@@ -1,4 +1,13 @@
+import type { Metadata } from "next";
+import { routeMetadata } from "../../lib/route-metadata";
 import { LegalDocument } from "../components/legal-document";
+
+export const metadata: Metadata = routeMetadata({
+  title: "FERPA Notice · Frapp",
+  description:
+    "How Frapp relates to FERPA: Frapp is a software provider, not an educational institution, and chapters are responsible for what they upload.",
+  path: "/ferpa",
+});
 
 // A change to the text below moves `lastUpdated` when it is material, and
 // updates this page's pin in scripts/ci/__tests__/legal-policy-version.test.mjs
@@ -9,14 +18,14 @@ const sections = [
   {
     heading: "1. Purpose of This Notice",
     paragraphs: [
-      "Signet supports chapter collaboration and organization. This notice clarifies Signet’s position regarding FERPA-related responsibilities.",
+      "Frapp supports chapter collaboration and organization. This notice clarifies Frapp’s position regarding FERPA-related responsibilities.",
     ],
   },
   {
-    heading: "2. Signet Is Not an Educational Institution",
+    heading: "2. Frapp Is Not an Educational Institution",
     paragraphs: [
-      "Signet is a software provider, not a school or university. Signet does not act as an educational institution under FERPA.",
-      "Chapters and members are responsible for ensuring they have rights to share materials uploaded to Signet.",
+      "Frapp is a software provider, not a school or university. Frapp does not act as an educational institution under FERPA.",
+      "Chapters and members are responsible for ensuring they have rights to share materials uploaded to Frapp.",
     ],
   },
   {
