@@ -631,11 +631,7 @@ describe('AllExceptionsFilter', () => {
       );
 
       expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
-      const [record, sampleKey] = jest.mocked(enqueueSanitizedLog).mock
-        .calls[0] as [
-        { body: string; attributes: Record<string, unknown> },
-        string,
-      ];
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0];
       expect(record.body).toBe('request');
       expect(record.attributes).toMatchObject({
         request_id: 'req-abc',
@@ -644,7 +640,6 @@ describe('AllExceptionsFilter', () => {
         status_code: 404,
         status_class: '4xx',
       });
-      expect(sampleKey).toBe('req-abc');
       const serialized = JSON.stringify(record);
       expect(serialized).not.toContain('member@example.com');
       expect(serialized).not.toContain('Cannot GET');

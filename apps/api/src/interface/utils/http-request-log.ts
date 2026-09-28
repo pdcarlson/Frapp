@@ -118,21 +118,18 @@ export function emitSanitizedHttpRequestLog(
 
   const userHash = pseudonymizeUserId(request.appUser?.id);
   const chapterHash = pseudonymizeChapterId(request.chapterId);
-  enqueueSanitizedLog(
-    {
-      body: 'request',
-      severity: status >= 500 ? 'ERROR' : 'INFO',
-      attributes: {
-        request_id: requestId,
-        method: request.method ?? 'UNKNOWN',
-        path: path ?? '/',
-        status_code: status,
-        status_class: httpStatusClass(status),
-        ...(latencyMs !== undefined ? { latency_ms: latencyMs } : {}),
-        ...(userHash ? { user_hash: userHash } : {}),
-        ...(chapterHash ? { chapter_hash: chapterHash } : {}),
-      },
+  enqueueSanitizedLog({
+    body: 'request',
+    severity: status >= 500 ? 'ERROR' : 'INFO',
+    attributes: {
+      request_id: requestId,
+      method: request.method ?? 'UNKNOWN',
+      path: path ?? '/',
+      status_code: status,
+      status_class: httpStatusClass(status),
+      ...(latencyMs !== undefined ? { latency_ms: latencyMs } : {}),
+      ...(userHash ? { user_hash: userHash } : {}),
+      ...(chapterHash ? { chapter_hash: chapterHash } : {}),
     },
-    request.requestId ?? `${request.method}:${path}:${status}`,
-  );
+  });
 }

@@ -353,22 +353,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
-    enqueueSanitizedLog(
-      {
-        body: 'error',
-        severity: 'ERROR',
-        attributes: {
-          request_id: requestId,
-          method: request.method ?? 'UNKNOWN',
-          path: pathOnly(request.url) ?? '/',
-          status_code: status,
-          status_class: httpStatusClass(status),
-          ...(userHash ? { user_hash: userHash } : {}),
-          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
-        },
+    enqueueSanitizedLog({
+      body: 'error',
+      severity: 'ERROR',
+      attributes: {
+        request_id: requestId,
+        method: request.method ?? 'UNKNOWN',
+        path: pathOnly(request.url) ?? '/',
+        status_code: status,
+        status_class: httpStatusClass(status),
+        ...(userHash ? { user_hash: userHash } : {}),
+        ...(chapterHash ? { chapter_hash: chapterHash } : {}),
       },
-      requestId,
-    );
+    });
   }
 
   private enqueueSanitizedSecurityLog(
@@ -380,24 +377,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
-    enqueueSanitizedLog(
-      {
-        body: 'security_event',
-        severity: 'WARN',
-        attributes: {
-          kind,
-          request_id: requestId,
-          method: request.method ?? 'UNKNOWN',
-          path: pathOnly(request.url) ?? '/',
-          status_code: status,
-          status_class: httpStatusClass(status),
-          ...(originHash ? { origin_hash: originHash } : {}),
-          ...(userHash ? { user_hash: userHash } : {}),
-          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
-        },
+    enqueueSanitizedLog({
+      body: 'security_event',
+      severity: 'WARN',
+      attributes: {
+        kind,
+        request_id: requestId,
+        method: request.method ?? 'UNKNOWN',
+        path: pathOnly(request.url) ?? '/',
+        status_code: status,
+        status_class: httpStatusClass(status),
+        ...(originHash ? { origin_hash: originHash } : {}),
+        ...(userHash ? { user_hash: userHash } : {}),
+        ...(chapterHash ? { chapter_hash: chapterHash } : {}),
       },
-      requestId,
-    );
+    });
   }
 }
 
