@@ -9,25 +9,18 @@
  * consistency check must not import that service — doing so would drag the
  * whole billing dependency graph into a check that runs before the app is
  * listening. A second hand-maintained copy is the thing this file exists to
- * prevent. Every Stripe endpoint registered before 2026-09-28 was missing at
- * least one of these six, and each a different one, because they are typed into
- * the Stripe dashboard by hand from a runbook that used to name no event types:
- * the test-mode endpoints lacked `payment_intent.payment_failed`, never updated
- * when it was added to the handler (#1978), and the live-mode endpoint lacked
- * `customer.subscription.updated` (#2285). Both were fixed by hand in the
- * dashboard on 2026-09-28.
+ * prevent. The list itself lives in one place — below. What drifts are the
+ * copies typed into the Stripe dashboard by hand: every endpoint registered
+ * before 2026-09-28 lacked at least one of these six (#1978, #2285), because the
+ * runbook used to name none of them. That is why the six are now named in
+ * `docs/internal/ops/deployment/integrations.md` § 7.1, at the step where an
+ * endpoint is created.
  *
- * Nothing checks the dashboards against this list except the boot-time warning,
- * so do not read "fixed" above as current state. The list itself lives in one
- * place — below.
- * What drifts are the copies in the Stripe dashboard, which is why the six types
- * are now named in `docs/internal/ops/deployment/integrations.md` § 7.1, at the
- * step where an endpoint is actually created.
- *
- * None of this is a repo fact, and none of it can be read from an agent sandbox,
- * where the Stripe MCP is test-mode only. The live-mode gap was found in
- * `frapp-api-prod`'s own boot log on 2026-09-15, in the warning
- * `stripe-webhook-consistency.service.ts` emits.
+ * What each endpoint subscribes to today is dashboard state, not a repo fact:
+ * `integrations.md` § 7 and `docs/internal/environment/ENV_REFERENCE.md` record
+ * it with its date and source, and only the warning
+ * `stripe-webhook-consistency.service.ts` logs at boot checks it. An agent
+ * sandbox cannot read it for live mode, where the Stripe MCP is test-mode only.
  */
 export const HANDLED_WEBHOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
   'checkout.session.completed',

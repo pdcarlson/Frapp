@@ -22,8 +22,7 @@
    update this step if it ever changes. Anything not on the list is dropped by the
    allowlist before the database is touched, so enabling extras is noise rather than
    risk; enabling **fewer** is the failure that keeps happening. Every endpoint
-   registered before 2026-09-28 was missing at least one type, each a different one
-   (#1978, #2285), because this step used to name none of them. `StripeWebhookConsistencyService`
+   registered before 2026-09-28 was missing at least one type (#1978, #2285), because this step used to name none of them. `StripeWebhookConsistencyService`
    warns at boot when the registered endpoint is missing one — read the API's startup
    log after creating an endpoint, and do not treat a green deploy as confirmation.
 
@@ -49,11 +48,13 @@ test-mode only.
 
 **Never register a test-mode endpoint against the production URL.** Production verifies
 with the live endpoint's secret, so every test-mode event sent there fails with 401,
-Stripe retries it for days, and then emails the owner that the endpoint is failing. The
+Stripe retries it, and then emails the owner that the endpoint is failing. The
 test-mode endpoint `we_1U9Qrn3Dzz3XLCb6VQw047AJ` sat on `api.frapp.live` from
 2026-08-28. Once production moved to the live endpoint's secret on 2026-09-15, every
 staging billing event it carried got a 401. It was deleted on 2026-09-28. Test mode now
-holds one endpoint, staging's.
+holds one endpoint, staging's `we_1U93QB3Dzz3XLCb6mYeeNzUF`, which the owner brought to
+all six types the same day ([#1978](https://github.com/pdcarlson/Frapp/issues/1978); read from
+the dashboard).
 
 ### 7.3 What customers see (live mode)
 
