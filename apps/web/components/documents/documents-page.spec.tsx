@@ -18,6 +18,7 @@ const {
   mockDocumentRefetch,
   mockRequestUpload,
   mockConfirmUpload,
+  mockToast,
   mockCreateFolder,
   mockUpdateFolder,
   mockDeleteFolder,
@@ -32,6 +33,7 @@ const {
   mockDocumentRefetch: vi.fn(),
   mockRequestUpload: vi.fn(),
   mockConfirmUpload: vi.fn(),
+  mockToast: vi.fn(),
   mockCreateFolder: vi.fn().mockResolvedValue({}),
   mockUpdateFolder: vi.fn().mockResolvedValue({}),
   mockDeleteFolder: vi.fn().mockResolvedValue({}),
@@ -88,7 +90,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
@@ -449,6 +453,51 @@ describe("DocumentsPage upload metadata", () => {
         effective_date: undefined,
       }),
     );
+  });
+
+  const uploadPdf = async (name: string) => {
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.4"], name, { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+    return file;
+  };
+
+  it("PUTs with the resolved type and x-upsert", async () => {
+    const file = await uploadPdf("bylaws.pdf");
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(fetch).toHaveBeenCalledWith("https://storage.example/put", {
+      method: "PUT",
+      body: file,
+      headers: { "content-type": "application/pdf", "x-upsert": "true" },
+    });
+  });
+
+  it("tells the member what to try when storage refuses the file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 413 } as Response),
+    );
+
+    await uploadPdf("bylaws.pdf");
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't upload document",
+          description:
+            "Storage rejected upload (413). Retry or check file size.",
+        }),
+      ),
+    );
+    expect(mockConfirmUpload).not.toHaveBeenCalled();
   });
 });
 

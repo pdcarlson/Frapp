@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
+import { putSignedUpload } from "./put-signed-upload";
 
 /** The query key `useChannels` caches the channel list under. */
 export const CHANNEL_LIST_KEY = ["channels"] as const;
@@ -597,28 +598,27 @@ export function useAuthorAvatars(
 
 /**
  * Performs the PUT to a Supabase Storage signed URL returned by
- * `useRequestChatUploadUrl`. Wraps the raw `fetch` so every chat network
- * call stays inside `@repo/hooks` and benefits from TanStack Query's retry,
- * pending state, and error handling primitives.
+ * `useRequestChatUploadUrl`, through `putSignedUpload`, so the chat composer
+ * gets TanStack Query's pending state and error handling on it.
+ *
+ * `contentType` is the type the upload URL was requested with, not
+ * `file.type`: the browser leaves that empty for legacy Office files, and the
+ * bucket rejects an empty type. No `x-upsert`: every chat upload gets a fresh
+ * path, so there is never an object to overwrite.
  */
 export function useUploadSignedUrl() {
   return useMutation({
     mutationFn: async ({
       signedUrl,
       file,
+      contentType,
     }: {
       signedUrl: string;
       file: File;
+      contentType: string;
     }) => {
-      const res = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      if (!res.ok) {
-        throw new Error(`Upload failed (${res.status})`);
-      }
-      return { status: res.status, contentType: file.type, size: file.size };
+      await putSignedUpload({ signedUrl, body: file, contentType });
+      return { contentType, size: file.size };
     },
   });
 }

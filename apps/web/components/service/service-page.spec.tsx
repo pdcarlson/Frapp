@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { MAX_UPLOAD_LABEL } from "@repo/validation";
 
 const {
   mockCurrentChapter,
@@ -44,7 +45,10 @@ const APPROVED_ENTRY = {
   points_awarded: true,
 };
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // The real PUT, so the specs below assert on the request it actually sends.
+  putSignedUpload: (await importOriginal<typeof import("@repo/hooks")>())
+    .putSignedUpload,
   useCurrentChapter: () => mockCurrentChapter(),
   useServiceEntries: () => ({
     data: [PENDING_ENTRY, APPROVED_ENTRY],
@@ -479,7 +483,9 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         "https://storage.example/put",
-        expect.objectContaining({ method: "PUT" }),
+        expect.objectContaining({
+          headers: { "content-type": "application/pdf", "x-upsert": "true" },
+        }),
       ),
     );
     await waitFor(() =>
@@ -516,6 +522,36 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
       ),
     );
     expect(fetch).not.toHaveBeenCalled();
+    expect(mockCreateEntry).not.toHaveBeenCalled();
+  });
+
+  it("shows the service-specific message when storage refuses the proof", async () => {
+    mockRequestProofUpload.mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/chap-1/service/proof-1/receipt.pdf",
+      proof_id: "proof-1",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 413 })) as unknown as typeof fetch,
+    );
+
+    render(<ServiceHoursPage />);
+    const dialog = await openLogDialog();
+    await userEvent.type(
+      within(dialog).getByLabelText(/what did you do/i),
+      "Campus cleanup",
+    );
+    attachProof(dialog);
+    await submit(dialog);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: `Storage rejected upload (413). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
+        }),
+      ),
+    );
     expect(mockCreateEntry).not.toHaveBeenCalled();
   });
 });
