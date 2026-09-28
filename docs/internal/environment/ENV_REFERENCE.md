@@ -224,9 +224,8 @@ dashboard. They do not live _only_ there, though: the path-`/` `render-api-stagi
 sync ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) pushes every Staging
 secret onward, so a copy also sits in the Render staging service env. The two
 staging Vercel syncs that also carried it were deleted on 2026-09-28 with their
-`Preview · main` rows (#834). `frapp-web` holds no staging copy; `frapp-landing`'s
-sync branch was never read, so confirm its unfiltered Preview list before
-counting it clean ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5). Count every destination that applies in any compromise
+`Preview · main` rows (#834). Neither project's Preview env holds a staging copy
+([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5). Count every destination that applies in any compromise
 assessment of this credential.
 
 | Variable                      | `dev`           | `staging`                                                                                                                                                 | `prod`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

@@ -141,9 +141,9 @@ filtered to `main`, read empty afterwards, and Production rows were left alone. 
 Infisical's `deleteSecretSync` (open-source backend, read 2026-09-28) queues a job that removes the
 synced secrets first and deletes the sync only when it completes; that the job would fail here on the
 same Git error is inferred, not observed. `frapp-landing`'s sync branch was never read in the
-dashboard (only `frapp-web`'s, `main`, on 2026-08-12), so a landing Preview row scoped to any other
-branch would not have shown under the `main` filter: read `frapp-landing`'s unfiltered Preview list
-before counting it free of staging credentials.
+dashboard (only `frapp-web`'s, `main`, on 2026-08-12), so its unfiltered Preview list was read
+afterwards too: it holds one row, an unscoped `NEXT_PUBLIC_APP_URL` added 2026-02-28, which the
+staging build strips. Neither project's Preview env holds a staging credential.
 
 **Never re-create a Vercel Preview sync with a git branch filter.** The *Vercel env* column is
 Vercel's environment name (`Production` or `Preview`); a Preview sync additionally names a
@@ -414,7 +414,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
-| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); `frapp-web` holds no staging copy, and `frapp-landing` is clean only if its unfiltered Preview list confirms it (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
+| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); neither project's Preview env holds a copy (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
 **All rotations happen in one place (Infisical).** Syncs propagate changes to Render and to Vercel Production automatically; the staging web and landing builds read Infisical directly, so they pick up a change on their next deploy.
 
