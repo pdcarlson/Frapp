@@ -49,8 +49,8 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
    *   - A subscribed-events gap. Until 2026-09-28 every registered endpoint had
    *     one (#1978, #2285), so fatal here would have refused boot on
    *     production. Whether the dashboards are clean now is recorded in
-   *     `integrations.md` § 7, not here, and only this warning's absence
-   *     from a production boot log confirms it. The standing reason holds
+   *     `integrations.md` § 7 and `ENV_REFERENCE.md`, not here, and only this
+   *     warning's absence from a production boot log confirms it. The standing reason holds
    *     either way: a type added to `HANDLED_WEBHOOK_EVENT_TYPES` before the
    *     dashboards are updated is exactly how #1978 happened, and making that
    *     sequence a total outage is the same bad trade the paragraph below
