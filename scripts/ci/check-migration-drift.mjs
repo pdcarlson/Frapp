@@ -38,10 +38,30 @@
 // Read-only by construction: no SQL is sent, so this script cannot mutate a
 // database even if it is wrong.
 //
+// What a database is judged against. Staging deploys on every merge, so it must
+// hold everything on `main` (after the grace window). Production deploys only
+// when the owner dispatches a ship, so a migration merged since the last ship is
+// unreleased, not drift: judging production against `main` opened a P1 the day
+// after any migration merged, every time, until the next ship. A target listed
+// in DRIFT_RELEASED_TARGETS is judged against the migrations in the latest `v*`
+// tag instead. `deploy-production.yml` mints that tag only after its migrate
+// step succeeded; a tag minted any other way (a `release.yml` dispatch, or by
+// hand) asserts the same thing without having proved it. Foreign rows are still
+// judged against `main` alone: a version renamed or deleted there since the tag
+// shipped blocks the next production `db push` all the same. The gap between
+// the tag and `main` is reported, never alerted on; /needs-me owns "production
+// is behind main".
+//
 // Env inputs:
 //   GITHUB_TOKEN           — required (issues: write)
 //   GITHUB_REPOSITORY      — required, owner/repo
 //   DRIFT_TARGETS          — required, `label=ref` pairs, comma-separated
+//   DRIFT_RELEASED_TARGETS — optional, comma-separated labels judged against the
+//                            latest `v*` tag's migrations rather than `main`'s.
+//                            Unset means `production` (when DRIFT_TARGETS names
+//                            it), so a hand run judges production the way the
+//                            schedule does; set it empty to judge every target
+//                            against `main`. The checkout must hold the `v*` tags
 //   SUPABASE_ACCESS_TOKEN_<LABEL>
 //                          — each target's Supabase Management API token, e.g.
 //                            SUPABASE_ACCESS_TOKEN_STAGING. Each Infisical
@@ -52,7 +72,7 @@
 //   RUN_URL                — optional, html_url of this run
 //
 // Exit codes:
-//   0 — every target matched the repo (or pending only within the grace window)
+//   0 — every target matched what it should hold (or pending only within the grace window)
 //       and any open drift alert was closed
 //   1 — drift found, a target could not be read, or every target matched but
 //       the alert issues could not be read, or an open one could not be closed
@@ -62,6 +82,7 @@
 // exit non-zero. Those annotate a run that is already red; this script *is* the
 // run, so a green result has to mean "the databases were checked and match".
 
+import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -150,6 +171,74 @@ export function versionToEpochMs(version) {
   return Date.UTC(year, month - 1, day, hour, minute, second);
 }
 
+// ── Release baseline ────────────────────────────────────────────────────────
+
+const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
+
+function defaultGit(args) {
+  return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+/**
+ * The versioned migrations in the tree at `ref`, in ONE git call. The drift
+ * gate's `readMigrationsAtRef` is the same query plus a per-file `git log` for
+ * its grace window, which a caller that needs only `version` and `file` must
+ * not pay for.
+ */
+export function readMigrationVersionsAtRef({ ref, runGit = defaultGit }) {
+  const listing = runGit(["ls-tree", "-r", "--name-only", ref, "--", "supabase/migrations"]);
+  return listing
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((path) => {
+      const parsed = parseMigrationFilename(path.split("/").pop());
+      return parsed ? { ...parsed, path } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.version.localeCompare(b.version));
+}
+
+/**
+ * The migrations in the latest `v*` tag, as { ok, tag, migrations, error }.
+ *
+ * "Latest" is `release.yml`'s own rule (`git tag --list 'v*'
+ * --sort=-version:refname | head -n1`), so both agree on what production's
+ * release is. That tag must be a plain `vX.Y.Z`, which is all `release.yml`
+ * mints; anything else is an error rather than a quiet step past it.
+ *
+ * Never throws. A missing tag, an unreadable tree or a tag with no migrations is
+ * an error, never an empty list: an empty baseline would pass every database.
+ */
+export function readReleaseBaseline({ git = defaultGit } = {}) {
+  let tag;
+  try {
+    tag = git(["tag", "--list", "v*", "--sort=-version:refname"])
+      .split("\n")
+      .map((t) => t.trim())
+      .find(Boolean);
+  } catch (error) {
+    return { ok: false, tag: null, migrations: [], error: `listing the v* tags failed: ${error.message}` };
+  }
+  if (!tag) {
+    return { ok: false, tag: null, migrations: [], error: "the checkout holds no v* tag" };
+  }
+  if (!RELEASE_TAG_PATTERN.test(tag)) {
+    return { ok: false, tag, migrations: [], error: `the latest v* tag, ${tag}, is not a vX.Y.Z release` };
+  }
+
+  let migrations;
+  try {
+    migrations = readMigrationVersionsAtRef({ ref: `refs/tags/${tag}`, runGit: git });
+  } catch (error) {
+    return { ok: false, tag, migrations: [], error: `reading ${tag}'s migrations failed: ${error.message}` };
+  }
+  if (migrations.length === 0) {
+    return { ok: false, tag, migrations: [], error: `${tag} holds no migrations in supabase/migrations/` };
+  }
+  return { ok: true, tag, migrations, error: null };
+}
+
 // ── Targets ─────────────────────────────────────────────────────────────────
 
 /**
@@ -171,6 +260,45 @@ export function parseTargets(spec) {
     targets.push({ label, ref });
   }
   return targets;
+}
+
+/** Labels judged against the release when DRIFT_RELEASED_TARGETS is unset. */
+export const DEFAULT_RELEASED_TARGETS = ["production"];
+
+/**
+ * Marks each target named in DRIFT_RELEASED_TARGETS (read from `env`) with the
+ * release baseline it is judged against: `released` when the tag was read,
+ * `releaseError` when it was not, which leaves that target unverified rather
+ * than judged against `main`. An unset spec means DEFAULT_RELEASED_TARGETS,
+ * among the targets present; an explicit one must name only real targets.
+ * Returns { ok, error }; mutates the targets.
+ */
+export function attachReleaseBaselines({ targets, env = process.env, readBaseline = readReleaseBaseline }) {
+  const releasedSpec = env.DRIFT_RELEASED_TARGETS;
+  const explicit = releasedSpec !== undefined;
+  const labels = explicit
+    ? releasedSpec
+        .split(",")
+        .map((label) => label.trim())
+        .filter(Boolean)
+    : DEFAULT_RELEASED_TARGETS.filter((label) => targets.some((target) => target.label === label));
+
+  const unknown = labels.filter((label) => !targets.some((target) => target.label === label));
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      error: `DRIFT_RELEASED_TARGETS names ${unknown.join(", ")}, which DRIFT_TARGETS does not.`,
+    };
+  }
+  if (labels.length === 0) return { ok: true, error: null };
+
+  const release = readBaseline();
+  for (const target of targets) {
+    if (!labels.includes(target.label)) continue;
+    if (release.ok) target.released = { tag: release.tag, migrations: release.migrations };
+    else target.releaseError = release.error;
+  }
+  return { ok: true, error: null };
 }
 
 // ── Remote migrations ───────────────────────────────────────────────────────
@@ -247,20 +375,29 @@ export async function fetchAppliedMigrations({
 /**
  * Pure set comparison between the repo and one database.
  *
- *   pending  — in the repo, not applied      (split into overdue / withinGrace)
- *   foreign  — applied, absent from the repo (always wrong, never graced)
- *   matched  — present in both
+ *   pending    — expected, not applied       (split into overdue / withinGrace)
+ *   foreign    — applied, absent from `main` (always wrong, never graced)
+ *   unreleased — on `main`, not in the release baseline, not applied (reported only)
+ *   matched    — applied and on `main`
  *
- * `foreign` is never subject to the grace window: a version the repo has never
- * contained is wrong the moment it appears, and it blocks `db push` outright.
+ * "Expected" is `main`'s migrations, or the release baseline's when `released`
+ * is given. `foreign` is judged against `main` either way and is never subject
+ * to the grace window: a version `main` does not hold blocks the next
+ * `db push` outright, including one the release shipped and `main` later
+ * renamed or deleted.
  */
-export function classifyDrift({ local, remote, nowMs, graceMs }) {
+export function classifyDrift({ local, released = null, remote, nowMs, graceMs }) {
+  const expected = released ?? local;
   const remoteVersions = new Set(remote.map((m) => m.version));
+  const expectedVersions = new Set(expected.map((m) => m.version));
   const localVersions = new Set(local.map((m) => m.version));
 
-  const matched = local.filter((m) => remoteVersions.has(m.version));
-  const pending = local.filter((m) => !remoteVersions.has(m.version));
+  const matched = remote.filter((m) => localVersions.has(m.version));
+  const pending = expected.filter((m) => !remoteVersions.has(m.version));
   const foreign = remote.filter((m) => !localVersions.has(m.version));
+  const unreleased = released
+    ? local.filter((m) => !expectedVersions.has(m.version) && !remoteVersions.has(m.version))
+    : [];
 
   const overdue = [];
   const withinGrace = [];
@@ -274,7 +411,7 @@ export function classifyDrift({ local, remote, nowMs, graceMs }) {
   }
 
   const status = foreign.length > 0 || overdue.length > 0 ? "drift" : "clean";
-  return { matched, pending, overdue, withinGrace, foreign, status };
+  return { matched, pending, overdue, withinGrace, foreign, unreleased, status };
 }
 
 /**
@@ -300,6 +437,17 @@ export function overallStatus(results) {
 
 // ── Reporting ───────────────────────────────────────────────────────────────
 
+// A foreign version has two causes with opposite fixes, so the guidance names
+// both. Deleting a renamed row makes the next `db push` re-run SQL the database
+// already ran.
+const FOREIGN_GUIDANCE =
+  "`supabase db push` refuses to run while one is present. First check whether the version ever " +
+  "existed in git (`git log --all --oneline -- 'supabase/migrations/<version>_*'`). If it shipped " +
+  "and `main` renamed it since, the SQL already ran: mark the old version reverted and the new one " +
+  "applied, and delete nothing. If git never held it, read the row's recorded `statements` before " +
+  "removing it — `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § reconciling a foreign migration row. " +
+  "The CLI suggests `migration repair --status reverted`; **do not run it blind**.";
+
 function migrationList(migrations, limit = 10) {
   const shown = migrations.slice(0, limit).map((m) => `\`${m.version}_${m.name}\``);
   const extra = migrations.length - shown.length;
@@ -308,16 +456,24 @@ function migrationList(migrations, limit = 10) {
 
 /** One-line verdict per target, used in the summary table and the issue body. */
 export function describeTarget(result) {
+  if (result.baselineUnread) return `not checked — its release baseline could not be read: ${result.error}`;
   if (result.status === "unknown") return `could not be read — ${result.error}`;
+  const against = result.baseline ? ` with \`${result.baseline}\`` : "";
   if (result.status === "clean") {
-    return result.withinGrace.length > 0
-      ? `in sync (${result.withinGrace.length} pending within grace)`
-      : "in sync";
+    const notes = [];
+    if (result.withinGrace.length > 0) notes.push(`${result.withinGrace.length} pending within grace`);
+    if (result.unreleased?.length > 0) notes.push(`${result.unreleased.length} on main, not released yet`);
+    return `in sync${against}${notes.length > 0 ? ` (${notes.join("; ")})` : ""}`;
   }
   const parts = [];
   if (result.overdue.length > 0) parts.push(`${result.overdue.length} pending`);
   if (result.foreign.length > 0) parts.push(`${result.foreign.length} foreign`);
-  return `DRIFTING — ${parts.join(", ")}`;
+  return `DRIFTING${result.baseline ? ` from \`${result.baseline}\`` : ""} — ${parts.join(", ")}`;
+}
+
+/** Where a target's pending migrations came from, for the pending headings. */
+function pendingSource(result) {
+  return result.baseline ? `\`${result.baseline}\`` : "this repository";
 }
 
 export function buildRunSummary({ status, results, graceHours, runUrl }) {
@@ -332,11 +488,11 @@ export function buildRunSummary({ status, results, graceHours, runUrl }) {
     "",
     badge,
     "",
-    "| Environment | Applied | In repo | Verdict |",
+    "| Environment | Applied | Expected | Verdict |",
     "| --- | --- | --- | --- |",
     ...results.map(
       (r) =>
-        `| \`${r.label}\` | ${r.status === "unknown" ? "—" : r.remoteCount} | ${r.localCount} | ${describeTarget(r)} |`,
+        `| \`${r.label}\` | ${r.status === "unknown" ? "—" : r.remoteCount} | ${r.expectedCount ?? "—"} | ${describeTarget(r)} |`,
     ),
   ];
 
@@ -346,19 +502,17 @@ export function buildRunSummary({ status, results, graceHours, runUrl }) {
     if (result.foreign.length > 0) {
       lines.push(
         "",
-        `**Foreign — applied but absent from this repository (${result.foreign.length}):**`,
+        `**Foreign — applied but not on \`main\` (${result.foreign.length}):**`,
         "",
         migrationList(result.foreign),
         "",
-        "`supabase db push` refuses to run while a foreign version is present. Read what the row " +
-          "actually did before removing it — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` " +
-          "§ reconciling a foreign migration row. **Do not** blind-run `migration repair`.",
+        FOREIGN_GUIDANCE,
       );
     }
     if (result.overdue.length > 0) {
       lines.push(
         "",
-        `**Pending — in this repository, not applied (${result.overdue.length}):**`,
+        `**Pending — in ${pendingSource(result)}, not applied (${result.overdue.length}):**`,
         "",
         migrationList(result.overdue),
       );
@@ -372,7 +526,8 @@ export function buildRunSummary({ status, results, graceHours, runUrl }) {
 
   lines.push(
     "",
-    `Pending migrations are tolerated for ${graceHours}h after their version timestamp.`,
+    `Pending migrations are tolerated for ${graceHours}h after their version timestamp. ` +
+      "A target judged against a `v*` tag does not alert on migrations merged since that tag.",
   );
   if (runUrl) lines.push("", `- Run: ${runUrl}`);
   return lines.join("\n");
@@ -409,7 +564,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
       }
       if (result.overdue.length > 0) {
         section.push(
-          `- **Pending (${result.overdue.length}):** ${migrationList(result.overdue)}`,
+          `- **Pending (${result.overdue.length}${result.baseline ? `, from \`${result.baseline}\`` : ""}):** ${migrationList(result.overdue)}`,
         );
       }
       section.push("");
@@ -417,14 +572,14 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     }),
     "### How to act on this",
     "",
-    "**Pending** rows mean migrations merged to the repo never reached the database — check whether",
-    "`Deploy API` is running at all (#763) before assuming a migration problem.",
+    "**Pending** rows mean migrations the environment should hold never reached its database. For",
+    "staging that is everything on `main`: check whether `Deploy API` is running at all (#763) before",
+    "assuming a migration problem. For production it is the latest `v*` tag's migrations, which",
+    "`deploy-production.yml` applies before it mints the tag. A pending row there means the tag was",
+    "minted some other way (a `release.yml` dispatch, or by hand) on a commit whose migrations never",
+    "shipped, or the history was changed by hand after the ship. Check how the tag was made first.",
     "",
-    "**Foreign** rows mean the database carries a version this repository has never contained.",
-    "`supabase db push` refuses to run in that state. The CLI suggests",
-    "`migration repair --status reverted`; **do not run it blind** — read the row's recorded",
-    "`statements` first. Full procedure:",
-    "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § reconciling a foreign migration row.",
+    `**Foreign** rows mean the database carries a version \`main\` does not. ${FOREIGN_GUIDANCE}`,
     "",
     `_Pending migrations are tolerated for ${graceHours}h after their version timestamp._`,
   ];
@@ -459,9 +614,9 @@ export function buildRecoveryCommentBody({ results, runUrl }) {
   const lines = [
     "**Every environment is back in sync.** Closing.",
     "",
-    "| Environment | Applied | In repo |",
+    "| Environment | Applied | Expected |",
     "| --- | --- | --- |",
-    ...results.map((r) => `| \`${r.label}\` | ${r.remoteCount} | ${r.localCount} |`),
+    ...results.map((r) => `| \`${r.label}\` | ${r.remoteCount} | ${r.expectedCount} |`),
   ];
   if (runUrl) lines.push("", `- Run: ${runUrl}`);
   lines.push(
@@ -499,6 +654,32 @@ export async function runMigrationDriftCheck({
   const results = [];
 
   for (const target of targets) {
+    const baseline = target.released?.tag ?? null;
+    const expectedCount = target.releaseError ? null : (target.released?.migrations.length ?? local.length);
+    const unread = (error) => ({
+      label: target.label,
+      ref: target.ref,
+      status: "unknown",
+      error,
+      baseline,
+      expectedCount,
+      remoteCount: 0,
+      matched: [],
+      pending: [],
+      overdue: [],
+      withinGrace: [],
+      foreign: [],
+      unreleased: [],
+    });
+
+    // A target that must be judged against a release, but whose release could
+    // not be read, is unverified. Falling back to `main` would raise the very
+    // alert the baseline exists to stop; passing it would hide real drift.
+    if (target.releaseError) {
+      results.push({ ...unread(target.releaseError), baselineUnread: true });
+      continue;
+    }
+
     const remote = await fetchAppliedMigrations({
       accessToken: target.accessToken,
       projectRef: target.ref,
@@ -506,28 +687,23 @@ export async function runMigrationDriftCheck({
     });
 
     if (!remote.ok) {
-      results.push({
-        label: target.label,
-        ref: target.ref,
-        status: "unknown",
-        error: remote.error,
-        localCount: local.length,
-        remoteCount: 0,
-        matched: [],
-        pending: [],
-        overdue: [],
-        withinGrace: [],
-        foreign: [],
-      });
+      results.push(unread(remote.error));
       continue;
     }
 
-    const drift = classifyDrift({ local, remote: remote.migrations, nowMs, graceMs });
+    const drift = classifyDrift({
+      local,
+      released: target.released?.migrations ?? null,
+      remote: remote.migrations,
+      nowMs,
+      graceMs,
+    });
     results.push({
       label: target.label,
       ref: target.ref,
       error: null,
-      localCount: local.length,
+      baseline,
+      expectedCount,
       remoteCount: remote.migrations.length,
       ...drift,
     });
@@ -601,6 +777,12 @@ async function main() {
 
   if (targets.length === 0) {
     console.error("Error: DRIFT_TARGETS parsed to zero targets. Expected `label=ref` pairs.");
+    process.exit(1);
+  }
+
+  const released = attachReleaseBaselines({ targets });
+  if (!released.ok) {
+    console.error(`Error: ${released.error}`);
     process.exit(1);
   }
   const untokened = targets.filter((target) => !target.accessToken);

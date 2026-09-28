@@ -98,12 +98,8 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseMigrationFilename, readLocalMigrations } from "./check-migration-drift.mjs";
-import {
-  defaultRunGit,
-  fetchAppliedWithRetry,
-  MIGRATIONS_PREFIX,
-} from "./check-migration-drift-gate.mjs";
+import { readLocalMigrations, readMigrationVersionsAtRef } from "./check-migration-drift.mjs";
+import { fetchAppliedWithRetry } from "./check-migration-drift-gate.mjs";
 import { ENVIRONMENTS, loadEnvironments, supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { openSnapshot, SNAPSHOT_WORKFLOW } from "./lib/migration-snapshot.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -111,31 +107,6 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
 export const RUNBOOK = "docs/internal/ops/DB_PROMOTION_RUNBOOK.md";
-
-/**
- * The versioned migrations present in the tree at `ref` — ONE git call.
- *
- * Deliberately not `readMigrationsAtRef` from check-migration-drift-gate.mjs,
- * which is otherwise the same query. That function additionally runs
- * `git log -1 --format=%ct <ref> -- <path>` per file to date each migration's
- * arrival on main, which its grace window needs and this gate never reads —
- * 55 subprocesses instead of one, each walking history, on every PR and every
- * push, forever. The fields consumed here are `version` and `file`, and
- * `parseMigrationFilename` produces both from the listing alone.
- */
-export function readMigrationVersionsAtRef({ ref, runGit = defaultRunGit }) {
-  const listing = runGit(["ls-tree", "-r", "--name-only", ref, "--", MIGRATIONS_PREFIX]);
-  return listing
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((path) => {
-      const parsed = parseMigrationFilename(path.split("/").pop());
-      return parsed ? { ...parsed, path } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.version.localeCompare(b.version));
-}
 
 // ── Pure semantics ──────────────────────────────────────────────────────────
 
