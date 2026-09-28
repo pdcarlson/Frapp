@@ -255,9 +255,11 @@ jobs:
         run: node scripts/ci/verify-served-commit.mjs
 
       # UPLOAD the bundles built above, only once the API they call is verified,
-      # and only when the plan says so (never over a host already serving this
-      # commit or a newer one). The deployment ids are captured from stdout for
-      # the alias step.
+      # and only when the plan says so: always for `main`'s tip (a re-run of the
+      # tip's run re-uploads, which is how a rotated build-time value reaches
+      # staging), and for any other commit never over a host already serving it
+      # or a newer one. The deployment ids are captured from stdout for the
+      # alias step.
       - name: Upload web + landing to staging
         id: upload
         if: steps.plan.outputs.upload == 'true'

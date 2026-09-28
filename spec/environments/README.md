@@ -250,7 +250,7 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, one job in `deploy-staging.yml` builds web and landing, runs database migrations, deploys and verifies the Render staging API, and only then uploads web and landing. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, one job in `deploy-staging.yml` deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
 ### Deploy Pipeline (on merge)
 

@@ -625,8 +625,12 @@ test("a retired title that could not be read makes the run unread, even though i
   });
 
   assert.deepEqual(result.alert, { action: "unread", closed: [900, 961] });
-  assert.ok(lines.some((line) => /::warning::.*could not be read/.test(line)));
-  assert.ok(!lines.some((line) => /closed alert issue/.test(line)));
+  // One warning that names what closed and what could not be read: never
+  // "none was closed" when two issues did.
+  const warning = lines.find((line) => /::warning::/.test(line));
+  assert.match(warning, /closed alert issue\(s\) 900, 961/);
+  assert.match(warning, /could not be read/);
+  assert.doesNotMatch(warning, /none was closed/);
 });
 
 test("a retired alert that would not close makes the run failed, and failed outranks unread", async () => {
@@ -652,6 +656,23 @@ test("a retired alert that would not close makes the run failed, and failed outr
     action: "failed",
     closed: [900],
   });
+
+  // The run log names the issue that did close, beside the failed-close warning.
+  const third = makeFetchStub({
+    issues: [OPEN_ALERT, alertIssue(960, RETIRED_API_TITLE)],
+    failCloseFor: [960],
+  });
+  const { logger, lines } = capturingLogger();
+  await runDeployAlert({
+    ...RUN,
+    needs: stagingNeeds("success", "deploy"),
+    fetchImpl: third.fetchImpl,
+    writeSummary: () => {},
+    logger,
+    config: DEPLOY_STAGING_CONFIG,
+  });
+  assert.ok(lines.some((line) => /closed alert issue\(s\): 900$/.test(line)), lines.join("\n"));
+  assert.ok(lines.some((line) => /::warning::.*could not be closed/.test(line)));
 });
 
 test("a failed run never touches a retired-title issue", async () => {

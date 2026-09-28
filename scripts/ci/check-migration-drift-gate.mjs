@@ -54,10 +54,16 @@
 // main's tip when it fired, not the commit that triggered it). Since #2803
 // `Deploy staging` does that work plus all of the old Deploy Vercel staging
 // run's: installs and both builds before it migrates, both uploads and the
-// alias after the API, and the publish waits for all of it. Those runs took
-// 2.8 to 4.3 minutes on 2026-09-28, so the leg is about 14 minutes at worst,
-// derived rather than measured and still inside the grace. The publish itself
-// took 14 to 37 seconds in the same sample.
+// alias after the API, and the publish waits for all of it. For one merge
+// alone that is about 14 minutes at worst. Two migration merges a few minutes
+// apart are the tight case: the second waits for CI, for the first's whole
+// run (it holds `db-migrate-staging`), for its own, for the `updated_at` lag
+// that fires the publish (over five minutes, above) and for the publish
+// itself, about 25 to 30 minutes, at the edge of the grace. Derived, not
+// measured; the sums and their sources are in
+// `.github/actions/download-migration-snapshot/action.yml`'s header, and #2832
+// moves the publish to right after the migrations. This gate reports; it
+// blocks no merge.
 //
 // `--first-parent` is what makes that true rather than merely intended: see
 // the comment at the call site. Without it the grace was measured from the

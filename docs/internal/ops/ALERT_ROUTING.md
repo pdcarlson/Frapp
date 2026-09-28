@@ -138,14 +138,10 @@ and tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689).
 `deploy-outcome` job raises comes from `scripts/ci/deploy-alert.mjs`. The `ALERT_CONFIG` env var set in each
 workflow's `deploy-outcome` job chooses which one it's reporting on, and an unknown value is a hard
 error rather than a silent fallback to the default. Today one workflow has one: `deploy-staging.yml`,
-with `ALERT_CONFIG: deploy-staging`. Each configuration gets its own alert issue and title, because
-the title is the lookup key: a shared one would let one workflow's recovery close another's live
-alert. Renaming a title orphans whatever alert is open under the old one, which could then never be
-found or self-close, unless the configuration lists the old title in `retiredAlertTitles`.
-`deploy-staging` lists the two titles it replaced in #2803, *Deploy API is failing — pushes are not
-reaching the environment* and *Deploy Vercel staging is failing — web and landing are not reaching
-staging*, so a run that closes the staging alert also closes an issue still open under either. How
-the script works is in
+with `ALERT_CONFIG: deploy-staging`. Each configuration gets its own alert issue and title. A
+successful staging run also closes an issue still open under a title that alert replaced in #2803
+(Deploy API's or Deploy Vercel staging's). How the script works, titles and retired titles
+included, is in
 [`AGENT_INFRA.md` § Deploy visibility](../ci-cd/AGENT_INFRA.md#deploy-visibility-scriptscideploy-alertmjs).
 
 `production-guardrails.mjs` is also `deploy-production.yml`'s preflight, but that invocation

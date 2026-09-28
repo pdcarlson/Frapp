@@ -816,6 +816,9 @@ export async function runDeployAlert({
     if (alert.action === "closed") {
       logger.log?.(`[deploy-alert] closed alert issue(s): ${alert.closed.join(", ")}`);
     } else if (alert.action === "failed") {
+      if (alert.closed?.length) {
+        logger.log?.(`[deploy-alert] closed alert issue(s): ${alert.closed.join(", ")}`);
+      }
       // `lib/alert-issue.mjs` added this action precisely so a failed close
       // could not be mistaken for a successful one, and dropping it here put
       // the mistake back: the alert stays open claiming the deploy path is
@@ -826,10 +829,14 @@ export async function runDeployAlert({
         "::warning::[deploy-alert] the deploy recovered but the alert issue could not be closed — it is still open and will re-post on the next run",
       );
     } else if (alert.action === "unread") {
-      // Not "still open": the lookup failed, so this run does not know whether
-      // an alert is open at all. The next successful deploy looks again.
+      // Not "still open": a lookup failed, so this run does not know whether
+      // an alert is open under that title. The next successful deploy looks
+      // again. With retired titles, another title's issue may still have
+      // closed in the same run, and the log says which (#2803).
       logger.log?.(
-        "::warning::[deploy-alert] the deploy succeeded but the alert issues could not be read, so none was closed",
+        alert.closed?.length
+          ? `::warning::[deploy-alert] the deploy succeeded and closed alert issue(s) ${alert.closed.join(", ")}, but another alert title could not be read, so an issue under it may still be open`
+          : "::warning::[deploy-alert] the deploy succeeded but the alert issues could not be read, so none was closed",
       );
     }
     return { outcome, failed, deployed, alert };
