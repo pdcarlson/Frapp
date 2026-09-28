@@ -352,7 +352,7 @@ Three client rules complete the contract, each closing a way the rules above wou
 
 **Decision (owner, 2026-09-28): nothing screens a message before it posts.** Guideline 1.2 lists "a method for filtering objectionable material from being posted" beside report and block. Frapp's answer is the combination it already ships, not a filter:
 
-- the Terms' zero-tolerance clause, which every member accepts ([`legal.md`](../legal.md#acceptance-record) § Acceptance record says where that is enforced, #2302);
+- the Terms' zero-tolerance clause (#2302), which a member must accept to join a chapter. Members from before #2302 are asked by an in-app prompt that the server doesn't enforce ([`legal.md`](../legal.md#acceptance-record) § Acceptance record);
 - report (§ Report);
 - block (§ Block);
 - officer removal of a reported message (§ Officer action).
