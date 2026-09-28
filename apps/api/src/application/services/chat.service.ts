@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import {
@@ -648,6 +649,114 @@ export class ChatService {
     // A left/archived Group DM must not keep serving the push worker's stale
     // member list — same reasoning as `updateChannel`'s cache invalidation.
     this.channelCache.invalidate(channelId);
+  }
+
+  /**
+   * `POST /v1/channels/:id/members` (#1302): add a chapter member to a PRIVATE
+   * channel. Until this route the creator seed was the whole of PRIVATE
+   * membership (#1008). The rules are in `spec/behavior/chat/README.md`
+   * § Channels.
+   *
+   * Authorized by `channels:manage` at the controller, not by membership of
+   * the channel, exactly like `updateChannel` and `deleteChannel`
+   * ({@link requireChannelInChapter}): an officer can add members to a
+   * private channel they cannot read, themselves included.
+   *
+   * `member_ids` is a bare `uuid[]` with no foreign key, so nothing at the
+   * database stops a foreign id landing in it. The chapter check here is the
+   * only one. It runs before the write and is not re-checked atomically with
+   * it: a member removed from the chapter in between is listed, and
+   * `canAccessChannel` still requires chapter membership on every read, so
+   * the stale id admits nobody.
+   *
+   * Idempotent: adding someone already listed succeeds and changes nothing.
+   */
+  async addPrivateChannelMember(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel> {
+    await this.requirePrivateChannel(channelId, chapterId);
+
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member) {
+      throw new BadRequestException(
+        'Only a member of this chapter can be added to one of its channels',
+      );
+    }
+
+    const updated = await this.channelRepo.addPrivateChannelMember(
+      channelId,
+      chapterId,
+      userId,
+    );
+    // Deleted between the check above and the RPC.
+    if (!updated) throw new NotFoundException('Channel not found');
+    // `member_ids` decides who is pushed this channel's messages
+    // (`ChannelCacheService`), so the worker must not keep the old list.
+    this.channelCache.invalidate(channelId);
+    return updated;
+  }
+
+  /**
+   * `DELETE /v1/channels/:id/members/:userId` (#1302): remove someone from a
+   * PRIVATE channel. Authorized like {@link addPrivateChannelMember}.
+   *
+   * No chapter-membership check, so an id that should never have been listed,
+   * or one whose member has left the chapter, can always be cleaned out.
+   * Idempotent for someone not listed.
+   *
+   * **Removing the last member is refused (409).** A PRIVATE channel with an
+   * empty list is readable by nobody, and nobody could be added back through
+   * membership, which is #1008's defect by another route. The RPC holds that
+   * guard in its `WHERE`, so two concurrent removals of the last two members
+   * cannot both pass it. A caller who wants the channel gone deletes it.
+   */
+  async removePrivateChannelMember(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel> {
+    await this.requirePrivateChannel(channelId, chapterId);
+
+    const updated = await this.channelRepo.removePrivateChannelMember(
+      channelId,
+      chapterId,
+      userId,
+    );
+    if (!updated) {
+      // The RPC matches nothing either because the channel went away after
+      // the check above, or because this removal would empty it. Re-read to
+      // tell the two apart; a type never changes.
+      const stillThere = await this.channelRepo.findById(channelId, chapterId);
+      if (!stillThere) throw new NotFoundException('Channel not found');
+      throw new ConflictException(
+        'A private channel must keep at least one member. Delete the channel instead.',
+      );
+    }
+    this.channelCache.invalidate(channelId);
+    return updated;
+  }
+
+  /**
+   * {@link requireChannelInChapter}, narrowed to PRIVATE. DM and Group DM
+   * membership is fixed at creation apart from leaving, and PUBLIC and
+   * ROLE_GATED channels never consult `member_ids`.
+   */
+  private async requirePrivateChannel(
+    channelId: string,
+    chapterId: string,
+  ): Promise<ChatChannel> {
+    const channel = await this.requireChannelInChapter(channelId, chapterId);
+    if (channel.type !== 'PRIVATE') {
+      throw new BadRequestException(
+        'Only a private channel has members that can be added or removed',
+      );
+    }
+    return channel;
   }
 
   // ── Categories ───────────────────────────────────────────────────────

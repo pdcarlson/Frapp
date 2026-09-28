@@ -37,6 +37,7 @@ import {
   UpdateChannelDto,
   CreateDmDto,
   CreateGroupDmDto,
+  AddChannelMemberDto,
   CreateCategoryDto,
   UpdateCategoryDto,
   SendMessageDto,
@@ -265,6 +266,45 @@ export class ChatController {
   ) {
     await this.chatService.leaveChannel(channelId, chapterId, userId);
     return { success: true };
+  }
+
+  /**
+   * PRIVATE channel membership (#1302). `channels:manage`, like `PATCH` and
+   * `DELETE` on a channel, and deliberately not per-user ACL'd: an officer
+   * can manage a private channel they cannot read. Rules:
+   * `ChatService.addPrivateChannelMember` / `removePrivateChannelMember`.
+   */
+  @Post(':id/members')
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({ summary: 'Add a chapter member to a private channel' })
+  async addChannelMember(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Body() dto: AddChannelMemberDto,
+  ) {
+    return this.chatService.addPrivateChannelMember(
+      channelId,
+      chapterId,
+      dto.user_id,
+    );
+  }
+
+  @Delete(':id/members/:userId')
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Remove someone from a private channel (409 if they are its last member)',
+  })
+  async removeChannelMember(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.chatService.removePrivateChannelMember(
+      channelId,
+      chapterId,
+      userId,
+    );
   }
 
   // ── Categories ───────────────────────────────────────────────────────

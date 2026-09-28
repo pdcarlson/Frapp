@@ -333,6 +333,33 @@ export interface Database {
         Returns: ChatChannel[];
       };
       /**
+       * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
+       * channel's `member_ids` unless already listed. Empty result set means
+       * the row didn't match (wrong id/chapter, or not PRIVATE).
+       */
+      add_private_channel_member: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+        };
+        Returns: ChatChannel[];
+      };
+      /**
+       * `20260928170000` (#1302). Atomically removes `p_user_id` from a
+       * PRIVATE channel's `member_ids`. Empty result set means the row didn't
+       * match (wrong id/chapter, not PRIVATE) or the removal would have left
+       * no members, which it refuses.
+       */
+      remove_private_channel_member: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+          p_user_id: string;
+        };
+        Returns: ChatChannel[];
+      };
+      /**
        * `20260925200000` (#2303). Hides a 1:1 DM from `p_user_id`'s own list:
        * upserts their read receipt with `hidden_at` and `last_read_at` at the
        * database's `now()`. Empty result set means the row didn't match (wrong
