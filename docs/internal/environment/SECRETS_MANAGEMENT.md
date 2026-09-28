@@ -35,7 +35,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    ...                                                            │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
-│  Syncs: Render ×2, Vercel ×2 (Production only) — §5               │
+│  Syncs: Render ×2; Vercel none (builds inject Infisical) — §5     │
 │  Web/landing (both envs): built from an Infisical injection — §5  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -47,7 +47,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
 | Environments | 3     | 3 — [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#infisical-environments) |
-| Integrations | 10    | 4 secret syncs — see §5        |
+| Integrations | 10    | 2 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
 and `ENV_REFERENCE.md` previously disagreed (7 vs 6) because both counted by hand. Infisical's own
@@ -112,7 +112,7 @@ Every sync below is configured at path `/`, so **each one pushes every secret in
 environment to its destination.** Narrowing a sync means splitting the secret store into paths and
 repointing the sync — there is no filter to switch on. See the "Blast radius" note below.
 
-#### Live syncs (4 total)
+#### Live syncs (2 total)
 
 **Dashboard state last verified: 2026-09-28.** This table is a convenience copy of live
 dashboard configuration and goes stale silently. Treat a disagreement between this table and the
@@ -123,10 +123,17 @@ See "Verifying this section against reality" below.
 | --------------------------- | ------------- | ---- | ------------------- | ----------------- |
 | `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           |
 | `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           |
-| `vercel-landing-production` | Production    | `/`  | `frapp-landing`     | Production        |
-| `vercel-web-production`     | Production    | `/`  | `frapp-web`         | Production        |
 
-All four read **Synced** in the Infisical UI on 2026-09-28.
+Both read **Synced** in the Infisical UI on 2026-09-28. No sync targets Vercel.
+
+**The two production Vercel syncs are deleted too (2026-09-28, #834).** Since #2673 no build reads a
+Vercel env row, so `vercel-web-production` and `vercel-landing-production` only copied the whole
+`prod` store into two frontend projects. The owner deleted both with **Remove Synced Secrets** on,
+which removed the rows they had written, and both projects' Production env lists read empty
+afterwards. The production dry run that followed,
+[36458267082 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/36458267082), built both
+frontends green from Infisical `prod` alone. Its earlier attempt had failed on a `[SENSITIVE]`
+placeholder that a synced row leaked into the landing build (#2810).
 
 **The two staging Vercel syncs are deleted (2026-09-28, [#834](https://github.com/pdcarlson/Frapp/issues/834)).**
 `vercel-web-staging` and `vercel-landing-staging` wrote Preview rows scoped to git branch `main`.
@@ -160,7 +167,7 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 
 #### GitHub Actions is not a sync
 
-There is no GitHub Actions sync — the Secret Syncs list holds exactly the four above. The workflows
+There is no GitHub Actions sync — the Secret Syncs list holds exactly the two above. The workflows
 that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` (pinned to that tag's commit SHA, #2647) with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
 `INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6). This is universal
@@ -232,9 +239,9 @@ any app key the injection lacked. A dry run withholds `SENTRY_AUTH_TOKEN` from t
 it from the pulled file, so it mints no Sentry release
 ([#2275](https://github.com/pdcarlson/Frapp/issues/2275)). A key Vercel's Production env holds that
 Infisical `prod` doesn't supply prints a `::warning::` naming it, which is how a value that only
-ever lived in Vercel shows up. With that, **no build reads a Vercel env row**, and the two production
-Vercel syncs only copy the whole `prod` store into two frontend projects: they are deleted, with
-their Production rows, once a production run on this path is green (owner, §5 and #834). Nothing
+ever lived in Vercel shows up. With that, **no build reads a Vercel env row**, so the two production
+Vercel syncs, which only copied the whole `prod` store into two frontend projects, were deleted with
+their Production rows on 2026-09-28 (§5, #834). Nothing
 here depends on Vercel's Git link or branch tracking, both of which are off.
 
 #### Blast radius
@@ -246,15 +253,14 @@ keeps equal to the source (this section used to carry its own copy, which had fa
 behind). Everything else in the environment — database passwords, service-role keys, Stripe secrets,
 deploy hook URLs — is pushed toward those projects without being used by them.
 
-**The Vercel syncs deliver — the staging ones did too, until they were deleted.** On 2026-08-12 the `frapp-web`
+**The Vercel syncs delivered, all four of them, until they were deleted on 2026-09-28.** On 2026-08-12 the `frapp-web`
 environment-variable list was read directly, and both its `Preview` and `Production` scopes held the
 full backend store: `SUPABASE_DB_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`,
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RENDER_DEPLOY_HOOK_URL`.
 
 `frapp-landing` was **not** inspected variable-by-variable that day, so treat its contents as
-expected-but-unconfirmed. The expectation is well founded — its Production scope is fed by a sync
-with the same `/` path from the same environment — but it is an inference, not a reading. Confirm it before
-relying on it, and see the verification steps below.
+expected-but-unconfirmed. The expectation was well founded (its syncs had the same `/` path from the
+same environments), but it was never read. Moot since 2026-09-28: every row is deleted.
 
 Staging was not spared while its syncs worked: they wrote to `Preview` scope filtered to branch
 `main`, and under the Git integration `main` is what staging deployed from, so the `frapp-web` staging
@@ -285,11 +291,10 @@ behind by the original misconfiguration. Those were inert (no deployment reads a
 but, unlike the current rows, were **not** marked Sensitive, so their values were readable in the
 Vercel dashboard. They were deleted from both `frapp-web` and `frapp-landing` on 2026-08-12.
 
-The **production** syncs still deliver the whole `prod` store into both frontend projects. Since
-#2673 no build reads what they write, so they are deleted rather than narrowed, like the staging
-ones (owner decision 2026-09-28, #834; a secret-path split was the rejected alternative). Delete the
-sync *first*, then its Production rows: deleting the rows first just invites the next sync to rewrite
-them.
+The **production** syncs delivered the whole `prod` store into both frontend projects until
+2026-09-28. Since #2673 no build read what they wrote, so they were deleted rather than narrowed, like
+the staging ones (owner decision, #834; a secret-path split was the rejected alternative), and their
+Production rows went with them. No Vercel project holds an Infisical secret now.
 
 #### Verifying this section against reality
 
@@ -444,7 +449,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 ## Audit
 
 - Infisical dashboard → Audit Log for all secret access
-- Verify sync health periodically for every sync in §5 (GitHub Actions is not one of them). All four report Synced; a Failed one is a real incident
+- Verify sync health periodically for every sync in §5 (GitHub Actions is not one of them). Both report Synced; a Failed one is a real incident
 - Review no unexpected access patterns
 
 ## Provider API token sanity checks (operations)
