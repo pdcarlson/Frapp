@@ -61,6 +61,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: '2026-08-24T12:00:00Z',
     completed_at: null,
     purged_at: null,
+    cleared_at: null,
     ...overrides,
   };
 }
@@ -670,7 +671,12 @@ function botChannel(overrides: Record<string, unknown> = {}) {
 describe('DiscordImportService — progress and clearing (#2816, #2817)', () => {
   it("reports a bot import's progress in channel rows, since its message total grows as it reads", async () => {
     await build(
-      job({ source: 'bot', total_messages: 5307, imported_messages: 5307 }),
+      job({
+        source: 'bot',
+        status: 'running',
+        total_messages: 5307,
+        imported_messages: 5307,
+      }),
     );
     repo.countChannels.mockResolvedValue({ total: 900, done: 201 });
 
@@ -690,23 +696,46 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 
-  it('clears a finished import, and only a finished one', async () => {
-    await build(job({ status: 'completed' }));
+  it.each(['draft', 'completed', 'purged'] as const)(
+    'skips the counts for a %s bot import, which has no progress to show',
+    async (status) => {
+      await build(job({ source: 'bot', status }));
+      expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
+        channels_total: null,
+        channels_done: null,
+      });
+      await service.list(CHAPTER);
+      expect(repo.countChannels).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stops or deletes a bot import without waiting on its progress counts', async () => {
+    await build(job({ source: 'bot', status: 'running' }));
+    repo.countChannels.mockRejectedValue(new Error('count timed out'));
+    await service.cancel(IMPORT_ID, CHAPTER);
+    expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+      status: 'cancelled',
+    });
+    expect(repo.countChannels).not.toHaveBeenCalled();
+  });
+
+  it('clears only a deleted import', async () => {
+    await build(job({ status: 'purged' }));
     await service.clear(IMPORT_ID, CHAPTER);
     expect(repo.markCleared).toHaveBeenCalledWith(
       IMPORT_ID,
       CHAPTER,
-      ['completed', 'failed', 'cancelled', 'purged'],
+      ['purged'],
       expect.any(String),
     );
   });
 
-  it('refuses to clear an import that is queued, running or being purged', async () => {
-    await build(job({ status: 'running' }));
-    // The conditional write matches nothing for an unfinished import.
+  it('refuses to clear an import that still holds what it brought in', async () => {
+    await build(job({ status: 'completed' }));
+    // The conditional write matches nothing for an import that is not purged.
     repo.markCleared.mockResolvedValue(null);
-    await expect(service.clear(IMPORT_ID, CHAPTER)).rejects.toBeInstanceOf(
-      ConflictException,
+    await expect(service.clear(IMPORT_ID, CHAPTER)).rejects.toThrow(
+      'Only a deleted import can be cleared. Delete it first.',
     );
   });
 

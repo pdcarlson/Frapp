@@ -133,15 +133,9 @@ export function useDiscordImportFiles(
 }
 
 /**
- * Stop a queued or running import.
- *
- * Not optional garnish: `DELETE` refuses while an import is `running` and tells
- * the admin to cancel first, so without this the documented recovery path has
- * no button behind it and a misconfigured import runs to completion.
- */
-/**
- * Take a finished import off the list. Nothing it imported is touched; the
- * API refuses (409) an import that is queued, running or being purged.
+ * Take a deleted import's record off the list. The API refuses (409) any
+ * other: an import that still holds what it brought in stays listed until it
+ * is deleted, since the list is where Delete lives.
  */
 export function useClearDiscordImport() {
   const client = useFrappClient();
@@ -165,6 +159,13 @@ export function useClearDiscordImport() {
   });
 }
 
+/**
+ * Stop a queued or running import.
+ *
+ * Not optional garnish: `DELETE` refuses while an import is `running` and tells
+ * the admin to cancel first, so without this the documented recovery path has
+ * no button behind it and a misconfigured import runs to completion.
+ */
 export function useCancelDiscordImport() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

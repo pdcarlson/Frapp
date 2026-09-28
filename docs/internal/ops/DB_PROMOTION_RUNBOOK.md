@@ -565,11 +565,11 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
-## 2026-09-28: Clear a finished Discord import off the list (#2817)
+## 2026-09-28: Clear a deleted Discord import off the list (#2817)
 
 ### 20260928183000_discord_import_cleared_at.sql
 
-- **Purpose**: Adds `cleared_at timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a chapter clears a finished import (completed, failed, cancelled or purged), and the import list leaves those rows out. Nothing an import brought in is touched; the job row stays as the record. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds `cleared_at timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a chapter clears an import it has already deleted (status `purged`), and the import list leaves those rows out. The job row stays, as the record that the import happened. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'cleared_at';` returns one row: `cleared_at | timestamp with time zone | YES | null`.
 - **Promoter notes**: Ship it before, or with, the API that reads it. The API's import list filters on the column, so a newer API against an unmigrated database fails the list. An older API ignores it. Every existing import stays listed. Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.

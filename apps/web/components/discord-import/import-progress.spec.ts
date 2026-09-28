@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importPercent, isClearable, type ImportRow } from "./import-progress";
+import { importPercent, type ImportRow } from "./import-progress";
 
 const row = (overrides: Partial<ImportRow>): ImportRow => ({
   id: "i1",
@@ -53,16 +53,5 @@ describe("importPercent", () => {
       importPercent(row({ total_messages: 400, imported_messages: 100 })),
     ).toBe(25);
     expect(importPercent(row({ total_messages: 0 }))).toBe(0);
-  });
-});
-
-describe("isClearable", () => {
-  it("offers Clear only once an import is finished", () => {
-    for (const status of ["completed", "failed", "cancelled", "purged"]) {
-      expect(isClearable(status)).toBe(true);
-    }
-    for (const status of ["draft", "ready", "running", "purging"]) {
-      expect(isClearable(status)).toBe(false);
-    }
   });
 });

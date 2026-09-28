@@ -45,9 +45,9 @@ const MESSAGE_BATCH_SIZE = 200;
 const FILE_PAGE_SIZE = 500;
 
 /**
- * Channel-mapping rows read, or inserted, per round trip. A bot import holds a
- * row per thread as well as per channel, so a chapter's first real server
- * already had 945 of them, within sight of the cap; see the note above.
+ * Channel-mapping rows read per round trip. A bot import holds a row per
+ * thread as well as per channel, so a chapter's first real server already had
+ * 945 of them, within sight of the cap; see the note above.
  */
 const CHANNEL_PAGE_SIZE = 500;
 
@@ -140,7 +140,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
   async markCleared(
     id: string,
     chapterId: string,
-    finished: DiscordImportStatus[],
+    clearable: DiscordImportStatus[],
     at: string,
   ): Promise<DiscordImport | null> {
     const { data, error } = await this.supabase
@@ -148,7 +148,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .update({ cleared_at: at, updated_at: at })
       .eq('id', id)
       .eq('chapter_id', chapterId)
-      .in('status', finished)
+      .in('status', clearable)
       .select()
       .maybeSingle();
     if (error) throw error;
@@ -214,15 +214,15 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     const payload: TablesInsert<'discord_import_channels'>[] = rows.map(
       (row) => ({ ...row, import_id: importId }),
     );
-    // Inserted in batches and read back through the paged read, never taken
-    // from `.insert().select()`: that answer is a response like any other, so
-    // past the cap it would hand discovery a silently shortened channel list.
-    for (let from = 0; from < payload.length; from += CHANNEL_PAGE_SIZE) {
-      const { error } = await this.supabase
-        .from('discord_import_channels')
-        .insert(payload.slice(from, from + CHANNEL_PAGE_SIZE));
-      if (error) throw error;
-    }
+    // One insert, so the set lands whole or not at all: a partial set would
+    // pass every "has the server been scanned" check and silently drop the
+    // rest. Read back through the paged read, never from `.insert().select()`,
+    // whose answer is capped like any other response and would hand discovery
+    // a shortened channel list.
+    const { error } = await this.supabase
+      .from('discord_import_channels')
+      .insert(payload);
+    if (error) throw error;
     return this.findChannels(importId, chapterId);
   }
 
@@ -272,9 +272,12 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .eq('import_id', importId)
         .eq('discord_imports.chapter_id', chapterId)
         .neq('mapping_action', 'skip');
+    // A row the worker skipped (its channel was deleted, or hidden from the
+    // bot, by the time it got there) is finished too, or the count would stop
+    // short of the total for good.
     const [total, done] = await Promise.all([
       base(),
-      base().eq('status', 'completed'),
+      base().in('status', ['completed', 'skipped']),
     ]);
     if (total.error) throw total.error;
     if (done.error) throw done.error;

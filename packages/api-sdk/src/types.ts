@@ -2710,7 +2710,7 @@ export interface paths {
         };
         /**
          * Import detail and progress
-         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`. A bot import reads Discord as it goes, so its message total grows with it; its progress is `channels_done` / `channels_total` (channel and thread rows being imported; null for an upload).
+         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled.
          */
         get: operations["DiscordImportController_get_v1"];
         put?: never;
@@ -2910,8 +2910,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Take a finished import off the list
-         * @description Hides a completed, failed, cancelled or purged import from the list. Nothing it imported is touched; to remove that, delete the import. 409 while the import is queued, running or being purged.
+         * Take a deleted import off the list
+         * @description Hides a purged (deleted) import’s record from the list. 409 for an import in any other status: the list is where an import is deleted from, so one that still holds what it brought in stays listed until it is deleted.
          */
         post: operations["DiscordImportController_clear_v1"];
         delete?: never;

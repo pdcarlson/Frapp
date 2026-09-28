@@ -467,7 +467,11 @@ chooses one at `/discord-import`; everything after the choice is identical.
 keeps working if Discord ever throttles or refuses one shared bot across every
 chapter, and it is the only path for a chapter that cannot install apps in its
 own server. Either way a background job writes the rows, the admin sees
-per-import progress, and can delete the whole import afterwards.
+per-import progress, and can delete the whole import afterwards. A bot import's
+progress is counted in channels and threads, a channel Discord no longer shows
+the bot counting as done: its message total is only known once Discord has been
+read, so a message count would read full from the first page (#2816). An upload's
+is counted in messages. Neither reads 100% until the import has completed.
 
 **What the bot path costs, stated plainly.** One bot process holds read access
 to every connected chapter's Discord server at once. That is a real cross-tenant
@@ -565,10 +569,9 @@ channel that reports a different one fails the import rather than being skipped.
   instead.
 - **Deleting an import is not the same as clearing it.** Delete purges what the
   import brought in and keeps the job row as the record that it happened.
-  Clear, offered once an import is finished (completed, failed, cancelled or
-  purged), only takes that row off the chapter's list and touches nothing it
-  imported (#2817). A bot import's progress is shown in channels and threads,
-  because its message total is only known once Discord has been read (#2816).
+  Clear takes that record off the chapter's list, and is offered only once the
+  import has been deleted (#2817): the list is where Delete lives, so an import
+  that still holds what it brought in stays on it.
 - **Where it lands is the operator's choice, per channel, starting from a safe
   default.** Every channel the bot can read starts as a *new* Frapp channel
   with its Discord name, so a server with no conflicts needs no per-channel

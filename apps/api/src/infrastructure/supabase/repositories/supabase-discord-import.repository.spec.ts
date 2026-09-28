@@ -186,10 +186,10 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     ).toContainEqual(['cleared_at', 'is', null]);
   });
 
-  it('markCleared cannot reach another chapter row, and only clears a finished import', async () => {
-    // IMPORT_B is `ready` in the fixture: not finished, so nothing changes.
+  it('markCleared cannot reach another chapter row, and only clears a clearable import', async () => {
+    // IMPORT_B is `ready` in the fixture: not clearable, so nothing changes.
     const result = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.markCleared(IMPORT_B, CHAPTER_B, ['completed'], 'now'),
+      repo.markCleared(IMPORT_B, CHAPTER_B, ['purged'], 'now'),
     );
     expect(result).toBeNull();
     expect(
@@ -206,6 +206,21 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
         CHAPTER_B,
       ]);
     }
+  });
+
+  it('countChannels counts the rows being imported, and a skipped one as done', async () => {
+    await repo.countChannels(IMPORT_B, CHAPTER_B);
+    const [total, done] = harness.ops.map((op) =>
+      op.filters.map((f) => [f.column, f.op, f.value]),
+    );
+    expect(harness.ops).toHaveLength(2);
+    // A row mapped to skip is not being imported, so it is in neither count.
+    expect(total).toContainEqual(['mapping_action', 'neq', 'skip']);
+    expect(done).toContainEqual(['mapping_action', 'neq', 'skip']);
+    expect(total.some(([column]) => column === 'status')).toBe(false);
+    // The worker skips a channel Discord no longer shows the bot; it is
+    // finished, or progress would stop short of the total for good.
+    expect(done).toContainEqual(['status', 'in', ['completed', 'skipped']]);
   });
 
   it('findFiles is scoped to the caller chapter', async () => {
@@ -322,11 +337,16 @@ describe('SupabaseDiscordImportRepository — channel rows past the response cap
   function repoWithChannelPages(pages: Array<{ data: unknown[] | null }>) {
     const ranges: Array<[number, number]> = [];
     const inserts: unknown[][] = [];
+    const orders: string[] = [];
     let index = 0;
     const builder: Record<string, unknown> = {};
-    for (const method of ['select', 'eq', 'order', 'delete', 'maybeSingle']) {
+    for (const method of ['select', 'eq', 'delete', 'maybeSingle']) {
       builder[method] = jest.fn(() => builder);
     }
+    builder.order = jest.fn((column: string) => {
+      orders.push(column);
+      return builder;
+    });
     builder.range = jest.fn((from: number, to: number) => {
       ranges.push([from, to]);
       return Promise.resolve(pages[index++] ?? { data: [], error: null });
@@ -344,7 +364,7 @@ describe('SupabaseDiscordImportRepository — channel rows past the response cap
         typeof SupabaseDiscordImportRepository
       >[0],
     );
-    return { repo, ranges, inserts };
+    return { repo, ranges, inserts, orders };
   }
 
   const channelRows = (count: number) =>
@@ -367,7 +387,23 @@ describe('SupabaseDiscordImportRepository — channel rows past the response cap
     expect(ranges[0]).toEqual([0, PAGE_SIZE - 1]);
   });
 
-  it('inserts a large set in batches and answers with the paged read', async () => {
+  it('pages over an order with no ties', async () => {
+    // Upload rows all sit at position 0, and two channels can share a name:
+    // without the id last, `.range()` pages over an order Postgres may change
+    // between requests, repeating some rows and dropping others.
+    const { repo, orders } = repoWithChannelPages([
+      { data: channelRows(PAGE_SIZE) },
+      { data: [] },
+    ]);
+    await repo.findChannels(IMPORT_A, CHAPTER_A);
+    expect(orders.slice(0, 3)).toEqual([
+      'position',
+      'discord_channel_name',
+      'id',
+    ]);
+  });
+
+  it('inserts the set in one write and answers with the paged read', async () => {
     const { repo, inserts } = repoWithChannelPages([
       { data: channelRows(PAGE_SIZE) },
       { data: channelRows(PAGE_SIZE) },
@@ -378,7 +414,9 @@ describe('SupabaseDiscordImportRepository — channel rows past the response cap
       discord_channel_id: String(i),
     })) as unknown as Parameters<typeof repo.replaceChannels>[2];
     const result = await repo.replaceChannels(IMPORT_A, CHAPTER_A, rows);
-    expect(inserts.map((batch) => batch.length)).toEqual([500, 500, 200]);
+    // One statement, so a failure leaves no partial set for the "has it been
+    // scanned" checks to accept.
+    expect(inserts.map((batch) => batch.length)).toEqual([1200]);
     expect(result).toHaveLength(1200);
   });
 });

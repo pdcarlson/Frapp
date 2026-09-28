@@ -7,8 +7,10 @@ export type ImportRow = {
   total_messages: number;
   imported_messages: number;
   /**
-   * A bot import's progress in channel and thread rows; null for an upload.
-   * Its message total grows as it reads, so messages cannot measure it.
+   * A bot import's progress in channel and thread rows. Null for an upload, and
+   * for a bot import that is not queued, running or stopped part-way. Its
+   * message total grows with every page it reads, so messages cannot measure
+   * it.
    */
   channels_total?: number | null;
   channels_done?: number | null;
@@ -19,20 +21,14 @@ export type ImportRow = {
   created_at: string;
 };
 
-/** Statuses in which an import is finished and can be cleared off the list. */
-const CLEARABLE = new Set(["completed", "failed", "cancelled", "purged"]);
-
-export function isClearable(status: string): boolean {
-  return CLEARABLE.has(status);
-}
-
 /**
  * How far along an import is, in whole percent.
  *
  * A bot import is measured in channel rows: it reads Discord as it goes, so
  * its message total rises with every page and `imported / total` would read
- * 100% from the first slice (#2816). An upload knows its total from the
- * export. Either way, 100% is kept for an import that has actually finished.
+ * 100% from the first slice (#2816). An upload is measured in messages; its
+ * total also grows, a part at a time, so it can briefly read full between
+ * parts. Either way, 100% is kept for an import that has actually finished.
  */
 export function importPercent(row: ImportRow): number {
   if (row.status === "completed") return 100;

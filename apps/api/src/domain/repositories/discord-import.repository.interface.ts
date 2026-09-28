@@ -85,14 +85,13 @@ export interface IDiscordImportRepository {
   findByChapter(chapterId: string): Promise<DiscordImport[]>;
 
   /**
-   * Take a finished import off the list, but only while its status is one of
-   * `finished`, in the same write. Null when it is not (it moved on, or it
-   * was never finished).
+   * Take an import off the list, but only while its status is one of
+   * `clearable`, in the same write. Null when it is not.
    */
   markCleared(
     id: string,
     chapterId: string,
-    finished: DiscordImportStatus[],
+    clearable: DiscordImportStatus[],
     at: string,
   ): Promise<DiscordImport | null>;
 
@@ -142,7 +141,9 @@ export interface IDiscordImportRepository {
   ): Promise<DiscordImportChannel[]>;
   /**
    * How many of this import's rows (channels and threads) are being imported,
-   * and how many of those are done. Skipped rows are not counted.
+   * and how many of those are done: imported, or skipped by the worker because
+   * Discord no longer showed the channel to the bot. Rows mapped to skip are
+   * not counted.
    */
   countChannels(
     importId: string,

@@ -11,6 +11,7 @@ import {
   useDiscordImports,
 } from "@repo/hooks";
 import { formatLocaleDateTime } from "@repo/formatting";
+import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +32,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
-import { importPercent, isClearable, type ImportRow } from "./import-progress";
+import { importPercent, type ImportRow } from "./import-progress";
 import type { ImportSource } from "./source-step";
 
 const STATUS_VARIANT: Record<
@@ -355,9 +356,10 @@ function DiscordImportBody({
                           Stop import
                         </Button>
                       ) : null}
-                      {/* Clearing only takes the row off this list; what the
-                          import brought in stays. Delete is what removes it. */}
-                      {isClearable(live.status) ? (
+                      {/* Only a deleted import is cleared: this list is where
+                          Delete lives, so one still holding what it brought
+                          in must stay on it. */}
+                      {isDiscordImportClearable(live.status) ? (
                         <Button
                           variant="ghost"
                           size="sm"
