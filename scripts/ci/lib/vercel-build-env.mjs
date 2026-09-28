@@ -3,8 +3,8 @@
 //
 // ── Why staging stopped reading Vercel's Preview env ───────────────────────
 // Staging's app config used to reach Vercel through two Infisical→Vercel syncs
-// (`vercel-web-staging`, `vercel-landing-staging`). Those have failed since
-// ADR-21 unlinked both projects from Git: Infisical scopes a Preview write by
+// (`vercel-web-staging`, `vercel-landing-staging`, deleted 2026-09-28). Those
+// failed from the day ADR-21 unlinked both projects from Git: Infisical scopes a Preview write by
 // git branch, and a Git-less project has no branch to resolve. They also pushed
 // the WHOLE staging store, backend credentials included, into two frontend
 // projects. The owner chose #834's option (b) on 2026-09-24: the staging deploy

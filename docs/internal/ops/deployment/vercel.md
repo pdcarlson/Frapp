@@ -43,8 +43,9 @@ The pull still supplies the project settings and `VERCEL_ENV=preview`
 production `vercel-*` syncs push the values into each project's Production scope, and the staging job
 reads Infisical `staging` directly; the dashboard is a destination, not the place a human enters
 anything. A Preview row can no longer supply a key an app reads, though a row under any other name
-still reaches the staging build's environment; delete the stale rows once a staging deploy on this
-path is green ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The authoritative sync map and
+still reaches the staging build's environment. The staging syncs and their `Preview · main` rows
+were deleted on 2026-09-28 ([#834](https://github.com/pdcarlson/Frapp/issues/834)); the unscoped
+Preview rows the pull still returns stay. The authoritative sync map and
 the setup procedure live in
 [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
 variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables

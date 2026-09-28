@@ -223,9 +223,10 @@ not written into this public repo — read them from Infisical or the Cloudflare
 dashboard. They do not live _only_ there, though: the path-`/` `render-api-staging`
 sync ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) pushes every Staging
 secret onward, so a copy also sits in the Render staging service env. The two
-staging Vercel syncs that also carried it were deleted on 2026-09-28, together
-with every Preview row they wrote (#834), so no Vercel project holds a staging
-copy. Count every destination that applies in any compromise
+staging Vercel syncs that also carried it were deleted on 2026-09-28 with their
+`Preview · main` rows (#834). `frapp-web` holds no staging copy; `frapp-landing`'s
+sync branch was never read, so confirm its unfiltered Preview list before
+counting it clean ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5). Count every destination that applies in any compromise
 assessment of this credential.
 
 | Variable                      | `dev`           | `staging`                                                                                                                                                 | `prod`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -559,7 +560,7 @@ the table above with its justification, and re-run the audit above if it could c
 ## Infisical → Provider Syncs
 
 **The sync inventory lives in one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs).** Go there for the
-per-sync source environment, secret path, destination scope, and git branch, plus how to verify all
+per-sync source environment, secret path, and destination scope, plus how to verify all
 of it against the dashboards.
 
 This section used to carry its own copy of that table and drifted badly enough to send a reader

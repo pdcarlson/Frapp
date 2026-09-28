@@ -35,7 +35,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    ...                                                            │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
-│  Syncs: Render ×2, Vercel ×4 (the 2 staging ones retired) — §5    │
+│  Syncs: Render ×2, Vercel ×2 (Production only) — §5               │
 │  Staging web/landing: built from an Infisical injection — §5      │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -47,7 +47,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
 | Environments | 3     | 3 — [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#infisical-environments) |
-| Integrations | 10    | 6 secret syncs — see §5        |
+| Integrations | 10    | 4 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
 and `ENV_REFERENCE.md` previously disagreed (7 vs 6) because both counted by hand. Infisical's own
@@ -135,10 +135,15 @@ They failed from the day ADR-21 unlinked the projects from Git
 [#2106](https://github.com/pdcarlson/Frapp/issues/2106)'s `infisical-syncs` assertion red, and
 nothing read what they wrote: staging's web and landing builds take their app config from Infisical
 `staging` at build time ([§ Staging web and landing](#staging-web-and-landing-injected-at-build-not-synced)).
-The owner deleted both syncs with **Remove Synced Secrets** off (that option queues a removal job
-against Vercel, which would hit the same Git error and keep the sync alive), then deleted every
-**Preview · `main`** row in `frapp-web` and `frapp-landing` by hand. Both projects' env lists,
-filtered to `main`, read empty afterwards. Production rows were left alone.
+The owner deleted both syncs with **Remove Synced Secrets** off, then deleted every
+**Preview · `main`** row in `frapp-web` and `frapp-landing` by hand; both projects' env lists,
+filtered to `main`, read empty afterwards, and Production rows were left alone. With that option on,
+Infisical's `deleteSecretSync` (open-source backend, read 2026-09-28) queues a job that removes the
+synced secrets first and deletes the sync only when it completes; that the job would fail here on the
+same Git error is inferred, not observed. `frapp-landing`'s sync branch was never read in the
+dashboard (only `frapp-web`'s, `main`, on 2026-08-12), so a landing Preview row scoped to any other
+branch would not have shown under the `main` filter: read `frapp-landing`'s unfiltered Preview list
+before counting it free of staging credentials.
 
 **Never re-create a Vercel Preview sync with a git branch filter.** The *Vercel env* column is
 Vercel's environment name (`Production` or `Preview`); a Preview sync additionally names a
@@ -214,8 +219,8 @@ env file where the strip looks. Mechanism and evidence: that file's header.
 
 **Runtime needs nothing from Infisical.** Next inlines `NEXT_PUBLIC_*` into client, server and proxy
 code at build, and the only non-public key either app receives, `SENTRY_AUTH_TOKEN`, is read by
-`next.config.js` alone. So deleting the Vercel Preview rows removes nothing a deployment reads at
-request time.
+`next.config.js` alone. So deleting the syncs' Vercel Preview rows (2026-09-28) removed nothing a
+deployment reads at request time.
 
 **Production has not moved yet ([#2673](https://github.com/pdcarlson/Frapp/issues/2673)).**
 `deploy-production.yml` injects Infisical `prod` in the same job as its Vercel steps, and those steps
@@ -233,14 +238,14 @@ keeps equal to the source (this section used to carry its own copy, which had fa
 behind). Everything else in the environment — database passwords, service-role keys, Stripe secrets,
 deploy hook URLs — is pushed toward those projects without being used by them.
 
-**The Vercel syncs deliver — including the staging ones.** On 2026-08-12 the `frapp-web`
+**The Vercel syncs deliver — the staging ones did too, until they were deleted.** On 2026-08-12 the `frapp-web`
 environment-variable list was read directly, and both its `Preview` and `Production` scopes held the
 full backend store: `SUPABASE_DB_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`,
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RENDER_DEPLOY_HOOK_URL`.
 
 `frapp-landing` was **not** inspected variable-by-variable that day, so treat its contents as
-expected-but-unconfirmed. The expectation is well founded — it is fed by two syncs with the same
-`/` path from the same environments — but it is an inference, not a reading. Confirm it before
+expected-but-unconfirmed. The expectation is well founded — its Production scope is fed by a sync
+with the same `/` path from the same environment — but it is an inference, not a reading. Confirm it before
 relying on it, and see the verification steps below.
 
 Staging was not spared while its syncs worked: they wrote to `Preview` scope filtered to branch
@@ -285,8 +290,8 @@ Prose in this repo has been wrong about this twice. Before relying on any claim 
 minutes confirming it:
 
 1. **Infisical → Integrations → Secret Syncs.** For each sync read the source environment, the
-   secret path, the destination scope, and the git branch. The branch is the field that has caused
-   every incident so far.
+   secret path, and the destination scope. A Vercel Preview sync would also carry a git branch, the
+   field behind every incident so far; none exists today, and one should not be re-created (above).
 2. **Vercel → project → Settings → Environment Variables.** Read what actually arrived. Group the
    rows by scope and by "Added" date — distinct dates mean distinct write generations, and old
    generations linger long after the config that created them is gone. A row scoped to a branch that
@@ -409,7 +414,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
-| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and every Preview row they wrote were deleted on 2026-09-28 (#834), so no Vercel project holds a copy. Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
+| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); `frapp-web` holds no staging copy, and `frapp-landing` is clean only if its unfiltered Preview list confirms it (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
 **All rotations happen in one place (Infisical).** Syncs propagate changes to Render and to Vercel Production automatically; the staging web and landing builds read Infisical directly, so they pick up a change on their next deploy.
 
@@ -432,7 +437,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 ## Audit
 
 - Infisical dashboard → Audit Log for all secret access
-- Verify sync health periodically for every sync in §5 (GitHub Actions is not one of them; the two staging Vercel syncs report Failed until they are deleted)
+- Verify sync health periodically for every sync in §5 (GitHub Actions is not one of them). All four report Synced; a Failed one is a real incident
 - Review no unexpected access patterns
 
 ## Provider API token sanity checks (operations)
