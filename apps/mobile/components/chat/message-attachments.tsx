@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
+import { isViewableImage } from "@repo/chat-core/attachments";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useOpenImageViewer, type ViewerImage } from "./image-viewer";
 
 /**
  * Files attached to one message, in the s05 thread.
@@ -28,6 +30,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * gives: this replaced a rendering where the filename was literal text in the
  * message body, so degrading to nothing would read as data loss to anyone who
  * remembers seeing the file.
+ *
+ * An image opens the thread's full-screen viewer, stepping through the
+ * message's other images (#2874). Any other file, and an image outside a
+ * screen that hosts a viewer, opens through the signed URL in the browser.
  */
 export interface MessageAttachmentsProps {
   channelId: string;
@@ -53,11 +59,6 @@ export interface MessageAttachmentsProps {
   onLongPress?: () => void;
 }
 
-/** Content types rendered as an inline preview rather than a download row. */
-export function isPreviewable(contentType: string | null): boolean {
-  return !!contentType && contentType.startsWith("image/");
-}
-
 export function MessageAttachments({
   channelId,
   messageId,
@@ -69,6 +70,7 @@ export function MessageAttachments({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const query = useMessageAttachments(channelId, messageId, count > 0);
+  const openViewer = useOpenImageViewer();
   const [openFailed, setOpenFailed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
@@ -111,51 +113,75 @@ export function MessageAttachments({
     }
   }
 
+  // The message's images, in order, for the viewer to step through.
+  const images: ViewerImage[] = query.data
+    .filter((attachment) => isViewableImage(attachment.content_type))
+    .map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      contentType: attachment.content_type,
+      url: attachment.download_url,
+    }));
+
   return (
     <View style={styles.list}>
-      {query.data.map((attachment) => (
-        <Pressable
-          key={attachment.id}
-          accessibilityRole="button"
-          // The filename alone would read as a label with no verb; the row is
-          // the only way to reach the file, so it says so.
-          accessibilityLabel={`Open ${attachment.filename}`}
-          onPress={() => void open(attachment.id, attachment.download_url)}
-          onLongPress={onLongPress}
-          style={styles.row}
-        >
-          {isPreviewable(attachment.content_type) ? (
-            <Image
-              source={{ uri: attachment.download_url }}
-              accessibilityLabel={attachment.filename}
-              resizeMode="contain"
-              // Sized from the stored dimensions when they exist so the row does
-              // not jump when the image lands. `chat_message_attachments` allows
-              // both to be null, so a fixed height is the fallback rather than
-              // an aspect ratio computed from nothing.
-              style={
-                attachment.width && attachment.height
-                  ? [
-                      styles.preview,
-                      { aspectRatio: attachment.width / attachment.height },
-                    ]
-                  : [styles.preview, styles.previewUnsized]
-              }
-            />
-          ) : (
-            <View style={styles.fileRow}>
-              <Text style={styles.filename} numberOfLines={1}>
-                {attachment.filename}
-              </Text>
-              {attachment.byte_size != null ? (
-                <Text style={styles.size}>
-                  {formatBytes(attachment.byte_size)}
+      {query.data.map((attachment) => {
+        const imageIndex = images.findIndex(
+          (image) => image.id === attachment.id,
+        );
+        const isImage = imageIndex !== -1;
+        return (
+          <Pressable
+            key={attachment.id}
+            accessibilityRole="button"
+            // The filename alone would read as a label with no verb; the row is
+            // the only way to reach the file, so it says so.
+            accessibilityLabel={
+              isImage && openViewer
+                ? `View ${attachment.filename}`
+                : `Open ${attachment.filename}`
+            }
+            onPress={() =>
+              isImage && openViewer
+                ? openViewer(images, imageIndex)
+                : void open(attachment.id, attachment.download_url)
+            }
+            onLongPress={onLongPress}
+            style={styles.row}
+          >
+            {isImage ? (
+              <Image
+                source={{ uri: attachment.download_url }}
+                accessibilityLabel={attachment.filename}
+                resizeMode="contain"
+                // Sized from the stored dimensions when they exist so the row does
+                // not jump when the image lands. `chat_message_attachments` allows
+                // both to be null, so a fixed height is the fallback rather than
+                // an aspect ratio computed from nothing.
+                style={
+                  attachment.width && attachment.height
+                    ? [
+                        styles.preview,
+                        { aspectRatio: attachment.width / attachment.height },
+                      ]
+                    : [styles.preview, styles.previewUnsized]
+                }
+              />
+            ) : (
+              <View style={styles.fileRow}>
+                <Text style={styles.filename} numberOfLines={1}>
+                  {attachment.filename}
                 </Text>
-              ) : null}
-            </View>
-          )}
-        </Pressable>
-      ))}
+                {attachment.byte_size != null ? (
+                  <Text style={styles.size}>
+                    {formatBytes(attachment.byte_size)}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
       {openFailed ? (
         <Text style={styles.error}>
           Couldn&apos;t open that file. Try again.

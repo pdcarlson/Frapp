@@ -19,6 +19,15 @@ vi.mock("expo-file-system/legacy", () => ({
   // these per test.
   getInfoAsync: vi.fn().mockResolvedValue({ exists: true, size: 1024 }),
   uploadAsync: vi.fn().mockResolvedValue({ status: 200, body: "" }),
+  // Saving or sharing a chat image downloads it into the cache first
+  // (`lib/chat/share-attachment.ts`).
+  makeDirectoryAsync: vi.fn().mockResolvedValue(undefined),
+  downloadAsync: vi.fn(async (_url: string, fileUri: string) => ({
+    uri: fileUri,
+    status: 200,
+    headers: {},
+    mimeType: null,
+  })),
   FileSystemUploadType: {
     BINARY_CONTENT: 0,
     MULTIPART: 1,
@@ -222,8 +231,61 @@ vi.mock("expo-network", () => ({
 
 // New-in-S1 native modules: mocked suite-wide so importing any file that
 // touches the provider stack never loads native code in the node/jsdom env.
-vi.mock("react-native-gesture-handler", () => ({
-  GestureHandlerRootView: "GestureHandlerRootView",
+vi.mock("react-native-gesture-handler", () => {
+  // The chat image viewer's pinch, pan and double-tap (#2874). Gestures need a
+  // device, so a builder here only records its kind and returns itself from
+  // every configuration call; `lib/chat/image-zoom.spec.ts` tests the
+  // arithmetic the callbacks run.
+  const builder = (kind: string) => {
+    const gesture: Record<string, unknown> = { kind };
+    for (const method of [
+      "onStart",
+      "onChange",
+      "onUpdate",
+      "onEnd",
+      "averageTouches",
+      "numberOfTaps",
+    ]) {
+      gesture[method] = () => gesture;
+    }
+    return gesture;
+  };
+  return {
+    GestureHandlerRootView: "GestureHandlerRootView",
+    GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+    Gesture: {
+      Pinch: () => builder("pinch"),
+      Pan: () => builder("pan"),
+      Tap: () => builder("tap"),
+      Race: (...gestures: unknown[]) => ({ kind: "race", gestures }),
+      Simultaneous: (...gestures: unknown[]) => ({
+        kind: "simultaneous",
+        gestures,
+      }),
+    },
+  };
+});
+
+// Only the chat image viewer animates directly (the sheets' own use is behind
+// the `@gorhom/bottom-sheet` mock). A shared value is a plain box read and
+// written through `get`/`set`, the React Compiler-safe accessors the viewer
+// uses, and an animated style is computed once, at render.
+vi.mock("react-native-reanimated", () => ({
+  default: { Image: "Animated.Image", View: "Animated.View" },
+  useSharedValue: <T>(initial: T) =>
+    React.useRef(
+      (() => {
+        let value = initial;
+        return {
+          get: () => value,
+          set: (next: T) => {
+            value = next;
+          },
+        };
+      })(),
+    ).current,
+  useAnimatedStyle: <T>(updater: () => T) => updater(),
+  withTiming: <T>(value: T) => value,
 }));
 
 vi.mock("react-native-safe-area-context", () => ({

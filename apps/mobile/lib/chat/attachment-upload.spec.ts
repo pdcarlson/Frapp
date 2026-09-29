@@ -64,6 +64,12 @@ describe("safeBasename", () => {
   it("falls back when there is nothing usable left", () => {
     expect(safeBasename("///", "photo.jpg")).toBe("photo.jpg");
   });
+
+  it("never returns a name made only of dots, which is a path reference", () => {
+    expect(safeBasename("..", "photo.jpg")).toBe("photo.jpg");
+    expect(safeBasename("a/...", "photo.jpg")).toBe("photo.jpg");
+    expect(safeBasename(".", "photo.jpg")).toBe("photo.jpg");
+  });
 });
 
 describe("resolveUploadable", () => {

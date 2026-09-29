@@ -42,6 +42,11 @@ import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import {
+  ImageViewer,
+  ImageViewerContext,
+  useImageViewer,
+} from "@/components/chat/image-viewer";
+import {
   MessageActionsSheet,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
@@ -630,6 +635,19 @@ export default function ChatThreadScreen() {
     }, [channelId, closeMuteMenu]),
   );
 
+  // The image viewer (#2874) covers the whole thread and is drawn last, below.
+  // It closes on a blur or a channel switch for the mute menu's reason: left
+  // open, it would come back over the next channel.
+  const imageViewer = useImageViewer();
+  const closeImageViewer = imageViewer.close;
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => closeImageViewer();
+    }, [channelId, closeImageViewer]),
+  );
+  const imageViewerOpen = imageViewer.gallery !== null;
+
   /**
    * What the in-thread pill says, or `null` when it has nothing to add.
    *
@@ -661,6 +679,14 @@ export default function ChatThreadScreen() {
         // tracked, not in which behavior is right.
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         enabled={getKeyboardPath() === "fallback" || Platform.OS === "ios"}
+        // Everything the image viewer covers, out of the accessibility tree
+        // while it is open, as the mute menu's wrapper below does for the
+        // menu. `KeyboardAvoidingView` hands these to the View it renders.
+        collapsable={false}
+        accessibilityElementsHidden={imageViewerOpen}
+        importantForAccessibility={
+          imageViewerOpen ? "no-hide-descendants" : "auto"
+        }
       >
         {/*
           Everything the mute menu covers, out of the accessibility tree while
@@ -801,23 +827,27 @@ export default function ChatThreadScreen() {
               </Text>
             </View>
           ) : (
-            <FlatList
-              ref={listRef}
-              onScrollToIndexFailed={handleScrollToIndexFailed}
-              data={inverted}
-              renderItem={renderItem}
-              // `client_message_id` is always present and is stable across the
-              // optimistic → confirmed transition, which the server id is not.
-              keyExtractor={(item) => item.message.client_message_id}
-              inverted
-              onEndReached={handleEndReached}
-              onEndReachedThreshold={0.5}
-              // An inverted list draws its footer at the top, above the oldest
-              // loaded row.
-              ListFooterComponent={historyEdge}
-              contentContainerStyle={styles.listContent}
-              style={styles.flex}
-            />
+            // The rows reach the image viewer through this, not through a
+            // prop threaded down the row and the bubble.
+            <ImageViewerContext.Provider value={imageViewer.open}>
+              <FlatList
+                ref={listRef}
+                onScrollToIndexFailed={handleScrollToIndexFailed}
+                data={inverted}
+                renderItem={renderItem}
+                // `client_message_id` is always present and is stable across the
+                // optimistic → confirmed transition, which the server id is not.
+                keyExtractor={(item) => item.message.client_message_id}
+                inverted
+                onEndReached={handleEndReached}
+                onEndReachedThreshold={0.5}
+                // An inverted list draws its footer at the top, above the oldest
+                // loaded row.
+                ListFooterComponent={historyEdge}
+                contentContainerStyle={styles.listContent}
+                style={styles.flex}
+              />
+            </ImageViewerContext.Provider>
           )}
 
           {shownTypingUsers.length > 0 ? (
@@ -953,6 +983,12 @@ export default function ChatThreadScreen() {
         onEdit={staging.startEdit}
         onDelete={handleDelete}
       />
+      {/*
+        Last, so it is above the header, the thread, the composer and the mute
+        menu in paint order and in hit-testing (#2033). The actions sheet
+        before it draws through the app's sheet provider, not here.
+      */}
+      <ImageViewer viewer={imageViewer} />
     </SafeAreaView>
   );
 }
