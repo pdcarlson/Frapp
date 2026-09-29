@@ -526,7 +526,7 @@ describe("edited marker (#2775)", () => {
 
   it("does not mark an unedited or deleted message", () => {
     expect(JSON.stringify(renderBubble(message()).toJSON())).not.toContain(
-      `· ${EDITED_MARKER}`,
+      EDITED_MARKER,
     );
     expect(
       JSON.stringify(
@@ -534,6 +534,6 @@ describe("edited marker (#2775)", () => {
           message({ edited_at: "2026-09-29T18:00:00Z", is_deleted: true }),
         ).toJSON(),
       ),
-    ).not.toContain(`· ${EDITED_MARKER}`);
+    ).not.toContain(EDITED_MARKER);
   });
 });

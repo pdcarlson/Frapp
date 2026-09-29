@@ -124,22 +124,38 @@ export function displayChannelName(
   return directChannelDisplayName(channel, viewerId, names);
 }
 
+/** What the s05 header says when it has no row to name the channel from. */
+export const THREAD_HEADER_FALLBACK = "Thread";
+
 /**
  * The s05 thread header (#2775): `#name` for a channel, the other member for a
  * DM, through the same `displayChannelName` the list uses, so a thread and its
- * row say the same thing. Empty until the channel row loads, and for a row that
- * isn't the channel on screen, rather than a placeholder that would flash and
- * change. `data` is `GET /v1/channels/{id}`, parsed as defensively as the list.
+ * row say the same thing.
+ *
+ * The name comes from the channel's own row (`GET /v1/channels/{id}`), or,
+ * while that read hasn't landed, from the cached list row s04 drew the member
+ * in from, parsed as defensively as the list. Neither is persisted, so an
+ * offline cold start or a failed read may have no row at all: the header then
+ * says `Thread`, as it did before it named anything. While a read is in flight
+ * it stays empty, rather than flashing `Thread` for a moment.
  */
-export function threadHeaderTitle(
-  data: unknown,
-  channelId: string | null,
-  viewerId: string | null,
-  names: DisplayNameMap,
-): string {
-  const [channel] = selectChannels([data]);
-  if (!channel || channel.id !== channelId) return "";
-  const name = displayChannelName(channel, viewerId, names);
+export function threadHeaderTitle(input: {
+  /** The single-channel read's data. */
+  row: unknown;
+  /** The cached channel list, if any. */
+  list: unknown;
+  channelId: string | null;
+  viewerId: string | null;
+  names: DisplayNameMap;
+  /** The single-channel read is fetching right now. */
+  isFetching: boolean;
+}): string {
+  const { channelId } = input;
+  const channel =
+    selectChannels([input.row]).find((row) => row.id === channelId) ??
+    selectChannels(input.list).find((row) => row.id === channelId);
+  if (!channel) return input.isFetching ? "" : THREAD_HEADER_FALLBACK;
+  const name = displayChannelName(channel, input.viewerId, input.names);
   return isDirectChannel(channel) ? name : `#${name}`;
 }
 

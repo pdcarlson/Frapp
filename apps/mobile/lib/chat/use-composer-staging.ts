@@ -5,10 +5,11 @@
  * Kept out of `app/(tabs)/chat-thread.tsx` so it can be tested: everything
  * under `app/` ships as a route module, so a spec cannot sit beside the screen.
  *
- * **Both are keyed by channel.** `chat-thread` is a `Tabs.Screen` that stays
+ * **Both are kept per channel.** `chat-thread` is a `Tabs.Screen` that stays
  * mounted while `channelId` changes in place, so a reply staged in #general
- * must not ride a send in #dues. A staged target belongs to the channel it was
- * staged in and resolves to nothing anywhere else, the same shape web's
+ * must not ride a send in #dues, and an edit half-typed in #general must still
+ * be there after a visit to #dues. Each channel holds at most one staged reply
+ * or one open edit, and neither resolves anywhere else, the same shape web's
  * `replyTo` takes.
  *
  * **What the strip shows is what the send carries.** The `replyToId` a send
@@ -34,7 +35,7 @@
  * refusal in the hint.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { hiddenQuoteText, type BlockState } from "@repo/chat-core/blocks";
 import {
   canActOnMessage,
@@ -70,6 +71,30 @@ interface EditState extends StagedTarget {
    * reloading with an empty cache doesn't hold.
    */
   original: string;
+  /** Why the last save of this edit didn't land, or `null`. */
+  error: string | null;
+}
+
+function withoutKey<T>(
+  map: Readonly<Record<string, T>>,
+  key: string,
+): Readonly<Record<string, T>> {
+  if (!(key in map)) return map;
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
+
+/** Applies `change` to a channel's open edit, if it is still that message's. */
+function updateEdit(
+  edits: Readonly<Record<string, EditState>>,
+  channelId: string,
+  messageId: string,
+  change: (open: EditState) => EditState,
+): Readonly<Record<string, EditState>> {
+  const open = edits[channelId];
+  if (!open || open.messageId !== messageId) return edits;
+  return { ...edits, [channelId]: change(open) };
 }
 
 export interface ComposerStagingInput {
@@ -136,9 +161,13 @@ export function useComposerStaging({
   send,
   edit,
 }: ComposerStagingInput): ComposerStaging {
-  const [replyTarget, setReplyTarget] = useState<StagedTarget | null>(null);
-  const [editing, setEditing] = useState<EditState | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
+  // One staged reply and one open edit per channel, keyed by channel id: the
+  // screen stays mounted across channels, and what a member left staged or
+  // half-typed in #general is still there when they come back from #dues.
+  const [replies, setReplies] = useState<
+    Readonly<Record<string, StagedTarget>>
+  >({});
+  const [edits, setEdits] = useState<Readonly<Record<string, EditState>>>({});
   /** Messages whose edit save is in flight, which `isSavingEdit` reports. */
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -157,40 +186,26 @@ export function useComposerStaging({
    */
   const replyInFlightRef = useRef<StagedTarget | null>(null);
 
-  const activeReply =
-    replyTarget && replyTarget.channelId === channelId ? replyTarget : null;
+  const activeReply = (channelId && replies[channelId]) || null;
+  const editing = (channelId && edits[channelId]) || null;
 
-  const editTarget =
-    editing && editing.channelId === channelId
-      ? byId.get(editing.messageId)
-      : undefined;
+  const editTarget = editing ? byId.get(editing.messageId) : undefined;
   // A message the window doesn't hold (yet) keeps its edit open; one that is
   // there and deleted closes it.
   const editGone = !!editTarget && !canActOnMessage(editTarget);
-  const activeEdit =
-    editing && editing.channelId === channelId && !editGone ? editing : null;
+  const activeEdit = editing && !editGone ? editing : null;
   // Closed during render rather than in an effect (React's "adjusting state
   // when a prop changes"), so no frame shows a strip for a deleted message.
   if (editing && editGone) {
-    setEditing(null);
-    setEditError(null);
+    setEdits((current) => withoutKey(current, editing.channelId));
   }
 
-  /**
-   * The edit open right now, for a save that resolves after the member moved
-   * on. Mirrored in an effect because refs cannot be written during render.
-   */
-  const openEditRef = useRef<string | null>(null);
-  const openEditId = activeEdit?.messageId ?? null;
-  useEffect(() => {
-    openEditRef.current = openEditId;
-  }, [openEditId]);
-
-  const cancelReply = useCallback(() => setReplyTarget(null), []);
+  const cancelReply = useCallback(() => {
+    if (channelId) setReplies((current) => withoutKey(current, channelId));
+  }, [channelId]);
   const cancelEdit = useCallback(() => {
-    setEditing(null);
-    setEditError(null);
-  }, []);
+    if (channelId) setEdits((current) => withoutKey(current, channelId));
+  }, [channelId]);
 
   const context = useMemo<ComposerContext | null>(() => {
     if (activeEdit) {
@@ -225,17 +240,14 @@ export function useComposerStaging({
     (messageId: string) => {
       const message = byId.get(messageId);
       if (!message) return;
+      const channel = message.channel_id;
       // One thing at a time in a channel: the strip has room for one, and a
-      // send can't be both an edit and a reply. An edit left open in another
-      // channel is that channel's, and stays.
-      setEditing((current) =>
-        current?.channelId === message.channel_id ? null : current,
-      );
-      setEditError(null);
-      setReplyTarget({
-        channelId: message.channel_id,
-        messageId: replyTargetId(message),
-      });
+      // send can't be both an edit and a reply.
+      setEdits((current) => withoutKey(current, channel));
+      setReplies((current) => ({
+        ...current,
+        [channel]: { channelId: channel, messageId: replyTargetId(message) },
+      }));
     },
     [byId],
   );
@@ -244,16 +256,18 @@ export function useComposerStaging({
     (messageId: string) => {
       const message = byId.get(messageId);
       if (!message) return;
-      setReplyTarget((current) =>
-        current?.channelId === message.channel_id ? null : current,
-      );
-      setEditError(null);
-      setEditing({
-        channelId: message.channel_id,
-        messageId: message.id,
-        value: message.content,
-        original: message.content,
-      });
+      const channel = message.channel_id;
+      setReplies((current) => withoutKey(current, channel));
+      setEdits((current) => ({
+        ...current,
+        [channel]: {
+          channelId: channel,
+          messageId: message.id,
+          value: message.content,
+          original: message.content,
+          error: null,
+        },
+      }));
     },
     [byId],
   );
@@ -261,10 +275,12 @@ export function useComposerStaging({
   const onChangeText = useCallback(
     (next: string) => {
       if (activeEdit) {
-        setEditing((current) =>
-          current && current.messageId === activeEdit.messageId
-            ? { ...current, value: next }
-            : current,
+        const { channelId: channel, messageId } = activeEdit;
+        setEdits((current) =>
+          updateEdit(current, channel, messageId, (open) => ({
+            ...open,
+            value: next,
+          })),
         );
         return;
       }
@@ -275,7 +291,7 @@ export function useComposerStaging({
 
   const submit = useCallback(() => {
     if (activeEdit) {
-      const { messageId } = activeEdit;
+      const { channelId: channel, messageId } = activeEdit;
       if (savingRef.current.has(messageId)) return;
       const content = activeEdit.value.trim();
       // The composer already withholds Save on an empty edit, and the hint
@@ -287,25 +303,36 @@ export function useComposerStaging({
         cancelEdit();
         return;
       }
-      setEditError(null);
+      setEdits((current) =>
+        updateEdit(current, channel, messageId, (open) => ({
+          ...open,
+          error: null,
+        })),
+      );
       savingRef.current.add(messageId);
       setSavingIds(new Set(savingRef.current));
       void edit(messageId, content)
         .then(() => {
           // Only the edit this save was for: the member may have cancelled it
           // and opened another while the request was out.
-          setEditing((current) =>
-            current?.messageId === messageId ? null : current,
+          setEdits((current) =>
+            current[channel]?.messageId === messageId
+              ? withoutKey(current, channel)
+              : current,
           );
         })
         .catch((error: unknown) => {
           // The edit stays open with the member's text, so nothing is lost;
-          // the hint says why it didn't save. Dropped if they moved on.
-          if (openEditRef.current !== messageId) return;
-          setEditError(
+          // its hint says why it didn't save. Dropped if they moved on.
+          const reason =
             error instanceof Error && error.message
               ? error.message
-              : "Couldn't edit message. Try again.",
+              : "Couldn't edit message. Try again.";
+          setEdits((current) =>
+            updateEdit(current, channel, messageId, (open) => ({
+              ...open,
+              error: reason,
+            })),
           );
         })
         .finally(() => {
@@ -322,14 +349,20 @@ export function useComposerStaging({
     if (staged && replyInFlightRef.current === staged) return;
     if (staged) {
       replyInFlightRef.current = staged;
-      setReplyTarget(null);
+      setReplies((current) => withoutKey(current, staged.channelId));
     }
     void send(draft, { replyToId: staged?.messageId ?? null }).then(
       (dispatched) => {
         if (!staged) return;
         if (replyInFlightRef.current === staged)
           replyInFlightRef.current = null;
-        if (!dispatched) setReplyTarget((current) => current ?? staged);
+        if (!dispatched) {
+          setReplies((current) =>
+            current[staged.channelId]
+              ? current
+              : { ...current, [staged.channelId]: staged },
+          );
+        }
       },
     );
   }, [activeEdit, activeReply, cancelEdit, draft, edit, send]);
@@ -339,7 +372,7 @@ export function useComposerStaging({
   // message that never had text (a photo sent with no caption) opens empty,
   // and an empty field there is just "no caption yet", not a mistake.
   const shownEditError = activeEdit
-    ? (editError ??
+    ? (activeEdit.error ??
       (!activeEdit.value.trim() && activeEdit.original.trim()
         ? EDIT_EMPTY_HINT
         : null))

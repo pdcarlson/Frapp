@@ -37,6 +37,7 @@ import {
   locateRow,
   markFailed,
   type RowPlacement,
+  mergeHeldServerRow,
   mergeServerRow,
   removeMessage,
   toggleReactionLocal,
@@ -946,7 +947,10 @@ export interface EditMessageArgs {
  * one canonical source for the new `content`/`edited_at`, and `mergeServerRow`
  * is already built to treat this as "a pin/edit UPDATE echo" (see its own
  * docstring) — the same merge a Realtime echo of this same edit would apply,
- * so a duplicate echo from Postgres Changes is a harmless no-op.
+ * so a duplicate echo from Postgres Changes is a harmless no-op. Merged only
+ * into a cache that holds the row (`mergeHeldServerRow`): an edit of a
+ * message the window no longer holds must not splice it back in out of
+ * order, which would break older-page paging (#2775).
  */
 export async function editMessage(
   ctx: ChatActionContext,
@@ -965,7 +969,7 @@ export async function editMessage(
       throwApiError(error, response, "Couldn't edit message");
     }
     patchCache(ctx.queryClient, args.channelId, (cache) =>
-      mergeServerRow(cache, data as unknown as RawChatMessage),
+      mergeHeldServerRow(cache, data as unknown as RawChatMessage),
     );
   } catch (err) {
     const { message } = classify(err);
@@ -1008,7 +1012,7 @@ export async function deleteMessage(
       throwApiError(error, response, "Couldn't delete message");
     }
     patchCache(ctx.queryClient, args.channelId, (cache) =>
-      mergeServerRow(cache, data as unknown as RawChatMessage),
+      mergeHeldServerRow(cache, data as unknown as RawChatMessage),
     );
   } catch (err) {
     const { message } = classify(err);

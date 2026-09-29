@@ -23,7 +23,9 @@ import {
 } from "@repo/chat-core/blocks";
 import { channelAllowsReplies } from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  CHANNEL_LIST_KEY,
   resolveAuthorName,
   useActiveChapterId,
   useChannel,
@@ -111,10 +113,12 @@ export default function ChatThreadScreen() {
 
   // Channel-level metadata (#704) — mobile had no read-only/post gating of any
   // kind before this, unlike web's `chat-shell.tsx`. `can_post` already folds
-  // in `is_read_only`; `isReadOnly` is only read separately to pick which of
-  // the two disabled hints applies (read-only-without-permission vs. the
-  // alumni restriction — the two cases `spec/ui/design-system/writing.md` §
-  // Chat documents). `selectPostCapability` parses the payload defensively
+  // in `is_read_only` for posting; `isReadOnly` is read separately to pick
+  // which of the two disabled hints applies (read-only-without-permission vs.
+  // the alumni restriction — the two cases `spec/ui/design-system/writing.md`
+  // § Chat documents), and it is load-bearing for Reply: `can_post` is true in
+  // #announcements for an `announcements:post` holder, yet nobody replies
+  // there (`channelAllowsReplies`, #2775). `selectPostCapability` parses the payload defensively
   // the same way `selectChannels` does — `GET /v1/channels/{id}` infers as
   // `never` in the generated SDK.
   const channelQuery = useChannel(channelId ?? "");
@@ -172,10 +176,27 @@ export default function ChatThreadScreen() {
   const { nameFor, refetch: refetchRoster } = roster;
 
   // `#name` for a channel, the other member for a DM (#2775).
+  // The cached list is read, not subscribed to: the fallback must not start
+  // a list fetch of its own from inside a thread.
+  const queryClient = useQueryClient();
   const headerTitle = useMemo(
     () =>
-      threadHeaderTitle(channelQuery.data, channelId, viewerId, roster.byId),
-    [channelQuery.data, channelId, viewerId, roster.byId],
+      threadHeaderTitle({
+        row: channelQuery.data,
+        list: queryClient.getQueryData(CHANNEL_LIST_KEY),
+        channelId,
+        viewerId,
+        names: roster.byId,
+        isFetching: channelQuery.isFetching,
+      }),
+    [
+      channelQuery.data,
+      channelQuery.isFetching,
+      queryClient,
+      channelId,
+      viewerId,
+      roster.byId,
+    ],
   );
 
   // Delete on someone else's message (#2775). The server resolves the
@@ -438,32 +459,57 @@ export default function ChatThreadScreen() {
   // the list. Rows have no fixed height, so a target outside the rendered
   // window fails `scrollToIndex` once; the fallback scrolls near it by the
   // average row height and tries once more.
+  //
+  // The retry looks the message up again when it fires, in the rows on screen
+  // then: the same list instance is reused across a channel switch, and
+  // `scrollToIndex` throws (not fails) on an index past the end. It is also
+  // cancelled by a channel switch or unmount.
   const listRef = useRef<FlatList<ThreadRow>>(null);
-  const jumpRetriedRef = useRef(false);
+  const rowsRef = useRef(inverted);
+  useEffect(() => {
+    rowsRef.current = inverted;
+  }, [inverted]);
+  const jumpTargetRef = useRef<string | null>(null);
+  const jumpRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelJumpRetry = useCallback(() => {
+    if (jumpRetryRef.current) clearTimeout(jumpRetryRef.current);
+    jumpRetryRef.current = null;
+  }, []);
+  useEffect(() => cancelJumpRetry, [channelId, cancelJumpRetry]);
   const jumpToMessage = useCallback(
     (messageId: string) => {
-      const index = inverted.findIndex((row) => row.message.id === messageId);
+      const index = rowsRef.current.findIndex(
+        (row) => row.message.id === messageId,
+      );
       if (index === -1) return;
-      jumpRetriedRef.current = false;
+      cancelJumpRetry();
+      jumpTargetRef.current = messageId;
       listRef.current?.scrollToIndex({
         index,
         animated: true,
         viewPosition: 0.5,
       });
     },
-    [inverted],
+    [cancelJumpRetry],
   );
   const handleScrollToIndexFailed = useCallback(
     (info: { index: number; averageItemLength: number }) => {
-      if (jumpRetriedRef.current) return;
-      jumpRetriedRef.current = true;
+      const target = jumpTargetRef.current;
+      // One retry per jump.
+      jumpTargetRef.current = null;
+      if (!target) return;
       listRef.current?.scrollToOffset({
         offset: info.averageItemLength * info.index,
         animated: false,
       });
-      setTimeout(() => {
+      jumpRetryRef.current = setTimeout(() => {
+        jumpRetryRef.current = null;
+        const index = rowsRef.current.findIndex(
+          (row) => row.message.id === target,
+        );
+        if (index === -1) return;
         listRef.current?.scrollToIndex({
-          index: info.index,
+          index,
           animated: true,
           viewPosition: 0.5,
         });

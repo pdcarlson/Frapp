@@ -6,6 +6,7 @@ import {
   listedChannels,
   selectChannels,
   selectPostCapability,
+  THREAD_HEADER_FALLBACK,
   threadHeaderTitle,
 } from "./channel-list";
 
@@ -340,43 +341,54 @@ describe("threadHeaderTitle (#2775)", () => {
   const VIEWER = "11111111-1111-4111-8111-111111111111";
   const CASEY = "33333333-3333-4333-8333-333333333333";
   const names = { [CASEY]: "Casey" };
+  const title = (overrides: Partial<Parameters<typeof threadHeaderTitle>[0]>) =>
+    threadHeaderTitle({
+      row: undefined,
+      list: undefined,
+      channelId: "c1",
+      viewerId: VIEWER,
+      names,
+      isFetching: false,
+      ...overrides,
+    });
 
   it("prefixes a channel with #", () => {
-    expect(
-      threadHeaderTitle(
-        { id: "c1", name: "general", type: "PUBLIC" },
-        "c1",
-        VIEWER,
-        names,
-      ),
-    ).toBe("#general");
+    expect(title({ row: { id: "c1", name: "general", type: "PUBLIC" } })).toBe(
+      "#general",
+    );
   });
 
   it("names the other member for a DM, with no #", () => {
     expect(
-      threadHeaderTitle(
-        {
+      title({
+        channelId: "c2",
+        row: {
           id: "c2",
           name: `dm-${VIEWER}-${CASEY}`,
           type: "DM",
           member_ids: [VIEWER, CASEY],
         },
-        "c2",
-        VIEWER,
-        names,
-      ),
+      }),
     ).toBe("Casey");
   });
 
-  it("is empty until the row loads, and for a row that isn't this channel", () => {
-    expect(threadHeaderTitle(undefined, "c1", VIEWER, names)).toBe("");
+  it("falls back to the cached list row while the channel's own read hasn't landed", () => {
     expect(
-      threadHeaderTitle(
-        { id: "c9", name: "dues", type: "PUBLIC" },
-        "c1",
-        VIEWER,
-        names,
-      ),
-    ).toBe("");
+      title({
+        list: [
+          { id: "c9", name: "dues", type: "PUBLIC" },
+          { id: "c1", name: "general", type: "PUBLIC" },
+        ],
+      }),
+    ).toBe("#general");
+  });
+
+  it("stays empty while the read is in flight, then says Thread if nothing named it", () => {
+    expect(title({ isFetching: true })).toBe("");
+    expect(title({})).toBe(THREAD_HEADER_FALLBACK);
+    // A row for another channel names nothing.
+    expect(title({ row: { id: "c9", name: "dues", type: "PUBLIC" } })).toBe(
+      THREAD_HEADER_FALLBACK,
+    );
   });
 });

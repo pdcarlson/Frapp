@@ -424,6 +424,44 @@ describe("useComposerStaging — edit", () => {
     expect(result.current.isEditing).toBe(true);
   });
 
+  it("keeps a half-typed edit in one channel while another channel opens its own", () => {
+    const byId = index(
+      row("m2", VIEWER),
+      row("d2", VIEWER, { channel_id: "chan-2" }),
+      row("d1", FRIEND, { channel_id: "chan-2" }),
+      row("m1", FRIEND),
+    );
+    const { result, rerender, input } = setup({ byId });
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("general, rewritten"));
+
+    rerender({ ...input, byId, channelId: "chan-2" });
+    act(() => result.current.startEdit("d2"));
+    act(() => result.current.onChangeText("dues, rewritten"));
+
+    rerender({ ...input, byId, channelId: "chan-1" });
+    expect(result.current.isEditing).toBe(true);
+    expect(result.current.value).toBe("general, rewritten");
+    rerender({ ...input, byId, channelId: "chan-2" });
+    expect(result.current.value).toBe("dues, rewritten");
+  });
+
+  it("keeps a reply staged in one channel while another channel stages its own", () => {
+    const byId = index(
+      row("m1", FRIEND),
+      row("d1", FRIEND, { channel_id: "chan-2" }),
+    );
+    const { result, rerender, input } = setup({ byId });
+    act(() => result.current.startReply("m1"));
+    rerender({ ...input, byId, channelId: "chan-2" });
+    act(() => result.current.startReply("d1"));
+    rerender({ ...input, byId, channelId: "chan-1" });
+    act(() => result.current.submit());
+    expect(input.send).toHaveBeenLastCalledWith("the draft", {
+      replyToId: "m1",
+    });
+  });
+
   it("replaces a staged reply, and a reply replaces an edit", () => {
     const { result } = setup();
     act(() => result.current.startReply("m1"));

@@ -2,7 +2,7 @@
 
 import type { ChatMessage } from "@repo/chat-core/types";
 import { cn } from "@/lib/utils";
-import { DELETED_MESSAGE_PLACEHOLDER } from "../message-placeholders";
+import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import { MessageMarkdown } from "./message-markdown";
 
 interface TextRendererProps {

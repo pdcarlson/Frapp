@@ -201,6 +201,38 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     expect(onEdit).toHaveBeenCalledWith("m9");
     expect(onDelete).toHaveBeenCalledWith("m9");
   });
+
+  it("closes the menu before handing off, so it never covers the strip or the alert", () => {
+    const dismiss = vi.fn();
+    const onReply = vi.fn();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={OWN}
+            onReply={onReply}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        </FrappThemeProvider>,
+        {
+          // The stand-in modal is a host string; hand the refs an instance
+          // that records the dismiss.
+          createNodeMock: (element) =>
+            element.type === "BottomSheetModal" ? { dismiss } : null,
+        },
+      );
+    });
+    for (const label of ["Reply", "Edit message", "Delete message"]) {
+      dismiss.mockClear();
+      pressByLabel(tree, label);
+      expect(dismiss).toHaveBeenCalled();
+    }
+  });
 });
 
 describe("MessageActionsSheet — menu", () => {

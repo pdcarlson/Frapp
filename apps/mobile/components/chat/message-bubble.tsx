@@ -174,7 +174,7 @@ export function messageActionsA11yProps(
 }
 
 /** The meta line's marker for a message edited since it was sent. */
-export const EDITED_MARKER = "edited";
+export const EDITED_MARKER = "(edited)";
 
 /** Whether a row shows `EDITED_MARKER`: edited, and not since deleted. */
 function showsEdited(message: ChatMessage): boolean {
@@ -348,7 +348,7 @@ export function MessageBubble({
     />
   ) : null;
   const meta = showsEdited(message)
-    ? `${authorLabel} · ${time} · ${EDITED_MARKER}`
+    ? `${authorLabel} · ${time} ${EDITED_MARKER}`
     : `${authorLabel} · ${time}`;
 
   return (
@@ -613,7 +613,7 @@ function MineDeliveryMeta({
     case "confirmed":
       return (
         <Text style={styles.metaText}>
-          {edited ? `${time} · ${EDITED_MARKER}` : time}
+          {edited ? `${time} ${EDITED_MARKER}` : time}
         </Text>
       );
     default: {

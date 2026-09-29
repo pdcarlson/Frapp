@@ -121,6 +121,27 @@ export function mergeServerRow(
   return { ...next, order: withOrderedKey(next, serverKey) };
 }
 
+/**
+ * `mergeServerRow`, but only for a row the cache already holds; otherwise the
+ * cache is returned unchanged.
+ *
+ * For the answer to an edit or delete (#2775). The server returns the whole
+ * row, and merging one the window doesn't hold would splice it in at its
+ * `created_at`: an old message edited after its channel reloaded with only
+ * the newest page would land below that page, `oldestConfirmed` would become
+ * it, and the next older-page read (`history.ts`) would skip every message in
+ * between for good. A row the window doesn't hold has nothing on screen to
+ * update, and the next read of its page brings the edit with it.
+ */
+export function mergeHeldServerRow(
+  cache: ChannelCache,
+  row: RawChatMessage,
+): ChannelCache {
+  return Object.prototype.hasOwnProperty.call(cache.byId, row.id)
+    ? mergeServerRow(cache, row)
+    : cache;
+}
+
 /** Merges many rows (backfill / initial load). */
 export function mergeServerRows(
   cache: ChannelCache,
