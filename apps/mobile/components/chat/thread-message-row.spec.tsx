@@ -797,6 +797,31 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
     ).not.toContain("Pinned");
   });
 
+  it("draws a deleted poll as the placeholder, with no votes or reactions", () => {
+    const deleted = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "poll",
+        is_deleted: true,
+        content: "",
+        reactions: { [reactionActionType("🔥")]: [VIEWER] },
+        payload: {
+          question: "Formal theme?",
+          options: [
+            { id: "a", label: "Casino" },
+            { id: "b", label: "Masquerade" },
+          ],
+        },
+      }),
+    );
+    const out = flat(renderRow(deleted));
+    expect(out).toContain("[message deleted]");
+    expect(out).not.toContain("Formal theme?");
+    expect(out).not.toContain("Casino");
+    expect(out).not.toContain("🔥");
+    expect(out).not.toContain("👍 +");
+  });
+
   it("offers a poll reply's jump to a screen reader, as a text reply does", () => {
     const parent = message({ id: "parent-1", sender_id: FRIEND, content: "which theme?" });
     const onJumpToMessage = vi.fn();

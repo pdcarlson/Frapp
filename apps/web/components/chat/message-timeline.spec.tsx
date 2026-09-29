@@ -1242,7 +1242,10 @@ describe("MessageTimeline runs and day dividers (#2873)", () => {
     );
   });
 
-  it("hands a follow-on the start of its run, for the gutter's AM/PM", () => {
+  it("hands every follow-on the start of its run, not the row above", () => {
+    // Three rows: noon falls between the first and the second, so the third
+    // is only read correctly against the run's start (11:58 AM), not against
+    // the row above it (12:01 PM, same period as itself).
     renderTimeline([
       message({
         id: "a",
@@ -1256,14 +1259,25 @@ describe("MessageTimeline runs and day dividers (#2873)", () => {
         content: "after noon",
         created_at: new Date(2026, 7, 16, 12, 1).toISOString(),
       }),
-    ]);
-    const gutter = rowOf("after noon").querySelector('[data-slot="gutter-time"]');
-    expect(gutter?.textContent).toBe(
-      new Date(2026, 7, 16, 12, 1).toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
+      message({
+        id: "c",
+        client_message_id: "c",
+        content: "later still",
+        created_at: new Date(2026, 7, 16, 12, 4).toISOString(),
       }),
-    );
+    ]);
+    for (const [text, minute] of [
+      ["after noon", 1],
+      ["later still", 4],
+    ] as const) {
+      const gutter = rowOf(text).querySelector('[data-slot="gutter-time"]');
+      expect(gutter?.textContent, text).toBe(
+        new Date(2026, 7, 16, 12, minute).toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+      );
+    }
   });
 
   it("puts no date on any author line", () => {

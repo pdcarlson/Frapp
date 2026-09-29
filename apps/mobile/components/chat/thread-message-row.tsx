@@ -148,7 +148,10 @@ function ThreadMessageRowBody({
   // the same quote, avatar and author line as any other row, with the card
   // where the text would be. Web draws every card kind this way; mobile has a
   // renderer for `poll` only, and draws every other kind as text.
-  if (message.kind === "poll") {
+  // A deleted poll keeps its kind and payload server-side, so it would still
+  // draw a live, votable card; like web, a deleted message of any kind is the
+  // placeholder instead (MessageItem: no votes, no reactions).
+  if (message.kind === "poll" && !message.is_deleted) {
     const quote =
       message.reply_to_id && !message.is_deleted ? (
         <ReplyQuote

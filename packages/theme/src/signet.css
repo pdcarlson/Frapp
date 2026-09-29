@@ -131,8 +131,11 @@
      * layout removed that bubble, #2873.) `chat-contrast.spec.ts` asserts it.
      *
      * The fill is §5's tint recipe at a heavier 20% over `--card`, resolved to a
-     * literal: the recipe's look on the surface a mention usually sits on, with
-     * the alpha taken out. Fixed and never accent-derived, like the red. */
+     * literal: the recipe's look on the incoming bubble a mention usually sat on
+     * when this was chosen, with the alpha taken out. The compact layout puts it
+     * on the row instead (`--background`, or `--surface-1` hovered); the literal
+     * was kept, and its 5.54:1 is its own pair's, whatever is under it. Fixed and
+     * never accent-derived, like the red. */
     --mention-chip: #4C3A1A;
     --mention-chip-text: #FAA81A;
 

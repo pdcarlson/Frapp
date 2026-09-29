@@ -1092,7 +1092,9 @@ function SettingsPageContent() {
                   paints "selected text". It does not, and the review is what
                   caught it: `::selection` is deliberately the neutral ladder's
                   two ends, because an accent-derived highlight is invisible on
-                  the accent-painted self bubble. See the rule's own comment in
+                  accent-painted fills (the chat self bubble when this was
+                  written, gone since #2873; primary buttons still). See the
+                  rule's own comment in
                   `packages/theme/src/signet.css`.
 
                   "Lightened where it needs to stand out" covers two engine

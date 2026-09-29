@@ -229,10 +229,10 @@ interface TimelineHeaderContext {
 
 /**
  * The row above the oldest loaded message: the older-history read in flight,
- * or its failure with a Retry. Otherwise a 16px spacer: a row's action bar is
- * centred on the row's top edge (`message-item.tsx`), so on the first row at
- * the top of the scroller half of it would sit above the scrollport and be cut
- * off. The day divider under it already says where the history starts.
+ * or its failure with a Retry. Nothing otherwise — the day divider under it
+ * already says where the history starts, and it also keeps the first row's
+ * action bar (centred on the row's top edge) inside the scroller: the oldest
+ * loaded row always starts a day, and its divider renders in the same item.
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
@@ -264,7 +264,7 @@ function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
       </div>
     );
   }
-  return <div aria-hidden="true" className="h-4" />;
+  return null;
 }
 
 /**
