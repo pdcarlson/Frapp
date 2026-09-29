@@ -38,19 +38,15 @@ export function useChapterSubscription(): ChapterSubscription {
     enabled: Boolean(activeChapterId),
   });
 
-  // Read defensively: `useCurrentChapter` returns the raw SDK response with no
-  // schema applied, and neither field is on the inferred type. `past_due_since`
-  // reaches the client only because `SupabaseChapterRepository.findById` does
-  // `select('*')` and the service spreads the whole row — narrowing that
-  // projection (as `ChapterGuard` already does) would silently drop it, which
-  // the predicate's fail-open grace check absorbs rather than reports.
-  const raw = data as Record<string, unknown> | undefined;
-  const rawStatus = raw?.["subscription_status"];
-  const rawPastDue = raw?.["past_due_since"];
+  // Both fields are on the contract (`CurrentChapterResponseDto`). The status
+  // still goes through `isSubscriptionStatus`: a state the server grows before
+  // this client models it reads as `null`, "not blocked", so a deploy skew
+  // never locks a chapter out of its own UI.
+  const rawStatus = data?.subscription_status;
 
   return {
     status: isSubscriptionStatus(rawStatus) ? rawStatus : null,
-    pastDueSince: typeof rawPastDue === "string" ? rawPastDue : null,
+    pastDueSince: data?.past_due_since ?? null,
     isPending: Boolean(activeChapterId) && isPending,
     isError,
   };

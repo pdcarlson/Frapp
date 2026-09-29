@@ -120,11 +120,12 @@ export function useChapterBranding(): ChapterBranding {
   const surface = tokens.color.surface.card;
   const brandAccent = tokens.color.gold.house;
   const brandOnAccent = tokens.color.gold.onHouse;
-  const chapter = data as Record<string, unknown> | undefined;
-  const accentColor = readString(chapter, "accent_color");
-  const palette = chapter?.["theme_palette"] as
-    | Record<string, unknown>
-    | undefined;
+  // `|| null` rather than `??`: an empty string means unset, as it does for
+  // the palette's roles below.
+  const accentColor = data?.accent_color || null;
+  const logoUrl = data?.logo_url || null;
+  const chapterName = data?.name || null;
+  const palette = data?.theme_palette;
   const generatedAccent = readString(palette, "--signet-accent-text");
   const generatedAccentPrimary = readString(palette, "--signet-accent-primary");
   const generatedAccentOnPrimary = readString(
@@ -148,8 +149,8 @@ export function useChapterBranding(): ChapterBranding {
         accentFallbackApplied: false,
         accentPrimary,
         accentOnPrimary,
-        logoUrl: readString(chapter, "logo_url"),
-        chapterName: readString(chapter, "name"),
+        logoUrl,
+        chapterName,
       };
     }
 
@@ -163,16 +164,17 @@ export function useChapterBranding(): ChapterBranding {
       accentFallbackApplied: resolved.fallbackApplied,
       accentPrimary,
       accentOnPrimary,
-      logoUrl: readString(chapter, "logo_url"),
-      chapterName: readString(chapter, "name"),
+      logoUrl,
+      chapterName,
     };
   }, [
     accentColor,
     accentOnPrimary,
     accentPrimary,
     brandAccent,
-    chapter,
+    chapterName,
     generatedAccent,
+    logoUrl,
     surface,
   ]);
 }
