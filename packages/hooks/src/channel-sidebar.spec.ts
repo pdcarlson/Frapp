@@ -60,7 +60,8 @@ function arrange(overrides: Partial<ArrangeSidebarInput<Row>> = {}) {
 /** The whole layout as `key: row, row` lines, so an order change anywhere fails. */
 const layout = (result: ReturnType<typeof arrange>) =>
   result.sections.map(
-    (s) => `${s.key}${s.collapsed ? " (folded)" : ""}: ${s.rows.map((r) => r.id).join(", ")}`,
+    (s) =>
+      `${s.key}${s.collapsed ? " (folded)" : ""}: ${s.rows.map((r) => r.id).join(", ")}`,
   );
 
 describe("arrangeChannelSidebar", () => {

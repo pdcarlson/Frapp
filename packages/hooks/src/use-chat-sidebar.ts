@@ -170,7 +170,10 @@ export function useSetSidebarSectionCollapsed() {
       const params = { params: { path: { sectionKey } } };
       const { data, error } = collapsed
         ? await client.PUT("/v1/chat-sidebar/collapsed/{sectionKey}", params)
-        : await client.DELETE("/v1/chat-sidebar/collapsed/{sectionKey}", params);
+        : await client.DELETE(
+            "/v1/chat-sidebar/collapsed/{sectionKey}",
+            params,
+          );
       if (error) throw error;
       return data;
     },

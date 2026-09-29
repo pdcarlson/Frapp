@@ -1112,7 +1112,4 @@ export {
   categorySectionKey,
   isSidebarSectionKey,
 } from "./chat-sidebar";
-export type {
-  SidebarFixedSectionKey,
-  SidebarSectionKey,
-} from "./chat-sidebar";
+export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";

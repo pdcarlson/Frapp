@@ -36,7 +36,11 @@ const {
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
   unreadData: {
-    value: [] as { channel_id: string; unread_count: number; mention_count: number }[],
+    value: [] as {
+      channel_id: string;
+      unread_count: number;
+      mention_count: number;
+    }[],
   },
   levelsData: { value: [] as { channel_id: string; level: string }[] },
   sidebarPrefs: {
@@ -561,7 +565,10 @@ describe("Chat home sidebar arrangement (#2877)", () => {
 
     act(() => rowNamed(tree, "general").props.onLongPress());
     const [, , channelButtons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
-    expect(channelButtons!.map((b) => b.text)).toEqual(["Pin to top", "Cancel"]);
+    expect(channelButtons!.map((b) => b.text)).toEqual([
+      "Pin to top",
+      "Cancel",
+    ]);
   });
 
   it("says Unpin from top on a pinned row", () => {

@@ -234,15 +234,15 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
   it("offers Pin to top, then Hide, as named accessibility actions", () => {
     const onTogglePin = vi.fn();
     const onHide = vi.fn();
-    const row = pressable(
-      renderRow({ isDirect: true, onHide, onTogglePin }),
-    );
+    const row = pressable(renderRow({ isDirect: true, onHide, onTogglePin }));
 
     expect(row.props.accessibilityActions).toEqual([
       { name: PIN_ACTION, label: "Pin to top" },
       { name: HIDE_ACTION, label: "Hide conversation" },
     ]);
-    row.props.onAccessibilityAction({ nativeEvent: { actionName: PIN_ACTION } });
+    row.props.onAccessibilityAction({
+      nativeEvent: { actionName: PIN_ACTION },
+    });
     expect(onTogglePin).toHaveBeenCalledTimes(1);
     expect(onHide).not.toHaveBeenCalled();
   });

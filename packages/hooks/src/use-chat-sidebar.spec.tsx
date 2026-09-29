@@ -23,7 +23,10 @@ const stored: ChatSidebar = {
   pinned_channel_ids: ["general"],
 };
 
-function setup(client: Record<string, unknown>, chapterId: string | null = CHAPTER) {
+function setup(
+  client: Record<string, unknown>,
+  chapterId: string | null = CHAPTER,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -92,7 +95,9 @@ describe("useSidebarPreferences", () => {
   });
 
   it("stays the default when the read fails, so no channel is hidden", async () => {
-    const GET = vi.fn().mockResolvedValue({ data: null, error: new Error("x") });
+    const GET = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: new Error("x") });
     const { Wrapper } = setup({ GET });
 
     const { result } = renderHook(
@@ -115,7 +120,9 @@ describe("useSidebarPreferences", () => {
       wrapper: Wrapper,
     });
 
-    await waitFor(() => expect(result.current.pinnedIds.has("general")).toBe(true));
+    await waitFor(() =>
+      expect(result.current.pinnedIds.has("general")).toBe(true),
+    );
     expect(result.current.collapsed.has("direct")).toBe(true);
     expect(result.current.filters).toEqual({
       unreadOnly: false,
@@ -198,11 +205,16 @@ describe("sidebar writes", () => {
     });
     act(() => result.current.mutate({ sectionKey: "pinned", collapsed: true }));
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(PUT).toHaveBeenCalledWith("/v1/chat-sidebar/collapsed/{sectionKey}", {
-      params: { path: { sectionKey: "pinned" } },
-    });
+    expect(PUT).toHaveBeenCalledWith(
+      "/v1/chat-sidebar/collapsed/{sectionKey}",
+      {
+        params: { path: { sectionKey: "pinned" } },
+      },
+    );
 
-    act(() => result.current.mutate({ sectionKey: "direct", collapsed: false }));
+    act(() =>
+      result.current.mutate({ sectionKey: "direct", collapsed: false }),
+    );
     await waitFor(() =>
       expect(DELETE).toHaveBeenCalledWith(
         "/v1/chat-sidebar/collapsed/{sectionKey}",
@@ -232,7 +244,9 @@ describe("sidebar writes", () => {
   });
 
   it("re-reads the server's state when a write fails, rather than keeping the guess", async () => {
-    const PUT = vi.fn().mockResolvedValue({ data: null, error: new Error("no") });
+    const PUT = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: new Error("no") });
     const { queryClient, Wrapper } = setup({ GET, PUT });
     queryClient.setQueryData(KEY, stored);
 
@@ -242,7 +256,9 @@ describe("sidebar writes", () => {
       { wrapper: Wrapper },
     );
     GET.mockClear();
-    act(() => result.current.write.mutate({ channelId: "social", pinned: true }));
+    act(() =>
+      result.current.write.mutate({ channelId: "social", pinned: true }),
+    );
 
     await waitFor(() => expect(result.current.write.isError).toBe(true));
     await waitFor(() => expect(GET).toHaveBeenCalled());

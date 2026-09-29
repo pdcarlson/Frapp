@@ -212,7 +212,10 @@ export function UnreadBadge({
   const styles = createStyles(tokens);
   return (
     <View
-      style={[styles.badge, addressed ? styles.badgeMention : styles.badgeNeutral]}
+      style={[
+        styles.badge,
+        addressed ? styles.badgeMention : styles.badgeNeutral,
+      ]}
     >
       <Text
         style={[

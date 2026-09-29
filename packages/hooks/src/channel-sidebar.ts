@@ -105,7 +105,11 @@ export function sidebarSections<
   system?: { label: string; channels: readonly C[] },
 ): SidebarSectionInput<C>[] {
   return [
-    { key: "channels", label: labels.channels, channels: grouped.uncategorized },
+    {
+      key: "channels",
+      label: labels.channels,
+      channels: grouped.uncategorized,
+    },
     ...grouped.categories.map(({ category, channels }) => ({
       key: categorySectionKey(category.id),
       label: category.name,
@@ -257,4 +261,3 @@ export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";
 export const SIDEBAR_SAVE_FAILED_TITLE = "Couldn't save your channel list";
 export const SIDEBAR_SAVE_FAILED_BODY =
   "Nothing changed. Check your connection and try again.";
-

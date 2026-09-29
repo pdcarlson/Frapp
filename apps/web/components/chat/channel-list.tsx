@@ -525,9 +525,15 @@ export function ChannelList({
                 className="flex w-full items-center gap-1 px-2 pb-1 text-left text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
               >
                 {section.collapsed ? (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <ChevronRight
+                    className="h-3.5 w-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <ChevronDown
+                    className="h-3.5 w-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
                 )}
                 <span className="truncate">{section.label}</span>
                 {section.collapsed &&
@@ -703,7 +709,9 @@ export function ChannelFilters({
           variant="ghost"
           size="icon"
           className={cn(CHAT_CONTROL_CLASS, "relative ml-auto")}
-          aria-label={active ? "Filter channels, filters on" : "Filter channels"}
+          aria-label={
+            active ? "Filter channels, filters on" : "Filter channels"
+          }
         >
           <ListFilter className="h-4 w-4" aria-hidden="true" />
           {active ? (
