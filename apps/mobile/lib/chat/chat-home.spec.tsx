@@ -21,11 +21,13 @@ const VIEWER = "11111111-1111-4111-8111-111111111111";
 const ALICE = "22222222-2222-4222-8222-222222222222";
 const BOB = "33333333-3333-4333-8333-333333333333";
 
-const { channelsData, leaveMutateAsync, reopenMutate } = vi.hoisted(() => ({
-  channelsData: { value: [] as unknown[] },
-  leaveMutateAsync: vi.fn(),
-  reopenMutate: vi.fn(),
-}));
+const { channelsData, categoriesData, leaveMutateAsync, reopenMutate } =
+  vi.hoisted(() => ({
+    channelsData: { value: [] as unknown[] },
+    categoriesData: { value: [] as unknown },
+    leaveMutateAsync: vi.fn(),
+    reopenMutate: vi.fn(),
+  }));
 
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
@@ -41,6 +43,7 @@ vi.mock("@repo/hooks", async () => {
   });
   return {
     canHideConversation: actual.canHideConversation,
+    groupChannelsByCategory: actual.groupChannelsByCategory,
     otherMemberId: actual.otherMemberId,
     directChannelDisplayName: actual.directChannelDisplayName,
     HIDDEN_CONVERSATIONS_LABEL: actual.HIDDEN_CONVERSATIONS_LABEL,
@@ -52,6 +55,7 @@ vi.mock("@repo/hooks", async () => {
     hideConversationConfirmTitle: actual.hideConversationConfirmTitle,
     useNowDate: () => new Date("2026-09-25T18:00:00Z"),
     useChannels: () => query(channelsData.value),
+    useCategories: () => query(categoriesData.value),
     useChannelUnreadCounts: () => query([]),
     useEvents: () => query([]),
     useTasks: () => query([]),
@@ -132,6 +136,7 @@ function hiddenToggle(tree: ReactTestRenderer) {
 beforeEach(() => {
   vi.clearAllMocks();
   channelsData.value = [general, dmAlice, dmBobHidden, group];
+  categoriesData.value = [];
 });
 
 describe("Chat home hide conversation (#2303)", () => {
@@ -215,5 +220,133 @@ describe("Chat home hide conversation (#2303)", () => {
           node.props.accessibilityState?.expanded !== undefined,
       ),
     ).toHaveLength(0);
+  });
+});
+
+/**
+ * Every section on s04, top to bottom, as `[header, row names]`.
+ *
+ * Read off the rendered screen as one list rather than asserted a header at a
+ * time, because the order is half of what these tests pin: an assertion per
+ * header would pass on a list rendered backwards.
+ */
+function layout(tree: ReactTestRenderer): [string, string[]][] {
+  return tree.root
+    .findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.accessibilityRole === "header",
+    )
+    .map((header) => [
+      String(header.props.children),
+      header.parent!.findAllByType(ChannelRow).map((row) => row.props.name),
+    ]);
+}
+
+describe("Chat home channel categories (#1684)", () => {
+  // Deliberately not alphabetical: this is the server's `display_order`.
+  const EXEC = { id: "cat-exec", name: "Executive", display_order: 0 };
+  const COMM = { id: "cat-comm", name: "Committees", display_order: 1 };
+
+  const execBoard = {
+    id: "c-exec",
+    name: "exec-board",
+    type: "PRIVATE",
+    category_id: "cat-exec",
+  };
+  const philanthropy = {
+    id: "c-phil",
+    name: "philanthropy",
+    type: "PUBLIC",
+    category_id: "cat-comm",
+  };
+  const orphan = {
+    id: "c-orphan",
+    name: "old-committee",
+    type: "PUBLIC",
+    category_id: "cat-deleted",
+  };
+
+  it("nests channels under their categories, between CHANNELS and DIRECT, in the API's order", () => {
+    categoriesData.value = [EXEC, COMM];
+    channelsData.value = [philanthropy, general, execBoard, dmAlice, group];
+    const tree = render();
+
+    expect(layout(tree)).toEqual([
+      ["CHANNELS", ["general"]],
+      ["Executive", ["exec-board"]],
+      ["Committees", ["philanthropy"]],
+      ["DIRECT", ["Alice Chen", "Exec board"]],
+    ]);
+  });
+
+  it("follows the server's category order, whatever it is", () => {
+    // The same rows with the categories reversed: the sections reverse too, so
+    // neither order above is a sort that happened to agree with the fixture.
+    categoriesData.value = [COMM, EXEC];
+    channelsData.value = [philanthropy, general, execBoard];
+    const tree = render();
+
+    expect(layout(tree).map(([label]) => label)).toEqual([
+      "CHANNELS",
+      "Committees",
+      "Executive",
+    ]);
+  });
+
+  it("never lets a category pull a DM out of DIRECT", () => {
+    categoriesData.value = [EXEC, COMM];
+    channelsData.value = [
+      { ...dmAlice, category_id: "cat-exec" },
+      { ...group, category_id: "cat-comm" },
+    ];
+    const tree = render();
+
+    expect(layout(tree)).toEqual([["DIRECT", ["Alice Chen", "Exec board"]]]);
+  });
+
+  it("keeps a channel whose category is gone, under CHANNELS", () => {
+    categoriesData.value = [EXEC];
+    channelsData.value = [orphan, execBoard];
+    const tree = render();
+
+    expect(layout(tree)).toEqual([
+      ["CHANNELS", ["old-committee"]],
+      ["Executive", ["exec-board"]],
+    ]);
+  });
+
+  it("draws no header for an empty category, or for CHANNELS when everything is filed", () => {
+    categoriesData.value = [EXEC, COMM];
+    channelsData.value = [execBoard, dmAlice];
+    const tree = render();
+
+    expect(layout(tree)).toEqual([
+      ["Executive", ["exec-board"]],
+      ["DIRECT", ["Alice Chen"]],
+    ]);
+  });
+
+  it("falls back to the flat layout while categories are missing or unreadable", () => {
+    // `useCategories` still loading, or a failed read: no data either way.
+    categoriesData.value = undefined;
+    channelsData.value = [execBoard, general, dmAlice];
+    const tree = render();
+
+    expect(layout(tree)).toEqual([
+      ["CHANNELS", ["exec-board", "general"]],
+      ["DIRECT", ["Alice Chen"]],
+    ]);
+  });
+
+  it("keeps a hidden DM hidden, even with a category on it", () => {
+    categoriesData.value = [EXEC];
+    channelsData.value = [general, { ...dmBobHidden, category_id: "cat-exec" }];
+    const tree = render();
+
+    expect(layout(tree)).toEqual([["CHANNELS", ["general"]]]);
+    expect(hiddenToggle(tree).props.accessibilityState).toEqual({
+      expanded: false,
+    });
   });
 });
