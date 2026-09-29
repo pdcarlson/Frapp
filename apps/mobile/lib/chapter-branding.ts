@@ -23,8 +23,9 @@ export type ChapterBranding = {
   accentFallbackApplied: boolean;
   /**
    * The solid-fill accent — `--signet-accent-primary` (step 9), for a surface
-   * that paints its own background rather than sitting on a neutral one (the
-   * chat self bubble is the first consumer). Falls back to Signet's house
+   * that paints its own background rather than sitting on a neutral one (a
+   * poll's chosen option; the chat self bubble was the first consumer until
+   * the compact layout removed it, #2873). Falls back to Signet's house
    * gold for a chapter whose palette predates the Signet map, same as
    * {@link accent}.
    */

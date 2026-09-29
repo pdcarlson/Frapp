@@ -111,9 +111,8 @@ describe("MessageItem author rendering", () => {
     expect(screen.getByText("Member 222222")).toBeInTheDocument();
   });
 
-  it("says 'You' on the viewer's own *card*, which keeps the incoming layout", () => {
-    // §11 sides bubbles only. A rich card is a card in the flow whoever sent
-    // it, so it still carries the author line.
+  it("says 'You' on the viewer's own card", () => {
+    // A card starts a run, so it carries the author line whoever sent it.
     renderItem(message({ sender_id: VIEWER, kind: "announcement" }));
 
     expect(screen.getByText("You")).toBeInTheDocument();
@@ -121,155 +120,220 @@ describe("MessageItem author rendering", () => {
 });
 
 /**
- * The two shapes `components.md` §11 draws. The distinction is load-bearing
- * rather than cosmetic — it is the whole of "mine vs theirs" on a surface where
- * the accent varies per chapter — so it is asserted rather than eyeballed.
+ * The compact layout `components.md` §11 specs (owner decision 2026-09-29,
+ * #2873): no bubble, one shape for every row, and whose message it is carried
+ * by the author line rather than by a side and a fill.
  */
-describe("MessageItem bubble sides", () => {
-  function bubbleOf(container: HTMLElement): HTMLElement {
-    const found = container.querySelector<HTMLElement>('[data-slot="bubble"]');
-    if (!found) throw new Error("no bubble rendered");
+describe("MessageItem compact layout (#2873)", () => {
+  function bodyOf(container: HTMLElement): HTMLElement {
+    const found = container.querySelector<HTMLElement>(
+      '[data-slot="message-body"]',
+    );
+    if (!found) throw new Error("no message body rendered");
     return found;
   }
 
-  it("gives an incoming bubble the card fill, a hairline and the left tail", () => {
-    const { container } = renderItem(message());
-    const bubble = bubbleOf(container);
+  function authorLine(container: HTMLElement): HTMLElement | null {
+    return container.querySelector<HTMLElement>('[data-slot="author-line"]');
+  }
 
-    expect(bubble.className).toContain("bg-card");
-    expect(bubble.className).toContain("border-border");
-    expect(bubble.className).toContain("rounded-bl-[6px]");
+  it("draws no bubble around anyone's message", () => {
+    for (const sender of [VIEWER, OTHER]) {
+      const { container, unmount } = renderItem(message({ sender_id: sender }));
+      const className = bodyOf(container).className;
+
+      // Every one of these was the bubble: its two fills, its hairline, its
+      // radius and its padding.
+      for (const bubbleClass of [
+        "bg-card",
+        "bg-primary",
+        "border",
+        "rounded-[18px]",
+        "px-4",
+      ]) {
+        expect(className, `${sender} ${bubbleClass}`).not.toContain(bubbleClass);
+      }
+      expect(className, sender).toContain("text-foreground");
+      unmount();
+    }
   });
 
-  it("gives the viewer's own bubble the accent pair and the right tail", () => {
+  it("gives the viewer's own row the same avatar and author line as anyone's", () => {
     const { container } = renderItem(message({ sender_id: VIEWER }));
-    const bubble = bubbleOf(container);
 
-    // The one place a message takes the chapter accent, and the engine
-    // guarantees this pair together — never a hand-picked foreground.
-    expect(bubble.className).toContain("bg-primary");
-    expect(bubble.className).toContain("text-primary-foreground");
-    expect(bubble.className).toContain("rounded-br-[6px]");
-    expect(bubble.className).not.toContain("border-border");
+    expect(authorLine(container)).not.toBeNull();
+    expect(screen.getByText("You")).toBeInTheDocument();
+    // The avatar is drawn for the viewer too; its initials come from the
+    // uuid slice when the roster has no name for them.
+    expect(screen.getByText("11")).toBeInTheDocument();
   });
 
-  it("drops the avatar and the name from the viewer's own bubble row", () => {
-    renderItem(message({ sender_id: VIEWER }));
+  it("marks only the viewer's own name in the chapter accent", () => {
+    const own = renderItem(message({ sender_id: VIEWER }));
+    expect(screen.getByText("You").className).toContain("text-accent-text");
+    own.unmount();
 
-    // §11: self is right-aligned with no avatar, and its caption is the time
-    // (plus the delivery state), not a name.
-    expect(screen.queryByText("You")).not.toBeInTheDocument();
-    expect(screen.queryByText("11")).not.toBeInTheDocument();
+    renderItem(message({ sender_id: OTHER }));
+    const name = screen.getByText("Alice Chen");
+    expect(name.className).toContain("text-foreground");
+    expect(name.className).not.toContain("text-accent-text");
   });
 
-  it("keeps a deleted message on its own side rather than reflowing the thread", () => {
-    renderItem(message({ sender_id: VIEWER, is_deleted: true }));
+  it("puts the time of day on the author line, never the date", () => {
+    const { container } = renderItem(message());
+    const line = authorLine(container)!;
+    const time = line.querySelector("time")!;
+
+    expect(time.textContent).toBe(
+      new Date(2026, 7, 16, 17, 9).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    );
+    // `formatClock` printed "Aug 16, 5:09 PM" on every author line.
+    expect(line.textContent).not.toMatch(/Aug|16,/);
+  });
+
+  it("draws neither avatar nor author line on a follow-on row", () => {
+    const { container } = renderItemWithProps({ showHeader: false });
+
+    expect(authorLine(container)).toBeNull();
+    expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
+    expect(screen.queryByText("AC")).not.toBeInTheDocument();
+    expect(container.querySelector('[role="listitem"]')?.className).toContain(
+      "pt-0.5",
+    );
+  });
+
+  it("keeps a follow-on's own time in the gutter, hidden until the row is revealed", () => {
+    const { container, unmount } = renderItemWithProps({ showHeader: false });
+    const gutter = container.querySelector<HTMLElement>(
+      '[data-slot="gutter-time"]',
+    );
+
+    expect(gutter).not.toBeNull();
+    expect(gutter?.getAttribute("dateTime")).toBe(message().created_at);
+    // Hours and minutes: the run's author line already says AM or PM.
+    expect(gutter?.textContent).toMatch(/^\d{1,2}:09$/);
+    expect(gutter?.className).toContain("opacity-0");
+    expect(gutter?.className).toContain("group-hover/message:opacity-100");
+    unmount();
+
+    const revealed = renderItemWithProps({
+      showHeader: false,
+      isTapRevealed: true,
+    });
+    expect(
+      revealed.container.querySelector('[data-slot="gutter-time"]')?.className,
+    ).toContain("opacity-100");
+  });
+
+  it("draws no gutter time on the row that starts a run", () => {
+    const { container } = renderItem(message());
+    expect(container.querySelector('[data-slot="gutter-time"]')).toBeNull();
+    expect(container.querySelector('[role="listitem"]')?.className).toContain(
+      "pt-4",
+    );
+  });
+
+  it("lifts the whole row one surface step when revealed", () => {
+    const rest = renderItemWithProps();
+    const row = rest.container.querySelector('[role="listitem"]')!;
+    expect(row.className).toContain("hover:bg-surface-1");
+    expect(row.className).not.toMatch(/(^|\s)bg-surface-1/);
+    rest.unmount();
+
+    const tapped = renderItemWithProps({ isTapRevealed: true });
+    expect(
+      tapped.container.querySelector('[role="listitem"]')?.className,
+    ).toMatch(/(^|\s)bg-surface-1/);
+  });
+
+  it("keeps a deleted message's author line and draws the placeholder", () => {
+    const { container } = renderItem(
+      message({ sender_id: VIEWER, is_deleted: true }),
+    );
 
     expect(screen.getByText("[message deleted]")).toBeInTheDocument();
-    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    expect(authorLine(container)).not.toBeNull();
+  });
+
+  it("dims a pending message's text until it posts", () => {
+    const { container } = renderItem(
+      message({ sender_id: VIEWER, _status: "pending" }),
+    );
+    expect(bodyOf(container).className).toContain("text-muted-foreground");
+    expect(screen.getByText("Sending…")).toBeInTheDocument();
+  });
+
+  it("dims a failed message's text and says so in the danger tone", () => {
+    const { container } = renderItem(
+      message({ sender_id: VIEWER, _status: "failed", _error: "Offline" }),
+    );
+    expect(bodyOf(container).className).toContain("text-muted-foreground");
+    expect(screen.getByText("Offline").parentElement?.className).toContain(
+      "text-destructive-text",
+    );
   });
 });
 
 /**
- * The action cluster attaches to the **bubble**, not to the thread column.
- *
- * The regression, seen on staging: the cluster was `absolute top-0 left-5` on a
- * self row and `right-5` on an incoming one, positioned against the row — which
- * spans the whole lane. Those insets only land on the bubble when the bubble is
- * at its 86% maximum; on every shorter message a right-aligned self bubble got
- * its cluster stranded against the far left of the lane with nothing under it.
- *
- * jsdom computes no layout, so these assert the structure that *produces* the
- * hug rather than measured pixels: the cluster rides a `flex-1` track whose
- * width is the leftover beside the bubble, so its outer edge and the bubble's
- * edge are the same line whatever the message's length. Nothing in this repo
- * measures the rendered pixels — `tests/visual/` is the responsive floor suite
- * and its config argues against adding a second spec there — so the geometry
- * was verified once in a real browser when this landed, and what guards it from
- * here is the structure below.
+ * The action bar floats over the row's top-right corner, icon-only
+ * (`components.md` §11 § Per-message actions; #2247's action-bar item).
  */
-describe("MessageItem action cluster docking", () => {
-  function cluster(container: HTMLElement): HTMLElement {
+describe("MessageItem action bar", () => {
+  function bar(container: HTMLElement): HTMLElement {
     const found = container.querySelector<HTMLElement>(
       '[role="group"][aria-label="Message actions"]',
     );
-    if (!found) throw new Error("no action cluster rendered");
+    if (!found) throw new Error("no action bar rendered");
     return found;
   }
 
-  function bubbleColumn(container: HTMLElement): HTMLElement {
-    const bubble = container.querySelector<HTMLElement>('[data-slot="bubble"]');
-    if (!bubble?.parentElement) throw new Error("no bubble rendered");
-    return bubble.parentElement;
-  }
-
-  it("never docks the cluster to the lane, on either side", () => {
+  it("pins to the row's top-right corner and reserves no height", () => {
     for (const sender of [VIEWER, OTHER]) {
       const { container, unmount } = renderItem(message({ sender_id: sender }));
-      const className = cluster(container).className;
+      const className = bar(container).className;
 
-      // The three classes that *were* the bug. A cluster positioned against the
-      // row can only name the lane's edges, never the bubble's.
-      expect(className, sender).not.toContain("absolute");
-      expect(className, sender).not.toContain("left-5");
-      expect(className, sender).not.toContain("right-5");
+      expect(className, sender).toContain("absolute");
+      expect(className, sender).toContain("right-4");
+      expect(className, sender).toContain("top-0");
+      expect(className, sender).toContain("-translate-y-1/2");
+      // Opaque, because it overlaps the text it floats over.
+      expect(className, sender).toContain("bg-card");
+      expect(bar(container).parentElement?.getAttribute("role")).toBe(
+        "listitem",
+      );
       unmount();
     }
   });
 
-  it("rides a leftover track that ends at the bubble's edge", () => {
-    for (const sender of [VIEWER, OTHER]) {
-      const { container, unmount } = renderItem(message({ sender_id: sender }));
-      const track = cluster(container).parentElement;
+  it("comes after the message in reading order", () => {
+    const { container } = renderItem(message());
+    const row = container.querySelector('[role="listitem"]')!;
 
-      // `flex-1` is what makes the track *be* the leftover beside the bubble —
-      // an `absolute` box cannot name that width — and `justify-end-safe` is
-      // what pins the cluster to the far end of it (the hug) while falling back
-      // to the lane edge instead of overflowing the pane when a max-width
-      // bubble leaves no room.
-      expect(track?.className, sender).toContain("flex-1");
-      expect(track?.className, sender).toContain("justify-end-safe");
-      // Zero height, so the hug costs the row nothing — the compactness the
-      // 5-minute grouping buys is the reason this was never in flow.
-      expect(track?.className, sender).toContain("h-0");
-      unmount();
+    // Last in the row, so a screen reader and the tab sequence reach the
+    // message before the controls that act on it.
+    expect(row.lastElementChild).toBe(bar(container));
+  });
+
+  it("names every icon, and draws no word on any of them", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onReply: vi.fn(),
+      onToggleBookmark: vi.fn(),
+      onEdit: vi.fn(),
+      onDelete: vi.fn(),
+    });
+
+    for (const name of ["Reply", "Save", "Edit", "Delete"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button, name).toHaveAttribute("title");
+      expect(button.textContent?.trim(), name).toBe("");
     }
-  });
-
-  it("puts the cluster on the left of an own bubble — away from the tail", () => {
-    const { container } = renderItem(message({ sender_id: VIEWER }));
-    const track = cluster(container).parentElement!;
-
-    // A self bubble is right-aligned, so the leftover is to its left — and the
-    // track gets there with `order`, not by being written first. The cluster
-    // acts on the message, so it has to stay *after* the message in the DOM for
-    // a screen reader and for the tab sequence, the same way it does on an
-    // incoming row. Moving it in source would silently put four buttons ahead
-    // of every one of the viewer's own messages.
-    expect(track.previousElementSibling).toBe(bubbleColumn(container));
-    expect(track.className).toContain("order-first");
-  });
-
-  it("puts the cluster on the right of an incoming bubble — away from its tail", () => {
-    const { container } = renderItem(message({ sender_id: OTHER }));
-    const track = cluster(container).parentElement!;
-
-    expect(track.previousElementSibling).toBe(bubbleColumn(container));
-    // Left where it is written — an incoming track is already on the side the
-    // reading order wants, so it needs no `order`.
-    expect(track.className).not.toContain("order-first");
-    // `rtl`, and specifically NOT `flex-row-reverse`, which is the thing that
-    // looks right and is not: `safe` falls back to `start`, and `start` for
-    // `justify-content` is writing-mode relative rather than flex relative, so
-    // reversing the main axis moves the hug and leaves the fallback on the
-    // physical left, off the side of the pane. This assertion is the spelling
-    // only — jsdom computes no layout, so it cannot see that difference. The
-    // browser check behind it, and its one honest limit, are recorded on
-    // `ACTION_TRACK` in `message-item.tsx`; do not restate the figure here.
-    expect(track.getAttribute("dir")).toBe("rtl");
-    expect(track.className).not.toContain("flex-row-reverse");
-    // ...and the cluster opts back out, or its own chips would reverse with it.
-    expect(cluster(container).getAttribute("dir")).toBe("ltr");
+    expect(screen.getByRole("button", { name: "Open emoji picker" })).toHaveAttribute(
+      "title",
+    );
   });
 });
 
@@ -525,8 +589,8 @@ describe("MessageItem reply-with-quote (#489)", () => {
 });
 
 /**
- * Edit is server-enforced own-only and, client-side, only offered for the
- * plain-text bubble kind (`selfBubble`) — a card has no free-text `content`
+ * Edit is server-enforced own-only and, client-side, only offered for a
+ * plain-text message (`canEditMessage`) — a card has no free-text `content`
  * a member typed. Delete is offered for the viewer's own message, or any
  * message when `canManageChannel` is set (mirrors the server's
  * `channels:manage` override).
@@ -534,14 +598,36 @@ describe("MessageItem reply-with-quote (#489)", () => {
 describe("MessageItem edited marker", () => {
   const edited = { edited_at: new Date(2026, 7, 16, 17, 12).toISOString() };
 
-  it("marks an edited message from someone else in its header", () => {
-    renderItem(message(edited));
+  it("marks an edited message after its text", () => {
+    const { container } = renderItem(message(edited));
+    const marker = screen.getByText("(edited)");
+    // Inside the body, after the last line — not on the author line, which a
+    // follow-on row does not draw.
+    expect(
+      container.querySelector('[data-slot="message-body"]'),
+    ).toContainElement(marker);
+    expect(
+      container.querySelector('[data-slot="author-line"]'),
+    ).not.toContainElement(marker);
+  });
+
+  it("marks an edited follow-on row, which has no author line (#2872)", () => {
+    renderItemWithProps({ message: message(edited), showHeader: false });
     expect(screen.getByText("(edited)")).toBeInTheDocument();
   });
 
-  it("marks the viewer's own edited message in its caption", () => {
+  it("marks the viewer's own edited message the same way", () => {
     renderItem(message({ ...edited, sender_id: VIEWER }));
     expect(screen.getByText("(edited)")).toBeInTheDocument();
+  });
+
+  it("marks an edited card under the card, not inside it", () => {
+    const { container } = renderItem(
+      message({ ...edited, kind: "announcement", payload: { title: "Formal" } }),
+    );
+    const marker = screen.getByText("(edited)");
+    expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
+    expect(marker).toBeInTheDocument();
   });
 
   it("drops the marker once the message is deleted, on either side", () => {
@@ -934,21 +1020,23 @@ describe("MessageItem bookmark toggle (#462)", () => {
     expect(button).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("reads Saved and pressed once bookmarked", () => {
-    // `aria-pressed` rather than label alone: a toggle whose only signal is the
-    // word flipping announces to a screen reader as one button disappearing and
-    // a different one arriving in the same slot.
+  it("reads pressed once bookmarked, under the same name", () => {
+    // `aria-pressed` carries the state, and the name stays "Save": a toggle
+    // whose name flips announces to a screen reader as one button disappearing
+    // and a different one arriving in the same slot. Only the tooltip says
+    // "Saved".
     renderItemWithProps({ onToggleBookmark: vi.fn(), isBookmarked: true });
 
-    const button = screen.getByRole("button", { name: "Saved" });
+    const button = screen.getByRole("button", { name: "Save" });
     expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAttribute("title", "Saved");
   });
 
   it("asks for the opposite of the current state, not a blind toggle", async () => {
     const onToggleBookmark = vi.fn();
     renderItemWithProps({ onToggleBookmark, isBookmarked: true });
 
-    await userEvent.click(screen.getByRole("button", { name: "Saved" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onToggleBookmark).toHaveBeenCalledWith("msg-1", false);
   });
@@ -1286,51 +1374,16 @@ describe("MessageItem recorded rows (#1789)", () => {
 });
 
 /**
- * The inline editor is the bubble, in draft — not a second, smaller surface
- * floating over it.
+ * The inline editor takes the body's place, at the body column's width.
  *
- * The regression, seen on staging: entering edit collapsed the message block to
- * a "postage stamp" narrower than the message it was editing. The cause is a
- * sizing rule the row otherwise depends on. §11 caps a bubble at 86% of the
- * thread column and hugs its content below that, and the self column gets the
- * hug for free by shrink-wrapping — but a shrink-to-fit box makes a percentage
- * width circular, so the `w-full` on both the edit form and the `<textarea>`
- * inside it resolves to `auto`, and the column ends up sized from the
- * textarea's `cols=20` intrinsic width instead of from the message.
- *
- * jsdom computes no layout, so — exactly as the action-cluster suite above — the
- * assertions below pin the structure that *produces* the width rather than
- * measured pixels: the editor is inside the same block the bubble uses, and
- * that block stops hugging while the editor is open. The pixels behind that
- * were measured once, 2026-09-14, by rendering this row into Chromium against
- * this app's own compiled Tailwind on a 900px lane (860px thread column): a
- * bubble at the 86% cap is 740px and its editor was 249px — the same 249 for a
- * 2-character message and a 2,000-character one — and 740px again with the
- * fill. As with `ACTION_TRACK`, nothing in this repo re-measures those figures,
- * and they scale with the thread column: treat "one fixed box at every length"
- * as the reason for the structure, not the pixel pair as a maintained number.
+ * Under the §11 bubble layout this suite pinned a fix for a "postage stamp"
+ * editor: a `<textarea>` inside a shrink-wrapped bubble resolved its `w-full`
+ * circularly and sized itself from `cols=20`. The compact layout's body column
+ * is a `flex-1` track with a definite width, so that cannot recur; what is
+ * left to pin is that the editor stays in the row and fills that column.
+ * jsdom computes no layout, so these assert the structure, not pixels.
  */
-describe("MessageItem inline editor width", () => {
-  /**
-   * The message block — found by its position, deliberately, not by the class
-   * under test. A row has exactly two children: the block and the zero-height
-   * action track it is measured against, and the track is always the one
-   * carrying `h-0`. Querying the block by `max-w-[86%]` instead would make
-   * every assertion about the cap a restatement of the selector that found it,
-   * and deleting the cap would surface as "no block rendered" rather than as
-   * the cap being gone.
-   */
-  function messageBlock(container: HTMLElement): HTMLElement {
-    const row = container.querySelector<HTMLElement>('[role="listitem"]');
-    if (!row) throw new Error("no message row rendered");
-    const block = [...row.children].find(
-      (child): child is HTMLElement =>
-        child instanceof HTMLElement && !child.className.includes("h-0"),
-    );
-    if (!block) throw new Error("no message block rendered");
-    return block;
-  }
-
+describe("MessageItem inline editor", () => {
   /** The edit surface itself — the element the textarea is wrapped in. */
   function editSurface(): HTMLElement {
     const field = screen.getByRole("textbox");
@@ -1352,76 +1405,46 @@ describe("MessageItem inline editor width", () => {
     const { container } = await openEditor();
 
     // A dialog or popover portals out of the row, so the row would no longer
-    // contain the field — and the editor would be free to take a width that has
-    // nothing to do with the message underneath it. This is the assertion that
-    // fails if anyone answers the width problem by floating the editor instead
-    // of putting it where the bubble was.
+    // contain the field. Queried through `screen`, not `container`: Radix
+    // portals a Dialog or a Popover to `document.body`, a *sibling* of the
+    // container RTL renders into, so a container-scoped query for one is null
+    // whether or not it is there — a tripwire that cannot trip.
     const row = container.querySelector('[role="listitem"]');
     expect(row).not.toBeNull();
     expect(row).toContainElement(screen.getByRole("textbox"));
-    expect(messageBlock(container)).toContainElement(screen.getByRole("textbox"));
-    // Queried through `screen`, not `container`: Radix portals a Dialog or a
-    // Popover to `document.body`, a *sibling* of the container RTL renders
-    // into, so a container-scoped query for one is null whether or not it is
-    // there — a tripwire that cannot trip.
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("fills the message block instead of letting the textarea size it", async () => {
+  it("takes the body's place in the body column, at its full width", async () => {
     const { container } = await openEditor();
 
-    // `w-full` replaces "as wide as your content" — which in edit mode means
-    // the textarea's 20-character intrinsic width — with "as wide as a bubble
-    // may be", which the cap beside it then limits to the track the bubble
-    // already had.
-    expect(messageBlock(container).className).toContain("w-full");
-    expect(messageBlock(container).className).toContain("max-w-[86%]");
-  });
-
-  it("fills the block with the editor, not just the block", async () => {
-    await openEditor();
-
-    // The contract has two halves and needs both. Widening only the block
-    // leaves the editor shrink-wrapping the textarea inside a correct block,
-    // and `items-end` then pins the same stamp to the block's right edge — the
-    // bug, with the surrounding layout fixed around it. Widening only the
-    // editor does nothing at all, since its percentage has nothing definite to
-    // resolve against.
+    expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
     expect(editSurface().className).toContain("w-full");
+    // The column the field fills is the flex-1 track beside the gutter, which
+    // is what gives `w-full` a definite width to resolve against.
+    expect(editSurface().parentElement?.className).toContain("flex-1");
   });
 
-  it("keeps the editor wearing the bubble's chrome", async () => {
+  it("is the plain text input, not a bubble in draft", async () => {
     await openEditor();
 
-    // The locked bubble radius and the sender's tail corner: the editor stands
-    // where the bubble stood, so a different shape is a jump of its own. These
-    // are the values §11 locks, and the spec bullet now claims them — without
-    // this, a tidy-up back to a generic radius is green in CI and the only
-    // thing left contradicting it is prose.
-    expect(editSurface().className).toContain("rounded-[18px]");
-    expect(editSurface().className).toContain("rounded-br-[6px]");
-    // Grows with the draft instead of scrolling a fixed box, and wraps where
-    // the bubble wrapped — same line box, same text column.
+    expect(editSurface().className).not.toContain("rounded-[18px]");
+    // Grows with the draft instead of scrolling a fixed box, on the body's
+    // 25px line box so the draft wraps near where the message wrapped.
     expect(screen.getByRole("textbox").className).toContain(
       "field-sizing-content",
     );
     expect(screen.getByRole("textbox").className).toContain("leading-[25px]");
+    expect(screen.getByRole("textbox").className).toContain("max-h-40");
   });
 
-  it("hands the width back to the message when the editor closes", async () => {
+  it("gives the body back when the editor closes", async () => {
     const { container, user } = await openEditor();
-    expect(messageBlock(container).className).toContain("w-full");
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
 
-    // Read mode has to hug again, and not because the bubble looks different
-    // filled — every child here is shrink-wrapped by `items-end`, so it would
-    // not. The sibling action track is `flex-1` on the leftover beside the
-    // block, so a block left permanently full-width would strand the cluster at
-    // the lane edge on every short message: the #2210 hug, undone from the
-    // other side. Edit mode escapes that only because the cluster is unmounted
-    // for the duration.
-    expect(messageBlock(container).className).not.toContain("w-full");
+    expect(container.querySelector('[data-slot="message-body"]')).not.toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 
   it("keeps the reply quote in place while editing", async () => {

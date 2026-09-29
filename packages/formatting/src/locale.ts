@@ -59,3 +59,38 @@ export function formatClock(value: unknown): string {
     day: "numeric",
   });
 }
+
+/**
+ * Chat's time of day, `"5:09 PM"` (locale-dependent), or `""` when missing.
+ *
+ * What a run's author line prints, on web and mobile alike. It carries no date
+ * on purpose: in the compact chat layout the date lives only in the day
+ * divider (`components.md` §11, #2873), and {@link formatClock}'s
+ * `"Aug 16, 5:09 PM"` on every author line is exactly what that decision
+ * removed.
+ */
+export function formatTimeOfDay(value: unknown): string {
+  const parsed = parseInstant(value);
+  if (!parsed) return "";
+  return parsed.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * {@link formatTimeOfDay} without the day period: `"5:09"`, or `""` when
+ * missing. A grouped chat row's hover time, which sits in the 32px avatar
+ * gutter; the run's author line above it already says AM or PM. A 24-hour
+ * locale has no day period, so this reads the same as the full form there.
+ */
+export function formatTimeOfDayShort(value: unknown): string {
+  const parsed = parseInstant(value);
+  if (!parsed) return "";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
+    .formatToParts(parsed)
+    .filter((part) => part.type !== "dayPeriod")
+    .map((part) => part.value)
+    .join("")
+    .trim();
+}

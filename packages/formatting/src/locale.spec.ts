@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatClock, formatLocaleDate, formatLocaleDateTime } from "./locale";
+import {
+  formatClock,
+  formatLocaleDate,
+  formatLocaleDateTime,
+  formatTimeOfDay,
+  formatTimeOfDayShort,
+} from "./locale";
 
 describe("formatLocaleDateTime", () => {
   it("returns an em dash for missing or unparseable values", () => {
@@ -49,5 +55,32 @@ describe("formatClock", () => {
         day: "numeric",
       }),
     );
+  });
+});
+
+describe("formatTimeOfDay", () => {
+  it("returns an empty string for missing or unparseable values", () => {
+    expect(formatTimeOfDay(undefined)).toBe("");
+    expect(formatTimeOfDay("later")).toBe("");
+    expect(formatTimeOfDayShort(null)).toBe("");
+    expect(formatTimeOfDayShort("later")).toBe("");
+  });
+
+  it("prints the time of day and never the date", () => {
+    const value = new Date(2026, 7, 16, 17, 9).toISOString();
+    expect(formatTimeOfDay(value)).toBe(
+      new Date(value).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    );
+    expect(formatTimeOfDay(value)).not.toMatch(/Aug|16/);
+  });
+
+  it("drops the day period for the gutter, and nothing else", () => {
+    const value = new Date(2026, 7, 16, 17, 9).toISOString();
+    const short = formatTimeOfDayShort(value);
+    expect(short).toMatch(/^\d{1,2}:09$/);
+    expect(formatTimeOfDay(value).startsWith(short)).toBe(true);
   });
 });

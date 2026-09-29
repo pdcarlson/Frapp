@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  authorGroupingKey,
   authorInitialsFallback,
   directChannelDisplayName,
   displayNameOrNull,
@@ -439,34 +438,5 @@ describe("resolveAuthorLabel", () => {
     expect(resolveAuthorLabel({ sender_id: null }, roster({}), null)).toBe(
       "Unknown member",
     );
-  });
-});
-
-describe("authorGroupingKey", () => {
-  it("groups two messages from the same member", () => {
-    expect(authorGroupingKey({ sender_id: "u1" })).toBe(
-      authorGroupingKey({ sender_id: "u1" }),
-    );
-  });
-
-  it("does NOT group two different imported authors", () => {
-    // The regression this exists for: comparing `sender_id` directly, `null ===
-    // null` is true, so an imported channel where twenty Discord members spoke
-    // in turn collapsed into one block under one name.
-    const a = { sender_id: null, author_name: "Ada", author_external_id: "1" };
-    const b = { sender_id: null, author_name: "Grace", author_external_id: "2" };
-    expect(authorGroupingKey(a)).not.toBe(authorGroupingKey(b));
-  });
-
-  it("separates a Signet uuid from a source-system id that reads the same", () => {
-    expect(authorGroupingKey({ sender_id: "1234" })).not.toBe(
-      authorGroupingKey({ sender_id: null, author_external_id: "1234" }),
-    );
-  });
-
-  it("falls back to the name when an imported row carries no external id", () => {
-    expect(
-      authorGroupingKey({ sender_id: null, author_name: "Ada" }),
-    ).not.toBe(authorGroupingKey({ sender_id: null, author_name: "Grace" }));
   });
 });

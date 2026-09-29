@@ -218,7 +218,11 @@ it up to 20 s. Rows are `document.querySelectorAll('[data-slot="bubble"]').lengt
 after the mark, because the mark fires just before `react-virtuoso` commits. **Six is a viewport
 count, not a cache count** — the cache holds up to 30 rows
 ([`FIRST_CHUNK_MESSAGE_LIMIT`](../../../apps/web/lib/chat/first-chunk-cache.ts)) and the virtualiser
-renders what fits the default headless window; the network-served warm arm reports the same six.
+renders what fits the default headless window; the network-served warm arm reports the same six. *(Corrected
+2026-09-29: the slot is `[data-slot="message-body"]` since the compact chat layout
+([#2873](https://github.com/pdcarlson/Frapp/issues/2873)), and a compact row is about half a bubble
+row's height, so a re-run under this method counts more rows per viewport than six. The table
+records what was measured then.)*
 
 Both arms run in the **same signed-in browser context**, and the cold arm deletes
 `frapp-chat-read-cache` immediately before its measured navigation rather than using a fresh profile —
@@ -257,7 +261,7 @@ matter:
   window is now skeleton, so nothing renders real from the cache. That outranks the latency: § First
   paint puts `1s` at rank 1 in the trust order, above this file. It is a deliberate trade, not an
   oversight — the rows it withholds were painting the member's own messages as another member's, and
-  §11 specs no third bubble shape to draw an unattributed row in — but it is a regression against
+  a row cannot be drawn without knowing whose it is — but it is a regression against
   the clause and is tracked as such, not as tuning.
 - **The abort check below no longer means what it is cited for.** It aborted `**/v1/channels**` and
   saw the rows paint from Dexie — and it still passes, because that glob does not match

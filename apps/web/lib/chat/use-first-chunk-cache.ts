@@ -38,8 +38,8 @@
  *
  * ## The viewer id is a paint input, and only that
  *
- * The cached `users.id` this returns decides which of `components.md` §11's two
- * bubble shapes a row takes, and nothing else. It is deliberately **not** fed to
+ * The cached `users.id` this returns decides whose a row reads as (the "You"
+ * author line of `components.md` §11), and nothing else. It is deliberately **not** fed to
  * `chatRealtime.configure` or to `flushOutbox`'s `ctx.userId`, which are the
  * write paths — a queued message's `senderId`, a reaction's `user_id`, a
  * presence `track()`. Those keep waiting on the live value.
@@ -291,7 +291,7 @@ function seedQuery(
  * Mere presence therefore means "somebody wrote here", not "the server
  * answered" — and the member it misfires for is the one with unsent messages,
  * who is precisely the member this cache exists to serve. They would have got
- * their own pending bubble over a skeleton and nothing else.
+ * their own pending row over a skeleton and nothing else.
  *
  * A confirmed row is the honest signal: only `mergeServerRows` produces one,
  * and only a backfill, a realtime echo or this seed calls it.

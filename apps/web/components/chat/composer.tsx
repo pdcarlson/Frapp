@@ -770,8 +770,8 @@ export function Composer({
       Mention.configure({
         // The same chip the timeline paints (`chip.ts`), not a second recipe.
         // It used to be an accent tint here, which meant a handle changed
-        // colour the instant you pressed Enter — and worse, the accent tint is
-        // exactly the paint a self bubble's own fill is derived from, so the
+        // colour the instant you pressed Enter — and worse, the accent tint was
+        // exactly the paint the old self bubble's fill was derived from, so the
         // authored mention and the sent one could not both read.
         HTMLAttributes: { class: MENTION_CHIP },
         // Same shape as the submit keymap below: `createMentionSuggestion`
@@ -988,7 +988,7 @@ export function Composer({
     if (text.length === 0 && pending.length === 0) return;
     // If the message begins with an implemented slash command and a dispatch
     // is wired, route through dispatch instead of sending as plain text — so
-    // Enter on `/poll "Q?" A B` posts a poll card, not a text bubble.
+    // Enter on `/poll "Q?" A B` posts a poll card, not a text message.
     const parsed = parseSlashInput(text);
     if (parsed.isSlash && parsed.command && onSlashDispatch) {
       const command = getSlashCommand(parsed.command, {

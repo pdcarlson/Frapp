@@ -3,6 +3,7 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 
 const hookState = vi.hoisted(() => ({
@@ -66,7 +67,6 @@ function render(
           channelId="chan-1"
           messageId="msg-1"
           count={1}
-          isMine={false}
           {...props}
         />
       </FrappThemeProvider>,
@@ -217,15 +217,18 @@ describe("the states that must stay visible", () => {
   });
 });
 
-// #1007: a self bubble's note text sits on the chapter accent fill, so it
-// needs that fill's contrast-checked on-primary colour, not a fixed one.
-describe("the mine note colour", () => {
-  it("colours the loading note with the caller's accentOnPrimary", () => {
+// The note is a caption about the message, lifted off `--muted` like every
+// chat caption (components.md §1): the self bubble it once had to match is gone
+// (#2873), so every row's note takes the same tone.
+describe("the note colour", () => {
+  it("draws the loading note in the lifted caption tone", () => {
     hookState.result = { isPending: true, isError: false, data: undefined };
-    const tree = render({ isMine: true, accentOnPrimary: "#2B2009", count: 1 });
+    const tree = render({ count: 1 });
 
     const [note] = tree.root.findAllByType("Text" as unknown as React.ElementType);
-    expect(JSON.stringify(note!.props.style)).toContain('"color":"#2B2009"');
+    expect(JSON.stringify(note!.props.style)).toContain(
+      `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+    );
   });
 });
 

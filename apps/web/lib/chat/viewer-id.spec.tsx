@@ -8,7 +8,7 @@
   `GET /v1/users/me` has not answered — and that it is never enough to paint
   somebody else's as theirs. So the second block puts the real `MessageTimeline`
   behind the real hook, with the live id held at `null` throughout, and asserts
-  the bubbles.
+  whose each row says it is.
 
   That is the bar #2249 sets and the one #2255 must not lose: the gate opens on
   cached identity, and an unknown identity still withholds.
@@ -158,8 +158,19 @@ describe("useChatViewerId", () => {
 });
 
 describe("a warm timeline painted from the cached id alone", () => {
-  const bubbles = () =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-slot="bubble"]'));
+  const bodies = () =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="message-body"]'),
+    );
+  /** The author label of the one row these render, and whether it is accented. */
+  const author = () => {
+    const line = document.querySelector<HTMLElement>('[data-slot="author-line"]');
+    const label = line?.firstElementChild as HTMLElement | null | undefined;
+    return {
+      text: label?.textContent ?? null,
+      accented: label?.className.includes("text-accent-text") ?? false,
+    };
+  };
 
   function Timeline({
     cached,
@@ -204,9 +215,10 @@ describe("a warm timeline painted from the cached id alone", () => {
 
       It fails if the cached id stops reaching the timeline, and it fails just as
       loudly if a row that *is* the member's paints as somebody else's: the
-      self bubble is right-aligned and avatarless, and `Member 111111` is
-      `memberFallbackLabel` reading the viewer's own uuid back to them — the
-      literal "Member … · BF" string staging reported on #2243.
+      member's own author line says "You" in the chapter accent, and
+      `Member 111111` is `memberFallbackLabel` reading the viewer's own uuid
+      back to them — the literal "Member … · BF" string staging reported on
+      #2243.
     */
     liveViewerId.current = null;
 
@@ -218,15 +230,13 @@ describe("a warm timeline painted from the cached id alone", () => {
     );
 
     expect(screen.getByText("mine")).toBeInTheDocument();
-    const [bubble] = bubbles();
-    expect(bubble?.className).toContain("rounded-br-[6px]");
+    expect(author()).toEqual({ text: "You", accented: true });
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
-    expect(screen.queryByText("11")).not.toBeInTheDocument();
   });
 
-  it("still paints another member's row as incoming", () => {
-    // The positive half: a gate that opened into *every* row taking the self
-    // shape would pass the assertion above. A cached id has to be able to say
+  it("still paints another member's row as theirs", () => {
+    // The positive half: a gate that opened into *every* row reading as the
+    // viewer's would pass the assertion above. A cached id has to be able to say
     // "not yours" as confidently as it says "yours".
     liveViewerId.current = null;
 
@@ -237,9 +247,7 @@ describe("a warm timeline painted from the cached id alone", () => {
       />,
     );
 
-    const [bubble] = bubbles();
-    expect(bubble?.className).toContain("rounded-bl-[6px]");
-    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(author()).toEqual({ text: "Alice Chen", accented: false });
   });
 
   it("does not paint one member's history against another member's cached id", () => {
@@ -247,7 +255,7 @@ describe("a warm timeline painted from the cached id alone", () => {
       The tenancy claim at the surface. `first-chunk-cache.spec.ts` proves no key
       can return Alice's id to Bob; this proves what the id *does* if one ever
       arrived anyway — it attributes by `sender_id`, so a mismatched id makes a
-      row incoming, never "mine". Fail-closed, exactly as `message-item.tsx`'s
+      row somebody else's, never "mine". Fail-closed, exactly as `message-item.tsx`'s
       `isMine` was rewritten to be in #2255.
     */
     liveViewerId.current = null;
@@ -259,9 +267,8 @@ describe("a warm timeline painted from the cached id alone", () => {
       />,
     );
 
-    const [bubble] = bubbles();
-    expect(bubble?.className).toContain("rounded-bl-[6px]");
-    expect(bubble?.className).not.toContain("rounded-br-[6px]");
+    expect(author().text).not.toBe("You");
+    expect(author().accented).toBe(false);
   });
 
   it("withholds every row when neither half knows the viewer", () => {
@@ -276,7 +283,7 @@ describe("a warm timeline painted from the cached id alone", () => {
       />,
     );
 
-    expect(bubbles()).toHaveLength(0);
+    expect(bodies()).toHaveLength(0);
     expect(screen.queryByText("mine")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Loading messages");
   });

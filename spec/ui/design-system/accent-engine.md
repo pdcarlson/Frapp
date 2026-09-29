@@ -41,12 +41,12 @@ Every accent role maps to a fixed step of the generated scale. Components consum
 
 | Role | Source | Used for |
 |---|---|---|
-| `accent-primary` | step 9 | Primary button fill, active RSVP, solid chips, own chat bubble |
+| `accent-primary` | step 9 | Primary button fill, active RSVP, solid chips (the own chat bubble until the compact layout removed it, 2026-09-29) |
 | `accent-hover` | step 10 | Hover/pressed state of primary fills |
 | `accent-ring` | step 8 | Focus rings |
 | `accent-subtle-bg` | step 3 | Tinted backgrounds: active nav item, badge/chip fills, selected rows |
 | `accent-border` | step 7 | Borders on accent-tinted surfaces (badges, selected cards) |
-| `accent-text` | step 11 | Accent-colored text and icons on neutral or subtle-bg surfaces |
+| `accent-text` | step 11 | Accent-colored text and icons on neutral or subtle-bg surfaces, including the viewer's own name on a chat row ([components.md](components.md) §11) |
 | `on-primary` | contrast color | Text/icons on `accent-primary` |
 
 `accent-primary` is the seed itself unless the seed sits within ΔE_OK 0.25 of step 1 (the dark background), in which case the generator takes its own, lighter step 9 (`getStep9Colors` in `packages/chapter-theme/src/vendor/generate-radix-colors.ts`). That catches most dark seeds, not only near-black ones: `#003087`'s step 9 is `#1C6CFE` and `#800000` paints `#F42F22`. Either way, a fill whose scale falls under the §8 floor is then lightened, so the fill may be a lifted version of the seed (or of the generator's own step 9): `#8B0000` paints `#D75748`, `#006400` paints `#41943C`, and `#003087`'s `#1C6CFE` becomes `#2D7BFF` for its hover's sake. That is how §1's rule holds in effect as well as in letter: step 9 is a generated, gated role even when it is the seed's own colour.

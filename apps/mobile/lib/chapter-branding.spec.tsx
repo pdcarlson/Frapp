@@ -298,7 +298,8 @@ describe("the accent role this hook reads", () => {
   });
 });
 
-// #1007: the chat self bubble is a solid fill, so it needs the step-9/on-primary
+// #1007: a solid accent fill (a poll's chosen option; the chat self bubble until
+// #2873) needs the step-9/on-primary
 // pair `signet.ts` gates for exactly that pairing — never `accent` (step 11),
 // which §8 does not hold to the fill contrast floor (see the suite above).
 describe("useChapterBranding solid-fill pair (accentPrimary/accentOnPrimary)", () => {

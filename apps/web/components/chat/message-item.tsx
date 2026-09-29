@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { CHIP, CHIP_HIT_AREA } from "./chip";
+import {
+  ACTION_BAR_BUTTON,
+  ACTION_BAR_BUTTON_ON,
+  CHIP,
+  CHIP_HIT_AREA,
+} from "./chip";
 import { BookmarkGlyph, PinGlyph, ThreadGlyph } from "./chat-glyphs";
 import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
@@ -17,10 +21,11 @@ import {
   canDeleteMessage,
   canEditMessage,
   EDITED_MARKER,
+  isCardMessage,
   isOwnMessage,
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
-import { MessageRenderer, rendersAsBubble } from "./renderers";
+import { MessageRenderer } from "./renderers";
 import {
   hiddenQuoteText,
   visibleReactions,
@@ -32,7 +37,7 @@ import {
   resolveAuthorLabel,
   resolveAuthorName,
 } from "@repo/hooks";
-import { formatClock } from "@repo/formatting";
+import { formatTimeOfDay, formatTimeOfDayShort } from "@repo/formatting";
 import { cn, initials } from "@/lib/utils";
 
 export interface MessageItemProps {
@@ -57,11 +62,11 @@ export interface MessageItemProps {
    * and `authorInitialsFallback` drew `BF` beside it: both halves of that are
    * the member's own uuid, read back to them as somebody else.
    *
-   * `null` is not a third bubble shape to fall back to: `components.md` §11
-   * specs exactly two, self and incoming, and which one a row takes is decided
-   * by this id. So a row cannot be drawn before it is in hand — `MessageTimeline`
-   * holds its skeleton until then, and this type is what stops a later caller
-   * from quietly reopening the hole.
+   * `null` is not a third answer to fall back to: this id decides whether the
+   * author line says "You" in the chapter accent (`components.md` §11) and
+   * whether Edit and Delete are offered. So a row cannot be drawn before it is
+   * in hand — `MessageTimeline` holds its skeleton until then, and this type is
+   * what stops a later caller from quietly reopening the hole.
    */
   viewerId: string;
   /**
@@ -76,6 +81,10 @@ export interface MessageItemProps {
    * cannot render a row with the list forgotten, which would fail open.
    */
   blockState: BlockState;
+  /**
+   * Whether this row starts a run (`@repo/chat-core/grouping`), and so draws the
+   * avatar and author line. A follow-on row draws neither.
+   */
   showHeader: boolean;
   /**
    * Resolves a `users.id` to a display name, or `null` when unresolvable.
@@ -130,7 +139,7 @@ export interface MessageItemProps {
    */
   onRetryUnconfirmed?: (replay: ReplayRequest) => void | Promise<void>;
   /**
-   * Own messages only, and only the plain-text bubble kind — a card
+   * Own messages only, and only a plain-text message — a card
    * (poll, task, event…) has no free-text `content` a member typed, so
    * there's nothing sensible to edit. Rejects on failure; the row stays in
    * edit mode so the draft isn't lost (the rejection itself already raised
@@ -177,83 +186,25 @@ export interface MessageItemProps {
 }
 
 /**
- * The strip the hover/focus action cluster rides, beside the bubble.
+ * A single message row in the compact layout (`components.md` §11, owner
+ * decision 2026-09-29, #2873).
  *
- * It is a flex sibling of the message column rather than an `absolute` box,
- * because the one thing the cluster needs — "end at the bubble's edge" — is a
- * length no `absolute` inset can name: the column shrink-wraps its bubble, so
- * its width is content, and CSS has no way to reference a sibling's edge. As a
- * `flex-1` track it *is* the leftover, whatever the message block's width turns
- * out to be, so the cluster's outer edge and that block's edge are the same
- * line at every message length. (Block, not bubble — see the limit below.)
+ * **One shape for every row, the viewer's included.** The first row of a run
+ * draws a 32px avatar and an author line (name, then the time of day); a
+ * follow-on row draws only its body, with its own time held in the avatar
+ * gutter until the row is hovered, focused or tapped. The viewer's own name
+ * reads "You" in `--accent-text`, which replaced the self bubble's accent fill
+ * as the one place a message row takes the chapter accent.
  *
- * - **`h-0`** so the strip contributes no height and the row stays exactly as
- *   compact as it was before the cluster existed. `items-start` goes with it:
- *   the default `stretch` would squash the cluster to the strip's zero height
- *   rather than letting it overflow, which is the whole trick.
- * - **`min-w-0`** so a cluster wider than the leftover overflows the track
- *   instead of forcing the track open and shrinking the bubble.
- * - **`justify-end-safe`** is the part that earns its keep. Plain `justify-end`
- *   pins the cluster's outer edge to the bubble's edge, which is the hug — but
- *   a bubble at its 86% maximum leaves a track far narrower than the cluster,
- *   and the overflow would then run off the far side of the thread column and
- *   out of the pane. `safe` falls the alignment back to `start` exactly when
- *   the content would overflow, so a cluster that cannot fit beside the bubble
- *   lands flush against the lane and overlaps the bubble instead of escaping
- *   it. Overlapping is why the cluster carries an opaque fill and a z-index.
- *
- * The incoming variant sets `dir="rtl"` on the track rather than flipping to
- * `justify-start`, and the reason is the part a browser had to settle. That
- * track sits on the bubble's *right*, so its hug is "align to the track's left
- * edge" and its fallback has to be the track's right edge — the mirror of the
- * self side. `flex-row-reverse` looks like it should do that and does not:
- * `safe` is defined as falling back to **`start`**, and `start` for
- * `justify-content` is writing-mode relative, not flex relative. Reversing the
- * main axis moves the hug but leaves the fallback on the physical left, so a
- * max-width incoming bubble sends the cluster off the right of the pane
- * instead. Flipping the *direction* moves both at once, because both keywords
- * are resolved against it. The cluster carries `dir="ltr"` so its own chips do
- * not reverse with it.
- *
- * That was settled by rendering this component into Chromium 2026-09-14 with a
- * throwaway harness — an 820px thread column, `flex-row-reverse` on the track:
- * the cluster's right edge landed 300px past the column's. **Nothing in the
- * repo re-measures it.** jsdom computes no layout, so `message-item.spec.tsx`
- * can only pin the spelling this arrived at, and `tests/visual/` is the
- * responsive floor suite whose config argues against a second spec. Treat the
- * figure as the reason for the `rtl`, not as a maintained measurement.
- *
- * One honest limit: the track ends at the **message column's** edge, and on a
- * short incoming message the widest thing in that column is the `Name · time`
- * meta line rather than the bubble, so the cluster hugs the meta line and sits
- * a little clear of the bubble itself. Closing that last gap would need the
- * track nested inside the column, where its leftover is the column's width
- * rather than the lane's — which would put the cluster into its fallback on
- * almost every message. The block edge is the right trade.
- */
-const ACTION_TRACK = "flex h-0 min-w-0 flex-1 items-start justify-end-safe";
-
-/**
- * A single message row, in the two shapes `components.md` §11 draws.
- *
- * **Incoming:** 32px avatar leading, `Name · time` caption *above* the bubble
- * and indented 4px, content capped at 86% of the thread column.
- *
- * **Self:** right-aligned, no avatar, and the caption moves *below* the bubble
- * — where it also carries the delivery state, which is why the pending/failed
- * region is that same line rather than a third row under it ("5:16 PM · read"
- * is the drawn example; §11's TODO-DESIGN names this line as the place the
- * undrawn pending and failed states go).
- *
- * The sided layout applies to **bubbles only**. A rich card (poll, task, event,
- * audit…) is a card in the flow, not a bubble, so it keeps the avatar-and-meta
- * shape whoever sent it — §11 specs bubbles, and panel 4e draws the one card it
- * has in the flow rather than sided.
+ * It replaced two §11 bubble shapes, self (right, accent fill, caption below)
+ * and incoming (left, card fill, caption above). Everything those carried has a
+ * home here: the delivery state is a line under the body, `(edited)` and
+ * Pinned trail the body's last line on every row, the reply quote sits above
+ * the author line, and reactions sit under the body.
  *
  * The viewer identity comes from the session (`viewerId`); the row never
  * trusts a literal sender id for "this is mine" comparisons. It is also always
- * *resolved* by the time a row renders — see `viewerId` on the props — because
- * an unresolved one has no shape in §11 to render as.
+ * *resolved* by the time a row renders — see `viewerId` on the props.
  */
 export function MessageItem({
   message,
@@ -299,8 +250,7 @@ export function MessageItem({
   // Rendered neutrally rather than in destructive red on purpose: the write may
   // well have committed, and red is what makes an officer re-type the command.
   // Only ever set on a heavy-command placeholder, whose `kind` is "loading" —
-  // which is in CARD_KINDS, so `rendersAsBubble` is false and such a row always
-  // takes the card path below, never the self-bubble one.
+  // a card, so its body is the loading card rather than muted text.
   const isUnconfirmed = message._status === "unconfirmed";
   // Write committed, card missing — not a failure and not retryable (#1789).
   const isRecorded = message._status === "recorded";
@@ -309,11 +259,10 @@ export function MessageItem({
   // parent id) — gate the hover affordances on a confirmed status so we
   // never act on a placeholder id.
   const isConfirmed = message._status === "confirmed";
-  const selfBubble = isMine && rendersAsBubble(message);
   const showActions = canActOnMessage(message);
   // The rules are shared with mobile (`@repo/chat-core/message-actions`, #2775):
   // Edit is own-only with no `channels:manage` override, and only on a
-  // plain-text bubble; Delete is own, or anyone's with `channels:manage`.
+  // plain-text message; Delete is own, or anyone's with `channels:manage`.
   const canEdit = canEditMessage(message, viewerId) && !!onEdit;
   const canDelete =
     canDeleteMessage(message, viewerId, !!canManageChannel) && !!onDelete;
@@ -450,7 +399,7 @@ export function MessageItem({
    *   *and* every renderer under `./renderers/`, present or future, without
    *   each one having to remember `stopPropagation`.
    * - **A selection elsewhere in the thread must not block this row.**
-   *   Finishing a text selection inside *this* bubble with a lift-off (which
+   *   Finishing a text selection inside *this* message with a lift-off (which
    *   does end in a click on most engines) must not also toggle the cluster
    *   right as the member is trying to copy something — but checking
    *   `window.getSelection()` globally would also suppress a legitimate tap
@@ -479,8 +428,10 @@ export function MessageItem({
   }
 
   /*
-   * The quoted parent, above the body — `spec/behavior/chat/README.md`: "The UI
-   * shows the replied-to message as a quote/preview above the reply."
+   * The quoted parent, above the author line — `spec/behavior/chat/README.md`:
+   * "The UI shows the replied-to message as a quote/preview above the reply."
+   * A reply always starts a run (`@repo/chat-core/grouping`), so there is always
+   * an author line under the quote saying who is answering.
    *
    * Hidden on a deleted row, for the same reason the reaction chips and the
    * attachment list are: a tombstone is not something anyone said, so hanging
@@ -498,19 +449,31 @@ export function MessageItem({
     : null;
   const replyQuote =
     message.reply_to_id && !message.is_deleted ? (
-      <QuotedMessage
-        className="mb-1"
-        author={
-          replyParent ? resolveAuthorLabel(replyParent, nameFor, viewerId) : null
-        }
-        preview={replyParent ? replyPreviewText(replyParent) : null}
-        hidden={hiddenParent}
-        onOpen={
-          replyParent && onJumpToParent
-            ? () => onJumpToParent(replyParent)
-            : undefined
-        }
-      />
+      <div className="mb-0.5 flex min-w-0 items-start gap-1.5">
+        {/*
+          The elbow: from the avatar's centre (16px into the 32px gutter) up
+          and across to the quote, so the quote reads as belonging to the row
+          below it rather than floating between two rows.
+        */}
+        <span
+          aria-hidden="true"
+          data-slot="reply-elbow"
+          className="ml-4 mt-2.5 h-2.5 w-6 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover"
+        />
+        <QuotedMessage
+          className="border-l-0 pl-0"
+          author={
+            replyParent ? resolveAuthorLabel(replyParent, nameFor, viewerId) : null
+          }
+          preview={replyParent ? replyPreviewText(replyParent) : null}
+          hidden={hiddenParent}
+          onOpen={
+            replyParent && onJumpToParent
+              ? () => onJumpToParent(replyParent)
+              : undefined
+          }
+        />
+      </div>
     ) : null;
 
   /*
@@ -529,22 +492,41 @@ export function MessageItem({
       />
     );
 
-  const bubble = (
+  /*
+   * `(edited)` and Pinned, after the body's last line on every row — grouped or
+   * not, which is what #2872 was: the marker used to live on the author line,
+   * and a follow-on row draws none. Neither applies to a deleted message.
+   */
+  const edited = showsEditedMarker(message);
+  const pinned = message.is_pinned && !message.is_deleted;
+  const trailing =
+    edited || pinned ? (
+      <span
+        data-slot="message-trailing"
+        className="ml-1.5 inline-flex items-center gap-1.5 whitespace-nowrap align-baseline text-[12.5px] text-muted-foreground"
+      >
+        {edited ? <span>{EDITED_MARKER}</span> : null}
+        {pinned ? (
+          <span className="inline-flex items-center gap-1 text-accent-text">
+            <PinGlyph className="h-3.5 w-3.5" />
+            Pinned
+          </span>
+        ) : null}
+      </span>
+    ) : null;
+  // A card draws its own frame, so its markers go on a line under it rather
+  // than into the renderer.
+  const trailingUnderCard = isCardMessage(message) && !message.is_deleted;
+
+  const body = (
     <MessageRenderer
       message={message}
       viewerId={viewerId}
-      isSelf={isMine}
       isConfirmed={isConfirmed}
       onAct={onAct ?? (() => {})}
+      trailing={trailingUnderCard ? undefined : trailing}
+      muted={isPending || isFailed}
     />
-  );
-
-  const renderer = (
-    <>
-      {replyQuote}
-      {bubble}
-      {attachments}
-    </>
   );
 
   // Deleted content has nothing left to react to. Reaction rows for a message
@@ -569,14 +551,10 @@ export function MessageItem({
 
   const reactions = message.is_deleted ? null : (
     <>
-      <ImportedReactionChips
-        reactions={importedSummary}
-        align={selfBubble ? "end" : "start"}
-      />
+      <ImportedReactionChips reactions={importedSummary} />
       <ReactionChips
         reactions={shownReactions}
         viewerId={viewerId}
-        align={selfBubble ? "end" : "start"}
         onReact={(emoji) => onReact(message.id, emoji)}
         onUnreact={(emoji) => onUnreact(message.id, emoji)}
       />
@@ -584,35 +562,29 @@ export function MessageItem({
   );
 
   /*
-   * Hover affordances stay mounted and fade, rather than mounting on a JS
-   * `hovered` flag: a keyboard user reaches them through `focus-within` (the
-   * mounted version was mouse-only), and the row stops re-rendering on every
-   * mouse crossing in a virtualized list.
+   * The action bar: icons over the row's top-right corner (`components.md` §11
+   * § Per-message actions).
    *
-   * Two things that has to get right, and the first cut got wrong:
+   * It stays mounted and fades, rather than mounting on a JS `hovered` flag: a
+   * keyboard user reaches it through `focus-within` (a mounted-on-hover version
+   * was mouse-only), and the row stops re-rendering on every mouse crossing in
+   * a virtualized list.
    *
-   * - **`opacity-0` is not hidden.** It removes neither hit-testing nor layout.
-   *   Without `pointer-events-none` a tap on the blank strip under a bubble
-   *   posts a reaction the member never saw a control for — and on touch, where
-   *   `:hover` never fires, that strip is *all* they can hit. The pointer gate
-   *   is lifted by the same two variants that lift the opacity.
-   * - **It must not reserve space.** In flow, every confirmed message grew a
-   *   permanent ~32px strip, which is most of the compactness the 5-minute
-   *   grouping exists to buy. It rides a zero-height track beside the bubble
-   *   instead (`ACTION_TRACK` below), so it contributes no height at all.
+   * - **`opacity-0` is not hidden.** It removes neither hit-testing nor layout,
+   *   so without `pointer-events-none` a tap over the corner posts a reaction
+   *   the member never saw a control for — and on touch, where `:hover` never
+   *   fires, that corner is *all* they can hit. The pointer gate is lifted by
+   *   the same variants that lift the opacity.
+   * - **It reserves no height.** It is `absolute`, centred on the row's top
+   *   edge, so it floats over the gap above the row and the top of the text.
+   *   Its fill is opaque so the text under it does not show through.
    *
-   * **The cluster attaches to the bubble, not to the lane.** It used to be
-   * `absolute top-0 left-5` / `right-5` against the *row*, which is the full
-   * width of the thread column — so it docked to the lane's edge and only
-   * happened to touch the bubble when the bubble was at its 86% maximum. On
-   * every shorter message, which is most of them, a right-aligned self bubble
-   * got a cluster stranded against the far left of the lane with nothing under
-   * it. The track below ends at the bubble's edge, so the cluster tracks the
-   * bubble at every width.
+   * A full-width row has a fixed corner to pin to, which is why this is one
+   * `absolute` box. The bubble it replaced had a variable edge, and the cluster
+   * needed a zero-height `rtl` flex track to follow it.
    *
-   * `:hover`/`:focus-within` still reach nothing on a coarse pointer, which
-   * left the cluster genuinely unreachable there (#1193) — `isTapRevealed`
-   * below is the third way in, driven by `handleRowTap`.
+   * `:hover`/`:focus-within` reach nothing on a coarse pointer (#1193), so
+   * `isTapRevealed` is the third way in, driven by `handleRowTap`.
    */
   const actions = showActions && !isEditing ? (
     <div
@@ -623,12 +595,9 @@ export function MessageItem({
       // promise arrow-key roving this does not implement.
       role="group"
       aria-label="Message actions"
-      // The incoming track runs `rtl` so its safe fallback lands on the right
-      // edge (see `ACTION_TRACK`); without this the cluster's own chips would
-      // reverse along with it.
-      dir="ltr"
       className={cn(
-        "relative z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
+        "absolute right-4 top-0 z-10 flex -translate-y-1/2 items-center gap-0.5",
+        "rounded-[10px] border border-border bg-card p-0.5",
         "transition-opacity",
         "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
         "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
@@ -650,78 +619,72 @@ export function MessageItem({
         onUnreact={(emoji) => onUnreact(message.id, emoji)}
       />
       {/*
-        Same glyph, same chip, same cluster — `iconography.md`'s chat table maps
-        "Reply to a message" to `ThreadGlyph` and `components.md` § 11 places the
-        control here, so only the handler changed. It stages an inline reply now
-        rather than opening the side panel.
+        `iconography.md`'s chat table maps "Reply to a message" to `ThreadGlyph`.
+        It stages an inline reply in the composer.
       */}
       {onReply ? (
         <button
           type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          className={ACTION_BAR_BUTTON}
+          aria-label="Reply"
+          title="Reply"
           onClick={() => onReply(message)}
         >
-          <ThreadGlyph className="h-3.5 w-3.5" />
-          Reply
+          <ThreadGlyph className="h-4 w-4" />
         </button>
       ) : null}
       {onToggleBookmark ? (
         <button
           type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          // The control is a toggle, so it announces its state rather than
-          // relying on the label flip alone — a screen reader otherwise hears
-          // two different buttons appear and disappear in the same slot.
+          className={cn(ACTION_BAR_BUTTON, isBookmarked && ACTION_BAR_BUTTON_ON)}
+          // A toggle announces its state, and its name stays put: a screen
+          // reader otherwise hears one button swapped for another in the slot.
           aria-pressed={!!isBookmarked}
+          aria-label="Save"
+          title={isBookmarked ? "Saved" : "Save"}
           onClick={() => onToggleBookmark(message.id, !isBookmarked)}
         >
-          <BookmarkGlyph className="h-3.5 w-3.5" active={isBookmarked} />
-          {isBookmarked ? "Saved" : "Save"}
+          <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
         </button>
       ) : null}
       {canEdit ? (
         <button
           type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          className={ACTION_BAR_BUTTON}
           ref={editTriggerRef}
+          aria-label="Edit"
+          title="Edit"
           onClick={startEdit}
         >
-          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-          Edit
+          <Pencil className="h-4 w-4" aria-hidden="true" />
         </button>
       ) : null}
       {canDelete ? (
         <button
           type="button"
-          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          className={ACTION_BAR_BUTTON}
+          aria-label="Delete"
+          title="Delete"
           onClick={() => onDelete?.(message.id)}
         >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          Delete
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       ) : null}
     </div>
   ) : null;
 
   /**
-   * The inline editor that takes the bubble's place in the row.
+   * The inline editor that takes the body's place in the row.
    *
-   * **It is the bubble, in draft.** Not a dialog, not a popover, not a floating
-   * card: it renders in the message block where the bubble was, at the block's
-   * width, between the same reply quote and attachment list. §11 draws no
-   * editor — this is the undrawn case, and the nearest drawn pattern is the
-   * bubble itself, so the editor borrows the locked bubble radius (18 with the
-   * self tail corner at 6, `foundations.md` §8) and the *incoming* bubble's
-   * neutral card fill and hairline. Neutral rather than `--primary`: a draft is
-   * not yet a message, and a textarea on the chapter accent would have to
-   * re-solve the contrast pair that `text-renderer.tsx` gets for free.
-   *
-   * `w-full` here is only half the contract and is inert without the other
-   * half — see the `w-full` on the self column below, which is what gives this
-   * percentage a definite width to resolve against.
+   * In place, not a dialog or popover: it renders where the body was, between
+   * the same reply quote and attachment list (`components.md` §11 § Editing).
+   * It is the §4 text input at the full width of the body column. The bubble
+   * editor this replaced had to fight a circular width, because a `<textarea>`
+   * inside a shrink-wrapped bubble sizes itself from its own ~20-character
+   * default; the body column has a definite width, so the field just fills it.
    */
   const editForm = (
-    <div className="mt-1 flex w-full flex-col gap-1.5 rounded-[18px] rounded-br-[6px] border border-border bg-card p-2">
+    <div className="mt-0.5 flex w-full flex-col gap-1.5">
       <Textarea
         autoFocus
         ref={editFieldRef}
@@ -743,39 +706,24 @@ export function MessageItem({
         }}
         disabled={isSavingEdit}
         /*
-          Width comes from the block; height comes from the draft.
+          Width comes from the column; height comes from the draft.
 
-          `leading-[25px]` and the horizontal padding are not cosmetic — they
-          are what makes the draft wrap where the message wrapped. The bubble
-          draws 16/25 body type inside `px-4` (`text-renderer.tsx`), so the
-          editor has to put its text column on the same two numbers: `px-2`
-          inside the wrapper's `p-2` is the bubble's 16px, and without the
-          explicit line box the field would fall back to `text-base`'s 24 and
-          re-wrap a six-line message to seven on the way in. Measured on an
-          860px thread column, that moves the field's text column from 201px to
-          704px against the bubble's 708px — the last 4px are the wrapper's
-          hairline and the field's own, which the bubble does not pay on the
-          self side, and are a quarter of a character.
+          `leading-[25px]` matches the body's 16 / 25 type, so the draft wraps
+          close to where the message wrapped rather than re-flowing on the way
+          in (the field's own padding moves it by a few pixels).
 
-          `field-sizing-content` then grows the field with what is typed, so a
+          `field-sizing-content` grows the field with what is typed, so a
           message that rendered as six lines is edited as six lines rather than
-          through a porthole — a box made full-width that still had to be
-          scrolled would only have moved the unreadability onto the other axis.
-          It is a progressive enhancement, and the one part of this change that
-          is: an engine without `field-sizing` keeps exactly today's fixed 60px
-          floor, which is why the floor stays 60 rather than rising to §4's
-          `min-h-24` (a form field's resting height — a field that grows wants
-          the smaller floor, or the shortest message becomes the tallest jump).
-          Width, unlike height, degrades nowhere.
+          through a porthole. It is a progressive enhancement: an engine
+          without `field-sizing` keeps the fixed 60px floor.
 
           `max-h-40` is the composer's own cap for a growing chat field
           (`COMPOSER_INPUT_CLASS`), and it is an absolute length deliberately:
           this field lives inside the timeline's scroller, which is always
           shorter than the viewport, so a `vh` cap would let a long draft push
-          Save and Cancel below the fold on a short window. Past it the field
-          scrolls, as any textarea does.
+          Save and Cancel below the fold on a short window.
         */
-        className="field-sizing-content max-h-40 min-h-[60px] resize-none px-2 leading-[25px]"
+        className="field-sizing-content max-h-40 min-h-[60px] resize-none leading-[25px]"
       />
       <div className="flex items-center justify-end gap-1.5">
         <button
@@ -808,7 +756,7 @@ export function MessageItem({
    * through the row's existing `role="status"` region below — a second region
    * mounted already populated is not reliably announced at all, and in a
    * virtualized list (Virtuoso remounts rows on scroll) the ones that are get
-   * re-read on every pass. The comment on that region says as much.
+   * re-read on every pass.
    *
    * Two other rules: no Discard, because the row may be the only trace of a
    * committed ledger write; and Retry replays `_replay`, not the cache key, so
@@ -816,7 +764,7 @@ export function MessageItem({
    */
   const unconfirmedFooter =
     isUnconfirmed && message._replay ? (
-      <div className="ml-1 mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
         {onRetryUnconfirmed ? (
           <button
             type="button"
@@ -858,223 +806,136 @@ export function MessageItem({
       </div>
     ) : null;
 
-  if (selfBubble) {
-    return (
-      <div
-        role="listitem"
-        className={cn(
-          "group/message flex items-start justify-end gap-2.5 px-5 pb-1",
-          showHeader ? "pt-4" : "pt-1",
-        )}
-        data-status={message._status}
-        onClick={handleRowTap}
-      >
-        {/*
-          The message block, and the one element that owns its width.
-
-          **Read mode hugs; edit mode fills.** §11 caps a bubble at 86% of the
-          thread column and hugs its content below that, and the column gets
-          that for free by shrink-wrapping — a flex item with no width is sized
-          from its content, and the bubble's content is the message. Swapping a
-          `<textarea>` in under that rule is what produced the postage stamp:
-          a textarea's `width: 100%` is circular inside a shrink-to-fit parent,
-          so it falls back to the intrinsic `cols` width and the *column* sizes
-          itself from that instead. Measured in Chromium on an 860px thread
-          column, a bubble at the 86% cap — 740px — became a 249px editor on
-          the way in, and snapped back to 740px on the way out.
-
-          `w-full` while editing replaces "as wide as your content" with "as
-          wide as a bubble may be", which the `max-w-[86%]` beside it then caps
-          to exactly the track the bubble already had. So the editor is never
-          narrower than the bubble it replaced: at the cap it is the same width
-          to the pixel, and below the cap it opens up to the width the message
-          is about to be allowed to grow into.
-
-          **It has to stay conditional.** Filling in read mode too would look
-          identical — every child here is shrink-wrapped by `items-end` — but
-          the sibling action track is `flex-1` on the leftover, so a permanently
-          full-width block would strand the cluster at the lane edge on every
-          short message, which is the exact regression §11's "attaches to the
-          message, not to the lane" rule names. Edit mode is safe from it only
-          because the cluster is unmounted for the duration.
-        */}
-        <div
-          className={cn(
-            "flex max-w-[86%] flex-col items-end",
-            isEditing && "w-full",
-          )}
-        >
-          {replyQuote}
-          {isEditing ? editForm : bubble}
-          {attachments}
-          {reactions}
-          {/*
-            The self caption and the delivery state are one line, per §11 —
-            but only the *state* half is a live region. Wrapping the timestamp
-            in one too made every self row mount a populated `aria-live` node,
-            and in a virtualized list that reads the clock aloud on every scroll.
-            A live region should be mounted and empty until it has something to
-            say.
-          */}
-          <div className="mr-1 mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-            <span>{formatClock(message.created_at)}</span>
-            {showsEditedMarker(message) ? <span>{EDITED_MARKER}</span> : null}
-            {message.is_pinned ? (
-              <span className="inline-flex items-center gap-1 text-accent-text">
-                <PinGlyph className="h-3.5 w-3.5" />
-                Pinned
-              </span>
-            ) : null}
-            <span role="status" aria-live="polite" aria-atomic="true">
-              {isPending ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden="true">·</span>
-                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                  sending
-                </span>
-              ) : null}
-              {isFailed ? (
-                <span className="text-destructive-text">
-                  · {message._error ?? "Send failed"}
-                </span>
-              ) : null}
-
-            </span>
-          </div>
-          {isFailed ? (
-            <div className="mt-1 flex items-center gap-1.5">
-              {onRetry ? (
-                <button
-                  type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-                  onClick={() => onRetry(message.client_message_id)}
-                >
-                  Retry
-                </button>
-              ) : null}
-              {onDiscard ? (
-                <button
-                  type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-                  onClick={() => onDiscard(message.client_message_id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  Discard
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {/*
-          Self bubbles are right-aligned, so the track — and with it the action
-          cluster — falls on the bubble's left edge, the side away from the tail
-          and away from the delivery caption under it.
-
-          `order-first` rather than writing it first: the cluster acts on the
-          message, so it has to come *after* the message for a screen reader and
-          for the tab sequence, exactly as it does on an incoming row. Source
-          order is the reading order on both sides; `order` moves the pixels.
-        */}
-        <div className={cn(ACTION_TRACK, "order-first")}>{actions}</div>
-      </div>
-    );
-  }
-
   return (
     <div
       role="listitem"
       className={cn(
-        "group/message flex gap-2.5 px-5 pb-1",
-        showHeader ? "pt-4" : "pt-1",
+        "group/message relative px-5 pb-0.5",
+        showHeader ? "pt-4" : "pt-0.5",
+        // Delineation without a bubble (§11): the whole row lifts one surface
+        // step under a pointer, with keyboard focus inside it, or once tapped.
+        // Pointer feedback, not information, so the ~1.1:1 step is enough.
+        "hover:bg-surface-1 focus-within:bg-surface-1",
+        isTapRevealed && "bg-surface-1",
       )}
       data-status={message._status}
+      data-run={showHeader ? "start" : "follow"}
       onClick={handleRowTap}
     >
-      {/* 32px avatar + 10px gap, s05. The gutter is held open on grouped rows. */}
-      <div className="w-8 shrink-0">
-        {showHeader ? (
-          <Avatar className="h-8 w-8" aria-hidden="true">
-            {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
-            <AvatarFallback>
-              {authorName
-                ? initials(authorName)
-                : authorInitialsFallback(message)}
-            </AvatarFallback>
-          </Avatar>
-        ) : null}
-      </div>
-      <div className="flex min-w-0 max-w-[86%] flex-col items-start">
-        {showHeader ? (
-          <div className="ml-1 flex items-baseline gap-2 text-[12.5px] text-muted-foreground">
-            <span className="font-semibold text-muted-foreground">
-              {authorLabel}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>{formatClock(message.created_at)}</span>
-            {showsEditedMarker(message) ? <span>{EDITED_MARKER}</span> : null}
-            {message.is_pinned ? (
-              <Badge variant="outline" className="h-6 gap-1 px-2">
-                <PinGlyph className="h-3.5 w-3.5" /> Pinned
-              </Badge>
-            ) : null}
-          </div>
-        ) : null}
-        {renderer}
-        {reactions}
-        <div role="status" aria-live="polite" aria-atomic="true">
-          {isPending ? (
-            <p className="ml-1 mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-              Sending…
-            </p>
-          ) : null}
-          {isUnconfirmed ? (
-            <p className="ml-1 mt-1 text-[12.5px] text-muted-foreground">
-              {message._error ?? "Not confirmed"}
-            </p>
-          ) : null}
-          {isRecorded ? (
-            <p className="ml-1 mt-1 text-[12.5px] text-muted-foreground">
-              {message._error ??
-                "Recorded, but the chat card didn't post. Don't run this command again."}
-            </p>
-          ) : null}
-          {isFailed ? (
-            <div className="ml-1 mt-1 flex items-center gap-2 text-[12.5px] text-destructive-text">
-              <span>{message._error ?? "Send failed"}</span>
-              {onRetry ? (
-                <button
-                  type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-                  onClick={() => onRetry(message.client_message_id)}
-                >
-                  Retry
-                </button>
-              ) : null}
-              {onDiscard ? (
-                <button
-                  type="button"
-                  className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-                  onClick={() => onDiscard(message.client_message_id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  Discard
-                </button>
-              ) : null}
+      {replyQuote}
+      <div className="flex gap-3">
+        {/* The 32px gutter, held open on every row of a run. */}
+        <div className="w-8 shrink-0">
+          {showHeader ? (
+            <Avatar className="h-8 w-8" aria-hidden="true">
+              {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
+              <AvatarFallback>
+                {authorName
+                  ? initials(authorName)
+                  : authorInitialsFallback(message)}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            /*
+              A follow-on's own time, revealed with the row. Opacity rather than
+              `visibility`, so a screen reader still hears when each message in
+              a run was sent; hours and minutes only, because the run's author
+              line above already says AM or PM and the gutter is 32px wide.
+            */
+            <time
+              dateTime={message.created_at}
+              data-slot="gutter-time"
+              className={cn(
+                "block whitespace-nowrap text-right text-[12.5px] leading-[25px] text-muted-foreground",
+                "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+                isTapRevealed && "opacity-100",
+              )}
+            >
+              {formatTimeOfDayShort(message.created_at)}
+            </time>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {showHeader ? (
+            <div
+              data-slot="author-line"
+              className="flex min-w-0 items-baseline gap-2 leading-5"
+            >
+              <span
+                className={cn(
+                  "truncate text-sm font-semibold",
+                  isMine ? "text-accent-text" : "text-foreground",
+                )}
+              >
+                {authorLabel}
+              </span>
+              <time
+                dateTime={message.created_at}
+                className="shrink-0 text-[12.5px] text-muted-foreground"
+              >
+                {formatTimeOfDay(message.created_at)}
+              </time>
             </div>
           ) : null}
+          {isEditing ? editForm : body}
+          {trailingUnderCard && trailing ? (
+            <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
+          ) : null}
+          {attachments}
+          {reactions}
+          {/*
+            The delivery state, under the body. Only this line is a live region,
+            and it is mounted empty until it has something to say: a region
+            mounted populated would read every row's status aloud on each
+            virtualized scroll.
+          */}
+          <div role="status" aria-live="polite" aria-atomic="true">
+            {isPending ? (
+              <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                Sending…
+              </p>
+            ) : null}
+            {isUnconfirmed ? (
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                {message._error ?? "Not confirmed"}
+              </p>
+            ) : null}
+            {isRecorded ? (
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                {message._error ??
+                  "Recorded, but the chat card didn't post. Don't run this command again."}
+              </p>
+            ) : null}
+            {isFailed ? (
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12.5px] text-destructive-text">
+                <span>{message._error ?? "Send failed"}</span>
+                {onRetry ? (
+                  <button
+                    type="button"
+                    className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+                    onClick={() => onRetry(message.client_message_id)}
+                  >
+                    Retry
+                  </button>
+                ) : null}
+                {onDiscard ? (
+                  <button
+                    type="button"
+                    className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+                    onClick={() => onDiscard(message.client_message_id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Discard
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          {unconfirmedFooter}
         </div>
-        {unconfirmedFooter}
       </div>
-      {/*
-        Incoming bubbles are left-aligned behind the avatar, so their track is
-        the leftover on the right and the cluster hugs the bubble's right edge.
-        `rtl` is what makes `justify-end-safe` mean that on this side — see
-        `ACTION_TRACK`.
-      */}
-      <div dir="rtl" className={ACTION_TRACK}>
-        {actions}
-      </div>
+      {actions}
     </div>
   );
 }

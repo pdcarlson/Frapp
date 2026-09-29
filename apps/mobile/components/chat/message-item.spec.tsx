@@ -47,11 +47,8 @@ import {
   DELETED_MESSAGE_PLACEHOLDER,
 } from "@repo/chat-core/reply-preview";
 import { EDITED_MARKER } from "@repo/chat-core/message-actions";
-import {
-  formatMessageTime,
-  groupReactions,
-  MessageBubble,
-} from "./message-bubble";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { groupReactions, MessageItem } from "./message-item";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -87,22 +84,6 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
 // `senderLabel` moved to `lib/chat/display-name.ts` when the display-name
 // resolution landed, and its cases moved with it — see `display-name.spec.ts`.
 // It no longer takes a `ChatMessage`, so it needs none of this file's factory.
-
-describe("formatMessageTime", () => {
-  it("renders a clock time", () => {
-    // Asserts the minutes only. `toLocaleTimeString` is locale-dependent — the
-    // same instant is "5:09 PM" under en-US and "17:09" under en-GB or de-DE —
-    // so pinning the hour would fail on any runner whose locale is not US, for
-    // no real defect.
-    expect(
-      formatMessageTime(new Date(2026, 7, 16, 17, 9).toISOString()),
-    ).toMatch(/:09/);
-  });
-
-  it("returns an empty string rather than 'Invalid Date'", () => {
-    expect(formatMessageTime("banana")).toBe("");
-  });
-});
 
 describe("groupReactions", () => {
   it("decodes the action type back to its emoji and counts the users", () => {
@@ -175,23 +156,26 @@ describe("groupReactions", () => {
  * enough, the component must not mount at all for the overwhelming majority of
  * rows. #1229.
  */
-function renderBubble(
+function renderItem(
   message: ChatMessage,
   replyParent?: ChatMessage | null,
+  extra: { startsRun?: boolean; onOpenActions?: () => void } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <MessageBubble
+        <MessageItem
           message={message}
           viewerId={VIEWER}
-          nameFor={() => "Casey"}
+          nameFor={(id) => (id === OTHER ? "Casey" : null)}
+          startsRun={extra.startsRun ?? true}
           replyParent={replyParent}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
           onUnreact={vi.fn()}
+          onOpenActions={extra.onOpenActions}
         />
       </FrappThemeProvider>,
     );
@@ -205,19 +189,19 @@ describe("attachment rendering is gated on the message", () => {
   });
 
   it("mounts the renderer for a message that has attachments", () => {
-    renderBubble(message({ attachment_count: 2 }));
+    renderItem(message({ attachment_count: 2 }));
     expect(attachmentHook.calls).toEqual([{ enabled: true }]);
   });
 
   it("does not mount it for a plain text message", () => {
-    renderBubble(message({ attachment_count: 0 }));
+    renderItem(message({ attachment_count: 0 }));
     expect(attachmentHook.calls).toEqual([]);
   });
 
   it("does not mount it for a deleted message that had attachments", () => {
     // The API 404s the attachment list for a deleted message, but the client
     // must not offer the affordance in the first place.
-    renderBubble(message({ attachment_count: 3, is_deleted: true }));
+    renderItem(message({ attachment_count: 3, is_deleted: true }));
     expect(attachmentHook.calls).toEqual([]);
   });
 
@@ -225,41 +209,131 @@ describe("attachment rendering is gated on the message", () => {
     // #1228's stopgap. It was honest but it was a dead end, and the acceptance
     // criteria require it deleted rather than left alongside the real renderer.
     const rendered = JSON.stringify(
-      renderBubble(message({ attachment_count: 1 })).toJSON(),
+      renderItem(message({ attachment_count: 1 })).toJSON(),
     );
     expect(rendered).not.toContain("open on web");
   });
 });
 
-// #1007: the self bubble is the one surface that takes the chapter accent
-// (components.md:210) via the mocked `useChapterBranding()` pair above.
-describe("self bubble takes the chapter accent (#1007)", () => {
-  it("fills the bubble with accentPrimary and colours its text accentOnPrimary", () => {
-    const rendered = renderBubble(
-      message({ sender_id: VIEWER, content: "hello" }),
-    ).toJSON();
-
-    // Flatten style arrays the way RN itself would, and pull every resolved
-    // backgroundColor/color across the tree — asserting on the JSON string
-    // would also pass for a coincidental substring match, and asserting only
-    // the outermost node would miss the fill living on a nested View.
-    const flat = JSON.stringify(rendered);
-    expect(flat).toContain('"backgroundColor":"#C49A3A"');
-    expect(flat).toContain('"color":"#2B2009"');
+// components.md §11 (#2873): the viewer's own name is now the one place a
+// message row takes the chapter accent, via the mocked `useChapterBranding()`.
+describe("the viewer's own name takes the chapter accent", () => {
+  it("colours 'You' with the accent text, and paints no accent fill", () => {
+    const tree = renderItem(message({ sender_id: VIEWER, content: "hello" }));
+    const you = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "You",
+    );
+    expect(JSON.stringify(you.props.style)).toContain('"color":"#C49A3A"');
+    // The self bubble's fill and its on-primary text are gone.
+    const flat = JSON.stringify(tree.toJSON());
+    expect(flat).not.toContain('"backgroundColor":"#C49A3A"');
+    expect(flat).not.toContain("#2B2009");
   });
 
-  it("never resolves branding colours for an incoming message", () => {
-    // Guards the split in MessageBubble: an incoming row must not call
-    // useChapterBranding() at all, so its rendered tree carries neither
-    // mocked colour — regression coverage for that isolation, not just this
-    // test's own fixture values.
-    const rendered = renderBubble(
-      message({ sender_id: OTHER, content: "hello" }),
-    ).toJSON();
-
-    const flat = JSON.stringify(rendered);
+  it("never resolves branding colours for someone else's message", () => {
+    // Guards the split: a row by anyone else must not call
+    // useChapterBranding() at all, so its tree carries no mocked colour.
+    const flat = JSON.stringify(
+      renderItem(message({ sender_id: OTHER, content: "hello" })).toJSON(),
+    );
     expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
+    expect(flat).toContain("Casey");
+  });
+});
+
+/** The rows' own layout (components.md §11, #2873). */
+describe("compact layout (#2873)", () => {
+  /** Accessible containers carrying the long-press action. */
+  function actionHosts(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.accessibilityActions) &&
+        node.props.accessibilityActions.some(
+          (action: { name?: string }) => action.name === "longpress",
+        ),
+    );
+  }
+
+  it("draws the avatar, the name and the time of day on a run's first row", () => {
+    const flat = JSON.stringify(renderItem(message()).toJSON());
+    expect(flat).toContain("Casey");
+    expect(flat).toContain('"CA"');
+    const time = new Date(2026, 7, 16, 17, 9).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    expect(flat).toContain(time);
+    // Never the date: that is the day divider's job.
+    expect(flat).not.toContain("Aug");
+  });
+
+  it("draws no avatar, name or time on a follow-on row", () => {
+    const tree = renderItem(message(), undefined, { startsRun: false });
+    const drawn = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => JSON.stringify(node.props.children));
+    expect(drawn.some((text) => text.includes("CA"))).toBe(false);
+    expect(drawn.some((text) => text.includes("Casey"))).toBe(false);
+    expect(drawn.some((text) => text.includes(":09"))).toBe(false);
+    expect(drawn.some((text) => text.includes("hello"))).toBe(true);
+  });
+
+  it("names the sender and time to a screen reader on a follow-on's gutter", () => {
+    const tree = renderItem(message(), undefined, {
+      startsRun: false,
+      onOpenActions: vi.fn(),
+    });
+    const gutter = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Casey, "),
+    );
+    expect(gutter.props.accessible).toBe(true);
+    // And it carries the long-press, so a photo-only follow-on is reachable.
+    expect(actionHosts(tree)).toContain(gutter);
+  });
+
+  it("draws no text row for an attachment-only message", () => {
+    const withText = renderItem(message({ attachment_count: 1 }), undefined, {
+      onOpenActions: vi.fn(),
+    });
+    const photoOnly = renderItem(
+      message({ content: "", attachment_count: 1 }),
+      undefined,
+      { onOpenActions: vi.fn() },
+    );
+    // The author line carries the action on both; only the one with text has
+    // a body container too.
+    expect(actionHosts(withText)).toHaveLength(2);
+    expect(actionHosts(photoOnly)).toHaveLength(1);
+  });
+
+  it("trails Pinned after the text, in the accent", () => {
+    const tree = renderItem(message({ is_pinned: true }));
+    const pinned = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children === " · Pinned",
+    );
+    expect(JSON.stringify(pinned.props.style)).toContain('"color":"#C49A3A"');
+  });
+
+  it("mutes the text of a send still in flight", () => {
+    const tree = renderItem(message({ sender_id: VIEWER, _status: "pending" }));
+    // The body is the Text whose own children carry the message.
+    const body = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        Array.isArray(node.props.style) &&
+        JSON.stringify(node.props.children).includes("hello"),
+    );
+    expect(JSON.stringify(body.props.style)).toContain(
+      `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+    );
   });
 });
 
@@ -277,7 +351,7 @@ function parentRow(overrides: Partial<ChatMessage> = {}): ChatMessage {
 describe("reply quote (#1727)", () => {
   it("renders the quoted parent above an incoming reply", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
         parentRow(),
       ).toJSON(),
@@ -287,11 +361,22 @@ describe("reply quote (#1727)", () => {
     expect(flat).toContain("agreed");
   });
 
+  it("draws the quote above the author line", () => {
+    const flat = JSON.stringify(
+      renderItem(
+        message({ reply_to_id: PARENT_ID, content: "agreed" }),
+        parentRow({ sender_id: OTHER }),
+      ).toJSON(),
+    );
+    // The quote's author comes first in the tree, then the row's own.
+    expect(flat.indexOf("the original")).toBeLessThan(flat.lastIndexOf("Casey"));
+  });
+
   it("says so when the parent is outside the loaded window", () => {
     // Nothing backfills older history (#1571). Rendering nothing would make
     // this reply indistinguishable from a plain message.
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
         null,
       ).toJSON(),
@@ -302,14 +387,14 @@ describe("reply quote (#1727)", () => {
 
   it("does not quote on a message that is not a reply", () => {
     const flat = JSON.stringify(
-      renderBubble(message({ content: "hello" })).toJSON(),
+      renderItem(message({ content: "hello" })).toJSON(),
     );
     expect(flat).not.toContain(UNAVAILABLE_QUOTE);
   });
 
   it("hides the quote on a deleted reply", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({
           reply_to_id: PARENT_ID,
           is_deleted: true,
@@ -324,7 +409,7 @@ describe("reply quote (#1727)", () => {
 
   it("quotes a deleted parent as the tombstone, not as a blank", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
         parentRow({ is_deleted: true, content: "" }),
       ).toJSON(),
@@ -334,12 +419,12 @@ describe("reply quote (#1727)", () => {
   });
 
   it("flattens markdown in the parent using the shared preview rules", () => {
-    // Mobile bubbles still print `content` raw (no markdown renderer on this
+    // Mobile rows still print `content` raw (no markdown renderer on this
     // surface). The quote uses the web preview rules on purpose (#1727), so
     // `_really_ urgent` becomes `really urgent` in the strip even though the
     // parent row would still show the underscores.
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
         parentRow({ content: "_really_ urgent" }),
       ).toJSON(),
@@ -348,9 +433,9 @@ describe("reply quote (#1727)", () => {
     expect(flat).not.toContain("_really_");
   });
 
-  it("still quotes on a self bubble", () => {
+  it("still quotes on the viewer's own message", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({
           sender_id: VIEWER,
           reply_to_id: PARENT_ID,
@@ -364,12 +449,12 @@ describe("reply quote (#1727)", () => {
   });
 });
 
-describe("self-bubble delivery status (#1910)", () => {
+describe("delivery status (#1910)", () => {
   const DESTRUCTIVE = "#F85149";
 
   it("renders an unconfirmed row as a muted note, not as delivered", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({
           sender_id: VIEWER,
           _status: "unconfirmed",
@@ -392,9 +477,9 @@ describe("self-bubble delivery status (#1910)", () => {
   });
 
   it("never offers discard on an unconfirmed row even when a handler is wired", () => {
-    // renderBubble always wires onDiscard. The control must not appear.
+    // renderItem always wires onDiscard. The control must not appear.
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({ sender_id: VIEWER, _status: "unconfirmed" }),
       ).toJSON(),
     );
@@ -404,7 +489,7 @@ describe("self-bubble delivery status (#1910)", () => {
 
   it("renders a recorded row as a muted don't-run-again note, with no retry", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({
           sender_id: VIEWER,
           _status: "recorded",
@@ -422,7 +507,7 @@ describe("self-bubble delivery status (#1910)", () => {
 
   it("keeps failed rows red with retry and discard", () => {
     const flat = JSON.stringify(
-      renderBubble(message({ sender_id: VIEWER, _status: "failed" })).toJSON(),
+      renderItem(message({ sender_id: VIEWER, _status: "failed" })).toJSON(),
     );
 
     expect(flat).toContain("Send failed");
@@ -431,24 +516,24 @@ describe("self-bubble delivery status (#1910)", () => {
     expect(flat).toContain(DESTRUCTIVE);
   });
 
-  it("keeps a confirmed self bubble on the time-only meta line", () => {
+  it("draws no delivery line on a confirmed message", () => {
     const flat = JSON.stringify(
-      renderBubble(
+      renderItem(
         message({ sender_id: VIEWER, _status: "confirmed" }),
       ).toJSON(),
     );
 
     expect(flat).not.toContain("Not confirmed");
     expect(flat).not.toContain("Send failed");
-    expect(flat).not.toContain("sending");
+    expect(flat).not.toContain("Sending");
     expect(flat).toContain("👍 +");
   });
 
-  it("still shows sending on a pending self bubble", () => {
+  it("says Sending… under a pending message", () => {
     const flat = JSON.stringify(
-      renderBubble(message({ sender_id: VIEWER, _status: "pending" })).toJSON(),
+      renderItem(message({ sender_id: VIEWER, _status: "pending" })).toJSON(),
     );
-    expect(flat).toContain("sending");
+    expect(flat).toContain("Sending…");
     expect(flat).not.toContain("Discard this message");
   });
 });
@@ -462,11 +547,11 @@ describe("links in a message are tappable (#2775)", () => {
     );
   }
 
-  it("draws a bare URL and a markdown link as links, on both bubble sides", async () => {
+  it("draws a bare URL and a markdown link as links, on anyone's message", async () => {
     const WebBrowser = await import("expo-web-browser");
     for (const sender of [OTHER, VIEWER]) {
       vi.mocked(WebBrowser.openBrowserAsync).mockClear();
-      const tree = renderBubble(
+      const tree = renderItem(
         message({
           sender_id: sender,
           content: "see https://frapp.live/a and [docs](https://x.test/d).",
@@ -485,7 +570,7 @@ describe("links in a message are tappable (#2775)", () => {
   });
 
   it("never links an unsafe target, and keeps its label as text", () => {
-    const tree = renderBubble(
+    const tree = renderItem(
       message({ content: "[click me](javascript:alert(1))" }),
     );
     expect(links(tree)).toHaveLength(0);
@@ -493,7 +578,7 @@ describe("links in a message are tappable (#2775)", () => {
   });
 
   it("offers each link to a screen reader as a named action", () => {
-    const tree = renderBubble(
+    const tree = renderItem(
       message({ content: "https://frapp.live/a", _status: "confirmed" }),
     );
     const container = tree.root.find(
@@ -510,10 +595,10 @@ describe("links in a message are tappable (#2775)", () => {
 });
 
 describe("edited marker (#2775)", () => {
-  it("marks an edited message on both sides", () => {
+  it("marks an edited message, the viewer's or anyone's", () => {
     for (const sender of [OTHER, VIEWER]) {
       const flat = JSON.stringify(
-        renderBubble(
+        renderItem(
           message({
             sender_id: sender,
             edited_at: "2026-09-29T18:00:00Z",
@@ -521,19 +606,28 @@ describe("edited marker (#2775)", () => {
         ).toJSON(),
       );
       expect(flat).toContain(EDITED_MARKER);
-      // The copy itself, as web's row header and the behavior spec have it.
+      // The copy itself, as web and the behavior spec have it.
       expect(flat).toMatch(/\S \(edited\)/);
       expect(EDITED_MARKER).toBe("(edited)");
     }
   });
 
+  it("marks an edited follow-on row too, which draws no author line (#2872)", () => {
+    const flat = JSON.stringify(
+      renderItem(message({ edited_at: "2026-09-29T18:00:00Z" }), undefined, {
+        startsRun: false,
+      }).toJSON(),
+    );
+    expect(flat).toContain(EDITED_MARKER);
+  });
+
   it("does not mark an unedited or deleted message", () => {
-    expect(JSON.stringify(renderBubble(message()).toJSON())).not.toContain(
+    expect(JSON.stringify(renderItem(message()).toJSON())).not.toContain(
       EDITED_MARKER,
     );
     expect(
       JSON.stringify(
-        renderBubble(
+        renderItem(
           message({ edited_at: "2026-09-29T18:00:00Z", is_deleted: true }),
         ).toJSON(),
       ),

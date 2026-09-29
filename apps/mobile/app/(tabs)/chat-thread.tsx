@@ -21,11 +21,13 @@ import {
   visibleTypingUsers,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { decorateThread } from "@repo/chat-core/grouping";
 import { channelAllowsReplies } from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
+  resolveAuthorLabel,
   resolveAuthorName,
   useActiveChapterId,
   useChannel,
@@ -164,9 +166,9 @@ export default function ChatThreadScreen() {
   } = useChatChannel(channelId);
 
   // `viewerId` is `null` both while `/v1/users/me` is in flight and after it
-  // failed, and a row can't be drawn in either case (#2250): self and incoming
-  // are the only two bubble shapes, and a null viewer reads every message as
-  // incoming. The query's own status tells the two apart, as on tasks.tsx.
+  // failed, and a row can't be drawn in either case (#2250): a row says whose
+  // it is ("You" in the accent), and a null viewer reads every message as
+  // someone else's. The query's own status tells the two apart, as on tasks.tsx.
   const viewerQuery = useCurrentUser();
 
   // One cached roster fetch per chapter names every author in the thread.
@@ -392,6 +394,17 @@ export default function ChatThreadScreen() {
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
+  // Where each run and each day starts (components.md §11 § Grouping), worked
+  // out oldest first — the order the rules read in — by the function web's
+  // timeline calls too. Keyed by the list's own row key, so the rows the list
+  // holds stay `ThreadRow`s for `useJumpToMessage`.
+  const layout = useMemo(() => {
+    const byKey = new Map<string, { startsRun: boolean; startsDay: boolean }>();
+    for (const { row, startsRun, startsDay } of decorateThread(thread.rows)) {
+      byKey.set(row.message.client_message_id, { startsRun, startsDay });
+    }
+    return byKey;
+  }, [thread.rows]);
 
   // Older history (#2772). The list is inverted, so its end is the top: reaching
   // it loads the next page, which is appended past the rows on screen and so
@@ -523,6 +536,8 @@ export default function ChatThreadScreen() {
         canReport: actions.canReport,
         blockUserId: actions.canBlock ? message.sender_id : null,
         senderName: resolveAuthorName(message, nameFor),
+        senderLabel: resolveAuthorLabel(message, nameFor, viewerId),
+        sentAt: message.created_at,
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
       });
@@ -547,9 +562,12 @@ export default function ChatThreadScreen() {
       const replyParent = item.message.reply_to_id
         ? (byId.get(item.message.reply_to_id) ?? null)
         : undefined;
+      const placement = layout.get(item.message.client_message_id);
       return (
         <ThreadMessageRow
           row={item}
+          startsRun={placement?.startsRun ?? true}
+          startsDay={placement?.startsDay ?? false}
           viewerId={viewerId}
           nameFor={nameFor}
           replyParent={replyParent}
@@ -581,6 +599,7 @@ export default function ChatThreadScreen() {
       unreact,
       act,
       byId,
+      layout,
       blockState,
       openActions,
       jumpToMessage,
@@ -966,9 +985,11 @@ function createStyles(tokens: SignetTokens) {
     flex: {
       flex: 1,
     },
+    // No gap and no side padding: each row carries its own (16pt sides, 16
+    // above a run and 2 above a follow-on), because the compact layout's
+    // spacing is what tells one run from the next (components.md §11).
     listContent: {
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
     },
     header: {
       flexDirection: "row",

@@ -17,7 +17,7 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * mirror of this file keeps its three marketing type roles for the same shape
  * of reason (foundations §7's amendment). `mention` is NOT in that category —
  * it was web-only until #2367 gave the rebuilt landing a chat frame with an
- * unread DM badge and an in-bubble mention chip, and it moved up with the rest
+ * unread DM badge and an in-body mention chip, and it moved up with the rest
  * of the common subset.
  *
  * Static values come from `packages/theme/src/signet.css`; the accent family is

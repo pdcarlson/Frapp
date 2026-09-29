@@ -18,6 +18,7 @@
     "./blocks": "./src/blocks.ts",
     "./block-copy": "./src/block-copy.ts",
     "./message-actions": "./src/message-actions.ts",
+    "./grouping": "./src/grouping.ts",
     "./links": "./src/links.ts"
   },
   "scripts": {

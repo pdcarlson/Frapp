@@ -5,7 +5,7 @@ import {
   canEditMessage,
   channelAllowsReplies,
   isOwnMessage,
-  rendersAsBubble,
+  isCardMessage,
   replyTargetId,
 } from "./message-actions";
 
@@ -118,12 +118,12 @@ describe("channelAllowsReplies", () => {
   });
 });
 
-describe("rendersAsBubble", () => {
-  it("draws text and imported rows as bubbles, cards as cards", () => {
-    expect(rendersAsBubble({ kind: "text" })).toBe(true);
-    expect(rendersAsBubble({ kind: "imported" })).toBe(true);
-    expect(rendersAsBubble({ kind: null })).toBe(true);
-    expect(rendersAsBubble({ kind: "poll" })).toBe(false);
-    expect(rendersAsBubble({ kind: "event" })).toBe(false);
+describe("isCardMessage", () => {
+  it("draws text and imported rows as text, cards as cards", () => {
+    expect(isCardMessage({ kind: "text" })).toBe(false);
+    expect(isCardMessage({ kind: "imported" })).toBe(false);
+    expect(isCardMessage({ kind: null })).toBe(false);
+    expect(isCardMessage({ kind: "poll" })).toBe(true);
+    expect(isCardMessage({ kind: "event" })).toBe(true);
   });
 });

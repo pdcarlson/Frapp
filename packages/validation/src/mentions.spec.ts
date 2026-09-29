@@ -21,7 +21,7 @@ const BOB: MentionCandidate = {
 };
 
 /**
- * The positional half, added for the in-bubble mention chip
+ * The positional half, added for the in-body mention chip
  * (`apps/web/components/chat/renderers/remark-mention-chips.ts`). A highlight
  * has to wrap exactly the characters the resolver read, so these pin the offsets
  * as well as the tokens — the whole point of putting this here rather than

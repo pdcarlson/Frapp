@@ -659,9 +659,9 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Edit strip | `Editing message` | — · cancel `Cancel edit`; the send control reads `Save edit` to a screen reader | mobile `lib/chat/use-composer-staging.ts`, `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit left empty | — | `A message can't be empty. Delete it instead, or cancel the edit.` (the composer hint, error tone, shown while the text is empty, beside the greyed-out Save) | mobile `lib/chat/use-composer-staging.ts` (`EDIT_EMPTY_HINT`) |
 | Edit failed | — | The reason chat-core classified, in the composer hint; the edit stays open with the member's text | mobile `lib/chat/use-composer-staging.ts` |
-| Edited marker | — | `(edited)` after the time on the meta line, and not on a deleted message. Mobile shows it on every row. Web shows it in the row header and on its own-message caption, so a grouped message from someone else, which has no header, shows none yet ([#2872](https://github.com/pdcarlson/Frapp/issues/2872)). The behavior is [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete | `@repo/chat-core/message-actions` (`EDITED_MARKER`, `showsEditedMarker`) |
+| Edited marker | — | `(edited)` after the message's last line, on every row, grouped or not, and not on a deleted message. On a card it goes on a line under the card. The behavior is [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete; the placement is [`components.md`](components.md) §11 § What rides the row | `@repo/chat-core/message-actions` (`EDITED_MARKER`, `showsEditedMarker`) |
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
-| Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-text.tsx`, `components/chat/message-bubble.tsx` |
+| Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-text.tsx`, `components/chat/message-item.tsx` |
 
 ### Start a DM (mobile s13)
 

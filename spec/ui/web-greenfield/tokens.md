@@ -133,7 +133,8 @@ Two things that are this file's to record, because they are about the *lane* rat
 - **It is deliberately *not* on the accent slot, and the first version of it was.** Wiring it to
   `--primary` / `--primary-foreground` retints for free and inherits §8's measured contrast, which
   is why it was written that way; review found it invisible on the accent-painted chat self bubble,
-  which is the surface people select most. That is the same shape as L-01's Ask-family trap — a
+  which was the surface people select most (the bubble is gone since #2873, 2026-09-29; the
+  Button and calendar collisions in foundations §13 still hold). That is the same shape as L-01's Ask-family trap — a
   pairing that is correct on the house tenant and wrong everywhere the accent moves — reached from
   the other direction.
 

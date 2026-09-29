@@ -21,7 +21,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * **Callers must not mount this for a message with no attachments.** The query
  * hook reaches for `FrappClientProvider` the moment this renders, so mounting it
  * unconditionally would make every plain-text row — the overwhelming majority —
- * require a client context it has never needed. `MessageBubble` guards on
+ * require a client context it has never needed. `MessageItem` guards on
  * `attachment_count` for that reason; the check below is belt and braces.
  *
  * Loading and error states are deliberately visible, for the same reason web
@@ -34,16 +34,6 @@ export interface MessageAttachmentsProps {
   messageId: string;
   /** `message.attachment_count` — 0 means nothing is fetched. */
   count: number;
-  /** Self bubbles take the chapter accent, so their text colour differs. */
-  isMine: boolean;
-  /**
-   * `--signet-accent-on-primary` (or its house-gold fallback) from the
-   * caller's own `useChapterBranding()` call — passed down rather than
-   * re-resolved here, so the note text on a self bubble always matches the
-   * bubble fill it sits on (#1007). Required when `isMine` is true, omitted
-   * by the incoming-message caller, which never reads chapter branding.
-   */
-  accentOnPrimary?: string;
   /**
    * The message's own long-press (report, block — #2257), forwarded to each
    * file. A file row is a `Pressable` that claims the touch, so without it a
@@ -62,8 +52,6 @@ export function MessageAttachments({
   channelId,
   messageId,
   count,
-  isMine,
-  accentOnPrimary,
   onLongPress,
 }: MessageAttachmentsProps) {
   const { tokens } = useFrappTheme();
@@ -72,9 +60,7 @@ export function MessageAttachments({
   const [openFailed, setOpenFailed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
-  const noteStyle = isMine
-    ? [styles.noteMine, { color: accentOnPrimary ?? tokens.color.gold.onHouse }]
-    : styles.noteTheirs;
+  const noteStyle = styles.note;
 
   if (count === 0) return null;
 
@@ -198,7 +184,7 @@ function createStyles(tokens: SignetTokens) {
       width: "100%",
       // Capped, matching web's `max-h-64`. Without it a tall screenshot — a
       // 400x2000 phone capture is the ordinary case — derives its height from
-      // the aspect ratio and renders many times the bubble's width, pushing the
+      // the aspect ratio and renders many times the column's width, pushing the
       // rest of the thread off screen. `contain` letterboxes inside the cap
       // rather than distorting.
       maxHeight: 240,
@@ -209,15 +195,9 @@ function createStyles(tokens: SignetTokens) {
     },
     // Same token pair as the body, one step quieter — a note about the message,
     // not the message.
-    noteTheirs: {
+    note: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      marginTop: tokens.spacing.xs,
-    },
-    noteMine: {
-      // No color here — the chapter accent's on-primary pairing is applied
-      // inline from the caller's accentOnPrimary prop (#1007).
-      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.xs,
     },
     error: {

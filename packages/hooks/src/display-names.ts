@@ -300,22 +300,3 @@ export function resolveAuthorLabel(
   if (author.sender_id) return memberFallbackLabel(author.sender_id);
   return UNKNOWN_MEMBER;
 }
-
-/**
- * A stable identity key for "did the same person write both of these?".
- *
- * Consecutive messages from one author render as a single group with one header.
- * Comparing `sender_id` directly used to be enough; with nullable senders it
- * silently breaks, because `null === null` is true in JavaScript — so an
- * imported channel where twenty different Discord members spoke in turn would
- * collapse into one block under one name.
- *
- * The namespace prefixes matter: without them a Signet uuid and a Discord
- * snowflake could in principle collide, and the two are not the same person.
- */
-export function authorGroupingKey(author: MessageAuthor): string {
-  if (author.sender_id) return `user:${author.sender_id}`;
-  if (author.author_external_id) return `external:${author.author_external_id}`;
-  const name = author.author_name?.trim();
-  return name ? `name:${name}` : "unknown";
-}
