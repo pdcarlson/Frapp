@@ -36,6 +36,7 @@
     "check:brand-assets": "node scripts/check-brand-assets.mjs",
     "check:staging-conformance": "node scripts/ci/staging-conformance.mjs",
     "check:chapter-directory-seed": "node scripts/check-chapter-directory-seed.mjs",
+    "check:edge-functions": "cd supabase/functions && deno fmt --check && deno lint && deno check . && deno test",
     "load:chapter-directory": "node scripts/load-chapter-directory.mjs",
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs",
     "configure:branch-protection:verify": "node scripts/configure-branch-protection.mjs --verify",

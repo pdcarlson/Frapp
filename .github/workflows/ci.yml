@@ -232,6 +232,21 @@ jobs:
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
+      # The Supabase Edge Functions under `supabase/functions/` (#2848, ADR-26)
+      # run on Deno, not Node, so nothing above reads them: `check-types` and
+      # `lint` are the workspaces' own. Format, lint, type-check and test them
+      # with Deno. `deno test` runs with no permissions granted, so a test that
+      # reached the network would fail rather than pass on a live call. The
+      # version is the one the handler was verified on; the platform's runtime
+      # is Supabase's and is not pinned here.
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.6
+
+      - name: Edge Functions (Deno fmt, lint, check, test)
+        run: npm run check:edge-functions
+
       # ── Clean-checkout guard (fresh-install path) ───────────────────────────
   # Reproduces a bare `npm install && npm run check-types` on a cold machine.
   # Deliberately has NO `needs: packages-build` and NO

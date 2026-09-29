@@ -52,7 +52,8 @@ export const CI_CHECKS = [
   // (`nest build`, Render parity); landing plus `@repo/validation`,
   // `@repo/color`, `@repo/formatting`, `@repo/observability`,
   // `@repo/chapter-theme`, `@repo/theme` and `@repo/api-sdk` unit tests;
-  // plus `npm run check:brand-assets`.
+  // plus `npm run check:brand-assets` and `npm run check:edge-functions`
+  // (Deno fmt, lint, check and test over `supabase/functions/`).
   "lint-and-typecheck",
   // `docker build -f apps/api/Dockerfile .` — the API image compile path.
   "api-docker-build",
