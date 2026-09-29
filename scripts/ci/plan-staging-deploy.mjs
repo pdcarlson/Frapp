@@ -59,12 +59,25 @@
 //     API: it deploys it, or nothing the image is built from changed since the
 //     served commit. That holds for the tip too, whose API plan is `stale`
 //     when staging already serves a newer commit (auto-deploy, #2679);
-//   * given that, the tip uploads, like the tip's API;
+//   * nothing uploads over a host that serves a newer commit, tip or not;
+//   * the tip uploads when something web or landing is built from
+//     (`FRONTEND_BUILD_PATHS`) changed since the commit either host serves, or
+//     when it can't tell (a host it can't read, one on another history, a diff
+//     that fails), like the tip's API;
+//   * a re-run of the tip's run (`GITHUB_RUN_ATTEMPT` above 1) uploads even
+//     when nothing changed: it is how a rotated build-time value (an Infisical
+//     `NEXT_PUBLIC_*`) reaches staging, since the value is inlined at build;
 //   * any other commit uploads only when both hosts serve commits strictly
-//     older than it (a move forward, never a rollback). A host it can't read,
-//     or one on another history, means no upload: the tip's run uploads.
+//     older than it (a move forward, never a rollback) and something web or
+//     landing is built from changed since them. A host it can't read, or one
+//     on another history, means no upload: the tip's run uploads.
 // A `stale` API plan can therefore still upload. Its verify step then checks
 // the served commit, as for `current`, before the upload.
+//
+// The path gate exists for Vercel's storage (#2865): every upload is a new
+// deployment of both projects, kept until `prune-vercel-staging.mjs` deletes
+// it, and most merges (docs, the API, mobile) change neither app. Web and
+// landing still upload as a pair, since the alias step points both hosts.
 //
 // Outputs (GITHUB_OUTPUT): `plan` (deploy|current|forward|stale), `deploy`
 // (true|false), `upload` (true|false), `verify_sha` (the commit the verify
@@ -88,6 +101,17 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
  */
 export const API_IMAGE_PATHS =
   /^(apps\/api\/|packages\/(validation|org-archetypes|chapter-theme|color|formatting|observability|typescript-config)\/|package\.json$|package-lock\.json$|\.dockerignore$)/;
+
+/**
+ * Everything web and landing are built from: both apps, every workspace
+ * package (the apps import most of them, and a package's own imports reach
+ * the rest), the root manifests `npm ci` installs from, the scripts the apps'
+ * `build` and `prebuild` run, and the deploy script and helpers that decide
+ * which keys reach `vercel build`. `plan-staging-deploy.test.mjs` walks the
+ * apps' build scripts and fails when a file they import is not matched here.
+ */
+export const FRONTEND_BUILD_PATHS =
+  /^(apps\/(web|landing)\/|packages\/|package\.json$|package-lock\.json$|turbo\.json$|scripts\/(next-build|sync-brand-assets)\.mjs$|scripts\/lib\/brand-pixels\.mjs$|scripts\/ci\/deploy-vercel\.mjs$|scripts\/ci\/lib\/vercel-(cli|build-env)\.mjs$)/;
 
 const SHA = /^[0-9a-f]{7,40}$/i;
 
@@ -168,22 +192,26 @@ export function planStagingDeploy({ head, served, tip, isAncestor, changedPaths 
 /**
  * Whether this run uploads web and landing. Nothing uploads unless the API
  * staging will serve carries this commit's API (`api.readyApi`), which the
- * verify step then checks before anything ships. Given that, the tip always
- * uploads, and any other commit uploads only when every staging host serves a
- * commit strictly older than it, so the upload moves each host forward and
- * never back. `live` is `[{ host, sha, error? }]` from the staging hostnames
- * (`sha` null when unread), or null when not read.
+ * verify step then checks before anything ships, and nothing uploads over a
+ * host that serves a newer commit. Given that, the tip uploads when something
+ * in `FRONTEND_BUILD_PATHS` changed since what either host serves, when it
+ * can't tell, or when `rerun` (a re-run of the tip's run, which is how a
+ * rotated build-time value reaches staging). Any other commit uploads only
+ * when every host serves a commit strictly older than it and something
+ * changed since. `live` is `[{ host, sha, error? }]` from the staging
+ * hostnames (`sha` null when unread), or null when not read; `changedPaths`
+ * is `planStagingDeploy`'s and may throw.
  *
  * Returns `{ upload, uploadReason, verifySha }`. `verifySha` is `readyApi`
  * whenever it uploads (a `stale` API plan that uploads verifies the served
  * commit, as `current` does), and the API plan's own otherwise.
  */
-export function planFrontendUpload({ head, tip, api, live, isAncestor }) {
+export function planFrontendUpload({ head, tip, api, live, isAncestor, changedPaths, rerun = false }) {
   const isTip = !tip || same(tip, head);
   const upload = (uploadReason) => ({ upload: true, uploadReason, verifySha: api.readyApi });
-  const skip = (why) => ({
+  const skip = (why, { tipsRun = !isTip } = {}) => ({
     upload: false,
-    uploadReason: isTip ? why : `${why}; \`main\` has moved on to ${short(tip)}, so its run uploads`,
+    uploadReason: tipsRun ? `${why}; \`main\` has moved on to ${short(tip)}, so its run uploads` : why,
     verifySha: api.verifySha,
   });
   // Even for the tip: staging can serve a newer commit than the tip this
@@ -197,28 +225,65 @@ export function planFrontendUpload({ head, tip, api, live, isAncestor }) {
       verifySha: api.verifySha,
     };
   }
-  if (isTip) return upload("this is `main`'s tip, so its web and landing ship");
-  if (!Array.isArray(live) || live.length === 0) return skip("what the staging hostnames serve was not read");
+  if (!Array.isArray(live) || live.length === 0) {
+    const why = "what the staging hostnames serve was not read";
+    return isTip ? upload(`${why}, and this is \`main\`'s tip, so shipping`) : skip(why);
+  }
 
-  for (const { host, sha, error } of live) {
+  // One verdict per host; the diff is shared when both serve the same commit.
+  const diffs = new Map();
+  const frontendChangesSince = (sha) => {
+    const key = sha.toLowerCase();
+    if (!diffs.has(key)) diffs.set(key, changedPaths(sha, head).filter((path) => FRONTEND_BUILD_PATHS.test(path)));
+    return diffs.get(key);
+  };
+  const verdicts = live.map(({ host, sha, error }) => {
     if (!sha || !SHA.test(sha)) {
-      return skip(`the commit ${host} serves could not be read${error ? ` (${error})` : ""}`);
+      return { host, kind: "unsure", why: `the commit ${host} serves could not be read${error ? ` (${error})` : ""}` };
     }
+    if (same(sha, head)) return { host, kind: "same", why: `${host} already serves ${short(sha)}` };
     let hostIsNewer;
     let hostIsOlder;
     try {
       hostIsNewer = isAncestor(head, sha);
       hostIsOlder = isAncestor(sha, head);
     } catch {
-      return skip(`git could not relate ${short(sha)} (${host}) to ${short(head)}`);
+      return { host, kind: "unsure", why: `git could not relate ${short(sha)} (${host}) to ${short(head)}` };
     }
-    if (hostIsNewer) return skip(`${host} already serves ${short(sha)}, which contains ${short(head)}`);
-    if (!hostIsOlder) return skip(`${host} serves ${short(sha)}, which is not on this commit's history`);
+    if (hostIsNewer) return { host, kind: "newer", why: `${host} already serves ${short(sha)}, which contains ${short(head)}` };
+    if (!hostIsOlder) return { host, kind: "unsure", why: `${host} serves ${short(sha)}, which is not on this commit's history` };
+    let changed;
+    try {
+      changed = frontendChangesSince(sha);
+    } catch {
+      return { host, kind: "unsure", why: `could not diff ${short(sha)}..${short(head)} for ${host}` };
+    }
+    return changed.length > 0
+      ? { host, kind: "changed", sha, why: `${changed.length} file(s) web and landing are built from changed since ${short(sha)} (${host}; first: ${changed[0]})` }
+      : { host, kind: "unchanged", sha, why: `nothing web and landing are built from changed since ${short(sha)} (${host})` };
+  });
+  const first = (kind) => verdicts.find((verdict) => verdict.kind === kind);
+
+  // Never over a newer commit: that host's run already shipped past this one.
+  const newer = first("newer");
+  if (newer) return skip(newer.why, { tipsRun: false });
+
+  if (!isTip) {
+    const blocker = first("unsure") ?? first("same");
+    if (blocker) return skip(blocker.why);
+    const changed = first("changed");
+    if (!changed) return skip(verdicts.map((verdict) => verdict.why).join("; "), { tipsRun: false });
+    return upload(
+      `${live.map(({ host, sha }) => `${host} serves ${short(sha)}`).join(" and ")}, older than ${short(head)}, ` +
+        `and ${changed.why}; \`main\` has moved on to ${short(tip)}, whose run may never deploy (its CI can fail), ` +
+        "so moving them forward",
+    );
   }
-  return upload(
-    `${live.map(({ host, sha }) => `${host} serves ${short(sha)}`).join(" and ")}, older than ${short(head)}; ` +
-      `\`main\` has moved on to ${short(tip)}, whose run may never deploy (its CI can fail), so moving them forward`,
-  );
+
+  if (rerun) return upload("this is a re-run of `main`'s tip, so its web and landing ship again (a rotated build-time value reaches staging this way)");
+  const reason = first("unsure") ?? first("changed");
+  if (reason) return upload(`${reason.why}, and this is \`main\`'s tip, so its web and landing ship`);
+  return skip(verdicts.map((verdict) => verdict.why).join("; "));
 }
 
 /**
@@ -324,10 +389,19 @@ async function main() {
     isAncestor,
     changedPaths: (base, tip) => gitChangedPaths(base, tip),
   });
-  // Only a non-tip commit whose API is ready needs the hosts read.
-  const needsHosts = Boolean(tip) && !same(tip, head) && Boolean(plan.readyApi);
-  const live = needsHosts ? await readStagingFrontends(hosts, { apiKey, teamId }) : null;
-  const frontends = planFrontendUpload({ head, tip, api: plan, live, isAncestor });
+  // Only a commit whose API is ready can upload, so only then are the hosts read.
+  const live = plan.readyApi ? await readStagingFrontends(hosts, { apiKey, teamId }) : null;
+  // GitHub sets it on every step; a caller's re-run of the whole workflow raises it.
+  const rerun = Number(process.env.GITHUB_RUN_ATTEMPT ?? "1") > 1;
+  const frontends = planFrontendUpload({
+    head,
+    tip,
+    api: plan,
+    live,
+    isAncestor,
+    changedPaths: (base, tip) => gitChangedPaths(base, tip),
+    rerun,
+  });
 
   console.log(`Plan for ${head}: ${plan.plan} — ${plan.reason}.`);
   console.log(`Web and landing: ${frontends.upload ? "upload" : "no upload"} — ${frontends.uploadReason}.`);
