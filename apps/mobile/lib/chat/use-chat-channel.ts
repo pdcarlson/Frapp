@@ -80,6 +80,10 @@ export interface UseChatChannelResult {
   messages: ChatMessage[];
   isLoading: boolean;
   loadError: Error | null;
+  /** Reads the newest page again, for the thread's failed-load Retry. */
+  reload: () => void;
+  /** A read of the newest page is in flight (the first, or a `reload`). */
+  isReloading: boolean;
   /**
    * Whether older history may exist beyond the loaded rows (#2772). True
    * until a read comes back short, so a channel the member has not scrolled to
@@ -199,6 +203,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     staleTime: Infinity,
     queryFn: () => (channelId ? pager.readNewest(channelId) : emptyCache()),
   });
+
+  const { refetch } = query;
+  const reload = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   // Older history (#2772), one page per call, merged into the same cache the
   // realtime merge, the outbox and the reconnect backfill write to. It only
@@ -649,6 +658,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     messages,
     isLoading: query.isPending,
     loadError: query.error ?? null,
+    reload,
+    isReloading: query.isFetching,
     hasOlder,
     isLoadingOlder: olderForChannel === "loading",
     olderError: olderForChannel === "error",

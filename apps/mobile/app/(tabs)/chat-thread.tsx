@@ -119,6 +119,8 @@ export default function ChatThreadScreen() {
     messages,
     isLoading,
     loadError,
+    reload,
+    isReloading,
     hasOlder,
     isLoadingOlder,
     olderError,
@@ -660,9 +662,16 @@ export default function ChatThreadScreen() {
             // Ahead of the identity gate, as on web (#2243): a failed read
             // must not hide behind "Loading messages…" while `/users/me` is
             // still in flight.
+            // With a Retry: the channel query never refetches on its own
+            // (`staleTime: Infinity`), so without one the member's only way
+            // back was leaving the channel and returning.
             <View style={styles.stateBlock}>
-              <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
-              <Text style={styles.stateBody}>{loadError.message}</Text>
+              <ErrorState
+                title="Couldn't load messages"
+                body="Confirm your chapter access and retry."
+                onRetry={reload}
+                isRetrying={isReloading}
+              />
             </View>
           ) : !viewerId && viewerQuery.isError ? (
             <View style={styles.stateBlock}>

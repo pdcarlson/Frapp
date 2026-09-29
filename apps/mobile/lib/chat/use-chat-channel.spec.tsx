@@ -99,10 +99,13 @@ const mocks = vi.hoisted(() => {
     unsubscribe: vi.fn(),
     emitTyping: vi.fn(),
     getTypingUsers: vi.fn(() => [] as string[]),
-    // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`.
+    // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`
+    // (its `.order().range()` tail is passed through in the module mock below).
     // Deliberately NOT `null`: mocking the client away skips that branch entirely,
     // which would leave the cold-start regression below untested.
-    supabaseIn: vi.fn(async () => ({ data: [] as unknown[] })),
+    supabaseIn: vi.fn<
+      (column: string, ids: string[]) => Promise<{ data: unknown[] }>
+    >(async () => ({ data: [] })),
     // Mutable so a test can null `ctx` and prove the write paths refuse. The two
     // stores arrived with #2228: the hook reads them off the runtime rather than
     // importing process-wide singletons, so they are never undefined here either.
@@ -138,7 +141,15 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
 
 vi.mock("@/lib/supabase", () => ({
   getSupabaseClient: () => ({
-    from: () => ({ select: () => ({ in: mocks.supabaseIn }) }),
+    // `.in(...).order(...).range(...)`: the page fetcher reads actions in
+    // ranges; `supabaseIn` answers the whole read.
+    from: () => ({
+      select: () => ({
+        in: (column: string, ids: string[]) => ({
+          order: () => ({ range: () => mocks.supabaseIn(column, ids) }),
+        }),
+      }),
+    }),
   }),
 }));
 
@@ -1245,5 +1256,25 @@ describe("older history (#2772)", () => {
     expect(view.result.current.olderError).toBe(false);
     view.rerender({ id: CHANNEL });
     expect(view.result.current.olderError).toBe(true);
+  });
+});
+
+describe("reload after a failed first read", () => {
+  it("reads the newest page again, and clears the error once it lands", async () => {
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({ data: undefined, error: new Error("offline") })
+      .mockResolvedValue({
+        data: [rawRow("server-1", "2026-08-27T00:00:00.000Z")],
+        error: null,
+      });
+    const { result } = renderChannel(createClient(GET));
+    await waitFor(() => expect(result.current.loadError).not.toBeNull());
+
+    act(() => result.current.reload());
+
+    await waitFor(() => expect(result.current.loadError).toBeNull());
+    expect(result.current.messages.map((m) => m.id)).toEqual(["server-1"]);
+    expect(GET).toHaveBeenCalledTimes(2);
   });
 });

@@ -16,9 +16,11 @@ import {
   upsertOptimistic,
 } from "./cache";
 import {
+  ACTION_READ_LIMIT,
   createHistoryPageFetcher,
   createHistoryPager,
   FIRST_PAGE_LIMIT,
+  IncompleteActionsError,
   hasOlderHistory,
   OLDER_PAGE_LIMIT,
   readNewestPage,
@@ -141,6 +143,19 @@ describe("readNewestPage", () => {
     expect(
       selectMessages(cache).some((m) => m.client_message_id === "queued"),
     ).toBe(true);
+  });
+
+  test("paints a page whose action read was incomplete", async () => {
+    const server = fakeServer(rows(1, 60));
+    const { cache } = await readNewestPage(
+      queryClient,
+      CHANNEL,
+      async (id, q) => ({
+        ...(await server.fetchPage(id, q)),
+        actionsIncomplete: true,
+      }),
+    );
+    expect(ids(cache)).toHaveLength(FIRST_PAGE_LIMIT);
   });
 
   test("drops an older cached row the page did not re-read", async () => {
@@ -274,6 +289,39 @@ describe("readOlderPage", () => {
     expect(queries.at(-1)?.before).toBe(instant);
   });
 
+  test("refuses a page whose action read was incomplete, merging nothing", async () => {
+    const { fetchPage } = fakeServer(rows(1, 150));
+    await openChannel(fetchPage);
+    const before = queryClient.getQueryData<ChannelCache>(KEY);
+    await expect(
+      readOlderPage(queryClient, CHANNEL, async (id, q) => ({
+        ...(await fetchPage(id, q)),
+        actionsIncomplete: true,
+      })),
+    ).rejects.toBeInstanceOf(IncompleteActionsError);
+    expect(queryClient.getQueryData<ChannelCache>(KEY)).toBe(before);
+  });
+
+  test("keeps a row that landed in the cache while the read was in flight", async () => {
+    const { fetchPage } = fakeServer(rows(1, 150));
+    await openChannel(fetchPage);
+    const duringRead: FetchHistoryPage = async (id, query) => {
+      // A Realtime arrival: newer than everything, so the edge stays put.
+      queryClient.setQueryData<ChannelCache>(KEY, (current) =>
+        mergeServerRow(current!, row(900)),
+      );
+      return fetchPage(id, query);
+    };
+
+    const read = await readOlderPage(queryClient, CHANNEL, duringRead);
+
+    expect(read.outcome).toBe("loaded");
+    const held = ids(queryClient.getQueryData<ChannelCache>(KEY));
+    expect(held).toContain("m900");
+    expect(held.at(-1)).toBe("m900");
+    expect(held[0]).toBe("m2");
+  });
+
   test("says the start without a read when nothing is confirmed yet", async () => {
     const fetchPage = vi.fn<FetchHistoryPage>();
     expect(await readOlderPage(queryClient, CHANNEL, fetchPage)).toEqual({
@@ -312,17 +360,34 @@ describe("hasOlderHistory", () => {
 });
 
 describe("createHistoryPageFetcher", () => {
-  function clients(data: unknown, error?: unknown) {
+  /**
+   * `from().select().in().order().range()`, answering each range from
+   * `store` with PostgREST's shape: at most `cap` rows, and the exact count.
+   */
+  function clients(
+    data: unknown,
+    error?: unknown,
+    store: RawChatMessageAction[] = [reaction("a1", "m1")],
+    cap = ACTION_READ_LIMIT,
+  ) {
     const GET = vi.fn().mockResolvedValue({ data, error });
-    const inFn = vi.fn().mockResolvedValue({ data: [reaction("a1", "m1")] });
+    const range = vi.fn(async (from: number, to: number) => ({
+      data: store.slice(from, Math.min(to + 1, from + cap)),
+      error: null,
+      count: store.length,
+    }));
+    const inFn = vi.fn(() => ({ order: () => ({ range }) }));
     const supabase = {
       from: vi.fn(() => ({ select: vi.fn(() => ({ in: inFn })) })),
     };
-    return { GET, inFn, supabase };
+    return { GET, inFn, range, supabase };
   }
 
+  const manyActions = (n: number) =>
+    Array.from({ length: n }, (_, i) => reaction(`a${i}`, "m1"));
+
   test("reads the page, then its actions in one batched select", async () => {
-    const { GET, inFn, supabase } = clients(rows(1, 2));
+    const { GET, inFn, range, supabase } = clients(rows(1, 2));
     const fetchPage = createHistoryPageFetcher(
       { GET } as never,
       supabase as never,
@@ -332,28 +397,67 @@ describe("createHistoryPageFetcher", () => {
       params: { path: { id: CHANNEL }, query: { limit: 100, before: "x" } },
     });
     expect(inFn).toHaveBeenCalledWith("message_id", ["m1", "m2"]);
-    expect(page.actions).toHaveLength(1);
+    expect(range).toHaveBeenCalledTimes(1);
+    expect(page).toEqual({ rows: rows(1, 2), actions: [reaction("a1", "m1")] });
+  });
+
+  test("pages the action read past PostgREST's row cap, by the exact count", async () => {
+    const { GET, range, supabase } = clients(
+      rows(1, 2),
+      undefined,
+      manyActions(1500),
+    );
+    const page = await createHistoryPageFetcher(
+      { GET } as never,
+      supabase as never,
+    )(CHANNEL, { limit: 100 });
+    expect(page.actions).toHaveLength(1500);
+    expect(page.actionsIncomplete).toBeUndefined();
+    expect(range.mock.calls).toEqual([
+      [0, ACTION_READ_LIMIT - 1],
+      [1000, 1000 + ACTION_READ_LIMIT - 1],
+    ]);
+  });
+
+  test("keeps paging when the server's cap is lower than the read limit", async () => {
+    const { GET, supabase } = clients(
+      rows(1, 2),
+      undefined,
+      manyActions(1200),
+      500,
+    );
+    const page = await createHistoryPageFetcher(
+      { GET } as never,
+      supabase as never,
+    )(CHANNEL, { limit: 100 });
+    expect(page.actions).toHaveLength(1200);
+  });
+
+  test("flags a failed action read instead of rejecting", async () => {
+    const { GET, range, supabase } = clients(rows(1, 2));
+    range.mockResolvedValue({
+      data: null,
+      error: { message: "JWT expired" },
+      count: null,
+    } as never);
+    const page = await createHistoryPageFetcher(
+      { GET } as never,
+      supabase as never,
+    )(CHANNEL, { limit: 50 });
+    expect(page).toEqual({
+      rows: rows(1, 2),
+      actions: [],
+      actionsIncomplete: true,
+    });
   });
 
   test("paints without actions when there is no Supabase client", async () => {
     const { GET } = clients(rows(1, 2));
     const page = await createHistoryPageFetcher({ GET } as never, null)(
       CHANNEL,
-      {
-        limit: 50,
-      },
+      { limit: 50 },
     );
     expect(page).toEqual({ rows: rows(1, 2), actions: [] });
-  });
-
-  test("rejects when the action read fails, rather than paint a page without its tallies", async () => {
-    const { GET, supabase, inFn } = clients(rows(1, 2));
-    inFn.mockResolvedValue({ data: null, error: new Error("JWT expired") });
-    await expect(
-      createHistoryPageFetcher({ GET } as never, supabase as never)(CHANNEL, {
-        limit: 50,
-      }),
-    ).rejects.toThrow("JWT expired");
   });
 
   test("rejects when the message read fails", async () => {

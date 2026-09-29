@@ -61,6 +61,27 @@ export interface HistoryPageQuery {
 export interface HistoryPage {
   rows: RawChatMessage[];
   actions: RawChatMessageAction[];
+  /**
+   * The action read failed, so `actions` may be missing rows. Set only by a
+   * fetcher that could not read them all; absent means complete.
+   */
+  actionsIncomplete?: true;
+}
+
+/**
+ * Rows per action read. PostgREST caps a response at `max_rows` (1000 here,
+ * `supabase/config.toml`, and Supabase's hosted default) and truncates
+ * silently, so the read pages by an exact count instead of trusting one
+ * response to hold every row.
+ */
+export const ACTION_READ_LIMIT = 1000;
+
+/** Thrown by `readOlderPage` when a page's action read was incomplete. */
+export class IncompleteActionsError extends Error {
+  constructor() {
+    super("Couldn't load the reactions and votes for these messages");
+    this.name = "IncompleteActionsError";
+  }
 }
 
 export type FetchHistoryPage = (
@@ -72,13 +93,15 @@ export type FetchHistoryPage = (
  * The one way a client reads a page: `GET /v1/channels/{id}/messages`, then a
  * single batched select on `chat_message_actions`, so reactions and poll
  * tallies are on the first paint rather than appearing only after a live
- * echo. Rejects when either read fails.
+ * echo. Rejects when the message read fails.
  *
- * The action read is not best-effort. A page merged without its actions stays
- * that way: `mergeUnheldRows` never re-merges a row it holds, and Realtime
- * delivers only new action rows, so a poll read with no votes would show a
- * partial tally for as long as the thread is cached. A failed page instead
- * shows Retry (older pages) or goes through the query's retry (the newest).
+ * A failed action read does not reject: the page comes back flagged
+ * `actionsIncomplete`, and each reader decides. The newest page paints without
+ * them (a thread that cannot be read at all is worse than one missing its
+ * tallies, and a later read of the newest page rebuilds it). An older page is
+ * refused (`readOlderPage`), because it is merged once and never re-read:
+ * `mergeUnheldRows` skips rows it holds, and Realtime delivers only new action
+ * rows, so its tallies would stay partial for as long as the thread is cached.
  *
  * `supabase` may be `null` where a client can boot without one (mobile's
  * `getSupabaseClient`); the page then carries no actions.
@@ -95,12 +118,28 @@ export function createHistoryPageFetcher(
     const rows = Array.isArray(data) ? (data as RawChatMessage[]) : [];
     const messageIds = rows.map((row) => row.id).filter(Boolean);
     if (!supabase || messageIds.length === 0) return { rows, actions: [] };
-    const { data: actions, error: actionsError } = await supabase
-      .from("chat_message_actions")
-      .select("*")
-      .in("message_id", messageIds);
-    if (actionsError) throw actionsError;
-    return { rows, actions: (actions ?? []) as RawChatMessageAction[] };
+    const actions: RawChatMessageAction[] = [];
+    for (;;) {
+      const {
+        data: batch,
+        error,
+        count,
+      } = await supabase
+        .from("chat_message_actions")
+        .select("*", { count: "exact" })
+        .in("message_id", messageIds)
+        .order("id")
+        .range(actions.length, actions.length + ACTION_READ_LIMIT - 1);
+      if (error) return { rows, actions, actionsIncomplete: true };
+      const got = (batch ?? []) as RawChatMessageAction[];
+      actions.push(...got);
+      // Done once the count is reached. A batch that adds nothing while the
+      // count says more exist means rows moved under the read; say so rather
+      // than loop.
+      if (typeof count !== "number" || actions.length >= count) break;
+      if (got.length === 0) return { rows, actions, actionsIncomplete: true };
+    }
+    return { rows, actions };
   };
 }
 
@@ -156,7 +195,9 @@ export async function readNewestPage(
  * the older pages meanwhile moved it, and merging there would draw a hole as
  * if nothing had been said in it; that read is `stale`.
  *
- * Rejects when a read fails; the caller owns how that is shown.
+ * Rejects when a read fails, or when the page's action read was incomplete
+ * (`IncompleteActionsError`): merged, it would never be repaired. The caller
+ * owns how that is shown.
  */
 export async function readOlderPage(
   queryClient: QueryClient,
@@ -171,10 +212,11 @@ export async function readOlderPage(
     edge.created_at,
   ];
   for (const before of cursors) {
-    const { rows, actions } = await fetchPage(channelId, {
+    const { rows, actions, actionsIncomplete } = await fetchPage(channelId, {
       limit: OLDER_PAGE_LIMIT,
       before,
     });
+    if (actionsIncomplete) throw new IncompleteActionsError();
     // Assigned inside the updater, which runs synchronously; boxed so the
     // compiler does not narrow it to its initial value.
     const result: { outcome: Exclude<LoadOlderResult, "error"> } = {

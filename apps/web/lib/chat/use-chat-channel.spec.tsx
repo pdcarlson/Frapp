@@ -64,7 +64,13 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/realtime/supabase-realtime", () => ({
   getRealtimeClient: () => ({
     from: () => ({
-      select: () => ({ in: async () => ({ data: [], error: null }) }),
+      select: () => ({
+        in: () => ({
+          order: () => ({
+            range: async () => ({ data: [], error: null, count: 0 }),
+          }),
+        }),
+      }),
     }),
   }),
 }));
@@ -414,11 +420,13 @@ describe("useChatChannel — a refetch keeps the member's unsent rows (#2486)", 
     // `seedFirstChunk` merges onto the cache, then invalidates with
     // `refetchType: "all"`.
     act(() => {
-      client!.setQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID), (current) =>
-        upsertOptimistic(
-          upsertOptimistic(current!, queuedRow("q-1", "pending")),
-          queuedRow("f-1", "failed"),
-        ),
+      client!.setQueryData<ChannelCache>(
+        chatMessagesKey(CHANNEL_ID),
+        (current) =>
+          upsertOptimistic(
+            upsertOptimistic(current!, queuedRow("q-1", "pending")),
+            queuedRow("f-1", "failed"),
+          ),
       );
     });
     mocks.GET.mockResolvedValue(historyPage(1, 4));
@@ -745,7 +753,9 @@ describe("useChatChannel — older history (#1571)", () => {
     const query = mocks.GET.mock.calls[1]![1].params.query;
     expect(query).toEqual({
       limit: OLDER_PAGE_LIMIT,
-      before: new Date(Date.parse(historyRow(101).created_at) + 1).toISOString(),
+      before: new Date(
+        Date.parse(historyRow(101).created_at) + 1,
+      ).toISOString(),
     });
     await waitFor(() => expect(result.current.messages).toHaveLength(149));
     // A full page says nothing about what is left, so there may be more.
