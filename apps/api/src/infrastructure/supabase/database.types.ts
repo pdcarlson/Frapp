@@ -337,11 +337,6 @@ export interface Database {
         Returns: ChatChannel[];
       };
       /**
-       * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
-       * channel's `member_ids` unless already listed. Empty result set means
-       * the row didn't match (wrong id/chapter, or not PRIVATE).
-       */
-      /**
        * `20260929213000` (#2877). Folds or unfolds one sidebar section for one
        * member in one chapter, creating the row on first use.
        */
@@ -354,6 +349,11 @@ export interface Database {
         };
         Returns: ChatSidebarPreferences[];
       };
+      /**
+       * `20260928170000` (#1302). Atomically appends `p_user_id` to a PRIVATE
+       * channel's `member_ids` unless already listed. Empty result set means
+       * the row didn't match (wrong id/chapter, or not PRIVATE).
+       */
       add_private_channel_member: {
         Args: {
           p_channel_id: string;

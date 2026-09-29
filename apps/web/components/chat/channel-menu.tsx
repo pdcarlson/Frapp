@@ -298,7 +298,10 @@ export function ChannelMenu({
                   }}
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
                 >
-                  <PinGlyph className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <PinGlyph
+                    className="h-5 w-5 shrink-0 text-muted-foreground"
+                    active={pinToTop.pinned}
+                  />
                   {pinToTop.pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}
                 </button>
               </li>

@@ -685,6 +685,52 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(execRow.querySelector("svg")).not.toBeNull();
   });
 
+  it("drops a muted row under Hide muted, keeping one that mentions the member", () => {
+    const random: ChatChannel = { id: "c-rand", name: "random", type: "PUBLIC" };
+    render(
+      <ChannelList
+        channels={[general, random, announcements]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={
+          new Map([["c-ann", { unreadCount: 1, mentionCount: 1 }]])
+        }
+        onPick={vi.fn()}
+        sidebar={sidebarControls({
+          mutedChannelIds: new Set(["c-gen", "c-ann"]),
+          preferences: {
+            pinnedIds: new Set(),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: true },
+          },
+        })}
+      />,
+    );
+
+    const rows = screen.getByRole("list", { name: "Channels" });
+    expect(rows).toHaveTextContent("announcements");
+    expect(rows).toHaveTextContent("random");
+    expect(rows).not.toHaveTextContent("general");
+  });
+
+  it("announces a folded Direct messages header as direct messages", () => {
+    renderArranged(
+      sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["direct"]),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+      new Map([["c-dm", { unreadCount: 3, mentionCount: 0 }]]),
+    );
+
+    expect(
+      screen.getByLabelText("3 unread messages, including direct messages"),
+    ).toBeInTheDocument();
+  });
+
   it("offers no fold or pin control without `sidebar`", () => {
     renderList([general, dm]);
 

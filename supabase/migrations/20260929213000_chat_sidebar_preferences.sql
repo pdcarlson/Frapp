@@ -43,10 +43,12 @@ create table if not exists public.chat_sidebar_preferences (
   primary key (user_id, chapter_id)
 );
 
--- RLS enabled with ZERO policies, matching every sibling per-member chat table
--- (channel_read_receipts, chat_notification_preferences,
--- chat_message_bookmarks): the API reaches it only with the service-role
--- client, and no client reads it directly.
+-- RLS enabled with ZERO policies, as on channel_read_receipts,
+-- chat_message_bookmarks and chat_member_blocks: the API reaches it only with
+-- the service-role client, and no client reads it directly. (Not every
+-- per-member chat table is shaped this way: chat_notification_preferences
+-- carries an own-row SELECT policy. No client reads this table, so it needs
+-- none, and adding one would only widen access.)
 alter table public.chat_sidebar_preferences enable row level security;
 
 -- ---------------------------------------------------------------------------

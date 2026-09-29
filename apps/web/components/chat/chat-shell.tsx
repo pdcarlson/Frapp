@@ -36,6 +36,7 @@ import {
   resolveAuthorLabel,
   SIDEBAR_SAVE_FAILED_BODY,
   SIDEBAR_SAVE_FAILED_TITLE,
+  sidebarMutedChannelIds,
   useSetChannelPinned,
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
@@ -286,19 +287,16 @@ export function ChatShell({
     }
     return map;
   }, [notificationPrefsQuery.data]);
-  // The rail's Hide muted filter reads this. `undefined` until the levels have
-  // loaded, so the filter hides nothing on missing data rather than treating
-  // every channel as unmuted or muted (#2877).
+  // The rail's Hide muted filter reads this: `undefined` while the levels are
+  // unknown, so the filter hides nothing on missing data (#2877). The rule is
+  // shared with mobile's s04.
   const mutedChannelIds = useMemo(
     () =>
-      notificationPrefsQuery.data
-        ? new Set(
-            notificationPrefsQuery.data
-              .filter((row) => row.level === "off")
-              .map((row) => row.channel_id),
-          )
-        : undefined,
-    [notificationPrefsQuery.data],
+      sidebarMutedChannelIds({
+        data: notificationPrefsQuery.data,
+        isError: notificationPrefsQuery.isError,
+      }),
+    [notificationPrefsQuery.data, notificationPrefsQuery.isError],
   );
 
   const channels = useMemo(
@@ -592,29 +590,34 @@ export function ChatShell({
   // The member's own arrangement of the rail (#2877): pins, folds, filters.
   // A failed read leaves the default arrangement, which hides nothing.
   const sidebarPreferences = useSidebarPreferences();
-  const { mutate: setChannelPinned } = useSetChannelPinned();
-  const { mutate: setSectionCollapsed } = useSetSidebarSectionCollapsed();
-  const { mutate: setSidebarFilter } = useSetSidebarFilter();
+  // A hook option, not `mutate`'s per-call `onError`, which fires only for the
+  // latest write on the hook. The write has already put the list back on the
+  // server's state; this says so.
+  const sidebarWriteOptions = useMemo(
+    () => ({
+      onError: () =>
+        toast({
+          title: SIDEBAR_SAVE_FAILED_TITLE,
+          description: SIDEBAR_SAVE_FAILED_BODY,
+        }),
+    }),
+    [toast],
+  );
+  const { mutate: setChannelPinned } = useSetChannelPinned(sidebarWriteOptions);
+  const { mutate: setSectionCollapsed } =
+    useSetSidebarSectionCollapsed(sidebarWriteOptions);
+  const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const sidebarControls = useMemo<ChannelSidebarControls>(() => {
-    // The write already put the cache back on the server's state; this says so.
-    const onError = () =>
-      toast({
-        title: SIDEBAR_SAVE_FAILED_TITLE,
-        description: SIDEBAR_SAVE_FAILED_BODY,
-      });
     return {
       preferences: sidebarPreferences,
       mutedChannelIds,
       onSetPinned: (channel, pinned) =>
-        setChannelPinned({ channelId: channel.id, pinned }, { onError }),
+        setChannelPinned({ channelId: channel.id, pinned }),
       onSetCollapsed: (sectionKey, collapsed) =>
-        setSectionCollapsed({ sectionKey, collapsed }, { onError }),
-      onSetFilters: (change) => setSidebarFilter(change, { onError }),
+        setSectionCollapsed({ sectionKey, collapsed }),
+      onSetFilters: (change) => setSidebarFilter(change),
       onClearFilters: () =>
-        setSidebarFilter(
-          { unread_only: false, hide_muted: false },
-          { onError },
-        ),
+        setSidebarFilter({ unread_only: false, hide_muted: false }),
     };
   }, [
     sidebarPreferences,
@@ -622,7 +625,6 @@ export function ChatShell({
     setChannelPinned,
     setSectionCollapsed,
     setSidebarFilter,
-    toast,
   ]);
   // Stable for the timeline's load-at-top effect, which lists it as a
   // dependency; the outcome is the hook's `olderError`/`hasOlder` to report.

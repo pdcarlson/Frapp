@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import type { SidebarSectionKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -18,9 +23,6 @@ import type { SidebarFilters } from "./channel-sidebar";
 export const chatSidebarKeys = createChapterQueryKeys("chat-sidebar");
 
 export type ChatSidebar = components["schemas"]["ChatSidebarDto"];
-
-/** Every write shares this key, so a write can tell whether another is still in flight. */
-const CHAT_SIDEBAR_WRITE_KEY = ["chat-sidebar", "write"] as const;
 
 export function useChatSidebar() {
   const client = useFrappClient();
@@ -79,59 +81,96 @@ export function useSidebarPreferences(): SidebarPreferences {
 }
 
 /**
+ * Sidebar writes in flight, per query client and chapter, so a write can tell
+ * whether another one overlapped it. Kept outside TanStack's mutation cache on
+ * purpose: a chapter switch clears that cache while the old chapter's writes
+ * are still running.
+ */
+const writesInFlight = new WeakMap<
+  QueryClient,
+  Map<string, { pending: number; overlapped: boolean }>
+>();
+
+function writeTracker(queryClient: QueryClient, chapterId: string) {
+  let byChapter = writesInFlight.get(queryClient);
+  if (!byChapter) {
+    byChapter = new Map();
+    writesInFlight.set(queryClient, byChapter);
+  }
+  let tracker = byChapter.get(chapterId);
+  if (!tracker) {
+    tracker = { pending: 0, overlapped: false };
+    byChapter.set(chapterId, tracker);
+  }
+  return tracker;
+}
+
+/** Options every sidebar write hook takes. */
+export interface SidebarWriteOptions {
+  /**
+   * Called on every failed write. A hook option rather than `mutate`'s
+   * per-call `onError`, which TanStack fires only for the latest call on the
+   * hook: a pin that failed while a second pin was in flight would otherwise
+   * be dropped silently.
+   */
+  onError?: () => void;
+}
+
+/**
  * Shared by every sidebar write: apply the change to the cache at once, then
- * take the server's answer as the truth.
+ * end on the server's state.
  *
  * - The optimistic edit makes a tap on a header or a pin feel instant.
- * - On success the response is the whole arrangement, so it replaces the cache,
- *   unless another sidebar write is still in flight, whose optimistic edit this
- *   older answer would briefly undo. The last write to settle refreshes.
- * - On failure the cache is re-read rather than rolled back to a snapshot: a
- *   snapshot taken before a second write started would undo that one too. The
- *   caller still reports `isError` to the member.
+ * - The chapter is captured when the write starts. TanStack pushes each
+ *   render's options onto a write still in flight, so reading the chapter at
+ *   settle time would file a write sent for one chapter under the next.
+ * - A write that overlapped no other write for its chapter takes its own
+ *   response as the cache: the response is the whole arrangement, so no
+ *   refetch is needed.
+ * - When writes overlap, no response is trusted. Their answers can arrive in
+ *   a different order from the one the server applied them in, so any one of
+ *   them may predate another's change. The last to settle re-reads the server
+ *   instead, once.
+ * - A failure re-reads the server too, rather than restoring a snapshot, which
+ *   would undo a second write taken after it.
  */
 function useSidebarWrite<TVars>(
   request: (vars: TVars) => Promise<ChatSidebar>,
   optimistic: (current: ChatSidebar, vars: TVars) => ChatSidebar,
+  options: SidebarWriteOptions = {},
 ) {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationKey: CHAT_SIDEBAR_WRITE_KEY,
     mutationFn: request,
     onMutate: async (vars) => {
-      if (!chapterId) return;
+      if (!chapterId) return undefined;
+      const tracker = writeTracker(queryClient, chapterId);
+      tracker.pending += 1;
+      if (tracker.pending > 1) tracker.overlapped = true;
       const key = chatSidebarKeys.chapter(chapterId);
       await queryClient.cancelQueries({ queryKey: key });
       queryClient.setQueryData<ChatSidebar>(key, (current) =>
         current ? optimistic(current, vars) : current,
       );
-    },
-    onSuccess: (data) => {
-      if (!chapterId) return;
-      const key = chatSidebarKeys.chapter(chapterId);
-      // This mutation still counts as in flight while its own callbacks run.
-      if (queryClient.isMutating({ mutationKey: CHAT_SIDEBAR_WRITE_KEY }) > 1) {
-        return;
-      }
-      queryClient.setQueryData(key, data);
+      return { chapterId };
     },
     onError: () => {
-      if (!chapterId) return;
-      void queryClient.invalidateQueries({
-        queryKey: chatSidebarKeys.chapter(chapterId),
-      });
+      options.onError?.();
     },
-    onSettled: () => {
-      if (!chapterId) return;
-      if (queryClient.isMutating({ mutationKey: CHAT_SIDEBAR_WRITE_KEY }) > 1) {
-        return;
+    onSettled: (data, error, _vars, context) => {
+      if (!context) return;
+      const tracker = writeTracker(queryClient, context.chapterId);
+      tracker.pending -= 1;
+      if (tracker.pending > 0) return;
+      const key = chatSidebarKeys.chapter(context.chapterId);
+      const overlapped = tracker.overlapped;
+      tracker.overlapped = false;
+      if (!error && !overlapped && data) {
+        queryClient.setQueryData(key, data);
+      } else {
+        void queryClient.invalidateQueries({ queryKey: key });
       }
-      // The last write to settle makes sure the cache ends on the server's
-      // state, covering any answer skipped above.
-      void queryClient.invalidateQueries({
-        queryKey: chatSidebarKeys.chapter(chapterId),
-      });
     },
   });
 }
@@ -142,7 +181,7 @@ export type SidebarFilterChange =
   | { unread_only?: boolean; hide_muted: boolean };
 
 /** Switch one filter, or both. A filter left out keeps its stored value. */
-export function useSetSidebarFilter() {
+export function useSetSidebarFilter(options?: SidebarWriteOptions) {
   const client = useFrappClient();
   return useSidebarWrite(
     async (change: SidebarFilterChange) => {
@@ -153,11 +192,12 @@ export function useSetSidebarFilter() {
       return data;
     },
     (current, change) => ({ ...current, ...change }),
+    options,
   );
 }
 
 /** Fold or unfold one section. */
-export function useSetSidebarSectionCollapsed() {
+export function useSetSidebarSectionCollapsed(options?: SidebarWriteOptions) {
   const client = useFrappClient();
   return useSidebarWrite(
     async ({
@@ -185,11 +225,12 @@ export function useSetSidebarSectionCollapsed() {
           : [...current.collapsed_sections, sectionKey]
         : current.collapsed_sections.filter((key) => key !== sectionKey),
     }),
+    options,
   );
 }
 
 /** Pin or unpin one channel. */
-export function useSetChannelPinned() {
+export function useSetChannelPinned(options?: SidebarWriteOptions) {
   const client = useFrappClient();
   return useSidebarWrite(
     async ({ channelId, pinned }: { channelId: string; pinned: boolean }) => {
@@ -208,5 +249,6 @@ export function useSetChannelPinned() {
           : [...current.pinned_channel_ids, channelId]
         : current.pinned_channel_ids.filter((id) => id !== channelId),
     }),
+    options,
   );
 }

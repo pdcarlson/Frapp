@@ -164,6 +164,8 @@ describe("sidebar writes", () => {
     expect(
       queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
     ).toEqual(["social", "general"]);
+    // A lone write's answer is the whole arrangement: no second round trip.
+    expect(GET).not.toHaveBeenCalled();
   });
 
   it("unpins with DELETE", async () => {
@@ -249,10 +251,14 @@ describe("sidebar writes", () => {
       .mockResolvedValue({ data: null, error: new Error("no") });
     const { queryClient, Wrapper } = setup({ GET, PUT });
     queryClient.setQueryData(KEY, stored);
+    const onError = vi.fn();
 
     // The sidebar is on screen, so its query has an observer to refetch for.
     const { result } = renderHook(
-      () => ({ read: useChatSidebar(), write: useSetChannelPinned() }),
+      () => ({
+        read: useChatSidebar(),
+        write: useSetChannelPinned({ onError }),
+      }),
       { wrapper: Wrapper },
     );
     GET.mockClear();
@@ -267,9 +273,84 @@ describe("sidebar writes", () => {
         queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
       ).toEqual(["general"]),
     );
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 
-  it("does not let an older answer undo a newer optimistic write", async () => {
+  it("reports every failed write, not only the latest one on the hook", async () => {
+    const first = deferred<{ data: null; error: Error }>();
+    const second = deferred<{ data: null; error: Error }>();
+    const PUT = vi
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const { queryClient, Wrapper } = setup({ GET, PUT });
+    queryClient.setQueryData(KEY, stored);
+    const onError = vi.fn();
+
+    const { result } = renderHook(() => useSetChannelPinned({ onError }), {
+      wrapper: Wrapper,
+    });
+    act(() => result.current.mutate({ channelId: "a", pinned: true }));
+    act(() => result.current.mutate({ channelId: "b", pinned: true }));
+    await waitFor(() => expect(PUT).toHaveBeenCalledTimes(2));
+
+    first.resolve({ data: null, error: new Error("a failed") });
+    second.resolve({ data: null, error: new Error("b failed") });
+    await waitFor(() => expect(onError).toHaveBeenCalledTimes(2));
+  });
+
+  it("files a write under the chapter it was sent for, across a chapter switch", async () => {
+    const answer = deferred<{ data: ChatSidebar; error: null }>();
+    const PUT = vi.fn(() => answer.promise);
+    let chapter = CHAPTER;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <FrappClientProvider
+        client={
+          { GET, PUT } as unknown as ReturnType<
+            typeof import("@repo/api-sdk").createFrappClient
+          >
+        }
+        chapterId={chapter}
+      >
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </FrappClientProvider>
+    );
+    const OTHER_KEY = chatSidebarKeys.chapter("chapter-2");
+    queryClient.setQueryData(KEY, stored);
+    queryClient.setQueryData(OTHER_KEY, { ...stored, pinned_channel_ids: [] });
+
+    const { result, rerender } = renderHook(() => useSetChannelPinned(), {
+      wrapper: Wrapper,
+    });
+    act(() => result.current.mutate({ channelId: "social", pinned: true }));
+    await waitFor(() => expect(PUT).toHaveBeenCalled());
+
+    // The member switches chapter while the write is in flight.
+    chapter = "chapter-2";
+    rerender();
+    answer.resolve({
+      data: { ...stored, pinned_channel_ids: ["general", "social"] },
+      error: null,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(
+      queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
+    ).toEqual(["general", "social"]);
+    expect(
+      queryClient.getQueryData<ChatSidebar>(OTHER_KEY)?.pinned_channel_ids,
+    ).toEqual([]);
+  });
+
+  it("trusts no answer when writes overlap, and re-reads once after the last", async () => {
     const first = deferred<{ data: ChatSidebar; error: null }>();
     const second = deferred<{ data: ChatSidebar; error: null }>();
     const PUT = vi
@@ -301,7 +382,9 @@ describe("sidebar writes", () => {
     );
 
     // The first answer knows nothing of `b`; applying it would drop `b` from
-    // the screen until the second answer lands.
+    // the screen. The second (below) may equally predate a change, since
+    // answers can arrive out of the order the server applied them in.
+    GET.mockClear();
     first.resolve({
       data: { ...stored, pinned_channel_ids: ["general", "a"] },
       error: null,
@@ -311,13 +394,17 @@ describe("sidebar writes", () => {
       queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
     ).toEqual(["general", "a", "b"]);
 
+    // An answer that predates `a`'s change: applying it would drop `a`.
     second.resolve({
-      data: { ...stored, pinned_channel_ids: ["general", "a", "b"] },
+      data: { ...stored, pinned_channel_ids: ["general", "b"] },
       error: null,
     });
     await waitFor(() => expect(result.current.b.isSuccess).toBe(true));
-    expect(
-      queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
-    ).toEqual(["general", "a", "b"]);
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
+      ).toEqual(["general", "a", "b"]),
+    );
   });
 });

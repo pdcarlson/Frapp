@@ -12,6 +12,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   arrangeChannelSidebar,
   canHideConversation,
+  foldedSectionAnnouncement,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
   HIDE_MUTED_LABEL,
@@ -20,7 +21,9 @@ import {
   SHOW_ALL_CHANNELS_LABEL,
   SIDEBAR_SAVE_FAILED_BODY,
   SIDEBAR_SAVE_FAILED_TITLE,
+  sidebarMutedChannelIds,
   sidebarSections,
+  sidebarUnreadCounts,
   UNREAD_ONLY_LABEL,
   useCategories,
   useChannelNotificationPreferences,
@@ -36,7 +39,6 @@ import {
   useSidebarPreferences,
   useTasks,
   useViewerUserId,
-  type SidebarUnreadCounts,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -123,12 +125,20 @@ export default function ChatHomeScreen() {
   // filters, stored server-side so they match web. A failed read leaves the
   // default arrangement, which hides nothing.
   const preferences = useSidebarPreferences();
-  const { mutate: setChannelPinned } = useSetChannelPinned();
-  const { mutate: setSectionCollapsed } = useSetSidebarSectionCollapsed();
-  const { mutate: setSidebarFilter } = useSetSidebarFilter();
-  // The write already put the cache back on the server's state; this says so.
-  const onSaveError = () =>
-    Alert.alert(SIDEBAR_SAVE_FAILED_TITLE, SIDEBAR_SAVE_FAILED_BODY);
+  // A hook option, not `mutate`'s per-call `onError`, which fires only for the
+  // latest write on the hook. The write has already put the list back on the
+  // server's state; this says so.
+  const sidebarWriteOptions = useMemo(
+    () => ({
+      onError: () =>
+        Alert.alert(SIDEBAR_SAVE_FAILED_TITLE, SIDEBAR_SAVE_FAILED_BODY),
+    }),
+    [],
+  );
+  const { mutate: setChannelPinned } = useSetChannelPinned(sidebarWriteOptions);
+  const { mutate: setSectionCollapsed } =
+    useSetSidebarSectionCollapsed(sidebarWriteOptions);
+  const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
 
   // Categories are grouping only. While they load, or if the read fails,
@@ -140,23 +150,17 @@ export default function ChatHomeScreen() {
     [categoriesQuery.data],
   );
   const arranged = useMemo(() => {
-    // Both filters apply only while their data is known: `undefined` tells
-    // the arrangement "not loaded", so a failed read never hides a row.
-    const unreadByChannelId = unreadQuery.data
-      ? new Map<string, SidebarUnreadCounts>(
-          Object.entries(unread).map(([id, counts]) => [
-            id,
-            { unreadCount: counts.unread, mentionCount: counts.mentions },
-          ]),
-        )
-      : undefined;
-    const mutedChannelIds = notificationPrefsQuery.data
-      ? new Set(
-          notificationPrefsQuery.data
-            .filter((row) => row.level === "off")
-            .map((row) => row.channel_id),
-        )
-      : undefined;
+    // Both filters apply only while their data is known. The shared helpers
+    // give `undefined` while a read is pending or its last attempt failed, so
+    // a filter never hides a row on missing or stale data.
+    const unreadByChannelId = sidebarUnreadCounts({
+      data: unreadQuery.data,
+      isError: unreadQuery.isError,
+    });
+    const mutedChannelIds = sidebarMutedChannelIds({
+      data: notificationPrefsQuery.data,
+      isError: notificationPrefsQuery.isError,
+    });
     return arrangeChannelSidebar({
       // Labels per `spec/behavior/chat/README.md` § Channels (the "Channel
       // categories" rule): the default group is "Channels", and it stays first
@@ -177,9 +181,10 @@ export default function ChatHomeScreen() {
     channels,
     categories,
     preferences,
-    unread,
     unreadQuery.data,
+    unreadQuery.isError,
     notificationPrefsQuery.data,
+    notificationPrefsQuery.isError,
     viewerId,
     memberNames,
   ]);
@@ -209,10 +214,7 @@ export default function ChatHomeScreen() {
     const name = displayChannelName(channel, viewerId, memberNames);
     const pinned = preferences.pinnedIds.has(channel.id);
     const togglePin = () =>
-      setChannelPinned(
-        { channelId: channel.id, pinned: !pinned },
-        { onError: onSaveError },
-      );
+      setChannelPinned({ channelId: channel.id, pinned: !pinned });
     const hide = canHideConversation(channel)
       ? () =>
           confirmHideConversation({
@@ -343,7 +345,6 @@ export default function ChatHomeScreen() {
                 key === "unread_only"
                   ? { unread_only: next }
                   : { hide_muted: next },
-                { onError: onSaveError },
               )
             }
           />
@@ -356,15 +357,26 @@ export default function ChatHomeScreen() {
           */}
           {arranged.sections.map((section) => (
             <View key={section.key} style={styles.section}>
+              {/*
+                A header that folds: the header role keeps each section on the
+                screen reader's headings rotor, as before #2877, and the
+                expanded state says it folds. The label carries a folded
+                section's total, since the badge inside is not read on its own.
+              */}
               <Pressable
-                accessibilityRole="button"
+                accessibilityRole="header"
                 accessibilityState={{ expanded: !section.collapsed }}
-                accessibilityLabel={section.label}
+                accessibilityLabel={
+                  section.collapsed &&
+                  (section.unreadCount > 0 || section.addressed)
+                    ? `${section.label}, ${foldedSectionAnnouncement(section)}`
+                    : section.label
+                }
                 onPress={() =>
-                  setSectionCollapsed(
-                    { sectionKey: section.key, collapsed: !section.collapsed },
-                    { onError: onSaveError },
-                  )
+                  setSectionCollapsed({
+                    sectionKey: section.key,
+                    collapsed: !section.collapsed,
+                  })
                 }
                 style={({ pressed }) => [
                   styles.sectionHeader,
@@ -375,7 +387,6 @@ export default function ChatHomeScreen() {
                   {section.collapsed ? "▸" : "▾"}
                 </Text>
                 <Text
-                  accessibilityRole="header"
                   numberOfLines={1}
                   style={[styles.sectionLabel, styles.sectionLabelInHeader]}
                 >
@@ -400,10 +411,7 @@ export default function ChatHomeScreen() {
               <Pressable
                 accessibilityRole="button"
                 onPress={() =>
-                  setSidebarFilter(
-                    { unread_only: false, hide_muted: false },
-                    { onError: onSaveError },
-                  )
+                  setSidebarFilter({ unread_only: false, hide_muted: false })
                 }
                 style={({ pressed }) => [
                   styles.retryButton,

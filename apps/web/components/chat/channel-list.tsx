@@ -6,8 +6,6 @@ import {
   ChevronRight,
   EyeOff,
   ListFilter,
-  Pin,
-  PinOff,
 } from "lucide-react";
 import {
   arrangeChannelSidebar,
@@ -16,6 +14,7 @@ import {
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
   HIDE_CONVERSATION_LABEL,
+  foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
   NO_MATCHING_CHANNELS,
@@ -41,7 +40,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { CHAT_CONTROL_CLASS } from "./chip";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
+import { AuditGlyph, LockGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
 import { Skeleton } from "@/components/shared/async-states";
 import { cn, initials } from "@/lib/utils";
 
@@ -478,11 +477,8 @@ export function ChannelList({
               offersHide ? "right-8" : "right-1",
             )}
           >
-            {pinned ? (
-              <PinOff className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <Pin className="h-4 w-4" aria-hidden="true" />
-            )}
+            {/* The channel menu's Pin to top row draws the same glyph. */}
+            <PinGlyph className="h-4 w-4" active={pinned} />
           </button>
         ) : null}
       </li>
@@ -541,7 +537,7 @@ export function ChannelList({
                   <Badge
                     variant={section.addressed ? "mention" : "secondary"}
                     className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
-                    aria-label={unreadAnnouncement(section)}
+                    aria-label={foldedSectionAnnouncement(section)}
                   >
                     {badgeLabel(section.unreadCount, section.mentionCount)}
                   </Badge>

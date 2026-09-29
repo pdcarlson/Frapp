@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   arrangeChannelSidebar,
+  foldedSectionAnnouncement,
+  sidebarMutedChannelIds,
   sidebarSections,
+  sidebarUnreadCounts,
   type ArrangeSidebarInput,
   type SidebarUnreadCounts,
 } from "./channel-sidebar";
@@ -369,5 +372,72 @@ describe("sidebarSections", () => {
       direct: "DIRECT",
     });
     expect(sections.map((s) => s.key)).toEqual(["channels", "direct"]);
+  });
+});
+
+describe("sidebarUnreadCounts and sidebarMutedChannelIds", () => {
+  const unreadRows = [{ channel_id: "a", unread_count: 2, mention_count: 1 }];
+  const levelRows = [
+    { channel_id: "a", level: "off" },
+    { channel_id: "b", level: "mentions" },
+  ];
+
+  it("reads the rows once they have loaded", () => {
+    expect(sidebarUnreadCounts({ data: unreadRows, isError: false })).toEqual(
+      new Map([["a", { unreadCount: 2, mentionCount: 1 }]]),
+    );
+    expect(sidebarMutedChannelIds({ data: levelRows, isError: false })).toEqual(
+      new Set(["a"]),
+    );
+  });
+
+  it("is unknown before the first read", () => {
+    expect(
+      sidebarUnreadCounts({ data: undefined, isError: false }),
+    ).toBeUndefined();
+    expect(
+      sidebarMutedChannelIds({ data: undefined, isError: false }),
+    ).toBeUndefined();
+  });
+
+  it("is unknown after a failed refetch, though the old rows are still there", () => {
+    expect(
+      sidebarUnreadCounts({ data: unreadRows, isError: true }),
+    ).toBeUndefined();
+    expect(
+      sidebarMutedChannelIds({ data: levelRows, isError: true }),
+    ).toBeUndefined();
+  });
+});
+
+describe("foldedSectionAnnouncement", () => {
+  it("names mentions first", () => {
+    expect(
+      foldedSectionAnnouncement({
+        unreadCount: 5,
+        mentionCount: 1,
+        addressed: true,
+      }),
+    ).toBe("1 mention, 5 unread");
+  });
+
+  it("says when the red comes from direct messages", () => {
+    expect(
+      foldedSectionAnnouncement({
+        unreadCount: 3,
+        mentionCount: 0,
+        addressed: true,
+      }),
+    ).toBe("3 unread messages, including direct messages");
+  });
+
+  it("is plain unread otherwise", () => {
+    expect(
+      foldedSectionAnnouncement({
+        unreadCount: 1,
+        mentionCount: 0,
+        addressed: false,
+      }),
+    ).toBe("1 unread message");
   });
 });

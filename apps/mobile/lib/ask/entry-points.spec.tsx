@@ -62,6 +62,9 @@ vi.mock("@repo/hooks", () => {
     useChannelNotificationPreferences: () => empty,
     sidebarSections: () => [],
     arrangeChannelSidebar: () => ({ sections: [], emptiedByFilters: false }),
+    sidebarUnreadCounts: () => undefined,
+    sidebarMutedChannelIds: () => undefined,
+    foldedSectionAnnouncement: () => "",
     UNREAD_ONLY_LABEL: "Unread only",
     HIDE_MUTED_LABEL: "Hide muted",
   };

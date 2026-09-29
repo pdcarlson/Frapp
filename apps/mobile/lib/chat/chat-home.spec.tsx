@@ -32,6 +32,8 @@ const {
   setPinned,
   setCollapsed,
   setFilter,
+  writeOptions,
+  queryErrors,
 } = vi.hoisted(() => ({
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
@@ -55,6 +57,10 @@ const {
   setPinned: vi.fn(),
   setCollapsed: vi.fn(),
   setFilter: vi.fn(),
+  // What s04 hands the write hooks, so a failure's report is observable.
+  writeOptions: { value: undefined as { onError?: () => void } | undefined },
+  // Loaded-but-failed state for the two reads the filters depend on.
+  queryErrors: { unread: false, levels: false },
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -85,6 +91,9 @@ vi.mock("@repo/hooks", async () => {
     arrangeChannelSidebar: actual.arrangeChannelSidebar,
     sidebarSections: actual.sidebarSections,
     countsAddressMember: actual.countsAddressMember,
+    foldedSectionAnnouncement: actual.foldedSectionAnnouncement,
+    sidebarMutedChannelIds: actual.sidebarMutedChannelIds,
+    sidebarUnreadCounts: actual.sidebarUnreadCounts,
     HIDE_MUTED_LABEL: actual.HIDE_MUTED_LABEL,
     NO_MATCHING_CHANNELS: actual.NO_MATCHING_CHANNELS,
     PIN_TO_TOP_LABEL: actual.PIN_TO_TOP_LABEL,
@@ -94,14 +103,23 @@ vi.mock("@repo/hooks", async () => {
     UNPIN_FROM_TOP_LABEL: actual.UNPIN_FROM_TOP_LABEL,
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
     useSidebarPreferences: () => sidebarPrefs.value,
-    useSetChannelPinned: () => ({ mutate: setPinned }),
+    useSetChannelPinned: (options?: { onError?: () => void }) => {
+      writeOptions.value = options;
+      return { mutate: setPinned };
+    },
     useSetSidebarSectionCollapsed: () => ({ mutate: setCollapsed }),
     useSetSidebarFilter: () => ({ mutate: setFilter }),
-    useChannelNotificationPreferences: () => query(levelsData.value),
+    useChannelNotificationPreferences: () => ({
+      ...query(levelsData.value),
+      isError: queryErrors.levels,
+    }),
     useNowDate: () => new Date("2026-09-25T18:00:00Z"),
     useChannels: () => query(channelsData.value),
     useCategories: () => query(categoriesData.value),
-    useChannelUnreadCounts: () => query(unreadData.value),
+    useChannelUnreadCounts: () => ({
+      ...query(unreadData.value),
+      isError: queryErrors.unread,
+    }),
     useEvents: () => query([]),
     useTasks: () => query([]),
     useViewerUserId: () => VIEWER,
@@ -196,6 +214,8 @@ beforeEach(() => {
   categoriesData.value = [];
   unreadData.value = [];
   levelsData.value = [];
+  queryErrors.unread = false;
+  queryErrors.levels = false;
   sidebarPrefs.value = {
     pinnedIds: new Set(),
     collapsed: new Set(),
@@ -292,16 +312,17 @@ function layout(tree: ReactTestRenderer): [string, string[]][] {
   return tree.root
     .findAll(
       (node) =>
-        (node.type as unknown) === "Text" &&
+        (node.type as unknown) === "Pressable" &&
         node.props.accessibilityRole === "header",
     )
     .map((header) => [
-      String(header.props.children),
-      // The header sits inside its fold control (#2877); the rows are that
-      // control's siblings in the section.
-      header
-        .parent!.parent!.findAllByType(ChannelRow)
-        .map((row) => row.props.name),
+      // Since #2877 the header is a fold control: a chevron, then the label.
+      String(
+        header.findAll((node) => (node.type as unknown) === "Text")[1]!.props
+          .children,
+      ),
+      // The rows are the fold control's siblings in the section.
+      header.parent!.findAllByType(ChannelRow).map((row) => row.props.name),
     ]);
 }
 
@@ -458,7 +479,9 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     };
     const tree = render();
 
-    const header = pressableLabelled(tree, "CHANNELS");
+    // The label carries the folded total, since the badge is not read alone.
+    const header = pressableLabelled(tree, "CHANNELS, 1 mention, 2 unread");
+    expect(header.props.accessibilityRole).toBe("header");
     expect(header.props.accessibilityState).toEqual({ expanded: false });
     expect(rows(tree)).toHaveLength(0);
     expect(
@@ -469,10 +492,10 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     ).toHaveLength(1);
 
     act(() => header.props.onPress());
-    expect(setCollapsed).toHaveBeenCalledWith(
-      { sectionKey: "channels", collapsed: false },
-      expect.objectContaining({ onError: expect.any(Function) }),
-    );
+    expect(setCollapsed).toHaveBeenCalledWith({
+      sectionKey: "channels",
+      collapsed: false,
+    });
   });
 
   it("switches each filter from its chip", () => {
@@ -481,16 +504,8 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     act(() => pressableLabelled(tree, "Unread only").props.onPress());
     act(() => pressableLabelled(tree, "Hide muted").props.onPress());
 
-    expect(setFilter).toHaveBeenNthCalledWith(
-      1,
-      { unread_only: true },
-      expect.anything(),
-    );
-    expect(setFilter).toHaveBeenNthCalledWith(
-      2,
-      { hide_muted: true },
-      expect.anything(),
-    );
+    expect(setFilter).toHaveBeenNthCalledWith(1, { unread_only: true });
+    expect(setFilter).toHaveBeenNthCalledWith(2, { hide_muted: true });
   });
 
   it("hides muted rows but keeps one that mentions the member", () => {
@@ -539,10 +554,10 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         ).length > 0,
     );
     act(() => clear.props.onPress());
-    expect(setFilter).toHaveBeenCalledWith(
-      { unread_only: false, hide_muted: false },
-      expect.anything(),
-    );
+    expect(setFilter).toHaveBeenCalledWith({
+      unread_only: false,
+      hide_muted: false,
+    });
   });
 
   it("offers Pin and Hide on a DM's long press, and Pin alone on a channel", () => {
@@ -558,10 +573,10 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       "Cancel",
     ]);
     act(() => dmButtons![0]!.onPress?.());
-    expect(setPinned).toHaveBeenCalledWith(
-      { channelId: dmAlice.id, pinned: true },
-      expect.anything(),
-    );
+    expect(setPinned).toHaveBeenCalledWith({
+      channelId: dmAlice.id,
+      pinned: true,
+    });
 
     act(() => rowNamed(tree, "general").props.onLongPress());
     const [, , channelButtons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
@@ -583,25 +598,71 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     const [, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
     expect(buttons![0]!.text).toBe("Unpin from top");
     act(() => buttons![0]!.onPress?.());
-    expect(setPinned).toHaveBeenCalledWith(
-      { channelId: general.id, pinned: false },
-      expect.anything(),
-    );
+    expect(setPinned).toHaveBeenCalledWith({
+      channelId: general.id,
+      pinned: false,
+    });
   });
 
-  it("tells the member when a write fails", () => {
+  it("tells the member when a write fails, through the hook's own onError", () => {
     channelsData.value = [general];
-    const tree = render();
+    render();
 
-    act(() => rowNamed(tree, "general").props.onTogglePin());
-    const [, { onError }] = setPinned.mock.calls[0] as [
-      unknown,
-      { onError: () => void },
-    ];
-    onError();
+    // A hook option rather than `mutate`'s per-call option, which TanStack
+    // fires only for the latest write on the hook.
+    writeOptions.value?.onError?.();
     expect(vi.mocked(Alert.alert)).toHaveBeenLastCalledWith(
       "Couldn't save your channel list",
       "Nothing changed. Check your connection and try again.",
     );
+  });
+});
+
+describe("Chat home filters on unknown data (#2877)", () => {
+  const social = { id: "c-social", name: "social", type: "PUBLIC" };
+
+  it("hides nothing under Unread only while the counts' last read failed", () => {
+    channelsData.value = [general, social];
+    // Stale rows from an earlier read say nothing is unread; the refetch failed.
+    unreadData.value = [];
+    queryErrors.unread = true;
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    const tree = render();
+
+    expect(rows(tree).map((row) => row.props.name)).toEqual([
+      "general",
+      "social",
+    ]);
+  });
+
+  it("hides nothing under Hide muted while the levels' last read failed", () => {
+    channelsData.value = [general, social];
+    levelsData.value = [{ channel_id: general.id, level: "off" }];
+    queryErrors.levels = true;
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: false, hideMuted: true },
+    };
+    const tree = render();
+
+    expect(rows(tree).map((row) => row.props.name)).toEqual([
+      "general",
+      "social",
+    ]);
+  });
+
+  it("filters once the reads are healthy", () => {
+    channelsData.value = [general, social];
+    levelsData.value = [{ channel_id: general.id, level: "off" }];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: false, hideMuted: true },
+    };
+    const tree = render();
+
+    expect(rows(tree).map((row) => row.props.name)).toEqual(["social"]);
   });
 });

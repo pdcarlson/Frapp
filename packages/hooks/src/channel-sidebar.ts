@@ -89,6 +89,73 @@ export interface ArrangedSidebar<C extends SidebarChannelLike> {
 
 export const PINNED_SECTION_LABEL = "Pinned";
 
+/** The shape of a TanStack query result these helpers read. */
+interface QueryState<T> {
+  data?: T | undefined;
+  isError: boolean;
+}
+
+/**
+ * The unread counts the arrangement reads, from `GET /v1/channels/unread`, or
+ * `undefined` while they are unknown: not loaded yet, or the last read failed.
+ * A failed refetch keeps the old `data` beside `isError`, and filtering on
+ * those stale counts would hide a channel that has since mentioned the member,
+ * so an error counts as unknown too.
+ */
+export function sidebarUnreadCounts(
+  query: QueryState<
+    { channel_id: string; unread_count: number; mention_count: number }[]
+  >,
+): Map<string, SidebarUnreadCounts> | undefined {
+  if (!query.data || query.isError) return undefined;
+  return new Map(
+    query.data.map((row) => [
+      row.channel_id,
+      { unreadCount: row.unread_count, mentionCount: row.mention_count },
+    ]),
+  );
+}
+
+/**
+ * The channels Hide muted drops, from `GET /v1/channels/notification-preferences`:
+ * those whose effective level is `off`. `undefined` while the levels are
+ * unknown, for the reason `sidebarUnreadCounts` gives, so the filter then hides
+ * nothing. (Web's mute glyph reads the same data differently on purpose: it
+ * keeps the last good levels through a failed refetch, because a glyph that
+ * vanished would claim a channel is unmuted. A filter errs the other way.)
+ */
+export function sidebarMutedChannelIds(
+  query: QueryState<{ channel_id: string; level: string }[]>,
+): Set<string> | undefined {
+  if (!query.data || query.isError) return undefined;
+  return new Set(
+    query.data
+      .filter((row) => row.level === "off")
+      .map((row) => row.channel_id),
+  );
+}
+
+/**
+ * What a screen reader hears for a folded section's badge. It names the
+ * mentions when there are any. Without mentions, it says when the red badge
+ * comes from direct messages, since that red means the same thing a mention
+ * badge does.
+ */
+export function foldedSectionAnnouncement(
+  section: Pick<
+    ArrangedSidebarSection<SidebarChannelLike>,
+    "unreadCount" | "mentionCount" | "addressed"
+  >,
+): string {
+  const plural = (n: number, word: string) =>
+    `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (section.mentionCount > 0) {
+    return `${plural(section.mentionCount, "mention")}, ${section.unreadCount} unread`;
+  }
+  const unread = plural(section.unreadCount, "unread message");
+  return section.addressed ? `${unread}, including direct messages` : unread;
+}
+
 /**
  * The sections below Pinned, from `groupChannelsByCategory`'s result, keyed the
  * way `@repo/validation` spells them: the default group, each category in the
