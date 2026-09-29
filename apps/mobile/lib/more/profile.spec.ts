@@ -18,6 +18,7 @@ describe("selectViewerProfile", () => {
         current_city: "Troy",
         current_company: null,
         bio: "",
+        avatar_url: "https://storage.example/signed/photo",
       }),
     ).toEqual({
       displayName: "Paul Carlson",
@@ -28,6 +29,7 @@ describe("selectViewerProfile", () => {
       currentCompany: null,
       // `''` is absent, not a value — `bio` is nullable and both mean "unset".
       bio: null,
+      photoUrl: "https://storage.example/signed/photo",
     });
   });
 

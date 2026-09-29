@@ -9,6 +9,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { ProfilePhoto } from "@/components/profile/profile-photo";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
@@ -20,7 +21,7 @@ import {
   selectViewerProfile,
   sumApprovedServiceMinutes,
 } from "@/lib/more/profile";
-import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s15 — Profile (`canvas-screens.dc.html:497`).
@@ -42,13 +43,12 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * lets a member edit (graduation year, city, company); display name heads the
  * screen and bio gets its own card. Filed.
  *
- * ## No Edit action
+ * ## The photo is editable here; the rest is not
  *
- * Canvas draws one. Editing here would mean a form plus an avatar picker. The
- * picker half is no longer a blocker — #2464 added `expo-image-picker` for chat
- * photo upload — so what remains is the edit form and the avatar upload wiring
- * (the `image` kind, not `document`). Profile editing stays on the web dashboard for this
- * slice. TODO-DESIGN: the Edit affordance and its sheet.
+ * Canvas draws an Edit action. The photo half is built (#732): `ProfilePhoto`
+ * picks, uploads and confirms it. The text fields (name, bio, graduation,
+ * city, company) still edit on the web dashboard, since a form here is a
+ * separate slice. TODO-DESIGN: the Edit affordance and its sheet.
  */
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
@@ -106,11 +106,10 @@ export default function ProfileScreen() {
   return (
     <ScreenShell title="Profile" subtitle="Your membership and chapter record.">
       <View style={styles.identity}>
-        <View style={[styles.avatar, { borderColor: accent }]}>
-          <Text style={[styles.avatarText, { color: accent }]}>
-            {profile?.initials ?? "?"}
-          </Text>
-        </View>
+        <ProfilePhoto
+          photoUrl={profile?.photoUrl ?? null}
+          initials={profile?.initials ?? "?"}
+        />
         <Text style={styles.name}>{profile?.displayName ?? "Your profile"}</Text>
         {profile?.graduationYear || profile?.currentCompany ? (
           <Text style={styles.identityMeta}>
@@ -173,31 +172,18 @@ export default function ProfileScreen() {
       ) : null}
 
       <Text style={styles.footnote}>
-        Edit your profile and photo on the web dashboard.
+        Edit your name and details on the web dashboard.
       </Text>
     </ScreenShell>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
-  const avatarSize = 84;
   return StyleSheet.create({
     identity: {
       alignItems: "center",
       gap: tokens.spacing.sm,
       paddingVertical: tokens.spacing.md,
-    },
-    avatar: {
-      width: avatarSize,
-      height: avatarSize,
-      borderRadius: avatarRadius(avatarSize),
-      borderWidth: 1,
-      backgroundColor: tokens.color.gold.askFill,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarText: {
-      ...typeRole(tokens.typography.role.headline),
     },
     name: {
       ...typeRole(tokens.typography.role.headline),

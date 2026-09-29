@@ -9,6 +9,7 @@ import {
   isAllowedUploadMime,
   mimeForUploadFile,
   readSignedUpload,
+  type UploadKind,
 } from "@repo/validation";
 
 /**
@@ -109,20 +110,29 @@ export function safeBasename(value: string, fallback: string): string {
  * one protecting GIF animation and PNG transparency, and it is worth pinning
  * separately from the upload plumbing around it.
  */
-export async function resolveUploadable(asset: {
-  uri: string;
-  fileName?: string | null;
-  mimeType?: string;
-}): Promise<{ uri: string; filename: string; contentType: string }> {
+export async function resolveUploadable(
+  asset: {
+    uri: string;
+    fileName?: string | null;
+    mimeType?: string;
+  },
+  /**
+   * The allowlist the upload is checked against. Chat attachments are
+   * `document`; a profile photo is `image` (#732). For a picked photo the two
+   * accept the same four image types, but naming the kind keeps the gate and
+   * this decision reading from one list.
+   */
+  kind: UploadKind = "document",
+): Promise<{ uri: string; filename: string; contentType: string }> {
   const filename = safeBasename(asset.fileName ?? asset.uri, "photo.jpg");
 
   // `asset.mimeType` is optional and, on Android, occasionally a generic
   // `application/octet-stream`, so the extension map gets a say too — it is
   // what `mimeForUploadFile` prefers for exactly this reason.
   const declared =
-    asset.mimeType && isAllowedUploadMime("document", asset.mimeType)
+    asset.mimeType && isAllowedUploadMime(kind, asset.mimeType)
       ? asset.mimeType
-      : mimeForUploadFile("document", {
+      : mimeForUploadFile(kind, {
           name: filename,
           type: asset.mimeType ?? "",
         });
@@ -134,7 +144,7 @@ export async function resolveUploadable(asset: {
   // Chrome (`mimeType: "image/jpeg"`, extension off the list) and an asset with
   // no `fileName` at all both land here; iOS returns a null `fileName` for a
   // limited-permission library pick, which is not a rare path.
-  if (declared && isAllowedUploadExtension("document", filename)) {
+  if (declared && isAllowedUploadExtension(kind, filename)) {
     return { uri: asset.uri, filename, contentType: declared };
   }
 
@@ -150,7 +160,11 @@ export async function resolveUploadable(asset: {
   };
 }
 
-async function byteSizeOf(uri: string, hinted?: number): Promise<number> {
+/** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
+export async function byteSizeOf(
+  uri: string,
+  hinted?: number,
+): Promise<number> {
   if (typeof hinted === "number" && Number.isFinite(hinted) && hinted >= 0) {
     return hinted;
   }

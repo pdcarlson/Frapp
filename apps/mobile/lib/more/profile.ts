@@ -19,6 +19,8 @@ export interface ViewerProfile {
   currentCity: string | null;
   currentCompany: string | null;
   bio: string | null;
+  /** Signed URL the API serves for the uploaded photo, or `null`. */
+  photoUrl: string | null;
 }
 
 /** `GET /v1/users/me`, narrowed. Returns `null` before the first payload. */
@@ -33,6 +35,7 @@ export function selectViewerProfile(data: unknown): ViewerProfile | null {
     currentCity: str(data, "current_city"),
     currentCompany: str(data, "current_company"),
     bio: str(data, "bio"),
+    photoUrl: str(data, "avatar_url"),
   };
 }
 
