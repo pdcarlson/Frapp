@@ -51,6 +51,7 @@ import {
   isAtOrAfter,
   snowflakeAtOrAfter,
 } from '#domain/utils/discord-snowflake';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * Messages fetched per Discord round trip.
@@ -267,20 +268,36 @@ export class DiscordExportWorkerService {
         continue;
       }
 
-      const done = await this.runChannel({
-        job,
-        guildId,
-        mapping,
-        deadline,
-        totals,
-        mediaByRelativePath,
-        checkpoint,
-        resolveTargetChannel: (channel) =>
-          this.resolveDestination(channel, byDiscordId, (row) =>
-            resolveTargetChannel(row, channels),
-          ),
-        importBatch,
-      });
+      let done: boolean;
+      try {
+        done = await this.runChannel({
+          job,
+          guildId,
+          mapping,
+          deadline,
+          totals,
+          mediaByRelativePath,
+          checkpoint,
+          resolveTargetChannel: (channel) =>
+            this.resolveDestination(channel, byDiscordId, (row) =>
+              resolveTargetChannel(row, channels),
+            ),
+          importBatch,
+        });
+      } catch (error) {
+        // The row says where the import stopped and why, for the Watch
+        // panel (#2857); the job carries the same reason. A restart resumes
+        // the row from its cursor like any unfinished one. Best effort: the
+        // import is failing anyway, and this write must not replace the
+        // reason it fails with.
+        await this.importRepo
+          .updateChannel(mapping.id, job.id, {
+            status: 'failed',
+            error: toReportableError(error).message,
+          })
+          .catch(() => undefined);
+        throw error;
+      }
       if (!done) return this.sliceResult(totals, false);
     }
 

@@ -43,3 +43,39 @@ export function newChannelMergeKey(
     permissions,
   ]);
 }
+
+/**
+ * Whether an existing channel still serves a row's merge key: the same type,
+ * gate and read-only setting, and not archived.
+ *
+ * A like-named row reuses a channel only when this holds, read from the
+ * channel itself rather than from the row that pointed at it. The row may
+ * carry a target it did not create (an upload mapped before #2856 kept a
+ * client-sent one), and a channel can be re-gated while the import runs;
+ * either way reusing it could widen who reads the messages.
+ */
+export function channelServesMergeKey(
+  channel: {
+    type: string;
+    required_permissions: string[] | null;
+    is_read_only: boolean;
+    archived_at: string | null;
+  },
+  mapping: Pick<
+    DiscordImportChannel,
+    | 'new_channel_type'
+    | 'new_channel_is_read_only'
+    | 'new_channel_required_permissions'
+  >,
+): boolean {
+  if (channel.archived_at !== null) return false;
+  if (channel.type !== mapping.new_channel_type) return false;
+  if (channel.is_read_only !== mapping.new_channel_is_read_only) return false;
+  const sorted = (permissions: string[] | null) =>
+    [...(permissions ?? [])].sort().join('\n');
+  return (
+    mapping.new_channel_type !== 'ROLE_GATED' ||
+    sorted(channel.required_permissions) ===
+      sorted(mapping.new_channel_required_permissions)
+  );
+}

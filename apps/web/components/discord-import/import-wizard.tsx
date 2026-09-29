@@ -35,6 +35,7 @@ import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
 import {
   mappingIssues,
   restageChoices,
+  isImportTarget,
   withMergeDefaults,
   type ExistingChannel,
 } from "./mapping-issues";
@@ -192,7 +193,12 @@ export function ImportWizard({
       existingChannels.data === undefined
         ? null
         : asArray<ExistingChannel>(existingChannels.data).map(
-            ({ id, name }) => ({ id, name }),
+            ({ id, name, type, archived_at }) => ({
+              id,
+              name,
+              type,
+              archived_at,
+            }),
           ),
     [existingChannels.data],
   );
@@ -440,9 +446,9 @@ export function ImportWizard({
     const issues = mappingIssues(
       staged.channels,
       channelChoices,
-      asArray<{ name: string }>(existingChannels.data).map(
-        (channel) => channel.name,
-      ),
+      asArray<ExistingChannel>(existingChannels.data)
+        .filter(isImportTarget)
+        .map((channel) => channel.name),
       readersOf,
     );
     if (existingChannels.data === undefined) {

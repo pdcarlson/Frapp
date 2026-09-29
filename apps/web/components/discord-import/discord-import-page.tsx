@@ -50,7 +50,11 @@ const STATUS_VARIANT: Record<
   draft: "outline",
 };
 
-/** Statuses whose import has channel rows worth watching (#2857). */
+/**
+ * Statuses whose bot import has channel rows worth watching (#2857). Only a
+ * bot import: an upload's rows record neither the order its parts ran in nor
+ * a part it skipped, so its progress stays the message count.
+ */
 const WATCHABLE = new Set([
   "ready",
   "running",
@@ -88,7 +92,10 @@ export function DiscordImportPage() {
   );
   const [handshake] = useState(() => searchParams.get("handshake"));
   const [wizardOpen, setWizardOpen] = useState(resumingBotWizard);
+  // The import whose detail is polled, which keeps its row live, and the one
+  // whose channel panel is open. Hiding the panel keeps the row live.
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   /**
    * Report the outcome of a connect attempt, exactly once.
@@ -156,6 +163,8 @@ export function DiscordImportPage() {
           setWizardOpen={setWizardOpen}
           activeId={activeId}
           setActiveId={setActiveId}
+          openId={openId}
+          setOpenId={setOpenId}
           resumingBotWizard={resumingBotWizard}
           handshake={handshake}
         />
@@ -169,6 +178,8 @@ function DiscordImportBody({
   setWizardOpen,
   activeId,
   setActiveId,
+  openId,
+  setOpenId,
   resumingBotWizard,
   handshake,
 }: {
@@ -176,6 +187,8 @@ function DiscordImportBody({
   setWizardOpen: (open: boolean) => void;
   activeId: string | null;
   setActiveId: (id: string | null) => void;
+  openId: string | null;
+  setOpenId: (id: string | null) => void;
   resumingBotWizard: boolean;
   handshake: string | null;
 }) {
@@ -253,6 +266,7 @@ function DiscordImportBody({
             onStarted={(id) => {
               setWizardOpen(false);
               setActiveId(id);
+              setOpenId(id);
             }}
           />
         </CardContent>
@@ -283,8 +297,9 @@ function DiscordImportBody({
               {rows.map((row) => {
                 const live = activeRow?.id === row.id ? activeRow : row;
                 const percent = importPercent(live);
-                const watching =
-                  activeId === row.id && WATCHABLE.has(live.status);
+                const watchable =
+                  live.source === "bot" && WATCHABLE.has(live.status);
+                const watching = openId === row.id && watchable;
                 return (
                   <li
                     key={row.id}
@@ -367,18 +382,30 @@ function DiscordImportBody({
                           variant="ghost"
                           size="sm"
                           aria-expanded="true"
-                          onClick={() => setActiveId(null)}
+                          onClick={() => setOpenId(null)}
                         >
                           Hide
                         </Button>
-                      ) : WATCHABLE.has(live.status) ? (
+                      ) : watchable ? (
                         <Button
                           variant="ghost"
                           size="sm"
                           aria-expanded="false"
-                          onClick={() => setActiveId(row.id)}
+                          onClick={() => {
+                            setActiveId(row.id);
+                            setOpenId(row.id);
+                          }}
                         >
                           {MOVING.has(live.status) ? "Watch" : "Details"}
+                        </Button>
+                      ) : activeId !== row.id && MOVING.has(live.status) ? (
+                        // An upload: Watch keeps its message count live.
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setActiveId(row.id)}
+                        >
+                          Watch
                         </Button>
                       ) : null}
                       {/* Delete refuses while an import is running and says to

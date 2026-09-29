@@ -66,10 +66,12 @@ export function ImportWatchPanel({
 }) {
   const progress = useDiscordImportProgress(importId, { active });
 
-  if (progress.isPending) {
+  // A failed poll keeps the last good read (TanStack Query keeps `data`);
+  // only a panel with nothing to show falls back to the error.
+  if (!progress.data && progress.isPending) {
     return <NestedLoading message="Loading the import’s channels…" lines={2} />;
   }
-  if (progress.isError || !progress.data) {
+  if (!progress.data) {
     return (
       <NestedError
         title="Couldn’t load the import’s channels"
@@ -92,12 +94,16 @@ export function ImportWatchPanel({
       </p>
 
       {data.running.length > 0 ? (
-        <Section title="Importing now">
+        <Section title={active ? "Importing now" : "Stopped at"}>
           {data.running.map((row) => (
             <ChannelLine
               key={row.discord_channel_id}
               row={row}
-              detail={`${messages(row.imported_count)} so far`}
+              detail={
+                active
+                  ? `${messages(row.imported_count)} so far`
+                  : messages(row.imported_count)
+              }
             />
           ))}
         </Section>

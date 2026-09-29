@@ -94,10 +94,10 @@ describe("defaultChoice", () => {
 
 describe("mergeTarget and the merge default (#2856)", () => {
   const frapp = [
-    { id: "f-general", name: "General" },
-    { id: "f-ann", name: "announcements" },
-    { id: "f-rush-1", name: "rush" },
-    { id: "f-rush-2", name: "Rush" },
+    { id: "f-general", name: "General", type: "PUBLIC" },
+    { id: "f-ann", name: "announcements", type: "PUBLIC" },
+    { id: "f-rush-1", name: "rush", type: "PUBLIC" },
+    { id: "f-rush-2", name: "Rush", type: "PUBLIC" },
   ];
 
   it("merges a public channel into the one Frapp channel of its name, ignoring case, punctuation and emoji", () => {
@@ -107,6 +107,21 @@ describe("mergeTarget and the merge default (#2856)", () => {
       action: "use_existing",
       targetChannelId: "f-ann",
     });
+  });
+
+  it("merges only into a live whole-chapter channel, never a DM, group DM, gated, private or archived one", () => {
+    const officers = (type: string, archived_at: string | null = null) => [
+      { id: "f-officers", name: "Officers", type, archived_at },
+    ];
+    for (const type of ["GROUP_DM", "DM", "PRIVATE", "ROLE_GATED"]) {
+      expect(mergeTarget(open("1", "officers"), officers(type))).toBeNull();
+    }
+    expect(
+      mergeTarget(open("1", "officers"), officers("PUBLIC", "2026-01-01")),
+    ).toBeNull();
+    expect(mergeTarget(open("1", "officers"), officers("PUBLIC"))).toBe(
+      "f-officers",
+    );
   });
 
   it("never guesses between two candidates", () => {
@@ -180,6 +195,25 @@ describe("mappingIssues", () => {
       {
         channelId: "1",
         message: expect.stringContaining("#memes already exists in Frapp"),
+      },
+    ]);
+  });
+
+  it("asks about a new name like an existing channel's, compared the loose way the merge is (#2856)", () => {
+    const privateAnnouncements = [
+      { ...open("1", "📢┃announcements"), privateInDiscord: true },
+    ];
+    const choices = defaultChoices(privateAnnouncements);
+    choices["1"] = { ...choices["1"]!, visibility: "chapter" };
+    const issues = mappingIssues(privateAnnouncements, choices, [
+      "Announcements",
+    ]);
+    expect(issues).toEqual([
+      {
+        channelId: "1",
+        message: expect.stringContaining(
+          "is a lot like #Announcements, which already exists in Frapp",
+        ),
       },
     ]);
   });

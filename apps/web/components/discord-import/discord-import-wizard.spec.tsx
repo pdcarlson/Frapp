@@ -40,7 +40,7 @@ const {
   permissionsFail: { value: null as null | "error" | "stale" },
   channelsQuery: {
     value: {
-      data: [{ id: "ch-1", name: "general" }] as unknown,
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }] as unknown,
       isPending: false,
       isError: false,
       refetch: (() => Promise.resolve()) as () => Promise<unknown>,
@@ -348,7 +348,7 @@ describe("ImportWizard — the bot path", () => {
     rolesFail.value = false;
     permissionsFail.value = null;
     channelsQuery.value = {
-      data: [{ id: "ch-1", name: "general" }],
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
       isPending: false,
       isError: false,
       refetch: () => Promise.resolve(),
@@ -675,7 +675,7 @@ describe("ImportWizard — the bot path", () => {
     // A failed background refetch keeps its data (TanStack Query v5), and the
     // names were already checked against it.
     channelsQuery.value = {
-      data: [{ id: "ch-1", name: "general" }],
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
       isPending: false,
       isError: true,
       refetch: () => Promise.resolve(),
@@ -734,18 +734,28 @@ describe("ImportWizard — the bot path", () => {
     });
 
     it("sends the chosen day as the viewer's own midnight", async () => {
-      await renderAtReview();
-      fireEvent.change(since(), { target: { value: "2024-06-01" } });
-      expect(
-        screen.getByText(/Older messages, and their attachments, are left out/),
-      ).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Start import" }));
-      await waitFor(() =>
-        expect(startImport).toHaveBeenCalledWith({
-          id: "import-1",
-          messagesAfter: new Date("2024-06-01T00:00:00").toISOString(),
-        }),
-      );
+      // Pinned away from UTC, or local and UTC midnight are the same instant
+      // and a regression to UTC parsing would still pass (CI runs in UTC).
+      vi.stubEnv("TZ", "America/Denver");
+      try {
+        await renderAtReview();
+        fireEvent.change(since(), { target: { value: "2024-06-01" } });
+        expect(
+          screen.getByText(
+            /Older messages, and their attachments, are left out/,
+          ),
+        ).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+        await waitFor(() =>
+          expect(startImport).toHaveBeenCalledWith({
+            id: "import-1",
+            // Midnight in Denver, UTC−6 in June.
+            messagesAfter: "2024-06-01T06:00:00.000Z",
+          }),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it("holds Start on a date in the future", async () => {
@@ -785,6 +795,46 @@ describe("ImportWizard — the bot path", () => {
     expect(continueDisabled()).toBe(true);
   });
 
+  it("never merges a row later, once the Frapp channels were loaded when it was staged (#2856)", async () => {
+    // Loaded, with nothing named #general: #general starts as a new channel.
+    channelsQuery.value = {
+      data: [],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    // A new element each time, or React skips the re-render and the hook is
+    // never asked again.
+    const wizard = () => (
+      <ImportWizard
+        onCancel={() => undefined}
+        onStarted={() => undefined}
+        initialSource="bot"
+        initialStep="consent"
+      />
+    );
+    const { rerender } = render(wizard());
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the roles" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText(/Nothing needs attention/);
+
+    // A refetch brings a #general. The row was decided already, so it stays
+    // a new channel, and the clash is asked about instead of merged silently.
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    rerender(wizard());
+    expect(
+      (await screen.findAllByText(/#general already exists in Frapp/)).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("merges once the Frapp channels load, when the scan beat them (#2856)", async () => {
     channelsQuery.value = {
       data: undefined,
@@ -808,7 +858,7 @@ describe("ImportWizard — the bot path", () => {
     await screen.findByRole("heading", { name: "Map the channels" });
 
     channelsQuery.value = {
-      data: [{ id: "ch-1", name: "general" }],
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
       isPending: false,
       isError: false,
       refetch: () => Promise.resolve(),

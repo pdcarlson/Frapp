@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -147,8 +148,9 @@ export function useDiscordImportProgress(
 ) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  const enabled = !!chapterId && !!id && (options.enabled ?? true);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: discordImportKeys.progress(chapterId, id ?? ""),
     queryFn: async () => {
       const { data, error } = await client.GET(
@@ -158,11 +160,23 @@ export function useDiscordImportProgress(
       if (error) throw error;
       return data;
     },
-    enabled: !!chapterId && !!id && (options.enabled ?? true),
+    enabled,
     staleTime: 0,
     retry: false,
     refetchInterval: options.active ? DISCORD_IMPORT_PROGRESS_POLL_MS : false,
   });
+
+  // One last read when the import stops moving. Turning the interval off
+  // fetches nothing, so without it the panel would keep the last poll from
+  // before the import ended, a channel still "importing" on a finished one.
+  const wasActive = useRef(options.active);
+  const { refetch } = query;
+  useEffect(() => {
+    if (wasActive.current && !options.active && enabled) void refetch();
+    wasActive.current = options.active;
+  }, [options.active, enabled, refetch]);
+
+  return query;
 }
 
 /**

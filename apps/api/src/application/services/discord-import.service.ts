@@ -1285,14 +1285,25 @@ export class DiscordImportService {
     job: DiscordImport,
     requested: string | null | undefined,
   ): { changed: boolean; value: string | null } {
+    // Undefined, not null, on a row read before the column's migration ran:
+    // a start that asks for no cutoff must not write the column then.
+    const current = job.messages_after ?? null;
     if (requested === undefined) {
-      return { changed: false, value: job.messages_after };
+      return { changed: false, value: current };
     }
-    const value = requested === null ? null : new Date(requested).toISOString();
+    // `IsISO8601` also passes shapes `Date` cannot read, such as week dates
+    // ("2025-W01"); those are the caller's mistake, not a 500.
+    const parsed = requested === null ? null : new Date(requested).getTime();
+    if (parsed !== null && !Number.isFinite(parsed)) {
+      throw new BadRequestException(
+        'Send the date cutoff as a date and time, such as 2024-06-01T00:00:00Z.',
+      );
+    }
+    const value = parsed === null ? null : new Date(parsed).toISOString();
     const instant = (at: string | null) =>
       at === null ? null : new Date(at).getTime();
-    if (instant(value) === instant(job.messages_after)) {
-      return { changed: false, value: job.messages_after };
+    if (instant(value) === instant(current)) {
+      return { changed: false, value: current };
     }
     if (job.source !== 'bot') {
       throw new BadRequestException(
@@ -1304,7 +1315,7 @@ export class DiscordImportService {
         'This import has already been started, so its date cutoff is fixed. Start a new import to use a different one.',
       );
     }
-    if (value !== null && new Date(value).getTime() > Date.now()) {
+    if (parsed !== null && parsed > Date.now()) {
       throw new BadRequestException(
         'Choose a date in the past, or leave the date empty to import all history.',
       );

@@ -717,7 +717,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
   }
 }
 
-/** Drops the `discord_imports` embed that carried the tenant filter. */
+/** Every channel status, in the order the Watch panel counts them (#2857). */
 const PROGRESS_STATUSES: readonly DiscordImportChannelStatus[] = [
   'pending',
   'running',
@@ -726,6 +726,7 @@ const PROGRESS_STATUSES: readonly DiscordImportChannelStatus[] = [
   'skipped',
 ];
 
+/** Drops the `discord_imports` embed that carried the tenant filter. */
 function stripImportEmbed(row: DiscordImportChannel): DiscordImportChannel {
   const rest = { ...row } as DiscordImportChannel & {
     discord_imports?: unknown;

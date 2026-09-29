@@ -19,9 +19,11 @@ import { useGateCatalog } from "@/components/shared/use-gate-catalog";
 import type { StagedChannel } from "./upload-step";
 import {
   asNewChannel,
+  isImportTarget,
   newChannelGroups,
   privacyReason,
   type ChannelChoice,
+  type ExistingChannel,
   type MappingIssue,
   type PrivacyReason,
 } from "./mapping-issues";
@@ -236,8 +238,9 @@ export function ChannelMappingStep({
   const importing = readable.filter(
     (channel) => (choices[channel.channelId]?.action ?? "skip") !== "skip",
   ).length;
-  const existingNames = asArray<{ id: string; name: string }>(
-    existingChannels.data,
+  // A DM or group DM is never somewhere to import into (`isImportTarget`).
+  const existingNames = asArray<ExistingChannel>(existingChannels.data).filter(
+    isImportTarget,
   );
   const permissionProps = {
     catalog,
@@ -249,9 +252,11 @@ export function ChannelMappingStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Every channel starts as a new Frapp channel with its Discord name.
-        Change only what you need to. Anything that still needs a decision is
-        listed under Needs attention.
+        Every channel starts as a new Frapp channel with its Discord name,
+        except a public one whose name a whole-chapter Frapp channel already
+        has, which starts merged into it. Channels given the same new name land
+        in one channel. Change only what you need to. Anything that still needs
+        a decision is listed under Needs attention.
       </p>
       {knowsPrivacy ? null : (
         <p className="text-sm text-muted-foreground">

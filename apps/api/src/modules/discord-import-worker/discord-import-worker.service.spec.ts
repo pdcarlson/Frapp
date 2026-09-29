@@ -262,7 +262,15 @@ async function buildWorker(
     findById: jest.fn(async (id: string, chapterId: string) =>
       chapterId === CHAPTER &&
       (id === SIGNET_CHANNEL || id === 'created-channel-1')
-        ? { id, chapter_id: chapterId, name: 'general' }
+        ? {
+            id,
+            chapter_id: chapterId,
+            name: 'general',
+            type: 'PUBLIC',
+            required_permissions: null,
+            is_read_only: true,
+            archived_at: null,
+          }
         : null,
     ),
   };
@@ -703,6 +711,60 @@ describe('DiscordImportWorkerService — importing', () => {
       await worker.sweepImports(NOW);
 
       expect(channelRepo.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('lands the rest of a group in one replacement when its first channel is gone', async () => {
+      repoRef.channels = [
+        newChannel({
+          id: 'map-0',
+          discord_channel_id: '800000000000000009',
+          target_channel_id: 'deleted-channel',
+          status: 'completed',
+        }),
+        newChannel({ id: 'map-1' }),
+        newChannel({ id: 'map-2', discord_channel_id: '800000000000000002' }),
+      ];
+      const { worker, channelRepo } = await buildWorker(repoRef, twoParts());
+
+      await worker.sweepImports(NOW);
+
+      // map-1 makes the replacement; map-2 passes over the gone channel to it.
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(
+        repoRef.channels.map((row) => [row.id, row.target_channel_id]),
+      ).toEqual([
+        ['map-0', 'deleted-channel'],
+        ['map-1', 'created-channel-1'],
+        ['map-2', 'created-channel-1'],
+      ]);
+    });
+
+    it('never reuses a channel whose readers are not the row’s own', async () => {
+      // An upload mapped before #2856 could carry a client-sent target on a
+      // new-channel row; that channel is PUBLIC, the row is gated.
+      const gated = {
+        new_channel_type: 'ROLE_GATED' as const,
+        new_channel_required_permissions: ['channels:read:exec'],
+      };
+      repoRef.channels = [
+        newChannel({
+          id: 'map-0',
+          discord_channel_id: '800000000000000009',
+          target_channel_id: SIGNET_CHANNEL,
+          status: 'completed',
+          ...gated,
+        }),
+        newChannel({ id: 'map-1', ...gated }),
+      ];
+      const { worker, channelRepo } = await buildWorker(
+        repoRef,
+        makeStorage(part000()),
+      );
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(repoRef.inserted().get(SIGNET_CHANNEL)).toBeUndefined();
     });
 
     it('does not reuse a shared channel that is gone', async () => {

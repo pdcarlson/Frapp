@@ -127,7 +127,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Channel-by-channel progress, for watching an import',
     description:
-      'What the Watch view polls while an import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll.',
+      "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
   })
   @ApiOkResponse({ type: DiscordImportProgressDto })
   getProgress(

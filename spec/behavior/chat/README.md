@@ -487,14 +487,21 @@ progress is counted in channels and threads, a channel Discord no longer shows
 the bot counting as done: its message total is only known once Discord has been
 read, so a message count would read full from the first page (#2816). An upload's
 is counted in messages. Neither reads 100% until the import has completed.
-**Watching an import (#2857).** Watch, on an import that is queued or running,
-opens it channel by channel: how many channels and threads are done, importing,
-waiting, failed or gone from Discord; the one importing now with its message
-count so far; the last few finished; and every failure with its reason (at
-most 20 named), each linking to the Frapp channel it lands in once there is
-one. The same panel is Details on a finished import, read once rather than
-polled. Imported messages never arrive live in an open chat, so the panel says
-that opening a channel shows what has landed so far.
+
+**Watching an import (#2857).** Watch, on a bot import that is queued or
+running, opens it channel by channel: how many channels and threads are done,
+importing, waiting, failed or gone from Discord; the one importing now with its
+message count so far; the last few finished; and the failures with their
+reasons (at most 20 named), each linking to the Frapp channel it lands in once
+there is one. A channel the import fails on is marked failed with the reason,
+and a restart resumes it. The same panel is Details on a finished bot import,
+read once when the import stops rather than polled, and there a channel still
+marked importing is where the import stopped. Hide closes the panel and keeps
+the row's own progress live. Imported messages never arrive live in an open
+chat, so the panel says that opening a channel shows what has landed so far.
+An upload has no such panel: it works through export parts, and its channel
+rows record neither their order nor a part it had to skip, so its progress
+stays the message count above.
 
 **What the bot path costs, stated plainly.** One bot process holds read access
 to every connected chapter's Discord server at once. That is a real cross-tenant
@@ -605,14 +612,17 @@ channel that reports a different one fails the import rather than being skipped.
   *2026-09-29, owner's decision (#2856), replacing "merging is still never
   inferred: a name that matches is listed as something to resolve".*
   - A channel the scan saw was public, with no private thread, starts as a
-    merge into the Frapp channel of the same name, when the admin can see
-    exactly one. The names compare ignoring case, punctuation and emoji, so
+    merge into the Frapp channel of the same name, when exactly one
+    whole-chapter (`PUBLIC`), unarchived channel the admin can see has it.
+    The names compare ignoring case, punctuation and emoji, so
     `📢-announcements` finds `Announcements`. A merge takes the target's
     readers, so a channel that was, or may have been, private never merges
     by default (a manual merge of one is #2800), and an upload, which says
     nothing about privacy, never does either. Such a channel starts as a new
-    channel, and its name clash is listed as something to resolve:
-    `chat_channels` has no unique constraint on `(chapter_id, name)`.
+    channel, and a name clash, compared the same loose way, is listed as
+    something to resolve: `chat_channels` has no unique constraint on
+    `(chapter_id, name)`. The admin's DMs and group DMs are never a target,
+    by default or by hand.
   - Channels of one import given the same new name land in **one** new
     channel when they agree on who reads it and whether it is read only; the
     worker reuses the channel the first of them created. Channels that share

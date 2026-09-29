@@ -2755,7 +2755,7 @@ export interface paths {
         };
         /**
          * Channel-by-channel progress, for watching an import
-         * @description What the Watch view polls while an import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll.
+         * @description What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.
          */
         get: operations["DiscordImportController_getProgress_v1"];
         put?: never;
@@ -4514,11 +4514,11 @@ export interface components {
         DiscordImportProgressDto: {
             /** @description Channel and thread rows being imported, by status. Rows mapped to skip are in no count. */
             counts: components["schemas"]["DiscordImportProgressCountsDto"];
-            /** @description The rows running now, at most 5. */
+            /** @description The rows running now, at most 5. On an import that is no longer moving, where it stopped. */
             running: components["schemas"]["DiscordImportChannelProgressRowDto"][];
             /** @description The rows finished last, most recent first, at most 5. */
             recent: components["schemas"]["DiscordImportChannelProgressRowDto"][];
-            /** @description Failed rows, in import order, at most 20. */
+            /** @description Failed rows with the reason, in import order, at most 20. A restart resumes them. */
             failed: components["schemas"]["DiscordImportChannelProgressRowDto"][];
         };
         DiscordImportUploadFileDto: {
@@ -4555,7 +4555,7 @@ export interface components {
             discord_channel_name: string;
             discord_category?: string;
             /**
-             * @description What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer.
+             * @description What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match with an existing channel is never treated as an answer. Rows of one import that `create_new` with the same `new_channel_name` (compared trimmed, without a leading `#`, in any case) and the same readers (type, gate and read-only) land in ONE new channel, the one the first of them creates (#2856); rows of the same name with different readers get a channel each.
              * @enum {string}
              */
             mapping_action: "create_new" | "use_existing" | "skip";

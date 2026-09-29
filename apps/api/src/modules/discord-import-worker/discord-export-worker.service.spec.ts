@@ -502,6 +502,37 @@ describe('DiscordExportWorkerService — walking a channel', () => {
   });
 });
 
+describe('DiscordExportWorkerService — a channel that fails (#2857)', () => {
+  it('records the failure and its reason on the row, then fails the slice', async () => {
+    const harness = await build();
+    harness.bot.fetchMessagePage.mockRejectedValue(
+      new Error('Discord refused the bot (Missing Access).'),
+    );
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      /Missing Access/,
+    );
+    expect(harness.repo.updateChannel).toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      {
+        status: 'failed',
+        error: 'Discord refused the bot (Missing Access).',
+      },
+    );
+  });
+
+  it('keeps the reason the import fails with when that write fails too', async () => {
+    const harness = await build();
+    harness.bot.fetchMessagePage.mockRejectedValue(new Error('page failed'));
+    harness.repo.updateChannel.mockRejectedValue(new Error('row write failed'));
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      'page failed',
+    );
+  });
+});
+
 describe('DiscordExportWorkerService — the date cutoff (#2858)', () => {
   const CUTOFF = '2024-06-01T00:00:00.000Z';
   const at = snowflakeAtOrAfter(Date.parse(CUTOFF));

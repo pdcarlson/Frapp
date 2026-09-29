@@ -22,6 +22,10 @@ const { hooks } = vi.hoisted(() => ({
     clear: vi.fn(),
     remove: vi.fn(),
     progress: vi.fn(),
+    // Records which import the page polls in detail.
+    detail: vi.fn<(id: string | null) => { data: null }>(() => ({
+      data: null,
+    })),
   },
 }));
 
@@ -39,7 +43,7 @@ vi.mock("@repo/hooks", () => ({
     fetchStatus: "idle",
     refetch: vi.fn(),
   }),
-  useDiscordImport: () => ({ data: null }),
+  useDiscordImport: (id: string | null) => hooks.detail(id),
   useDiscordImportProgress: (id: string, options: { active: boolean }) =>
     hooks.progress(id, options),
   useCancelDiscordImport: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -247,5 +251,53 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     ).toBeInTheDocument();
     fireEvent.click(running.getByRole("button", { name: /Retry/ }));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it("keeps showing what it has when one poll fails", () => {
+    hooks.progress.mockReturnValue({
+      data: progress,
+      isPending: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+    const running = rowOf("Running server");
+    fireEvent.click(running.getByRole("button", { name: "Watch" }));
+    expect(running.getByText("Importing now")).toBeInTheDocument();
+    expect(
+      running.queryByText("Couldn’t load the import’s channels"),
+    ).toBeNull();
+  });
+
+  it("keeps the row's own progress live after Hide", () => {
+    render(<DiscordImportPage />);
+    const running = rowOf("Running server");
+    fireEvent.click(running.getByRole("button", { name: "Watch" }));
+    fireEvent.click(running.getByRole("button", { name: "Hide" }));
+    // The detail poll still follows the import; only the panel closed.
+    expect(hooks.detail).toHaveBeenLastCalledWith("moving");
+    expect(running.queryByText("Importing now")).toBeNull();
+  });
+
+  it("says where a stopped import stopped, rather than that it is importing", () => {
+    hooks.rows = [row("broke", "failed", "Failed server")];
+    render(<DiscordImportPage />);
+    const failed = rowOf("Failed server");
+    fireEvent.click(failed.getByRole("button", { name: "Details" }));
+    expect(failed.getByText("Stopped at")).toBeInTheDocument();
+    expect(failed.queryByText("Importing now")).toBeNull();
+    expect(failed.getByText("240 messages")).toBeInTheDocument();
+  });
+
+  it("has no channel panel for an upload, whose Watch keeps its count live", () => {
+    hooks.rows = [
+      { ...row("uploaded", "running", "Uploaded server"), source: "upload" },
+    ];
+    render(<DiscordImportPage />);
+    const uploaded = rowOf("Uploaded server");
+    fireEvent.click(uploaded.getByRole("button", { name: "Watch" }));
+    expect(hooks.detail).toHaveBeenLastCalledWith("uploaded");
+    expect(hooks.progress).not.toHaveBeenCalled();
+    expect(uploaded.queryByRole("button", { name: "Hide" })).toBeNull();
   });
 });

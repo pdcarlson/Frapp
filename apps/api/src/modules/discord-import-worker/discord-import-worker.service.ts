@@ -38,7 +38,10 @@ import type {
   DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
-import { newChannelMergeKey } from '#domain/utils/discord-channel-merge';
+import {
+  channelServesMergeKey,
+  newChannelMergeKey,
+} from '#domain/utils/discord-channel-merge';
 
 /**
  * How long one tick may work before checkpointing and handing the job back.
@@ -791,24 +794,29 @@ export class DiscordImportWorkerService {
     }
 
     const key = newChannelMergeKey(mapping);
-    const shared = key
-      ? siblings.find(
-          (other) =>
-            other.id !== mapping.id &&
-            other.target_channel_id !== null &&
-            newChannelMergeKey(other) === key,
-        )
-      : undefined;
-    if (shared?.target_channel_id) {
-      // A create_new row's target is only ever the channel this import made
-      // for it (the service drops a client-sent one), and it is read back
-      // through the chapter like any target before a message lands in it.
-      // Gone since, it is not reused: this row makes its own.
-      const target = await this.channelRepo.findById(
-        shared.target_channel_id,
-        chapterId,
-      );
-      if (target) {
+    // Every channel a like-named row already has, first found first. A gone
+    // one is passed over for the next, so a group whose first channel was
+    // deleted still lands in one replacement rather than one each.
+    const candidates = key
+      ? [
+          ...new Set(
+            siblings.flatMap((other) =>
+              other.id !== mapping.id &&
+              other.target_channel_id !== null &&
+              newChannelMergeKey(other) === key
+                ? [other.target_channel_id]
+                : [],
+            ),
+          ),
+        ]
+      : [];
+    for (const candidate of candidates) {
+      // Read back through the chapter like any target, and reused only while
+      // the channel itself still has this row's readers: the row that points
+      // at it may carry a target it did not create (an upload mapped before
+      // #2856), or the channel may have been re-gated since.
+      const target = await this.channelRepo.findById(candidate, chapterId);
+      if (target && channelServesMergeKey(target, mapping)) {
         await this.importRepo.updateChannel(mapping.id, importId, {
           target_channel_id: target.id,
         });

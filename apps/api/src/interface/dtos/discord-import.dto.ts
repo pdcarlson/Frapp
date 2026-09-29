@@ -17,6 +17,7 @@ import {
 import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
 import { RawValue } from './raw-value.transform';
+import { DISCORD_IMPORT_PROGRESS_LIMITS } from '#domain/entities/discord-import.entity';
 
 export class CreateDiscordImportDto {
   @ApiProperty({
@@ -168,7 +169,7 @@ export class DiscordChannelMappingDto {
   @ApiProperty({
     enum: ['create_new', 'use_existing', 'skip'],
     description:
-      'What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer.',
+      'What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match with an existing channel is never treated as an answer. Rows of one import that `create_new` with the same `new_channel_name` (compared trimmed, without a leading `#`, in any case) and the same readers (type, gate and read-only) land in ONE new channel, the one the first of them creates (#2856); rows of the same name with different readers get a channel each.',
   })
   @IsIn(['create_new', 'use_existing', 'skip'])
   mapping_action: 'create_new' | 'use_existing' | 'skip';
@@ -360,19 +361,19 @@ export class DiscordImportProgressDto {
 
   @ApiProperty({
     type: [DiscordImportChannelProgressRowDto],
-    description: 'The rows running now, at most 5.',
+    description: `The rows running now, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.running}. On an import that is no longer moving, where it stopped.`,
   })
   running: DiscordImportChannelProgressRowDto[];
 
   @ApiProperty({
     type: [DiscordImportChannelProgressRowDto],
-    description: 'The rows finished last, most recent first, at most 5.',
+    description: `The rows finished last, most recent first, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.recent}.`,
   })
   recent: DiscordImportChannelProgressRowDto[];
 
   @ApiProperty({
     type: [DiscordImportChannelProgressRowDto],
-    description: 'Failed rows, in import order, at most 20.',
+    description: `Failed rows with the reason, in import order, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.failed}. A restart resumes them.`,
   })
   failed: DiscordImportChannelProgressRowDto[];
 }

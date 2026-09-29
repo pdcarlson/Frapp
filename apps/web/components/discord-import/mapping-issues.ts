@@ -5,6 +5,18 @@ import { nameKey, type SameAsDiscordReaders } from "./role-matching";
 export interface ExistingChannel {
   id: string;
   name: string;
+  /** `PUBLIC`, `ROLE_GATED`, `PRIVATE`, `DM` or `GROUP_DM`. */
+  type?: string;
+  archived_at?: string | null;
+}
+
+/**
+ * Whether a channel can take an import at all. The admin's own DMs and group
+ * DMs are in the channel list, and a group DM has a name its members chose,
+ * so "Officers" could be one; chapter history never belongs in one.
+ */
+export function isImportTarget(channel: ExistingChannel): boolean {
+  return channel.type !== "DM" && channel.type !== "GROUP_DM";
 }
 
 export interface ChannelChoice {
@@ -77,11 +89,12 @@ export function defaultVisibility(
  * emoji (`nameKey`), so `📢-announcements` finds `Announcements`, and only
  * when exactly one visible Frapp channel has it: two candidates is a guess.
  *
- * Only for a channel the scan SAW was public with no private thread. A merge
- * takes the target's readers, and a private channel merged into a
- * chapter-wide one would be readable by everyone (#2800), so it keeps the
- * new-channel default and its name clash is asked about instead. An upload
- * says nothing about privacy, so it never merges by default either.
+ * Only for a channel the scan SAW was public with no private thread, and
+ * only into a whole-chapter channel that is not archived. A merge takes the
+ * target's readers, and a private channel merged into a chapter-wide one
+ * would be readable by everyone (#2800), so it keeps the new-channel default
+ * and its name clash is asked about instead. An upload says nothing about
+ * privacy, so it never merges by default either.
  */
 export function mergeTarget(
   channel: StagedChannel,
@@ -92,8 +105,14 @@ export function mergeTarget(
   }
   const key = nameKey(channel.channelName);
   if (!key) return null;
+  // Only a live, whole-chapter channel is merged into by default: a public
+  // channel into a public one. A narrower one (gated, private) is the
+  // admin's call, and a DM or group DM is never a target (`isImportTarget`).
   const matches = existing.filter(
-    (candidate) => nameKey(candidate.name) === key,
+    (candidate) =>
+      candidate.type === "PUBLIC" &&
+      !candidate.archived_at &&
+      nameKey(candidate.name) === key,
   );
   const [only, ...others] = matches;
   return only && others.length === 0 ? only.id : null;
@@ -369,7 +388,23 @@ export function mappingIssues(
   readersOf: ReadersOf = () => null,
 ): MappingIssue[] {
   const issues: MappingIssue[] = [];
-  const existing = new Set(existingChannelNames.map(normaliseChannelName));
+  // A clash is the same name, or a like one: the merge default matches
+  // ignoring punctuation and emoji (`nameKey`), so a channel it declines
+  // (private, or two candidates) must be asked about under that rule too, or
+  // `📢┃announcements` would land beside #announcements unasked.
+  const existing = new Map<string, string>();
+  for (const existingName of existingChannelNames) {
+    existing.set(`exact:${normaliseChannelName(existingName)}`, existingName);
+    const like = nameKey(existingName);
+    if (like) existing.set(`like:${like}`, existingName);
+  }
+  const clashWith = (name: string): string | undefined => {
+    const like = nameKey(name);
+    return (
+      existing.get(`exact:${normaliseChannelName(name)}`) ??
+      (like ? existing.get(`like:${like}`) : undefined)
+    );
+  };
   const { split } = newChannelGroups(channels, choices, readersOf);
 
   let importing = 0;
@@ -396,10 +431,14 @@ export function mappingIssues(
         channelId: channel.channelId,
         message: `Name the new channel for ${label}.`,
       });
-    } else if (existing.has(key)) {
+    } else if (clashWith(name) !== undefined) {
+      const other = (clashWith(name) ?? name).trim().replace(/^#+/, "");
       issues.push({
         channelId: channel.channelId,
-        message: `#${name} already exists in Frapp. Rename the new channel for ${label}, or merge into the existing one.`,
+        message:
+          normaliseChannelName(other) === key
+            ? `#${name} already exists in Frapp. Rename the new channel for ${label}, or merge into the existing one.`
+            : `#${name} is a lot like #${other}, which already exists in Frapp. Rename the new channel for ${label}, or merge into the existing one.`,
       });
     } else if (split.has(channel.channelId)) {
       issues.push({

@@ -881,6 +881,24 @@ describe('DiscordImportService — the date cutoff (#2858)', () => {
     expect(repo.update).not.toHaveBeenCalled();
   });
 
+  it('answers a date shape it cannot read with a 400, not a 500', async () => {
+    await build(botDraft());
+    mapped();
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: '2025-W01' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('writes nothing for an explicit null on a row read before the migration', async () => {
+    // No column yet: the row carries no messages_after at all.
+    const unmigrated = botDraft() as Partial<DiscordImport>;
+    delete unmigrated.messages_after;
+    await build(unmigrated as DiscordImport);
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: null });
+    expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
+  });
+
   it('refuses one on an upload, whose range is set when exporting', async () => {
     await build(job({ status: 'draft' }));
     await expect(
