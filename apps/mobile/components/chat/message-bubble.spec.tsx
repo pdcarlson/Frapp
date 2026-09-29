@@ -521,6 +521,9 @@ describe("edited marker (#2775)", () => {
         ).toJSON(),
       );
       expect(flat).toContain(EDITED_MARKER);
+      // The copy itself, as web's row header and the behavior spec have it.
+      expect(flat).toMatch(/\S \(edited\)/);
+      expect(EDITED_MARKER).toBe("(edited)");
     }
   });
 

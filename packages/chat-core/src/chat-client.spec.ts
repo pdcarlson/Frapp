@@ -1530,3 +1530,47 @@ describe("sendMessage — outbox faults (#1718)", () => {
     expect(apiClient.POST).toHaveBeenCalled();
   });
 });
+
+describe("deleteMessage on a row the window doesn't hold (#2775)", () => {
+  it("never splices the tombstone in, which would break older-page paging", async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-new",
+          channel_id: "chan-1",
+          sender_id: "user-2",
+          content: "newest",
+          created_at: "2026-02-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    const apiClient = {
+      DELETE: vi.fn().mockResolvedValue({
+        data: {
+          id: "msg-old",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "[message deleted]",
+          is_deleted: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+    });
+
+    await deleteMessage(ctx, { channelId: "chan-1", messageId: "msg-old" });
+
+    const cache = queryClient.getQueryData(
+      chatMessagesKey("chan-1"),
+    ) as ChannelCache;
+    expect(cache.order).toEqual(["msg-new"]);
+    expect(cache.byId["msg-old"]).toBeUndefined();
+  });
+});

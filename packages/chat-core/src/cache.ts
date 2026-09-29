@@ -122,22 +122,26 @@ export function mergeServerRow(
 }
 
 /**
- * `mergeServerRow`, but only for a row the cache already holds; otherwise the
- * cache is returned unchanged.
+ * `mergeServerRow`, but only for a row the cache already holds, under its
+ * server id or, while its send is still settling, its `client_message_id`;
+ * otherwise the cache is returned unchanged.
  *
- * For the answer to an edit or delete (#2775). The server returns the whole
- * row, and merging one the window doesn't hold would splice it in at its
- * `created_at`: an old message edited after its channel reloaded with only
- * the newest page would land below that page, `oldestConfirmed` would become
- * it, and the next older-page read (`history.ts`) would skip every message in
- * between for good. A row the window doesn't hold has nothing on screen to
- * update, and the next read of its page brings the edit with it.
+ * For anything that updates an existing message: the answer to an edit or
+ * delete (#2775), and a Realtime UPDATE echo (#2871). Merging a row the window
+ * doesn't hold would splice it in at its `created_at`: an old message edited
+ * after its channel reloaded with only the newest page would land below that
+ * page, `oldestConfirmed` would become it, and the next older-page read
+ * (`history.ts`) would skip every message in between for good. A row the
+ * window doesn't hold has nothing on screen to update, and the next read of
+ * its page brings the change with it.
  */
 export function mergeHeldServerRow(
   cache: ChannelCache,
   row: RawChatMessage,
 ): ChannelCache {
-  return Object.prototype.hasOwnProperty.call(cache.byId, row.id)
+  const held = (key: string | null | undefined) =>
+    !!key && Object.prototype.hasOwnProperty.call(cache.byId, key);
+  return held(row.id) || held(row.client_message_id)
     ? mergeServerRow(cache, row)
     : cache;
 }

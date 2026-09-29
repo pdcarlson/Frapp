@@ -62,9 +62,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the composer and Delete asks for confirmation in a native alert, so each row
  * closes the sheet and tells the screen which message it was for.
  *
- * **Two sheets, not one with panes.** The menu is at most five rows (Reply,
- * Edit, Delete, then Report and Block) and sizes to its content; the report
- * form is seven reasons, a text field and a button, which
+ * **Two sheets, not one with panes.** The menu is at most four rows (Reply,
+ * Edit and Delete on your own message; Reply, Delete, Report and Block on
+ * someone else's) and sizes to its content; the report form is seven reasons, a text field and a button, which
  * on a small phone with the keyboard up is taller than the screen. A bounded
  * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
  * fixed detent with the sheet-aware scroll view as its direct child

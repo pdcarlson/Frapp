@@ -55,6 +55,7 @@ import {
   applyReactionDelete,
   applyReactionInsert,
   emptyCache,
+  mergeHeldServerRow,
   mergeServerRow,
   removeMessage,
 } from "./cache";
@@ -478,10 +479,19 @@ class ChatRealtimeManager {
           // INSERT / UPDATE — full row is present and authoritative about its
           // content, and says nothing about the viewer's block list: this path
           // has no viewer. `asEcho` makes that explicit (#2315).
+          //
+          // An UPDATE (an edit, pin or soft delete) merges only into a cache
+          // that holds the row. An old message the window never loaded would
+          // otherwise be spliced in below the newest page, become the cache's
+          // oldest confirmed row, and make the older-page read (`history.ts`)
+          // skip everything in between for good (#2775, #2871). A new message
+          // is an INSERT and always lands.
           const echo = asEcho(next);
-          this.patchCache(state.channelId, (cache) =>
-            mergeServerRow(cache, echo),
-          );
+          const merge =
+            payload.eventType === "UPDATE"
+              ? mergeHeldServerRow
+              : mergeServerRow;
+          this.patchCache(state.channelId, (cache) => merge(cache, echo));
           this.settleNotices(state.channelId, [next]);
           this.writeLastSeen(state.channelId, next.id);
           return;
@@ -501,8 +511,7 @@ class ChatRealtimeManager {
 
     channel.on("broadcast", { event: "typing" }, (msg) => {
       const payload = msg.payload as
-        | { userId?: string; displayName?: string | null }
-        | undefined;
+        { userId?: string; displayName?: string | null } | undefined;
       if (!payload?.userId) return;
       state.typingUsers.set(payload.userId, Date.now() + 4000);
       this.emitStatus();
@@ -642,7 +651,9 @@ class ChatRealtimeManager {
   private dispatchActionDelete(actionId: string): void {
     for (const channelId of this.channels.keys()) {
       this.patchCache(channelId, (cache) =>
-        cache.actionIndex[actionId] ? applyReactionDelete(cache, actionId) : cache,
+        cache.actionIndex[actionId]
+          ? applyReactionDelete(cache, actionId)
+          : cache,
       );
     }
   }

@@ -70,6 +70,7 @@ import {
 } from "@/lib/chat/channel-list";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
+import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -455,68 +456,12 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
-  // A reply quote's tap scrolls to its parent, when the parent is a row in
-  // the list. Rows have no fixed height, so a target outside the rendered
-  // window fails `scrollToIndex` once; the fallback scrolls near it by the
-  // average row height and tries once more.
-  //
-  // The retry looks the message up again when it fires, in the rows on screen
-  // then: the same list instance is reused across a channel switch, and
-  // `scrollToIndex` throws (not fails) on an index past the end. It is also
-  // cancelled by a channel switch or unmount.
-  const listRef = useRef<FlatList<ThreadRow>>(null);
-  const rowsRef = useRef(inverted);
-  useEffect(() => {
-    rowsRef.current = inverted;
-  }, [inverted]);
-  const jumpTargetRef = useRef<string | null>(null);
-  const jumpRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelJumpRetry = useCallback(() => {
-    if (jumpRetryRef.current) clearTimeout(jumpRetryRef.current);
-    jumpRetryRef.current = null;
-  }, []);
-  useEffect(() => cancelJumpRetry, [channelId, cancelJumpRetry]);
-  const jumpToMessage = useCallback(
-    (messageId: string) => {
-      const index = rowsRef.current.findIndex(
-        (row) => row.message.id === messageId,
-      );
-      if (index === -1) return;
-      cancelJumpRetry();
-      jumpTargetRef.current = messageId;
-      listRef.current?.scrollToIndex({
-        index,
-        animated: true,
-        viewPosition: 0.5,
-      });
-    },
-    [cancelJumpRetry],
-  );
-  const handleScrollToIndexFailed = useCallback(
-    (info: { index: number; averageItemLength: number }) => {
-      const target = jumpTargetRef.current;
-      // One retry per jump.
-      jumpTargetRef.current = null;
-      if (!target) return;
-      listRef.current?.scrollToOffset({
-        offset: info.averageItemLength * info.index,
-        animated: false,
-      });
-      jumpRetryRef.current = setTimeout(() => {
-        jumpRetryRef.current = null;
-        const index = rowsRef.current.findIndex(
-          (row) => row.message.id === target,
-        );
-        if (index === -1) return;
-        listRef.current?.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.5,
-        });
-      }, 100);
-    },
-    [],
-  );
+  // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
+  const {
+    listRef,
+    jumpToMessage,
+    onScrollToIndexFailed: handleScrollToIndexFailed,
+  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
 
   const { unblock, reloadMaskedCopies } = useBlockActions();
   const handleUnblock = useCallback(

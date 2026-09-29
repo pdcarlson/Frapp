@@ -947,10 +947,10 @@ export interface EditMessageArgs {
  * one canonical source for the new `content`/`edited_at`, and `mergeServerRow`
  * is already built to treat this as "a pin/edit UPDATE echo" (see its own
  * docstring) — the same merge a Realtime echo of this same edit would apply,
- * so a duplicate echo from Postgres Changes is a harmless no-op. Merged only
- * into a cache that holds the row (`mergeHeldServerRow`): an edit of a
+ * so a duplicate echo from Postgres Changes is a harmless no-op. Both merge
+ * only into a cache that holds the row (`mergeHeldServerRow`): an edit of a
  * message the window no longer holds must not splice it back in out of
- * order, which would break older-page paging (#2775).
+ * order, which would break older-page paging (#2775, #2871).
  */
 export async function editMessage(
   ctx: ChatActionContext,

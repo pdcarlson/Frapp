@@ -19,11 +19,7 @@ import { visibleTypingUsers, type BlockState } from "./blocks";
 import { memoryStore } from "./test/memory-store";
 import { unconfirmedNotice } from "./test/notices";
 
-type SubscribeStatus =
-  | "SUBSCRIBED"
-  | "CHANNEL_ERROR"
-  | "TIMED_OUT"
-  | "CLOSED";
+type SubscribeStatus = "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED";
 
 /** Mirrors `CHANNEL_STATES` in @supabase/realtime-js. */
 type FakeChannelState = "closed" | "errored" | "joined" | "joining" | "leaving";
@@ -41,6 +37,7 @@ interface FakeChannel {
   trigger: (status: SubscribeStatus) => void;
   /** Delivers a `postgres_changes` frame to whatever the manager registered. */
   emitPostgresChange: (payload: {
+    eventType?: "INSERT" | "UPDATE" | "DELETE";
     new?: unknown;
     old?: unknown;
   }) => void;
@@ -440,7 +437,9 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience/message-d
   test("a poll left hanging at destroy() does not wedge the next session", async () => {
     // The manager is a module singleton, so a latched in-flight flag would
     // survive teardown and silently disable polling forever.
-    backfill.mockImplementationOnce(() => new Promise<RawChatMessage[]>(() => {}));
+    backfill.mockImplementationOnce(
+      () => new Promise<RawChatMessage[]>(() => {}),
+    );
 
     chatRealtime.subscribe("channel-1");
     current("channel-1").trigger("CHANNEL_ERROR");
@@ -537,8 +536,10 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     chatRealtime.subscribe("channel-1");
 
     await vi.waitFor(() => expect(current("channel-1")).not.toBe(first));
-    const topics = (supabase.channel as unknown as ReturnType<typeof vi.fn>).mock
-      .calls.map((c) => c[0] as string)
+    const topics = (
+      supabase.channel as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls
+      .map((c) => c[0] as string)
       .filter((t) => t.startsWith("chat:channel:"));
     expect(new Set(topics)).toEqual(new Set(["chat:channel:channel-1"]));
   });
@@ -637,6 +638,72 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
       chatMessagesKey("channel-1"),
     );
     expect(cache?.order).toContain("msg-live");
+  });
+
+  test("an UPDATE echo of a message the window doesn't hold stays out, so paging can't skip history (#2871)", () => {
+    // An old message edited, pinned or deleted while only the newest page is
+    // loaded. Spliced in, it would become the cache's oldest row and the next
+    // older-page read would start below everything in between.
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    ch.emitPostgresChange({
+      eventType: "INSERT",
+      new: {
+        id: "msg-new",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "newest",
+        created_at: "2026-02-01T00:00:00.000Z",
+        client_message_id: "client-new",
+      },
+    });
+
+    ch.emitPostgresChange({
+      eventType: "UPDATE",
+      new: {
+        id: "msg-old",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "edited long ago",
+        created_at: "2026-01-01T00:00:00.000Z",
+        edited_at: "2026-02-02T00:00:00.000Z",
+        client_message_id: "client-old",
+      },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.order).toEqual(["msg-new"]);
+    expect(cache?.byId["msg-old"]).toBeUndefined();
+  });
+
+  test("an UPDATE echo of a held message still lands", () => {
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    const row = {
+      id: "msg-held",
+      channel_id: "channel-1",
+      sender_id: "user-2",
+      kind: "text",
+      content: "before",
+      created_at: "2026-02-01T00:00:00.000Z",
+      client_message_id: "client-held",
+    };
+    ch.emitPostgresChange({ eventType: "INSERT", new: row });
+    ch.emitPostgresChange({
+      eventType: "UPDATE",
+      new: { ...row, content: "after", edited_at: "2026-02-01T00:05:00.000Z" },
+    });
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.byId["msg-held"]?.content).toBe("after");
   });
 
   test("an echo never lands server-evaluated, even carrying a sender_blocked of its own (#2315)", () => {
@@ -785,7 +852,9 @@ describe("ChatRealtimeManager — heavy-command notice eviction (#1909)", () => 
     backfill.mockResolvedValueOnce([card]);
     joined();
 
-    await vi.waitFor(() => expect(readNotices("chan-1", "user-1", kv)).toEqual([]));
+    await vi.waitFor(() =>
+      expect(readNotices("chan-1", "user-1", kv)).toEqual([]),
+    );
   });
 
   // A notice is filed under the member who dispatched, and the server posts

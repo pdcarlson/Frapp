@@ -916,7 +916,7 @@ export function MessageItem({
           */}
           <div className="mr-1 mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
             <span>{formatClock(message.created_at)}</span>
-            {message.edited_at ? <span>· edited</span> : null}
+            {message.edited_at ? <span>(edited)</span> : null}
             {message.is_pinned ? (
               <span className="inline-flex items-center gap-1 text-accent-text">
                 <PinGlyph className="h-3.5 w-3.5" />
