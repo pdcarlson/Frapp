@@ -265,6 +265,15 @@ export function MemberDetailSheet({
       : false;
   const customFields = useMemo(() => parseCustomFields(resolvedMember), [resolvedMember]);
   const canMutate = !usingPreviewData && !rolesQuery.isError && !memberQuery.isError;
+  // The writes' own gates (`PATCH /members/:id/roles` needs `roles:manage`,
+  // `DELETE /members/:id` needs `members:remove`), mirrored so a viewer who
+  // holds only `members:view` isn't offered controls that can only 403. Every
+  // directory visitor can open this sheet, from the Actives tab and, since
+  // #2484, from the Alumni tab. Disabled while the permission read is pending,
+  // the same as a failed read.
+  const myPermissions = myPermissionsQuery.data?.permissions;
+  const canEditRoles = canMutate && can("roles:manage", myPermissions);
+  const canRemove = canMutate && can("members:remove", myPermissions);
 
   async function handleSaveRoles() {
     if (!memberId) return;
@@ -502,7 +511,7 @@ export function MemberDetailSheet({
                 title={role.name}
                 subtitle={role.id}
                 checked={selectedRoleIds.includes(role.id)}
-                disabled={!canMutate}
+                disabled={!canEditRoles}
                 onChange={(isChecked) => handleRoleChange(role.id, isChecked)}
               />
             ))}
@@ -527,7 +536,7 @@ export function MemberDetailSheet({
                   subtitle={role.key}
                   monoSubtitle
                   checked={selectedCustomRoleIds.includes(role.id)}
-                  disabled={!canMutate}
+                  disabled={!canEditRoles}
                   onChange={(isChecked) =>
                     handleCustomRoleChange(role.id, isChecked)
                   }
@@ -550,7 +559,7 @@ export function MemberDetailSheet({
           </Button>
           <Button
             onClick={handleSaveRoles}
-            disabled={!canMutate || updateRolesMutation.isPending}
+            disabled={!canEditRoles || updateRolesMutation.isPending}
           >
             {updateRolesMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -560,7 +569,7 @@ export function MemberDetailSheet({
           <Button
             variant="destructive"
             onClick={handleRemoveMember}
-            disabled={!canMutate || removeMemberMutation.isPending}
+            disabled={!canRemove || removeMemberMutation.isPending}
           >
             {removeMemberMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />

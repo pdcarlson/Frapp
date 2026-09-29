@@ -81,7 +81,9 @@ describe("selectDirectoryRows", () => {
 
 // #2484: a chapter with alumni. `GET /v1/members` returns all of them; the
 // Actives tab must not, or the "Actives" chip counts alumni the "Alumni" chip
-// also counts.
+// also counts. That the two tabs partition the chapter is checked against the
+// screen itself, with separate members and alumni payloads, in
+// `directory-screen.spec.tsx`.
 describe("selectActives", () => {
   const chapter = [
     { user_id: "u-1", display_name: "Marcus Reid", is_alumni: false },
@@ -94,17 +96,6 @@ describe("selectActives", () => {
     expect(
       selectDirectoryRows(selectActives(chapter)).map((row) => row.displayName),
     ).toEqual(["Andre Silva", "Marcus Reid"]);
-  });
-
-  it("leaves no member on both tabs and none on neither", () => {
-    const actives = selectActives(chapter).map((row) => String(row.user_id));
-    const alumni = chapter
-      .filter((row) => row.is_alumni)
-      .map((row) => row.user_id);
-    expect(actives.filter((id) => alumni.includes(id))).toEqual([]);
-    expect([...actives, ...alumni].sort()).toEqual(
-      chapter.map((row) => row.user_id).sort(),
-    );
   });
 
   it("treats a row without the flag as active, as an older API would send it", () => {

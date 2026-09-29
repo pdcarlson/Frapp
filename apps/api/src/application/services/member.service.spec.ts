@@ -38,6 +38,7 @@ describe('MemberService', () => {
   let mockRbacService: {
     getEffectivePermissions: jest.Mock;
     flagIfPresidentRemoved: jest.Mock;
+    getAlumniRoleId: jest.Mock;
   };
   let mockAuditLogService: AuditLogServiceMock;
   let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
@@ -86,6 +87,15 @@ describe('MemberService', () => {
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
       flagIfPresidentRemoved: jest.fn().mockResolvedValue(undefined),
+      // The real lookup, over the mocked role repository, so each test states
+      // the chapter's Alumni role once, on `findByChapterAndSystemKey`.
+      getAlumniRoleId: jest.fn(async (chapterId: string) => {
+        const role = await mockRoleRepo.findByChapterAndSystemKey(
+          chapterId,
+          SystemRoleKeys.ALUMNI,
+        );
+        return role?.id ?? null;
+      }),
     };
     mockAuditLogService = createAuditLogServiceMock();
     mockStorageProvider = {
@@ -1679,10 +1689,8 @@ describe('MemberService', () => {
           .sort(),
       );
       expect(alumni.every((m) => m.is_alumni)).toBe(true);
-      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
-        'chapter-1',
-        SystemRoleKeys.ALUMNI,
-      );
+      // Through the lookup the alumni restrictions use, not a copy of it.
+      expect(mockRbacService.getAlumniRoleId).toHaveBeenCalledWith('chapter-1');
     });
 
     it('is false for everyone when the chapter has no keyed Alumni role', async () => {

@@ -17,10 +17,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Member } from '#domain/entities/member.entity';
 import { User } from '#domain/entities/user.entity';
-import {
-  SystemPermissions,
-  SystemRoleKeys,
-} from '#domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
@@ -57,10 +54,11 @@ export interface MemberProfile {
   current_company: string | null;
   email: string;
   /**
-   * Whether the member holds the chapter's Alumni system role, resolved by
-   * `system_key` exactly as {@link MemberService.findAlumniByChapter} resolves
-   * it — so a client splitting a list into actives and alumni can never count
-   * one member in both halves, nor disagree with `GET /alumni` (#2484). `false`
+   * Whether the member holds the chapter's Alumni system role. Resolved through
+   * `RbacService.getAlumniRoleId`, the lookup {@link MemberService.findAlumniByChapter}
+   * and the alumni restrictions also use, so a client splitting a list into
+   * actives and alumni can never count one member in both halves, nor disagree
+   * with `GET /alumni` or with who is actually restricted (#2484). `false`
    * everywhere for a legacy chapter whose Alumni role has no key, matching that
    * endpoint's empty list.
    */
@@ -118,7 +116,7 @@ export class MemberService {
     const userIds = [...new Set(members.map((member) => member.user_id))];
     const [users, alumniRoleId] = await Promise.all([
       this.userRepo.findByIds(userIds),
-      this.findAlumniRoleId(chapterId),
+      this.rbacService.getAlumniRoleId(chapterId),
     ]);
     const userMap = new Map(users.map((user) => [user.id, user]));
 
@@ -495,7 +493,7 @@ export class MemberService {
     const [user, permissions, alumniRoleId] = await Promise.all([
       this.userRepo.findById(member.user_id),
       this.rbacService.getEffectivePermissions(chapterId, viewerUserId),
-      this.findAlumniRoleId(chapterId),
+      this.rbacService.getAlumniRoleId(chapterId),
     ]);
     if (!user) throw new NotFoundException('User not found');
 
@@ -537,7 +535,7 @@ export class MemberService {
     const userIds = [...new Set(members.map((m) => m.user_id))];
     const [users, alumniRoleId] = await Promise.all([
       this.userRepo.findByIds(userIds),
-      this.findAlumniRoleId(chapterId),
+      this.rbacService.getAlumniRoleId(chapterId),
     ]);
     const userMap = new Map(users.map((u) => [u.id, u]));
 
@@ -625,7 +623,7 @@ export class MemberService {
     chapterId: string,
     filter?: AlumniFilter,
   ): Promise<MemberProfile[]> {
-    const alumniRoleId = await this.findAlumniRoleId(chapterId);
+    const alumniRoleId = await this.rbacService.getAlumniRoleId(chapterId);
     if (!alumniRoleId) return [];
 
     const members = await this.memberRepo.findByChapter(chapterId);
@@ -681,20 +679,6 @@ export class MemberService {
       if (!companyMatch) return false;
     }
     return true;
-  }
-
-  /**
-   * The chapter's Alumni role id, by `system_key` — the one resolution both
-   * `GET /alumni` and every profile's `is_alumni` go through, so the two can
-   * never disagree about who is an alumnus. `null` when the chapter has no
-   * keyed Alumni role (see `spec/behavior/alumni.md` → Role identity).
-   */
-  private async findAlumniRoleId(chapterId: string): Promise<string | null> {
-    const alumniRole = await this.roleRepo.findByChapterAndSystemKey(
-      chapterId,
-      SystemRoleKeys.ALUMNI,
-    );
-    return alumniRole?.id ?? null;
   }
 
   private mergeMemberWithUser(

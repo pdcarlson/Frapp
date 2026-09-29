@@ -16,7 +16,10 @@ import { networkMock } from "@/tests/network";
  * every future restyle without telling anyone which rule broke.
  */
 
-const { mockOffline } = vi.hoisted(() => ({ mockOffline: { value: false } }));
+const { mockOffline, mutateRoles } = vi.hoisted(() => ({
+  mockOffline: { value: false },
+  mutateRoles: vi.fn(),
+}));
 
 type Read = {
   data: unknown;
@@ -79,7 +82,7 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => rolesRead,
   useLeaderboard: () => leaderboardRead,
   useOrgConfig: () => ({ data: undefined }),
-  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
 }));
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
@@ -420,7 +423,7 @@ describe("Actives on a chapter with alumni", () => {
     expect(screen.queryByRole("option", { name: /2019/ })).toBeNull();
   });
 
-  it("leaves alumni out of a search on this tab too", async () => {
+  it("searches both tabs, since it is the web directory's only name search", async () => {
     const user = userEvent.setup();
     Object.assign(membersRead, read(CHAPTER));
     Object.assign(
@@ -431,8 +434,84 @@ describe("Actives on a chapter with alumni", () => {
 
     await user.type(screen.getByRole("searchbox"), "a");
 
-    expect(await screen.findByText(/1 member matching/)).toBeInTheDocument();
-    expect(screen.queryByText("Charles Whitmore III")).toBeNull();
+    expect(await screen.findByText(/2 members matching/)).toBeInTheDocument();
+    expect(screen.getByText("Charles Whitmore III")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Actives and alumni" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers the Alumni role to assign, not to filter a list it can't match", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-alumni",
+          name: "Alumni",
+          system_key: "ALUMNI",
+          is_system: true,
+          permissions: [],
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    const filter = screen.getByLabelText("Filter members by role");
+    expect(
+      within(filter).queryByRole("option", { name: "Role: Alumni" }),
+    ).toBeNull();
+    expect(
+      within(filter).getByRole("option", { name: "Role: Treasurer" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(
+      within(screen.getByLabelText("Select role to assign")).getByRole(
+        "option",
+        { name: "Alumni" },
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("narrows the selection to the failures after a partly failed bulk assign", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    mutateRoles.mockReset();
+    mutateRoles.mockImplementation(({ id }: { id: string }) =>
+      id === "m-2" ? Promise.reject(new Error("nope")) : Promise.resolve({}),
+    );
+    const { rerender } = render(<MembersDirectory />);
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Select role to assign"),
+      "r-1",
+    );
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    // Only Grace's assignment failed, so only Grace is left to retry.
+    expect(await screen.findByText("1 selected")).toBeInTheDocument();
+
+    // Had the role been Alumni, Ada's refetch would move her off this tab;
+    // she must not linger in the count once she is gone.
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], is_alumni: true }, CHAPTER[1], ALUMNUS]),
+    );
+    rerender(<MembersDirectory />);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 
   it("keeps an open sheet on a member who has just been made an alumnus", async () => {

@@ -66,7 +66,12 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
 
 const PAGE_SIZE = 25;
 
-type RoleOption = { id: string; name: string; isPresident: boolean };
+type RoleOption = {
+  id: string;
+  name: string;
+  isPresident: boolean;
+  isAlumni: boolean;
+};
 
 type SortKey = "name" | "role" | "points" | "joined";
 type SortDir = "asc" | "desc";
@@ -192,16 +197,23 @@ export function MembersDirectory() {
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
   // The Actives tab is the chapter minus its alumni (#2484), who are listed on
-  // the Alumni tab beside it. `GET /v1/members` and its search both return the
-  // whole chapter, so the split is made here on the server's `is_alumni`,
-  // which it resolves exactly as it builds `GET /v1/alumni` — the two tabs
-  // never both list one member. `!== true` so a row from an API older than the
-  // flag reads as active, the unsplit list this was before.
-  const members = useMemo(
-    () =>
-      (activeQuery.data ?? []).filter((member) => member.is_alumni !== true),
-    [activeQuery.data],
-  );
+  // the Alumni tab beside it. `GET /v1/members` returns the whole chapter, so
+  // the split is made here on the server's `is_alumni`, which it resolves
+  // exactly as it builds `GET /v1/alumni`: the two tabs never both list one
+  // member. `!== true` so a row from an API older than the flag reads as
+  // active, the unsplit list this was before.
+  //
+  // A search is not split. It is the only name, email and custom-field search
+  // the web directory has (the Alumni tab filters by class year, city and
+  // company), and the directory is one surface precisely so nobody has to know
+  // which list a person is on before looking them up. Mobile's s13 search
+  // spans both lists for the same reason.
+  const members = useMemo(() => {
+    const rows = activeQuery.data ?? [];
+    return usingSearch
+      ? rows
+      : rows.filter((member) => member.is_alumni !== true);
+  }, [activeQuery.data, usingSearch]);
 
   const roleOptions = useMemo<RoleOption[]>(() => {
     return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
@@ -216,7 +228,11 @@ export function MembersDirectory() {
         ? role.permissions
         : [];
       const isPresident = role.is_system === true && permissions.includes("*");
-      return [{ id: role.id, name: role.name, isPresident }];
+      // Read defensively, as the Discord import wizard reads it: `GET
+      // /v1/roles` returns the whole row, `system_key` included, but declares
+      // no response schema (#1049), so the SDK doesn't type it.
+      const isAlumni = role.system_key === "ALUMNI";
+      return [{ id: role.id, name: role.name, isPresident, isAlumni }];
     });
   }, [rolesQuery.data]);
   const roleNameById = useMemo(
@@ -228,6 +244,13 @@ export function MembersDirectory() {
   // filter dropdown (filtering by President is valid); only assignment excludes it.
   const assignableRoleOptions = useMemo(
     () => roleOptions.filter((role) => !role.isPresident),
+    [roleOptions],
+  );
+  // The Alumni role is left out of the role *filter*: every holder is on the
+  // Alumni tab (#2484), so on this list it could only ever match nothing. It
+  // stays assignable, since bulk-assigning it is how a graduating class moves.
+  const filterRoleOptions = useMemo(
+    () => roleOptions.filter((role) => !role.isAlumni),
     [roleOptions],
   );
 
@@ -452,6 +475,16 @@ export function MembersDirectory() {
         description: `${roleName}: ${succeeded} updated, ${failed} failed. Retry the rest.`,
         variant: "destructive",
       });
+      // Narrow the selection to exactly "the rest". Keeping the members that
+      // succeeded selected was harmless while a role assignment never removed
+      // a row, but assigning Alumni now moves them to the Alumni tab (#2484),
+      // where they would linger in the "n selected" count with no row left to
+      // deselect them from.
+      setSelectedMemberIds(
+        targets
+          .filter((_, index) => results[index]?.status === "rejected")
+          .map(memberId),
+      );
     }
   }
 
@@ -545,7 +578,8 @@ export function MembersDirectory() {
             id="members-list-label"
             className={`${EYEBROW} truncate text-muted-foreground`}
           >
-            Actives
+            {/* A search spans both tabs (see `members` above), so say so. */}
+            {usingSearch ? "Actives and alumni" : "Actives"}
           </h2>
           {/*
             Suppressed while a search is in flight rather than rendering
@@ -600,7 +634,7 @@ export function MembersDirectory() {
             className={dashboardFilterSelectClassName}
           >
             <option value="all">Role: All</option>
-            {roleOptions.map((role) => (
+            {filterRoleOptions.map((role) => (
               <option key={role.id} value={role.id}>
                 Role: {role.name}
               </option>

@@ -453,7 +453,10 @@ use. A mouse gets the board's density; a finger gets the full 44.
       (`flex-col … sm:flex-row`); both rows here now do the same. The alumni **bio** also left the
       `·` join for a line of its own: lane 4's "free text last" rule assumes the free-text field
       trails one short date and a folder name, and with three fields ahead of it in half a row an
-      ellipsis took the bio entirely, at every width, with no detail surface to recover it from
+      ellipsis took the bio entirely, at every width, with no detail surface to recover it from.
+      **Corrected 2026-09-29 (#2484):** the alumni row is no longer inert. It is a button with an
+      `aria-label`, and it opens the actives' `MemberDetailSheet` (see the superseded "alumni detail
+      sheet" row below), so the full bio is recoverable there. The stacking rule stands
 - [x] No em dash left in rendered copy on this route. **Four sites, one defect, two different
       fixes** — `"—"` standing in for a value that is absent. In a row's meta line (an unparseable
       join date, a member with no role) nothing replaces it: the line is a `·`-joined list of the
