@@ -116,7 +116,7 @@ export interface UseChatChannelResult {
    * message in #dues is the bug that shape prevents.
    *
    * Resolves `true` once the message is in the outbox, `false` when nothing
-   * was queued (an empty body, a send already in flight, no runtime, or an
+   * was queued (an empty body, an earlier send still in flight, no runtime, or an
    * outbox that refused the row), so a caller holding state for this send (a
    * staged reply) can keep it. Never rejects.
    */

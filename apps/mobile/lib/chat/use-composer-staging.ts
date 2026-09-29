@@ -18,8 +18,10 @@
  *
  * **A reply the send never took stays staged.** The strip clears as the send
  * goes out, as web's does, and comes back when `send` reports it did not
- * dispatch (a send already in flight, or an outbox that refused the row), so
- * the words the member gets back are still a reply.
+ * dispatch (an earlier send still in flight, or an outbox that refused the
+ * row), so the words the member gets back are still a reply. A second tap on
+ * the same staged reply, inside one render, is a duplicate of the send already
+ * carrying it: it neither sends nor puts the reply back.
  *
  * **An edit never touches the draft.** The composer shows the message being
  * edited in place of the draft, and the draft, persisted per channel, is still
@@ -62,6 +64,12 @@ interface StagedTarget {
 
 interface EditState extends StagedTarget {
   value: string;
+  /**
+   * The message's text when the edit opened. The unchanged-save check and the
+   * empty-edit hint compare against this, not the cached row, which a channel
+   * reloading with an empty cache doesn't hold.
+   */
+  original: string;
 }
 
 export interface ComposerStagingInput {
@@ -131,13 +139,23 @@ export function useComposerStaging({
   const [replyTarget, setReplyTarget] = useState<StagedTarget | null>(null);
   const [editing, setEditing] = useState<EditState | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
-  /** The edit a save is in flight for, which is what `isSavingEdit` reports. */
-  const [savingFor, setSavingFor] = useState<StagedTarget | null>(null);
+  /** Messages whose edit save is in flight, which `isSavingEdit` reports. */
+  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   /**
    * The same, as a ref: the double-save guard. Two taps inside one render
-   * both read the pre-commit state, so a state guard lets both through.
+   * both read the pre-commit state, so a state guard lets both through. Keyed
+   * by message, so a save still out for #general never swallows one in #dues.
    */
-  const savingRef = useRef(false);
+  const savingRef = useRef(new Set<string>());
+  /**
+   * The staged reply a send is carrying right now. Two taps on Send inside
+   * one render both see the same staged reply; the second is the duplicate
+   * the channel hook's re-entry guard drops, and must neither send again nor
+   * put back a reply the first tap already sent.
+   */
+  const replyInFlightRef = useRef<StagedTarget | null>(null);
 
   const activeReply =
     replyTarget && replyTarget.channelId === channelId ? replyTarget : null;
@@ -234,6 +252,7 @@ export function useComposerStaging({
         channelId: message.channel_id,
         messageId: message.id,
         value: message.content,
+        original: message.content,
       });
     },
     [byId],
@@ -256,21 +275,21 @@ export function useComposerStaging({
 
   const submit = useCallback(() => {
     if (activeEdit) {
-      if (savingRef.current) return;
-      const { channelId: editChannelId, messageId } = activeEdit;
+      const { messageId } = activeEdit;
+      if (savingRef.current.has(messageId)) return;
       const content = activeEdit.value.trim();
       // The composer already withholds Save on an empty edit, and the hint
       // below says why; this is the belt to that.
       if (!content) return;
       // Nothing changed: close without a request, so an unchanged save
       // doesn't stamp "edited" on a message nobody rewrote.
-      if (content === editTarget?.content.trim()) {
+      if (content === activeEdit.original.trim()) {
         cancelEdit();
         return;
       }
       setEditError(null);
-      savingRef.current = true;
-      setSavingFor({ channelId: editChannelId, messageId });
+      savingRef.current.add(messageId);
+      setSavingIds(new Set(savingRef.current));
       void edit(messageId, content)
         .then(() => {
           // Only the edit this save was for: the member may have cancelled it
@@ -290,8 +309,8 @@ export function useComposerStaging({
           );
         })
         .finally(() => {
-          savingRef.current = false;
-          setSavingFor(null);
+          savingRef.current.delete(messageId);
+          setSavingIds(new Set(savingRef.current));
         });
       return;
     }
@@ -300,20 +319,30 @@ export function useComposerStaging({
     // and would attach itself to whatever the member typed next. Put back if
     // the send didn't take it, unless the member has staged another since.
     const staged = activeReply;
-    if (staged) setReplyTarget(null);
+    if (staged && replyInFlightRef.current === staged) return;
+    if (staged) {
+      replyInFlightRef.current = staged;
+      setReplyTarget(null);
+    }
     void send(draft, { replyToId: staged?.messageId ?? null }).then(
       (dispatched) => {
-        if (!dispatched && staged) {
-          setReplyTarget((current) => current ?? staged);
-        }
+        if (!staged) return;
+        if (replyInFlightRef.current === staged)
+          replyInFlightRef.current = null;
+        if (!dispatched) setReplyTarget((current) => current ?? staged);
       },
     );
-  }, [activeEdit, activeReply, cancelEdit, draft, edit, editTarget, send]);
+  }, [activeEdit, activeReply, cancelEdit, draft, edit, send]);
 
-  // An empty edit can't be saved, and the composer greys Save out; this is
-  // what says why, rather than leaving a dead button.
+  // An edit emptied of the text it had can't be saved, and the composer greys
+  // Save out; this is what says why, rather than leaving a dead button. A
+  // message that never had text (a photo sent with no caption) opens empty,
+  // and an empty field there is just "no caption yet", not a mistake.
   const shownEditError = activeEdit
-    ? (editError ?? (activeEdit.value.trim() ? null : EDIT_EMPTY_HINT))
+    ? (editError ??
+      (!activeEdit.value.trim() && activeEdit.original.trim()
+        ? EDIT_EMPTY_HINT
+        : null))
     : null;
 
   return {
@@ -322,9 +351,9 @@ export function useComposerStaging({
     onChangeText,
     submit,
     isEditing: !!activeEdit,
-    // Keyed like everything else here: a save in flight for #general must
+    // Keyed by the open edit's message: a save in flight for #general must
     // not lock the composer in #dues.
-    isSavingEdit: savingFor !== null && savingFor.channelId === channelId,
+    isSavingEdit: !!activeEdit && savingIds.has(activeEdit.messageId),
     editError: shownEditError,
     startReply,
     startEdit,

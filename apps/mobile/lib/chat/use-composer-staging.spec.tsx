@@ -119,6 +119,49 @@ describe("useComposerStaging — reply", () => {
     });
   });
 
+  it("sends a reply once on a double tap, and doesn't put back the reply it sent", async () => {
+    let settle!: (queued: boolean) => void;
+    const send = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<boolean>((resolve) => (settle = resolve)),
+      )
+      .mockResolvedValue(false);
+    const { result } = setup({ send });
+    act(() => result.current.startReply("m1"));
+    await act(async () => {
+      // One render: both taps see the same staged reply.
+      result.current.submit();
+      result.current.submit();
+      await Promise.resolve();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(result.current.context).toBeNull();
+    await act(async () => {
+      settle(true);
+      await Promise.resolve();
+    });
+    expect(result.current.context).toBeNull();
+  });
+
+  it("puts a refused reply back only if nothing newer was staged meanwhile", async () => {
+    let refuse!: (queued: boolean) => void;
+    const send = vi.fn(
+      () => new Promise<boolean>((resolve) => (refuse = resolve)),
+    );
+    const byId = index(row("m1", FRIEND), row("m3", FRIEND));
+    const { result } = setup({ send, byId });
+    act(() => result.current.startReply("m1"));
+    act(() => result.current.submit());
+    act(() => result.current.startReply("m3"));
+    await act(async () => {
+      refuse(false);
+      await Promise.resolve();
+    });
+    act(() => result.current.submit());
+    expect(send).toHaveBeenLastCalledWith("the draft", { replyToId: "m3" });
+  });
+
   it("sends an ordinary message with no reply target", () => {
     const { result, input } = setup();
     act(() => result.current.submit());
@@ -274,15 +317,42 @@ describe("useComposerStaging — edit", () => {
     expect(result.current.isSavingEdit).toBe(false);
   });
 
-  it("locks only the channel whose edit is saving", () => {
+  it("locks only the channel whose edit is saving, and saves there too", () => {
     const edit = vi.fn(() => new Promise<void>(() => {}));
-    const { result, rerender, input } = setup({ edit });
+    const byId = index(
+      row("m2", VIEWER),
+      row("d2", VIEWER, { channel_id: "chan-2" }),
+    );
+    const { result, rerender, input } = setup({ edit, byId });
     act(() => result.current.startEdit("m2"));
     act(() => result.current.onChangeText("fixed"));
     act(() => result.current.submit());
     expect(result.current.isSavingEdit).toBe(true);
-    rerender({ ...input, edit, channelId: "chan-2" });
+
+    rerender({ ...input, edit, byId, channelId: "chan-2" });
     expect(result.current.isSavingEdit).toBe(false);
+    act(() => result.current.startEdit("d2"));
+    act(() => result.current.onChangeText("dues fixed"));
+    act(() => result.current.submit());
+    expect(edit).toHaveBeenCalledTimes(2);
+    expect(edit).toHaveBeenLastCalledWith("d2", "dues fixed");
+  });
+
+  it("closes an unchanged edit without a request even when the message isn't loaded", () => {
+    const { result, rerender, input } = setup();
+    act(() => result.current.startEdit("m2"));
+    rerender({ ...input, byId: new Map() });
+    act(() => result.current.submit());
+    expect(input.edit).not.toHaveBeenCalled();
+    expect(result.current.isEditing).toBe(false);
+  });
+
+  it("doesn't call a captionless photo's empty field a mistake", () => {
+    const photo = row("p1", VIEWER, { content: "" });
+    const { result } = setup({ byId: index(photo) });
+    act(() => result.current.startEdit("p1"));
+    expect(result.current.isEditing).toBe(true);
+    expect(result.current.editError).toBeNull();
   });
 
   it("never lets a save for one edit close or fault the edit opened after it", async () => {
