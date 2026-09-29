@@ -19,9 +19,9 @@ describe("isViewableImage", () => {
   });
 
   it.each([
-    // An imported row can carry one, and it stays a download row.
+    // No upload path accepts one, and it stays a download row if a row has it.
     "image/svg+xml",
-    // On the `document` upload allowlist, but most browsers can't draw them.
+    // Imported Discord media (the `archive` kind), which most browsers can't draw.
     "image/tiff",
     "image/heic",
     "application/pdf",

@@ -95,12 +95,13 @@ export function useImageViewer(): ImageViewerState {
     });
   }, []);
   const close = useCallback(() => setGallery(null), []);
+  // Stepping wraps, as web's does: a step control disabled at an end would
+  // drop a screen reader's focus the moment it took the step that disabled it.
   const step = useCallback((delta: -1 | 1) => {
     setGallery((current) => {
-      if (!current) return current;
-      const index = current.index + delta;
-      if (index < 0 || index >= current.images.length) return current;
-      return { ...current, index };
+      if (!current || current.images.length < 2) return current;
+      const total = current.images.length;
+      return { ...current, index: (current.index + delta + total) % total };
     });
   }, []);
 
@@ -152,8 +153,6 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
   if (!gallery || !image) return null;
 
   const total = gallery.images.length;
-  const hasPrevious = gallery.index > 0;
-  const hasNext = gallery.index < total - 1;
 
   async function share(target: ViewerImage) {
     // One at a time: iOS rejects a second share sheet while one is showing.
@@ -222,8 +221,6 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Previous image"
-            accessibilityState={{ disabled: !hasPrevious }}
-            disabled={!hasPrevious}
             hitSlop={8}
             onPress={() => viewer.step(-1)}
             style={({ pressed }) => [
@@ -231,9 +228,7 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={hasPrevious ? styles.chevron : styles.chevronDisabled}>
-              ‹
-            </Text>
+            <Text style={styles.chevron}>‹</Text>
           </Pressable>
           <Text style={styles.counter}>
             {gallery.index + 1} of {total}
@@ -241,8 +236,6 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Next image"
-            accessibilityState={{ disabled: !hasNext }}
-            disabled={!hasNext}
             hitSlop={8}
             onPress={() => viewer.step(1)}
             style={({ pressed }) => [
@@ -250,9 +243,7 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={hasNext ? styles.chevron : styles.chevronDisabled}>
-              ›
-            </Text>
+            <Text style={styles.chevron}>›</Text>
           </Pressable>
         </View>
       ) : null}
@@ -430,10 +421,6 @@ function createStyles(tokens: SignetTokens) {
     chevron: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
-    },
-    chevronDisabled: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.disabled,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),

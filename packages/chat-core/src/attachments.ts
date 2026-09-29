@@ -3,11 +3,13 @@
  *
  * An image attachment is shown inline and opens in the in-app viewer; every
  * other attachment is a file row that downloads. Both clients used to decide
- * this separately with `startsWith("image/")`, which also admitted types no
- * browser can draw (`image/tiff`, `image/heic`, both on the `document` upload
- * allowlist) and `image/svg+xml`, which an imported row can carry even though
- * no upload path accepts it. Those drew as a broken image, and now fall to a
- * file row.
+ * this separately with `startsWith("image/")`, which also admitted types most
+ * browsers can't draw (`image/tiff`, `image/heic`: imported Discord media,
+ * which the `archive` kind accepts and live chat doesn't) and `image/svg+xml`,
+ * which no upload path accepts but an older row could still carry. Those drew
+ * as a broken image, and now fall to a file row. BMP and AVIF are
+ * archive-only too, and stay images because browsers and both mobile
+ * platforms draw them.
  *
  * This is a rendering choice, not the security boundary. The bucket gates the
  * declared type, never the bytes, so an attachment typed `image/png` may hold

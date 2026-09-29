@@ -138,20 +138,22 @@ describe("opening and closing", () => {
 });
 
 describe("stepping through a message's images", () => {
-  it("steps forward and back, stopping at each end", () => {
+  it("steps forward and back, wrapping at each end", () => {
     const tree = render();
-    act(() => viewer.open([image(1), image(2)], 0));
+    act(() => viewer.open([image(1), image(2), image(3)], 0));
 
-    expect(button(tree, "Previous image").props.disabled).toBe(true);
     act(() => button(tree, "Next image").props.onPress());
     expect(shownImage(tree).props.source).toEqual({ uri: image(2).url });
-    expect(button(tree, "Next image").props.disabled).toBe(true);
 
-    // Past the end is a no-op, not a wrap.
-    act(() => viewer.step(1));
-    expect(shownImage(tree).props.source).toEqual({ uri: image(2).url });
+    // No control is ever disabled: disabling the one a screen reader is on
+    // would drop its focus.
+    expect(button(tree, "Previous image").props.disabled).toBeUndefined();
 
     act(() => button(tree, "Previous image").props.onPress());
+    act(() => button(tree, "Previous image").props.onPress());
+    expect(shownImage(tree).props.source).toEqual({ uri: image(3).url });
+
+    act(() => button(tree, "Next image").props.onPress());
     expect(shownImage(tree).props.source).toEqual({ uri: image(1).url });
   });
 
