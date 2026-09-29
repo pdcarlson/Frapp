@@ -9,7 +9,8 @@
  * A **day divider** sits above the first row of each local calendar day, and is
  * the only place a date appears in the thread.
  */
-import { CARD_KINDS } from "./message-actions";
+import { dayDelta, parseInstant } from "@repo/formatting";
+import { isCardMessage } from "./message-actions";
 
 /**
  * A follow-on joins the run above only when it was sent less than this long
@@ -59,43 +60,36 @@ export interface GroupableRow<M extends GroupableMessage = GroupableMessage> {
   visibility: "visible" | "tombstone";
 }
 
-function instant(iso: string): Date | null {
-  const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? null : at;
-}
-
 /**
  * The viewer's local calendar day, so "yesterday" breaks where the reader's day
  * breaks. `null` for an unparseable timestamp, which never equals another day.
  */
 export function calendarDayKey(iso: string): string | null {
-  const at = instant(iso);
+  const at = parseInstant(iso);
   if (!at) return null;
   return `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
 }
 
 /**
  * The day divider's label: `Today`, `Yesterday`, then the weekday, month and
- * day ("Sunday, Sep 28") in the viewer's locale. Empty for an unparseable
- * timestamp, so a divider never prints "Invalid Date".
+ * day ("Sunday, Sep 28") in the viewer's locale, with the year when it is not
+ * this one ("Tuesday, Mar 3, 2020") — the divider is the only date in the
+ * thread, and an imported archive spans years. Empty for an unparseable
+ * timestamp, so a divider never prints "Invalid Date". Calendar days are the
+ * viewer's local ones (`dayDelta`, the shared arithmetic).
  */
 export function dayDividerLabel(iso: string, now: Date = new Date()): string {
-  const at = instant(iso);
+  const at = parseInstant(iso);
   if (!at) return "";
-  const day = calendarDayKey(iso);
-  if (day === calendarDayKey(now.toISOString())) return "Today";
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (day === calendarDayKey(yesterday.toISOString())) return "Yesterday";
+  const delta = dayDelta(at, now);
+  if (delta === 0) return "Today";
+  if (delta === 1) return "Yesterday";
   return at.toLocaleDateString(undefined, {
     weekday: "long",
     month: "short",
     day: "numeric",
+    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });
-}
-
-function isCard(message: GroupableMessage): boolean {
-  return CARD_KINDS.has(message.kind ?? "text");
 }
 
 /**
@@ -119,9 +113,9 @@ function startsRun(
   // The quote above a reply needs the author line under it.
   if (message.reply_to_id) return true;
   // A card is its own object in the channel; its author line says who ran it.
-  if (isCard(message) || isCard(prev.message)) return true;
-  const at = instant(message.created_at);
-  const before = instant(prev.message.created_at);
+  if (isCardMessage(message) || isCardMessage(prev.message)) return true;
+  const at = parseInstant(message.created_at);
+  const before = parseInstant(prev.message.created_at);
   // A timestamp that cannot be read cannot be inside the window.
   if (!at || !before) return true;
   const gap = at.getTime() - before.getTime();

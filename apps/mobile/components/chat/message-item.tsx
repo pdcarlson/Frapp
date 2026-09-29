@@ -235,6 +235,7 @@ export function MessageRowFrame({
   startsRun,
   quote,
   onOpenActions,
+  onJumpToParent,
   children,
 }: {
   message: ChatMessage;
@@ -244,6 +245,12 @@ export function MessageRowFrame({
   /** The reply quote, when the row is a reply; drawn above the author line. */
   quote?: ReactNode;
   onOpenActions?: () => void;
+  /**
+   * The quote's jump as a named action on the author line, for a row whose
+   * body has no container to carry it (a photo-only reply). A reply always
+   * starts a run, so the author line is always there.
+   */
+  onJumpToParent?: () => void;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -255,7 +262,9 @@ export function MessageRowFrame({
   const authorName = resolveAuthorName(message, nameFor);
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
   const time = formatTimeOfDay(message.created_at);
-  const headerA11y = messageActionsA11yProps(onOpenActions);
+  const headerA11y = messageActionsA11yProps(onOpenActions, {
+    onJumpToParent: quote ? onJumpToParent : undefined,
+  });
   // `isOwnMessage` checks the sender before comparing: an imported archive row
   // has no `sender_id`, and `null === null` would otherwise make it "mine".
   const isMine = isOwnMessage(message, viewerId);
@@ -484,6 +493,9 @@ export function MessageItem({
       startsRun={startsRun}
       quote={quote}
       onOpenActions={onOpenActions}
+      // The body's container carries the jump when there is text; a photo-only
+      // reply has none, so its author line does.
+      onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}
     >
       {text ? (
         <View accessible={"accessibilityActions" in bodyA11y} {...bodyA11y}>

@@ -1514,7 +1514,8 @@ export function ChatShell({
       </section>
 
       {/*
-        The thread column is the app floor, with bubbles stepped above it (s05).
+        The thread column is the app floor (s05); the cards posted into it are
+        the step above it, and a hovered message row lifts to `--surface-1`.
         No border of its own: the channels column's right hairline is the only
         division, and the composer pins to the bottom of this column, which is
         the bottom of the viewport.

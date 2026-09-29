@@ -81,10 +81,23 @@ export function formatTimeOfDay(value: unknown): string {
   });
 }
 
+/**
+ * Built once: constructing an `Intl.DateTimeFormat` is the expensive part, and
+ * the chat timeline calls {@link formatTimeOfDayShort} for every follow-on row
+ * on every render. Created on first use rather than at import, so a test that
+ * sets a locale or time zone before its first call is honoured.
+ */
+let clockFormat: Intl.DateTimeFormat | null = null;
+function clockParts(at: Date): Intl.DateTimeFormatPart[] {
+  clockFormat ??= new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return clockFormat.formatToParts(at);
+}
+
 function dayPeriodOf(at: Date): string | undefined {
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
-    .formatToParts(at)
-    .find((part) => part.type === "dayPeriod")?.value;
+  return clockParts(at).find((part) => part.type === "dayPeriod")?.value;
 }
 
 /**
@@ -105,8 +118,7 @@ export function formatTimeOfDayShort(value: unknown, since?: unknown): string {
   if (anchor && dayPeriodOf(anchor) !== dayPeriodOf(parsed)) {
     return formatTimeOfDay(value);
   }
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
-    .formatToParts(parsed)
+  return clockParts(parsed)
     .filter((part) => part.type !== "dayPeriod")
     .map((part) => part.value)
     .join("")

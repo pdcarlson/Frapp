@@ -1054,7 +1054,7 @@ export function Composer({
 
       Not awaited before clearing: `sendMessage` awaits the POST when online, so
       holding the text until `onSend` resolved would leave it standing beside
-      its own optimistic bubble for a round trip, inviting a second Enter that
+      its own optimistic row for a round trip, inviting a second Enter that
       mints a fresh `client_message_id`. Mobile's `send` makes the same trade.
 
       What rejects is the outbox write, `outbox.enqueue`: the unscoped

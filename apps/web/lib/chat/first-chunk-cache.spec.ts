@@ -484,8 +484,8 @@ describe("what is written", () => {
   query rather than a stand-in that keys the way its author believed.
 
   What makes this row worth its own block is that getting it wrong is not a cold
-  load. `users.id` decides which of `components.md` §11's two bubble shapes a row
-  takes, so a viewer id served under the wrong scope is the #2243 mis-ID again
+  load. `users.id` decides whose a row reads as (§11's "You" author line in
+  `components.md`), so a viewer id served under the wrong scope is the #2243 mis-ID again
   with a cache behind it instead of a race — a member's own history painted as
   somebody else's, or worse, another member's id painted as theirs.
 */

@@ -689,7 +689,7 @@ export function MessageItem({
    * The inline editor that takes the body's place in the row.
    *
    * In place, not a dialog or popover: it renders where the body was, between
-   * the same reply quote and attachment list (`components.md` §11 § Editing).
+   * the same reply quote and attachment list (`components.md` §11 § Editing (web)).
    * It is the §4 text input at the full width of the body column. The bubble
    * editor this replaced had to fight a circular width, because a `<textarea>`
    * inside a shrink-wrapped bubble sizes itself from its own ~20-character
@@ -859,7 +859,12 @@ export function MessageItem({
               dateTime={message.created_at}
               data-slot="gutter-time"
               className={cn(
-                "block whitespace-nowrap text-right text-[12.5px] leading-[25px] text-muted-foreground",
+                // A flex box ending at the gutter's right edge, so a time wider
+                // than 32px ("12:02 PM", once a run crosses noon) overflows to
+                // the left into the row's 20px padding rather than over the
+                // text; `text-right` alone does not, since an overflowing line
+                // is start-aligned.
+                "flex justify-end whitespace-nowrap text-[12.5px] leading-[25px] text-muted-foreground",
                 "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
                 isTapRevealed && "opacity-100",
               )}

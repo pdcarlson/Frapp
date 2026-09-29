@@ -223,7 +223,7 @@ export function directChannelDisplayName(
  *
  * Structural rather than an import of `@repo/chat-core`'s `ChatMessage`: this
  * module is deliberately dependency-free (see the header), and every caller —
- * the web timeline, the pins popover, the mobile bubble — passes a different
+ * the web timeline, the pins popover, the mobile message row — passes a different
  * concrete row shape.
  */
 export interface MessageAuthor {

@@ -312,6 +312,47 @@ describe("compact layout (#2873)", () => {
     expect(actionHosts(photoOnly)).toHaveLength(1);
   });
 
+  it("offers a photo-only reply's jump on its author line", () => {
+    const onJumpToParent = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageItem
+            message={message({
+              content: "",
+              attachment_count: 1,
+              reply_to_id: "msg-parent",
+            })}
+            viewerId={VIEWER}
+            nameFor={() => "Casey"}
+            startsRun
+            replyParent={message({ id: "msg-parent", content: "the original" })}
+            onRetry={vi.fn()}
+            onDiscard={vi.fn()}
+            onReact={vi.fn()}
+            onUnreact={vi.fn()}
+            onJumpToParent={onJumpToParent}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const host = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.accessibilityActions) &&
+        node.props.accessibilityActions.some(
+          (action: { name?: string }) => action.name === "jumpToParent",
+        ),
+    );
+    act(() =>
+      host.props.onAccessibilityAction({
+        nativeEvent: { actionName: "jumpToParent" },
+      }),
+    );
+    expect(onJumpToParent).toHaveBeenCalledTimes(1);
+  });
+
   it("trails Pinned after the text, in the accent", () => {
     const tree = renderItem(message({ is_pinned: true }));
     const pinned = tree.root.find(

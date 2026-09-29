@@ -21,7 +21,6 @@ import {
   visibleTypingUsers,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { decorateThread } from "@repo/chat-core/grouping";
 import { channelAllowsReplies } from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -56,6 +55,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
@@ -395,16 +395,8 @@ export default function ChatThreadScreen() {
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
   // Where each run and each day starts (components.md §11 § Grouping), worked
-  // out oldest first — the order the rules read in — by the function web's
-  // timeline calls too. Keyed by the list's own row key, so the rows the list
-  // holds stay `ThreadRow`s for `useJumpToMessage`.
-  const layout = useMemo(() => {
-    const byKey = new Map<string, { startsRun: boolean; startsDay: boolean }>();
-    for (const { row, startsRun, startsDay } of decorateThread(thread.rows)) {
-      byKey.set(row.message.client_message_id, { startsRun, startsDay });
-    }
-    return byKey;
-  }, [thread.rows]);
+  // out oldest first; `threadLayout` says why.
+  const layout = useMemo(() => threadLayout(thread.rows), [thread.rows]);
 
   // Older history (#2772). The list is inverted, so its end is the top: reaching
   // it loads the next page, which is appended past the rows on screen and so

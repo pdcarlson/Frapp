@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   hiddenQuoteText,
@@ -153,7 +154,7 @@ function ThreadMessageRowBody({
   // placeholder instead (MessageItem: no votes, no reactions).
   if (message.kind === "poll" && !message.is_deleted) {
     const quote =
-      message.reply_to_id && !message.is_deleted ? (
+      message.reply_to_id ? (
         <ReplyQuote
           message={message}
           replyParent={quotedParent}
@@ -216,7 +217,7 @@ function ThreadMessageRowBody({
  */
 export function DayDivider({ createdAt }: { createdAt: string }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (
     <View style={styles.divider} accessibilityRole="header">
       <View style={styles.rule} />

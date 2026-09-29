@@ -233,6 +233,15 @@ describe("MessageItem compact layout (#2873)", () => {
     ).toContain("opacity-100");
   });
 
+  it("anchors the gutter time to the right, so a long one spills left", () => {
+    const { container } = renderItemWithProps({ showHeader: false });
+    const tokens = container
+      .querySelector('[data-slot="gutter-time"]')!
+      .className.split(/\s+/);
+    expect(tokens).toContain("flex");
+    expect(tokens).toContain("justify-end");
+  });
+
   it("keeps AM/PM in the gutter once the run has crossed noon", () => {
     const noon = new Date(2026, 7, 16, 12, 20).toISOString();
     const morning = new Date(2026, 7, 16, 11, 50).toISOString();
@@ -656,6 +665,22 @@ describe("MessageItem edited marker", () => {
   it("marks the viewer's own edited message the same way", () => {
     renderItem(message({ ...edited, sender_id: VIEWER }));
     expect(screen.getByText("(edited)")).toBeInTheDocument();
+  });
+
+  it("marks a pinned message after its text, on a follow-on row too", () => {
+    const { container } = renderItemWithProps({
+      message: message({ is_pinned: true }),
+      showHeader: false,
+    });
+    const pinned = screen.getByText("Pinned");
+    expect(
+      container.querySelector('[data-slot="message-body"]'),
+    ).toContainElement(pinned);
+  });
+
+  it("marks no pin on a deleted message", () => {
+    renderItem(message({ is_pinned: true, is_deleted: true }));
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
   });
 
   it("marks an edited card under the card, not inside it", () => {

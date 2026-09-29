@@ -277,6 +277,12 @@ describe("day dividers", () => {
     expect(label).not.toMatch(/\d:\d\d/);
   });
 
+  it("adds the year to a day in another year, and only then", () => {
+    const lastYear = new Date(2025, 2, 3, 9, 0).toISOString();
+    expect(dayDividerLabel(lastYear, now)).toContain("2025");
+    expect(dayDividerLabel(at(20, 17, 15), now)).not.toContain("2026");
+  });
+
   it("prints nothing for an unreadable timestamp", () => {
     expect(dayDividerLabel("nope", now)).toBe("");
     expect(calendarDayKey("nope")).toBeNull();
