@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { deriveSignetPalette } from '@repo/chapter-theme';
@@ -60,6 +61,8 @@ describe('ChapterService', () => {
     getSignedUploadUrl: jest.Mock;
     getSignedDownloadUrl: jest.Mock;
     deleteFile: jest.Mock;
+    deleteFiles: jest.Mock;
+    listObjects: jest.Mock;
   };
   let mockSupabase: { from: jest.Mock };
   let mockInsert: jest.Mock;
@@ -74,6 +77,18 @@ describe('ChapterService', () => {
         .fn()
         .mockResolvedValue('https://signed-download.url'),
       deleteFile: jest.fn().mockResolvedValue(undefined),
+      deleteFiles: jest.fn().mockResolvedValue(undefined),
+      // The logo confirm lists the branding folder to prove the upload
+      // happened (#2592). The logo paths these tests confirm are all there
+      // unless a test says otherwise.
+      listObjects: jest
+        .fn()
+        .mockResolvedValue(
+          [
+            'chapters/ch-1/branding/logo.png',
+            'chapters/ch-1/branding/logo.jpg',
+          ].map((path) => ({ path, createdAt: new Date() })),
+        ),
     };
     mockChapterRepo = {
       findById: jest.fn(),
@@ -1178,22 +1193,40 @@ describe('ChapterService', () => {
     );
   });
 
-  it('should generate logo upload URL', async () => {
+  it('should generate logo upload URL under a fresh key', async () => {
     const result = await service.requestLogoUploadUrl(
       'ch-1',
       'logo.png',
       'image/png',
     );
 
+    expect(result.signedUrl).toBe('https://signed-upload.url');
+    expect(result.storagePath).toMatch(
+      /^chapters\/ch-1\/branding\/logo-[0-9a-f-]{36}\.png$/,
+    );
+    // No upsert: the key is new, so there is nothing to overwrite (#2592).
     expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledWith(
       'branding',
-      'chapters/ch-1/branding/logo.png',
+      result.storagePath,
       'image/png',
     );
-    expect(result).toEqual({
-      signedUrl: 'https://signed-upload.url',
-      storagePath: 'chapters/ch-1/branding/logo.png',
-    });
+  });
+
+  it('mints a different key for each upload of the same extension (#2592)', async () => {
+    // The key used to be `logo.<ext>`, so a second PNG collided with the first
+    // at the mint and storage answered 409.
+    const first = await service.requestLogoUploadUrl(
+      'ch-1',
+      'crest.png',
+      'image/png',
+    );
+    const second = await service.requestLogoUploadUrl(
+      'ch-1',
+      'crest.png',
+      'image/png',
+    );
+
+    expect(first.storagePath).not.toBe(second.storagePath);
   });
 
   it('should reject logo upload with invalid content type', async () => {
@@ -1242,6 +1275,206 @@ describe('ChapterService', () => {
     expect(result).toEqual(updatedChapter);
   });
 
+  it('rejects a confirm for a path nothing was uploaded to (#2592)', async () => {
+    // Confirm now also deletes the logo it replaces, so pointing the column at
+    // a missing object would leave the chapter with no logo at all.
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      logo_path: 'chapters/ch-1/branding/logo.png',
+    });
+
+    await expect(
+      service.confirmLogoUpload(
+        'ch-1',
+        'chapters/ch-1/branding/logo-never-uploaded.png',
+        'user-9',
+      ),
+    ).rejects.toThrow('storage_path does not reference an uploaded logo');
+    expect(mockStorageProvider.listObjects).toHaveBeenCalledWith(
+      'branding',
+      'chapters/ch-1/branding',
+    );
+    expect(mockChapterRepo.update).not.toHaveBeenCalled();
+    expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    expect(mockAuditLog.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects a confirm for a path in a sub-folder of the branding folder', async () => {
+    // The listing is direct children only, so a nested path is never "there".
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      logo_path: null,
+    });
+
+    await expect(
+      service.confirmLogoUpload(
+        'ch-1',
+        'chapters/ch-1/branding/nested/logo.png',
+        'user-9',
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockChapterRepo.update).not.toHaveBeenCalled();
+  });
+
+  describe('logo replacement (#2592)', () => {
+    const current = 'chapters/ch-1/branding/logo-aaaa.png';
+    const next = 'chapters/ch-1/branding/logo-bbbb.png';
+    const abandonedOld = 'chapters/ch-1/branding/logo-cccc.jpg';
+    const inFlight = 'chapters/ch-1/branding/logo-dddd.png';
+    const DAY = 24 * 60 * 60 * 1000;
+    const ago = (ms: number) => new Date(Date.now() - ms);
+
+    /** The row as confirm first reads it, then as the sweep re-reads it. */
+    function rowReads(before: string | null, after: string | null) {
+      mockChapterRepo.findById
+        .mockReset()
+        .mockResolvedValueOnce({ id: 'ch-1', logo_path: before })
+        .mockResolvedValue({ id: 'ch-1', logo_path: after });
+    }
+
+    beforeEach(() => {
+      rowReads(current, next);
+      mockChapterRepo.update.mockResolvedValue({
+        id: 'ch-1',
+        logo_path: next,
+      });
+      mockStorageProvider.listObjects.mockResolvedValue([
+        { path: current, createdAt: ago(3 * DAY) },
+        { path: next, createdAt: ago(60_000) },
+        { path: abandonedOld, createdAt: ago(2 * DAY) },
+        { path: inFlight, createdAt: ago(60_000) },
+      ]);
+    });
+
+    it('replaces a logo with another of the same extension and deletes the one it replaced', async () => {
+      await service.confirmLogoUpload('ch-1', next, 'user-9');
+
+      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+        logo_path: next,
+      });
+      // The replaced logo, and an upload abandoned more than a day ago.
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('branding', [
+        current,
+        abandonedOld,
+      ]);
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      expect(mockAuditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chapter_logo_updated',
+          diff: { logo_path: { from: current, to: next } },
+        }),
+      );
+    });
+
+    it("never deletes a recent upload, which may be another officer's in flight", async () => {
+      await service.confirmLogoUpload('ch-1', next, 'user-9');
+
+      const deleted = mockStorageProvider.deleteFiles.mock.calls.flatMap(
+        ([, paths]) => paths as string[],
+      );
+      expect(deleted).not.toContain(inFlight);
+    });
+
+    it('spares the logo another confirm made current in the meantime', async () => {
+      // Two officers replace the logo at once. By the time this confirm
+      // sweeps, the other one has written `inFlight` as the logo. The first
+      // cut swept its whole listing and deleted it, leaving the chapter
+      // pointing at nothing.
+      rowReads(current, inFlight);
+
+      await service.confirmLogoUpload('ch-1', next, 'user-9');
+
+      const deleted = mockStorageProvider.deleteFiles.mock.calls.flatMap(
+        ([, paths]) => paths as string[],
+      );
+      expect(deleted).not.toContain(inFlight);
+      expect(deleted).not.toContain(next);
+      expect(deleted).toContain(current);
+    });
+
+    it('keeps the replaced logo when a concurrent confirm made it current again', async () => {
+      rowReads(current, current);
+      mockStorageProvider.listObjects.mockResolvedValue([
+        { path: current, createdAt: ago(3 * DAY) },
+        { path: next, createdAt: ago(60_000) },
+      ]);
+
+      await service.confirmLogoUpload('ch-1', next, 'user-9');
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    it('treats an upload with no timestamp as recent', async () => {
+      rowReads(null, next);
+      mockStorageProvider.listObjects.mockResolvedValue([
+        { path: next, createdAt: ago(60_000) },
+        { path: abandonedOld, createdAt: null },
+      ]);
+
+      await service.confirmLogoUpload('ch-1', next, 'user-9');
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    it('deletes nothing when it cannot re-read which logo is current', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockChapterRepo.findById
+        .mockReset()
+        .mockResolvedValueOnce({ id: 'ch-1', logo_path: current })
+        .mockRejectedValue(new Error('db blip'));
+
+      await expect(
+        service.confirmLogoUpload('ch-1', next, 'user-9'),
+      ).resolves.toEqual({ id: 'ch-1', logo_path: next });
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('db blip'));
+      warn.mockRestore();
+    });
+
+    it('deletes the old objects only after the column has moved', async () => {
+      mockChapterRepo.update.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.confirmLogoUpload('ch-1', next, 'user-9'),
+      ).rejects.toThrow('db down');
+
+      // Deleting first would leave the chapter pointing at a deleted logo.
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    it('logs the objects a failed delete left behind and still succeeds', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      mockStorageProvider.deleteFiles.mockRejectedValue(
+        new Error('storage down'),
+      );
+
+      await expect(
+        service.confirmLogoUpload('ch-1', next, 'user-9'),
+      ).resolves.toEqual({ id: 'ch-1', logo_path: next });
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(current));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(abandonedOld));
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it('deletes nothing when the new logo is the only object', async () => {
+      rowReads(null, next);
+      mockStorageProvider.listObjects.mockResolvedValue([
+        { path: next, createdAt: ago(60_000) },
+      ]);
+
+      await service.confirmLogoUpload('ch-1', next, 'user-9');
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+  });
+
   it('should reject confirm logo with invalid storage path', async () => {
     await expect(
       service.confirmLogoUpload(
@@ -1288,11 +1521,8 @@ describe('ChapterService', () => {
     });
 
     it('audits a confirm of the stored path too', async () => {
-      // The server can't see whether the object at a path changed: a stored
-      // path can name a missing object (confirm doesn't check for an upload),
-      // and an upload to that free key then a confirm of the same path changes
-      // the logo without moving the column. A redundant row is the cheaper
-      // mistake than a missed change.
+      // A re-sent confirm changes nothing a member sees, but a redundant row
+      // is the cheaper mistake than a missed change.
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockResolvedValue(withLogo);
 
@@ -1391,10 +1621,9 @@ describe('ChapterService', () => {
     });
 
     it('deletes the object before clearing the column, so a retried removal can finish', async () => {
-      // Column first would strand the object on any later failure, and with
-      // a fixed key per extension that blocks every later upload of that
-      // extension. Object first leaves the column pointing at it, so a retry
-      // finds the logo still set and completes (#2592).
+      // Column first would strand the object on any later failure. Object
+      // first leaves the column pointing at it, so a retry finds the logo
+      // still set and completes.
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockChapterRepo.update.mockRejectedValue(new Error('db down'));
 
@@ -1410,9 +1639,8 @@ describe('ChapterService', () => {
 
     it('aborts the removal when the object delete fails', async () => {
       // A swallowed storage error would clear the column and audit a removal
-      // while the object stays at its fixed key, blocking every later upload
-      // of that extension (#2592). Failing here leaves the logo set, so a
-      // retry tries the object again.
+      // while the object stays in the bucket with nothing pointing at it.
+      // Failing here leaves the logo set, so a retry tries the object again.
       mockChapterRepo.findById.mockResolvedValue(withLogo);
       mockStorageProvider.deleteFile.mockRejectedValue(
         new Error('storage down'),

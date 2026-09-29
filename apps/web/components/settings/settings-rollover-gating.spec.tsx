@@ -32,6 +32,8 @@ vi.mock("@repo/hooks", () => ({
   usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
   useSemesters: () => ({ data: [], isPending: false, isError: false }),
   useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateChapter: () => ({
     mutateAsync: mockUpdateChapter,
     isPending: false,

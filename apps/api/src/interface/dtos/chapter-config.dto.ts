@@ -1,6 +1,7 @@
 import {
   IsArray,
   Max,
+  MaxLength,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -14,7 +15,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import {
+  CHAPTER_SHORT_NAME_MAX_LENGTH,
+  POINTS_ADJUSTMENT_MAX,
+} from '@repo/validation';
 import { Type } from 'class-transformer';
 import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
 
@@ -56,6 +60,28 @@ export class BrandingDto {
   @IsOptional()
   @IsString()
   greek_letters?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The chapter\'s short name, e.g. "FIJI". Its mark when it has no logo, ' +
+      'ahead of Greek letters (spec/behavior/branding.md § Chapter mark). An ' +
+      'empty string clears it.',
+    maxLength: CHAPTER_SHORT_NAME_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(CHAPTER_SHORT_NAME_MAX_LENGTH)
+  short_name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'False hides the Greek letters on every surface that shows them, for ' +
+      'organizations that by custom do not display theirs. Absent means shown. ' +
+      'The stored letters are kept.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  show_greek_letters?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

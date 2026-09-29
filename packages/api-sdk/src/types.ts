@@ -3135,6 +3135,10 @@ export interface components {
         };
         BrandingDto: {
             greek_letters?: string;
+            /** @description The chapter's short name, e.g. "FIJI". Its mark when it has no logo, ahead of Greek letters (spec/behavior/branding.md § Chapter mark). An empty string clears it. */
+            short_name?: string;
+            /** @description False hides the Greek letters on every surface that shows them, for organizations that by custom do not display theirs. Absent means shown. The stored letters are kept. */
+            show_greek_letters?: boolean;
             designation?: string;
             school_short?: string;
             founded_at?: number;

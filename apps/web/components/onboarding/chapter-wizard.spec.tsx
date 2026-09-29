@@ -8,6 +8,8 @@ const {
   createInviteMutate,
   emailInvitesMutate,
   activateMutate,
+  uploadLogoMutate,
+  directoryRows,
   refreshSession,
   routerPush,
   routerReplace,
@@ -16,6 +18,9 @@ const {
   createInviteMutate: vi.fn(),
   emailInvitesMutate: vi.fn(),
   activateMutate: vi.fn(),
+  uploadLogoMutate: vi.fn(),
+  // What the directory search answers; empty unless a test fills it.
+  directoryRows: { current: [] as unknown[] },
   refreshSession: vi.fn(),
   routerPush: vi.fn(),
   // Hoisted like `routerPush` so the wizard's finish destination is
@@ -34,7 +39,7 @@ vi.mock("@repo/hooks", () => ({
   DIRECTORY_MIN_QUERY_LENGTH: 2,
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
   useChapterDirectorySearch: () => ({
-    data: [],
+    data: directoryRows.current,
     isFetching: false,
     isError: false,
     refetch: vi.fn(),
@@ -51,6 +56,10 @@ vi.mock("@repo/hooks", () => ({
   // Consumed by useSelectChapter, which the wizard calls after creating the
   // chapter so the active_chapter_id claim is issued for the new chapter.
   useActivateChapter: () => ({ mutateAsync: activateMutate, isPending: false }),
+  useUploadChapterLogo: () => ({
+    mutateAsync: uploadLogoMutate,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@repo/org-archetypes", () => ({
@@ -204,6 +213,173 @@ describe("ChapterWizard accent", () => {
     const accent = await submittedAccent();
     expect(accent).toBe("#8B0000");
     expect(accent).toBe(normalizeAccentInput("#8b0000"));
+  });
+});
+
+describe("ChapterWizard chapter mark (#2876)", () => {
+  beforeEach(() => {
+    onboardMutate.mockReset();
+    onboardMutate.mockResolvedValue({ id: "ch-1" });
+    activateMutate.mockReset();
+    uploadLogoMutate.mockReset();
+    uploadLogoMutate.mockResolvedValue({});
+    // jsdom has no object URLs; the preview only needs a string back.
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  function create() {
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+  }
+
+  it("sends the short name and a Greek-letters opt-out with the chapter", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.change(screen.getByLabelText("Greek letters"), {
+      target: { value: "ΦΓΔ" },
+    });
+    fireEvent.change(screen.getByLabelText("Short name (optional)"), {
+      target: { value: "FIJI" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    create();
+
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+    expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
+      greek_letters: "ΦΓΔ",
+      short_name: "FIJI",
+      show_greek_letters: false,
+    });
+  });
+
+  it("previews the mark without the letters once they are turned off", () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.change(screen.getByLabelText("Greek letters"), {
+      target: { value: "ΦΓΔ" },
+    });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΦΓΔ");
+    fireEvent.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("TC");
+  });
+
+  it("uploads a chosen logo only after the new chapter is active", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    const file = new File(["png"], "crest.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Logo (optional)"), {
+      target: { files: [file] },
+    });
+    expect(screen.getByTestId("chapter-mark-logo")).toHaveAttribute(
+      "src",
+      "blob:preview",
+    );
+    create();
+
+    await waitFor(() => expect(uploadLogoMutate).toHaveBeenCalledTimes(1));
+    expect(uploadLogoMutate).toHaveBeenCalledWith({
+      body: file,
+      filename: "crest.png",
+      contentType: "image/png",
+    });
+    // The logo routes are chapter-scoped, so the switch has to land first.
+    expect(activateMutate.mock.invocationCallOrder[0]).toBeLessThan(
+      uploadLogoMutate.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("clears the file input with the queued logo, so the same file can be chosen again", () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    const input = screen.getByLabelText("Logo (optional)") as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["png"], "crest.png", { type: "image/png" })] },
+    });
+    const clearValue = vi.spyOn(input, "value", "set");
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(clearValue).toHaveBeenCalledWith("");
+    expect(screen.queryByTestId("chapter-mark-logo")).not.toBeInTheDocument();
+  });
+
+  it("still reaches the invite step when the logo upload fails", async () => {
+    uploadLogoMutate.mockRejectedValue(new Error("storage down"));
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.change(screen.getByLabelText("Logo (optional)"), {
+      target: { files: [new File(["png"], "crest.png", { type: "image/png" })] },
+    });
+    create();
+
+    await waitFor(() =>
+      expect(screen.getByText("Invite members")).toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the opt-out and short name when the founder re-picks a directory row", async () => {
+    // The directory autofills Greek letters for every chapter it knows,
+    // FIJI's included. Choosing the row again (after going back) must not
+    // switch the letters back on or drop the short name.
+    directoryRows.current = [
+      {
+        id: "dir-fiji",
+        org_letters: "ΦΓΔ",
+        org_name: "Phi Gamma Delta",
+        archetype: "ifc",
+        chapter_designation: "Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        university_short: "RPI",
+        founded_year: 1893,
+        default_colors: null,
+      },
+    ];
+    const pickFiji = async () => {
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "Phi Gamma" },
+      });
+      fireEvent.click(await screen.findByText(/Phi Gamma Delta/));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    };
+    try {
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pickFiji();
+      fireEvent.change(screen.getByLabelText("Short name (optional)"), {
+        target: { value: "FIJI" },
+      });
+      fireEvent.click(
+        screen.getByRole("switch", { name: /show greek letters/i }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /back/i }));
+      fireEvent.click(screen.getByRole("button", { name: /back/i }));
+      await pickFiji();
+
+      expect(screen.getByLabelText("Greek letters")).toHaveValue("ΦΓΔ");
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+      expect(
+        screen.getByRole("switch", { name: /show greek letters/i }),
+      ).toHaveAttribute("aria-checked", "false");
+      create();
+      await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+      expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
+        greek_letters: "ΦΓΔ",
+        short_name: "FIJI",
+        show_greek_letters: false,
+      });
+    } finally {
+      directoryRows.current = [];
+    }
+  });
+
+  it("uploads nothing when no logo was chosen", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    create();
+
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByText("Invite members")).toBeInTheDocument(),
+    );
+    expect(uploadLogoMutate).not.toHaveBeenCalled();
   });
 });
 

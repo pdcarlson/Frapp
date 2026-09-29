@@ -82,3 +82,12 @@ export const INVOICE_DESCRIPTION_MAX_LENGTH = 2_000;
 
 /** Chat message body, shared by send and edit so the two cannot diverge. */
 export const CHAT_MESSAGE_CONTENT_MAX_LENGTH = 10_000;
+
+/**
+ * A chapter's short name (`branding.short_name`, #2876): the mark a chapter
+ * shows when it has no logo, in place of Greek letters ("FIJI" for a Phi Gamma
+ * Delta chapter). It renders inside the web nav's 28px chapter tile, which
+ * holds about four characters at its type size and six at the smaller one it
+ * steps down to, so the cap is the tile, not the column.
+ */
+export const CHAPTER_SHORT_NAME_MAX_LENGTH = 6;

@@ -115,6 +115,8 @@ describe("chapterIdentityBranding", () => {
   it("sends the house seed for an untouched form (#2102)", () => {
     expect(chapterIdentityBranding(EMPTY_CHAPTER_IDENTITY)).toEqual({
       greek_letters: undefined,
+      short_name: undefined,
+      show_greek_letters: undefined,
       designation: undefined,
       school_short: undefined,
       founded_at: undefined,
@@ -139,6 +141,8 @@ describe("chapterIdentityBranding", () => {
         name: "Sigma",
         university: "UCLA",
         greekLetters: " ΣΦΕ ",
+        shortName: "",
+        showGreekLetters: true,
         designation: "   ",
         schoolShort: "UCLA",
         foundedYear: "1948",
@@ -146,10 +150,26 @@ describe("chapterIdentityBranding", () => {
       }),
     ).toEqual({
       greek_letters: "ΣΦΕ",
+      short_name: undefined,
+      show_greek_letters: undefined,
       designation: undefined,
       school_short: "UCLA",
       founded_at: 1948,
       colors: { accent: "#8B0000" },
     });
+  });
+
+  it("sends a short name and the Greek-letters opt-out (#2876)", () => {
+    // A FIJI chapter the directory autofilled with ΦΓΔ: the letters are kept,
+    // hidden, and the short name is its mark.
+    const branding = chapterIdentityBranding({
+      ...EMPTY_CHAPTER_IDENTITY,
+      greekLetters: "ΦΓΔ",
+      shortName: " FIJI ",
+      showGreekLetters: false,
+    });
+    expect(branding.greek_letters).toBe("ΦΓΔ");
+    expect(branding.short_name).toBe("FIJI");
+    expect(branding.show_greek_letters).toBe(false);
   });
 });
