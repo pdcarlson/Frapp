@@ -12,7 +12,7 @@ Database rollback and restore are their own procedures:
 
 ### Detection signals
 
-- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../../../spec/architecture/adr/adr-24.md); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
+- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency. `/health`'s body is no substitute: it reuses one probe for up to 60 s. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../../../spec/architecture/adr/adr-24.md); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
 - Render service marked unhealthy
 - Elevated 5xx alerts
 
@@ -20,7 +20,7 @@ Database rollback and restore are their own procedures:
 
 1. Confirm outage scope (`staging` vs `production`).
 2. Check Render deploy/activity timeline.
-3. Hit `/health` directly and inspect response body.
+3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. It probes fresh; `/health`'s body can be up to 60 s old.
 4. Inspect Render logs for startup/env errors.
 5. Inspect Sentry for first error spike and root exception.
 

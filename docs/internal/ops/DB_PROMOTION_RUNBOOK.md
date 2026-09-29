@@ -395,10 +395,12 @@ before the apply (its `Run migrations (dry-run)` step always runs first) and wha
 it applied.
 
 - [ ] The migration steps of the **Deploy staging** run for your merge commit are green
-- [ ] `GET /health` reports `database: connected` (its aggregate `status` also
-      reflects Supabase Storage reachability — an unrelated Storage hiccup can
-      read `degraded` with the database fully healthy, so check the
-      `database` field specifically for a migration verification)
+- [ ] `GET /health/ready` answers `200`. It probes fresh on every call, where
+      `/health`'s fields can be up to 60 s old
+      ([Health Check](../../../spec/behavior/observability.md#health-check)).
+      A `503` names each dependency in `message`, and an unrelated Storage or
+      `billing:` failure can 503 it with the database fully healthy, so read
+      the `database:` part specifically for a migration verification
 - [ ] One auth-protected API route succeeds
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
 - [ ] No migration-related errors in Render logs

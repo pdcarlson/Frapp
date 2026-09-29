@@ -50,7 +50,8 @@ which read `.env.local` (see
 [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md) § "Booting the API"). Full
 bringup: [`AGENTS.md`](../../../AGENTS.md) § "Starting the dev environment". Check the API with
 `curl http://localhost:3001/health`, which reports `"status":"ok"` when the database and storage
-are connected.
+are connected. It reuses one probe for up to 60 s, so to confirm a fix on a running API use
+`/health/ready`, which probes fresh.
 
 ## CI parity checklist
 

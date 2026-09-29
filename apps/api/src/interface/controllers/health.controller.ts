@@ -21,13 +21,15 @@ import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
 const PROBE_TIMEOUT_MS = 3000;
 
 // How long `/health` reuses one probe result. Render calls it every 5 seconds
-// and every open web or mobile client every 30, and none of them reads the
-// dependency fields: they act on the status code, which is 2xx either way.
+// and every open web or mobile client every 30, and no automated caller reads
+// the dependency fields: they act on the status code, which is 2xx either way.
 // Probing per call made each hit two Supabase requests, and at that cadence
 // each opened a fresh TLS connection, because undici drops a socket after 4
-// idle seconds. That was most of an idle instance's ~6.5 MB/hour of billed
-// Render egress. `/health/ready` never uses this cache: the deploy gate needs
-// a probe taken now.
+// idle seconds. Measured against Supabase (2026-09-29), that is ~2.4 KB sent
+// per probe before TCP/IP headers, which puts the probes at an estimated 60%
+// of an idle instance's ~6.5 MB/hour of billed Render egress. `/health/ready` never uses
+// this cache: the deploy gate, and anyone checking a recovery, needs a probe
+// taken now.
 export const LIVENESS_PROBE_TTL_MS = 60_000;
 
 interface DependencyProbes {
@@ -110,9 +112,11 @@ export class HealthController {
   // The promise is what is cached, so callers arriving while a probe is in
   // flight share it rather than each starting their own. `probe` never
   // rejects (every arm resolves to a status), so a cached failure is a
-  // reported `'error'`, never a rejection replayed for the whole TTL.
+  // reported `'error'`, never a rejection replayed for the whole TTL. The age
+  // is read off the monotonic clock, so a wall-clock step back cannot stretch
+  // the TTL.
   private cachedProbes(): Promise<DependencyProbes> {
-    const now = Date.now();
+    const now = performance.now();
     if (this.liveness && now - this.liveness.probedAt < LIVENESS_PROBE_TTL_MS) {
       return this.liveness.probes;
     }
