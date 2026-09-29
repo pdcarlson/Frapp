@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -353,9 +355,6 @@ describe("the workflows that run this script grant the scope it needs", () => {
     assert.match(step, /GH_TOKEN:/);
     assert.match(step, /secrets\.RELEASE_GITHUB_TOKEN \|\| secrets\.GITHUB_TOKEN/);
     assert.match(step, /34254679932/);
-    // Each token that can be refused the ref gets its own fix in the error.
-    assert.match(step, /Resource not accessible by integration/);
-    assert.match(step, /Resource not accessible by personal access token'[^\n]*\n[^\n]*Workflows permission/);
     assert.match(step, /git fetch origin "refs\/tags\/\$\{TAG\}:refs\/tags\/\$\{TAG\}"/);
     assert.doesNotMatch(step, /git push origin/);
     assert.doesNotMatch(step, /git tag -a/);
@@ -401,5 +400,82 @@ describe("the workflows that run this script grant the scope it needs", () => {
       /^ {4}secrets: inherit$/m,
       "deploy-production.yml's release call must pass `secrets: inherit`, or RELEASE_GITHUB_TOKEN reads empty",
     );
+  });
+});
+
+// The Create tag step's own shell, run with a stubbed `gh` and `git`: each
+// refusal of the tag ref prints the fix for the token that was refused. Run
+// 36506993182 was the PAT's refusal (Contents without Workflows), which used
+// to print nothing past the generic line.
+describe("Create tag names the fix for the token that was refused the ref", () => {
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const releaseYml = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
+  const lines = releaseYml.split("\n");
+  const at = lines.findIndex((l) => l.trim() === "- name: Create tag");
+  const runAt = lines.findIndex((l, i) => i > at && /^\s+run: \|\s*$/.test(l));
+  const indent = lines[runAt].search(/\S/);
+  const body = [];
+  for (const line of lines.slice(runAt + 1)) {
+    if (line.trim() && line.search(/\S/) <= indent) break;
+    body.push(line.slice(indent + 2));
+  }
+  const script = body.join("\n");
+
+  // `gh` makes the tag object, then answers the ref with `REF_BODY` and exit
+  // 1; `git ls-remote` finds no existing tag.
+  const run = (refBody) => {
+    const dir = mkdtempSync(join(tmpdir(), "create-tag-"));
+    try {
+      writeFileSync(
+        join(dir, "gh"),
+        '#!/bin/sh\ncase "$*" in\n  *git/tags*) echo t4g0bj ;;\n  *git/refs*) echo "$REF_BODY" >&2; exit 1 ;;\nesac\n',
+        { mode: 0o755 },
+      );
+      writeFileSync(join(dir, "git"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      const output = join(dir, "output");
+      writeFileSync(output, "");
+      const result = spawnSync("bash", ["-c", script], {
+        env: {
+          PATH: `${dir}:${process.env.PATH}`,
+          SHA: "269d82b6e7a8b6a71f31cdd04802b60f2c8a82b7",
+          VERSION: "1.4.0",
+          GH_TOKEN: "t",
+          GITHUB_REPOSITORY: "o/r",
+          GITHUB_OUTPUT: output,
+          REF_BODY: refBody,
+        },
+        encoding: "utf8",
+      });
+      return { code: result.status, out: result.stdout + result.stderr };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  const APP_FIX = /The GitHub App cannot create that tag ref/;
+  const PAT_FIX = /RELEASE_GITHUB_TOKEN made the tag object but was refused the ref[^\n]*Workflows permission/;
+  const GENERIC = /Failed to create refs\/tags\/v1\.4\.0 pointing at t4g0bj/;
+
+  it("the Actions token's refusal gets the App's fix", () => {
+    const { code, out } = run('{"message":"Resource not accessible by integration","status":"403"}');
+    assert.equal(code, 1);
+    assert.match(out, GENERIC);
+    assert.match(out, APP_FIX);
+    assert.doesNotMatch(out, PAT_FIX);
+  });
+
+  it("the PAT's refusal says to add Workflows", () => {
+    const { code, out } = run('{"message":"Resource not accessible by personal access token","status":"403"}');
+    assert.equal(code, 1);
+    assert.match(out, GENERIC);
+    assert.match(out, PAT_FIX);
+    assert.doesNotMatch(out, APP_FIX);
+  });
+
+  it("any other refusal gets the generic line only", () => {
+    const { code, out } = run('{"message":"Not Found","status":"404"}');
+    assert.equal(code, 1);
+    assert.match(out, GENERIC);
+    assert.doesNotMatch(out, APP_FIX);
+    assert.doesNotMatch(out, PAT_FIX);
   });
 });

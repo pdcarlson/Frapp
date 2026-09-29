@@ -49,9 +49,9 @@ name: Release
 #      files. Mint the ref with RELEASE_GITHUB_TOKEN (a *user* PAT with the
 #      Contents AND Workflows permissions, read and write; an `automation`
 #      environment secret, #2518) or from a laptop. With Contents alone the PAT
-#      makes the tag object and is refused the ref the same way (runs
-#      36506993182 and 36517450128; Workflows added, run 36517657454 minted
-#      v1.4.0).
+#      makes the tag object and is refused the ref with its own 403, "Resource
+#      not accessible by personal access token" (runs 36506993182 and
+#      36517450128; with Workflows added, run 36517657454 minted v1.4.0).
 #
 # Bump semantics (including why the PR number is parsed from the SUBJECT line
 # only) live in `scripts/ci/resolve-release-bump.mjs`. Unit tests:
