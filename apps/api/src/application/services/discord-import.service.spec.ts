@@ -89,6 +89,12 @@ async function build(current: DiscordImport = job()) {
     replaceChannels: jest.fn(async (_id, _chapter, rows) => rows),
     findChannels: jest.fn(async () => []),
     countChannels: jest.fn(async () => ({ total: 0, done: 0 })),
+    findChannelProgress: jest.fn(async () => ({
+      counts: { pending: 0, running: 0, completed: 0, failed: 0, skipped: 0 },
+      running: [],
+      recent: [],
+      failed: [],
+    })),
     markCleared: jest.fn(async () => ({ ...current, cleared_at: 'now' })),
     updateChannel: jest.fn(),
     // Registration enforces the archive ceilings itself now, so the default

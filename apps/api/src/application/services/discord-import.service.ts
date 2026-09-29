@@ -44,6 +44,7 @@ import {
 import type {
   DiscordImport,
   DiscordImportChannel,
+  DiscordImportChannelProgress,
   DiscordImportFileKind,
   DiscordImportFile,
   DiscordImportNewChannelType,
@@ -436,6 +437,18 @@ export class DiscordImportService {
 
   getChannels(id: string, chapterId: string): Promise<DiscordImportChannel[]> {
     return this.importRepo.findChannels(id, chapterId);
+  }
+
+  /**
+   * The Watch view's progress, channel by channel (#2857): counts, what is
+   * running, what finished last, what failed. Chapter-scoped by the
+   * repository, like `getChannels`, whose full list it keeps off the poll.
+   */
+  getProgress(
+    id: string,
+    chapterId: string,
+  ): Promise<DiscordImportChannelProgress> {
+    return this.importRepo.findChannelProgress(id, chapterId);
   }
 
   getFiles(id: string, chapterId: string): Promise<DiscordImportFile[]> {

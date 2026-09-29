@@ -6990,6 +6990,43 @@
         ]
       }
     },
+    "/v1/discord-imports/{id}/progress": {
+      "get": {
+        "description": "What the Watch view polls while an import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll.",
+        "operationId": "DiscordImportController_getProgress_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportProgressDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Channel-by-channel progress, for watching an import",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
     "/v1/discord-imports/{id}/files": {
       "get": {
         "description": "Rows with a null `uploaded_at` are what an interrupted upload still needs to send.",
@@ -11621,6 +11658,128 @@
         },
         "required": [
           "consent_acknowledged"
+        ]
+      },
+      "DiscordImportProgressCountsDto": {
+        "type": "object",
+        "properties": {
+          "pending": {
+            "type": "number"
+          },
+          "running": {
+            "type": "number"
+          },
+          "completed": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "skipped": {
+            "type": "number",
+            "description": "Skipped by the worker: Discord no longer showed the channel to the bot when it got there."
+          }
+        },
+        "required": [
+          "pending",
+          "running",
+          "completed",
+          "failed",
+          "skipped"
+        ]
+      },
+      "DiscordImportChannelProgressRowDto": {
+        "type": "object",
+        "properties": {
+          "discord_channel_id": {
+            "type": "string"
+          },
+          "discord_channel_name": {
+            "type": "string",
+            "description": "As the scan recorded it; a thread reads `parent › thread`."
+          },
+          "discord_category": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_discord_channel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set on a thread: the channel it lives in."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "skipped"
+            ]
+          },
+          "imported_count": {
+            "type": "number",
+            "description": "Messages written so far."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "target_channel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Frapp channel it lands in, once known: from mapping time for a merge, and once the worker reaches it for a new channel. Open it at `/chat?channel=<id>`."
+          }
+        },
+        "required": [
+          "discord_channel_id",
+          "discord_channel_name",
+          "discord_category",
+          "parent_discord_channel_id",
+          "status",
+          "imported_count",
+          "error",
+          "target_channel_id"
+        ]
+      },
+      "DiscordImportProgressDto": {
+        "type": "object",
+        "properties": {
+          "counts": {
+            "description": "Channel and thread rows being imported, by status. Rows mapped to skip are in no count.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiscordImportProgressCountsDto"
+              }
+            ]
+          },
+          "running": {
+            "description": "The rows running now, at most 5.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportChannelProgressRowDto"
+            }
+          },
+          "recent": {
+            "description": "The rows finished last, most recent first, at most 5.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportChannelProgressRowDto"
+            }
+          },
+          "failed": {
+            "description": "Failed rows, in import order, at most 20.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportChannelProgressRowDto"
+            }
+          }
+        },
+        "required": [
+          "counts",
+          "running",
+          "recent",
+          "failed"
         ]
       },
       "DiscordImportUploadFileDto": {

@@ -276,3 +276,89 @@ export class DiscordUploadTicketDto {
   })
   content_type: string;
 }
+
+export class DiscordImportChannelProgressRowDto {
+  @ApiProperty()
+  discord_channel_id: string;
+
+  @ApiProperty({
+    description: 'As the scan recorded it; a thread reads `parent › thread`.',
+  })
+  discord_channel_name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  discord_category: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Set on a thread: the channel it lives in.',
+  })
+  parent_discord_channel_id: string | null;
+
+  @ApiProperty({
+    enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
+  })
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+
+  @ApiProperty({ description: 'Messages written so far.' })
+  imported_count: number;
+
+  @ApiProperty({ type: String, nullable: true })
+  error: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Frapp channel it lands in, once known: from mapping time for a merge, and once the worker reaches it for a new channel. Open it at `/chat?channel=<id>`.',
+  })
+  target_channel_id: string | null;
+}
+
+export class DiscordImportProgressCountsDto {
+  @ApiProperty()
+  pending: number;
+
+  @ApiProperty()
+  running: number;
+
+  @ApiProperty()
+  completed: number;
+
+  @ApiProperty()
+  failed: number;
+
+  @ApiProperty({
+    description:
+      'Skipped by the worker: Discord no longer showed the channel to the bot when it got there.',
+  })
+  skipped: number;
+}
+
+export class DiscordImportProgressDto {
+  @ApiProperty({
+    type: DiscordImportProgressCountsDto,
+    description:
+      'Channel and thread rows being imported, by status. Rows mapped to skip are in no count.',
+  })
+  counts: DiscordImportProgressCountsDto;
+
+  @ApiProperty({
+    type: [DiscordImportChannelProgressRowDto],
+    description: 'The rows running now, at most 5.',
+  })
+  running: DiscordImportChannelProgressRowDto[];
+
+  @ApiProperty({
+    type: [DiscordImportChannelProgressRowDto],
+    description: 'The rows finished last, most recent first, at most 5.',
+  })
+  recent: DiscordImportChannelProgressRowDto[];
+
+  @ApiProperty({
+    type: [DiscordImportChannelProgressRowDto],
+    description: 'Failed rows, in import order, at most 20.',
+  })
+  failed: DiscordImportChannelProgressRowDto[];
+}

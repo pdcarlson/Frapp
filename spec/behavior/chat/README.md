@@ -472,6 +472,14 @@ progress is counted in channels and threads, a channel Discord no longer shows
 the bot counting as done: its message total is only known once Discord has been
 read, so a message count would read full from the first page (#2816). An upload's
 is counted in messages. Neither reads 100% until the import has completed.
+**Watching an import (#2857).** Watch, on an import that is queued or running,
+opens it channel by channel: how many channels and threads are done, importing,
+waiting, failed or gone from Discord; the one importing now with its message
+count so far; the last few finished; and every failure with its reason (at
+most 20 named), each linking to the Frapp channel it lands in once there is
+one. The same panel is Details on a finished import, read once rather than
+polled. Imported messages never arrive live in an open chat, so the panel says
+that opening a channel shows what has landed so far.
 
 **What the bot path costs, stated plainly.** One bot process holds read access
 to every connected chapter's Discord server at once. That is a real cross-tenant

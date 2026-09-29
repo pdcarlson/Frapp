@@ -32,6 +32,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
+import { ImportWatchPanel } from "./import-watch-panel";
 import { importPercent, type ImportRow } from "./import-progress";
 import type { ImportSource } from "./source-step";
 
@@ -48,6 +49,17 @@ const STATUS_VARIANT: Record<
   purged: "outline",
   draft: "outline",
 };
+
+/** Statuses whose import has channel rows worth watching (#2857). */
+const WATCHABLE = new Set([
+  "ready",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+/** Of those, the ones still moving: watched live rather than read once. */
+const MOVING = new Set(["ready", "running"]);
 
 /**
  * Discord import, admin-only.
@@ -271,6 +283,8 @@ function DiscordImportBody({
               {rows.map((row) => {
                 const live = activeRow?.id === row.id ? activeRow : row;
                 const percent = importPercent(live);
+                const watching =
+                  activeId === row.id && WATCHABLE.has(live.status);
                 return (
                   <li
                     key={row.id}
@@ -334,14 +348,33 @@ function DiscordImportBody({
                       </details>
                     ) : null}
 
+                    {watching ? (
+                      <ImportWatchPanel
+                        importId={row.id}
+                        active={MOVING.has(live.status)}
+                      />
+                    ) : null}
+
                     <div className="flex justify-end gap-2">
-                      {activeId !== row.id ? (
+                      {/* Watch opens the import channel by channel (#2857);
+                          on a finished import the same panel is its details. */}
+                      {watching ? (
                         <Button
                           variant="ghost"
                           size="sm"
+                          aria-expanded="true"
+                          onClick={() => setActiveId(null)}
+                        >
+                          Hide
+                        </Button>
+                      ) : WATCHABLE.has(live.status) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-expanded="false"
                           onClick={() => setActiveId(row.id)}
                         >
-                          Watch
+                          {MOVING.has(live.status) ? "Watch" : "Details"}
                         </Button>
                       ) : null}
                       {/* Delete refuses while an import is running and says to

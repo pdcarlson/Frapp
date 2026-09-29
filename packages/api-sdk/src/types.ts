@@ -2746,6 +2746,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/discord-imports/{id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channel-by-channel progress, for watching an import
+         * @description What the Watch view polls while an import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll.
+         */
+        get: operations["DiscordImportController_getProgress_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/discord-imports/{id}/files": {
         parameters: {
             query?: never;
@@ -4467,6 +4487,39 @@ export interface components {
              * @enum {string}
              */
             source: "upload" | "bot";
+        };
+        DiscordImportProgressCountsDto: {
+            pending: number;
+            running: number;
+            completed: number;
+            failed: number;
+            /** @description Skipped by the worker: Discord no longer showed the channel to the bot when it got there. */
+            skipped: number;
+        };
+        DiscordImportChannelProgressRowDto: {
+            discord_channel_id: string;
+            /** @description As the scan recorded it; a thread reads `parent › thread`. */
+            discord_channel_name: string;
+            discord_category: string | null;
+            /** @description Set on a thread: the channel it lives in. */
+            parent_discord_channel_id: string | null;
+            /** @enum {string} */
+            status: "pending" | "running" | "completed" | "failed" | "skipped";
+            /** @description Messages written so far. */
+            imported_count: number;
+            error: string | null;
+            /** @description The Frapp channel it lands in, once known: from mapping time for a merge, and once the worker reaches it for a new channel. Open it at `/chat?channel=<id>`. */
+            target_channel_id: string | null;
+        };
+        DiscordImportProgressDto: {
+            /** @description Channel and thread rows being imported, by status. Rows mapped to skip are in no count. */
+            counts: components["schemas"]["DiscordImportProgressCountsDto"];
+            /** @description The rows running now, at most 5. */
+            running: components["schemas"]["DiscordImportChannelProgressRowDto"][];
+            /** @description The rows finished last, most recent first, at most 5. */
+            recent: components["schemas"]["DiscordImportChannelProgressRowDto"][];
+            /** @description Failed rows, in import order, at most 20. */
+            failed: components["schemas"]["DiscordImportChannelProgressRowDto"][];
         };
         DiscordImportUploadFileDto: {
             /**
@@ -8952,6 +9005,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    DiscordImportController_getProgress_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordImportProgressDto"];
+                };
             };
         };
     };

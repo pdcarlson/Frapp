@@ -234,6 +234,43 @@ export interface DiscordImportChannel {
 /** The two `chat_channels.type` values an import may create. */
 export type DiscordImportNewChannelType = 'PUBLIC' | 'ROLE_GATED';
 
+/** One channel or thread as the Watch view names it (#2857). */
+export type DiscordImportChannelProgressRow = Pick<
+  DiscordImportChannel,
+  | 'discord_channel_id'
+  | 'discord_channel_name'
+  | 'discord_category'
+  | 'parent_discord_channel_id'
+  | 'status'
+  | 'imported_count'
+  | 'error'
+  | 'target_channel_id'
+>;
+
+/** How many rows of each kind the Watch view names, at most. */
+export const DISCORD_IMPORT_PROGRESS_LIMITS = {
+  running: 5,
+  recent: 5,
+  failed: 20,
+} as const;
+
+/**
+ * An import's progress channel by channel, for the Watch view (#2857).
+ *
+ * Counts, plus a few rows worth naming: the ones running now, the last ones
+ * finished, and the failures. It stays a few KB whatever the server's size,
+ * because the view polls it every few seconds and a server can hold over a
+ * thousand channels and threads; the full list is `GET :id/channels`.
+ * Rows mapped to skip are not being imported and are in none of it.
+ */
+export interface DiscordImportChannelProgress {
+  counts: Record<DiscordImportChannelStatus, number>;
+  running: DiscordImportChannelProgressRow[];
+  /** Finished most recently first: the worker walks rows in `position` order. */
+  recent: DiscordImportChannelProgressRow[];
+  failed: DiscordImportChannelProgressRow[];
+}
+
 export type DiscordImportFileKind = 'export' | 'media';
 
 /**

@@ -30,6 +30,7 @@ import {
   ConfirmDiscordUploadsDto,
   CreateDiscordImportDto,
   DiscordDiscoveryResponseDto,
+  DiscordImportProgressDto,
   DiscordUploadTicketDto,
   RequestDiscordUploadUrlsDto,
   SetDiscordChannelMappingDto,
@@ -116,6 +117,22 @@ export class DiscordImportController {
     @CurrentChapterId() chapterId: string,
   ) {
     return this.importService.getChannels(id, chapterId);
+  }
+
+  @Get(':id/progress')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Channel-by-channel progress, for watching an import',
+    description:
+      'What the Watch view polls while an import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll.',
+  })
+  @ApiOkResponse({ type: DiscordImportProgressDto })
+  getProgress(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.importService.getProgress(id, chapterId);
   }
 
   @Get(':id/files')
