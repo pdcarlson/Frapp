@@ -5,10 +5,12 @@ import { EyeOff } from "lucide-react";
 import {
   canHideConversation,
   directChannelDisplayName,
+  groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
   HIDE_CONVERSATION_LABEL,
   type DisplayNameMap,
 } from "@repo/hooks";
+import { isDirectChannel } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
@@ -104,8 +106,9 @@ function isSystem(channel: ChatChannel): boolean {
   return SYSTEM_CHANNEL_NAMES.has(channel.name);
 }
 
+/** `@repo/validation`'s rule, the one `groupChannelsByCategory` sections by. */
 function isDm(channel: ChatChannel): boolean {
-  return channel.type === "DM" || channel.type === "GROUP_DM";
+  return isDirectChannel(channel);
 }
 
 /**
@@ -247,62 +250,48 @@ export function ChannelList({
    * Rail sections, in render order: the uncategorized default group, then one
    * per category, then DMs, then system.
    *
-   * **Type wins over category.** A row is tested for system and DM *before* its
-   * `category_id` is consulted, so a stray category on a DM row can never pull
-   * it out of "Direct messages" — the three type groups are what s04 draws, and
-   * categories subdivide the plain-channel group only.
+   * The category rules (API order, type before category, an unknown
+   * `category_id` falls back to uncategorized) are `groupChannelsByCategory`'s,
+   * shared with mobile's s04 so the two clients can't disagree (#1684). What
+   * stays here is web's own: the System group, which is split off first so the
+   * shared rule never sees it, and the title sort inside each section.
    *
    * **Uncategorized keeps the label "Channels" and stays first.**
-   * `spec/behavior/chat/README.md` § Channel categories names the fallback group
+   * `spec/behavior/chat/README.md` § Channels names the fallback group
    * "Channels", which is what this rail already called it — so adopting
    * categories moves no uncategorized channel. A chapter that categorizes
    * everything just sees that group's empty section disappear, which the render
    * below already does for any empty section.
    */
   const { sections, hiddenDms } = useMemo(() => {
-    const uncategorized: ChatChannel[] = [];
     // A DM the member hid (#2303) moves to the collapsed group at the end,
     // except while it is the open channel, so a jump into one does not leave
     // the rail with no row marked current.
     const hiddenDms: ChatChannel[] = [];
-    const dms: ChatChannel[] = [];
     const system: ChatChannel[] = [];
-    // Seeded from `categories` so a category with no channels still gets an
-    // entry — it renders as an empty section, which the list then omits.
-    const byCategory = new Map<string, ChatChannel[]>(
-      categories.map((category) => [category.id, []]),
-    );
+    const rest: ChatChannel[] = [];
 
     for (const channel of channels) {
       if (channel.hidden && channel.id !== activeChannelId) {
         hiddenDms.push(channel);
-        continue;
-      }
-      if (isSystem(channel)) system.push(channel);
-      else if (isDm(channel)) dms.push(channel);
-      else {
-        // A `category_id` naming a category that is not in the list — deleted,
-        // or a stale cache — falls back to uncategorized rather than vanishing.
-        // That matches what the admin screen promises when a category is
-        // deleted: "Channels in this category become uncategorized."
-        const bucket =
-          channel.category_id != null
-            ? byCategory.get(channel.category_id)
-            : undefined;
-        (bucket ?? uncategorized).push(channel);
+      } else if (isSystem(channel)) {
+        system.push(channel);
+      } else {
+        rest.push(channel);
       }
     }
 
+    const grouped = groupChannelsByCategory(rest, categories);
     const result: Section[] = [
-      { key: "channels", label: "Channels", channels: uncategorized },
-      ...categories.map((category) => ({
+      { key: "channels", label: "Channels", channels: grouped.uncategorized },
+      ...grouped.categories.map(({ category, channels: inCategory }) => ({
         // Prefixed so a category whose id ever collided with a literal key
         // below cannot silently replace that section.
         key: `category:${category.id}`,
         label: category.name,
-        channels: byCategory.get(category.id) ?? [],
+        channels: inCategory,
       })),
-      { key: "dms", label: "Direct messages", channels: dms },
+      { key: "dms", label: "Direct messages", channels: grouped.direct },
       { key: "system", label: "System", channels: system },
     ];
 

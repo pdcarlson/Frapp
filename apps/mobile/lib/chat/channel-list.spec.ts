@@ -4,6 +4,7 @@ import {
   indexUnread,
   isDirectChannel,
   listedChannels,
+  selectCategories,
   selectChannels,
   selectPostCapability,
   THREAD_HEADER_FALLBACK,
@@ -53,6 +54,7 @@ describe("selectChannels", () => {
         type: "PUBLIC",
         member_ids: [],
         hidden: false,
+        category_id: null,
       },
     ]);
   });
@@ -71,6 +73,7 @@ describe("selectChannels", () => {
         type: "DM",
         member_ids: [VIEWER, OTHER],
         hidden: false,
+        category_id: null,
       },
     ]);
   });
@@ -92,6 +95,7 @@ describe("selectChannels", () => {
         type: "PUBLIC",
         member_ids: [VIEWER],
         hidden: false,
+        category_id: null,
       },
     ]);
   });
@@ -104,6 +108,7 @@ describe("selectChannels", () => {
         type: "PUBLIC",
         member_ids: [],
         hidden: false,
+        category_id: null,
       },
     ]);
   });
@@ -119,7 +124,14 @@ describe("selectChannels", () => {
         { id: "ok", name: "kept", type: "PUBLIC" },
       ]),
     ).toEqual([
-      { id: "ok", name: "kept", type: "PUBLIC", member_ids: [], hidden: false },
+      {
+        id: "ok",
+        name: "kept",
+        type: "PUBLIC",
+        member_ids: [],
+        hidden: false,
+        category_id: null,
+      },
     ]);
   });
 
@@ -138,10 +150,61 @@ describe("selectChannels", () => {
     ]);
   });
 
+  // #1684: s04 groups by it, so a mangled value must read as "no category",
+  // never drop the row.
+  it("carries category_id, and reads anything but a string as uncategorized", () => {
+    expect(
+      selectChannels([
+        { id: "a", name: "exec", type: "PRIVATE", category_id: "cat-exec" },
+        { id: "b", name: "general", type: "PUBLIC", category_id: null },
+        { id: "c", name: "rush", type: "PUBLIC", category_id: 7 },
+        { id: "d", name: "social", type: "PUBLIC" },
+      ]).map((channel) => [channel.id, channel.category_id]),
+    ).toEqual([
+      ["a", "cat-exec"],
+      ["b", null],
+      ["c", null],
+      ["d", null],
+    ]);
+  });
+
   it("survives a non-array payload", () => {
     expect(selectChannels(undefined)).toEqual([]);
     expect(selectChannels(null)).toEqual([]);
     expect(selectChannels({ channels: [] })).toEqual([]);
+  });
+});
+
+describe("selectCategories", () => {
+  it("keeps id and name, in the order the server sent them", () => {
+    // Not alphabetical on purpose: the server's `display_order` put Executive
+    // first, and nothing here may re-sort it.
+    expect(
+      selectCategories([
+        { id: "cat-exec", name: "Executive", display_order: 0, extra: 1 },
+        { id: "cat-comm", name: "Committees", display_order: 1 },
+      ]),
+    ).toEqual([
+      { id: "cat-exec", name: "Executive" },
+      { id: "cat-comm", name: "Committees" },
+    ]);
+  });
+
+  it("drops rows with no usable id or name", () => {
+    expect(
+      selectCategories([
+        { id: "cat-a" },
+        { name: "nameless" },
+        { id: 7, name: "numeric id" },
+        null,
+        { id: "cat-ok", name: "Kept" },
+      ]),
+    ).toEqual([{ id: "cat-ok", name: "Kept" }]);
+  });
+
+  it("survives a non-array payload", () => {
+    expect(selectCategories(undefined)).toEqual([]);
+    expect(selectCategories({ categories: [] })).toEqual([]);
   });
 });
 
@@ -158,6 +221,7 @@ describe("isDirectChannel", () => {
           type,
           member_ids: [],
           hidden: false,
+          category_id: null,
         }),
       ).toBe(true);
     }
@@ -169,6 +233,7 @@ describe("isDirectChannel", () => {
           type,
           member_ids: [],
           hidden: false,
+          category_id: null,
         }),
       ).toBe(false);
     }
@@ -185,6 +250,7 @@ describe("displayChannelName", () => {
           type: "DM",
           member_ids: [VIEWER, OTHER],
           hidden: false,
+          category_id: null,
         },
         VIEWER,
         NAMES,
@@ -201,6 +267,7 @@ describe("displayChannelName", () => {
           type: "DM",
           member_ids: [VIEWER, "unknown-user"],
           hidden: false,
+          category_id: null,
         },
         VIEWER,
         NAMES,
@@ -217,6 +284,7 @@ describe("displayChannelName", () => {
           type: "GROUP_DM",
           member_ids: [VIEWER],
           hidden: false,
+          category_id: null,
         },
         VIEWER,
         NAMES,
@@ -233,6 +301,7 @@ describe("displayChannelName", () => {
           type: "GROUP_DM",
           member_ids: [VIEWER, OTHER],
           hidden: false,
+          category_id: null,
         },
         VIEWER,
         NAMES,
@@ -251,6 +320,7 @@ describe("displayChannelName", () => {
           type: "PUBLIC",
           member_ids: [],
           hidden: false,
+          category_id: null,
         },
         VIEWER,
         NAMES,
