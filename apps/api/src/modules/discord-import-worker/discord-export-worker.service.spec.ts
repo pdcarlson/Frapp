@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import {
-  ATTACHMENT_CONCURRENCY,
+  COPY_BATCH_MAX_ITEMS,
   DiscordExportWorkerService,
   EXPORT_PAGE_SIZE,
 } from './discord-export-worker.service';
@@ -14,7 +14,12 @@ import {
 } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
-import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import {
+  ARCHIVE_MEDIA_COPIER,
+  ArchiveMediaCopyError,
+  type ArchiveMediaCopyItem,
+  type ArchiveMediaCopyResult,
+} from '#domain/adapters/archive-media-copier.interface';
 import { MISSING_MESSAGE_CONTENT_INTENT_ERROR } from '#domain/utils/discord-api-message';
 import type {
   DiscordImport,
@@ -121,7 +126,12 @@ interface Harness {
   repo: Record<string, jest.Mock>;
   connectionRepo: Record<string, jest.Mock>;
   bot: Record<string, jest.Mock>;
-  storage: Record<string, jest.Mock>;
+  copier: {
+    copy: jest.Mock<
+      Promise<ArchiveMediaCopyResult[]>,
+      [ArchiveMediaCopyItem[]]
+    >;
+  };
   channels: DiscordImportChannel[];
   files: DiscordImportFile[];
 }
@@ -163,7 +173,21 @@ async function build(
         return created;
       },
     ),
-    markFilesUploaded: jest.fn(async () => 1),
+    // Writes through to `files`, so a later slice's `findFiles` sees what an
+    // earlier one marked, as the real table would.
+    markFilesUploaded: jest.fn(
+      async (
+        _importId: string,
+        _chapterId: string,
+        paths: string[],
+        uploadedAt: string,
+      ) => {
+        for (const file of files) {
+          if (paths.includes(file.storage_path)) file.uploaded_at = uploadedAt;
+        }
+        return paths.length;
+      },
+    ),
   };
 
   const connectionRepo = {
@@ -188,19 +212,18 @@ async function build(
       pageIndex += 1;
       return page;
     }),
-    openAttachment: jest.fn(async () => ({
-      body: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(new Uint8Array([1, 2, 3]));
-          controller.close();
-        },
-      }),
-      contentType: 'image/png',
-      contentLength: 3,
-    })),
   };
 
-  const storage = { uploadFile: jest.fn(async () => undefined) };
+  // Stores everything it is given, unless a test says otherwise.
+  const copier = {
+    copy: jest.fn(async (items: ArchiveMediaCopyItem[]) =>
+      items.map((item): ArchiveMediaCopyResult => ({
+        path: item.path,
+        status: 'stored',
+        bytes: 3,
+      })),
+    ),
+  };
 
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -208,7 +231,7 @@ async function build(
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: DISCORD_CONNECTION_REPOSITORY, useValue: connectionRepo },
       { provide: DISCORD_BOT_GATEWAY, useValue: bot },
-      { provide: STORAGE_PROVIDER, useValue: storage },
+      { provide: ARCHIVE_MEDIA_COPIER, useValue: copier },
     ],
   }).compile();
 
@@ -217,7 +240,7 @@ async function build(
     repo,
     connectionRepo,
     bot,
-    storage,
+    copier,
     channels,
     files,
   };
@@ -576,35 +599,62 @@ describe('DiscordExportWorkerService — attachments', () => {
       ],
     });
 
-  it('pipes the CDN body into storage without buffering it', async () => {
+  /** One message carrying `count` small attachments. */
+  const withAttachments = (count: number, size = 10) =>
+    apiMessage('1', {
+      attachments: Array.from({ length: count }, (_, i) => ({
+        id: `att-${i}`,
+        filename: `p${i}.png`,
+        size,
+        url: `https://cdn.discordapp.com/a/p${i}.png`,
+        content_type: 'image/png',
+      })),
+    });
+
+  /** Answer each item with the status `pick` chooses for its index. */
+  const answer =
+    (pick: (index: number) => ArchiveMediaCopyResult['status']) =>
+    async (items: ArchiveMediaCopyItem[]) =>
+      items.map((item, index): ArchiveMediaCopyResult => ({
+        path: item.path,
+        status: pick(index),
+        reason: pick(index) === 'stored' ? undefined : 'CDN answered 503.',
+      }));
+
+  it('hands the copier the CDN url, never the bytes', async () => {
+    // #2848: the API sending the file to Storage is what Render bills.
     const harness = await build({ pages: [[withAttachment('1')]] });
     await harness.worker.runSlice(runArgs(harness));
 
-    expect(harness.storage.uploadFile).toHaveBeenCalledTimes(1);
-    const [, path, body, contentType, options] =
-      harness.storage.uploadFile.mock.calls[0];
-    // A stream, not bytes — this runs beside live traffic and the bucket takes
-    // objects up to 100 MB.
-    expect(body).toBeInstanceOf(ReadableStream);
-    expect(contentType).toBe('image/png');
-    expect(options).toEqual({ contentLength: 3 });
-    // Shared layout, so the per-import purge's prefix sweep finds it.
-    expect(path).toContain(
-      `chapters/${CHAPTER}/chat-archive/imports/${IMPORT_ID}/media/`,
-    );
+    expect(harness.copier.copy).toHaveBeenCalledTimes(1);
+    const [items] = harness.copier.copy.mock.calls[0];
+    expect(items).toEqual([
+      {
+        url: 'https://cdn.discordapp.com/attachments/1/att-1/photo.png?ex=aaa',
+        bucket: 'chat-archive',
+        // Shared layout, so the per-import purge's prefix sweep finds it.
+        path: expect.stringContaining(
+          `chapters/${CHAPTER}/chat-archive/imports/${IMPORT_ID}/media/`,
+        ),
+        contentType: 'image/png',
+        declaredSize: 2048,
+      },
+    ]);
+    // The gateway no longer opens attachments at all.
+    expect(harness.bot).not.toHaveProperty('openAttachment');
   });
 
-  it('registers the manifest row BEFORE the transfer and marks it after', async () => {
+  it('registers the manifest row BEFORE the copy and marks it after', async () => {
     const harness = await build({ pages: [[withAttachment('1')]] });
     await harness.worker.runSlice(runArgs(harness));
 
     const created = harness.repo.registerFiles.mock.invocationCallOrder[0];
-    const uploaded = harness.storage.uploadFile.mock.invocationCallOrder[0];
+    const copied = harness.copier.copy.mock.invocationCallOrder[0];
     const marked = harness.repo.markFilesUploaded.mock.invocationCallOrder[0];
     // A row with a null `uploaded_at` is exactly "a transfer that did not
     // finish", which is what makes an interrupted slice resume correctly.
-    expect(created).toBeLessThan(uploaded);
-    expect(uploaded).toBeLessThan(marked);
+    expect(created).toBeLessThan(copied);
+    expect(copied).toBeLessThan(marked);
   });
 
   it('keys the manifest on the attachment id, not the rotating CDN url', async () => {
@@ -629,7 +679,7 @@ describe('DiscordExportWorkerService — attachments', () => {
     );
   });
 
-  it('does not re-fetch an attachment an earlier slice already stored', async () => {
+  it('does not re-send an attachment an earlier slice already stored', async () => {
     const harness = await build({ pages: [[withAttachment('1')]] });
     harness.files.push({
       id: 'file-existing',
@@ -648,8 +698,7 @@ describe('DiscordExportWorkerService — attachments', () => {
 
     await harness.worker.runSlice(runArgs(harness));
 
-    expect(harness.bot.openAttachment).not.toHaveBeenCalled();
-    expect(harness.storage.uploadFile).not.toHaveBeenCalled();
+    expect(harness.copier.copy).not.toHaveBeenCalled();
   });
 
   it('deduplicates the same attachment repeated within one page', async () => {
@@ -674,12 +723,13 @@ describe('DiscordExportWorkerService — attachments', () => {
     const harness = await build({ pages: [[duplicated]] });
     await harness.worker.runSlice(runArgs(harness));
 
-    expect(harness.storage.uploadFile).toHaveBeenCalledTimes(1);
+    expect(harness.copier.copy).toHaveBeenCalledTimes(1);
+    expect(harness.copier.copy.mock.calls[0][0]).toHaveLength(1);
   });
 
   it('warns and keeps the message when the attachment is gone from the CDN', async () => {
     const harness = await build({ pages: [[withAttachment('1')]] });
-    harness.bot.openAttachment.mockResolvedValue(null);
+    harness.copier.copy.mockImplementation(answer(() => 'gone'));
 
     const args = runArgs(harness);
     const result = await harness.worker.runSlice(args);
@@ -687,15 +737,172 @@ describe('DiscordExportWorkerService — attachments', () => {
     expect(result.finished).toBe(true);
     const warnings = args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('no longer available from Discord');
+    expect(harness.repo.markFilesUploaded).not.toHaveBeenCalled();
     // The message itself still imported — it still has its text.
     expect(args.importBatch).toHaveBeenCalled();
   });
 
-  it('fails the import when the bot path crosses an archive ceiling, and never uploads', async () => {
+  it('marks uploaded only what the copier reports stored', async () => {
+    const harness = await build({ pages: [[withAttachments(3)]] });
+    harness.copier.copy.mockImplementation(
+      answer((index) => (index === 1 ? 'failed' : 'stored')),
+    );
+
+    const args = runArgs(harness, {
+      importBatch: jest.fn(
+        async (batch: {
+          messages: unknown[];
+          mediaByRelativePath: Map<string, DiscordImportFile>;
+        }) => ({
+          imported: batch.messages.length,
+          skipped: 0,
+          attachmentsImported: batch.mediaByRelativePath.size,
+          attachmentsSkipped: 0,
+          // What the real batch writer says about a file with no stored object.
+          warnings: ['No uploaded file for attachment: att-1/p1.png'],
+        }),
+      ),
+    });
+    await harness.worker.runSlice(args);
+
+    const [, , marked] = harness.repo.markFilesUploaded.mock.calls[0];
+    expect(marked).toHaveLength(2);
+    expect(marked).not.toContain(
+      harness.files.find((file) => file.relative_path === 'att-1/p1.png')
+        ?.storage_path,
+    );
+    // The resolver the batch writer reads holds only the stored two.
+    const [batch] = args.importBatch.mock.calls[0];
+    expect([...batch.mediaByRelativePath.keys()].sort()).toEqual([
+      'att-0/p0.png',
+      'att-2/p2.png',
+    ]);
+    const warnings: string[] =
+      args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
+    expect(warnings).toContain(
+      'Could not import attachment "p1.png": CDN answered 503.',
+    );
+    // Explained by name and reason already, so the generic line is dropped.
+    expect(warnings.join(' ')).not.toContain('No uploaded file');
+  });
+
+  it('sends a large page in batches', async () => {
+    const harness = await build({
+      pages: [[withAttachments(COPY_BATCH_MAX_ITEMS * 2 + 5)]],
+    });
+    await harness.worker.runSlice(runArgs(harness));
+
+    expect(
+      harness.copier.copy.mock.calls.map(([items]) => items.length),
+    ).toEqual([COPY_BATCH_MAX_ITEMS, COPY_BATCH_MAX_ITEMS, 5]);
+    // Marked after each call, so a later call that throws costs only its own.
+    expect(harness.repo.markFilesUploaded).toHaveBeenCalledTimes(3);
+  });
+
+  it('caps a batch by declared bytes, but always sends at least one file', async () => {
+    // 90 MiB each: two fit under the 256 MiB hint, a third does not.
+    const harness = await build({
+      pages: [[withAttachments(5, 90 * 1024 * 1024)]],
+    });
+    await harness.worker.runSlice(runArgs(harness));
+
+    expect(
+      harness.copier.copy.mock.calls.map(([items]) => items.length),
+    ).toEqual([2, 2, 1]);
+  });
+
+  it('sends deferred files again until each one resolves', async () => {
+    const harness = await build({ pages: [[withAttachments(3)]] });
+    harness.copier.copy
+      .mockImplementationOnce(
+        answer((index) => (index === 0 ? 'stored' : 'deferred')),
+      )
+      .mockImplementationOnce(answer(() => 'stored'));
+
+    const args = runArgs(harness);
+    await harness.worker.runSlice(args);
+
+    const sent = harness.copier.copy.mock.calls.map(([items]) =>
+      items.map((item) => item.path),
+    );
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0].slice(1));
+    const [batch] = args.importBatch.mock.calls[0];
+    expect(batch.mediaByRelativePath.size).toBe(3);
+  });
+
+  it('yields mid-page at the deadline, and the next slice sends only the unfinished files', async () => {
+    // The same page twice: the second slice must fetch it again, because the
+    // first never advanced the cursor past it.
+    const page = [withAttachments(3)];
+    const harness = await build({ pages: [page, page] });
+    harness.copier.copy.mockImplementationOnce(async (items) => {
+      // The call took the slice past its budget.
+      jest.setSystemTime(Date.now() + 60_000);
+      return answer((index) => (index === 0 ? 'stored' : 'deferred'))(items);
+    });
+
+    try {
+      const first = runArgs(harness);
+      const result = await harness.worker.runSlice(first);
+
+      expect(result.finished).toBe(false);
+      // Nothing about the page was written: no rows, no cursor, no checkpoint.
+      expect(first.importBatch).not.toHaveBeenCalled();
+      expect(first.checkpoint).not.toHaveBeenCalled();
+      expect(harness.repo.updateChannel).not.toHaveBeenCalledWith(
+        'mapping-1',
+        IMPORT_ID,
+        expect.objectContaining({ cursor_before_snowflake: expect.anything() }),
+      );
+      expect(result.totals.totalMessages).toBe(0);
+
+      const second = runArgs(harness);
+      await harness.worker.runSlice(second);
+
+      // The same page again, from the same cursor.
+      expect(harness.bot.fetchMessagePage.mock.calls[1][0]).toEqual(
+        expect.objectContaining({ before: null }),
+      );
+      const sent = harness.copier.copy.mock.calls.map(([items]) =>
+        items.map((item) => item.path),
+      );
+      expect(sent[1]).toEqual(sent[0].slice(1));
+      const [batch] = second.importBatch.mock.calls[0];
+      expect(batch.mediaByRelativePath.size).toBe(3);
+    } finally {
+      jest.setSystemTime(NOW);
+    }
+  });
+
+  it('fails the import when a call copied nothing at all', async () => {
+    // Every call resolving at least one file is what ends the loop; a copier
+    // that breaks it must not spin until the deadline, slice after slice.
+    const harness = await build({ pages: [[withAttachments(2)]] });
+    harness.copier.copy.mockImplementation(answer(() => 'deferred'));
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      ArchiveMediaCopyError,
+    );
+  });
+
+  it('fails the import, rather than skipping the files, when the copier itself fails', async () => {
+    const harness = await build({ pages: [[withAttachment('1')]] });
+    harness.copier.copy.mockRejectedValue(
+      new ArchiveMediaCopyError('the copy service answered 404'),
+    );
+
+    const args = runArgs(harness);
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(/answered 404/);
+    expect(args.importBatch).not.toHaveBeenCalled();
+    expect(harness.repo.markFilesUploaded).not.toHaveBeenCalled();
+  });
+
+  it('fails the import when the bot path crosses an archive ceiling, and never copies', async () => {
     // The bot path writes to the same bucket as the upload path, so it carries
-    // the same ceilings (#1243). Enforced BEFORE the transfer, because that is
-    // the only point at which refusing still saves the storage — after
-    // `uploadFile` the bytes are already in the bucket.
+    // the same ceilings (#1243). Enforced BEFORE the copy, because that is the
+    // only point at which refusing still saves the storage — after the copy the
+    // bytes are already in the bucket.
     //
     // It fails the job rather than skipping the attachment: a partial archive
     // that reports success would tell the admin their history imported when it
@@ -712,7 +919,7 @@ describe('DiscordExportWorkerService — attachments', () => {
     await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
       /archive would hold .* past its .* limit/,
     );
-    expect(harness.storage.uploadFile).not.toHaveBeenCalled();
+    expect(harness.copier.copy).not.toHaveBeenCalled();
   });
 
   it('skips a file type the archive bucket refuses, and says which', async () => {
@@ -737,7 +944,7 @@ describe('DiscordExportWorkerService — attachments', () => {
     const args = runArgs(harness);
     await harness.worker.runSlice(args);
 
-    expect(harness.bot.openAttachment).not.toHaveBeenCalled();
+    expect(harness.copier.copy).not.toHaveBeenCalled();
     const warnings = args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('setup.exe');
   });
@@ -764,37 +971,10 @@ describe('DiscordExportWorkerService — attachments', () => {
     const args = runArgs(harness);
     const result = await harness.worker.runSlice(args);
 
-    expect(harness.bot.openAttachment).not.toHaveBeenCalled();
+    expect(harness.copier.copy).not.toHaveBeenCalled();
     expect(result.finished).toBe(true);
     const warnings = args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('movie.mp4');
-  });
-
-  it('never runs more than the configured number of transfers at once', async () => {
-    const many = apiMessage('1', {
-      attachments: Array.from({ length: 20 }, (_, i) => ({
-        id: `att-${i}`,
-        filename: `p${i}.png`,
-        size: 10,
-        url: `https://cdn.discordapp.com/a/p${i}.png`,
-        content_type: 'image/png',
-      })),
-    });
-    const harness = await build({ pages: [[many]] });
-
-    let inFlight = 0;
-    let peak = 0;
-    harness.storage.uploadFile.mockImplementation(async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await Promise.resolve();
-      inFlight -= 1;
-    });
-
-    await harness.worker.runSlice(runArgs(harness));
-
-    expect(harness.storage.uploadFile).toHaveBeenCalledTimes(20);
-    expect(peak).toBeLessThanOrEqual(ATTACHMENT_CONCURRENCY);
   });
 });
 
