@@ -179,6 +179,13 @@ export class DiscordExportWorkerService {
     deadline: number;
     /** What a role mention reads as, from the import's role mapping (#2875). */
     roleName: (discordRoleId: string) => string | null;
+    /**
+     * The Frapp channels among the import's merge targets that every member
+     * can read; a mention of a merged channel is named only then (#2875).
+     */
+    wholeChapterChannelIds: (
+      rows: readonly DiscordImportChannel[],
+    ) => Promise<ReadonlySet<string>>;
     /** True while the job may still be advanced (not cancelled, lease held). */
     checkpoint: (patch: {
       imported: number;
@@ -210,6 +217,7 @@ export class DiscordExportWorkerService {
       job,
       deadline,
       roleName,
+      wholeChapterChannelIds,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -247,7 +255,10 @@ export class DiscordExportWorkerService {
       roleName,
       // The same row objects the destinations are written onto, so a channel
       // links from the moment it exists (#2875).
-      channel: importChannelMentions(channels),
+      channel: importChannelMentions(
+        channels,
+        await wholeChapterChannelIds(channels),
+      ),
     };
     const totals: SliceTotals = {
       imported: job.imported_messages,
@@ -271,40 +282,48 @@ export class DiscordExportWorkerService {
         .map((file) => [file.relative_path, file]),
     );
 
-    // Every channel this import creates exists before a message is read, so a
-    // mention of a channel the walk reaches later still links to it (#2875).
-    // Made lazily, a channel would not exist yet when an earlier channel's
-    // messages mentioned it, and those messages would keep an unlinked name
-    // for good. The cost: a channel Discord stops showing mid-import is
-    // skipped by the walk and stays in Frapp, empty. Threads need nothing
-    // here, since they land in their parent's channel. Resumable like the
-    // walk: a row that has its target is not asked again.
-    for (const mapping of channels) {
-      if (
-        mapping.parent_discord_channel_id !== null ||
-        mapping.mapping_action !== 'create_new' ||
-        mapping.target_channel_id !== null ||
-        mapping.status === 'completed' ||
-        mapping.status === 'skipped'
-      ) {
-        continue;
+    // Every channel this import creates exists before a message is written,
+    // so a mention of a channel the walk reaches later still links to it
+    // (#2875). Made lazily, a channel would not exist yet when an earlier
+    // channel's messages mentioned it, and they would keep an unlinked name
+    // for good.
+    //
+    // Not done up front: it waits until a page has passed every check a first
+    // page can fail (the channel is in this guild, the bot can read message
+    // content) and is about to be written. An import that fails there, the
+    // common first-slice failure, then leaves no channel behind. Once it has
+    // run, an import cancelled or failing later leaves the channels it made,
+    // empty or not, as deleting an import always has. Threads need nothing
+    // here, since they land in their parent's channel. Once per slice, and
+    // resumable: a row that has its target is not asked again.
+    let destinationsReady = false;
+    const ensureDestinations = async (): Promise<void> => {
+      if (destinationsReady) return;
+      for (const mapping of channels) {
+        if (
+          mapping.parent_discord_channel_id ||
+          mapping.mapping_action !== 'create_new' ||
+          mapping.target_channel_id !== null ||
+          mapping.status === 'completed' ||
+          mapping.status === 'skipped'
+        ) {
+          continue;
+        }
+        try {
+          await resolveTargetChannel(mapping, channels);
+        } catch (error) {
+          // As the walk does: the row says why the import stopped (#2857).
+          await this.importRepo
+            .updateChannel(mapping.id, job.id, {
+              status: 'failed',
+              error: toReportableError(error).message,
+            })
+            .catch(() => undefined);
+          throw error;
+        }
       }
-      if (Date.now() >= deadline) {
-        return this.sliceResult(totals, false);
-      }
-      try {
-        await resolveTargetChannel(mapping, channels);
-      } catch (error) {
-        // As the walk does: the row says why the import stopped (#2857).
-        await this.importRepo
-          .updateChannel(mapping.id, job.id, {
-            status: 'failed',
-            error: toReportableError(error).message,
-          })
-          .catch(() => undefined);
-        throw error;
-      }
-    }
+      destinationsReady = true;
+    };
 
     for (const mapping of channels) {
       if (Date.now() >= deadline) {
@@ -332,6 +351,7 @@ export class DiscordExportWorkerService {
           totals,
           mediaByRelativePath,
           mentionContext,
+          ensureDestinations,
           checkpoint,
           resolveTargetChannel: (channel) =>
             this.resolveDestination(channel, byDiscordId, (row) =>
@@ -455,6 +475,8 @@ export class DiscordExportWorkerService {
     totals: SliceTotals;
     mediaByRelativePath: Map<string, DiscordImportFile>;
     mentionContext: ImportMentionContext;
+    /** Creates the import's new channels, once; see `runSlice`. */
+    ensureDestinations: () => Promise<void>;
     checkpoint: (patch: {
       imported: number;
       skipped: number;
@@ -485,6 +507,7 @@ export class DiscordExportWorkerService {
       totals,
       mediaByRelativePath,
       mentionContext,
+      ensureDestinations,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -632,6 +655,7 @@ export class DiscordExportWorkerService {
       // `outcome.attachmentsSkipped` below. Adding both double-counts every
       // skipped attachment.
 
+      await ensureDestinations();
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,

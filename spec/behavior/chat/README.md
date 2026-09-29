@@ -844,27 +844,35 @@ What follows is the behaviour the archive has once it is in.
   that a delete also clears. The rewrite is `rewriteDiscordMentions`
   (`apps/api/src/domain/utils/discord-mentions.ts`), run by the mapper both
   import paths share:
-  - a user (`<@id>`, `<@!id>`) reads `@` plus their Discord display name. That
-    can differ from the server nickname their own messages are labelled with:
-    Discord's API returns no nickname for a mentioned user, and taking one from
-    whatever the import happened to have read already named the same person
-    two ways;
+  - a user (`<@id>`, `<@!id>`) reads `@` plus the name the message's own
+    mentioned-user entry carries. On the bot path that is their Discord display
+    name, which can differ from the server nickname their own messages are
+    labelled with: Discord's API returns no nickname for a mentioned user, and
+    taking one from whatever the import happened to have read already named the
+    same person two ways. An upload's entry is DiscordChatExporter's, which
+    carries the nickname;
   - a role (`<@&id>`) reads `@` plus the mapped Frapp role's current name, or its
     Discord name when it was set to Ignore; `@everyone`'s role reads
-    `@everyone`;
+    `@everyone`. An upload has no role mapping, so there it reads
+    `@unknown-role`;
   - a channel (`<#id>`) reads `#name`, linked to the Frapp channel its messages
     landed in (`/chat?channel=<id>`). A thread links to its parent's channel.
-    The bot path creates every new channel before it reads a message, so
-    every mention of an imported channel links; the cost is that a channel
-    Discord stops showing mid-import stays in Frapp, empty. The link works on
-    web, where like every message link it opens in a new tab. Mobile shows the
-    name without a link, because it only links absolute URLs;
+    The bot path creates every new channel of the import just before it writes
+    its first page, once that page has passed the checks a first page can fail
+    (the channel is in this server, the bot can read message content), so
+    every mention of an imported channel links. The cost is that an import
+    cancelled or failing after that leaves channels it never filled, which a
+    deleted import already leaves. The link works on web, where like every
+    message link it opens in a new tab. Mobile shows the name without a link,
+    because it only links absolute URLs;
   - **a channel some members cannot read is never named**: it reads
     `#private-channel`, as Discord shows "No Access" to someone outside it.
-    Only a channel the import creates for the whole chapter, or a channel
-    Discord showed to everyone, is named. A restricted destination, a private
-    thread, and a merged or skipped channel whose privacy was private or
-    unknown (an upload records none) all read `#private-channel`;
+    It is judged by where its messages landed, which is who can read them now:
+    a channel the import creates is named when it is created for the whole
+    chapter; one merged into an existing channel when that Frapp channel is
+    whole-chapter; one skipped, whose messages landed nowhere, only when
+    Discord showed it and the thread to everyone. Anything else, including a
+    privacy nobody recorded, reads `#private-channel`;
   - a custom emoji reads `:name:`, a timestamp (`<t:…>`) an absolute UTC time,
     and a slash command `/name`;
   - an id none of that can name reads `@unknown-user`, `@unknown-role` or
@@ -873,21 +881,27 @@ What follows is the behaviour the archive has once it is in.
     role step does not offer;
   - a token inside inline code or a fenced block, or escaped with a backslash,
     stays as written, as Discord shows it;
-  - a name is inserted as plain text: brackets, angle brackets, backslashes,
-    backticks and asterisks are dropped from it, so a nickname cannot make a
-    link or reshape the message around it.
+  - a name is inserted as plain text, since it is someone else's words inside
+    another member's message: brackets, angle brackets, backslashes, backticks,
+    asterisks, underscores at a word's edge and bidirectional controls are
+    dropped from it. So a nickname cannot make a disguised link, restyle the
+    words around it, or reorder them. A nickname that is itself a URL stays
+    one, and mobile links it, showing the address it opens.
 
   The web mention chip marks `@` plus one word, so a name with a space is only
   partly marked, and the `@unknown-*` placeholders are marked too, as they are
   in a member's own message.
 
   An upload has little to do: DiscordChatExporter's JSON already renders tokens
-  as text unless it was run with `--markdown false`. For a bot import that ran
+  as text unless it was run with `--markdown false`. For an import that ran
   before this, `apps/api/src/backfill-discord-mention-tokens.ts` applies the
-  same rewrite to the rows already written. It names a user by the display
-  name the import stored on their own messages, since the mentioned-user lists
-  were never kept, so someone mentioned who never posted reads
-  `@unknown-user` there.
+  same rewrite to the rows already written. It runs only on an import that has
+  stopped and whose new channels all exist, since a rewritten mention can never
+  be linked later. It names a user by the name the import stored on their own
+  messages, since the mentioned-user lists were never kept: someone mentioned
+  who never posted reads `@unknown-user`, and an upload's users read as their
+  Discord username.
+
 - **Moderating an archived message is not live.** The Realtime exclusion is a
   row rule, not an operation rule, so a soft-delete, pin or edit of an imported
   message reaches other members on their next channel read rather than

@@ -34,6 +34,7 @@ import {
 } from '#domain/utils/discord-export';
 import {
   importChannelMentions,
+  mergeTargetIds,
   roleMentionNames,
 } from '#domain/utils/discord-mentions';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
@@ -296,6 +297,8 @@ export class DiscordImportWorkerService {
       job,
       deadline,
       roleName: (id) => roleNames.get(id) ?? null,
+      wholeChapterChannelIds: (rows) =>
+        this.wholeChapterChannelIds(chapterId, rows),
       /**
        * One checkpoint, two questions, both of which must be answered before
        * the next page is fetched: may this job still be advanced (the admin has
@@ -411,7 +414,10 @@ export class DiscordImportWorkerService {
     // `mentions` users carry their own names.
     const mentionContext: ImportMentionContext = {
       roleName: () => null,
-      channel: importChannelMentions(channels),
+      channel: importChannelMentions(
+        channels,
+        await this.wholeChapterChannelIds(chapterId, channels),
+      ),
     };
 
     if (job.status !== 'running') {
@@ -645,6 +651,26 @@ export class DiscordImportWorkerService {
       messagesImported: imported,
       finished,
     };
+  }
+
+  /**
+   * The Frapp channels this import merges into that every member of the
+   * chapter can read. A mention of a merged channel is named only when its
+   * messages landed in one of these (#2875). Chapter-scoped, like every other
+   * read of a target.
+   */
+  private async wholeChapterChannelIds(
+    chapterId: string,
+    rows: readonly DiscordImportChannel[],
+  ): Promise<ReadonlySet<string>> {
+    const ids = mergeTargetIds(rows);
+    if (ids.length === 0) return new Set();
+    const channels = await this.channelRepo.findByIds(chapterId, ids);
+    return new Set(
+      channels
+        .filter((channel) => channel.type === 'PUBLIC')
+        .map((channel) => channel.id),
+    );
   }
 
   private async importBatch(args: {

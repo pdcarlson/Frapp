@@ -261,6 +261,15 @@ async function buildWorker(
       id: 'created-channel-1',
       name: data.name,
     })),
+    // Merge targets' types decide whether a mention of a merged channel is
+    // named (#2875). The harness's target is a whole-chapter channel.
+    findByIds: jest.fn(async (chapterId: string, ids: string[]) =>
+      chapterId === CHAPTER
+        ? ids
+            .filter((id) => id === SIGNET_CHANNEL)
+            .map((id) => ({ id, chapter_id: chapterId, type: 'PUBLIC' }))
+        : [],
+    ),
     // Chapter-scoped: the worker re-verifies that the mapping's target channel
     // belongs to the import's chapter before writing a single message into it.
     findById: jest.fn(async (id: string, chapterId: string) =>
@@ -976,7 +985,7 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
     repoRef = makeRepo(job());
   });
 
-  it('names the tokens an upload still carries, and never a channel it cannot vouch for', async () => {
+  it('names the tokens an upload still carries, linking a channel merged into a whole-chapter one', async () => {
     // DCE renders tokens as text by default; an export made with
     // `--markdown false` keeps them, and names no roles.
     const part = JSON.parse(
@@ -1002,9 +1011,11 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
     const rows = repoRef.insertMessages.mock.calls[0][0] as {
       content: string;
     }[];
-    // An upload records no privacy, and this row merges into an existing
-    // channel, so nothing says every member could read it: its name stays out.
-    expect(rows[0].content).toBe('#private-channel @unknown-role @Paul');
+    // An upload records no privacy, but this row merged into a channel every
+    // member reads, so its messages are open to all and its name is too.
+    expect(rows[0].content).toBe(
+      `[#general](/chat?channel=${SIGNET_CHANNEL}) @unknown-role @Paul`,
+    );
   });
 
   it('hands a bot slice role names from the mapping and the Frapp roles', async () => {

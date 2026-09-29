@@ -26,15 +26,16 @@
  *
  * **What the output must never do.** A name is someone else's text, so it is
  * inserted inert (see {@link inertName}): a Discord nickname such as
- * `[Verify](https://ev.il)` must not become a link inside another member's
- * message. And a channel only some members could read is not named at all
+ * `[Verify](https://ev.il)` must not become a disguised link, or restyle or
+ * reorder the words around it, inside another member's message. And a channel only some members could read is not named at all
  * (see {@link importChannelMentions}), since Discord shows "No Access" there.
  *
  * **Code stays literal.** A token inside a fenced block or an inline code span
  * is someone showing the token, not using it, and Discord draws it raw there
  * too. A span closes on a backtick run of exactly its opening length, as in
- * CommonMark and Discord. A backslash-escaped token (`\<@123>`) is Discord's
- * own way of writing one literally, and stays as written for the same reason.
+ * CommonMark and Discord, and an escaped backtick opens none. A
+ * backslash-escaped token (`\<@123>`) is Discord's own way of writing one
+ * literally, and stays as written for the same reason.
  *
  * Pure and I/O-free, like the rest of the importer's mapping, so every token
  * shape is testable without Discord.
@@ -92,26 +93,45 @@ const TOKEN =
  * renders `content` as CommonMark: link and autolink brackets (a disguised
  * link), the escape, backticks (which move code-span boundaries) and the
  * asterisk (emphasis that can pair with one later in the message).
- *
- * The underscore stays: it is common in Discord usernames, and CommonMark does
- * not read an underscore inside a word as emphasis. Web renders without GFM,
- * so `~` and `|` are inert.
+ * Web renders without GFM, so `~` and `|` are inert.
  */
 const MARKUP = /[[\]<>\\`*]/g;
 
 /**
+ * An underscore that can open or close emphasis: one not between two letters
+ * or digits. An underscore inside a word (`big_mike`, common in Discord
+ * usernames) is inert in CommonMark and stays; one at a word's edge, as in
+ * `_Sam`, would italicise the message from there to the next underscore.
+ */
+const EDGE_UNDERSCORE = /(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu;
+
+/**
+ * Bidirectional controls: embeddings, overrides, isolates and marks. One in a
+ * name would reverse or reorder the rest of the line it lands on, someone
+ * else's words. Other format characters stay, since the zero-width joiner is
+ * what holds an emoji sequence such as a family together.
+ */
+const BIDI_CONTROL = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+
+/**
  * A name as inert text, or null when nothing readable is left.
  *
- * Removed rather than backslash-escaped: mobile draws a body as typed, not as
- * markdown, so an escape would show there as a stray backslash. Losing a
- * bracket or an asterisk from a nickname is the smaller cost. Line breaks and
- * other control characters become spaces, so a name cannot start a new block
- * either.
+ * Markup is removed rather than backslash-escaped: mobile draws a body as
+ * typed, not as markdown, so an escape would show there as a stray backslash.
+ * Losing a bracket or an asterisk from a nickname is the smaller cost. Line
+ * breaks and other control characters become spaces, so a name cannot start a
+ * new block either.
+ *
+ * What stays possible is a name that is itself a URL: mobile links a bare
+ * `https://…` in any text, so a nickname like that is tappable there. It is not
+ * disguised, since the text a reader sees is the address it opens.
  */
 export function inertName(name: string): string | null {
   const plain = name
     .replace(/\p{Cc}/gu, ' ')
+    .replace(BIDI_CONTROL, '')
     .replace(MARKUP, '')
+    .replace(EDGE_UNDERSCORE, '')
     .replace(/\s+/g, ' ')
     .trim();
   return plain.length > 0 ? plain : null;
@@ -228,6 +248,13 @@ export function rewriteDiscordMentions(
   while (i < content.length) {
     const char = content[i];
 
+    // An escaped backtick is a literal one: it opens no span.
+    if (char === '`' && isEscaped(content, i)) {
+      out += char;
+      i += 1;
+      continue;
+    }
+
     if (char === '`') {
       const run = runLength(content, i);
       const close = unclosedTicks.has(run)
@@ -268,30 +295,56 @@ export function rewriteDiscordMentions(
  * channel it sits in, so naming a private one would publish its name (a
  * private thread's name is often the whole secret).
  *
- * Whole chapter means one of:
- * - the import creates it readable by the whole chapter (`PUBLIC`). A channel
- *   private in Discord gets that only by the admin choosing it, and it is then
- *   on every member's channel list anyway;
- * - the scan found it readable by everyone in Discord (`private_in_discord`
- *   false), and it merges into an existing channel or was skipped. Its name
- *   was public in Discord, so naming it discloses nothing new.
+ * Judged by where the row's messages landed in Frapp, which is what decides
+ * who can read them now; a thread by its parent's destination:
+ * - a channel the import creates: whole chapter when it is created so
+ *   (`PUBLIC`). A channel private in Discord gets that only by the admin
+ *   choosing it;
+ * - a merge into an existing channel: whole chapter when that Frapp channel is
+ *   (`wholeChapterChannelIds`), since its messages are then readable by
+ *   everyone however private they were in Discord;
+ * - a skipped channel, whose messages landed nowhere: only when the scan found
+ *   it, and the thread itself, readable by everyone in Discord.
  *
- * Anything else counts as private: a `ROLE_GATED` destination, a private
- * thread, and a merged or skipped channel that was private or whose privacy
- * is unknown (an upload records none). A thread is judged on its own privacy
- * and on its parent's destination, where its messages landed.
+ * Anything else is private, including a privacy nobody recorded (an upload
+ * records none, so a skipped channel of one is private).
  */
 function readableByWholeChapter(
   row: DiscordImportChannel,
   landedIn: DiscordImportChannel | undefined,
+  wholeChapterChannelIds: ReadonlySet<string>,
 ): boolean {
   if (!landedIn) return false;
-  const isThread = row !== landedIn;
-  if (isThread && row.private_in_discord !== false) return false;
-  if (landedIn.mapping_action === 'create_new') {
-    return landedIn.new_channel_type === 'PUBLIC';
+  switch (landedIn.mapping_action) {
+    case 'create_new':
+      return landedIn.new_channel_type === 'PUBLIC';
+    case 'use_existing':
+      return (
+        landedIn.target_channel_id !== null &&
+        wholeChapterChannelIds.has(landedIn.target_channel_id)
+      );
+    default:
+      return (
+        row.private_in_discord === false &&
+        landedIn.private_in_discord === false
+      );
   }
-  return landedIn.private_in_discord === false;
+}
+
+/**
+ * The Frapp channels an import merges into, whose types decide whether a
+ * mention of a merged channel is named (see `importChannelMentions`).
+ */
+export function mergeTargetIds(
+  rows: readonly DiscordImportChannel[],
+): string[] {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.mapping_action === 'use_existing' && row.target_channel_id) {
+      ids.add(row.target_channel_id);
+    }
+  }
+  return [...ids];
 }
 
 /**
@@ -300,16 +353,19 @@ function readableByWholeChapter(
  * Reads the rows **live**, not a copy: the worker writes each row's
  * `target_channel_id` onto the same objects as it creates or finds the Frapp
  * channel, so a channel is linked from the moment its channel exists. The bot
- * path creates every new channel before it reads a message, so on that path
+ * path creates every new channel before it writes a message, so on that path
  * every mention of an imported channel links.
  *
  * A thread is named as itself but links to where it landed, its parent's
  * channel. A top-level channel is named what it is called in Frapp when this
  * import made it, else Discord's name. A channel only some members can read is
- * {@link PRIVATE_CHANNEL}.
+ * {@link PRIVATE_CHANNEL}. `wholeChapterChannelIds` are the Frapp channels,
+ * among those the import merges into (`mergeTargetIds`), that every member can
+ * read.
  */
 export function importChannelMentions(
   rows: readonly DiscordImportChannel[],
+  wholeChapterChannelIds: ReadonlySet<string>,
 ): (
   discordChannelId: string,
 ) => MentionedChannel | typeof PRIVATE_CHANNEL | null {
@@ -317,9 +373,12 @@ export function importChannelMentions(
   return (discordChannelId) => {
     const row = byId.get(discordChannelId);
     if (!row) return null;
-    const isThread = row.parent_discord_channel_id !== null;
-    const landedIn = isThread ? byId.get(row.parent_discord_channel_id!) : row;
-    if (!readableByWholeChapter(row, landedIn)) return PRIVATE_CHANNEL;
+    const parentId = row.parent_discord_channel_id;
+    const isThread = Boolean(parentId);
+    const landedIn = parentId ? byId.get(parentId) : row;
+    if (!readableByWholeChapter(row, landedIn, wholeChapterChannelIds)) {
+      return PRIVATE_CHANNEL;
+    }
     const name =
       !isThread && row.mapping_action === 'create_new'
         ? (row.new_channel_name ?? row.discord_channel_name)

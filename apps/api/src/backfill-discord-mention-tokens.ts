@@ -1,25 +1,30 @@
 /**
- * Names the Discord tokens in messages a bot import already wrote (#2875).
+ * Names the Discord tokens in messages an import already wrote (#2875).
  *
- * Bot imports that ran before the importer learned to name `<@id>`, `<@&id>`,
- * `<#id>`, custom emoji and the rest stored them verbatim. This applies the
- * importer's own rewrite (`rewriteDiscordMentions`) to those rows. A re-import
- * would also fix them, but it re-reads every message from Discord and copies
- * every attachment again; this touches only the rows that carry a token.
+ * Imports that ran before the importer learned to name `<@id>`, `<@&id>`,
+ * `<#id>`, custom emoji and the rest stored them verbatim: every bot import,
+ * and an upload exported with DiscordChatExporter's `--markdown false`. This
+ * applies the importer's own rewrite (`rewriteDiscordMentions`) to those rows.
+ * A re-import would also fix them, but it re-reads every message from Discord
+ * and copies every attachment again; this touches only the rows that carry a
+ * token.
  *
- * Bot imports only. An upload's text was already named by DiscordChatExporter,
- * and an upload records no role mapping to name roles from.
+ * It runs only on an import that has stopped, and only once every channel the
+ * import creates exists, so every mention of an imported channel links (see
+ * `mentionBackfillBlocker`, and `--allow-unlinked` for an import that never
+ * will finish).
  *
  * What it names things from, and how that compares with a fresh import:
- * - roles and channels: the same lookups the worker uses, read now. By now
- *   every channel of the import exists, so every mention of an imported
- *   channel links, as it does in a fresh bot import. A role renamed in Frapp
- *   since the import reads as its current name.
- * - users: the display name the import stored on that user's own messages
- *   (`payload.author_username`, newest first). A fresh import reads the
- *   display name from the message's own `mentions`, which were never stored,
- *   so a mentioned user who never posted in the import reads `@unknown-user`
- *   here.
+ * - roles and channels: the same lookups the worker uses, read now. A role
+ *   renamed in Frapp since the import reads as its current name. An upload
+ *   has no role mapping, so its role mentions read `@unknown-role`, as they
+ *   would fresh.
+ * - users: the name the import stored on that user's own messages
+ *   (`payload.author_username`, newest first). On a bot import that is the
+ *   display name, as a fresh import writes. On an upload it is the Discord
+ *   username, where a fresh import prefers the nickname DCE recorded. The
+ *   message's own `mentions` were never stored, so a mentioned user who never
+ *   posted in the import reads `@unknown-user`.
  *
  * `content` is rewritten in place and nothing else changes; like the importer,
  * it keeps no copy of the original text (see `discord-mentions.ts`).
@@ -31,17 +36,22 @@
  * Usage, from apps/api:
  *   node --conditions=source -r ts-node/register \
  *     src/backfill-discord-mention-tokens.ts \
- *     --chapter <chapter id> --import <import id> [--dry-run]
+ *     --chapter <chapter id> --import <import id> [--dry-run] [--allow-unlinked]
  */
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './infrastructure/supabase/database.types';
 import { SupabaseDiscordImportRepository } from './infrastructure/supabase/repositories/supabase-discord-import.repository';
 import { SupabaseRoleRepository } from './infrastructure/supabase/repositories/supabase-role.repository';
+import { SupabaseChatChannelRepository } from './infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import {
   importChannelMentions,
-  rewriteDiscordMentions,
+  mergeTargetIds,
   roleMentionNames,
 } from '#domain/utils/discord-mentions';
+import {
+  mentionBackfillBlocker,
+  nameStoredTokens,
+} from '#domain/utils/discord-mention-backfill';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import { asRecord, asString } from '#domain/utils/json-guards';
 
@@ -75,7 +85,7 @@ async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
   if (!chapterId || !importId) {
     throw new Error(
-      'Usage: backfill-discord-mention-tokens --chapter <id> --import <id> [--dry-run]',
+      'Usage: backfill-discord-mention-tokens --chapter <id> --import <id> [--dry-run] [--allow-unlinked]',
     );
   }
 
@@ -89,14 +99,13 @@ async function main(): Promise<void> {
   // Chapter-scoped, so a mistyped import id from another chapter finds nothing.
   const job = await imports.findById(importId, chapterId);
   if (!job) throw new Error(`No import ${importId} in chapter ${chapterId}.`);
-  if (job.source !== 'bot') {
-    throw new Error(
-      `Import ${importId} is an upload; DiscordChatExporter already named its tokens.`,
-    );
-  }
-  if (job.status === 'purging' || job.status === 'purged') {
-    throw new Error(`Import ${importId} is ${job.status}; nothing to fix.`);
-  }
+  const channels = await imports.findChannels(importId, chapterId);
+  const blocker = mentionBackfillBlocker(
+    job,
+    channels,
+    process.argv.includes('--allow-unlinked'),
+  );
+  if (blocker) throw new Error(blocker);
 
   const frappRoles = await new SupabaseRoleRepository(supabase).findByChapter(
     chapterId,
@@ -106,15 +115,28 @@ async function main(): Promise<void> {
     frappRoleNames: new Map(frappRoles.map((role) => [role.id, role.name])),
     guildId: job.guild_id,
   });
+  // The merge targets every member can read, as the worker reads them.
+  const mergeTargets = mergeTargetIds(channels);
+  const targets = mergeTargets.length
+    ? await new SupabaseChatChannelRepository(supabase).findByIds(
+        chapterId,
+        mergeTargets,
+      )
+    : [];
   const channel = importChannelMentions(
-    await imports.findChannels(importId, chapterId),
+    channels,
+    new Set(
+      targets
+        .filter((target) => target.type === 'PUBLIC')
+        .map((target) => target.id),
+    ),
   );
 
-  // Looked up on demand, once per user: a server has far fewer mentioned
+  // Once per user across the whole run: a server has far fewer mentioned
   // people than messages mentioning them.
   const userNames = new Map<string, string | null>();
-  const knownUser = async (discordUserId: string): Promise<void> => {
-    if (userNames.has(discordUserId)) return;
+  const userName = async (discordUserId: string): Promise<string | null> => {
+    if (userNames.has(discordUserId)) return userNames.get(discordUserId)!;
     const { data, error } = await supabase
       .from('chat_messages')
       .select('payload')
@@ -125,10 +147,9 @@ async function main(): Promise<void> {
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    userNames.set(
-      discordUserId,
-      asString(asRecord(data?.payload)?.author_username),
-    );
+    const name = asString(asRecord(data?.payload)?.author_username);
+    userNames.set(discordUserId, name);
+    return name;
   };
 
   let scanned = 0;
@@ -152,23 +173,17 @@ async function main(): Promise<void> {
     if (error) throw error;
     if (!rows || rows.length === 0) break;
     after = rows[rows.length - 1].id;
+    scanned += rows.length;
 
-    const updates: { id: string; content: string }[] = [];
-    for (const row of rows) {
-      scanned += 1;
-      for (const match of row.content.matchAll(/<@!?(\d{1,25})>/g)) {
-        await knownUser(match[1]);
-      }
-      const rewritten = rewriteDiscordMentions(row.content, {
-        userName: (id) => userNames.get(id) ?? null,
-        roleName: (id) => roleNames.get(id) ?? null,
-        channel,
-      });
-      if (rewritten === row.content) continue;
-      if (samples.length < 5) {
-        samples.push({ before: row.content, after: rewritten });
-      }
-      updates.push({ id: row.id, content: rewritten });
+    const updates = await nameStoredTokens(rows, {
+      userName,
+      roleName: (id) => roleNames.get(id) ?? null,
+      channel,
+    });
+    for (const update of updates) {
+      if (samples.length >= 5) break;
+      const before = rows.find((row) => row.id === update.id)!.content;
+      samples.push({ before, after: update.content });
     }
 
     if (!dryRun) {
