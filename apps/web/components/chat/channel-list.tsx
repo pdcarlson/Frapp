@@ -17,6 +17,7 @@ import {
   HIDDEN_CONVERSATIONS_LABEL,
   HIDE_CONVERSATION_LABEL,
   HIDE_MUTED_LABEL,
+  isAddressed,
   NO_MATCHING_CHANNELS,
   PIN_TO_TOP_LABEL,
   SHOW_ALL_CHANNELS_LABEL,
@@ -380,8 +381,8 @@ export function ChannelList({
     // @-mentions only (the RPC filters on `m.mentions`), so a DM
     // has to be folded in here or the one signal the fixed red
     // exists for never fires for the most personal channel there is.
-    const hasMention =
-      counts.mentionCount > 0 || (isDm(channel) && counts.unreadCount > 0);
+    // `isAddressed` is the rule the arrangement's header totals use too.
+    const hasMention = isAddressed(channel, counts);
     // A mention implies an unread row even if the two counts ever
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.

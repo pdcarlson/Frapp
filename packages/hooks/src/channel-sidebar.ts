@@ -123,13 +123,18 @@ const NO_UNREAD: SidebarUnreadCounts = { unreadCount: 0, mentionCount: 0 };
  * @-mention, or anything unread in a direct message (foundations.md §5).
  */
 export function isAddressed(
-  channel: SidebarChannelLike,
+  channel: Pick<SidebarChannelLike, "type">,
   counts: SidebarUnreadCounts,
 ): boolean {
-  return (
-    counts.mentionCount > 0 ||
-    (isDirectChannel(channel) && counts.unreadCount > 0)
-  );
+  return countsAddressMember(isDirectChannel(channel), counts);
+}
+
+/** `isAddressed` for a caller that knows only whether the row is a DM. */
+export function countsAddressMember(
+  isDirect: boolean,
+  counts: SidebarUnreadCounts,
+): boolean {
+  return counts.mentionCount > 0 || (isDirect && counts.unreadCount > 0);
 }
 
 export function arrangeChannelSidebar<C extends SidebarChannelLike>(

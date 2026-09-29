@@ -50,6 +50,20 @@ vi.mock("@repo/hooks", () => {
       direct: [],
     }),
     HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
+    // #2877: s04's sidebar arrangement. An empty list arranges to nothing.
+    useSidebarPreferences: () => ({
+      pinnedIds: new Set(),
+      collapsed: new Set(),
+      filters: { unreadOnly: false, hideMuted: false },
+    }),
+    useSetChannelPinned: () => ({ mutate: vi.fn() }),
+    useSetSidebarSectionCollapsed: () => ({ mutate: vi.fn() }),
+    useSetSidebarFilter: () => ({ mutate: vi.fn() }),
+    useChannelNotificationPreferences: () => empty,
+    sidebarSections: () => [],
+    arrangeChannelSidebar: () => ({ sections: [], emptiedByFilters: false }),
+    UNREAD_ONLY_LABEL: "Unread only",
+    HIDE_MUTED_LABEL: "Hide muted",
   };
 });
 

@@ -2,7 +2,12 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { initialsFor } from "@/lib/chat/display-name";
-import { HIDE_CONVERSATION_LABEL } from "@repo/hooks";
+import {
+  HIDE_CONVERSATION_LABEL,
+  countsAddressMember,
+  PIN_TO_TOP_LABEL,
+  UNPIN_FROM_TOP_LABEL,
+} from "@repo/hooks";
 
 /**
  * One row of the s04 channel list.
@@ -33,7 +38,10 @@ export interface ChannelRowProps {
   name: string;
   /** DM/group rows draw initials; channel rows draw a `#` sigil. */
   isDirect?: boolean;
-  /** Renders the sigil in gold, per the drawn pinned `announcements` row. */
+  /**
+   * The member pinned this row (#2877). Renders the sigil in gold, per the
+   * drawn pinned `announcements` row, and names the pin action "Unpin from top".
+   */
   isPinned?: boolean;
   preview?: string | null;
   timestamp?: string | null;
@@ -47,10 +55,23 @@ export interface ChannelRowProps {
    * (`canHideConversation`); the row itself does not decide.
    */
   onHide?: () => void;
+  /**
+   * Pin or unpin the row (#2877), as a named accessibility action. The long
+   * press reaches it through `onLongPress`'s chooser.
+   */
+  onTogglePin?: () => void;
+  /**
+   * What a long press does. The screen passes the row-actions chooser here;
+   * without it a long press falls back to `onHide`, as before #2877.
+   */
+  onLongPress?: () => void;
 }
 
 /** The accessibility action's `name`; its spoken label is `HIDE_CONVERSATION_LABEL`. */
 export const HIDE_ACTION = "hide";
+
+/** The pin action's `name`; its spoken label says pin or unpin. */
+export const PIN_ACTION = "pin";
 
 /**
  * Badge text. A mention badge leads with `@` and shows the mention count, not
@@ -72,11 +93,21 @@ export function ChannelRow({
   mentionCount,
   onPress,
   onHide,
+  onTogglePin,
+  onLongPress,
 }: ChannelRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const hasMention = mentionCount > 0;
+  // Red means "you were addressed": an @-mention, or anything unread in a
+  // direct message (foundations.md §5). The DM half was missing here until
+  // #2877, so an unread DM drew the neutral badge while web drew it red; the
+  // rule is now `countsAddressMember` in `@repo/hooks`, which the shared
+  // sidebar arrangement uses too.
+  const hasMention = countsAddressMember(isDirect, {
+    unreadCount,
+    mentionCount,
+  });
   // A mention always implies an unread row even if the counts ever disagree —
   // a red badge over a read-styled row would be a contradiction on screen.
   const isUnread = unreadCount > 0 || hasMention;
@@ -91,16 +122,30 @@ export function ChannelRow({
         mentionCount,
       })}
       onPress={onPress}
-      onLongPress={onHide}
+      onLongPress={onLongPress ?? onHide}
       accessibilityActions={
-        onHide
-          ? [{ name: HIDE_ACTION, label: HIDE_CONVERSATION_LABEL }]
+        onTogglePin || onHide
+          ? [
+              ...(onTogglePin
+                ? [
+                    {
+                      name: PIN_ACTION,
+                      label: isPinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL,
+                    },
+                  ]
+                : []),
+              ...(onHide
+                ? [{ name: HIDE_ACTION, label: HIDE_CONVERSATION_LABEL }]
+                : []),
+            ]
           : undefined
       }
       onAccessibilityAction={
-        onHide
+        onTogglePin || onHide
           ? (event) => {
-              if (event.nativeEvent.actionName === HIDE_ACTION) onHide();
+              const action = event.nativeEvent.actionName;
+              if (action === PIN_ACTION) onTogglePin?.();
+              if (action === HIDE_ACTION) onHide?.();
             }
           : undefined
       }
@@ -138,24 +183,46 @@ export function ChannelRow({
       <View style={styles.trailing}>
         {timestamp ? <Text style={styles.timestamp}>{timestamp}</Text> : null}
         {isUnread ? (
-          <View
-            style={[
-              styles.badge,
-              hasMention ? styles.badgeMention : styles.badgeNeutral,
-            ]}
-          >
-            <Text
-              style={[
-                styles.badgeText,
-                hasMention ? styles.badgeTextMention : styles.badgeTextNeutral,
-              ]}
-            >
-              {badgeLabel(unreadCount, mentionCount)}
-            </Text>
-          </View>
+          <UnreadBadge
+            unreadCount={unreadCount}
+            mentionCount={mentionCount}
+            addressed={hasMention}
+          />
         ) : null}
       </View>
     </Pressable>
+  );
+}
+
+/**
+ * The count badge: neutral for plain unread, the fixed mention red when the
+ * member was addressed. Exported for the folded section headers on s04
+ * (#2877), so a header's total draws with the row's recipe.
+ */
+export function UnreadBadge({
+  unreadCount,
+  mentionCount,
+  addressed,
+}: {
+  unreadCount: number;
+  mentionCount: number;
+  addressed: boolean;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View
+      style={[styles.badge, addressed ? styles.badgeMention : styles.badgeNeutral]}
+    >
+      <Text
+        style={[
+          styles.badgeText,
+          addressed ? styles.badgeTextMention : styles.badgeTextNeutral,
+        ]}
+      >
+        {badgeLabel(unreadCount, mentionCount)}
+      </Text>
+    </View>
   );
 }
 
