@@ -6,9 +6,29 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 - Chapters can upload a logo image. Types, extensions, and size follow the shared `image` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`: `isAllowedUploadMime`, `isAllowedUploadExtension`, `MAX_UPLOAD_BYTES`) — the same allowlist and cap as avatars and every other image-upload surface. This spec does not copy those lists; the kind is the source of truth. The private `branding` bucket enforces the same MIME list and `file_size_limit` on the PUT itself.
 - The logo is displayed in: the app header/sidebar, the member directory, exported PDF reports, and the onboarding tutorial welcome screen. On mobile it appears in the Chat header (`ChapterHeaderTitle`, mounted by `(tabs)/_layout.tsx`) — there is no Home screen; chat is home. PDF export is a renderer limit, not an upload restriction: the PDF library can embed only a subset of the `image` kind, and an unreadable logo is skipped with a warning rather than failing the export — see [`reports.md`](reports.md) § PDF Formatting.
-- Logo is stored in Supabase Storage under `chapters/{chapter_id}/branding/logo.{ext}`.
+- Logo is stored in Supabase Storage under `chapters/{chapter_id}/branding/logo-{uuid}.{ext}`, a fresh key per upload (#2592). The key used to be `logo.{ext}`, fixed per extension, and a signed upload URL can't overwrite an existing object without an upsert chosen at mint time, so replacing a PNG with another PNG failed at the mint. Upserting onto a fixed key would have swapped the displayed bytes at PUT time, before any confirm and so before any audit row; a unique key keeps confirm the only step that changes the logo. Logos stored under the old key keep working until they are replaced.
+- **Confirm proves the upload and cleans up after it.** `POST /v1/chapters/current/logo` refuses a `storage_path` with no object in the chapter's branding folder (a 400), so it can't point the chapter at nothing. After the column update lands, it deletes every other object in that folder: the logo it replaced and any upload that was minted and PUT but never confirmed. Deleting before the update would leave the chapter pointing at a deleted logo whenever the update failed. A failed delete is logged with the paths it left and doesn't fail the confirm; with unique keys a stranded object costs storage but blocks nothing.
 - The `branding` bucket is **private**, so `logo_path` is not addressable by a client on its own. `GET /v1/chapters/current` returns a signed **`logo_url`** alongside it; that is the only supported way for a client to render the logo. When signing fails the field is `null` — the logo is decoration, and an unreachable asset must not fail the chapter read.
-- If no logo is uploaded, the chapter name is displayed as text.
+- Without a logo, what stands in for it is the chapter mark's text (§ Chapter mark below).
+
+## Chapter mark
+
+The chapter mark is what stands for a chapter wherever the product shows its identity in a small space: the web nav's 28px chapter tile, the mobile chat header beside the chapter name, and the welcome message onboarding posts to `#general` (#2876). In precedence order:
+
+1. **The uploaded logo.**
+2. **The short name** (`branding.short_name`), a few characters the chapter chooses: "FIJI", say. Capped at `CHAPTER_SHORT_NAME_MAX_LENGTH` in `@repo/validation`, which the tile's width sets.
+3. **The Greek letters** (`branding.greek_letters`), **unless the chapter turned them off** (`branding.show_greek_letters: false`).
+4. **Initials of the chapter name**, only on a surface that always fills its slot (the web tile). The mobile header shows nothing instead, since the name is right beside it, and the welcome message leaves the mark out.
+
+**Why letters can be turned off.** Some organizations don't display their Greek letters at all. By custom, chapters of Phi Gamma Delta (FIJI) don't, and the beta chapter, Tau Nu, is one. The onboarding autofill fills the letters from `chapter_directory` for every chapter it knows, so without the switch that chapter's nav showed "ΦΓΔ" (reported by the owner, 2026-09-29). The positioning promise to serve "the full Greek spectrum" ([`../product/positioning.md`](../product/positioning.md)) means a chapter chooses what represents it.
+
+**The switch hides; it doesn't delete.** The stored letters stay (Settings still edits them), and turning the switch back on shows them again. Absent means shown, so every chapter created before the setting keeps its letters. Only an explicit `false` hides them.
+
+**One resolver.** `resolveChapterMark` and `chapterTextMark` in `@repo/validation` (`chapter-mark.ts`) own this order, and every surface reads the mark through them. `chapter-mark-renderers.spec.ts` beside them fails if a product file outside the editors (the two wizards, Settings, the DTOs and the resolver) touches `greek_letters`, so a new surface can't print the letters around the switch.
+
+**Where it's set.** Settings → Chapter → Chapter mark ([`settings/README.md`](settings/README.md#chapter-tab-taborg)) uploads the logo and sets the short name and the switch. Both first-officer wizards take the short name and the switch in the identity step, beside the autofilled letters. The web wizard also takes a logo, uploaded once the new chapter is active, because the logo routes are chapter-scoped. The mobile wizard's logo picker is [#2883](https://github.com/pdcarlson/Frapp/issues/2883).
+
+**Contrast.** A text mark on web is `accent-text` on `accent-subtle`, a pair the accent engine holds to AA for every seed ([`accent-engine.md` §8](../ui/design-system/accent-engine.md#8-validation)). On mobile it is the accent chip pairing: the step-11 accent fill under the fixed `gold.onHouse` label. Both surfaces are dark-only. A logo is drawn as uploaded on a neutral tile, never recoloured, and the Settings card previews the nav's own tile so an officer sees how it reads before it ships.
 
 ## Accent Color
 
