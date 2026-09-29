@@ -636,7 +636,7 @@ clients import it from `@repo/hooks`.
 
 | State | Title | Description | Where |
 |---|---|---|---|
-| The control | — | `Hide conversation`: a long press on a 1:1 DM row, and the row's accessibility action of the same name (mobile); a control on a 1:1 DM row in the rail, named `Hide conversation with <name>`, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
+| The control | — | `Hide conversation`: a choice in a 1:1 DM row's long-press menu (since #2877; before it, the long press asked directly), and the row's accessibility action of the same name (mobile); a control on a 1:1 DM row in the rail, named `Hide conversation with <name>`, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
 | Confirmation | `Hide your conversation with <name>?` | `It leaves your list, and nothing in it is deleted. They aren't told. It comes back when there's something new in it, and you can open it from Hidden conversations anytime.` · confirm `Hide`. A native alert on mobile; on web, the shell's confirm dialog from the rail and the `⋯` menu's panel from the header | `hideConversationConfirmTitle`, `HIDE_CONVERSATION_CONFIRM_BODY` |
 | Hidden group | `Hidden conversations (<n>)` | A collapsed group at the end of the list, on both clients; opening a row from it brings that DM back | `HIDDEN_CONVERSATIONS_LABEL` |
 | Hide failed | `Couldn't hide the conversation` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web, because a rail hide can fail for a DM that is not open | `HIDE_CONVERSATION_FAILED_TITLE`, `HIDE_CONVERSATION_FAILED_BODY` |
@@ -650,6 +650,31 @@ end of the same list the member is hiding from, while messaging them means findi
 in the directory first. *(Corrected 2026-09-28, #2773: the reason given here was that the
 mobile app had no way to start a DM, which stopped being true when its directory gained
 Message.)*
+
+### Arrange the channel list (mobile and web)
+
+A member's pins, folds and filters on the channel list (#2877). The behavior is owned by
+[`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Sidebar arrangement.
+Every string both clients show lives once, in `packages/hooks/src/channel-sidebar.ts`,
+and both import it from `@repo/hooks`. The filter note below is web's alone and lives in
+`apps/web/components/chat/channel-list.tsx`.
+
+| State | Title | Description | Where |
+|---|---|---|---|
+| Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a long-press choice and a named accessibility action (mobile); a control on the rail row, named `Pin to top: <title>`, and a row in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
+| Pinned section | `Pinned` | The section header above everything else | `PINNED_SECTION_LABEL` |
+| Filters | — | `Unread only`, `Hide muted`: toggle chips above the list (mobile); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL` |
+| Filtered to nothing | — | `No channels match your filters.` with the action `Show all channels`, which turns both filters off | `NO_MATCHING_CHANNELS`, `SHOW_ALL_CHANNELS_LABEL` |
+| Save failed | `Couldn't save your channel list` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web | `SIDEBAR_SAVE_FAILED_TITLE`, `SIDEBAR_SAVE_FAILED_BODY` |
+
+**"Pin to top", never a bare "Pin".** The channel menu already has a `Pinned` panel for
+pinned *messages*, which the chapter shares. A pin on the channel list is the member's own,
+and the longer name keeps the two apart where they sit side by side. The section keeps the
+board's `PINNED` label, because in the list it has no neighbour to be confused with.
+
+**The filter note says what a filter never hides.** Web's filter popover ends with
+`Pinned channels, the open channel and anything that mentions you always show.`, so a
+member who turns on Hide muted and still sees a muted channel knows why.
 
 ### Message actions (mobile s05, and web's delete confirmation)
 
