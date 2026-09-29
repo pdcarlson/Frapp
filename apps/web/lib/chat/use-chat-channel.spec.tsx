@@ -20,7 +20,8 @@ import {
   type ChannelCache,
 } from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
-import { OLDER_PAGE_LIMIT, useChatChannel } from "./use-chat-channel";
+import { OLDER_PAGE_LIMIT } from "@repo/chat-core/history";
+import { useChatChannel } from "./use-chat-channel";
 
 /**
  * #1909 — an `unconfirmed` `/points` row, and the Retry that replays its
