@@ -9,6 +9,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 const share = vi.hoisted(() => ({ result: true }));
 const attachments = vi.hoisted(() => ({
   data: undefined as Record<string, unknown>[] | undefined,
+  calls: [] as unknown[][],
 }));
 vi.mock("@repo/hooks", async () => {
   const actual =
@@ -16,11 +17,10 @@ vi.mock("@repo/hooks", async () => {
   return {
     ...actual,
     // The viewer reads the message's images through the row's query.
-    useMessageAttachments: () => ({
-      isPending: false,
-      isError: false,
-      data: attachments.data,
-    }),
+    useMessageAttachments: (...args: unknown[]) => {
+      attachments.calls.push(args);
+      return { isPending: false, isError: false, data: attachments.data };
+    },
   };
 });
 vi.mock("@/lib/chat/share-attachment", () => ({
@@ -130,6 +130,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   share.result = true;
   attachments.data = undefined;
+  attachments.calls = [];
 });
 
 describe("opening and closing", () => {
@@ -249,6 +250,21 @@ describe("saving or sharing", () => {
 });
 
 describe("fresh signed URLs", () => {
+  it("reads the images through the row's own query, live, without refetching on open", () => {
+    // Enabled, so it refetches the hour-long signed URLs when the app comes
+    // back to the foreground; no refetch on mount, which would mint new URLs
+    // and reload the image under a pinch.
+    render();
+    openOn([image(1)], 0);
+
+    expect(attachments.calls).toContainEqual([
+      "chan-1",
+      "msg-1",
+      true,
+      { refetchOnMount: false },
+    ]);
+  });
+
   it("shows the URL a refetch hands back, not the one it opened with", () => {
     // Signed URLs last an hour; the query refetches when the app comes back
     // to the foreground, and an open viewer must use the new one.

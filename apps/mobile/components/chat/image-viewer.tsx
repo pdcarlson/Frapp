@@ -141,8 +141,8 @@ export function useImageViewer(): ImageViewerState {
     [],
   );
 
-  // The viewer covers the whole screen, so Android's back button has to close
-  // it rather than pop the navigator underneath.
+  // The viewer covers the thread, so Android's back button has to close it
+  // rather than pop the navigator underneath.
   const isOpen = target !== null;
   useEffect(() => {
     if (!isOpen) return;
@@ -187,9 +187,17 @@ function ViewerBody({
   // stepping to another one clears it without an effect to reset it.
   const [failedId, setFailedId] = useState<string | null>(null);
 
-  // Already in the cache from the row that opened the viewer, so this costs
-  // no request, and it refetches with that row's query.
-  const query = useMessageAttachments(target.channelId, target.messageId, true);
+  // The row that opened the viewer already holds this query, so opening sends
+  // no request (`refetchOnMount: false`: a refetch mints new signed URLs and
+  // would reload the image under a pinch). It still refetches when the app
+  // comes back to the foreground once stale, which is what keeps its
+  // hour-long signed URLs current.
+  const query = useMessageAttachments(
+    target.channelId,
+    target.messageId,
+    true,
+    { refetchOnMount: false },
+  );
   const images = query.data ? viewerImages(query.data) : [];
   const index = images.findIndex(
     (candidate) => candidate.id === target.imageId,

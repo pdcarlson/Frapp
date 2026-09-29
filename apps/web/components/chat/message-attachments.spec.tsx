@@ -4,10 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hookState = vi.hoisted(() => ({
   result: {} as Record<string, unknown>,
+  calls: [] as unknown[][],
 }));
 
 vi.mock("@repo/hooks", () => ({
-  useMessageAttachments: () => hookState.result,
+  useMessageAttachments: (...args: unknown[]) => {
+    hookState.calls.push(args);
+    return hookState.result;
+  },
 }));
 
 const { MessageAttachments } = await import("./message-attachments");
@@ -333,14 +337,39 @@ describe("the image viewer", () => {
     ).toHaveAttribute("href", "https://storage.test/signed/fresh.png");
   });
 
-  it("closes when a refetch no longer lists the image", async () => {
+  it("closes when a refetch no longer lists the image, and stays closed if it comes back", async () => {
     const view = show(photo(1), photo(2));
     await openViewerOn("photo-2.png");
 
     hookState.result = { isPending: false, isError: false, data: [photo(1)] };
     view.rerender(<Host count={1} />);
-
     expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Closed, not merely hidden: a later refetch that lists the image again
+    // must not pop the dialog back open under whatever the member is doing.
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [photo(1), photo(2)],
+    };
+    view.rerender(<Host count={2} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("reads the images through the row's own query, live, without refetching on open", async () => {
+    // Enabled, so it keeps refreshing the hour-long signed URLs after the row
+    // has scrolled away; no refetch on mount, which would mint new URLs and
+    // swap the image being opened for a fresh download of itself.
+    show(photo(1));
+    hookState.calls = [];
+    await openViewerOn("photo-1.png");
+
+    expect(hookState.calls).toContainEqual([
+      "chan-1",
+      "msg-1",
+      true,
+      { refetchOnMount: false },
+    ]);
   });
 
   it("has no step controls for a single image", async () => {

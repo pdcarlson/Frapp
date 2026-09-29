@@ -133,10 +133,20 @@ function OpenImageViewer({
   viewer: ImageViewerState;
 }) {
   const { close } = viewer;
-  // Already in the cache from the row that opened the viewer, so this costs
-  // no request; it refetches with that row's query, and keeps doing so after
-  // the row has scrolled away.
-  const query = useMessageAttachments(target.channelId, target.messageId, true);
+  // The row that opened the viewer already holds this query, so opening sends
+  // no request (`refetchOnMount: false`: a refetch mints new signed URLs and
+  // would swap the image being opened for a fresh download of itself). It
+  // still refetches on window focus and reconnect once stale, with the row or
+  // alone after the row has scrolled away, which is what keeps its hour-long
+  // signed URLs current.
+  const query = useMessageAttachments(
+    target.channelId,
+    target.messageId,
+    true,
+    {
+      refetchOnMount: false,
+    },
+  );
   const images = query.data ? viewerImages(query.data) : [];
   const found = images.findIndex((image) => image.id === target.imageId);
   const index = found === -1 ? null : found;
