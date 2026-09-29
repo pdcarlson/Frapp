@@ -438,6 +438,14 @@ async function copyOne(
     source.headers.get("content-type") ??
     "application/octet-stream";
 
+  // Known limit: if Storage answers before reading the whole body (an early
+  // 4xx), the runtime keeps draining the CDN response in the background after
+  // the item is reported. Under Deno 2.9.6 neither aborting the CDN request
+  // nor cancelling its body stops a body an upload holds, and the 30 s signal
+  // this used to carry didn't either (#2848's review measured both). Stopping
+  // it would take a JS-level pipe on every transfer, costing CPU on the common
+  // path to save bandwidth on a rare one, so it stays: the refusals that
+  // cause it are rare, and the file size and the worker's wall clock bound it.
   let upload: Response;
   try {
     upload = await deps.fetch(

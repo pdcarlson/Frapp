@@ -481,25 +481,38 @@ Deno.test("a transfer the hard deadline cuts short comes back deferred, to be se
   // didn't fail.
   const { deps } = harness({
     cdn: hangingCdn,
-    limits: { hardDeadlineMs: 20, fairTransferWindowMs: 1_000 },
+    // The header timer is far off, so only the hard stop can end this.
+    limits: {
+      hardDeadlineMs: 20,
+      fairTransferWindowMs: 1_000,
+      cdnResponseTimeoutMs: 60_000,
+    },
   });
+  const started = performance.now();
   const [result] = await results(
     await handleCopyRequest(post({ items: [item()] }), deps),
   );
   assert.deepEqual(result, { path: PATH, status: "deferred" });
+  assert.ok(performance.now() - started < 5_000, "the hard stop ended it");
 });
 
 Deno.test("a transfer that had the whole window and still didn't finish is failed", async () => {
   // Otherwise a file too slow for any request would be re-sent forever.
   const { deps } = harness({
     cdn: hangingCdn,
-    limits: { hardDeadlineMs: 20, fairTransferWindowMs: 10 },
+    limits: {
+      hardDeadlineMs: 20,
+      fairTransferWindowMs: 10,
+      cdnResponseTimeoutMs: 60_000,
+    },
   });
+  const started = performance.now();
   const [result] = await results(
     await handleCopyRequest(post({ items: [item()] }), deps),
   );
   assert.equal(result.status, "failed");
   assert.match(result.reason ?? "", /Timed out/);
+  assert.ok(performance.now() - started < 5_000, "the hard stop ended it");
 });
 
 Deno.test("a CDN that sends no headers in time is a failure", async () => {
@@ -534,4 +547,59 @@ Deno.test("the header timeout stops governing the CDN request once headers arriv
   );
   assert.equal(result.status, "stored");
   assert.equal(cdnSignal?.aborted, false);
+});
+
+Deno.test("the hard stop reaches an upload in progress, not the CDN body behind it", async () => {
+  // Aborting the CDN request once the runtime is piping its body into the
+  // upload errors that pipe with nobody awaiting it (an unhandled rejection
+  // under Deno). Aborting the upload cancels its source instead.
+  let cdnSignal: AbortSignal | undefined;
+  let uploadSignal: AbortSignal | undefined;
+  const { deps } = harness({
+    cdn: (_url, init) => {
+      cdnSignal = init.signal ?? undefined;
+      return new Response("bytes", { status: 200 });
+    },
+    storage: (_url, init) => {
+      uploadSignal = init.signal ?? undefined;
+      return hangingCdn(_url, init);
+    },
+    limits: {
+      hardDeadlineMs: 20,
+      fairTransferWindowMs: 1_000,
+      cdnResponseTimeoutMs: 60_000,
+    },
+  });
+  const [result] = await results(
+    await handleCopyRequest(post({ items: [item()] }), deps),
+  );
+  assert.equal(result.status, "deferred");
+  assert.equal(uploadSignal?.aborted, true);
+  assert.equal(cdnSignal?.aborted, false);
+});
+
+Deno.test("a late-starting item that fails on its own is failed, not deferred", async () => {
+  // Only a cut by the hard stop earns a re-send; a CDN 503 is a 503.
+  let clock = 0;
+  let calls = 0;
+  const { deps } = harness({
+    now: () => clock,
+    cdn: () => {
+      calls += 1;
+      if (calls === 1) {
+        // The first transfer takes the request well past the fair window.
+        clock += 50_000;
+        return new Response("bytes", { status: 200 });
+      }
+      return new Response("busy", { status: 503 });
+    },
+    limits: { concurrency: 1 },
+  });
+  const all = await results(
+    await handleCopyRequest(
+      post({ items: [item(), item({ path: `${PATH}-2` })] }),
+      deps,
+    ),
+  );
+  assert.deepEqual(all.map((result) => result.status), ["stored", "failed"]);
 });

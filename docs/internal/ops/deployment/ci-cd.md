@@ -236,15 +236,10 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 
 **CD (deploy workflows)** uses Infisical-injected runtime secrets in `_deploy.yml`, the job `deploy-staging.yml` (staging) and `deploy-production.yml` (production) both call. Variable names are **unified** across environments ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../environment/SECRETS_MANAGEMENT.md#key-design-principles)). Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
 
-| Variable                 | Purpose                                                  |
-| ------------------------ | -------------------------------------------------------- |
-| `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
-| `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations (read-only token)       |
-| `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` | Supabase CLI auth for deploying the Edge Functions (Edge Functions read-write only) |
-| `SUPABASE_PROJECT_REF`   | Target project for migrations and functions (value differs per environment) |
+Which variables the deploy reads, and what each is for, is kept in one place:
+[`ENV_REFERENCE.md` § CD Secrets](../../environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only).
 
 Two GitHub secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET`. Like every GitHub secret here they belong in environments restricted to `main`, never in repository scope, because a repository secret is readable from any branch ([#2518](https://github.com/pdcarlson/Frapp/issues/2518)). The deploy-time values themselves come from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)). Which environment holds which secret, including the provider API tokens the deploy workflows use: [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
 
-See `docs/internal/environment/ENV_REFERENCE.md` for the complete variable mapping.
 
 ---
