@@ -143,16 +143,16 @@ export function matchFrappRole(
 }
 
 /**
- * The starting answer for a Discord role (owner's decision on #2818): its
- * name match, else a new role if it could read a private channel (so that
- * channel can be imported "Same as Discord"), else Ignore, so colour, class
- * year and game roles create nothing. A viewer who cannot manage roles starts
- * everything at Ignore, the only mapping the API will take from them.
+ * The starting answer for a Discord role: its name match, else a new role
+ * named after it. Owner's decision on #2855, replacing #2818's "Ignore unless
+ * it could read a private channel": a role classifies people (a class year, a
+ * committee) even when it gates nothing, and the admin sets any role they
+ * don't want to Ignore. A viewer who cannot manage roles starts everything at
+ * Ignore, the only mapping the API will take from them.
  */
 export function defaultRoleChoice(
   role: StagedRole,
   frappRoles: readonly FrappRole[],
-  readsPrivate: boolean,
   canManageRoles: boolean,
 ): { choice: RoleChoice; kind: MatchKind } {
   if (!canManageRoles) return { choice: { action: "ignore" }, kind: null };
@@ -163,12 +163,7 @@ export function defaultRoleChoice(
       kind: match.kind,
     };
   }
-  return {
-    choice: readsPrivate
-      ? { action: "new", name: role.roleName.trim() }
-      : { action: "ignore" },
-    kind: null,
-  };
+  return { choice: { action: "new", name: role.roleName.trim() }, kind: null };
 }
 
 /** How many private channels each Discord role could read. */

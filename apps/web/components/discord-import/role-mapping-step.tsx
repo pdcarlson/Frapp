@@ -33,9 +33,10 @@ const IGNORE = "__ignore__";
  * through it.
  *
  * Each role starts at its name match, then a close match to a seeded role,
- * then New role if it could read a private channel and Ignore if it could
- * not. A close match is labelled, since "Recording Secretary" → Secretary is
- * a guess the admin should see.
+ * then New role (#2855): a role classifies people even when it gates no
+ * channel, and the admin sets the ones they don't want to Ignore. A close
+ * match is labelled, since "Recording Secretary" → Secretary is a guess the
+ * admin should see.
  *
  * **It never puts anyone into a role.** Imported authors are names on
  * messages, not accounts. Starting the import creates the new roles and lets

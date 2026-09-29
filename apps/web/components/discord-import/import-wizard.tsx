@@ -354,17 +354,12 @@ export function ImportWizard({
         matches[role.roleId] = null;
         continue;
       }
-      const fallback = defaultRoleChoice(
-        role,
-        frappRoles,
-        (readsPrivate.get(role.roleId) ?? 0) > 0,
-        canManageRoles,
-      );
+      const fallback = defaultRoleChoice(role, frappRoles, canManageRoles);
       choices[role.roleId] = fallback.choice;
       matches[role.roleId] = fallback.kind;
     }
     return { roleChoices: choices, roleMatches: matches };
-  }, [staged, roleEdits, frappRoles, readsPrivate, canManageRoles]);
+  }, [staged, roleEdits, frappRoles, canManageRoles]);
   const roleProblems = useMemo(
     () =>
       roleIssues(

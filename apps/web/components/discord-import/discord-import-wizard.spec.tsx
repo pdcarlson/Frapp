@@ -777,20 +777,22 @@ describe("ImportWizard — the bot path", () => {
         .closest("div.rounded-md")
         ?.querySelector("select") as HTMLSelectElement;
 
-    it("asks about roles before channels, defaulting by name, then a close match, then new or ignore", async () => {
+    it("asks about roles before channels, defaulting by name, then a close match, then a new role", async () => {
       scanWithRoles();
       renderAtConsent();
       await screen.findByRole("heading", { name: "Map the roles" });
 
       expect(becomes("treasurer").value).toBe("role-treasurer");
       expect(becomes("Recording Secretary").value).toBe("role-secretary");
-      // Reads a private channel, matches nothing: a new role.
+      // Matches nothing: a new role, whether or not it read a private
+      // channel (#2855), because a role classifies people either way.
       expect(becomes("Rush Chair").value).toBe("__new__");
+      expect(becomes("Gamers").value).toBe("__new__");
       expect(
-        (screen.getByLabelText("New role name") as HTMLInputElement).value,
-      ).toBe("Rush Chair");
-      // Reads nothing private: creates nothing.
-      expect(becomes("Gamers").value).toBe("__ignore__");
+        screen
+          .getAllByLabelText("New role name")
+          .map((input) => (input as HTMLInputElement).value),
+      ).toEqual(["Rush Chair", "Gamers"]);
 
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
       await waitFor(() =>
@@ -821,9 +823,9 @@ describe("ImportWizard — the bot path", () => {
             {
               discord_role_id: "r-gamer",
               discord_role_name: "Gamers",
-              action: "ignore",
+              action: "new",
               frapp_role_id: undefined,
-              new_role_name: undefined,
+              new_role_name: "Gamers",
             },
           ],
         }),

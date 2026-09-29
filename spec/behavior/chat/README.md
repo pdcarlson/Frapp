@@ -640,9 +640,12 @@ channel that reports a different one fails the import rather than being skipped.
     seeded role, read from the end of the Discord name ("Recording Secretary"
     is a Secretary, "Pledges" are New Members, but "Pledge Educator" is not a
     pledge), except Member, the widest role, which matches only a whole name
-    ("Brothers", never "Board Member"); then a new role if it could read a
-    private channel, and Ignore if it could not, so colour, class-year and
-    game roles create nothing. A viewer who cannot manage roles, or cannot
+    ("Brothers", never "Board Member"); then a new role named after it.
+    *2026-09-29, owner's decision (#2855), replacing "a new role if it could
+    read a private channel, and Ignore if it could not, so colour, class-year
+    and game roles create nothing": a role classifies people (a class year, a
+    committee) even when it gates no channel, and the admin sets any role
+    they don't want to Ignore.* A viewer who cannot manage roles, or cannot
     load the chapter's roles, keeps every role on Ignore and can still import.
     `@everyone`, and the managed roles Discord gives bots and boosters, are
     not offered: the Frapp bot's own role is allowed on every channel it was
