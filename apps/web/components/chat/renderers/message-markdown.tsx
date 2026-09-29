@@ -3,39 +3,10 @@
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import { isSafeHref } from "@repo/chat-core/links";
 import { opensTooManyContainers, remarkDepthCap } from "./remark-depth-cap";
 import { remarkMentionChips } from "./remark-mention-chips";
 import { cn } from "@/lib/utils";
-
-const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"]);
-
-/**
- * A markdown link's `href` is user-typed text, not a vetted URL —
- * `[text](javascript:alert(1))` parses to a real anchor with that href.
- * react-markdown's own `urlTransform` already blocks a dangerous scheme
- * before any component sees `href` (including a control-character-obfuscated
- * one like `jav\tascript:`, which it neutralizes to `""` regardless of this
- * function), so this check is defense in depth, not the only layer — but it
- * has to hold on its own rather than quietly lean on that upstream behavior.
- *
- * One thing neither layer stops on its own: a **protocol-relative** href
- * (`//attacker.example/login`) has no scheme to reject, so both react-
- * markdown's transform and a naive version of this check wave it through as
- * "relative." A browser resolves it against the current page's scheme to a
- * real, external, clickable link — a phishing vector, not code execution,
- * but exactly the kind of link a schemeless-href-is-safe assumption misses.
- * A same-origin relative href (`example.com`, `/path`) has no such risk and
- * is left alone.
- */
-function isSafeHref(href: string): boolean {
-  // Strip the same control characters a browser ignores when parsing a URL
-  // scheme, so `jav\tascript:` can't slip past the regex below by breaking
-  // the match rather than the intent.
-  const normalized = href.replace(/[\t\n\r]/g, "");
-  if (normalized.startsWith("//")) return false;
-  const scheme = /^([a-zA-Z][a-zA-Z\d+.-]*):/.exec(normalized)?.[1];
-  return scheme === undefined || SAFE_URL_SCHEMES.has(scheme.toLowerCase());
-}
 
 /**
  * `spec/behavior/chat/README.md`'s "Text formatting" set, and nothing wider:
@@ -60,7 +31,9 @@ const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br", "mark"]
  * has no code path from message text to raw HTML, so a message body can
  * carry `<script>` or an `onerror=` attribute verbatim and it renders as
  * inert text, not a tag. The one thing react-markdown does *not* vet on its
- * own is a link's scheme, which `isSafeHref` covers below.
+ * own is a link's scheme, which `isSafeHref` covers below. It lives in
+ * `@repo/chat-core/links` because mobile's tappable links read the same rule
+ * (#2775); its docblock says what it blocks and why.
  *
  * **Memoized on `content`.** Nothing above this memoizes a timeline row, so
  * without it every re-render of the timeline parsed every visible message

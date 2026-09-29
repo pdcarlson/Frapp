@@ -76,7 +76,13 @@ import {
   ComposerShell,
   notifyDispatchOutcome,
 } from "./composer";
-import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
+import {
+  channelAllowsReplies,
+  DELETE_MESSAGE_CONFIRM_BODY,
+  DELETE_MESSAGE_CONFIRM_LABEL,
+  DELETE_MESSAGE_CONFIRM_TITLE,
+  replyTargetId,
+} from "@repo/chat-core/message-actions";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { ChannelMenu } from "./channel-menu";
@@ -676,11 +682,9 @@ export function ChatShell({
     (messageId: string) => {
       void (async () => {
         const confirmed = await confirm({
-          title: "Delete this message?",
-          description:
-            "This can't be undone. Everyone in the channel will see " +
-            `"${DELETED_MESSAGE_PLACEHOLDER}" in its place.`,
-          confirmLabel: "Delete message",
+          title: DELETE_MESSAGE_CONFIRM_TITLE,
+          description: DELETE_MESSAGE_CONFIRM_BODY,
+          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
           tone: "destructive",
         });
         if (!confirmed) return;
@@ -1105,56 +1109,24 @@ export function ChatShell({
   ]);
 
   /**
-   * Stages an inline reply, **normalized to the root message** — AC 3 and
-   * `spec/behavior/chat/README.md`: "Replying to a reply references the root
-   * message (no deep nesting)."
-   *
-   * Client-side on purpose. `ChatService.createMessage` validates only that
-   * `reply_to_id` names a message in the same channel, and it must stay that
-   * way: `linkReplyPairs` (`supabase-discord-import.repository.ts`) writes
-   * Discord's genuinely nested reply targets during an archive import, so a
-   * server-side root rule would rewrite an imported thread's real shape.
-   *
-   * One hop is enough because every reply this client authors is already
-   * root-normalized, so `parent.reply_to_id` is itself always a root. An
-   * imported chain deeper than that resolves to its own parent rather than its
-   * true root — accepted: chasing the chain would need messages outside the
-   * loaded window, and the alternative (quoting nothing) is worse.
+   * Stages an inline reply, normalized to the root message (`replyTargetId` in
+   * `@repo/chat-core/message-actions` says why it is client-side, and why one
+   * hop is enough).
    */
   const startReply = useCallback((message: ChatMessage) => {
     setReplyTarget({
       channelId: message.channel_id,
-      messageId: message.reply_to_id ?? message.id,
+      messageId: replyTargetId(message),
     });
   }, []);
   const cancelReply = useCallback(() => setReplyTarget(null), []);
   /**
-   * Whether to offer Reply on rows in this channel at all.
-   *
-   * **Both halves are load-bearing, and each covers a case the other misses.**
-   *
-   * `can_post` — is there a composer to stage into? It is the server's own
-   * capability (`ChannelAccessService.withPostCapability`), and it comes back
-   * false for *two* reasons, only one of which is read-only: the other is the
-   * alumni lifecycle restriction (`spec/behavior/alumni.md`). An alumnus in an
-   * ordinary `PUBLIC` channel gets `is_read_only: false` and
-   * `can_post: false`, so a read-only-only check leaves them a Reply chip whose
-   * strip can never render — `Composer` returns the "Alumni can read this
-   * channel but not post" paragraph instead of an editor. Clicking it would
-   * change nothing anywhere on screen: an inert control, which
-   * `spec/ui/design-system/components.md` § 5 bans outright.
-   *
-   * `is_read_only` — does the channel allow in-thread replies at all?
-   * `spec/behavior/chat/README.md` § 253: "Announcement messages cannot be
-   * replied to in-thread… it holds regardless of permissions", and
-   * `ChatService.sendMessage` 400s such a send. `can_post` does not cover this,
-   * because it is deliberately **true** in `#announcements` for a holder of
-   * `announcements:post` — they may post a top-level announcement, and nobody
-   * threads one. Without this half, that member stages a strip and the send
-   * fails.
+   * Whether to offer Reply on rows in this channel at all. Both `can_post` and
+   * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
+   * each covers.
    *
    * Read off the two fields the rail actually carries rather than through
-   * `@repo/validation`'s `allowsInThreadReplies`. Calling the shared predicate
+   * `@repo/validation`'s `allowsInThreadReplies`. Calling that predicate
    * would need a hand-built `ChannelAccessRecord`, and the fields the rail has
    * never loaded would have to be invented — `required_permissions: null` and
    * no `archived_at`. That is a projection wearing the full type: the moment
@@ -1163,10 +1135,7 @@ export function ChatShell({
    * pre-filter; the server is the enforcement, and it is the server's copy of
    * the rule that has to be right.
    */
-  const canReplyHere =
-    !!activeChannel &&
-    activeChannel.can_post !== false &&
-    !activeChannel.is_read_only;
+  const canReplyHere = !!activeChannel && channelAllowsReplies(activeChannel);
   /**
    * The staged reply, resolved for the composer's strip.
    *
@@ -1954,7 +1923,10 @@ export function ChatShell({
             onAct={(messageId, actionType, payload) =>
               void channel.act(messageId, actionType, payload)
             }
-            onEdit={channel.edit}
+            // An edit authorizes as a post (`spec/behavior/chat/README.md`
+            // § Channel access), so a member who can't post here, such as an
+            // alumnus in an ordinary channel, isn't offered one (#2775).
+            onEdit={activeChannel?.can_post !== false ? channel.edit : undefined}
             onDelete={handleDeleteMessage}
             bookmarkedMessageIds={bookmarkedMessageIds}
             onToggleBookmark={handleToggleBookmark}

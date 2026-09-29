@@ -1,28 +1,54 @@
 /**
- * The mobile message-actions sheet's rules: which member-safety actions a
- * message offers, and what the roster can say about a sender (#2257).
+ * The mobile message-actions sheet's rules: which actions a message offers
+ * (Reply, Edit and Delete, #2775; Report and Block, #2257), and what the
+ * roster can say about a sender.
  *
+ * Reply, Edit and Delete decide through `@repo/chat-core/message-actions`,
+ * the rules web reads too, so the two clients cannot offer different things.
  * The block classifier the thread applies (tombstone, held, quotes,
- * reactions) is shared with web and lives in `@repo/chat-core/blocks`
- * (#2313). What stays here is mobile's alone: web offers no Report or Block
- * on a message.
+ * reactions) is shared with web as well and lives in `@repo/chat-core/blocks`
+ * (#2313). What stays here is mobile's alone: web offers no Report or Block on
+ * a message yet (#2687).
  */
 
 import { isBlockableSender } from "@repo/chat-core/blocks";
+import {
+  canActOnMessage,
+  canDeleteMessage,
+  canEditMessage,
+  isOwnMessage,
+} from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 export interface MessageActions {
   /** Whether the long-press sheet opens at all. */
   canOpen: boolean;
+  canReply: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   canReport: boolean;
   canBlock: boolean;
 }
 
 const NO_ACTIONS: MessageActions = {
   canOpen: false,
+  canReply: false,
+  canEdit: false,
+  canDelete: false,
   canReport: false,
   canBlock: false,
 };
+
+/** What the open channel and the viewer's permissions allow, beyond the row. */
+export interface MessageActionsContext {
+  isMember: MemberLookup;
+  /** `channelAllowsReplies` for the open channel. */
+  canReply: boolean;
+  /** The channel's `can_post`: an edit authorizes as a post. */
+  canPost: boolean;
+  /** The viewer holds `channels:manage`. */
+  canManageChannel: boolean;
+}
 
 /**
  * Whether a `users.id` is a member of the active chapter:
@@ -58,48 +84,61 @@ export function rosterMembership(
 }
 
 /**
- * Whether a message offers the actions sheet at all — the first three rules
- * below, which need no roster. What a row's long-press is gated on.
+ * Whether a message offers the actions sheet at all, which is what a row's
+ * long-press is gated on. It needs no roster or channel: a confirmed,
+ * undeleted row always offers something. Your own message offers Delete, and
+ * anyone else's offers Report.
  */
 export function canOpenMessageActions(
-  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  message: Pick<ChatMessage, "_status" | "is_deleted">,
   viewerId: string | null,
 ): boolean {
-  if (viewerId === null) return false;
-  if (message.sender_id === viewerId) return false;
-  return message._status === "confirmed" && !message.is_deleted;
+  return viewerId !== null && canActOnMessage(message);
 }
 
 /**
- * Which member-safety actions a message offers.
+ * Which actions a message offers.
  *
- * - **Never on your own message.** There is nothing to report or block.
- * - **Confirmed rows only.** A pending or failed row carries a client id the
- *   API has never seen, so a report against it would 404.
- * - **Not on a deleted row.** Its content already reads `[message deleted]`,
- *   and the report would snapshot exactly that.
- * - **Block needs a blockable sender not known to have left** — not the system
+ * - **Confirmed, undeleted rows only.** A pending or failed row carries a
+ *   client id the API has never seen, so any action on it would 404, and a
+ *   deleted row already reads `[message deleted]`.
+ * - **Reply** wherever the channel takes replies (`channelAllowsReplies`).
+ * - **Edit** on your own plain-text message (`canEditMessage`), where you can
+ *   still post.
+ * - **Delete** on your own message, or anyone's with `channels:manage`.
+ * - **Report and Block never on your own message.** There is nothing to
+ *   report or block. On anyone else's, Report always shows: an imported row
+ *   names its author in `author_name`, which the API snapshots into the report
+ *   for exactly that.
+ * - **Block needs a blockable sender not known to have left**: not the system
  *   actor, not an imported row, and not someone `isMember` positively knows
  *   departed. A sender the cached roster does not list still gets Block: that
  *   is exactly what a brand-new member looks like, and App Review's block
- *   control must not vanish for them. If they did leave, `POST /v1/chat/blocks`
- *   answers 404 `Member not found` and the confirmation says so. Report stays
- *   in every case: an imported row names its author in `author_name`, which the
- *   API snapshots into the report for exactly that.
+ *   control must not vanish for them. If they did leave,
+ *   `POST /v1/chat/blocks` answers 404 `Member not found` and the confirmation
+ *   says so.
  *
  * A tombstoned row never reaches this: the thread renders it without the sheet.
  */
 export function messageActionsFor(
-  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  message: Pick<
+    ChatMessage,
+    "id" | "sender_id" | "kind" | "_status" | "is_deleted"
+  >,
   viewerId: string | null,
-  isMember: MemberLookup,
+  context: MessageActionsContext,
 ): MessageActions {
   if (!canOpenMessageActions(message, viewerId)) return NO_ACTIONS;
+  const own = isOwnMessage(message, viewerId);
   return {
     canOpen: true,
-    canReport: true,
+    canReply: context.canReply,
+    canEdit: context.canPost && canEditMessage(message, viewerId),
+    canDelete: canDeleteMessage(message, viewerId, context.canManageChannel),
+    canReport: !own,
     canBlock:
+      !own &&
       isBlockableSender(message.sender_id) &&
-      isMember(message.sender_id) !== false,
+      context.isMember(message.sender_id) !== false,
   };
 }

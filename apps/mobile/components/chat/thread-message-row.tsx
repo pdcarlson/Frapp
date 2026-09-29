@@ -54,6 +54,8 @@ export interface ThreadMessageRowProps {
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
   onOpenActions: (message: ChatMessage) => void;
+  /** Scrolls the thread to a loaded message: a reply quote's tap. */
+  onJumpToMessage: (messageId: string) => void;
   onUnblock: (userId: string) => void;
   /** Each member's post-unblock re-read (`useMaskedRefresh`), for stale tombstones. */
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
@@ -73,6 +75,7 @@ export function ThreadMessageRow({
   onReact,
   onUnreact,
   onOpenActions,
+  onJumpToMessage,
   onUnblock,
   maskedRefresh,
   onReload,
@@ -143,6 +146,9 @@ export function ThreadMessageRow({
       onReact={onReact}
       onUnreact={onUnreact}
       onOpenActions={openActions}
+      onJumpToParent={
+        quotedParent ? () => onJumpToMessage(quotedParent.id) : undefined
+      }
     />
   );
 }

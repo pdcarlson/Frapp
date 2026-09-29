@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   replyPreviewText,
@@ -24,6 +24,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * quote: a block that hid the message but let a reply print its words would
  * hide nothing. The caller also withholds the parent itself (`replyParent`
  * arrives `null`), so this cannot draw what it was never given.
+ *
+ * Tapping the quote scrolls to the parent (#2775) when the caller passes
+ * `onPress`, which it does only for a parent that is loaded and shown. The
+ * quote is not announced as a button: it sits inside the message's accessible
+ * container, which carries the same jump as a named action.
  */
 export function ReplyQuote({
   message,
@@ -33,6 +38,8 @@ export function ReplyQuote({
   viewerId,
   borderColor,
   textColor,
+  onPress,
+  onLongPress,
 }: {
   message: ChatMessage;
   replyParent: ChatMessage | null | undefined;
@@ -43,6 +50,10 @@ export function ReplyQuote({
   viewerId: string;
   borderColor: string;
   textColor: string;
+  /** Scrolls to the parent; omitted when there is nothing to scroll to. */
+  onPress?: () => void;
+  /** The row's long-press, since a pressable quote claims the touch. */
+  onLongPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -52,9 +63,16 @@ export function ReplyQuote({
   const placeholder = hiddenText ?? (replyParent ? null : UNAVAILABLE_QUOTE);
 
   return (
-    <View
+    <Pressable
       accessibilityRole="text"
-      style={[styles.rule, { borderLeftColor: borderColor }]}
+      disabled={!onPress}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={({ pressed }) => [
+        styles.rule,
+        { borderLeftColor: borderColor },
+        pressed ? styles.pressed : null,
+      ]}
     >
       {placeholder !== null || !replyParent ? (
         <Text
@@ -65,10 +83,7 @@ export function ReplyQuote({
         </Text>
       ) : (
         <View style={styles.row}>
-          <Text
-            style={[styles.author, { color: textColor }]}
-            numberOfLines={1}
-          >
+          <Text style={[styles.author, { color: textColor }]} numberOfLines={1}>
             {resolveAuthorLabel(replyParent, nameFor, viewerId)}
           </Text>
           <Text
@@ -79,7 +94,7 @@ export function ReplyQuote({
           </Text>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 
@@ -109,6 +124,9 @@ function createStyles(tokens: SignetTokens) {
     },
     unavailable: {
       fontStyle: "italic",
+    },
+    pressed: {
+      opacity: 0.7,
     },
   });
 }

@@ -102,6 +102,7 @@ function renderRow(
     blockState?: BlockState;
     replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
+    onJumpToMessage?: (messageId: string) => void;
     onUnblock?: (userId: string) => void;
     maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
     onReload?: (userId: string) => void;
@@ -123,6 +124,7 @@ function renderRow(
           onReact={vi.fn()}
           onUnreact={vi.fn()}
           onOpenActions={overrides.onOpenActions ?? vi.fn()}
+          onJumpToMessage={overrides.onJumpToMessage ?? vi.fn()}
           onUnblock={overrides.onUnblock ?? vi.fn()}
           maskedRefresh={overrides.maskedRefresh ?? new Map()}
           onReload={overrides.onReload ?? vi.fn()}
@@ -393,6 +395,40 @@ describe("ThreadMessageRow — reply quotes (finding 7, #2312 §1)", () => {
     );
     expect(flat(tree)).toContain(parentWords);
   });
+
+  /** The quote's own pressable: the one that jumps rather than long-presses alone. */
+  function quoteJump(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        typeof node.props.onPress === "function" &&
+        node.props.accessibilityRole === "text",
+    );
+  }
+
+  it("jumps to a shown parent when the quote is tapped (#2775)", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const onJumpToMessage = vi.fn();
+      const tree = renderRow(
+        { message: reply({ sender_id: sender }), visibility: "visible" },
+        { replyParent: parent(), onJumpToMessage },
+      );
+      const [quote] = quoteJump(tree);
+      expect(quote).toBeDefined();
+      act(() => quote!.props.onPress());
+      expect(onJumpToMessage).toHaveBeenCalledWith("parent-1");
+    }
+  });
+
+  it("never offers the jump for a parent it cannot show", () => {
+    for (const replyParent of [null, parent({ sender_id: BLOCKED })]) {
+      const tree = renderRow(
+        { message: reply(), visibility: "visible" },
+        { replyParent },
+      );
+      expect(quoteJump(tree)).toHaveLength(0);
+    }
+  });
 });
 
 describe("ThreadMessageRow — message actions", () => {
@@ -515,13 +551,18 @@ describe("ThreadMessageRow — message actions", () => {
     expect(onOpenActions).toHaveBeenCalledTimes(1);
   });
 
-  it("offers nothing on the viewer's own message", () => {
-    const tree = renderRow({
-      message: message({ sender_id: VIEWER }),
-      visibility: "visible",
-    });
-    expect(longPressTargets(tree)).toHaveLength(0);
-    expect(JSON.stringify(tree.toJSON())).not.toContain(
+  it("opens the sheet from the viewer's own message too, for Reply, Edit and Delete (#2775)", () => {
+    const onOpenActions = vi.fn();
+    const own = message({ sender_id: VIEWER });
+    const tree = renderRow(
+      { message: own, visibility: "visible" },
+      { onOpenActions },
+    );
+    const targets = longPressTargets(tree);
+    expect(targets.length).toBeGreaterThan(0);
+    act(() => targets[0]!.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledWith(own);
+    expect(JSON.stringify(tree.toJSON())).toContain(
       MESSAGE_ACTIONS_A11Y_LABEL,
     );
   });

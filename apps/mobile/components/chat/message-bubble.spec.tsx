@@ -42,8 +42,12 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { UNAVAILABLE_QUOTE, DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
+  UNAVAILABLE_QUOTE,
+  DELETED_MESSAGE_PLACEHOLDER,
+} from "@repo/chat-core/reply-preview";
+import {
+  EDITED_MARKER,
   formatMessageTime,
   groupReactions,
   MessageBubble,
@@ -375,7 +379,9 @@ describe("self-bubble delivery status (#1910)", () => {
       ).toJSON(),
     );
 
-    expect(flat).toContain("Not confirmed — these points may or may not have been recorded.");
+    expect(flat).toContain(
+      "Not confirmed — these points may or may not have been recorded.",
+    );
     expect(flat).not.toContain("Send failed");
     expect(flat).not.toContain("Discard this message");
     expect(flat).not.toContain("Retry sending this message");
@@ -416,9 +422,7 @@ describe("self-bubble delivery status (#1910)", () => {
 
   it("keeps failed rows red with retry and discard", () => {
     const flat = JSON.stringify(
-      renderBubble(
-        message({ sender_id: VIEWER, _status: "failed" }),
-      ).toJSON(),
+      renderBubble(message({ sender_id: VIEWER, _status: "failed" })).toJSON(),
     );
 
     expect(flat).toContain("Send failed");
@@ -429,7 +433,9 @@ describe("self-bubble delivery status (#1910)", () => {
 
   it("keeps a confirmed self bubble on the time-only meta line", () => {
     const flat = JSON.stringify(
-      renderBubble(message({ sender_id: VIEWER, _status: "confirmed" })).toJSON(),
+      renderBubble(
+        message({ sender_id: VIEWER, _status: "confirmed" }),
+      ).toJSON(),
     );
 
     expect(flat).not.toContain("Not confirmed");
@@ -447,3 +453,87 @@ describe("self-bubble delivery status (#1910)", () => {
   });
 });
 
+describe("links in a message are tappable (#2775)", () => {
+  function links(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.accessibilityRole === "link",
+    );
+  }
+
+  it("draws a bare URL and a markdown link as links, on both bubble sides", async () => {
+    const WebBrowser = await import("expo-web-browser");
+    for (const sender of [OTHER, VIEWER]) {
+      vi.mocked(WebBrowser.openBrowserAsync).mockClear();
+      const tree = renderBubble(
+        message({
+          sender_id: sender,
+          content: "see https://frapp.live/a and [docs](https://x.test/d).",
+        }),
+      );
+      const found = links(tree);
+      expect(found.map((node) => node.props.children)).toEqual([
+        "https://frapp.live/a",
+        "docs",
+      ]);
+      act(() => found[1]!.props.onPress());
+      expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+        "https://x.test/d",
+      );
+    }
+  });
+
+  it("never links an unsafe target, and keeps its label as text", () => {
+    const tree = renderBubble(
+      message({ content: "[click me](javascript:alert(1))" }),
+    );
+    expect(links(tree)).toHaveLength(0);
+    expect(JSON.stringify(tree.toJSON())).toContain("click me");
+  });
+
+  it("offers each link to a screen reader as a named action", () => {
+    const tree = renderBubble(
+      message({ content: "https://frapp.live/a", _status: "confirmed" }),
+    );
+    const container = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.accessibilityActions) &&
+        node.props.accessibilityActions.some(
+          (action: { label?: string }) =>
+            action.label === "Open https://frapp.live/a",
+        ),
+    );
+    expect(container.props.accessible).toBe(true);
+  });
+});
+
+describe("edited marker (#2775)", () => {
+  it("marks an edited message on both sides", () => {
+    for (const sender of [OTHER, VIEWER]) {
+      const flat = JSON.stringify(
+        renderBubble(
+          message({
+            sender_id: sender,
+            edited_at: "2026-09-29T18:00:00Z",
+          }),
+        ).toJSON(),
+      );
+      expect(flat).toContain(EDITED_MARKER);
+    }
+  });
+
+  it("does not mark an unedited or deleted message", () => {
+    expect(JSON.stringify(renderBubble(message()).toJSON())).not.toContain(
+      `· ${EDITED_MARKER}`,
+    );
+    expect(
+      JSON.stringify(
+        renderBubble(
+          message({ edited_at: "2026-09-29T18:00:00Z", is_deleted: true }),
+        ).toJSON(),
+      ),
+    ).not.toContain(`· ${EDITED_MARKER}`);
+  });
+});

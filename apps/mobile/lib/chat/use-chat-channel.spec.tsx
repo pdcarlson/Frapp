@@ -90,6 +90,8 @@ const mocks = vi.hoisted(() => {
   reactAction: vi.fn(async () => undefined),
   unreactAction: vi.fn(async () => undefined),
   actOnCard: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
+  editMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
+  deleteMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
   bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
   listForChannel: vi.fn(async () => [] as unknown[]),
   draftLoad: vi.fn(async () => ""),
@@ -124,6 +126,8 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   react: mocks.reactAction,
   unreact: mocks.unreactAction,
   actOnCard: mocks.actOnCard,
+  editMessage: mocks.editMessage,
+  deleteMessage: mocks.deleteMessage,
 }));
 
 vi.mock("@repo/chat-core/realtime-manager", () => ({
@@ -1080,5 +1084,79 @@ describe("act() failure surfacing (#528/#999)", () => {
     act(() => staleOnError!({ title: "Couldn't record action", description: "too late" }));
 
     expect(result.current.actionError).toBeNull();
+  });
+});
+
+describe("reply, edit and delete (#2775)", () => {
+  it("sends a reply with its parent id", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.send("answer", { replyToId: "m1" });
+    });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ content: "answer", replyToId: "m1" }),
+    );
+  });
+
+  it("sends an ordinary message with no reply target", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.send("plain");
+    });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ replyToId: null }),
+    );
+  });
+
+  it("edits and deletes through chat-core for this channel", async () => {
+    mocks.editMessage.mockResolvedValue(undefined);
+    mocks.deleteMessage.mockResolvedValue(undefined);
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.edit("m1", "fixed");
+      await result.current.remove("m2");
+    });
+    expect(mocks.editMessage).toHaveBeenCalledWith(expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "m1",
+      content: "fixed",
+    });
+    expect(mocks.deleteMessage).toHaveBeenCalledWith(expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "m2",
+    });
+  });
+
+  it("rejects with the reason chat-core classified, since mobile has no toast", async () => {
+    mocks.deleteMessage.mockImplementation(async (ctx: unknown) => {
+      (
+        ctx as {
+          onError: (input: { title: string; description?: string }) => void;
+        }
+      ).onError({
+        title: "Couldn't delete message",
+        description: "You can only delete your own messages",
+      });
+      throw new Error("raw 403");
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await expect(result.current.remove("m2")).rejects.toThrow(
+      "You can only delete your own messages",
+    );
+  });
+
+  it("refuses to edit or delete without a runtime, rather than silently doing nothing", async () => {
+    mocks.runtime.ctx = null;
+    const { result } = renderChannel();
+    await expect(result.current.edit("m1", "x")).rejects.toThrow();
+    await expect(result.current.remove("m1")).rejects.toThrow();
+    expect(mocks.editMessage).not.toHaveBeenCalled();
+    expect(mocks.deleteMessage).not.toHaveBeenCalled();
   });
 });
