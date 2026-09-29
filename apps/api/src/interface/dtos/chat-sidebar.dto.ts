@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, ValidateIf } from 'class-validator';
+import { RawValue } from './raw-value.transform';
 
 /**
  * A member's own sidebar arrangement (#2877), as every `/v1/chat-sidebar`
@@ -35,15 +36,28 @@ export class ChatSidebarDto {
   pinned_channel_ids: string[];
 }
 
-/** Switch one or both filters. A filter left out keeps its stored value. */
+/** Only a key left out is optional: a `null` fails `@IsBoolean()`. */
+const whenSent = ValidateIf(
+  (_dto: object, value: unknown) => value !== undefined,
+);
+
+/**
+ * Switch one or both filters. A filter left out keeps its stored value.
+ *
+ * Each filter takes only a real boolean. `@IsOptional()` would let `null`
+ * through to a `not null` column (a 500), and `RawValue` stops implicit
+ * conversion from saving the string `"false"` as `true`.
+ */
 export class UpdateChatSidebarDto {
   @ApiPropertyOptional()
-  @IsOptional()
+  @whenSent
+  @RawValue()
   @IsBoolean()
   unread_only?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @whenSent
+  @RawValue()
   @IsBoolean()
   hide_muted?: boolean;
 }

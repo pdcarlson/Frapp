@@ -322,12 +322,16 @@ export function ChannelList({
     // A DM the member hid (#2303) moves to the collapsed group at the end,
     // except while it is the open channel, so a jump into one does not leave
     // the rail with no row marked current. Hiding wins over pinning: a hidden
-    // DM the member had pinned waits in the hidden group like any other.
+    // DM the member had pinned waits in the hidden group like any other, and
+    // while it is open it sits under Direct messages, not Pinned, since its
+    // row offers no pin control to take it back out.
     const hiddenDms: ChatChannel[] = [];
     const system: ChatChannel[] = [];
     const rest: ChatChannel[] = [];
+    const pinnedIds = new Set(preferences.pinnedIds);
 
     for (const channel of channels) {
+      if (channel.hidden) pinnedIds.delete(channel.id);
       if (channel.hidden && channel.id !== activeChannelId) {
         hiddenDms.push(channel);
       } else if (isSystem(channel)) {
@@ -343,7 +347,7 @@ export function ChannelList({
         { channels: "Channels", direct: "Direct messages" },
         { label: "System", channels: system },
       ),
-      pinnedIds: preferences.pinnedIds,
+      pinnedIds,
       collapsed: preferences.collapsed,
       filters: preferences.filters,
       activeChannelId,

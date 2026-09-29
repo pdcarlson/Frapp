@@ -653,6 +653,50 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(onSetPinned).toHaveBeenNthCalledWith(2, exec, false);
   });
 
+  describe("hiding outranks pinning", () => {
+    const hiddenDm: ChatChannel = { ...dm, hidden: true };
+    const pinnedDm = sidebarControls({
+      preferences: {
+        pinnedIds: new Set([dm.id]),
+        collapsed: new Set(),
+        filters: { unreadOnly: false, hideMuted: false },
+      },
+    });
+    const renderHidden = (activeChannelId: string | null) =>
+      render(
+        <ChannelList
+          channels={[general, hiddenDm]}
+          activeChannelId={activeChannelId}
+          viewerId={VIEWER}
+          memberNames={NAMES}
+          onPick={vi.fn()}
+          onHide={vi.fn()}
+          sidebar={pinnedDm}
+        />,
+      );
+
+    it("keeps a pinned DM the member hid in the hidden group", () => {
+      renderHidden(null);
+
+      expect(headers()).toEqual(["Channels"]);
+      expect(
+        screen.getByRole("button", { name: "Hidden conversations (1)" }),
+      ).toBeInTheDocument();
+    });
+
+    it("draws the open one under Direct messages, with no pin control", () => {
+      renderHidden(hiddenDm.id);
+
+      expect(headers()).toEqual(["Channels", "Direct messages"]);
+      expect(
+        screen.getByRole("list", { name: "Direct messages" }),
+      ).toHaveTextContent("Alice Chen");
+      expect(
+        screen.queryByRole("button", { name: /from top: Alice Chen/ }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("says the filters emptied the list and offers to clear them", () => {
     const onClearFilters = vi.fn();
     renderArranged(
