@@ -75,12 +75,15 @@ export function formatClock(value: unknown): string {
  * times stay in the same (old) zone until a reload, instead of disagreeing.
  */
 let clockFormat: Intl.DateTimeFormat | null = null;
-function clockParts(at: Date): Intl.DateTimeFormatPart[] {
+function clock(): Intl.DateTimeFormat {
   clockFormat ??= new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
-  return clockFormat.formatToParts(at);
+  return clockFormat;
+}
+function clockParts(at: Date): Intl.DateTimeFormatPart[] {
+  return clock().formatToParts(at);
 }
 
 /**
@@ -98,10 +101,9 @@ export function formatTimeOfDay(value: unknown): string {
   // `Intl` separates the day period with a narrow no-break space (U+202F);
   // `Date#toLocaleTimeString`, which this used to call, prints a plain one in
   // V8. Kept plain, so the text members see does not change.
-  return clockParts(parsed)
-    .map((part) => part.value)
-    .join("")
-    .replace(/\u202f/g, " ");
+  // `format`, not `formatToParts`: this is the author line on mobile too, and
+  // `format` is the part of `Intl.DateTimeFormat` every engine ships.
+  return clock().format(parsed).replace(/\u202f/g, " ");
 }
 
 function dayPeriodOf(at: Date): string | undefined {
