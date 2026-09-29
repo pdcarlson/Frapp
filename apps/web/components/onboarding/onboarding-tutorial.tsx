@@ -168,7 +168,7 @@ export function OnboardingTutorial() {
   }, [activeChapterId, chaptersQuery.data]);
 
   const chapterName =
-    (currentChapter.data as { name?: string } | undefined)?.name ??
+    currentChapter.data?.name ??
     activeMembership?.chapter?.name ??
     "your chapter";
 

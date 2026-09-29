@@ -7,8 +7,8 @@ import { useCurrentChapter } from "@repo/hooks";
 // (accent-engine.md §1) and have no business in a browser bundle that only
 // re-keys an already-generated palette.
 import {
+  hasSignetSemanticRoles,
   signetAccentSemanticVars,
-  type SignetPalette,
 } from "@repo/chapter-theme/accent-vars";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useTenantScope } from "@/lib/tenancy/scope";
@@ -82,17 +82,6 @@ import {
  * no save that can repaint the live surface without also correcting the row.
  */
 
-/** The engine roles `signetAccentSemanticVars` reads; all-or-nothing. */
-const SIGNET_ROLE_KEYS = [
-  "--signet-accent-primary",
-  "--signet-accent-hover",
-  "--signet-accent-ring",
-  "--signet-accent-subtle-bg",
-  "--signet-accent-border",
-  "--signet-accent-text",
-  "--signet-accent-on-primary",
-] as const;
-
 export function useChapterTheme() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data } = useCurrentChapter({
@@ -104,22 +93,13 @@ export function useChapterTheme() {
   /**
    * The semantic tokens for the current chapter, or `null`.
    *
-   * All-or-nothing, which is the rule this hook has always applied and which
-   * the cache inherits: a row missing the Signet keys (as a row persisted
-   * before them does, until the #1165 sweep reaches it) applies none, and half a map is
-   * worse than none — the stylesheet's
-   * house defaults are internally consistent, one chapter's primary beside the
-   * house ring is not.
+   * All-or-nothing (`hasSignetSemanticRoles` says why), and the cache
+   * inherits that: a row missing any bridged role applies none, and the
+   * stylesheet's house defaults stand.
    */
   const resolved = useMemo(() => {
-    const raw = data as Record<string, unknown> | undefined;
-    const palette = raw?.["theme_palette"] as
-      | Record<string, string>
-      | undefined;
-    if (!palette || Object.keys(palette).length === 0) return null;
-    if (!SIGNET_ROLE_KEYS.every((key) => typeof palette[key] === "string")) {
-      return null;
-    }
+    const palette = data?.theme_palette;
+    if (!palette || !hasSignetSemanticRoles(palette)) return null;
     /*
       The chapter id comes out of the **payload**, not the store.
 
@@ -131,10 +111,9 @@ export function useChapterTheme() {
       are the same `useChapterStore` selector read in the same render, so it
       could never fire.
     */
-    const chapterId = typeof raw?.["id"] === "string" ? (raw["id"] as string) : null;
     return {
-      chapterId,
-      tokens: signetAccentSemanticVars(palette as unknown as SignetPalette),
+      chapterId: data?.id ?? null,
+      tokens: signetAccentSemanticVars(palette),
     };
   }, [data]);
   const tokens = resolved?.tokens ?? null;

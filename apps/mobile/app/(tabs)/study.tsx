@@ -707,10 +707,7 @@ export default function StudyScreen() {
     );
   }, [endSession]);
 
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> } | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
   // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
   // and a missing claim (no membership yet, or a hook-off incident) would hide
   // the screen from everyone if we required it. The writes are gated

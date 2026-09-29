@@ -113,6 +113,27 @@ describe("useChapterBranding", () => {
     expect(bare.result.current.logoUrl).toBeNull();
   });
 
+  it("treats an empty name or logo url as unset", async () => {
+    // The typed reads use `|| null`, not `??`: an empty string is no name and
+    // no logo, so consumers take the text-branding fallback.
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          name: "",
+          logo_url: "",
+          theme_palette: { "--signet-accent-text": DARK_LEGIBLE_ACCENT },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() =>
+      expect(result.current.accent).toBe(DARK_LEGIBLE_ACCENT),
+    );
+    expect(result.current.chapterName).toBeNull();
+    expect(result.current.logoUrl).toBeNull();
+  });
+
   it("falls back to house gold with no chapter resolved", async () => {
     const { result } = renderBranding({}, null);
 

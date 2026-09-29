@@ -363,13 +363,8 @@ export default function PreferencesScreen() {
   const canSeeChapterAdmin = can("chapter-config:view", permissions);
 
   const chapterQuery = useCurrentChapter();
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> } | undefined
-  )?.enabled_modules;
-  const donationUrl = (
-    chapterQuery.data as { donation_url?: string | null } | undefined
-  )?.donation_url;
+  const enabledModules = chapterQuery.data?.enabled_modules;
+  const donationUrl = chapterQuery.data?.donation_url;
   const showDonationCta = shouldShowDonationCta(permissions, donationUrl);
   const geofencesEnabled =
     canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
