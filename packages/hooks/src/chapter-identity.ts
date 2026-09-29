@@ -33,6 +33,15 @@ export type ChapterIdentityForm = {
   name: string;
   university: string;
   greekLetters: string;
+  /** The chapter mark's short name, e.g. "FIJI" (#2876). */
+  shortName: string;
+  /**
+   * Whether the chapter shows its Greek letters. The directory autofill fills
+   * `greekLetters` for every chapter it knows, FIJI's included, so a chapter
+   * whose organization doesn't display its letters turns this off rather than
+   * having to clear a field the wizard filled for it.
+   */
+  showGreekLetters: boolean;
   designation: string;
   schoolShort: string;
   foundedYear: string;
@@ -44,6 +53,8 @@ export const EMPTY_CHAPTER_IDENTITY: Readonly<ChapterIdentityForm> =
     name: "",
     university: "",
     greekLetters: "",
+    shortName: "",
+    showGreekLetters: true,
     designation: "",
     schoolShort: "",
     foundedYear: "",
@@ -120,6 +131,8 @@ export function chapterIdentityIsValid(identity: ChapterIdentityForm): boolean {
 
 export type ChapterIdentityBranding = {
   greek_letters?: string;
+  short_name?: string;
+  show_greek_letters?: false;
   designation?: string;
   school_short?: string;
   founded_at?: number;
@@ -135,6 +148,9 @@ export function chapterIdentityBranding(
 ): ChapterIdentityBranding {
   return {
     greek_letters: identity.greekLetters.trim() || undefined,
+    short_name: identity.shortName.trim() || undefined,
+    // Sent only as an opt-out; absent means shown, as it does in Settings.
+    show_greek_letters: identity.showGreekLetters ? undefined : false,
     designation: identity.designation.trim() || undefined,
     school_short: identity.schoolShort.trim() || undefined,
     founded_at: parseFoundedYear(identity.foundedYear),

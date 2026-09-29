@@ -14,7 +14,8 @@ Related canon lives in:
 
 ## Chapter Tab (`?tab=org`)
 
-- Identity fields: name, university, Greek letters, designation, school short, founded year, donation URL.
+- Identity fields: name, university, Greek letters, designation, school short, founded year, donation URL. Emptying a branding field and saving clears it (the form sends `""`, since the config PATCH deep-merges).
+- **Chapter mark** card ([`../branding.md` § Chapter mark](../branding.md#chapter-mark)): upload, replace or remove the logo, set the short name, and turn the Greek letters off, with a live preview of the nav's chapter tile. The logo routes take `CHAPTER_PROFILE_PERMISSIONS`, like the profile save; the short name and the switch go through the config PATCH, which takes `chapter-config:manage`, like the identity fields.
 - **Archetype** is selectable from the eight supported archetypes. Switching archetype **resets modules, role pack, and vocabulary** to the new archetype's defaults; identity, branding, and custom fields are kept. The switch is confirmed before applying because of the reset.
 - Archetype lookups always resolve through the `getArchetype()` helper, which falls back to the `ifc` archetype when the stored key is missing or unknown. Settings must never crash on a stale or in-flight archetype value, and must never read an archetype map directly by key without that guard.
 - **Vocabulary** is configurable per chapter via three substitutable terms: pledge/aspirant/candidate, rush/recruitment/intake, and class/line/cohort. All settings copy and downstream surfaces render the chapter's chosen term through the vocabulary helper rather than hardcoding "rush" or "pledge."
