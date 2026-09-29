@@ -66,7 +66,12 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
 
 const PAGE_SIZE = 25;
 
-type RoleOption = { id: string; name: string; isPresident: boolean };
+type RoleOption = {
+  id: string;
+  name: string;
+  isPresident: boolean;
+  isAlumni: boolean;
+};
 
 type SortKey = "name" | "role" | "points" | "joined";
 type SortDir = "asc" | "desc";
@@ -191,7 +196,24 @@ export function MembersDirectory() {
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
-  const members = useMemo(() => activeQuery.data ?? [], [activeQuery.data]);
+  // The Actives tab is the chapter minus its alumni (#2484), who are listed on
+  // the Alumni tab beside it. `GET /v1/members` returns the whole chapter, so
+  // the split is made here on the server's `is_alumni`, which it resolves
+  // exactly as it builds `GET /v1/alumni`: the two tabs never both list one
+  // member. `!== true` so a row from an API older than the flag reads as
+  // active, the unsplit list this was before.
+  //
+  // A search is not split. It is the only name, email and custom-field search
+  // the web directory has (the Alumni tab filters by class year, city and
+  // company), and the directory is one surface precisely so nobody has to know
+  // which list a person is on before looking them up. Mobile's s13 search
+  // spans both lists for the same reason.
+  const members = useMemo(() => {
+    const rows = activeQuery.data ?? [];
+    return usingSearch
+      ? rows
+      : rows.filter((member) => member.is_alumni !== true);
+  }, [activeQuery.data, usingSearch]);
 
   const roleOptions = useMemo<RoleOption[]>(() => {
     return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
@@ -206,7 +228,11 @@ export function MembersDirectory() {
         ? role.permissions
         : [];
       const isPresident = role.is_system === true && permissions.includes("*");
-      return [{ id: role.id, name: role.name, isPresident }];
+      // Read defensively, as the Discord import wizard reads it: `GET
+      // /v1/roles` returns the whole row, `system_key` included, but declares
+      // no response schema (#1049), so the SDK doesn't type it.
+      const isAlumni = role.system_key === "ALUMNI";
+      return [{ id: role.id, name: role.name, isPresident, isAlumni }];
     });
   }, [rolesQuery.data]);
   const roleNameById = useMemo(
@@ -220,6 +246,24 @@ export function MembersDirectory() {
     () => roleOptions.filter((role) => !role.isPresident),
     [roleOptions],
   );
+  // The filters offer what the list on screen can hold (#2484). Outside a
+  // search that is actives only, so the Alumni role is left out of the role
+  // filter, where it could only match nothing; a search spans both tabs, so it
+  // is offered then. It stays assignable either way, since bulk-assigning it
+  // is how a graduating class moves.
+  const filterRoleOptions = useMemo(
+    () =>
+      usingSearch ? roleOptions : roleOptions.filter((role) => !role.isAlumni),
+    [roleOptions, usingSearch],
+  );
+  // A choice whose option has gone (Alumni picked during a search that has
+  // since been cleared) reads as "all" rather than filtering on something the
+  // select no longer shows.
+  const effectiveRoleFilter =
+    roleFilter === "all" ||
+    filterRoleOptions.some((role) => role.id === roleFilter)
+      ? roleFilter
+      : "all";
 
   const pointsByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -238,15 +282,23 @@ export function MembersDirectory() {
 
   const cohortTerm = vocab("class", orgConfig.data);
   // Cohort options come from the full roster (not the search-narrowed list) so a
-  // selected cohort never silently loses its <option> mid-search.
+  // selected cohort never silently loses its <option> mid-search. Alumni class
+  // years join them only while a search spans both tabs, as the role filter's
+  // Alumni option does.
   const cohortOptions = useMemo(() => {
     const years = new Set<number>();
     for (const member of membersQuery.data ?? []) {
+      if (!usingSearch && member.is_alumni === true) continue;
       if (typeof member.graduation_year === "number")
         years.add(member.graduation_year);
     }
     return [...years].sort((a, b) => b - a);
-  }, [membersQuery.data]);
+  }, [membersQuery.data, usingSearch]);
+  const effectiveCohortFilter =
+    cohortFilter === "all" ||
+    cohortOptions.some((y) => String(y) === cohortFilter)
+      ? cohortFilter
+      : "all";
 
   const pointsOf = (member: MemberProfile) =>
     pointsByUserId.get(member.user_id) ?? 0;
@@ -266,12 +318,15 @@ export function MembersDirectory() {
 
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
-      if (roleFilter !== "all" && !member.role_ids.includes(roleFilter)) {
+      if (
+        effectiveRoleFilter !== "all" &&
+        !member.role_ids.includes(effectiveRoleFilter)
+      ) {
         return false;
       }
       if (
-        cohortFilter !== "all" &&
-        String(member.graduation_year ?? "") !== cohortFilter
+        effectiveCohortFilter !== "all" &&
+        String(member.graduation_year ?? "") !== effectiveCohortFilter
       ) {
         return false;
       }
@@ -281,7 +336,7 @@ export function MembersDirectory() {
         return false;
       return true;
     });
-  }, [members, roleFilter, cohortFilter, statusFilter]);
+  }, [members, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
 
   const sortedMembers = useMemo(() => {
     const factor = sortDir === "asc" ? 1 : -1;
@@ -352,7 +407,7 @@ export function MembersDirectory() {
     setPage(1);
     setSelectedMemberIds([]);
     setBulkRoleId("");
-  }, [trimmedQuery, roleFilter, cohortFilter, statusFilter]);
+  }, [trimmedQuery, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Re-sorting keeps the same population; just return to the first page.
@@ -365,12 +420,27 @@ export function MembersDirectory() {
   const allPageSelected =
     pageMemberIds.length > 0 &&
     pageMemberIds.every((id) => selectedMemberIds.includes(id));
-  const selectedCount = selectedMemberIds.length;
+  // The selection counted and acted on is the part of it that still has a row.
+  // A refetch can move a selected member off this tab (given Alumni from their
+  // sheet, or by another officer), and an id with no row can't be unticked, so
+  // it must not keep inflating "n selected" or the Apply that follows it.
+  const visibleSelectedIds = useMemo(() => {
+    const shown = new Set(sortedMembers.map(memberId));
+    return selectedMemberIds.filter((id) => shown.has(id));
+  }, [selectedMemberIds, sortedMembers]);
+  const selectedCount = visibleSelectedIds.length;
+  // Looked up in the unfiltered response, not in `sortedMembers`. The sheet
+  // stays open after a role save, and the save refetches the list, so a member
+  // an officer has just given the Alumni role (or who no longer matches the
+  // role filter) drops out of this tab while their sheet is still up. Found in
+  // the filtered list, that sheet would lose its member mid-edit and render an
+  // unknown one with its roles cleared.
   const activeMember = useMemo(
     () =>
-      sortedMembers.find((member) => memberId(member) === activeMemberId) ??
-      null,
-    [activeMemberId, sortedMembers],
+      (activeQuery.data ?? []).find(
+        (member) => memberId(member) === activeMemberId,
+      ) ?? null,
+    [activeMemberId, activeQuery.data],
   );
   // A filter or a search term is the difference between "this chapter has no
   // members" and "nothing matched what you asked for" — two different states on
@@ -379,8 +449,8 @@ export function MembersDirectory() {
   // that guessed at both.
   const narrowed =
     usingSearch ||
-    roleFilter !== "all" ||
-    cohortFilter !== "all" ||
+    effectiveRoleFilter !== "all" ||
+    effectiveCohortFilter !== "all" ||
     statusFilter !== "all";
 
   function toggleMember(id: string, isSelected: boolean) {
@@ -434,6 +504,13 @@ export function MembersDirectory() {
         description: `${roleName}: ${succeeded} updated, ${failed} failed. Retry the rest.`,
         variant: "destructive",
       });
+      // Narrow the selection to exactly "the rest", which is what the toast
+      // asks the officer to retry.
+      setSelectedMemberIds(
+        targets
+          .filter((_, index) => results[index]?.status === "rejected")
+          .map(memberId),
+      );
     }
   }
 
@@ -527,7 +604,8 @@ export function MembersDirectory() {
             id="members-list-label"
             className={`${EYEBROW} truncate text-muted-foreground`}
           >
-            Actives
+            {/* A search spans both tabs (see `members` above), so say so. */}
+            {usingSearch ? "Actives and alumni" : "Actives"}
           </h2>
           {/*
             Suppressed while a search is in flight rather than rendering
@@ -577,12 +655,12 @@ export function MembersDirectory() {
           </div>
           <select
             aria-label="Filter members by role"
-            value={roleFilter}
+            value={effectiveRoleFilter}
             onChange={(event) => setRoleFilter(event.target.value)}
             className={dashboardFilterSelectClassName}
           >
             <option value="all">Role: All</option>
-            {roleOptions.map((role) => (
+            {filterRoleOptions.map((role) => (
               <option key={role.id} value={role.id}>
                 Role: {role.name}
               </option>
@@ -590,7 +668,7 @@ export function MembersDirectory() {
           </select>
           <select
             aria-label={`Filter members by ${cohortTerm}`}
-            value={cohortFilter}
+            value={effectiveCohortFilter}
             onChange={(event) => setCohortFilter(event.target.value)}
             className={dashboardFilterSelectClassName}
           >

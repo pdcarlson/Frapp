@@ -6,6 +6,7 @@ import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ChannelCacheModule } from './channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
+import { AuthModule } from '../auth/auth.module';
 
 /**
  * Push worker (ADR-09). Runs in-process on the API; the
@@ -26,7 +27,10 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
   // sender is dropped from the push audience (#2257). Imported rather than
   // provided locally so there is one home for the block rule across the four
   // surfaces that owe it.
+  // `AuthModule` → `USER_REPOSITORY`, for the sender's display name that every
+  // chat push title carries (#2771).
   imports: [
+    AuthModule,
     NotificationModule,
     ChapterModule,
     RbacModule,

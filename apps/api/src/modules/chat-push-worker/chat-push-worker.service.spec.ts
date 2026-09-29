@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {
@@ -10,6 +11,7 @@ import {
 import { RbacService } from '../../application/services/rbac.service';
 import { ChatBlockService } from '../../application/services/chat-block.service';
 import { ChannelCacheService } from './channel-cache.service';
+import { SYSTEM_SENDER_ID } from '@repo/validation';
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -18,11 +20,19 @@ describe('ChatPushWorkerService', () => {
   let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
   let filterOutBlockers: jest.Mock;
+  let findDisplayIdentitiesByIds: jest.Mock;
+
+  /** Display names the sender lookup answers with; anyone else has none. */
+  const NAMES: Record<string, string> = {
+    sender: 'Sam Rivera',
+    alice: 'Alice Chen',
+  };
 
   const CHANNEL = {
     id: 'ch-1',
     chapter_id: 'chap-1',
-    name: 'general',
+    name: 'random',
+    default_notification_level: null,
     is_read_only: false,
     type: 'PUBLIC',
     member_ids: null,
@@ -38,6 +48,11 @@ describe('ChatPushWorkerService', () => {
 
   beforeEach(async () => {
     notifyUser = jest.fn().mockResolvedValue(undefined);
+    findDisplayIdentitiesByIds = jest.fn(async (ids: string[]) =>
+      ids
+        .filter((id) => NAMES[id])
+        .map((id) => ({ id, display_name: NAMES[id], avatar_url: null })),
+    );
     findByChapter = jest.fn();
     findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
@@ -56,6 +71,7 @@ describe('ChatPushWorkerService', () => {
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
+        { provide: USER_REPOSITORY, useValue: { findDisplayIdentitiesByIds } },
         ChannelCacheService,
         {
           provide: SUPABASE_CLIENT,
@@ -280,7 +296,7 @@ describe('ChatPushWorkerService', () => {
       'a',
       'chap-1',
       expect.objectContaining({
-        title: 'New Announcement',
+        title: 'Announcement from Sam Rivera',
         priority: 'URGENT',
         category: 'announcements',
       }),
@@ -309,7 +325,7 @@ describe('ChatPushWorkerService', () => {
       'a',
       'chap-1',
       expect.objectContaining({
-        title: 'New Announcement',
+        title: 'Announcement from Sam Rivera',
         priority: 'URGENT',
         category: 'announcements',
       }),
@@ -341,7 +357,7 @@ describe('ChatPushWorkerService', () => {
       'a',
       'chap-1',
       expect.objectContaining({
-        title: 'New message in #general',
+        title: 'Sam Rivera in #random',
         priority: 'NORMAL',
         category: 'chat',
       }),
@@ -633,6 +649,386 @@ describe('ChatPushWorkerService', () => {
     expect(notifyUser).not.toHaveBeenCalled();
   });
 
+  describe('one push path, sender-named titles, default levels (#2771)', () => {
+    const DM = {
+      ...CHANNEL,
+      id: 'dm-1',
+      name: 'dm-alice-sender',
+      type: 'DM',
+      member_ids: ['sender', 'alice'],
+    };
+    const send = (
+      channelId: string,
+      over: Partial<Parameters<ChatPushWorkerService['handleMessage']>[0]> = {},
+    ) =>
+      service.handleMessage({
+        id: 'm1',
+        channel_id: channelId,
+        sender_id: 'sender',
+        content: 'hello',
+        kind: 'text',
+        created_at: '',
+        ...over,
+      });
+    const titles = () =>
+      notifyUser.mock.calls.map((c) => (c[2] as { title: string }).title);
+
+    it('pushes every DM message by default, titled with the sender alone', async () => {
+      service.__setChannelForTest(DM);
+      setMembers(['sender', 'alice', 'carol']);
+      await send(DM.id);
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'alice',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Sam Rivera',
+          body: 'hello',
+          category: 'chat',
+          priority: 'NORMAL',
+        }),
+      );
+    });
+
+    it('pushes nothing for a DM the recipient muted', async () => {
+      service.__setChannelForTest(DM);
+      setMembers(['sender', 'alice']);
+      setPrefs({
+        alice: [
+          {
+            user_id: 'alice',
+            chapter_id: 'chap-1',
+            scope: 'channel',
+            scope_id: DM.id,
+            scope_kind: null,
+            level: 'off',
+          },
+        ],
+      });
+      await send(DM.id);
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('still pushes a muted DM that mentions the recipient, once', async () => {
+      service.__setChannelForTest(DM);
+      setMembers(['sender', 'alice']);
+      setPrefs({
+        alice: [
+          {
+            user_id: 'alice',
+            chapter_id: 'chap-1',
+            scope: 'channel',
+            scope_id: DM.id,
+            scope_kind: null,
+            level: 'off',
+          },
+        ],
+      });
+      await send(DM.id, { content: 'hey @alice', mentions: ['alice'] });
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('titles a named group DM with the sender and the group', async () => {
+      service.__setChannelForTest({
+        ...DM,
+        id: 'gdm-1',
+        name: 'Rush chairs',
+        type: 'GROUP_DM',
+        member_ids: ['sender', 'alice', 'bob'],
+      });
+      setMembers(['sender', 'alice', 'bob']);
+      await send('gdm-1');
+      expect(titles()).toEqual([
+        'Sam Rivera in Rush chairs',
+        'Sam Rivera in Rush chairs',
+      ]);
+    });
+
+    it("never puts an unnamed group DM's placeholder name in a title", async () => {
+      service.__setChannelForTest({
+        ...DM,
+        id: 'gdm-2',
+        name: 'group-dm-1727000000000',
+        type: 'GROUP_DM',
+        member_ids: ['sender', 'alice'],
+      });
+      setMembers(['sender', 'alice']);
+      await send('gdm-2');
+      expect(titles()).toEqual(['Sam Rivera']);
+    });
+
+    it('pushes #general to everyone by default, naming the sender', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['sender', 'a', 'b']);
+      await send('ch-gen');
+      expect(notifyUser.mock.calls.map((c) => c[0])).toEqual(['a', 'b']);
+      expect(titles()).toEqual([
+        'Sam Rivera in #general',
+        'Sam Rivera in #general',
+      ]);
+    });
+
+    it('follows the officer-set channel default over the built-in one', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+        default_notification_level: 'mentions',
+      });
+      setMembers(['sender', 'a']);
+      await send('ch-gen');
+      expect(notifyUser).not.toHaveBeenCalled();
+
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-social',
+        name: 'social',
+        default_notification_level: 'all',
+      });
+      await send('ch-social');
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a member's own level beat the officer-set default", async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-social',
+        name: 'social',
+        default_notification_level: 'all',
+      });
+      setMembers(['sender', 'a']);
+      setPrefs({
+        a: [
+          {
+            user_id: 'a',
+            chapter_id: 'chap-1',
+            scope: 'channel',
+            scope_id: 'ch-social',
+            scope_kind: null,
+            level: 'off',
+          },
+        ],
+      });
+      await send('ch-social');
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('treats a public read-only channel named like announcements as one', async () => {
+      // `ChatService` used to fan these out itself. The worker now owns them,
+      // so the announcement test has to cover them or they go silent.
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-exec-ann',
+        name: 'chapter-announcements',
+        is_read_only: true,
+      });
+      setMembers(['sender', 'a']);
+      await send('ch-exec-ann');
+      expect(notifyUser).toHaveBeenCalledWith(
+        'a',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Announcement from Sam Rivera',
+          priority: 'URGENT',
+          category: 'announcements',
+        }),
+      );
+    });
+
+    it('does not treat a channel anyone can post in as announcements', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-im',
+        name: 'intramural-announcements',
+        is_read_only: false,
+      });
+      setMembers(['sender', 'a']);
+      await send('ch-im');
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('keeps a bundled announcement burst URGENT and in its own category', async () => {
+      service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a']);
+      for (let i = 0; i < 3; i++) {
+        await send(ANNOUNCEMENT_CHANNEL.id, { id: `m${i}` });
+      }
+      expect(notifyUser.mock.calls[2][2]).toEqual(
+        expect.objectContaining({
+          title: 'Announcement from Sam Rivera',
+          body: '3 new messages',
+          priority: 'URGENT',
+          category: 'announcements',
+        }),
+      );
+    });
+
+    it('names the sender in a bundled channel push too', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['sender', 'a']);
+      for (let i = 0; i < 3; i++) {
+        await send('ch-gen', { id: `m${i}` });
+      }
+      expect(notifyUser.mock.calls[2][2]).toEqual(
+        expect.objectContaining({
+          title: 'Sam Rivera in #general',
+          body: '3 new messages',
+          data: expect.objectContaining({ bundled: true, count: 3 }),
+        }),
+      );
+    });
+
+    it('falls back to the old titles when the sender has no name', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      service.__setChannelForTest(DM);
+      setMembers(['nameless', 'sender', 'alice']);
+      await send('ch-gen', { sender_id: 'nameless' });
+      await send(DM.id, { sender_id: 'nameless', id: 'm2' });
+      expect(titles()).toEqual([
+        'New message in #general',
+        'New message in #general',
+        'New Message',
+        'New Message',
+      ]);
+    });
+
+    it('gives a nameless burst the title a single push has, not a plural one', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      service.__setChannelForTest(DM);
+      setMembers(['nameless', 'alice']);
+      for (const channelId of ['ch-gen', ANNOUNCEMENT_CHANNEL.id, DM.id]) {
+        for (let i = 0; i < 3; i++) {
+          await send(channelId, {
+            id: `${channelId}-${i}`,
+            sender_id: 'nameless',
+          });
+        }
+      }
+      const bundled = notifyUser.mock.calls
+        .map((c) => c[2] as { title: string; data: { bundled?: boolean } })
+        .filter((p) => p.data.bundled)
+        .map((p) => p.title);
+      expect(bundled).toEqual([
+        'New message in #general',
+        'New Announcement',
+        'New Message',
+      ]);
+    });
+
+    it('keeps the old titles for the system actor, never "Frapp System"', async () => {
+      // An opted-in member's audit-bridge push, and a system DM they opened.
+      findDisplayIdentitiesByIds.mockResolvedValue([
+        {
+          id: SYSTEM_SENDER_ID,
+          display_name: 'Frapp System',
+          avatar_url: null,
+        },
+      ]);
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['a']);
+      await send('ch-gen', { sender_id: SYSTEM_SENDER_ID, kind: 'text' });
+      expect(titles()).toEqual(['New message in #general']);
+      expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+
+    it('ignores a client-supplied announcement kind outside an announcements channel', async () => {
+      // `kind` comes from the client, and any member may post one in #general.
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['sender', 'a']);
+      await send('ch-gen', { kind: 'announcement' });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'a',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Sam Rivera in #general',
+          priority: 'NORMAL',
+          category: 'chat',
+        }),
+      );
+    });
+
+    it('does not treat a group DM named announcements as announcements', async () => {
+      service.__setChannelForTest({
+        ...DM,
+        id: 'gdm-ann',
+        name: 'announcements',
+        type: 'GROUP_DM',
+        member_ids: ['sender', 'alice'],
+      });
+      setMembers(['sender', 'alice']);
+      await send('gdm-ann');
+      expect(notifyUser).toHaveBeenCalledWith(
+        'alice',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Sam Rivera in announcements',
+          priority: 'NORMAL',
+          category: 'chat',
+        }),
+      );
+    });
+
+    it('does not treat #announcements with read-only switched off as announcements', async () => {
+      service.__setChannelForTest({
+        ...ANNOUNCEMENT_CHANNEL,
+        is_read_only: false,
+      });
+      setMembers(['sender', 'a']);
+      await send(ANNOUNCEMENT_CHANNEL.id);
+      // An ordinary channel now: `mentions` by default, so no push at all.
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('still pushes when the sender name cannot be read', async () => {
+      findDisplayIdentitiesByIds.mockRejectedValue(new Error('db down'));
+      service.__setChannelForTest(DM);
+      setMembers(['sender', 'alice']);
+      await send(DM.id);
+      expect(titles()).toEqual(['New Message']);
+    });
+
+    it('reads the sender name once per message, and not at all when nobody is pushed', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['sender', 'a', 'b', 'c']);
+      await send('ch-gen');
+      expect(findDisplayIdentitiesByIds).toHaveBeenCalledTimes(1);
+
+      findDisplayIdentitiesByIds.mockClear();
+      service.__setChannelForTest(CHANNEL); // `mentions` default, no mention
+      await send(CHANNEL.id, { id: 'm2' });
+      expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+  });
+
   describe('channel cache eviction race (#988)', () => {
     it('does not re-cache a channel read that resolves after a concurrent invalidate', async () => {
       // No `__setChannelForTest` here — the point is to exercise the real,
@@ -664,6 +1060,10 @@ describe('ChatPushWorkerService', () => {
       const mod = await Test.createTestingModule({
         providers: [
           ChatPushWorkerService,
+          {
+            provide: USER_REPOSITORY,
+            useValue: { findDisplayIdentitiesByIds },
+          },
           { provide: ChannelCacheService, useValue: channelCache },
           {
             provide: SUPABASE_CLIENT,

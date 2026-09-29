@@ -31,7 +31,14 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
@@ -44,12 +51,13 @@ import {
   unreact as unreactAction,
   type CardActionArgs,
 } from "@repo/chat-core/chat-client";
+import { emptyCache, selectMessages } from "@repo/chat-core/cache";
 import {
-  applyReactionInsert,
-  emptyCache,
-  mergeServerRows,
-  selectMessages,
-} from "@repo/chat-core/cache";
+  createHistoryPageFetcher,
+  createHistoryPager,
+  hasOlderHistory,
+  type LoadOlderResult,
+} from "@repo/chat-core/history";
 import {
   chatRealtime,
   type ConnectionStatus,
@@ -58,8 +66,6 @@ import {
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
-  type RawChatMessage,
-  type RawChatMessageAction,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { useFrappClient } from "@repo/hooks";
@@ -74,6 +80,24 @@ export interface UseChatChannelResult {
   messages: ChatMessage[];
   isLoading: boolean;
   loadError: Error | null;
+  /** Reads the newest page again, for the thread's failed-load Retry. */
+  reload: () => void;
+  /** A read of the newest page is in flight (the first, or a `reload`). */
+  isReloading: boolean;
+  /**
+   * Whether older history may exist beyond the loaded rows (#2772). True
+   * until a read comes back short, so a channel the member has not scrolled to
+   * the top of says "maybe" rather than "no".
+   */
+  hasOlder: boolean;
+  isLoadingOlder: boolean;
+  /** The last older-page read failed; cleared by the next attempt. */
+  olderError: boolean;
+  /**
+   * Loads the next page of older history. Concurrent calls share one read.
+   * Resolves what it did (`LoadOlderResult`, `@repo/chat-core/history`).
+   */
+  loadOlder: () => Promise<LoadOlderResult>;
   /** `null` until the viewer's app user resolves; own-message styling keys off it. */
   viewerId: string | null;
   /** False while `ctx` is null — the composer must disable rather than no-op silently. */
@@ -143,63 +167,57 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const apiClient = useFrappClient();
   const queryClient = useQueryClient();
 
-  // Initial load: the REST backfill, plus one batched select on
-  // `chat_message_actions` so reactions are on the first paint rather than
-  // appearing only after a live echo. `applyReactionInsert` is the canonical
-  // merge — it also appends the raw row to `message.actions`, which card tallies
-  // read, so a local variant that skipped it would render zeroed cards.
   // Read the client directly rather than through `ctx`. `ctx` is null until the
-  // viewer's `users.id` resolves, and this query runs on first render with
-  // `staleTime: Infinity` and no `supabase` in its key — so sourcing it from
-  // `ctx` meant the reaction hydration below was skipped on every cold start and
+  // viewer's `users.id` resolves, and the channel query runs on first render
+  // with `staleTime: Infinity` and no `supabase` in its key — so sourcing it
+  // from `ctx` meant the reaction hydration was skipped on every cold start and
   // never retried, leaving reactions blank and poll cards at zero until a live
   // action INSERT happened to arrive. Web is not exposed to this because its
   // client comes from a provider, not from `ctx`.
   const supabase = useMemo(() => getSupabaseClient(), []);
+  // Every page, the newest and each older one, reads through the one chat-core
+  // pager, which also keeps where each channel's history starts and each
+  // channel's older-page status — per channel, because this screen stays
+  // mounted across channel switches. Web's hook reads through the same one.
+  const pager = useMemo(
+    () =>
+      createHistoryPager(
+        queryClient,
+        createHistoryPageFetcher(apiClient, supabase),
+      ),
+    [queryClient, apiClient, supabase],
+  );
+  const pagerState = useSyncExternalStore(pager.subscribe, pager.getSnapshot);
+
+  // The newest page. Folded into this key as it stands when the read lands,
+  // never started from `emptyCache()`: three other writers target the same key
+  // while the fetch is in flight — an optimistic send, `hydrateOutboxIntoCache`,
+  // and the realtime merge — and starting from empty discarded all of them (a
+  // message sent during the initial spinner vanished, its outbox row already
+  // dequeued). `readNewestPage` keeps those and drops only older confirmed rows
+  // the page did not re-read, so a message the server deleted meanwhile does
+  // not linger either.
   const query = useQuery<ChannelCache, Error>({
     queryKey: channelId ? chatMessagesKey(channelId) : ["chat", "none"],
     enabled: !!channelId,
     staleTime: Infinity,
-    queryFn: async () => {
-      if (!channelId) return emptyCache();
-      const { data, error } = await apiClient.GET(
-        "/v1/channels/{id}/messages",
-        {
-          params: { path: { id: channelId }, query: { limit: 50 } },
-        },
-      );
-      if (error) throw error as Error;
-      const rows = Array.isArray(data) ? (data as RawChatMessage[]) : [];
-      // Merge onto whatever is already in this key, not onto `emptyCache()`.
-      // React Query replaces the key's data when this resolves, and three other
-      // writers target the same key while the fetch is in flight: an optimistic
-      // send, `hydrateOutboxIntoCache`, and the realtime merge. Starting from
-      // empty discarded all of them — a message sent during the initial spinner
-      // vanished, and its outbox row had already been dequeued on success, so
-      // nothing restored it until a remount. `mergeServerRows` only adds and
-      // updates, so keeping the prior cache cannot resurrect anything.
-      const previous = queryClient.getQueryData<ChannelCache>(
-        chatMessagesKey(channelId),
-      );
-      let cache = mergeServerRows(previous ?? emptyCache(), rows);
-
-      const messageIds = rows.map((row) => row.id).filter(Boolean);
-      if (supabase && messageIds.length > 0) {
-        const { data: actions } = await supabase
-          .from("chat_message_actions")
-          .select("*")
-          .in("message_id", messageIds);
-        if (actions) {
-          let mutated = cache;
-          for (const action of actions as RawChatMessageAction[]) {
-            mutated = applyReactionInsert(mutated, action);
-          }
-          cache = mutated;
-        }
-      }
-      return cache;
-    },
+    queryFn: () => (channelId ? pager.readNewest(channelId) : emptyCache()),
   });
+
+  const { refetch } = query;
+  const reload = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  // Older history (#2772), one page per call, merged into the same cache the
+  // realtime merge, the outbox and the reconnect backfill write to. It only
+  // adds rows older than the oldest confirmed one, so it cannot disturb a
+  // queued send or a backfilled arrival.
+  const loadOlder = useCallback(
+    (): Promise<LoadOlderResult> =>
+      channelId ? pager.loadOlder(channelId) : Promise.resolve("start"),
+    [channelId, pager],
+  );
 
   // Ref-counted realtime attach. `useChatRuntime` configures the manager but
   // deliberately does not subscribe — the screen owns its own pair, and the
@@ -629,10 +647,23 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const messages = useMemo(() => selectMessages(query.data), [query.data]);
 
+  const hasOlder =
+    !!channelId &&
+    hasOlderHistory(query.data, pagerState.starts.get(channelId));
+  const olderForChannel = channelId
+    ? (pagerState.older.get(channelId) ?? null)
+    : null;
+
   return {
     messages,
     isLoading: query.isPending,
     loadError: query.error ?? null,
+    reload,
+    isReloading: query.isFetching,
+    hasOlder,
+    isLoadingOlder: olderForChannel === "loading",
+    olderError: olderForChannel === "error",
+    loadOlder,
     viewerId,
     canSend: !!ctx && !!channelId,
     send,

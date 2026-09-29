@@ -47,6 +47,7 @@ describe('PollService', () => {
     is_read_only: false,
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
+    default_notification_level: null,
   };
 
   const basePollMessage: ChatMessage = {

@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {
@@ -75,6 +76,8 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   let getEffectivePermissions: jest.Mock;
   let subscribeSpy: jest.Mock;
   let removeChannel: jest.Mock;
+  /** Nobody has a display name here: this file is not about titles. */
+  const findDisplayIdentitiesByIds = jest.fn().mockResolvedValue([]);
   /** The `postgres_changes` callback the worker registers at bootstrap. */
   let emitRow: (row: WorkerReadsFromChatMessages) => Promise<void>;
 
@@ -83,7 +86,8 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   const PUBLIC_CHANNEL = {
     id: 'ch-public',
     chapter_id: CHAPTER,
-    name: 'general',
+    name: 'random',
+    default_notification_level: null,
     is_read_only: false,
     type: 'PUBLIC',
     member_ids: null,
@@ -108,15 +112,17 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   };
 
   /**
-   * `defaultLevelFor` returns `all` for a channel named `announcements` and
-   * `mentions` for anything else. The mute cases below therefore have to run
-   * HERE: on a `mentions`-default channel a seeded `off` changes no outcome, so
-   * those tests would pass with per-channel preferences disabled entirely.
+   * `defaultLevelFor` returns `all` for the announcements channel (PUBLIC and
+   * read-only, as seeded) and `mentions` for `PUBLIC_CHANNEL`. The mute cases
+   * below therefore have to run HERE: on a `mentions`-default channel a seeded
+   * `off` changes no outcome, so those tests would pass with per-channel
+   * preferences disabled entirely.
    */
   const ANNOUNCE_CHANNEL = {
     ...PUBLIC_CHANNEL,
     id: 'ch-announce',
     name: 'announcements',
+    is_read_only: true,
   };
 
   const ROLE_GATED_CHANNEL = {
@@ -213,6 +219,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
+        { provide: USER_REPOSITORY, useValue: { findDisplayIdentitiesByIds } },
         ChannelCacheService,
         {
           provide: SUPABASE_CLIENT,

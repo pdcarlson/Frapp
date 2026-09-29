@@ -37,8 +37,9 @@ import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
  * - {@link listBlockedUserIds}, the masking set, read by the surfaces that
  *   serve message content to a named viewer, and served to clients by
  *   `GET /v1/chat/blocks` so they can mask the Realtime echo themselves.
- * - {@link filterOutBlockers}, the audience filter, read by whatever notifies:
- *   the push worker and `ChatService`'s DM and announcement notifications.
+ * - {@link filterOutBlockers}, the audience filter, read by whatever notifies
+ *   with chat content: today only the chat push worker, which has been the
+ *   only chat push path since #2771.
  *
  * Which surfaces those are, and which are still open, is kept in exactly one
  * place: `apps/api/src/application/services/chat-read-surface-ledger.spec.ts`.

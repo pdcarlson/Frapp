@@ -50,9 +50,9 @@ const OPTIONS: {
   {
     level: "mentions",
     label: "Only @mentions",
-    // Not labelled "the default" any more: it is the default for ordinary
-    // channels but not for #announcements (`all`) or #chapter-audit (`off`),
-    // and the panel is shown on those too.
+    // Not labelled "the default": a channel's default is officer-set, and
+    // without one it is `all` for #general, #announcements and DMs and `off`
+    // for #chapter-audit (#2771), and the panel is shown on all of them.
     description: "Notify me when someone addresses me.",
   },
   {
