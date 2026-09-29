@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ProfilePhotoUrlService } from '../../application/services/profile-photo-url.service';
 import { UserService } from '../../application/services/user.service';
 import { AccountDeletionService } from '../../application/services/account-deletion.service';
 import { UserController } from '../../interface/controllers/user.controller';
@@ -28,6 +29,7 @@ import { SupabaseAuthAdminService } from '../../infrastructure/supabase/supabase
   controllers: [UserController],
   providers: [
     UserService,
+    ProfilePhotoUrlService,
     AccountDeletionService,
     AuthSyncInterceptor,
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },

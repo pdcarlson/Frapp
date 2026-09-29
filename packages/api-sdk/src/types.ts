@@ -121,6 +121,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a profile photo upload and make it the current photo
+         * @description The path must be one `POST /v1/users/me/avatar-url` minted for the caller in the active chapter, and the object must already be uploaded. The previous photo is deleted.
+         */
+        post: operations["UserController_confirmAvatarUpload_v1"];
+        /** Remove the current profile photo */
+        delete: operations["UserController_removeAvatar_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/analytics/identity": {
         parameters: {
             query?: never;
@@ -3090,7 +3111,6 @@ export interface components {
         UpdateUserDto: {
             display_name?: string;
             bio?: string;
-            avatar_url?: string;
             graduation_year?: number | null;
             current_city?: string;
             current_company?: string;
@@ -3100,6 +3120,18 @@ export interface components {
             filename: string;
             /** @description MIME content type (e.g. image/jpeg, image/png) */
             content_type: string;
+            /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
+            size_bytes?: number;
+        };
+        AvatarUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send back on `POST /v1/users/me/avatar` once the PUT succeeds. */
+            storage_path: string;
+        };
+        ConfirmAvatarDto: {
+            /** @description Storage path returned from `POST /v1/users/me/avatar-url` */
+            storage_path: string;
         };
         IdentityResponseDto: {
             /** @description Pseudonymous analytics id: 64 lowercase hex HMAC of the user id, or null when analytics is unconfigured. Clients must not compute this; the salt is API-only. */
@@ -4834,6 +4866,46 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvatarUploadUrlResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_confirmAvatarUpload_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmAvatarDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UserController_removeAvatar_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

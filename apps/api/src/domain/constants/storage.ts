@@ -1,4 +1,5 @@
 import { posix } from 'node:path';
+import { isUnsafeStoragePath } from '../utils/storage-path';
 
 /**
  * Profile-photo storage layout, shared by the upload path
@@ -12,6 +13,33 @@ export const PROFILES_BUCKET = 'profiles';
 /** Folder holding a user's profile photos within one chapter (no trailing slash). */
 export function profileFolderPrefix(chapterId: string, userId: string): string {
   return `chapters/${chapterId}/profiles/${userId}`;
+}
+
+/** Exactly `chapters/<chapter>/profiles/<user>/<file>`, one segment each. */
+const PROFILE_PHOTO_PATH =
+  /^chapters\/([^/\\]+)\/profiles\/([^/\\]+)\/([^/\\]+)$/;
+
+/**
+ * The owner of a bare profile-photo storage path, or null when `value` is not
+ * one: a URL, a nested path, or a path with a dot segment.
+ *
+ * This is the shape `users.avatar_url` holds once a member confirms an upload
+ * (`UserService.confirmAvatarUpload`), and the only shape the read path signs.
+ * The two purges (`AccountDeletionService.avatarUrlFolder`,
+ * `MemberService.remove`) parse more loosely on purpose, because they must also
+ * find the folder inside a legacy URL; signing must not.
+ */
+export function parseProfilePhotoPath(
+  value: string,
+): { chapterId: string; userId: string; folder: string } | null {
+  const match = PROFILE_PHOTO_PATH.exec(value);
+  if (!match || isUnsafeStoragePath(value)) return null;
+  const [, chapterId, userId] = match;
+  return {
+    chapterId,
+    userId,
+    folder: profileFolderPrefix(chapterId, userId),
+  };
 }
 
 /**
@@ -125,7 +153,7 @@ const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
  * The last segment of a storage key built from a client-supplied filename.
  *
  * Every upload-URL route that puts the member's filename into the key
- * (documents, backwork, chat attachments, avatars, service proof) goes through
+ * (documents, backwork, chat attachments, service proof) goes through
  * this, because a raw name breaks the upload in ways the traversal guard does
  * not catch. storage-js interpolates the key into the request URL unencoded,
  * and against storage-api:
@@ -149,11 +177,10 @@ const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
  * download is saved under: chat signs with `download: true`, which sends
  * `Content-Disposition: attachment` with no filename, so the browser takes the
  * URL's last segment, and documents and backwork sign with no `downloadAs`.
- * Squashing spaces or parentheses would rename every such file on disk. It
- * also keeps the avatar key, which sits directly in the member's profile folder
- * with no uuid folder above it, from mapping two names that both worked before
- * to one key. The stored display name (a document's `title`, a chat
- * attachment's `filename`) is untouched either way.
+ * Squashing spaces or parentheses would rename every such file on disk. The
+ * stored display name (a document's `title`, a chat attachment's `filename`)
+ * is untouched either way. (Profile photos no longer use this: their key is a
+ * server-minted uuid, `UserService.requestAvatarUploadUrl`.)
  *
  * A `.` or `..` result is left for `assertSafeObjectPath` to refuse, and every
  * caller's extension allowlist rejects those first anyway. Only new keys are

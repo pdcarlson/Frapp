@@ -220,7 +220,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -229,6 +236,55 @@
           }
         ],
         "summary": "Get signed upload URL for profile photo",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/v1/users/me/avatar": {
+      "post": {
+        "description": "The path must be one `POST /v1/users/me/avatar-url` minted for the caller in the active chapter, and the object must already be uploaded. The previous photo is deleted.",
+        "operationId": "UserController_confirmAvatarUpload_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmAvatarDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm a profile photo upload and make it the current photo",
+        "tags": [
+          "Users"
+        ]
+      },
+      "delete": {
+        "operationId": "UserController_removeAvatar_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove the current profile photo",
         "tags": [
           "Users"
         ]
@@ -7680,9 +7736,6 @@
           "bio": {
             "type": "string"
           },
-          "avatar_url": {
-            "type": "string"
-          },
           "graduation_year": {
             "type": "number",
             "nullable": true
@@ -7705,11 +7758,44 @@
           "content_type": {
             "type": "string",
             "description": "MIME content type (e.g. image/jpeg, image/png)"
+          },
+          "size_bytes": {
+            "type": "number",
+            "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
           }
         },
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "AvatarUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send back on `POST /v1/users/me/avatar` once the PUT succeeds."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path"
+        ]
+      },
+      "ConfirmAvatarDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path returned from `POST /v1/users/me/avatar-url`"
+          }
+        },
+        "required": [
+          "storage_path"
         ]
       },
       "IdentityResponseDto": {

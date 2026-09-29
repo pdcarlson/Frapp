@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ProfilePhotoUrlService } from '../../application/services/profile-photo-url.service';
 import { MemberService } from '../../application/services/member.service';
 import { MemberController } from '../../interface/controllers/member.controller';
 import { AlumniController } from '../../interface/controllers/alumni.controller';
@@ -24,6 +25,7 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
   controllers: [MemberController, AlumniController],
   providers: [
     MemberService,
+    ProfilePhotoUrlService,
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     // `MemberService.remove` takes a departing member off the chapter's
     // PRIVATE channels (#1302).

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   Patch,
   Post,
   UseGuards,
@@ -15,6 +16,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiOkResponse,
+  ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { UserService } from '../../application/services/user.service';
 import { AccountDeletionService } from '../../application/services/account-deletion.service';
@@ -32,6 +34,8 @@ import {
 import {
   UpdateUserDto,
   RequestAvatarUploadUrlDto,
+  AvatarUploadUrlResponseDto,
+  ConfirmAvatarDto,
   MyPermissionsDto,
   LegalAcceptanceDto,
   AcceptLegalTermsDto,
@@ -54,7 +58,7 @@ export class UserController {
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
   async getMe(@CurrentUser('id') userId: string) {
-    return this.userService.findById(userId);
+    return this.userService.findProfile(userId);
   }
 
   @Get('me/permissions')
@@ -117,7 +121,9 @@ export class UserController {
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateUserDto,
   ) {
-    return this.userService.update(userId, dto);
+    return this.userService.withSignedPhoto(
+      await this.userService.update(userId, dto),
+    );
   }
 
   @Delete('me')
@@ -135,16 +141,57 @@ export class UserController {
   @ThrottleFanOutWrite()
   @UseGuards(ChapterGuard)
   @ApiOperation({ summary: 'Get signed upload URL for profile photo' })
+  @ApiCreatedResponse({ type: AvatarUploadUrlResponseDto })
   async requestAvatarUploadUrl(
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: RequestAvatarUploadUrlDto,
-  ) {
-    return this.userService.requestAvatarUploadUrl(
+  ): Promise<AvatarUploadUrlResponseDto> {
+    // Snake_case on the wire like every sibling ticket (#2129), because
+    // `readSignedUpload` is how every client reads one. This route returned
+    // the service's camelCase until its first client arrived (#732).
+    const ticket = await this.userService.requestAvatarUploadUrl(
       chapterId,
       userId,
       dto.filename,
       dto.content_type,
+      dto.size_bytes,
     );
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      upload_url: ticket.signedUrl,
+      storage_path: ticket.storagePath,
+    };
+  }
+
+  @Post('me/avatar')
+  // 200, not 201: it updates the caller's profile and returns it.
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ChapterGuard)
+  @ApiOperation({
+    summary: 'Confirm a profile photo upload and make it the current photo',
+    description:
+      'The path must be one `POST /v1/users/me/avatar-url` minted for the caller in the active chapter, and the object must already be uploaded. The previous photo is deleted.',
+  })
+  async confirmAvatarUpload(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: ConfirmAvatarDto,
+  ) {
+    return this.userService.confirmAvatarUpload(
+      chapterId,
+      userId,
+      dto.storage_path,
+    );
+  }
+
+  @Delete('me/avatar')
+  @ApiOperation({ summary: 'Remove the current profile photo' })
+  async removeAvatar(@CurrentUser('id') userId: string) {
+    return this.userService.removeAvatar(userId);
   }
 }
