@@ -64,6 +64,26 @@ export function formatClock(value: unknown): string {
 }
 
 /**
+ * Built once: constructing an `Intl.DateTimeFormat` is the expensive part, and
+ * the chat timeline formats a time for every row on every render. Created on
+ * first use rather than at import, so a test that sets a locale or time zone
+ * before its first call is honoured.
+ *
+ * {@link formatTimeOfDay} and {@link formatTimeOfDayShort} both read it, and
+ * that is the point: a formatter keeps the zone it was built in, so if the
+ * device's zone changes mid-session both a run's author line and its gutter
+ * times stay in the same (old) zone until a reload, instead of disagreeing.
+ */
+let clockFormat: Intl.DateTimeFormat | null = null;
+function clockParts(at: Date): Intl.DateTimeFormatPart[] {
+  clockFormat ??= new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return clockFormat.formatToParts(at);
+}
+
+/**
  * Chat's time of day, `"5:09 PM"` (locale-dependent), or `""` when missing.
  *
  * What a run's author line prints, on web and mobile alike. It carries no date
@@ -75,25 +95,13 @@ export function formatClock(value: unknown): string {
 export function formatTimeOfDay(value: unknown): string {
   const parsed = parseInstant(value);
   if (!parsed) return "";
-  return parsed.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/**
- * Built once: constructing an `Intl.DateTimeFormat` is the expensive part, and
- * the chat timeline calls {@link formatTimeOfDayShort} for every follow-on row
- * on every render. Created on first use rather than at import, so a test that
- * sets a locale or time zone before its first call is honoured.
- */
-let clockFormat: Intl.DateTimeFormat | null = null;
-function clockParts(at: Date): Intl.DateTimeFormatPart[] {
-  clockFormat ??= new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return clockFormat.formatToParts(at);
+  // `Intl` separates the day period with a narrow no-break space (U+202F);
+  // `Date#toLocaleTimeString`, which this used to call, prints a plain one in
+  // V8. Kept plain, so the text members see does not change.
+  return clockParts(parsed)
+    .map((part) => part.value)
+    .join("")
+    .replace(/\u202f/g, " ");
 }
 
 function dayPeriodOf(at: Date): string | undefined {

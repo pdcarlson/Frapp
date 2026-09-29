@@ -312,7 +312,7 @@ A row **starts a run** (and draws the avatar and author line) when any of these 
 
 The window is measured from the previous row, not from the run's first row. The rules live once, in `@repo/chat-core/grouping` (`GROUPING_WINDOW_MS`, `decorateThread`), which web and mobile both call, so the two surfaces cannot drift. Rows the viewer's block list holds back are not drawn, so they neither join nor break a run.
 
-**Day divider.** A hairline (`--border`) on both sides of a centered caption, 12.5 / 600 in `--muted-foreground`: `Today`, `Yesterday`, then the weekday, month and day (`Sunday, Sep 28`), by the viewer's local calendar day. It is the only place a date appears in the thread, and it always starts a run. Mobile draws it too; before this decision mobile drew no divider at all.
+**Day divider.** A hairline (`--border`) on both sides of a centered caption, 12.5 / 600 in `--muted-foreground`: `Today`, `Yesterday`, then the weekday, month and day (`Sunday, Sep 28`), with the year added when it is not the current one (`Tuesday, Mar 3, 2025`: an imported archive spans years, and the divider is the only date there is), by the viewer's local calendar day. It is the only place a date appears in the thread, and it always starts a run. Mobile draws it too; before this decision mobile drew no divider at all.
 
 #### What rides the row
 
