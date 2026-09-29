@@ -10,6 +10,7 @@ import {
   HIDE_CONVERSATION_LABEL,
   type DisplayNameMap,
 } from "@repo/hooks";
+import { isDirectChannel } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
@@ -105,8 +106,9 @@ function isSystem(channel: ChatChannel): boolean {
   return SYSTEM_CHANNEL_NAMES.has(channel.name);
 }
 
+/** `@repo/validation`'s rule, the one `groupChannelsByCategory` sections by. */
 function isDm(channel: ChatChannel): boolean {
-  return channel.type === "DM" || channel.type === "GROUP_DM";
+  return isDirectChannel(channel);
 }
 
 /**
@@ -255,7 +257,7 @@ export function ChannelList({
    * shared rule never sees it, and the title sort inside each section.
    *
    * **Uncategorized keeps the label "Channels" and stays first.**
-   * `spec/behavior/chat/README.md` § Channel categories names the fallback group
+   * `spec/behavior/chat/README.md` § Channels names the fallback group
    * "Channels", which is what this rail already called it — so adopting
    * categories moves no uncategorized channel. A chapter that categorizes
    * everything just sees that group's empty section disappear, which the render

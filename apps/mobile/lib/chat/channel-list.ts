@@ -13,6 +13,7 @@
  */
 
 import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
+import { isDirectChannel as isDirectChannelType } from "@repo/validation";
 
 /** Minimal channel shape; the SDK response type is unusable. */
 export interface ChannelSummary {
@@ -109,8 +110,12 @@ export function hiddenChannels(channels: ChannelSummary[]): ChannelSummary[] {
   return channels.filter((channel) => channel.hidden);
 }
 
+/**
+ * The rule is `@repo/validation`'s, the one `groupChannelsByCategory` files
+ * rows by, so the section a row lands in and how the row draws can't disagree.
+ */
 export function isDirectChannel(channel: ChannelSummary): boolean {
-  return channel.type === "DM" || channel.type === "GROUP_DM";
+  return isDirectChannelType(channel);
 }
 
 /** Whether the caller may post in a channel right now, and why not (#704). */

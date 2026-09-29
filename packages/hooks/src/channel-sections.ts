@@ -1,12 +1,14 @@
 /**
  * How a chat channel list divides into category sections, shared so web's rail
  * and mobile's s04 apply one rule instead of two copies free to disagree
- * (#1684). The behavior is owned by `spec/behavior/chat/README.md` § Channel
- * categories: named groups, with anything unassigned in a default "Channels"
+ * (#1684). The behavior is owned by `spec/behavior/chat/README.md` § Channels
+ * (the "Channel categories" rule): named groups, with anything unassigned in a default "Channels"
  * group. Labels, sorting inside a section, and any extra sections a client
  * draws (web's System group, both clients' Hidden conversations) stay with the
  * client.
  */
+
+import { isDirectChannel } from "@repo/validation";
 
 /** The fields the grouping reads off a channel row. */
 export interface GroupableChannel {
@@ -33,10 +35,6 @@ export interface ChannelSections<
   categories: { category: K; channels: C[] }[];
   /** DMs and group DMs, whatever `category_id` they carry. */
   direct: C[];
-}
-
-function isDirect(channel: GroupableChannel): boolean {
-  return channel.type === "DM" || channel.type === "GROUP_DM";
 }
 
 /**
@@ -73,7 +71,7 @@ export function groupChannelsByCategory<
   );
 
   for (const channel of channels) {
-    if (isDirect(channel)) {
+    if (isDirectChannel(channel)) {
       direct.push(channel);
       continue;
     }

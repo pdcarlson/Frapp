@@ -113,8 +113,8 @@ export default function ChatHomeScreen() {
   const sections = useMemo(() => {
     const grouped = groupChannelsByCategory(channels, categories);
     return [
-      // Label per `spec/behavior/chat/README.md` § Channel categories: the
-      // default group is "Channels", and it stays first.
+      // Label per `spec/behavior/chat/README.md` § Channels (the "Channel
+      // categories" rule): the default group is "Channels", and it stays first.
       { key: "channels", label: "CHANNELS", channels: grouped.uncategorized },
       ...grouped.categories.map(({ category, channels: inCategory }) => ({
         // Prefixed so a category id can never collide with a fixed key.
