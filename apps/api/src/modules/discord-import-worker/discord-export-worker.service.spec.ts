@@ -831,53 +831,106 @@ describe('DiscordExportWorkerService — attachments', () => {
     expect(batch.mediaByRelativePath.size).toBe(3);
   });
 
-  it('yields mid-page at the deadline, and the next slice sends only the unfinished files', async () => {
-    // The same page twice: the second slice must fetch it again, because the
-    // first never advanced the cursor past it.
-    const page = [withAttachments(3)];
-    const harness = await build({ pages: [page, page] });
-    harness.copier.copy.mockImplementationOnce(async (items) => {
-      // The call took the slice past its budget.
-      jest.setSystemTime(Date.now() + 60_000);
-      return answer((index) => (index === 0 ? 'stored' : 'deferred'))(items);
-    });
+  it('finishes a page past the slice deadline, renewing the lease before each later call', async () => {
+    // Yielding mid-page would lose every outcome but `stored`, so the page's
+    // copies finish in the slice that started them; the lease bounds it.
+    const harness = await build({ pages: [[withAttachments(3)]] });
+    harness.copier.copy
+      .mockImplementationOnce(async (items) => {
+        // The first call took the slice past its budget.
+        jest.setSystemTime(Date.now() + 60_000);
+        return answer((index) => (index === 0 ? 'stored' : 'deferred'))(items);
+      })
+      .mockImplementationOnce(answer(() => 'stored'));
 
     try {
-      const first = runArgs(harness);
-      const result = await harness.worker.runSlice(first);
+      const args = runArgs(harness);
+      await harness.worker.runSlice(args);
 
-      expect(result.finished).toBe(false);
-      // Nothing about the page was written: no rows, no cursor, no checkpoint.
-      expect(first.importBatch).not.toHaveBeenCalled();
-      expect(first.checkpoint).not.toHaveBeenCalled();
-      expect(harness.repo.updateChannel).not.toHaveBeenCalledWith(
+      const calls = harness.copier.copy.mock.invocationCallOrder;
+      const renewals = args.checkpoint.mock.invocationCallOrder;
+      expect(calls).toHaveLength(2);
+      // The first call goes straight after the page fetch; the second only
+      // once the lease is renewed, and the page's own checkpoint follows.
+      expect(renewals.filter((order) => order < calls[0])).toHaveLength(0);
+      expect(
+        renewals.filter((order) => order > calls[0] && order < calls[1]),
+      ).toHaveLength(1);
+      const [batch] = args.importBatch.mock.calls[0];
+      expect(batch.mediaByRelativePath.size).toBe(3);
+      expect(harness.repo.updateChannel).toHaveBeenCalledWith(
         'mapping-1',
         IMPORT_ID,
-        expect.objectContaining({ cursor_before_snowflake: expect.anything() }),
+        expect.objectContaining({ cursor_before_snowflake: '1' }),
       );
-      expect(result.totals.totalMessages).toBe(0);
-
-      const second = runArgs(harness);
-      await harness.worker.runSlice(second);
-
-      // The same page again, from the same cursor.
-      expect(harness.bot.fetchMessagePage.mock.calls[1][0]).toEqual(
-        expect.objectContaining({ before: null }),
-      );
-      const sent = harness.copier.copy.mock.calls.map(([items]) =>
-        items.map((item) => item.path),
-      );
-      expect(sent[1]).toEqual(sent[0].slice(1));
-      const [batch] = second.importBatch.mock.calls[0];
-      expect(batch.mediaByRelativePath.size).toBe(3);
     } finally {
       jest.setSystemTime(NOW);
     }
   });
 
+  it('sends the first batch even when the slice deadline has already passed', async () => {
+    // At least one batch per page is what keeps a slow page moving.
+    const harness = await build({ pages: [[withAttachments(2)]] });
+    const args = runArgs(harness);
+    harness.bot.fetchMessagePage.mockImplementationOnce(async () => {
+      // Discord was slow: the budget is spent before the copy starts.
+      jest.setSystemTime(args.deadline + 1);
+      return [withAttachments(2)];
+    });
+
+    try {
+      await harness.worker.runSlice(args);
+      expect(harness.copier.copy).toHaveBeenCalledTimes(1);
+      expect(args.importBatch).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.setSystemTime(NOW);
+    }
+  });
+
+  it('stops a page mid-copy when the job may no longer advance, and a resume sends only the unfinished files', async () => {
+    // The same page twice: the resume must fetch it again, because the first
+    // run never advanced the cursor past it.
+    const page = [withAttachments(3)];
+    const harness = await build({ pages: [page, page] });
+    harness.copier.copy.mockImplementationOnce(
+      answer((index) => (index === 0 ? 'stored' : 'deferred')),
+    );
+
+    const first = runArgs(harness, {
+      // The admin cancelled (or the lease was lost) during the first call.
+      checkpoint: jest.fn(async () => false),
+    });
+    const result = await harness.worker.runSlice(first);
+
+    expect(result.finished).toBe(false);
+    expect(harness.copier.copy).toHaveBeenCalledTimes(1);
+    // Nothing about the page was written: no rows, no cursor.
+    expect(first.importBatch).not.toHaveBeenCalled();
+    expect(harness.repo.updateChannel).not.toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      expect.objectContaining({ cursor_before_snowflake: expect.anything() }),
+    );
+    expect(result.totals.totalMessages).toBe(0);
+
+    const second = runArgs(harness);
+    await harness.worker.runSlice(second);
+
+    // The same page again, from the same cursor.
+    expect(harness.bot.fetchMessagePage.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ before: null }),
+    );
+    const sent = harness.copier.copy.mock.calls.map(([items]) =>
+      items.map((item) => item.path),
+    );
+    expect(sent[1]).toEqual(sent[0].slice(1));
+    const [batch] = second.importBatch.mock.calls[0];
+    expect(batch.mediaByRelativePath.size).toBe(3);
+  });
+
   it('fails the import when a call copied nothing at all', async () => {
     // Every call resolving at least one file is what ends the loop; a copier
-    // that breaks it must not spin until the deadline, slice after slice.
+    // that breaks it must not spin forever.
     const harness = await build({ pages: [[withAttachments(2)]] });
     harness.copier.copy.mockImplementation(answer(() => 'deferred'));
 

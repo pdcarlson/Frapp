@@ -60,7 +60,7 @@ in the last row; path-gated jobs are still required.
 
 | CI job | Run locally |
 |--------|-------------|
-| `lint-and-typecheck` | `npm run check-types`, `npm run build -w apps/api` (full `nest build`, which catches what `tsc --noEmit` misses), `npm run lint`, `npm run check:brand-assets`, and `npm run test -w <ws>` for `apps/landing`, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, `@repo/api-sdk` |
+| `lint-and-typecheck` | `npm run check-types`, `npm run build -w apps/api` (full `nest build`, which catches what `tsc --noEmit` misses), `npm run lint`, `npm run check:brand-assets`, `npm run check:edge-functions` (Deno, for `supabase/functions/`; installs its pinned Deno on first use), and `npm run test -w <ws>` for `apps/landing`, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, `@repo/api-sdk` |
 | `clean-checkout-typecheck` | `npm run check-types` and `npm run lint` on a tree with no prebuilt `packages/*/dist`. This guards the `^build` wiring in `turbo.json` |
 | `api-tests` | `npm run test -w apps/api`, `npm run test:e2e -w apps/api`, `npm run test:ai-evals -w apps/api` |
 | `web-tests` (path-gated) | `npm run test -w apps/web`, plus `-w packages/hooks`, `-w packages/chat-core`, `-w packages/chat-integrations`. The job runs on any `packages/**` change |

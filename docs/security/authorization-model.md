@@ -355,9 +355,13 @@ the authorization check, never accept one from the caller.
 `chat-archive` is written **two ways**, and the MIME list binds differently on each — do not treat it
 as a server-write-only bucket:
 
-- **Bot importer** — writes server-side through `IStorageProvider.uploadFile` on the service-role key
-  (`discord-export-worker.service.ts`), passing the content type the server itself resolved. There
-  `allowed_mime_types` is a second belt.
+- **Bot importer** — writes server-side on the service-role key, but not from the API: the
+  `discord-attachment-copy` Edge Function streams each file from Discord's CDN into the bucket
+  ([ADR-26](../../spec/architecture/adr/adr-26.md)), called by `discord-export-worker.service.ts`.
+  The worker checks Discord's declared type against the archive allowlist before sending, and the
+  function stores that type. When Discord declared none, the function stores the CDN's own
+  `Content-Type` header, which nothing checked first, so there `allowed_mime_types` is the only
+  enforcement, as on the upload path.
 - **Upload importer** — mints signed upload URLs and the browser PUTs straight to storage
   (`POST /v1/discord-imports/:id/upload-urls`, `channels:manage`, via
   `DiscordImportService.requestUploadUrls`). The uploader sets its own `Content-Type` header, so on

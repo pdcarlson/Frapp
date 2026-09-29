@@ -492,12 +492,20 @@ export class DiscordExportWorkerService {
         page: rawPage,
         mediaByRelativePath,
         totals,
-        deadline,
+        renewLease: () =>
+          checkpoint({
+            imported: totals.imported,
+            skipped: totals.skipped,
+            attachmentsImported: totals.attachmentsImported,
+            attachmentsSkipped: totals.attachmentsSkipped,
+            totalMessages: totals.totalMessages,
+            warnings: totals.warnings,
+          }),
       });
-      // The budget ran out with files of this page still unsent. Yield before
-      // anything about the page is written: the cursor still points at it, so
-      // the next slice fetches the same page, finds the files that landed in
-      // `mediaByRelativePath`, and sends only the rest.
+      // The admin cancelled, or another worker took the lease, mid-page. Stop
+      // before anything about the page is written: the cursor still points at
+      // it, so whoever resumes fetches the same page, finds the files that
+      // landed in `mediaByRelativePath`, and sends only the rest.
       if (!fetched.complete) return false;
 
       totals.totalMessages += rawPage.length;
@@ -593,18 +601,27 @@ export class DiscordExportWorkerService {
    * copier, which streams Discord's CDN into Storage inside Supabase and
    * answers per file; only a file it reports `stored` is marked uploaded.
    *
-   * `complete: false` means the slice's deadline passed with files still
-   * unsent. At least one batch always goes first, so a page too heavy for one
-   * slice still moves forward, one slice at a time.
+   * A page's copies always finish within the slice that started them, even
+   * past the slice deadline, as the in-process copy did before #2848. Yielding
+   * mid-page instead loses every outcome but `stored` (nothing else is
+   * persisted), so the next slice re-sends the same files and repeats their
+   * warnings, and a head of slow failures can hold a page forever.
+   *
+   * What bounds a long page is the lease, renewed through `renewLease` before
+   * every call after the first. The first follows the previous page's
+   * checkpoint, and one call is bounded well inside the lease
+   * (`ARCHIVE_MEDIA_COPY_BUDGET_MS`). `complete: false` means the renewal
+   * refused: the admin cancelled, or another worker took the job.
    */
   private async copyPageAttachments(args: {
     job: DiscordImport;
     page: DiscordApiMessage[];
     mediaByRelativePath: Map<string, DiscordImportFile>;
     totals: SliceTotals;
-    deadline: number;
+    /** The slice's checkpoint: false when the job may no longer advance. */
+    renewLease: () => Promise<boolean>;
   }): Promise<{ skipped: number; reported: string[]; complete: boolean }> {
-    const { job, page, mediaByRelativePath, totals, deadline } = args;
+    const { job, page, mediaByRelativePath, totals, renewLease } = args;
     /** Keys this slice already warned about, by name and reason. */
     const reported: string[] = [];
 
@@ -725,7 +742,7 @@ export class DiscordExportWorkerService {
 
     let sent = false;
     while (queue.length > 0) {
-      if (sent && Date.now() >= deadline) {
+      if (sent && !(await renewLease())) {
         return { skipped, reported, complete: false };
       }
       const batch = takeCopyBatch(queue);
@@ -774,8 +791,7 @@ export class DiscordExportWorkerService {
       });
 
       // A call that resolved nothing breaks the one promise that ends this
-      // loop. Failing is the honest outcome; retrying would spin until the
-      // deadline and then do the same thing next slice, forever.
+      // loop. Failing is the honest outcome; retrying would spin forever.
       if (deferred.length === batch.length) {
         throw new ArchiveMediaCopyError(
           'Could not copy attachments into the archive: the copy service accepted a batch and copied none of it. The import stopped rather than retry forever; start it again to resume where it left off.',
@@ -796,8 +812,8 @@ export class DiscordExportWorkerService {
         // that is about to run resolves attachments through THIS map, so a file
         // that landed a moment ago but is missing here produces a message row
         // with `attachment_count: 0` — a bubble that renders as if it never had
-        // one. On a yield it also tells the next pass over this page what is
-        // already done.
+        // one. After a cancel or a lost lease it also tells whoever resumes
+        // this page what is already done.
         for (const file of landed) {
           mediaByRelativePath.set(file.relative_path, {
             ...file,

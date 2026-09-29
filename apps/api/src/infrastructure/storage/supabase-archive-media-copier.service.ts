@@ -20,10 +20,10 @@ export const ARCHIVE_MEDIA_COPY_FUNCTION = 'discord-attachment-copy';
 /**
  * How long one call may take before the API gives up on it.
  *
- * The function stops starting transfers at 60 s and aborts what is still in
- * flight at 120 s, and the platform returns a 504 at 150 s if it has not
- * answered. This sits between the last two, so the API only times out on a
- * call the platform is about to fail anyway.
+ * The function answers by its own hard deadline (`HARD_DEADLINE_MS` in
+ * `supabase/functions/discord-attachment-copy/handler.ts`), and the platform
+ * returns a 504 at 150 s if it has not answered. This sits between the two, so
+ * the API only times out on a call the platform is about to fail anyway.
  */
 export const ARCHIVE_MEDIA_COPY_TIMEOUT_MS = 140_000;
 
@@ -35,6 +35,17 @@ export const ARCHIVE_MEDIA_COPY_TIMEOUT_MS = 140_000;
  * duplicate.
  */
 export const ARCHIVE_MEDIA_COPY_RETRY_DELAYS_MS = [2_000, 5_000] as const;
+
+/**
+ * The longest one `copy()` may run, retries included. A retry that could not
+ * finish inside it is not started.
+ *
+ * Sized against the import lease (`LEASE_MS`, 5 minutes). The worker renews the
+ * lease before each call after a page's first, so one call is the longest the
+ * lease goes unrenewed while copying; three attempts of up to 140 s would take
+ * about seven minutes and let the lease lapse mid-call.
+ */
+export const ARCHIVE_MEDIA_COPY_BUDGET_MS = 200_000;
 
 const STATUSES = new Set<ArchiveMediaCopyStatus>([
   'stored',
@@ -62,6 +73,7 @@ export class SupabaseArchiveMediaCopier implements IArchiveMediaCopier {
   async copy(items: ArchiveMediaCopyItem[]): Promise<ArchiveMediaCopyResult[]> {
     if (items.length === 0) return [];
 
+    const startedAt = this.now();
     for (let attempt = 0; ; attempt += 1) {
       const response = await this.supabase.functions.invoke<unknown>(
         ARCHIVE_MEDIA_COPY_FUNCTION,
@@ -73,7 +85,11 @@ export class SupabaseArchiveMediaCopier implements IArchiveMediaCopier {
 
       const failure = await describeFailure(error);
       const delay = ARCHIVE_MEDIA_COPY_RETRY_DELAYS_MS[attempt];
-      if (!failure.retryable || delay === undefined) {
+      const fits =
+        delay !== undefined &&
+        this.now() - startedAt + delay + ARCHIVE_MEDIA_COPY_TIMEOUT_MS <=
+          ARCHIVE_MEDIA_COPY_BUDGET_MS;
+      if (!failure.retryable || !fits) {
         throw new ArchiveMediaCopyError(
           `Could not copy attachments into the archive: the copy service ${failure.detail}. The import stopped rather than skip the files; start it again to resume where it left off.`,
         );
@@ -85,7 +101,11 @@ export class SupabaseArchiveMediaCopier implements IArchiveMediaCopier {
     }
   }
 
-  /** A seam for tests, which replace the real wait. */
+  /** Seams for tests, which replace the real clock and wait. */
+  protected now(): number {
+    return performance.now();
+  }
+
   protected wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -129,6 +149,16 @@ export class SupabaseArchiveMediaCopier implements IArchiveMediaCopier {
   }
 }
 
+/** Whether the function's error body says no retry can help. */
+function declaresPermanent(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as { retryable?: unknown } | null;
+    return parsed?.retryable === false;
+  } catch {
+    return false;
+  }
+}
+
 /** What went wrong with a whole call, and whether trying again can help. */
 async function describeFailure(
   error: unknown,
@@ -136,16 +166,16 @@ async function describeFailure(
   if (error instanceof FunctionsHttpError) {
     const response = error.context as Response;
     const status = response.status;
-    const body = await response
-      .text()
-      .then((text) => text.trim().slice(0, 200))
-      .catch(() => '');
+    const text = await response.text().catch(() => '');
+    const body = text.trim().slice(0, 200);
     return {
       // 5xx, including the platform's 504 and its 546 (a worker over its CPU
       // or memory limit), is the service having a bad moment. 4xx is the
       // request or the deploy being wrong (401: the key; 404: the function is
-      // not deployed), which no retry fixes.
-      retryable: status >= 500,
+      // not deployed), which no retry fixes. So is a 5xx the function itself
+      // marks `retryable: false`: Storage refusing its key, or its config
+      // missing.
+      retryable: status >= 500 && !declaresPermanent(text),
       detail: `answered ${status}${body ? ` (${body})` : ''}`,
     };
   }

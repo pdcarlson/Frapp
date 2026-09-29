@@ -209,10 +209,11 @@ Deno.test("a new secret key is accepted, and Storage gets it on apikey alone", a
   assert.equal(headers.get("authorization"), null);
 });
 
-Deno.test("a function without its Supabase config answers 500", async () => {
+Deno.test("a function without its Supabase config answers 500, not retryable", async () => {
   const { deps } = harness({ env: { SUPABASE_SERVICE_ROLE_KEY: LEGACY_KEY } });
   const response = await handleCopyRequest(post({ items: [item()] }), deps);
   assert.equal(response.status, 500);
+  assert.equal((await response.json()).retryable, false);
 });
 
 Deno.test("a malformed body is a 400", async () => {
@@ -365,15 +366,20 @@ Deno.test("Storage refusing one object fails that item only", async () => {
   assert.match(all[0].reason ?? "", /500/);
 });
 
-Deno.test("Storage refusing the function's own credential ends the request with a 502", async () => {
-  const { deps } = harness({
-    storage: () => new Response("unauthorized", { status: 403 }),
-  });
-  const response = await handleCopyRequest(
-    post({ items: [item(), item({ path: `${PATH}-2` })] }),
-    deps,
-  );
-  assert.equal(response.status, 502);
+Deno.test("Storage refusing the function's own credential ends the request with a 502, not retryable", async () => {
+  for (const status of [401, 403]) {
+    const { deps } = harness({
+      storage: () => new Response("unauthorized", { status }),
+    });
+    const response = await handleCopyRequest(
+      post({ items: [item(), item({ path: `${PATH}-2` })] }),
+      deps,
+    );
+    assert.equal(response.status, 502, String(status));
+    // The API retries a 5xx from the platform, but not this: no re-send fixes
+    // a credential Storage refuses.
+    assert.equal((await response.json()).retryable, false, String(status));
+  }
 });
 
 // ── the budget ──────────────────────────────────────────────────────────────
@@ -464,20 +470,68 @@ Deno.test("an image larger than Discord declared counts at its real size", async
   assert.deepEqual(all.map((result) => result.status), ["stored", "deferred"]);
 });
 
-Deno.test("a transfer still running at the hard deadline is aborted and reported failed", async () => {
+/** A CDN that never answers until its request is aborted. */
+const hangingCdn = (_url: string, init: RequestInit) =>
+  new Promise<Response>((_resolve, reject) => {
+    init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+  });
+
+Deno.test("a transfer the hard deadline cuts short comes back deferred, to be sent again", async () => {
+  // Started with less than the fair window left: the request ran out, the file
+  // didn't fail.
   const { deps } = harness({
-    cdn: (_url, init) =>
-      new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener(
-          "abort",
-          () => reject(init.signal?.reason),
-        );
-      }),
-    limits: { hardDeadlineMs: 20 },
+    cdn: hangingCdn,
+    limits: { hardDeadlineMs: 20, fairTransferWindowMs: 1_000 },
+  });
+  const [result] = await results(
+    await handleCopyRequest(post({ items: [item()] }), deps),
+  );
+  assert.deepEqual(result, { path: PATH, status: "deferred" });
+});
+
+Deno.test("a transfer that had the whole window and still didn't finish is failed", async () => {
+  // Otherwise a file too slow for any request would be re-sent forever.
+  const { deps } = harness({
+    cdn: hangingCdn,
+    limits: { hardDeadlineMs: 20, fairTransferWindowMs: 10 },
   });
   const [result] = await results(
     await handleCopyRequest(post({ items: [item()] }), deps),
   );
   assert.equal(result.status, "failed");
   assert.match(result.reason ?? "", /Timed out/);
+});
+
+Deno.test("a CDN that sends no headers in time is a failure", async () => {
+  const { deps } = harness({
+    cdn: hangingCdn,
+    limits: { cdnResponseTimeoutMs: 10 },
+  });
+  const [result] = await results(
+    await handleCopyRequest(post({ items: [item()] }), deps),
+  );
+  assert.equal(result.status, "failed");
+  assert.match(result.reason ?? "", /CDN: Timed out/);
+});
+
+Deno.test("the header timeout stops governing the CDN request once headers arrive", async () => {
+  // A fetch's signal keeps governing its response body, so a signal that could
+  // still fire after the headers would cut a large file mid-stream.
+  let cdnSignal: AbortSignal | undefined;
+  const { deps } = harness({
+    cdn: (_url, init) => {
+      cdnSignal = init.signal ?? undefined;
+      return new Response("bytes", { status: 200 });
+    },
+    storage: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return new Response("{}", { status: 200 });
+    },
+    limits: { cdnResponseTimeoutMs: 10 },
+  });
+  const [result] = await results(
+    await handleCopyRequest(post({ items: [item()] }), deps),
+  );
+  assert.equal(result.status, "stored");
+  assert.equal(cdnSignal?.aborted, false);
 });

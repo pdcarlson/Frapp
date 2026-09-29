@@ -9,11 +9,13 @@ import {
   type ArchiveMediaCopyItem,
 } from '#domain/adapters/archive-media-copier.interface';
 import {
+  ARCHIVE_MEDIA_COPY_BUDGET_MS,
   ARCHIVE_MEDIA_COPY_FUNCTION,
   ARCHIVE_MEDIA_COPY_RETRY_DELAYS_MS,
   ARCHIVE_MEDIA_COPY_TIMEOUT_MS,
   SupabaseArchiveMediaCopier,
 } from './supabase-archive-media-copier.service';
+import { LEASE_MS } from '../../modules/discord-import-worker/discord-import-worker.service';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 
 const item = (path: string): ArchiveMediaCopyItem => ({
@@ -33,6 +35,7 @@ describe('SupabaseArchiveMediaCopier', () => {
   let copier: SupabaseArchiveMediaCopier;
   let invoke: jest.Mock;
   let wait: jest.SpyInstance;
+  let now: jest.SpyInstance;
 
   beforeEach(async () => {
     invoke = jest.fn();
@@ -45,6 +48,7 @@ describe('SupabaseArchiveMediaCopier', () => {
     copier = moduleRef.get(SupabaseArchiveMediaCopier);
     // The real wait is seconds long; the retry ORDER is what is under test.
     wait = jest.spyOn(copier, 'wait').mockResolvedValue(undefined);
+    now = jest.spyOn(copier, 'now').mockReturnValue(0);
   });
 
   it('calls the function with the batch, inside the platform timeout', async () => {
@@ -144,6 +148,46 @@ describe('SupabaseArchiveMediaCopier', () => {
     expect(invoke).toHaveBeenCalledTimes(
       ARCHIVE_MEDIA_COPY_RETRY_DELAYS_MS.length + 1,
     );
+  });
+
+  it.each([
+    [502, "Storage refused the function's service credential (401)."],
+    [500, 'The function is missing its Supabase config.'],
+  ])(
+    'fails at once on a %i the function marks not retryable',
+    async (status, message) => {
+      invoke.mockResolvedValue(
+        failed(
+          httpError(
+            status,
+            JSON.stringify({ error: message, retryable: false }),
+          ),
+        ),
+      );
+
+      await expect(copier.copy([item('a')])).rejects.toThrow(message);
+      expect(invoke).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not start a retry that could outlast its time budget', async () => {
+    // The first attempt timed out at 140 s: another 140 s would pass the budget.
+    invoke.mockResolvedValue(
+      failed(
+        new FunctionsFetchError(new DOMException('aborted', 'AbortError')),
+      ),
+    );
+    now.mockReturnValueOnce(0).mockReturnValue(ARCHIVE_MEDIA_COPY_TIMEOUT_MS);
+
+    await expect(copier.copy([item('a')])).rejects.toThrow(
+      /did not answer within 140 s/,
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one call inside the import lease', () => {
+    // The worker renews the lease before each call; one call must not outlast it.
+    expect(ARCHIVE_MEDIA_COPY_BUDGET_MS).toBeLessThan(LEASE_MS);
   });
 
   it('names a timeout as a timeout', async () => {

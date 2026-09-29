@@ -321,10 +321,10 @@ Both run under `npm run test -w apps/api`. The chat hot path has no Deno tier.
 
 `supabase/functions/` holds one function, `discord-attachment-copy`, which copies Discord bot-import attachments from Discord's CDN into Storage (#2848). Its logic is a pure handler (`handler.ts`) that takes `fetch`, the clock and the environment as arguments, so `handler.test.ts` runs it against a fake CDN and a fake Storage with no network.
 
-- **Run:** `npm run check:edge-functions` runs `deno fmt --check`, `deno lint`, `deno check` and `deno test` from `supabase/functions/`. It needs Deno on `PATH`; the repo does not install it.
-- **In CI:** the same script is a step of the required `lint-and-typecheck` job, on the Deno version that step pins.
+- **Run:** `npm run check:edge-functions` (`scripts/check-edge-functions.sh`) runs `deno fmt --check`, `deno lint`, `deno check` and `deno test` from `supabase/functions/`. On first use it installs its pinned Deno from the npm registry into `.cache/deno/`, so it needs nothing on `PATH` and runs in the cloud sandbox too.
+- **In CI:** the same script is a step of the required `lint-and-typecheck` job, so the Deno version lives only in the script.
 - **The API side** (`SupabaseArchiveMediaCopier`, and the worker's batching, deferral and resume) is ordinary Jest, under `npm run test -w apps/api`.
-- **Not runnable in the cloud sandbox:** the local edge runtime is excluded there ([`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)), so a local bot import fails at the copy. The handler can still be exercised against the sandbox's local Storage by importing it under `deno run` with a fake CDN `fetch`.
+- **The function itself doesn't run in the cloud sandbox:** the local edge runtime is excluded there ([`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)), so a local bot import fails at the copy. The handler can still be exercised against the sandbox's local Storage by importing it under `.cache/deno/node_modules/.bin/deno run` (after one `npm run check:edge-functions`) with a fake CDN `fetch`.
 
 ## 6. E2E scaffolding
 

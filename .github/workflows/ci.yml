@@ -234,16 +234,10 @@ jobs:
 
       # The Supabase Edge Functions under `supabase/functions/` (#2848, ADR-26)
       # run on Deno, not Node, so nothing above reads them: `check-types` and
-      # `lint` are the workspaces' own. Format, lint, type-check and test them
-      # with Deno. `deno test` runs with no permissions granted, so a test that
-      # reached the network would fail rather than pass on a live call. The
-      # version is the one the handler was verified on; the platform's runtime
-      # is Supabase's and is not pinned here.
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: 2.9.6
-
+      # `lint` are the workspaces' own. The script installs its pinned Deno from
+      # the npm registry (the one place the version lives), then formats,
+      # lints, type-checks and tests them. `deno test` runs with no permissions
+      # granted, so a test that reached the network fails rather than passes.
       - name: Edge Functions (Deno fmt, lint, check, test)
         run: npm run check:edge-functions
 

@@ -39,7 +39,8 @@ export const COPY_CONCURRENCY = 6;
  * function that has not answered by then gets a 504, and the caller learns
  * nothing about which items landed. The 400 s wall clock is not the constraint.
  * So a request works to a budget and answers early; items it did not start come
- * back `deferred` and the API sends them again.
+ * back `deferred` and the API sends them again (as do transfers the hard
+ * deadline cuts short, see `FAIR_TRANSFER_WINDOW_MS`).
  */
 export const START_BUDGET_MS = 60_000;
 
@@ -50,8 +51,22 @@ export const START_BUDGET_MS = 60_000;
  */
 export const HARD_DEADLINE_MS = 120_000;
 
-/** How long the CDN gets to answer with headers, per attachment. */
+/**
+ * How long the CDN gets to answer with headers, per attachment. Only the
+ * headers: the timer is cleared once they arrive, so a large file still
+ * streaming is bounded by the hard deadline, never by this.
+ */
 export const CDN_RESPONSE_TIMEOUT_MS = 30_000;
+
+/**
+ * A transfer the hard deadline cuts off comes back `deferred`, not `failed`,
+ * when it started with less than this much time left before that deadline. It
+ * ran out of this request's budget rather than failing, and a re-send starts it
+ * first in the next request with the whole budget. One that had this long and
+ * still didn't finish is `failed`, so a file too slow for any request can't be
+ * re-sent forever.
+ */
+export const FAIR_TRANSFER_WINDOW_MS = 90_000;
 
 /**
  * Bytes one request may START. Each item reserves its declared size before
@@ -91,8 +106,8 @@ export interface CopyItem {
  * - `gone`: the CDN answered that the attachment doesn't exist any more.
  * - `rejected`: refused before any transfer (host, bucket, path or size).
  * - `failed`: attempted, and something went wrong on the way.
- * - `deferred`: not attempted, because the request's budget ran out. Send it
- *   again.
+ * - `deferred`: not attempted, or cut off after starting late, because the
+ *   request's budget ran out. Send it again.
  */
 export type CopyStatus = "stored" | "gone" | "rejected" | "failed" | "deferred";
 
@@ -125,6 +140,8 @@ export interface Limits {
   startBudgetMs: number;
   hardDeadlineMs: number;
   startByteBudget: number;
+  cdnResponseTimeoutMs: number;
+  fairTransferWindowMs: number;
 }
 
 const DEFAULT_LIMITS: Limits = {
@@ -132,6 +149,8 @@ const DEFAULT_LIMITS: Limits = {
   startBudgetMs: START_BUDGET_MS,
   hardDeadlineMs: HARD_DEADLINE_MS,
   startByteBudget: START_BYTE_BUDGET,
+  cdnResponseTimeoutMs: CDN_RESPONSE_TIMEOUT_MS,
+  fairTransferWindowMs: FAIR_TRANSFER_WINDOW_MS,
 };
 
 /**
@@ -356,21 +375,36 @@ async function copyOne(
   storageUrl: string,
   storageAuth: Record<string, string>,
   hardStop: AbortSignal,
+  cdnResponseTimeoutMs: number,
   /** Called with the CDN's `Content-Length` once it is known. */
   onLength: (bytes: number) => void,
 ): Promise<CopyResult> {
   const { path } = item;
+  // The CDN request's signal governs only the wait for headers. A fetch's
+  // signal keeps governing its response body, so a timeout still armed then
+  // would cut a large file mid-stream, and a hard stop reaching the body
+  // errors the stream the runtime is piping into the upload, which surfaces as
+  // an unhandled rejection. After the headers, the upload's own signal is the
+  // one that stops a transfer: aborting the upload cancels its source.
+  const waitForHeaders = new AbortController();
+  const timer = setTimeout(
+    () => waitForHeaders.abort(new DOMException("Timed out.", "TimeoutError")),
+    cdnResponseTimeoutMs,
+  );
+  const onHardStop = () => waitForHeaders.abort(hardStop.reason);
+  if (hardStop.aborted) onHardStop();
+  hardStop.addEventListener("abort", onHardStop);
   let source: Response;
   try {
     source = await deps.fetch(item.url, {
       redirect: "error",
-      signal: AbortSignal.any([
-        hardStop,
-        AbortSignal.timeout(CDN_RESPONSE_TIMEOUT_MS),
-      ]),
+      signal: waitForHeaders.signal,
     });
   } catch (error) {
     return { path, status: "failed", reason: `CDN: ${describe(error)}` };
+  } finally {
+    clearTimeout(timer);
+    hardStop.removeEventListener("abort", onHardStop);
   }
 
   const length = declaredLength(source);
@@ -477,7 +511,12 @@ export async function handleCopyRequest(
   const supabaseUrl = deps.env("SUPABASE_URL");
   const storageAuth = storageHeaders(deps.env);
   if (!supabaseUrl || !storageAuth) {
-    return json(500, { error: "The function is missing its Supabase config." });
+    // `retryable: false` tells the API that sending again cannot help, as
+    // opposed to a 5xx from the platform in front of the function.
+    return json(500, {
+      error: "The function is missing its Supabase config.",
+      retryable: false,
+    });
   }
   const storageUrl = `${supabaseUrl.replace(/\/+$/, "")}/storage/v1`;
 
@@ -529,21 +568,32 @@ export async function handleCopyRequest(
       const index = runnable[cursor];
       cursor += 1;
       started += 1;
+      const startedAfter = deps.now() - startedAt;
       // Reserved before the first await, so the next runner's `mayStart`
       // already counts it.
       const reserved = items[index].declaredSize ?? 0;
       startedBytes += reserved;
       try {
-        results[index] = await copyOne(
+        const result = await copyOne(
           items[index],
           deps,
           storageUrl,
           storageAuth,
           hardStopController.signal,
+          limits.cdnResponseTimeoutMs,
           (length) => {
             startedBytes += length - reserved;
           },
         );
+        // Cut off by this request's own deadline, having started too late to
+        // get a fair share of it: the file didn't fail, the request ran out.
+        const cutShort = result.status === "failed" &&
+          hardStopController.signal.aborted &&
+          halt.error === null &&
+          limits.hardDeadlineMs - startedAfter < limits.fairTransferWindowMs;
+        results[index] = cutShort
+          ? { path: result.path, status: "deferred" }
+          : result;
       } catch (error) {
         if (!(error instanceof StorageAuthError)) throw error;
         halt.error = error;
@@ -568,7 +618,9 @@ export async function handleCopyRequest(
     clearTimeout(hardStopTimer);
   }
 
-  if (halt.error) return json(502, { error: halt.error.message });
+  if (halt.error) {
+    return json(502, { error: halt.error.message, retryable: false });
+  }
 
   const response: CopyResponse = {
     results: items.map((item, index) =>

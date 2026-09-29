@@ -239,8 +239,9 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 | Variable                 | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
 | `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
-| `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
-| `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |
+| `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations (read-only token)       |
+| `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` | Supabase CLI auth for deploying the Edge Functions (Edge Functions read-write only) |
+| `SUPABASE_PROJECT_REF`   | Target project for migrations and functions (value differs per environment) |
 
 Two GitHub secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET`. Like every GitHub secret here they belong in environments restricted to `main`, never in repository scope, because a repository secret is readable from any branch ([#2518](https://github.com/pdcarlson/Frapp/issues/2518)). The deploy-time values themselves come from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)). Which environment holds which secret, including the provider API tokens the deploy workflows use: [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
 

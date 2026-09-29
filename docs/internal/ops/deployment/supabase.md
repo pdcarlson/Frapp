@@ -122,9 +122,10 @@ the API.
 
 **Limits it is built around** (Supabase [`functions/limits`](https://supabase.com/docs/guides/functions/limits),
 read 2026-09-29): 256 MB of memory, 2 s of CPU per request with async I/O excluded, and a
-**150 s request idle timeout**, past which the caller gets a 504. A call stops starting transfers at
-60 s, aborts what is still running at 120 s, starts at most 256 MiB, and hands back what it did not
-start as `deferred`. The constants and their reasons are in `handler.ts`.
+**150 s request idle timeout**, past which the caller gets a 504. So a call works to its own time and
+byte budget, answers well before that, and hands back what it did not get to as `deferred` for the API
+to send again. The budgets, and why each is set where it is, are the constants at the top of
+`supabase/functions/discord-attachment-copy/handler.ts`.
 
 **To check it is deployed:** Supabase MCP `list_edge_functions` for the project, or the dashboard's
 **Edge Functions** page. Its logs are there too. A bot import whose copy service is missing or
