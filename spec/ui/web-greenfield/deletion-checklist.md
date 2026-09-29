@@ -453,7 +453,10 @@ use. A mouse gets the board's density; a finger gets the full 44.
       (`flex-col … sm:flex-row`); both rows here now do the same. The alumni **bio** also left the
       `·` join for a line of its own: lane 4's "free text last" rule assumes the free-text field
       trails one short date and a folder name, and with three fields ahead of it in half a row an
-      ellipsis took the bio entirely, at every width, with no detail surface to recover it from
+      ellipsis took the bio entirely, at every width, with no detail surface to recover it from.
+      **Corrected 2026-09-29 (#2484):** the alumni row is no longer inert. It is a button with an
+      `aria-label`, and it opens the actives' `MemberDetailSheet` (see the superseded "alumni detail
+      sheet" row below), so the full bio is recoverable there. The stacking rule stands
 - [x] No em dash left in rendered copy on this route. **Four sites, one defect, two different
       fixes** — `"—"` standing in for a value that is absent. In a row's meta line (an unparseable
       join date, a member with no role) nothing replaces it: the line is a `·`-joined list of the
@@ -497,7 +500,7 @@ use. A mouse gets the board's density; a finger gets the full 44.
 | A `<Can>` gate on the invite trigger, the bulk-assign controls or the row checkboxes | The route has **no** `<Can>` anywhere today; the only client mirror of `members:view` is the nav entry. Adding a permission read changes what a member sees, which is behavior, not chrome. It is a real divergence from [`../design-system/README.md`](../design-system/README.md) §5 rule 4 — **not** `components.md` §5, which is Badges and chips — and is filed as [#2170](https://github.com/pdcarlson/Frapp/issues/2170), which also carries the guaranteed-403 `useInvites` call the Invite row above only narrows |
 | The underline tab row → the board's segmented toggle | The board draws **no** horizontal tab bar (`grep -c 'border-bottom:2px'` returns 0). Its two tab shapes are `4d`'s left rail, for a settings page with six sections, and `1f`'s Calendar/List *view toggle*, which switches two renderings of one dataset. Actives and alumni are two datasets behind two queries, so neither frame is about this control — and where the board is silent, `components.md` §6 is explicit ("underline style only — no segmented pill controls") and the primitives slice already deleted a segmented rail here. Re-adding it would reverse that on the strength of a frame that is not about it |
 | Deleting the page's own search field, as lane 3 deleted the channel list's | `1b` pin 5 and `1a` pin 9 delete *per-column* search in favour of the top bar's find. The find bar navigates to `/members`; it does not narrow it, and this input is wired to `GET /v1/members/search`, a **server-side** search over the whole roster. Deleting it moves a capability. `/documents` and `/backwork` kept theirs for the same reason |
-| An alumni detail sheet | Alumni rows were a dead end before this lane and still are. There is no alumni detail surface in `apps/web` for a row to open, and adding one is a capability |
+| An alumni detail sheet | Alumni rows were a dead end before this lane and still are. There is no alumni detail surface in `apps/web` for a row to open, and adding one is a capability. **Superseded 2026-09-29 (#2484):** once the Actives tab stopped listing alumni, this dead end was the only way on web to reach an alumnus's roles, so alumni rows now open the actives' `MemberDetailSheet` |
 | Folding `CHAT_CONTROL_CLASS` into `denseRowControlClassName` | Unchanged from §8: still the same string in two files, still a chat edit |
 | Finance/Billing and Admin/settings | The other two thirds of #2146, and separate PRs by the issue's own "can split PRs" |
 

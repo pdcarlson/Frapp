@@ -6,6 +6,7 @@ import { useAlumni } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EYEBROW } from "@/components/ui/typography";
@@ -21,8 +22,9 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
+import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray, initials } from "@/lib/utils";
+import { asArray, cn, initials } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type AlumniRow = {
@@ -49,11 +51,12 @@ type AlumniRow = {
  * paragraph is deleted outright, and the per-alumnus cards become rows in the
  * same flush list the actives half renders.
  *
- * **The rows stay non-interactive.** Actives rows open a detail sheet; there is
- * no alumni detail surface anywhere in `apps/web` for a row to open, and adding
- * one is a capability rather than chrome. So an alumnus is a row of facts, as
- * it was a card of facts, and the dead end this list has always been is
- * recorded rather than quietly widened.
+ * **Rows open the actives' `MemberDetailSheet` (#2484).** They used to be
+ * rows of facts with no detail surface, which was harmless while the Actives
+ * tab also listed every alumnus. It no longer does, and that sheet is where
+ * roles are assigned, so a non-interactive row here would leave an officer no
+ * way on web to correct a mistaken Alumni role or remove an alumnus. Mobile's
+ * s13 already opens its sheet from both tabs.
  */
 export function AlumniDirectory() {
   const { isOffline } = useNetwork();
@@ -62,6 +65,12 @@ export function AlumniDirectory() {
   const [graduationYear, setGraduationYear] = useState("");
   const [cityFilter, setCityFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
+  // The row as it was when opened, not an id looked up in `alumni`: the sheet
+  // stays open after a role save, and revoking the Alumni role refetches this
+  // list without the member in it — a lookup would empty the sheet mid-edit.
+  // The sheet re-reads the member by id itself, so the snapshot only seeds it.
+  const [openAlumnus, setOpenAlumnus] = useState<AlumniRow | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [committed, setCommitted] = useState<{
     graduation_year?: string;
     city?: string;
@@ -297,8 +306,8 @@ export function AlumniDirectory() {
               transfer: on `/documents` the description trails one short date
               and a folder name, where here three fields precede it in half a
               row, so an ellipsis took the bio in full at every width — and
-              unlike a document, an alumnus has no detail surface to recover it
-              from. It gets its own line below.
+              the row is no place to read a bio in full. It gets its own line
+              below, and the whole of it is in the detail sheet.
             */
             const meta = [
               alum.graduation_year ? `Class of ${alum.graduation_year}` : null,
@@ -308,48 +317,76 @@ export function AlumniDirectory() {
               .filter(Boolean)
               .join(" · ");
             return (
-              <li
-                key={id}
-                className="flex min-h-9 items-start gap-2.5 px-2 py-1 pointer-coarse:min-h-11"
-              >
-                <Avatar className="mt-0.5 h-6 w-6 shrink-0">
-                  {alum.avatar_url ? (
-                    <AvatarImage src={alum.avatar_url} alt="" />
-                  ) : null}
-                  <AvatarFallback className="text-[9px]">
-                    {initials(alum.display_name)}
-                  </AvatarFallback>
-                </Avatar>
+              <li key={id} className="flex">
                 {/*
-                  Name over meta below `sm`, side by side above it. An earlier
-                  draft hid the meta line on a phone (`hidden sm:block`), which
-                  on this half was total: the row is deliberately
-                  non-interactive and carries no `aria-label`, and `display:none`
-                  removes text from the accessibility tree — so class year,
-                  company and city existed in no form anywhere in the product
-                  below 640px, on the screen whose entire purpose is those three
-                  fields.
+                  The row is the control, as on the actives list, and for the
+                  same reason it carries an `aria-label` restating every fact
+                  shown: the label replaces the subtree's text as the name.
                 */}
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-3">
-                    <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
-                      {name}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenAlumnus(alum);
+                    setSheetOpen(true);
+                  }}
+                  aria-label={[name, meta || null, alum.bio || null]
+                    .filter(Boolean)
+                    .join(", ")}
+                  className={cn(
+                    "flex min-h-9 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
+                    "pointer-coarse:min-h-11 hover:bg-accent-subtle hover:text-foreground",
+                    FOCUS_RING_OFFSET,
+                  )}
+                >
+                  <Avatar className="mt-0.5 h-6 w-6 shrink-0">
+                    {alum.avatar_url ? (
+                      <AvatarImage src={alum.avatar_url} alt="" />
+                    ) : null}
+                    <AvatarFallback className="text-[9px]">
+                      {initials(alum.display_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {/*
+                    Name over meta below `sm`, side by side above it. Never
+                    `hidden sm:block` on the meta line, which an earlier draft
+                    did: on the screen whose entire purpose is class year,
+                    company and city, that put all three in no visible form
+                    below 640px. The row's `aria-label` would still carry them
+                    now, but a sighted phone user reads the row, not the label.
+
+                    Spans, not divs: a `<button>` may only hold phrasing
+                    content, the same reason the actives row is built of spans.
+                  */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-3">
+                      <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
+                        {name}
+                      </span>
+                      <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
+                        {meta}
+                      </span>
                     </span>
-                    <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
-                      {meta}
-                    </span>
-                  </div>
-                  {alum.bio ? (
-                    <p className="line-clamp-1 text-[12.5px] text-muted">
-                      {alum.bio}
-                    </p>
-                  ) : null}
-                </div>
+                    {alum.bio ? (
+                      <span className="line-clamp-1 text-[12.5px] text-muted">
+                        {alum.bio}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
               </li>
             );
           })}
         </ul>
       )}
+      <MemberDetailSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        member={openAlumnus}
+        // Alumni accrue no points (`spec/behavior/alumni.md`), and the
+        // leaderboard this would come from ranks actives.
+        points={null}
+        usingPreviewData={false}
+      />
     </section>
   );
 }

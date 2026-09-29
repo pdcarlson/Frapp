@@ -8824,6 +8824,10 @@
           "email": {
             "type": "string"
           },
+          "is_alumni": {
+            "type": "boolean",
+            "description": "Whether the member holds the chapter's Alumni system role, resolved the same way GET /alumni resolves it — a directory splitting actives from alumni filters on this rather than on role ids."
+          },
           "custom_fields": {
             "description": "Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see.",
             "type": "array",
@@ -8847,7 +8851,8 @@
           "graduation_year",
           "current_city",
           "current_company",
-          "email"
+          "email",
+          "is_alumni"
         ]
       },
       "MemberRosterEntryDto": {

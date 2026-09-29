@@ -89,6 +89,13 @@ vi.mock("@repo/hooks", () => ({
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
+// Rows open the actives' detail sheet (#2484), which reads a dozen hooks this
+// file's `@repo/hooks` mock has no business knowing about. Nothing here opens
+// it; `alumni-directory.spec.tsx` covers the rows.
+vi.mock("@/components/members/member-detail-sheet", () => ({
+  MemberDetailSheet: () => null,
+}));
+
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
     selector: (state: { activeChapterId: string }) => unknown,

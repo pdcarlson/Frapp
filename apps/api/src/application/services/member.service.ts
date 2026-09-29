@@ -17,10 +17,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Member } from '#domain/entities/member.entity';
 import { User } from '#domain/entities/user.entity';
-import {
-  SystemPermissions,
-  SystemRoleKeys,
-} from '#domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
@@ -56,6 +53,16 @@ export interface MemberProfile {
   current_city: string | null;
   current_company: string | null;
   email: string;
+  /**
+   * Whether the member holds the chapter's Alumni system role. Resolved through
+   * `RbacService.getAlumniRoleId`, the lookup {@link MemberService.findAlumniByChapter}
+   * and the alumni restrictions also use, so a client splitting a list into
+   * actives and alumni can never count one member in both halves, nor disagree
+   * with `GET /alumni` or with who is actually restricted (#2484). `false`
+   * everywhere for a legacy chapter whose Alumni role has no key, matching that
+   * endpoint's empty list.
+   */
+  is_alumni: boolean;
   /**
    * Custom-field values, present only on single-member reads
    * (`findProfileById`) and already filtered to the fields the requesting
@@ -107,7 +114,10 @@ export class MemberService {
     if (!members.length) return [];
 
     const userIds = [...new Set(members.map((member) => member.user_id))];
-    const users = await this.userRepo.findByIds(userIds);
+    const [users, alumniRoleId] = await Promise.all([
+      this.userRepo.findByIds(userIds),
+      this.rbacService.getAlumniRoleId(chapterId),
+    ]);
     const userMap = new Map(users.map((user) => [user.id, user]));
 
     return members.map((member) => {
@@ -117,7 +127,7 @@ export class MemberService {
           `User not found for member ${member.id} in chapter ${chapterId}`,
         );
       }
-      return this.mergeMemberWithUser(member, user);
+      return this.mergeMemberWithUser(member, user, alumniRoleId);
     });
   }
 
@@ -480,9 +490,10 @@ export class MemberService {
     // The user fetch and the viewer's permission resolution are independent
     // (the latter keys off the viewer, not the target member), so run them
     // together rather than serially.
-    const [user, permissions] = await Promise.all([
+    const [user, permissions, alumniRoleId] = await Promise.all([
       this.userRepo.findById(member.user_id),
       this.rbacService.getEffectivePermissions(chapterId, viewerUserId),
+      this.rbacService.getAlumniRoleId(chapterId),
     ]);
     if (!user) throw new NotFoundException('User not found');
 
@@ -501,7 +512,7 @@ export class MemberService {
       );
 
     return {
-      ...this.mergeMemberWithUser(member, user),
+      ...this.mergeMemberWithUser(member, user, alumniRoleId),
       custom_fields: customFields,
     };
   }
@@ -522,7 +533,10 @@ export class MemberService {
     if (!members.length) return [];
 
     const userIds = [...new Set(members.map((m) => m.user_id))];
-    const users = await this.userRepo.findByIds(userIds);
+    const [users, alumniRoleId] = await Promise.all([
+      this.userRepo.findByIds(userIds),
+      this.rbacService.getAlumniRoleId(chapterId),
+    ]);
     const userMap = new Map(users.map((u) => [u.id, u]));
 
     const q = query.trim().toLowerCase();
@@ -551,7 +565,7 @@ export class MemberService {
         nameOrEmailMatchedUserIds.has(user.id) ||
         matchedMemberIds.has(member.id)
       ) {
-        results.push(this.mergeMemberWithUser(member, user));
+        results.push(this.mergeMemberWithUser(member, user, alumniRoleId));
       }
     }
     return results;
@@ -609,18 +623,15 @@ export class MemberService {
     chapterId: string,
     filter?: AlumniFilter,
   ): Promise<MemberProfile[]> {
-    const alumniRole = await this.roleRepo.findByChapterAndSystemKey(
-      chapterId,
-      SystemRoleKeys.ALUMNI,
-    );
-    if (!alumniRole) return [];
+    const alumniRoleId = await this.rbacService.getAlumniRoleId(chapterId);
+    if (!alumniRoleId) return [];
 
     const members = await this.memberRepo.findByChapter(chapterId);
 
     const alumniMembers: Member[] = [];
     const userIdsSet = new Set<string>();
     for (const m of members) {
-      if (m.role_ids.includes(alumniRole.id)) {
+      if (m.role_ids.includes(alumniRoleId)) {
         alumniMembers.push(m);
         userIdsSet.add(m.user_id);
       }
@@ -641,7 +652,7 @@ export class MemberService {
     for (const member of alumniMembers) {
       const user = userMap.get(member.user_id);
       if (user) {
-        results.push(this.mergeMemberWithUser(member, user));
+        results.push(this.mergeMemberWithUser(member, user, alumniRoleId));
       }
     }
     return results;
@@ -670,9 +681,15 @@ export class MemberService {
     return true;
   }
 
-  private mergeMemberWithUser(member: Member, user: User): MemberProfile {
+  private mergeMemberWithUser(
+    member: Member,
+    user: User,
+    alumniRoleId: string | null,
+  ): MemberProfile {
     return {
       ...member,
+      is_alumni:
+        alumniRoleId !== null && member.role_ids.includes(alumniRoleId),
       display_name: user.display_name,
       avatar_url: user.avatar_url,
       bio: user.bio,

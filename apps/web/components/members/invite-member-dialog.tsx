@@ -37,12 +37,16 @@ import { buildJoinUrl } from "@/lib/invite-link";
  * Seeded display name of the Member system role — the role a chapter with no
  * configured default falls back to.
  *
- * Matched by name here because `GET /v1/roles` does not project `system_key`.
- * The server-side fallback in `InviteService.resolveInviteRole` resolves the
- * same role by `system_key`, so a chapter that renamed Member still lands
- * correctly there; this constant only decides what the picker *shows* first.
+ * Only a fallback now. The picker finds Member by `system_key` first, as the
+ * server-side fallback in `InviteService.resolveInviteRole` does, so a chapter
+ * that renamed Member still lands on it. `GET /v1/roles` returns the whole
+ * row, `system_key` included; it is only untyped, because the route declares
+ * no response schema (#1049). (Corrected 2026-09-29, #2484: this comment used
+ * to say the key was not projected, and matched by name alone because of it.)
+ * The name still covers a legacy Member role that predates the key.
  */
 const SEEDED_MEMBER_ROLE_NAME = "Member";
+const MEMBER_SYSTEM_KEY = "MEMBER";
 
 type InviteRow = {
   id: string;
@@ -135,6 +139,26 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     [rolesQuery.data],
   );
 
+  // The Member role's current name: by `system_key`, read defensively off the
+  // untyped payload, then by its seeded name. `undefined` when neither exists.
+  const memberRoleName = useMemo(() => {
+    const keyed = (Array.isArray(rolesQuery.data) ? rolesQuery.data : []).find(
+      (role: unknown) =>
+        !!role &&
+        typeof role === "object" &&
+        (role as Record<string, unknown>).system_key === MEMBER_SYSTEM_KEY,
+    ) as Record<string, unknown> | undefined;
+    const keyedName = keyed?.name;
+    if (
+      typeof keyedName === "string" &&
+      roleOptions.some((role) => role.name === keyedName)
+    ) {
+      return keyedName;
+    }
+    return roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
+      ?.name;
+  }, [rolesQuery.data, roleOptions]);
+
   const inviteRows = useMemo(() => {
     return normalizeInvites(invitesQuery.data);
   }, [invitesQuery.data]);
@@ -171,9 +195,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
         setRoleName(
           defaultRoleName ??
-            roleOptions.find(
-              (role) => role.name === SEEDED_MEMBER_ROLE_NAME,
-            )?.name ??
+            memberRoleName ??
             roleOptions[0]?.name ??
             SEEDED_MEMBER_ROLE_NAME,
         );
@@ -186,13 +208,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     // (which is all of them: the column ships null with no backfill). That
     // would hand new members the alumni lifecycle restrictions instead of
     // Member, and it is precisely the arbitrary default this issue exists to
-    // remove — reached by a new route. Matching Member by name reproduces the
-    // pre-#422 behaviour exactly; the server-side fallback resolves the same
-    // role by `system_key`, which also survives a rename.
+    // remove — reached by a new route. Member is found by `system_key`, as the
+    // server-side fallback finds it, so a renamed Member is still the one
+    // pre-selected (`memberRoleName` above).
     const preferred =
       defaultRoleName ??
-      roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
-        ?.name ??
+      memberRoleName ??
       roleOptions[0]?.name ??
       SEEDED_MEMBER_ROLE_NAME;
     // No disable directive needed here: the rule reports once per effect, and
@@ -200,7 +221,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     if (preferred !== roleName) {
       setRoleName(preferred);
     }
-  }, [defaultRoleName, hasPickedRole, roleName, roleOptions]);
+  }, [defaultRoleName, hasPickedRole, memberRoleName, roleName, roleOptions]);
 
   const isSubmitting =
     createInviteMutation.isPending || createBatchInvitesMutation.isPending;
