@@ -773,6 +773,51 @@ describe("ImportWizard — the bot path", () => {
     });
   });
 
+  it("never offers a DM or group DM to merge into, or counts one as a clash (#2856)", async () => {
+    channelsQuery.value = {
+      data: [
+        { id: "ch-1", name: "general", type: "PUBLIC" },
+        { id: "gdm-1", name: "officers", type: "GROUP_DM" },
+        { id: "dm-1", name: "dm-a-b", type: "DM" },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "officers",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+    await renderAtChannels();
+    // #officers is not merged into the group DM of that name, and a new
+    // #officers does not clash with it.
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
+    const picker = screen.getByLabelText("Merge into") as HTMLSelectElement;
+    expect([...picker.options].map((option) => option.textContent)).toEqual([
+      "Pick a channel…",
+      "#general",
+    ]);
+  });
+
   it("keeps a private like-named channel as a new one and asks about the clash (#2856)", async () => {
     discoverChannels.mockResolvedValue({
       channels: [
