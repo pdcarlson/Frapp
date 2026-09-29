@@ -11,10 +11,19 @@ import { hydrateRoot } from "react-dom/client";
 // back to prove what the *rendered* placeholder says. `composerPlaceholder`
 // below is tested directly and needs none of this; only the "fresh mount"
 // integration test near the bottom needs `useEditor` stubbed, to capture the
-// real `Placeholder` extension Composer wires it into.
-const { capturedExtensions, mockRequestUploadUrl, mockUploadSignedUrl, mockToast } =
-  vi.hoisted(() => ({
+// real `Placeholder` extension Composer wires it into. The send suite (#1728)
+// also swaps the stub's `null` for an editor double, so `submit()` can run.
+const {
+  capturedExtensions,
+  editorDouble,
+  mockRequestUploadUrl,
+  mockUploadSignedUrl,
+  mockToast,
+} = vi.hoisted(() => ({
     capturedExtensions: [] as unknown[][],
+    // What the stubbed `useEditor` hands back. `null` everywhere except the
+    // send suite (#1728), which installs a `fakeEditor` so `submit()` can run.
+    editorDouble: { current: null as unknown },
     mockToast: vi.fn(),
     // Resolves a real response shape. Returning bare `vi.fn()` (undefined) made
     // `handleAttach` throw and toast instead of staging a chip, so no test
@@ -41,7 +50,7 @@ vi.mock("@tiptap/react", async () => {
     ...actual,
     useEditor: (options: { extensions: unknown[] }) => {
       capturedExtensions.push(options.extensions);
-      return null;
+      return editorDouble.current;
     },
     EditorContent: () => null,
   };
@@ -199,9 +208,9 @@ describe("Composer mention wiring", () => {
  *
  * Only the strip and its controls are reachable here: `useEditor` is stubbed to
  * `null` above (jsdom renders no ProseMirror view), so `submit()` returns on
- * its first line and no send can be driven through this component. That the
- * shell actually carries `replyToId` into `channel.send` is pinned in
- * `chat-shell.spec.tsx`, at the seam where it is drivable.
+ * its first line. The send suite below drives it with an editor double, but the
+ * reply never passes through the composer's send anyway: that the shell
+ * carries `replyToId` into `channel.send` is pinned in `chat-shell.spec.tsx`.
  */
 describe("Composer staged reply (#489)", () => {
   const REPLY_TO = { id: "msg-1", author: "Alice Chen", preview: "the original" };
@@ -369,6 +378,193 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
     expect(onSlashDispatch).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A minimal stand-in for the Tiptap editor, enough for `submit()` to run.
+ *
+ * jsdom renders no ProseMirror view, so the real editor cannot be typed into
+ * here; this holds the text as a string and implements exactly the calls the
+ * send path makes. `type` stands in for the member typing after a send.
+ */
+function fakeEditor(initial: string) {
+  let text = initial;
+  const docOf = (value: string) => ({
+    type: "doc",
+    content: value.split("\n").map((line) => ({
+      type: "paragraph",
+      content: line ? [{ type: "text", text: line }] : [],
+    })),
+  });
+  const textOf = (doc: { content?: { content?: { text?: string }[] }[] }) =>
+    (doc.content ?? [])
+      .map((p) => (p.content ?? []).map((n) => n.text ?? "").join(""))
+      .join("\n");
+  return {
+    isDestroyed: false,
+    get isEmpty() {
+      return text.length === 0;
+    },
+    getText: () => text,
+    getJSON: () => docOf(text),
+    type(value: string) {
+      text = value;
+    },
+    commands: {
+      clearContent: vi.fn(() => {
+        text = "";
+        return true;
+      }),
+      setContent: vi.fn((doc: Parameters<typeof textOf>[0]) => {
+        text = textOf(doc);
+        return true;
+      }),
+      focus: vi.fn(() => true),
+    },
+  };
+}
+
+/**
+ * #1728 — a send the outbox refused must not cost the member their message.
+ *
+ * `submit()` used to `void` the send and clear unconditionally, so an
+ * `outbox.enqueue` rejection (IndexedDB blocked, over quota, corrupt) emptied
+ * the composer and dropped the staged files, with no toast and — because
+ * `sendMessage` removes the optimistic card before rethrowing — nothing in the
+ * timeline either. The staged reply is the shell's half, pinned in
+ * `chat-shell.spec.tsx`.
+ */
+describe("Composer send failure (#1728)", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send" });
+  const refused = () => new Error("QuotaExceededError");
+
+  let editor: ReturnType<typeof fakeEditor>;
+  beforeEach(() => {
+    editor = fakeEditor("hello");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    captureException.mockClear();
+  });
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  function renderComposer(overrides: Partial<ComposerProps> = {}) {
+    const props = baseProps({ draft: "hello", ...overrides });
+    return { props, ...render(<Composer {...props} />) };
+  }
+
+  const failureToast = () =>
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Message not sent",
+        variant: "destructive",
+      }),
+    );
+
+  it("puts the text back and says why when the send rejects", async () => {
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const { props } = renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(failureToast);
+    expect(onSend).toHaveBeenCalledWith("hello", []);
+    expect(editor.getText()).toBe("hello");
+    // Reported to the draft too, so it survives a reload like any other text.
+    expect(props.onChangeDraft).toHaveBeenLastCalledWith("hello");
+    // Caught now, so Sentry's unhandled-rejection handler no longer sees it.
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { chat_send: "composer" },
+    });
+  });
+
+  it("keeps a staged attachment when the send rejects", async () => {
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const { container } = renderComposer({ onSend });
+    const file = new File(["%PDF-1.4"], "notes.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      { target: { files: [file] } },
+    );
+    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(failureToast);
+    expect(onSend).toHaveBeenCalledWith("hello", [
+      expect.objectContaining({ filename: "notes.pdf" }),
+    ]);
+    expect(
+      screen.getByRole("button", { name: /remove notes\.pdf/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("treats a synchronous throw from onSend as the same refusal", async () => {
+    const onSend = vi.fn(() => {
+      throw refused();
+    });
+    renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(failureToast);
+    expect(editor.getText()).toBe("hello");
+  });
+
+  it("does not overwrite text typed after the send", async () => {
+    // The rejection lands milliseconds later in practice, but a restore that
+    // clobbered a new message would lose that one instead.
+    let reject!: (error: Error) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>((_, rejectSend) => {
+          reject = rejectSend;
+        }),
+    );
+    const { props } = renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+    expect(editor.getText()).toBe("");
+    editor.type("second thought");
+    await act(async () => reject(refused()));
+
+    failureToast();
+    expect(editor.getText()).toBe("second thought");
+    expect(props.onChangeDraft).not.toHaveBeenCalledWith("hello");
+  });
+
+  it("clears the text and files, silently, once the send is queued", async () => {
+    // The other direction: restoring on every send would pass every case above
+    // and leave each sent message sitting in the composer.
+    const onSend = vi.fn(async () => undefined);
+    const { container } = renderComposer({ onSend });
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+
+    await act(async () => fireEvent.click(sendButton()));
+
+    expect(editor.getText()).toBe("");
+    expect(
+      screen.queryByRole("button", { name: /remove notes\.pdf/i }),
+    ).not.toBeInTheDocument();
+    expect(mockToast).not.toHaveBeenCalled();
   });
 });
 

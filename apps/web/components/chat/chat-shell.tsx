@@ -1999,7 +1999,7 @@ export function ChatShell({
             // `replyTo?.id`, not `replyToId`: the derived target is the one the
             // member can actually see staged. Reading the raw id would let a
             // send carry a reply whose strip resolved to nothing.
-            onSend={(body, attachments) => {
+            onSend={async (body, attachments) => {
               const target = replyTo?.id ?? null;
               // Cleared before the await, not after: `channel.send` enqueues to
               // the Dexie outbox and resolves on its own schedule, and a strip
@@ -2013,8 +2013,20 @@ export function ChatShell({
               // answers a ping in #random — that send wiped it — and comes back
               // to #general to a per-channel draft still in the composer and no
               // strip above it, so Enter posts the reply as a top-level message.
-              if (replyTo) setReplyTarget(null);
-              return channel.send(body, { replyToId: target, attachments });
+              //
+              // Put back if the send rejects, which means the outbox never took
+              // the message (#1728): the composer restores the text beside it,
+              // and a reply that came back without its strip would post as a
+              // top-level message. Only into an empty slot, so a reply the
+              // member staged in the meantime wins.
+              const staged = replyTo ? replyTarget : null;
+              if (staged) setReplyTarget(null);
+              try {
+                await channel.send(body, { replyToId: target, attachments });
+              } catch (error) {
+                if (staged) setReplyTarget((current) => current ?? staged);
+                throw error;
+              }
             }}
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(

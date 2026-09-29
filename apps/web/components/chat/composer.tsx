@@ -409,6 +409,13 @@ interface ComposerBaseProps {
   canPost?: boolean;
   draft: string;
   onChangeDraft: (body: string) => void;
+  /**
+   * Rejects when the message was **not** queued (the outbox write failed). The
+   * composer clears optimistically and, on a rejection, puts the text and
+   * attachments back and toasts. A caller that clears staged state of its own
+   * before the send settles (the shell's reply target) restores it on the same
+   * rejection and rethrows, so the composer still hears about it.
+   */
   onSend: (
     body: string,
     attachments: OutboxAttachment[],
@@ -1011,12 +1018,52 @@ export function Composer({
         return;
       }
     }
-    void onSend(text, pending);
-    // Only clear when a send was actually issued.
+    /*
+      Cleared optimistically, put back if the send rejects (#1728).
+
+      Not awaited before clearing: `sendMessage` awaits the POST when online, so
+      holding the text until `onSend` resolved would leave it standing beside
+      its own optimistic bubble for a round trip, inviting a second Enter that
+      mints a fresh `client_message_id`. Mobile's `send` makes the same trade.
+
+      What rejects is the outbox write itself (`outbox.enqueue`, i.e.
+      IndexedDB blocked, over quota or corrupt). `sendMessage` removes the
+      optimistic card before rethrowing, so without this the member saw the
+      composer empty itself, nothing in the timeline, and no explanation.
+      API failures never reach here: those rows are queued and keep
+      Retry/Delete. The enqueue runs before any network I/O, so the rejection
+      lands within milliseconds of the clear. The text is restored only into
+      an editor that is still empty, so it cannot overwrite anything typed
+      since; the staged reply is the shell's to put back.
+
+      `onSend` is called inside the async wrapper so a synchronous throw
+      becomes the same rejection rather than escaping the click handler.
+    */
+    const sentDoc = editor.getJSON();
+    const sentPending = pending;
+    const sent = (async () => onSend(text, sentPending))();
     editor.commands.clearContent(true);
     setPending([]);
+    void sent.catch((error: unknown) => {
+      Sentry.captureException(error, { tags: { chat_send: "composer" } });
+      if (!editor.isDestroyed && editor.isEmpty) {
+        // `emitUpdate: false` so the restore doesn't broadcast a typing ping;
+        // the draft is reported by hand instead, which also keeps the
+        // draft-sync effect above from treating it as a stale restore.
+        editor.commands.setContent(sentDoc, { emitUpdate: false });
+        onChangeDraft(editor.getText());
+      }
+      setPending((current) => [...sentPending, ...current]);
+      toast({
+        title: "Message not sent",
+        description:
+          "This browser couldn't save it for sending. Your message is still here. Try again.",
+        variant: "destructive",
+      });
+    });
   }, [
     editor,
+    onChangeDraft,
     onSend,
     onSlashDispatch,
     pending,
