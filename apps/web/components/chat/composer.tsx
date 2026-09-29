@@ -791,6 +791,12 @@ export function Composer({
     pending: OutboxAttachment[];
     replyId: string | null;
   }>({ pending: [], replyId: null });
+  /*
+    Uploads started so far, counted when they start rather than when they
+    stage a chip: a file the member began attaching after a send lands in
+    `pending` later, beside whatever that send's refusal put back.
+  */
+  const uploadsStartedRef = useRef(0);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -1061,7 +1067,10 @@ export function Composer({
 
       All or nothing. The text, the files and the reply belong together, so
       they come back only into a composer the member has not touched since:
-      an empty editor, no file staged, no other reply staged. Anything less
+      an empty editor, no file staged or started uploading, no other reply
+      staged. A file still uploading from before Send doesn't count: it was
+      headed for this message, and lands beside it (if it finishes first, it
+      is a staged file like any other). Anything less
       pairs pieces of two messages (the old files on new text, a reply strip
       over text it was never written for), which is worse than a message
       that is plainly gone. The rejection usually lands within milliseconds,
@@ -1074,6 +1083,7 @@ export function Composer({
     const sentDoc = editor.getJSON();
     const sentPending = pending;
     const sentReplyId = replyTo?.id ?? null;
+    const sentUploads = uploadsStartedRef.current;
     const sent = (async () => onSend(text, sentPending))();
     editor.commands.clearContent(true);
     setPending([]);
@@ -1086,11 +1096,13 @@ export function Composer({
         !editor.isDestroyed &&
         editor.isEmpty &&
         (staged.pending.length === 0 || staged.pending === sentPending) &&
-        (staged.replyId === null || staged.replyId === sentReplyId);
+        (staged.replyId === null || staged.replyId === sentReplyId) &&
+        uploadsStartedRef.current === sentUploads;
       if (!untouched) {
         toast({
           title: "Message not sent",
-          description: "It couldn't be queued for delivery.",
+          description:
+            "It couldn't be queued for delivery and was discarded. Re-enter it to try again.",
           variant: "destructive",
         });
         return;
@@ -1156,6 +1168,7 @@ export function Composer({
         });
         return;
       }
+      uploadsStartedRef.current += 1;
       try {
         const signed = await requestUploadUrl.mutateAsync({
           id: channelId,

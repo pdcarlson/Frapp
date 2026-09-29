@@ -448,6 +448,7 @@ describe("Composer send failure (#1728)", () => {
     editor = fakeEditor("hello");
     editorDouble.current = editor;
     mockToast.mockClear();
+    mockUploadSignedUrl.mockClear();
     captureException.mockClear();
   });
   afterEach(() => {
@@ -483,6 +484,19 @@ describe("Composer send failure (#1728)", () => {
     return screen.findByRole("button", { name: `Remove ${name}` });
   }
 
+  /** Enter through the editor's own keymap, outside any React event. */
+  function pressEnter() {
+    const submitKeymap = capturedExtensions
+      .at(-1)!
+      .find(
+        (extension) =>
+          (extension as { name?: string } | null)?.name === "submit-on-enter",
+      ) as {
+      config: { addKeyboardShortcuts: () => { Enter: () => boolean } };
+    };
+    submitKeymap.config.addKeyboardShortcuts.call({}).Enter();
+  }
+
   const chip = (name = "notes.pdf") =>
     screen.queryByRole("button", { name: `Remove ${name}` });
 
@@ -495,7 +509,7 @@ describe("Composer send failure (#1728)", () => {
       }),
     );
   const BACK = /back in the composer/;
-  const GONE = /^It couldn't be queued for delivery\.$/;
+  const GONE = /was discarded/;
 
   it("puts the text back and says so when the send rejects", async () => {
     const onSend = vi.fn(async () => {
@@ -552,6 +566,50 @@ describe("Composer send failure (#1728)", () => {
     expect(onRestoreReply).toHaveBeenCalledWith("msg-1");
   });
 
+  it("re-stages the reply once the shell has cleared its strip", async () => {
+    // What production does: the shell clears its target the moment it sends,
+    // so by the time the refusal lands the composer's `replyTo` is null.
+    const { onSend, refuse } = deferredSend();
+    const onRestoreReply = vi.fn();
+    const props = baseProps({
+      draft: "hello",
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    const { rerender } = render(<Composer {...props} />);
+
+    fireEvent.click(sendButton());
+    rerender(<Composer {...baseProps({ ...props, replyTo: null })} />);
+    await refuse();
+
+    toastSaying(BACK);
+    expect(onRestoreReply).toHaveBeenCalledWith("msg-1");
+    expect(editor.getText()).toBe("hello");
+  });
+
+  it("restores when the refusal lands before the re-render that cleared it", async () => {
+    // An unscoped outbox throws at once, so outside a React event (Enter
+    // arrives through ProseMirror's own keymap) the rejection can settle
+    // before React commits `setPending([])`. What is staged is then still the
+    // files that were sent, which is not the member touching anything.
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const { container } = renderComposer({ onSend });
+    await stageFile(container);
+
+    pressEnter();
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    // Settled before any render: the chip is the one React has yet to clear.
+    toastSaying(BACK);
+    await act(async () => {});
+
+    expect(editor.getText()).toBe("hello");
+    expect(chip()).toBeInTheDocument();
+  });
+
   it("treats a synchronous throw from onSend as the same refusal", async () => {
     const onSend = vi.fn(() => {
       throw refused();
@@ -604,6 +662,56 @@ describe("Composer send failure (#1728)", () => {
     expect(editor.getText()).toBe("");
     expect(chip("photo.pdf")).toBeInTheDocument();
     expect(chip("notes.pdf")).not.toBeInTheDocument();
+  });
+
+  it("restores none of it over an upload started since", async () => {
+    // The file lands in `pending` only when its upload finishes, so this is
+    // the one piece of the next message the staged check can't see yet.
+    const { onSend, refuse } = deferredSend();
+    const { container } = renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+    mockUploadSignedUrl.mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "photo.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalled());
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("");
+  });
+
+  it("still restores over an upload already under way at Send", async () => {
+    // That file was headed for this message; it lands beside the restored
+    // text, as it would have beside the text had the send never happened.
+    const { onSend, refuse } = deferredSend();
+    const { container } = renderComposer({ onSend });
+    mockUploadSignedUrl.mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "photo.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalled());
+
+    fireEvent.click(sendButton());
+    await refuse();
+
+    toastSaying(BACK);
+    expect(editor.getText()).toBe("hello");
   });
 
   it("restores none of it over a different reply staged since", async () => {
