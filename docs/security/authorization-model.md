@@ -108,6 +108,8 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
 | `GET/POST /users/me/legal-acceptance` | A | **D** — reads and stamps the caller's own row only; no chapter context, because a user accepts before they join one (#2302) |
 | `GET /users/me/permissions`, `POST /users/me/avatar-url` | A+C | Chapter context needed; guard supplies it |
+| `POST /users/me/avatar` | A+C | **D** — `confirmAvatarUpload` accepts only a path directly in the caller's own `chapters/<active>/profiles/<uid>/` folder, and only once the object exists (#732) |
+| `DELETE /users/me/avatar` | A | **D** — clears the caller's own photo; deletes the object only when the stored path is in the caller's own folder |
 | `POST /push-tokens`, `DELETE /push-tokens/:id` | A | **D** — `removePushToken` checks `existing.user_id !== userId → 404` (`notification.service.ts:299`) |
 | `GET /notifications`, `PATCH /notifications/:id/read` | A | **D** — `markNotificationRead` checks `existing.user_id !== userId → 404` (`:271`) |
 | `GET /notifications/preferences?chapterId=`, `PATCH /notifications/preferences` | A | Client-supplied chapter id with **no** `ChapterGuard` — verified explicitly by `assertChapterMembership(userId, chapterId)` (`notification.service.ts:309,319,334`) |
