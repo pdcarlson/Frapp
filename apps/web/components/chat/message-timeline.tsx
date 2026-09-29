@@ -232,7 +232,8 @@ interface TimelineHeaderContext {
  * or its failure with a Retry. Nothing otherwise — the day divider under it
  * already says where the history starts, and it also keeps the first row's
  * action bar (centred on the row's top edge) inside the scroller: the oldest
- * loaded row always starts a day, and its divider renders in the same item.
+ * loaded row starts a day, and its divider renders in the same item. (A row
+ * whose timestamp cannot be read gets no divider, so there the bar clips.)
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
