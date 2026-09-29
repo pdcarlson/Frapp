@@ -166,4 +166,16 @@ describe('ProfilePhotoUrlService', () => {
     expect(again.avatar_url).toBe(hit.avatar_url);
     expect(storage.getSignedDownloadUrls).toHaveBeenCalledTimes(1);
   });
+
+  it('serves every row of a single read larger than the cache bound', async () => {
+    // One call past MAX_CACHED_URLS: the trim after signing evicts this call's
+    // own earliest paths, and they must still be served from what was signed.
+    const rows = Array.from({ length: 5001 }, (_, i) =>
+      row(`user-${i}`, `chapters/ch-1/profiles/user-${i}/p.jpg`),
+    );
+
+    const result = await service.signRows(rows, (r) => r.user_id);
+
+    expect(result.every((r) => r.avatar_url?.startsWith('signed:'))).toBe(true);
+  });
 });

@@ -373,21 +373,27 @@ describe("pickAndUploadPhoto", () => {
 });
 
 describe("uploadFailureReason", () => {
-  it("reads the API's message off a thrown error body", () => {
+  it("reads the API's reason off a thrown 4xx body", () => {
     expect(uploadFailureReason({ statusCode: 400, message: "Too big" })).toBe(
       "Too big",
     );
     // class-validator answers with a list.
-    expect(uploadFailureReason({ message: ["filename must be a string"] })).toBe(
-      "filename must be a string",
-    );
+    expect(
+      uploadFailureReason({
+        statusCode: 400,
+        message: ["filename must be a string"],
+      }),
+    ).toBe("filename must be a string");
   });
 
-  it("does not show a thrown Error's text, which is platform jargon", () => {
-    expect(uploadFailureReason(new Error("NSURLErrorDomain -1009"))).toBe(
-      "Couldn't upload that photo. Try again in a moment.",
-    );
-    expect(uploadFailureReason(undefined)).toBe(
+  it.each([
+    ["a 429's framework text", { statusCode: 429, message: "ThrottlerException: Too Many Requests" }],
+    ["a 500's framework text", { statusCode: 500, message: "Internal server error" }],
+    ["a body with no status", { message: "something" }],
+    ["a native Error, which is platform jargon", new Error("NSURLErrorDomain -1009")],
+    ["nothing at all", undefined],
+  ])("shows the generic sentence for %s", (_label, err) => {
+    expect(uploadFailureReason(err)).toBe(
       "Couldn't upload that photo. Try again in a moment.",
     );
   });
@@ -404,12 +410,29 @@ describe("uploadFailureReason", () => {
 
     const result = await pickAndUploadPhoto(
       "channel-1",
-      vi.fn().mockRejectedValue({ message: "You can't post in this channel" }),
+      vi.fn().mockRejectedValue({
+        statusCode: 403,
+        message: "You can't post in this channel",
+      }),
     );
 
     expect(result).toEqual({
       status: "refused",
       reason: "You can't post in this channel",
     });
+  });
+
+  it("never crops a chat attachment: that re-encodes and drops GIF frames", async () => {
+    vi.mocked(ImagePicker).requestMediaLibraryPermissionsAsync.mockResolvedValue({
+      granted: true,
+      canAskAgain: true,
+    } as never);
+
+    await pickAndUploadPhoto("channel-1", vi.fn());
+
+    const [options] = vi.mocked(ImagePicker).launchImageLibraryAsync.mock
+      .calls[0] as [Record<string, unknown>];
+    expect(options).not.toHaveProperty("allowsEditing");
+    expect(options).not.toHaveProperty("aspect");
   });
 });

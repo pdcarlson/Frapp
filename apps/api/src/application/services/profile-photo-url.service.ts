@@ -41,10 +41,11 @@ interface HasAvatarUrl {
  * else serves as `null`, so the client draws initials. That covers every value
  * the free-text `PATCH /v1/users/me` could store before it stopped accepting
  * `avatar_url` (#2519): a path into someone else's folder, which would hand out
- * a photo the owner never uploaded, and a URL. No code has ever written a URL
- * here (sign-in syncs only the email and name), so a URL can only be one a
- * member typed in, and serving it would have every chapter-mate who opens a
- * chat with them fetch it from a host that member chose.
+ * a photo the owner never uploaded, and a URL. No code writes a URL here
+ * (sign-in syncs only the email and name, and no migration or seed sets the
+ * column), so a URL is one a member typed in, and serving it would have every
+ * chapter-mate who opens a chat with them fetch it from a host that member
+ * chose.
  *
  * A signing failure degrades to `null` for the affected rows rather than
  * failing the read: a photo is decoration on a roster, a directory, or the

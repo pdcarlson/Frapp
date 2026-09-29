@@ -338,6 +338,22 @@ describe('UserService', () => {
       expect(deleted).not.toContain(phones);
     });
 
+    it('a retried confirm of the current photo deletes nothing, least of all the photo', async () => {
+      // A lost response makes the client resend the same confirm; the photo it
+      // "replaces" is itself.
+      mockRepo.findById.mockResolvedValue(userWith(NEW_PATH));
+      mockStorageProvider.listObjects.mockResolvedValue(stored([NEW_PATH, 2]));
+
+      const result = await service.confirmAvatarUpload(
+        'ch-1',
+        'user-1',
+        NEW_PATH,
+      );
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      expect(result.avatar_url).toBe(`signed:${NEW_PATH}`);
+    });
+
     it('never deletes an object whose age storage did not report', async () => {
       mockRepo.findById.mockResolvedValue(userWith(null));
       mockStorageProvider.listObjects.mockResolvedValue([

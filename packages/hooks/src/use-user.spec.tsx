@@ -114,36 +114,78 @@ describe("profile photo mutations (#732)", () => {
     });
   });
 
+  // Named literally rather than read back from `PHOTO_QUERY_KEYS`, so dropping
+  // a key from that list fails here instead of passing with it.
+  const EXPECTED_KEYS = [["user", "me"], ["members"], ["alumni"], ["activity-feed"]];
+
   function photoMutationHarness() {
     const mockClient = {
       POST: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
       DELETE: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
     };
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    // Each invalidation stays pending until released, so a test can see
+    // whether `mutateAsync` waited for the refetches or resolved before them.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const invalidate = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(() => gate);
     const invalidatedKeys = () =>
       invalidate.mock.calls.map(([filters]) => filters?.queryKey);
-    return { wrapper: createWrapper(queryClient, mockClient), invalidatedKeys };
+    return {
+      wrapper: createWrapper(queryClient, mockClient),
+      invalidatedKeys,
+      release: () => release(),
+    };
   }
 
-  it("confirm refetches every read that shows the photo before resolving", async () => {
-    const { wrapper, invalidatedKeys } = photoMutationHarness();
-    const { result } = renderHook(() => useConfirmAvatar(), { wrapper });
+  async function expectWaitsForRefetch(
+    mutate: () => Promise<unknown>,
+    harness: ReturnType<typeof photoMutationHarness>,
+  ) {
+    let settled = false;
+    const pending = mutate().then(() => {
+      settled = true;
+    });
+    await waitFor(() =>
+      expect(harness.invalidatedKeys()).toHaveLength(EXPECTED_KEYS.length),
+    );
+    // Every refetch has started and none has finished: not resolved yet.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    harness.release();
+    await pending;
+    expect(settled).toBe(true);
+    for (const key of EXPECTED_KEYS) {
+      expect(harness.invalidatedKeys()).toContainEqual(key);
+    }
+  }
 
-    await result.current.mutateAsync("chapters/c/profiles/u/x.png");
-
-    for (const key of PHOTO_QUERY_KEYS) expect(invalidatedKeys()).toContainEqual(key);
-    // Keyed apart from `["members"]`, so it has to be named: a stale alumni
-    // photo is what added it.
-    expect(invalidatedKeys()).toContainEqual(["alumni"]);
+  it("the key list covers every read that serves the photo", () => {
+    expect([...PHOTO_QUERY_KEYS]).toEqual(EXPECTED_KEYS);
   });
 
-  it("remove refetches every read that shows the photo before resolving", async () => {
-    const { wrapper, invalidatedKeys } = photoMutationHarness();
-    const { result } = renderHook(() => useRemoveAvatar(), { wrapper });
+  it("confirm resolves only after every read that shows the photo refetched", async () => {
+    const harness = photoMutationHarness();
+    const { result } = renderHook(() => useConfirmAvatar(), {
+      wrapper: harness.wrapper,
+    });
 
-    await result.current.mutateAsync();
+    await expectWaitsForRefetch(
+      () => result.current.mutateAsync("chapters/c/profiles/u/x.png"),
+      harness,
+    );
+  });
 
-    for (const key of PHOTO_QUERY_KEYS) expect(invalidatedKeys()).toContainEqual(key);
+  it("remove resolves only after every read that shows the photo refetched", async () => {
+    const harness = photoMutationHarness();
+    const { result } = renderHook(() => useRemoveAvatar(), {
+      wrapper: harness.wrapper,
+    });
+
+    await expectWaitsForRefetch(() => result.current.mutateAsync(), harness);
   });
 
   it("confirm sends the path and surfaces an API refusal", async () => {
