@@ -38,6 +38,7 @@ import {
 } from './subscription.decorator';
 import { ChatController } from '../controllers/chat.controller';
 import { ChatBookmarkController } from '../controllers/chat-bookmark.controller';
+import { ChatSidebarController } from '../controllers/chat-sidebar.controller';
 import { CustomFieldController } from '../controllers/custom-field.controller';
 import { CustomRoleController } from '../controllers/custom-role.controller';
 import { NotificationController } from '../controllers/notification.controller';
@@ -84,6 +85,7 @@ describe('subscription decorator wiring', () => {
   const freeTier = [
     ChatController,
     ChatBookmarkController,
+    ChatSidebarController,
     CustomFieldController,
     CustomRoleController,
     MemberController,

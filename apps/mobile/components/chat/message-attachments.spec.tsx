@@ -30,7 +30,9 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
-import { isPreviewable, MessageAttachments } from "./message-attachments";
+import * as WebBrowser from "expo-web-browser";
+import { ImageViewerContext } from "./image-viewer";
+import { MessageAttachments } from "./message-attachments";
 
 /**
  * The behaviours this file exists for, all from #1229.
@@ -57,18 +59,21 @@ function attachment(overrides: Record<string, unknown> = {}) {
 
 function render(
   props: Partial<React.ComponentProps<typeof MessageAttachments>> = {},
+  openViewer: React.ContextType<typeof ImageViewerContext> = null,
 ) {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <MessageAttachments
-          channelId="chan-1"
-          messageId="msg-1"
-          count={1}
-          isMine={false}
-          {...props}
-        />
+        <ImageViewerContext.Provider value={openViewer}>
+          <MessageAttachments
+            channelId="chan-1"
+            messageId="msg-1"
+            count={1}
+            isMine={false}
+            {...props}
+          />
+        </ImageViewerContext.Provider>
       </FrappThemeProvider>,
     );
   });
@@ -224,16 +229,91 @@ describe("the mine note colour", () => {
     hookState.result = { isPending: true, isError: false, data: undefined };
     const tree = render({ isMine: true, accentOnPrimary: "#2B2009", count: 1 });
 
-    const [note] = tree.root.findAllByType("Text" as unknown as React.ElementType);
+    const [note] = tree.root.findAllByType(
+      "Text" as unknown as React.ElementType,
+    );
     expect(JSON.stringify(note!.props.style)).toContain('"color":"#2B2009"');
   });
 });
 
-describe("isPreviewable", () => {
-  it("is true only for image content types", () => {
-    expect(isPreviewable("image/png")).toBe(true);
-    expect(isPreviewable("application/pdf")).toBe(false);
-    // The column is nullable, and a null must not preview as an image.
-    expect(isPreviewable(null)).toBe(false);
+// #2874: an image opens the thread's viewer, not the browser.
+describe("opening an image", () => {
+  const photo = (n: number) =>
+    attachment({
+      id: `att-${n}`,
+      filename: `photo-${n}.png`,
+      content_type: "image/png",
+      download_url: `https://example.test/signed/photo-${n}.png`,
+    });
+
+  beforeEach(() => {
+    vi.mocked(WebBrowser.openBrowserAsync).mockClear();
+  });
+
+  it("opens the viewer on the tapped image of this message", () => {
+    // The PDF sits between the images and is not one of them.
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [photo(1), attachment(), photo(2)],
+    };
+    const openViewer = vi.fn();
+    const tree = render({ count: 3 }, openViewer);
+
+    const row = tree.root
+      .findAllByProps({ accessibilityRole: "button" })
+      .find((node) => node.props.accessibilityLabel === "View photo-2.png")!;
+    act(() => row.props.onPress());
+
+    expect(openViewer).toHaveBeenCalledWith({
+      channelId: "chan-1",
+      messageId: "msg-1",
+      imageId: "att-2",
+    });
+    expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+  });
+
+  it("still opens any other file through the signed URL", () => {
+    const openViewer = vi.fn();
+    const tree = render({}, openViewer);
+    const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
+    act(() => row!.props.onPress());
+
+    expect(openViewer).not.toHaveBeenCalled();
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://example.test/signed/minutes.pdf",
+    );
+  });
+
+  it("opens an image in the browser where no screen hosts a viewer", () => {
+    hookState.result = { isPending: false, isError: false, data: [photo(1)] };
+    const tree = render();
+    const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
+
+    expect(row!.props.accessibilityLabel).toBe("Open photo-1.png");
+    act(() => row!.props.onPress());
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://example.test/signed/photo-1.png",
+    );
+  });
+
+  it("keeps an SVG a file row, never drawn and never in the viewer", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({ filename: "logo.svg", content_type: "image/svg+xml" }),
+      ],
+    };
+    const openViewer = vi.fn();
+    const tree = render({}, openViewer);
+
+    expect(
+      tree.root.findAllByType("Image" as unknown as React.ElementType),
+    ).toHaveLength(0);
+    expect(textOf(tree)).toContain("logo.svg");
+    const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
+    act(() => row!.props.onPress());
+    expect(openViewer).not.toHaveBeenCalled();
   });
 });

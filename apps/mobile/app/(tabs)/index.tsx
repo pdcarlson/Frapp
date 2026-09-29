@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -9,17 +10,33 @@ import {
 } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  arrangeChannelSidebar,
   canHideConversation,
+  foldedSectionAnnouncement,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
+  HIDE_MUTED_LABEL,
+  NO_MATCHING_CHANNELS,
   otherMemberId,
+  SHOW_ALL_CHANNELS_LABEL,
+  SIDEBAR_SAVE_FAILED_BODY,
+  SIDEBAR_SAVE_FAILED_TITLE,
+  sidebarMutedChannelIds,
+  sidebarSections,
+  sidebarUnreadCounts,
+  UNREAD_ONLY_LABEL,
   useCategories,
+  useChannelNotificationPreferences,
   useChannelUnreadCounts,
   useGetOrCreateDm,
   useChannels,
   useEvents,
   useLeaveChannel,
   useMemberDisplayNames,
+  useSetChannelPinned,
+  useSetSidebarFilter,
+  useSetSidebarSectionCollapsed,
+  useSidebarPreferences,
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
@@ -27,12 +44,12 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
-import { ChannelRow } from "@/components/chat/channel-row";
+import { ToggleChips } from "@/components/filter-chips";
+import { ChannelRow, UnreadBadge } from "@/components/chat/channel-row";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import {
   displayChannelName,
-  indexUnread,
   hiddenChannels,
   isDirectChannel,
   listedChannels,
@@ -41,6 +58,7 @@ import {
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
 import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
+import { openChannelRowActions } from "@/lib/chat/channel-row-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -97,10 +115,38 @@ export default function ChatHomeScreen() {
   );
   const channels = useMemo(() => listedChannels(allChannels), [allChannels]);
   const hidden = useMemo(() => hiddenChannels(allChannels), [allChannels]);
-  const unread = useMemo(
-    () => indexUnread(unreadQuery.data ?? []),
-    [unreadQuery.data],
+  // One map for the rows' badges and the arrangement alike, so a folded
+  // header and the rows never disagree. `undefined` while the counts are
+  // unknown (pending, or the last read failed): rows then draw no badge (after
+  // a failure the warning below says why), and Unread only hides nothing.
+  const unreadByChannelId = useMemo(
+    () =>
+      sidebarUnreadCounts({
+        data: unreadQuery.data,
+        isError: unreadQuery.isError,
+      }),
+    [unreadQuery.data, unreadQuery.isError],
   );
+
+  // The member's own arrangement (#2877): pins, folded sections and the two
+  // filters, stored server-side so they match web. A failed read leaves the
+  // default arrangement, which hides nothing.
+  const preferences = useSidebarPreferences();
+  // A hook option, not `mutate`'s per-call `onError`, which fires only for the
+  // latest write on the hook. The write has already put the list back on the
+  // server's state; this says so.
+  const sidebarWriteOptions = useMemo(
+    () => ({
+      onError: () =>
+        Alert.alert(SIDEBAR_SAVE_FAILED_TITLE, SIDEBAR_SAVE_FAILED_BODY),
+    }),
+    [],
+  );
+  const { mutate: setChannelPinned } = useSetChannelPinned(sidebarWriteOptions);
+  const { mutate: setSectionCollapsed } =
+    useSetSidebarSectionCollapsed(sidebarWriteOptions);
+  const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
+  const notificationPrefsQuery = useChannelNotificationPreferences();
 
   // Categories are grouping only. While they load, or if the read fails,
   // `selectCategories` gives `[]` and every channel sits under CHANNELS, the
@@ -110,21 +156,40 @@ export default function ChatHomeScreen() {
     () => selectCategories(categoriesQuery.data),
     [categoriesQuery.data],
   );
-  const sections = useMemo(() => {
-    const grouped = groupChannelsByCategory(channels, categories);
-    return [
-      // Label per `spec/behavior/chat/README.md` § Channels (the "Channel
-      // categories" rule): the default group is "Channels", and it stays first.
-      { key: "channels", label: "CHANNELS", channels: grouped.uncategorized },
-      ...grouped.categories.map(({ category, channels: inCategory }) => ({
-        // Prefixed so a category id can never collide with a fixed key.
-        key: `category:${category.id}`,
-        label: category.name,
-        channels: inCategory,
-      })),
-      { key: "direct", label: "DIRECT", channels: grouped.direct },
-    ].filter((section) => section.channels.length > 0);
-  }, [channels, categories]);
+  const arranged = useMemo(() => {
+    // Both filters apply only while their data is known. The shared helpers
+    // give `undefined` while a read is pending or its last attempt failed, so
+    // a filter never hides a row on missing or stale data.
+    const mutedChannelIds = sidebarMutedChannelIds({
+      data: notificationPrefsQuery.data,
+      isError: notificationPrefsQuery.isError,
+    });
+    return arrangeChannelSidebar({
+      // Labels per `spec/behavior/chat/README.md` § Channels (the "Channel
+      // categories" rule): the default group is "Channels", and it stays first
+      // below Pinned.
+      sections: sidebarSections(groupChannelsByCategory(channels, categories), {
+        channels: "CHANNELS",
+        direct: "DIRECT",
+      }),
+      pinnedIds: preferences.pinnedIds,
+      collapsed: preferences.collapsed,
+      filters: preferences.filters,
+      activeChannelId: null,
+      titleOf: (channel) => displayChannelName(channel, viewerId, memberNames),
+      unreadByChannelId,
+      mutedChannelIds,
+    });
+  }, [
+    channels,
+    categories,
+    preferences,
+    unreadByChannelId,
+    notificationPrefsQuery.data,
+    notificationPrefsQuery.isError,
+    viewerId,
+    memberNames,
+  ]);
 
   function openChannel(channelId: string) {
     // Object form, because the route takes a param. Note this is invisible to
@@ -147,24 +212,36 @@ export default function ChatHomeScreen() {
   }
 
   function renderChannel(channel: ChannelSummary) {
-    const counts = unread[channel.id];
+    const counts = unreadByChannelId?.get(channel.id);
     const name = displayChannelName(channel, viewerId, memberNames);
+    const pinned = preferences.pinnedIds.has(channel.id);
+    const togglePin = () =>
+      setChannelPinned({ channelId: channel.id, pinned: !pinned });
+    const hide = canHideConversation(channel)
+      ? () =>
+          confirmHideConversation({
+            name,
+            run: () => leaveChannel.mutateAsync(channel.id),
+          })
+      : undefined;
     return (
       <ChannelRow
         key={channel.id}
         name={name}
         isDirect={isDirectChannel(channel)}
-        unreadCount={counts?.unread ?? 0}
-        mentionCount={counts?.mentions ?? 0}
+        isPinned={pinned}
+        unreadCount={counts?.unreadCount ?? 0}
+        mentionCount={counts?.mentionCount ?? 0}
         onPress={() => openChannel(channel.id)}
-        onHide={
-          canHideConversation(channel)
-            ? () =>
-                confirmHideConversation({
-                  name,
-                  run: () => leaveChannel.mutateAsync(channel.id),
-                })
-            : undefined
+        onHide={hide}
+        onTogglePin={togglePin}
+        onLongPress={() =>
+          openChannelRowActions({
+            name,
+            pinned,
+            onTogglePin: togglePin,
+            onHide: hide,
+          })
         }
       />
     );
@@ -247,20 +324,114 @@ export default function ChatHomeScreen() {
       ) : (
         <>
           {/*
-            TODO-DESIGN: the Canvas draws a PINNED section above CHANNELS
-            (canvas-screens.dc.html:135), but `ChatChannel` carries no pin or
-            favourite field — there is no data behind it on either client. The
-            nearest honest pattern is to render only the sections that exist;
-            adding a pin is an API change, not a screen decision.
+            The two filters (#2877). Chips rather than a menu: the header's one
+            action slot is the Ask pill, and the state of each filter should be
+            visible without opening anything, since a shortened list would
+            otherwise read as a chapter with fewer channels.
           */}
-          {sections.map((section) => (
+          <ToggleChips
+            chips={[
+              {
+                key: "unread_only",
+                label: UNREAD_ONLY_LABEL,
+                on: preferences.filters.unreadOnly,
+              },
+              {
+                key: "hide_muted",
+                label: HIDE_MUTED_LABEL,
+                on: preferences.filters.hideMuted,
+              },
+            ]}
+            onToggle={(key, next) =>
+              setSidebarFilter(
+                key === "unread_only"
+                  ? { unread_only: next }
+                  : { hide_muted: next },
+              )
+            }
+          />
+
+          {/*
+            Each header folds its section (#2877). Folded, it keeps the
+            section's unread total, red when anything inside addresses the
+            member, so folding never hides a mention. PINNED is the Canvas's
+            section above CHANNELS (canvas-screens.dc.html:135).
+          */}
+          {arranged.sections.map((section) => (
             <View key={section.key} style={styles.section}>
-              <Text accessibilityRole="header" style={styles.sectionLabel}>
-                {section.label}
-              </Text>
-              {section.channels.map(renderChannel)}
+              {/*
+                A header that folds. The header role keeps each section on the
+                screen reader's headings rotor, as before #2877. A header has
+                no button trait, and iOS never announces "collapsed", so the
+                label says whether the section is folded and the hint says what
+                a double-tap does. A folded label also carries the section's
+                total, since the badge inside is not read on its own.
+              */}
+              <Pressable
+                accessibilityRole="header"
+                accessibilityState={{ expanded: !section.collapsed }}
+                accessibilityLabel={
+                  section.collapsed
+                    ? section.unreadCount > 0 || section.addressed
+                      ? `${section.label}, folded, ${foldedSectionAnnouncement(section)}`
+                      : `${section.label}, folded`
+                    : section.label
+                }
+                accessibilityHint={
+                  section.collapsed
+                    ? "Double-tap to show its channels."
+                    : "Double-tap to fold this section."
+                }
+                onPress={() =>
+                  setSectionCollapsed({
+                    sectionKey: section.key,
+                    collapsed: !section.collapsed,
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.sectionHeader,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.sectionChevron}>
+                  {section.collapsed ? "▸" : "▾"}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.sectionLabel, styles.sectionLabelInHeader]}
+                >
+                  {section.label}
+                </Text>
+                {section.collapsed &&
+                (section.unreadCount > 0 || section.addressed) ? (
+                  <UnreadBadge
+                    unreadCount={section.unreadCount}
+                    mentionCount={section.mentionCount}
+                    addressed={section.addressed}
+                  />
+                ) : null}
+              </Pressable>
+              {section.rows.map(renderChannel)}
             </View>
           ))}
+
+          {arranged.emptiedByFilters ? (
+            <View style={styles.stateBlock}>
+              <Text style={styles.stateBody}>{NO_MATCHING_CHANNELS}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  setSidebarFilter({ unread_only: false, hide_muted: false })
+                }
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.retryText}>{SHOW_ALL_CHANNELS_LABEL}</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {hidden.length > 0 ? (
             <View style={styles.section}>
@@ -312,6 +483,22 @@ function createStyles(tokens: SignetTokens) {
       textTransform: "uppercase",
       color: tokens.color.text.muted,
       marginBottom: tokens.spacing.xs,
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      minHeight: tokens.touch.minimum,
+    },
+    // Inside the fold control the row carries the spacing, so the label drops
+    // its own bottom margin and gives up width to the badge.
+    sectionLabelInHeader: {
+      flex: 1,
+      marginBottom: 0,
+    },
+    sectionChevron: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
     },
     retryButton: {
       marginTop: tokens.spacing.sm,

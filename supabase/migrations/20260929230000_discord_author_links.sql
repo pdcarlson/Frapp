@@ -387,8 +387,9 @@ $$;
 -- keep the reported words, per data-retention.md, but lose the Discord name
 -- for the same reason.
 --
--- Redefined in full from `20260915210100_anonymize_user_purge_chat_blocks.sql`;
--- the only change is the block marked #2878.
+-- Redefined in full from `20260929213000_chat_sidebar_preferences.sql`
+-- (the #2877 sidebar purge included); the only change is the block marked
+-- #2878.
 create or replace function anonymize_user(
   p_user_id uuid,
   p_rescan_cards boolean default false
@@ -453,6 +454,8 @@ begin
   delete from channel_read_receipts where user_id = p_user_id;
   delete from chat_message_bookmarks where user_id = p_user_id;
   delete from chat_member_blocks where blocker_user_id = p_user_id;
+  delete from chat_sidebar_preferences where user_id = p_user_id;
+  delete from chat_sidebar_pins where user_id = p_user_id;
   delete from rush_candidate_votes where voter_id = p_user_id;
   delete from study_sessions where user_id = p_user_id;
 

@@ -165,7 +165,7 @@ Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — 
 
 | Element | Spec |
 | ------- | ---- |
-| Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)). **Not in the web top bar**: the chapter identity lives in the nav's 40px chapter row instead |
+| Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)). **Not in the web top bar**: the chapter identity lives in the nav's 40px chapter row instead, whose 28px tile draws the chapter mark ([`branding.md` § Chapter mark](../../behavior/branding.md#chapter-mark)) |
 | Find | wide input, height 34, radius 10, max width 520, fill `--card`, 1px `--input`. The container owns the focus ring on the input's behalf (`FOCUS_RING_WITHIN`) |
 | Ask entry | Tinted **geometry**, house-gold **paint**: height 34, radius 10, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11`. The board draws Ask in the same values as the chapter accent tints **because its demo tenant is the house tenant** — they coincide there and nowhere else, so merging the two families is the house-tenant trap, not a simplification |
 | Notification badge | Fixed `--gold-house` on the bell, never `--primary`. A count is not direct address, so it takes neither the chapter accent nor the mention red (§5) |

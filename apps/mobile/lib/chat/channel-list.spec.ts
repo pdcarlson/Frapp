@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   displayChannelName,
-  indexUnread,
   isDirectChannel,
   listedChannels,
   selectCategories,
@@ -362,33 +361,6 @@ describe("selectPostCapability", () => {
     expect(
       selectPostCapability({ can_post: "no", is_read_only: true }),
     ).toEqual({ canPost: true, isReadOnly: true });
-  });
-});
-
-describe("indexUnread", () => {
-  it("keys counts by channel id", () => {
-    expect(
-      indexUnread([
-        { channel_id: "c1", unread_count: 7, mention_count: 0 },
-        { channel_id: "c2", unread_count: 9, mention_count: 2 },
-      ]),
-    ).toEqual({
-      c1: { unread: 7, mentions: 0 },
-      c2: { unread: 9, mentions: 2 },
-    });
-  });
-
-  it("keeps explicit zeros — the endpoint returns a row per readable channel", () => {
-    // A zero row is meaningful: it says "readable, and fully read". Dropping it
-    // would be indistinguishable from "no data", which is what the error path
-    // means.
-    expect(
-      indexUnread([{ channel_id: "c1", unread_count: 0, mention_count: 0 }]),
-    ).toEqual({ c1: { unread: 0, mentions: 0 } });
-  });
-
-  it("returns an empty index for no rows", () => {
-    expect(indexUnread([])).toEqual({});
   });
 });
 

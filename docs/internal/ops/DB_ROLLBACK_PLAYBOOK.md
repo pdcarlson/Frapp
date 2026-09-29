@@ -2311,6 +2311,28 @@ alter table public.chat_channels drop column if exists default_notification_leve
 
 Channels an officer set lose that choice and fall back to the built-in default. Members' own levels are in `chat_notification_preferences` and are untouched.
 
+## Rollback chat sidebar arrangement (20260929213000)
+
+* **Migration**: `20260929213000_chat_sidebar_preferences.sql`
+
+Two new per-member tables (#2877), `chat_sidebar_preferences` and `chat_sidebar_pins`, the function `set_chat_sidebar_section_collapsed`, and an `anonymize_user` that also purges both tables. No existing table or row changes.
+
+**Revert the API and client code forward, and keep the migration file.** Revert the #2877 code on `main` (the `/v1/chat-sidebar` controller, its service and repository, and the clients' sidebar controls), but keep `supabase/migrations/20260929213000_chat_sidebar_preferences.sql` in the tree. A plain `git revert` of the PR deletes that file, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+**Once a store build that calls `/v1/chat-sidebar` is listed in `apps/mobile/store/shipped-builds.json`, keep the routes.** Removing a route a shipped binary calls fails the required `check:api-breaking:shipped` gate, and its waiver covers only routes no shipped binary calls. Revert the web rail and mobile s04 to the default arrangement instead, and leave the controller answering; an installed build then keeps working until it is retired.
+
+Leaving the tables in place after the code is reverted is safe: nothing reads them, and `anonymize_user` keeps purging them. To remove them, write a new forward migration, not hand DDL, which would leave the ledger recording `20260929213000` as applied. That migration must first restore `anonymize_user` without the two sidebar deletes, because the current body deletes from both tables and would fail once they are gone. The body to restore is the current one minus those two lines: since `20260929230000_discord_author_links.sql` (#2878) redefines `anonymize_user` on top of this one, restoring the `20260915210100` body would also drop the #2878 Discord-link scrub, unless #2878 was rolled back first (added 2026-09-29):
+
+```sql
+-- 1. create or replace function anonymize_user(...) with the current body, minus the chat_sidebar_* deletes.
+-- 2. Then:
+drop function if exists public.set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean);
+drop table if exists public.chat_sidebar_pins;
+drop table if exists public.chat_sidebar_preferences;
+```
+
+Dropping the tables loses every member's pins, folds and filters. Each member's sidebar returns to the default, and no channel, message or read state is affected.
+
 ## Rollback Discord author links (20260929230000)
 
 * **Migration**: `20260929230000_discord_author_links.sql`
@@ -2336,7 +2358,7 @@ Then undo it in one new forward migration, not by hand, and in this order.
       and m.author_external_id = l.discord_user_id;
    ```
 
-2. **Put `anonymize_user` back before dropping the table.** The #2878 body reads and deletes from `discord_author_links`, so dropping the table under it makes every account deletion fail with `relation "discord_author_links" does not exist`. Copy the `create or replace function anonymize_user(...)` definition from `20260915210100_anonymize_user_purge_chat_blocks.sql` into this migration verbatim, with its grants block.
+2. **Put `anonymize_user` back before dropping the table.** The #2878 body reads and deletes from `discord_author_links`, so dropping the table under it makes every account deletion fail with `relation "discord_author_links" does not exist`. Copy the `create or replace function anonymize_user(...)` definition from `20260929213000_chat_sidebar_preferences.sql` into this migration verbatim, with its grants block. (Corrected 2026-09-29: this said `20260915210100`, which predates the #2877 sidebar purge and would drop it.)
 
 3. **Remove the objects.**
 

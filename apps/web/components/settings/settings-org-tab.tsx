@@ -38,12 +38,24 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "@/components/ui/focus";
+import type { ChapterLogoUpload } from "@repo/hooks";
+import { SettingsChapterMarkCard } from "@/components/settings/settings-chapter-mark-card";
 
 type Branding = {
   greek_letters?: string;
+  short_name?: string;
+  show_greek_letters?: boolean;
   designation?: string;
   school_short?: string;
   founded_at?: number;
+};
+
+/** Everything the Chapter mark card needs beyond the branding (#2876). */
+export type ChapterMarkProps = {
+  logoUrl: string | null;
+  onUploadLogo: (upload: ChapterLogoUpload) => Promise<void>;
+  onRemoveLogo: () => Promise<void>;
+  logoPending?: boolean;
 };
 
 type Props = {
@@ -54,6 +66,7 @@ type Props = {
   vocabulary: Record<string, string>;
   branding: Branding;
   profile: { name: string; university: string; donation_url: string };
+  mark: ChapterMarkProps;
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
   /**
@@ -79,6 +92,7 @@ export function SettingsOrgTab({
   vocabulary,
   branding,
   profile,
+  mark,
   canManage,
   canEditProfile,
   onSaveProfile,
@@ -104,31 +118,55 @@ export function SettingsOrgTab({
 
   // Re-sync drafts whenever the server config changes (e.g. after an archetype
   // switch resets vocabulary, or another officer edits the chapter).
+  //
+  // Keyed on the stored values, never on the objects that carry them: the page
+  // rebuilds `profile`, `branding` and `vocabulary` on every render, so an
+  // object dependency re-ran these on any unrelated re-render (a logo upload
+  // starting, another card saving) and threw away whatever the officer had
+  // typed but not saved.
+  const { name: storedName, university: storedUniversity, donation_url: storedDonation } =
+    profile;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed profile draft from the chapter config query
-    setProfileDraft(profile);
-  }, [profile]);
+    setProfileDraft({
+      name: storedName,
+      university: storedUniversity,
+      donation_url: storedDonation,
+    });
+  }, [storedName, storedUniversity, storedDonation]);
   /* eslint-disable react-hooks/set-state-in-effect -- re-seed branding fields from the chapter config query */
   useEffect(() => {
     setGreekLetters(branding.greek_letters ?? "");
     setDesignation(branding.designation ?? "");
     setSchoolShort(branding.school_short ?? "");
     setFoundedYear(branding.founded_at != null ? String(branding.founded_at) : "");
-  }, [branding]);
+  }, [
+    branding.greek_letters,
+    branding.designation,
+    branding.school_short,
+    branding.founded_at,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
   /* eslint-disable react-hooks/set-state-in-effect -- re-seed vocabulary drafts from the chapter config query */
   useEffect(() => {
     setRecruitment(vocabulary.recruitment ?? "");
     setPledge(vocabulary.pledge ?? "");
     setCohort(vocabulary.class ?? "");
-  }, [vocabulary]);
+  }, [vocabulary.recruitment, vocabulary.pledge, vocabulary.class]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const foundedTrimmed = foundedYear.trim();
   // The same rule the chapter wizards apply, so a year either one stores never
   // blocks this form's save.
   const foundedNum = parseFoundedYear(foundedTrimmed);
-  const foundedValid = foundedTrimmed === "" || foundedNum !== undefined;
+  // Empty is fine for a chapter with no year stored, but not as a way to
+  // remove one: the config PATCH deep-merges, so an omitted year keeps the
+  // stored value, and `null` would store something the branding schema
+  // refuses on read. Saying so beats a save that reports success and keeps
+  // the year.
+  const foundedCleared = foundedTrimmed === "" && branding.founded_at != null;
+  const foundedValid =
+    (foundedTrimmed === "" && !foundedCleared) || foundedNum !== undefined;
 
   function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -143,9 +181,20 @@ export function SettingsOrgTab({
     event.preventDefault();
     if (!foundedValid) return;
     const brandingDiff: Branding = {};
-    if (greekLetters.trim()) brandingDiff.greek_letters = greekLetters.trim();
-    if (designation.trim()) brandingDiff.designation = designation.trim();
-    if (schoolShort.trim()) brandingDiff.school_short = schoolShort.trim();
+    // The config PATCH deep-merges, so an omitted key keeps its stored value
+    // and a field an officer emptied would silently come back. Sending "" for
+    // a stored value is how a clear reaches the server; a field that was
+    // never set stays out of the diff.
+    const text = (draft: string, stored: string | undefined) => {
+      const trimmed = draft.trim();
+      return trimmed || stored ? trimmed : undefined;
+    };
+    const letters = text(greekLetters, branding.greek_letters);
+    if (letters !== undefined) brandingDiff.greek_letters = letters;
+    const designationValue = text(designation, branding.designation);
+    if (designationValue !== undefined) brandingDiff.designation = designationValue;
+    const schoolShortValue = text(schoolShort, branding.school_short);
+    if (schoolShortValue !== undefined) brandingDiff.school_short = schoolShortValue;
     if (foundedTrimmed && foundedValid) brandingDiff.founded_at = foundedNum;
     void onPatchConfig({ branding: brandingDiff });
   }
@@ -265,13 +314,29 @@ export function SettingsOrgTab({
         </form>
       </Card>
 
+      <SettingsChapterMarkCard
+        name={profile.name}
+        logoUrl={mark.logoUrl}
+        branding={branding}
+        canEditLogo={canEditProfile}
+        canManage={canManage}
+        onUploadLogo={mark.onUploadLogo}
+        onRemoveLogo={mark.onRemoveLogo}
+        logoPending={mark.logoPending}
+        onPatchConfig={onPatchConfig}
+        savingConfig={savingConfig}
+        manageHint={manageHint}
+        profileHint={profileHint}
+      />
+
       {/* Identity & founding (branding config — audited) */}
       <Card>
         <CardHeader>
           <CardTitle>Identity &amp; founding</CardTitle>
           <CardDescription>
-            Greek letters and designation show in the sidebar chapter lockup.
-            Saving writes an entry to the chapter audit log.
+            Your chapter&apos;s letters and founding details. Whether the
+            letters show is set under Chapter mark. Saving writes an entry to
+            the chapter audit log.
           </CardDescription>
         </CardHeader>
         <form onSubmit={saveIdentity}>
@@ -319,6 +384,9 @@ export function SettingsOrgTab({
                 />
                 {!foundedValid ? (
                   <p className="text-xs text-destructive">
+                    {foundedCleared
+                      ? "A founded year can't be removed once saved. "
+                      : null}
                     Enter a year between {FOUNDED_YEAR_MIN} and {latestFoundedYear()}.
                   </p>
                 ) : null}

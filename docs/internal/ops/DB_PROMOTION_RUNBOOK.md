@@ -572,11 +572,24 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-29: Each member's chat sidebar arrangement (#2877)
+
+### 20260929213000_chat_sidebar_preferences.sql
+
+- **Purpose**: Adds two per-member tables, both with RLS enabled and no policies. `public.chat_sidebar_preferences` has one row per (member, chapter) holding `unread_only`, `hide_muted` and `collapsed_sections text[]`. `public.chat_sidebar_pins` has one row per (member, channel), cascading from `chat_channels`. Adds `set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)`, which folds or unfolds one section atomically; EXECUTE is limited to `service_role`. Replaces `anonymize_user` with the 20260915210100 body plus two deletes, one for each new table. No existing row is rewritten, and a member with no row gets every default. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#sidebar-arrangement) § Sidebar arrangement.
+- **Checks**: After `db push`,
+  `select relname, relrowsecurity from pg_class where relname in ('chat_sidebar_preferences', 'chat_sidebar_pins');` returns both with `t`,
+  `select has_function_privilege('authenticated', 'public.set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)', 'execute');` returns `f`, and
+  `select prosrc like '%chat_sidebar_pins%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API that reads it. Against an unmigrated database the new `/v1/chat-sidebar` routes answer 500, and clients then show the default sidebar (no pins, nothing folded, filters off), so no channel disappears. An older API ignores both tables. Re-applying is idempotent (`create table if not exists`, `create or replace function`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-chat-sidebar-arrangement-20260929213000) § Rollback chat sidebar arrangement.
+
 ## 2026-09-29: Members link their Discord history to themselves (#2878)
 
 ### 20260929230000_discord_author_links.sql
 
-- **Purpose**: Adds `public.discord_author_links` (one row per member who linked their Discord account in a chapter; unique on `(chapter_id, discord_user_id)` and `(chapter_id, user_id)`, RLS on with no policies). Adds `purpose text not null default 'connect'` to `discord_oauth_states` with `discord_oauth_states_purpose_check` (`connect`, `author_link`), so the link handshake shares the one registered callback URL. Adds `link_discord_author`, `unlink_discord_author` and their shared `discord_author_detach` (service role only), which set or clear `chat_messages.sender_id` on that author's imported rows in the chapter (linking also sets `chat_message_reports.reported_sender_id` on reports about those rows that named nobody), and the `trg_chat_messages_attach_linked_author` BEFORE INSERT trigger (`when (new.kind = 'imported')`), which attaches imported rows to an existing link as they are written. Redefines `anonymize_user` to clear the Discord name, avatar path and id on a deleted member's linked rows, and the Discord name on reports about them, and to delete their links. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds `public.discord_author_links` (one row per member who linked their Discord account in a chapter; unique on `(chapter_id, discord_user_id)` and `(chapter_id, user_id)`, RLS on with no policies). Adds `purpose text not null default 'connect'` to `discord_oauth_states` with `discord_oauth_states_purpose_check` (`connect`, `author_link`), so the link handshake shares the one registered callback URL. Adds `link_discord_author`, `unlink_discord_author` and their shared `discord_author_detach` (service role only), which set or clear `chat_messages.sender_id` on that author's imported rows in the chapter (linking also sets `chat_message_reports.reported_sender_id` on reports about those rows that named nobody), and the `trg_chat_messages_attach_linked_author` BEFORE INSERT trigger (`when (new.kind = 'imported')`), which attaches imported rows to an existing link as they are written. Redefines `anonymize_user` (on top of the `20260929213000` body, keeping its #2877 sidebar purge) to clear the Discord name, avatar path and id on a deleted member's linked rows, and the Discord name on reports about them, and to delete their links. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select relrowsecurity from pg_class where relname = 'discord_author_links';` returns `t`;
   `select count(*) from pg_policies where tablename = 'discord_author_links';` returns `0`;

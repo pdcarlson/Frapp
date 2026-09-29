@@ -3478,6 +3478,208 @@
         ]
       }
     },
+    "/v1/chat-sidebar": {
+      "get": {
+        "operationId": "ChatSidebarController_getSidebar_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSidebarDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own chat sidebar arrangement",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "patch": {
+        "operationId": "ChatSidebarController_updateSidebar_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChatSidebarDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSidebarDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Switch the sidebar filters. A filter left out keeps its stored value.",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat-sidebar/collapsed/{sectionKey}": {
+      "put": {
+        "operationId": "ChatSidebarController_collapseSection_v1",
+        "parameters": [
+          {
+            "name": "sectionKey",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSidebarDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fold a sidebar section (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatSidebarController_expandSection_v1",
+        "parameters": [
+          {
+            "name": "sectionKey",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSidebarDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unfold a sidebar section (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat-sidebar/pins/{channelId}": {
+      "put": {
+        "operationId": "ChatSidebarController_pinChannel_v1",
+        "parameters": [
+          {
+            "name": "channelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSidebarDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a channel to the top of your sidebar (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatSidebarController_unpinChannel_v1",
+        "parameters": [
+          {
+            "name": "channelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSidebarDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a channel from your sidebar (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -7932,6 +8134,15 @@
           "greek_letters": {
             "type": "string"
           },
+          "short_name": {
+            "type": "string",
+            "description": "The chapter's short name, e.g. \"FIJI\". Its mark when it has no logo, ahead of Greek letters (spec/behavior/branding.md § Chapter mark). An empty string clears it.",
+            "maxLength": 6
+          },
+          "show_greek_letters": {
+            "type": "boolean",
+            "description": "False hides the Greek letters on every surface that shows them, for organizations that by custom do not display theirs. Absent means shown. The stored letters are kept."
+          },
           "designation": {
             "type": "string"
           },
@@ -10150,6 +10361,51 @@
           "blocked_user_id",
           "created_at"
         ]
+      },
+      "ChatSidebarDto": {
+        "type": "object",
+        "properties": {
+          "unread_only": {
+            "type": "boolean",
+            "description": "Show only channels with something unread, a mention included. Pinned channels and the open channel still show."
+          },
+          "hide_muted": {
+            "type": "boolean",
+            "description": "Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows."
+          },
+          "collapsed_sections": {
+            "description": "Section keys the member folded: pinned, channels, direct, system, or category:<uuid>.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pinned_channel_ids": {
+            "description": "Channels the member pinned to the top, limited to channels they can still read. Carries no order: the sidebar sorts the Pinned section like any other.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "unread_only",
+          "hide_muted",
+          "collapsed_sections",
+          "pinned_channel_ids"
+        ]
+      },
+      "UpdateChatSidebarDto": {
+        "type": "object",
+        "properties": {
+          "unread_only": {
+            "type": "boolean"
+          },
+          "hide_muted": {
+            "type": "boolean"
+          }
+        }
       },
       "GeofenceCoordinateDto": {
         "type": "object",
