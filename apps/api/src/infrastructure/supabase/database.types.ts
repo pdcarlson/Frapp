@@ -26,6 +26,8 @@ import type {
   ChatMessageBookmark,
   ChatMessageReport,
   ChatNotificationPreference,
+  ChatSidebarPin,
+  ChatSidebarPreferences,
   DiscordConnection,
   DiscordImport,
   DiscordImportChannel,
@@ -152,6 +154,8 @@ export interface Database {
       chapter_directory: TableDefinition<ChapterDirectoryEntry>;
       chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
+      chat_sidebar_preferences: TableDefinition<ChatSidebarPreferences>;
+      chat_sidebar_pins: TableDefinition<ChatSidebarPin>;
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
       scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
@@ -337,6 +341,19 @@ export interface Database {
        * channel's `member_ids` unless already listed. Empty result set means
        * the row didn't match (wrong id/chapter, or not PRIVATE).
        */
+      /**
+       * `20260929213000` (#2877). Folds or unfolds one sidebar section for one
+       * member in one chapter, creating the row on first use.
+       */
+      set_chat_sidebar_section_collapsed: {
+        Args: {
+          p_user_id: string;
+          p_chapter_id: string;
+          p_section_key: string;
+          p_collapsed: boolean;
+        };
+        Returns: ChatSidebarPreferences[];
+      };
       add_private_channel_member: {
         Args: {
           p_channel_id: string;

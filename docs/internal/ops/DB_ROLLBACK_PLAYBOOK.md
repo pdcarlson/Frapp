@@ -2310,3 +2310,23 @@ alter table public.chat_channels drop column if exists default_notification_leve
 ```
 
 Channels an officer set lose that choice and fall back to the built-in default. Members' own levels are in `chat_notification_preferences` and are untouched.
+
+## Rollback chat sidebar arrangement (20260929213000)
+
+* **Migration**: `20260929213000_chat_sidebar_preferences.sql`
+
+Two new per-member tables (#2877), `chat_sidebar_preferences` and `chat_sidebar_pins`, the function `set_chat_sidebar_section_collapsed`, and an `anonymize_user` that also purges both tables. No existing table or row changes.
+
+**Revert the API and client code forward, and keep the migration file.** Revert the #2877 code on `main` (the `/v1/chat-sidebar` controller, its service and repository, and the clients' sidebar controls), but keep `supabase/migrations/20260929213000_chat_sidebar_preferences.sql` in the tree. A plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+Leaving the tables in place after the code is reverted is safe: nothing reads them, and `anonymize_user` keeps purging them. To remove them, write a new forward migration, not hand DDL, which would leave the ledger recording `20260929213000` as applied. That migration must first restore `anonymize_user` to the `20260915210100` body, because the current body deletes from both tables and would fail once they are gone:
+
+```sql
+-- 1. create or replace function anonymize_user(...) with the 20260915210100 body.
+-- 2. Then:
+drop function if exists public.set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean);
+drop table if exists public.chat_sidebar_pins;
+drop table if exists public.chat_sidebar_preferences;
+```
+
+Dropping the tables loses every member's pins, folds and filters. Each member's sidebar returns to the default, and no channel, message or read state is affected.

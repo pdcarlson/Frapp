@@ -1105,3 +1105,14 @@ export type {
   ChatNotificationLevel,
   NotificationDefaultChannel,
 } from "./chat-notification-defaults";
+
+export {
+  SIDEBAR_FIXED_SECTION_KEYS,
+  categoryIdFromSectionKey,
+  categorySectionKey,
+  isSidebarSectionKey,
+} from "./chat-sidebar";
+export type {
+  SidebarFixedSectionKey,
+  SidebarSectionKey,
+} from "./chat-sidebar";

@@ -1377,6 +1377,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chat-sidebar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own chat sidebar arrangement */
+        get: operations["ChatSidebarController_getSidebar_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Switch the sidebar filters. A filter left out keeps its stored value. */
+        patch: operations["ChatSidebarController_updateSidebar_v1"];
+        trace?: never;
+    };
+    "/v1/chat-sidebar/collapsed/{sectionKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Fold a sidebar section (idempotent) */
+        put: operations["ChatSidebarController_collapseSection_v1"];
+        post?: never;
+        /** Unfold a sidebar section (idempotent) */
+        delete: operations["ChatSidebarController_expandSection_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-sidebar/pins/{channelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin a channel to the top of your sidebar (idempotent) */
+        put: operations["ChatSidebarController_pinChannel_v1"];
+        post?: never;
+        /** Unpin a channel from your sidebar (idempotent) */
+        delete: operations["ChatSidebarController_unpinChannel_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -3872,6 +3926,20 @@ export interface components {
             /** Format: uuid */
             blocked_user_id: string;
             created_at: string;
+        };
+        ChatSidebarDto: {
+            /** @description Show only channels with something unread, a mention included. Pinned channels and the open channel still show. */
+            unread_only: boolean;
+            /** @description Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows. */
+            hide_muted: boolean;
+            /** @description Section keys the member folded: pinned, channels, direct, system, or category:<uuid>. */
+            collapsed_sections: string[];
+            /** @description Channels the member pinned to the top, limited to channels they can still read. Carries no order: the sidebar sorts the Pinned section like any other. */
+            pinned_channel_ids: string[];
+        };
+        UpdateChatSidebarDto: {
+            unread_only?: boolean;
+            hide_muted?: boolean;
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -6905,6 +6973,132 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ChatSidebarController_getSidebar_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSidebarDto"];
+                };
+            };
+        };
+    };
+    ChatSidebarController_updateSidebar_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChatSidebarDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSidebarDto"];
+                };
+            };
+        };
+    };
+    ChatSidebarController_collapseSection_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sectionKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSidebarDto"];
+                };
+            };
+        };
+    };
+    ChatSidebarController_expandSection_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sectionKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSidebarDto"];
+                };
+            };
+        };
+    };
+    ChatSidebarController_pinChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSidebarDto"];
+                };
+            };
+        };
+    };
+    ChatSidebarController_unpinChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSidebarDto"];
+                };
             };
         };
     };
