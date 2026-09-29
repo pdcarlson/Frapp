@@ -11,10 +11,19 @@ import { hydrateRoot } from "react-dom/client";
 // back to prove what the *rendered* placeholder says. `composerPlaceholder`
 // below is tested directly and needs none of this; only the "fresh mount"
 // integration test near the bottom needs `useEditor` stubbed, to capture the
-// real `Placeholder` extension Composer wires it into.
-const { capturedExtensions, mockRequestUploadUrl, mockUploadSignedUrl, mockToast } =
-  vi.hoisted(() => ({
+// real `Placeholder` extension Composer wires it into. The send suite (#1728)
+// also swaps the stub's `null` for an editor double, so `submit()` can run.
+const {
+  capturedExtensions,
+  editorDouble,
+  mockRequestUploadUrl,
+  mockUploadSignedUrl,
+  mockToast,
+} = vi.hoisted(() => ({
     capturedExtensions: [] as unknown[][],
+    // What the stubbed `useEditor` hands back. `null` everywhere except the
+    // send suite (#1728), which installs a `fakeEditor` so `submit()` can run.
+    editorDouble: { current: null as unknown },
     mockToast: vi.fn(),
     // Resolves a real response shape. Returning bare `vi.fn()` (undefined) made
     // `handleAttach` throw and toast instead of staging a chip, so no test
@@ -41,7 +50,7 @@ vi.mock("@tiptap/react", async () => {
     ...actual,
     useEditor: (options: { extensions: unknown[] }) => {
       capturedExtensions.push(options.extensions);
-      return null;
+      return editorDouble.current;
     },
     EditorContent: () => null,
   };
@@ -199,9 +208,9 @@ describe("Composer mention wiring", () => {
  *
  * Only the strip and its controls are reachable here: `useEditor` is stubbed to
  * `null` above (jsdom renders no ProseMirror view), so `submit()` returns on
- * its first line and no send can be driven through this component. That the
- * shell actually carries `replyToId` into `channel.send` is pinned in
- * `chat-shell.spec.tsx`, at the seam where it is drivable.
+ * its first line. The send suite below drives it with an editor double, but the
+ * reply never passes through the composer's send anyway: that the shell
+ * carries `replyToId` into `channel.send` is pinned in `chat-shell.spec.tsx`.
  */
 describe("Composer staged reply (#489)", () => {
   const REPLY_TO = { id: "msg-1", author: "Alice Chen", preview: "the original" };
@@ -369,6 +378,404 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
     expect(onSlashDispatch).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A minimal stand-in for the Tiptap editor, enough for `submit()` to run.
+ *
+ * jsdom renders no ProseMirror view, so the real editor cannot be typed into
+ * here; this holds the text as a string and implements exactly the calls the
+ * send path makes. `type` stands in for the member typing after a send.
+ */
+function fakeEditor(initial: string) {
+  let text = initial;
+  const docOf = (value: string) => ({
+    type: "doc",
+    content: value.split("\n").map((line) => ({
+      type: "paragraph",
+      content: line ? [{ type: "text", text: line }] : [],
+    })),
+  });
+  const textOf = (doc: { content?: { content?: { text?: string }[] }[] }) =>
+    (doc.content ?? [])
+      .map((p) => (p.content ?? []).map((n) => n.text ?? "").join(""))
+      .join("\n");
+  return {
+    isDestroyed: false,
+    get isEmpty() {
+      return text.length === 0;
+    },
+    getText: () => text,
+    getJSON: () => docOf(text),
+    type(value: string) {
+      text = value;
+    },
+    commands: {
+      clearContent: vi.fn(() => {
+        text = "";
+        return true;
+      }),
+      setContent: vi.fn((doc: Parameters<typeof textOf>[0]) => {
+        text = textOf(doc);
+        return true;
+      }),
+      focus: vi.fn(() => true),
+    },
+  };
+}
+
+/**
+ * #1728 — a send the outbox refused must not cost the member their message.
+ *
+ * `submit()` used to `void` the send and clear unconditionally, so an
+ * `outbox.enqueue` rejection emptied the composer and dropped the staged files
+ * and reply, with no toast and — because `sendMessage` removes the optimistic
+ * card before rethrowing — nothing in the timeline either.
+ *
+ * The restore is all or nothing: the message comes back whole into a composer
+ * the member has not touched since, or not at all, and the toast says which.
+ * Re-staging the reply is the shell's half (`chat-shell.spec.tsx`); this suite
+ * pins that the composer asks for it.
+ */
+describe("Composer send failure (#1728)", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send" });
+  const refused = () => new Error("QuotaExceededError");
+  const REPLY = { id: "msg-1", author: "Alice Chen", preview: "the original" };
+
+  let editor: ReturnType<typeof fakeEditor>;
+  beforeEach(() => {
+    editor = fakeEditor("hello");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    mockUploadSignedUrl.mockClear();
+    captureException.mockClear();
+  });
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  /** A send whose rejection the test releases, standing in for a slow one. */
+  function deferredSend() {
+    let reject!: (error: Error) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>((_, rejectSend) => {
+          reject = rejectSend;
+        }),
+    );
+    return { onSend, refuse: () => act(async () => reject(refused())) };
+  }
+
+  function renderComposer(overrides: Partial<ComposerProps> = {}) {
+    const props = baseProps({ draft: "hello", ...overrides });
+    return { props, ...render(<Composer {...props} />) };
+  }
+
+  async function stageFile(container: HTMLElement, name = "notes.pdf") {
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [new File(["%PDF-1.4"], name, { type: "application/pdf" })],
+        },
+      },
+    );
+    return screen.findByRole("button", { name: `Remove ${name}` });
+  }
+
+  /** Enter through the editor's own keymap, outside any React event. */
+  function pressEnter() {
+    const submitKeymap = capturedExtensions
+      .at(-1)!
+      .find(
+        (extension) =>
+          (extension as { name?: string } | null)?.name === "submit-on-enter",
+      ) as {
+      config: { addKeyboardShortcuts: () => { Enter: () => boolean } };
+    };
+    submitKeymap.config.addKeyboardShortcuts.call({}).Enter();
+  }
+
+  const chip = (name = "notes.pdf") =>
+    screen.queryByRole("button", { name: `Remove ${name}` });
+
+  const toastSaying = (description: RegExp) =>
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Message not sent",
+        description: expect.stringMatching(description),
+        variant: "destructive",
+      }),
+    );
+  const BACK = /back in the composer/;
+  const GONE = /was discarded/;
+
+  it("puts the text back and says so when the send rejects", async () => {
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const { props } = renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(() => toastSaying(BACK));
+    expect(onSend).toHaveBeenCalledWith("hello", []);
+    expect(editor.getText()).toBe("hello");
+    // Reported to the draft too, so it survives a reload like any other text.
+    expect(props.onChangeDraft).toHaveBeenLastCalledWith("hello");
+    // Restored without emitting an update, which would reach `onTyping` and
+    // tell the channel the member is typing when they did nothing.
+    expect(editor.commands.setContent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "doc" }),
+      { emitUpdate: false },
+    );
+    expect(props.onTyping).not.toHaveBeenCalled();
+    // Caught now, so Sentry's unhandled-rejection handler no longer sees it.
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { chat_send: "composer" },
+    });
+  });
+
+  it("puts a staged attachment back with the text", async () => {
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const { container } = renderComposer({ onSend });
+    await stageFile(container);
+
+    fireEvent.click(sendButton());
+
+    await waitFor(() => toastSaying(BACK));
+    expect(onSend).toHaveBeenCalledWith("hello", [
+      expect.objectContaining({ filename: "notes.pdf" }),
+    ]);
+    expect(chip()).toBeInTheDocument();
+  });
+
+  it("asks the shell to re-stage the reply the send carried", async () => {
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const onRestoreReply = vi.fn();
+    renderComposer({ onSend, replyTo: REPLY, onCancelReply: vi.fn(), onRestoreReply });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(() => toastSaying(BACK));
+    expect(onRestoreReply).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("re-stages the reply once the shell has cleared its strip", async () => {
+    // What production does: the shell clears its target the moment it sends,
+    // so by the time the refusal lands the composer's `replyTo` is null.
+    const { onSend, refuse } = deferredSend();
+    const onRestoreReply = vi.fn();
+    const props = baseProps({
+      draft: "hello",
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    const { rerender } = render(<Composer {...props} />);
+
+    fireEvent.click(sendButton());
+    rerender(<Composer {...baseProps({ ...props, replyTo: null })} />);
+    await refuse();
+
+    toastSaying(BACK);
+    expect(onRestoreReply).toHaveBeenCalledWith("msg-1");
+    expect(editor.getText()).toBe("hello");
+  });
+
+  it("restores when the refusal lands before the re-render that cleared it", async () => {
+    // An unscoped outbox throws at once, so outside a React event (Enter
+    // arrives through ProseMirror's own keymap) the rejection can settle
+    // before React commits `setPending([])`. What is staged is then still the
+    // files that were sent, which is not the member touching anything.
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const { container } = renderComposer({ onSend });
+    await stageFile(container);
+
+    pressEnter();
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    // Settled before any render: the chip is the one React has yet to clear.
+    toastSaying(BACK);
+    await act(async () => {});
+
+    expect(editor.getText()).toBe("hello");
+    expect(chip()).toBeInTheDocument();
+  });
+
+  it("treats a synchronous throw from onSend as the same refusal", async () => {
+    const onSend = vi.fn(() => {
+      throw refused();
+    });
+    renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(() => toastSaying(BACK));
+    expect(editor.getText()).toBe("hello");
+  });
+
+  it("restores none of it over text typed since, and says it is gone", async () => {
+    // Half a restore pairs pieces of two messages: the old file on the new
+    // text, or the old reply over it. The text alone can't come back either,
+    // because it would overwrite what the member is writing now.
+    const { onSend, refuse } = deferredSend();
+    const onRestoreReply = vi.fn();
+    const { container, props } = renderComposer({
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    await stageFile(container);
+
+    fireEvent.click(sendButton());
+    expect(editor.getText()).toBe("");
+    expect(chip()).not.toBeInTheDocument();
+    editor.type("second thought");
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("second thought");
+    expect(props.onChangeDraft).not.toHaveBeenCalledWith("hello");
+    expect(chip()).not.toBeInTheDocument();
+    expect(onRestoreReply).not.toHaveBeenCalled();
+  });
+
+  it("restores none of it over a file staged since", async () => {
+    const { onSend, refuse } = deferredSend();
+    const { container } = renderComposer({ onSend });
+    await stageFile(container);
+
+    fireEvent.click(sendButton());
+    await stageFile(container, "photo.pdf");
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("");
+    expect(chip("photo.pdf")).toBeInTheDocument();
+    expect(chip("notes.pdf")).not.toBeInTheDocument();
+  });
+
+  it("restores none of it over an upload started since", async () => {
+    // The file lands in `pending` only when its upload finishes, so this is
+    // the one piece of the next message the staged check can't see yet.
+    const { onSend, refuse } = deferredSend();
+    const { container } = renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+    mockUploadSignedUrl.mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "photo.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalled());
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("");
+  });
+
+  it("still restores over an upload already under way at Send", async () => {
+    // That file was headed for this message; it lands beside the restored
+    // text, as it would have beside the text had the send never happened.
+    const { onSend, refuse } = deferredSend();
+    const { container } = renderComposer({ onSend });
+    mockUploadSignedUrl.mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "photo.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalled());
+
+    fireEvent.click(sendButton());
+    await refuse();
+
+    toastSaying(BACK);
+    expect(editor.getText()).toBe("hello");
+  });
+
+  it("restores none of it over a different reply staged since", async () => {
+    // Putting the text back under msg-2's strip would post it as a reply to a
+    // message it was never written for.
+    const { onSend, refuse } = deferredSend();
+    const onRestoreReply = vi.fn();
+    const props = baseProps({
+      draft: "hello",
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    const { rerender } = render(<Composer {...props} />);
+
+    fireEvent.click(sendButton());
+    rerender(
+      <Composer
+        {...baseProps({
+          ...props,
+          replyTo: { id: "msg-2", author: "Bo", preview: "another" },
+        })}
+      />,
+    );
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("");
+    expect(onRestoreReply).not.toHaveBeenCalled();
+  });
+
+  it("restores nothing into a destroyed editor, and says it is gone", async () => {
+    // A channel switch remounts `<Composer>` (it is keyed per channel).
+    const { onSend, refuse } = deferredSend();
+    renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+    editor.isDestroyed = true;
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.commands.setContent).not.toHaveBeenCalled();
+  });
+
+  it("clears the text and files, silently, once the send is queued", async () => {
+    // The other direction: restoring on every send would pass every case above
+    // and leave each sent message sitting in the composer.
+    const onSend = vi.fn(async () => undefined);
+    const onRestoreReply = vi.fn();
+    const { container } = renderComposer({
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    await stageFile(container);
+
+    await act(async () => fireEvent.click(sendButton()));
+
+    expect(editor.getText()).toBe("");
+    expect(chip()).not.toBeInTheDocument();
+    expect(mockToast).not.toHaveBeenCalled();
+    expect(onRestoreReply).not.toHaveBeenCalled();
   });
 });
 
