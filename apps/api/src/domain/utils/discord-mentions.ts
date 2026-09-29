@@ -44,6 +44,7 @@ import type {
   DiscordImportChannel,
   DiscordRoleMapping,
 } from '../entities/discord-import.entity';
+import { chunkIds } from './chunk-ids';
 
 /** A channel as a mention can name it. */
 export interface MentionedChannel {
@@ -299,12 +300,12 @@ export function rewriteDiscordMentions(
  *   thread may have had none of its messages imported (a date cutoff, a thread
  *   the bot could not read), so where its parent landed says nothing about who
  *   has seen it.
- * - Otherwise it is judged by where its messages landed, which is who can read
- *   them now: the live type of the Frapp channel (`wholeChapterByChannel`,
- *   from {@link wholeChapterTargets}). A channel made after that lookup, by
- *   this very run, has the type its mapping asked for, so that stands in.
- * - A skipped channel landed nowhere, and is named only when Discord showed it
- *   to everyone.
+ * - A channel with a Frapp channel is judged by that channel as it is now
+ *   (`wholeChapterByChannel`, from {@link wholeChapterTargets}). One the lookup
+ *   did not see was made after it by this very run, so it has the type its
+ *   mapping asked for, which stands in.
+ * - A channel with no Frapp channel (skipped, or not made yet or ever) landed
+ *   nowhere, and is named only when Discord showed it to everyone.
  *
  * Anything else is private, including a privacy nobody recorded (an upload
  * records none) and a target the lookup could not find.
@@ -316,14 +317,11 @@ function readableByWholeChapter(
 ): boolean {
   if (!landedIn) return false;
   if (row !== landedIn && row.private_in_discord !== false) return false;
-  if (landedIn.mapping_action === 'skip') {
-    return landedIn.private_in_discord === false;
-  }
-  const target = landedIn.target_channel_id;
-  const known = target ? wholeChapterByChannel.get(target) : undefined;
+  const target =
+    landedIn.mapping_action === 'skip' ? null : landedIn.target_channel_id;
+  if (!target) return landedIn.private_in_discord === false;
+  const known = wholeChapterByChannel.get(target);
   if (known !== undefined) return known;
-  // Not in the lookup: made by this run after it (or not made yet), so it has
-  // the type its mapping asked for. A merge target always predates the run.
   return (
     landedIn.mapping_action === 'create_new' &&
     landedIn.new_channel_type === 'PUBLIC'
@@ -334,7 +332,9 @@ function readableByWholeChapter(
  * For each Frapp channel an import's rows already point at, whether every
  * member of the chapter can read it (`PUBLIC`). The one lookup both the worker
  * and the backfill name channel mentions by. `findByIds` must be scoped to the
- * import's chapter; a target it does not return is treated as private.
+ * import's chapter; a target it does not return is treated as private. Asked
+ * in chunks, since a server can hold hundreds of channels and PostgREST
+ * refuses an `in` filter that long (`chunk-ids.ts`).
  */
 export async function wholeChapterTargets(
   rows: readonly DiscordImportChannel[],
@@ -348,10 +348,11 @@ export async function wholeChapterTargets(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  const found = ids.length > 0 ? await findByIds(ids) : [];
   const byId = new Map(ids.map((id) => [id, false]));
-  for (const channel of found) {
-    if (byId.has(channel.id)) byId.set(channel.id, channel.type === 'PUBLIC');
+  for (const chunk of chunkIds(ids)) {
+    for (const channel of await findByIds(chunk)) {
+      if (byId.has(channel.id)) byId.set(channel.id, channel.type === 'PUBLIC');
+    }
   }
   return byId;
 }
@@ -361,9 +362,9 @@ export async function wholeChapterTargets(
  *
  * Reads the rows **live**, not a copy: the worker writes each row's
  * `target_channel_id` onto the same objects as it creates or finds the Frapp
- * channel, so a channel is linked from the moment its channel exists. On the
- * bot path every new channel exists before any message that can mention one is
- * written, so every mention of an imported channel links.
+ * channel, so a channel is linked from the moment its channel exists. The bot
+ * path makes a new channel as soon as a page about to be written mentions it,
+ * so every mention of an imported channel links there.
  *
  * A thread is named as itself but links to where it landed, its parent's
  * channel. A top-level channel is named what it is called in Frapp when this

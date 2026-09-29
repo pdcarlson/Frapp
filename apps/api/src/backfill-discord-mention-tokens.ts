@@ -9,10 +9,12 @@
  * and copies every attachment again; this touches only the rows that carry a
  * token.
  *
- * It runs only on an import that has stopped, and only once every channel the
- * import creates exists, so every mention of an imported channel links (see
- * `mentionBackfillBlocker`, and `--allow-unlinked` for an import that never
- * will finish).
+ * It runs only on an import that has stopped (see `mentionBackfillBlocker`).
+ * A failed or cancelled import with a new channel never made is refused unless
+ * `--allow-unlinked` is passed, since mentions of that channel would be written
+ * unlinked for good: a failed one can be restarted first. A completed import
+ * is not refused; a channel it never made (an upload part it could not read)
+ * never will be, and its mentions read as a channel that landed nowhere does.
  *
  * What it names things from, and how that compares with a fresh import:
  * - roles and channels: the same lookups the worker uses, read now. A role

@@ -613,7 +613,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       ]);
     });
 
-    it('asks only for top-level new channels that still need one', async () => {
+    it('makes ahead only the new channels a page mentions, a thread’s being its parent’s', async () => {
       const harness = await build({
         channels: [
           channel({ private_in_discord: false }),
@@ -638,16 +638,35 @@ describe('DiscordExportWorkerService — walking a channel', () => {
             target_channel_id: null,
             parent_discord_channel_id: '900000000000000003',
           }),
+          channel({
+            id: 'unmentioned',
+            discord_channel_id: '900000000000000006',
+            mapping_action: 'create_new',
+            target_channel_id: null,
+            position: 9,
+          }),
         ],
-        pages: [[apiMessage('2')]],
+        pages: [
+          [
+            apiMessage('2', {
+              content: `<#${THREAD}> <#900000000000000004> <#900000000000000005>`,
+            }),
+          ],
+        ],
       });
       const resolveTargetChannel = minting();
-      const args = runArgs(harness, { resolveTargetChannel });
+      const args = runArgs(harness, {
+        resolveTargetChannel,
+        // Stop after the first page, before the walk reaches anything else.
+        checkpoint: jest.fn(async () => false),
+      });
       await harness.worker.runSlice(args);
 
       const asked = resolveTargetChannel.mock.calls.map(([row]) => row.id);
       expect(asked).not.toContain('skip');
       expect(asked).not.toContain('done');
+      expect(asked).not.toContain('thread');
+      expect(asked).not.toContain('unmentioned');
       // Asked before the first batch was written. (The walk asks again when
       // it reaches the row, and gets the channel already made.)
       expect(
@@ -692,8 +711,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       ]);
     });
 
-    it('waits for a page with content, since a blank one proves nothing and mentions nothing', async () => {
-      // Five blank messages: too few for the missing-intent check to decide.
+    it('makes nothing ahead for a page that mentions no channel', async () => {
       const harness = await build({
         channels: [channel(), later()],
         pages: [[1, 2, 3, 4, 5].map((n) => blank(String(n)))],
@@ -707,16 +725,40 @@ describe('DiscordExportWorkerService — walking a channel', () => {
         resolveTargetChannel.mock.invocationCallOrder[
           asked.indexOf('mapping-2')
         ];
-      // Only the walk reached it, after the blank page was written.
+      // Only the walk reached it, after the first page was written.
       expect(firstAsk).toBeGreaterThan(
         args.importBatch.mock.invocationCallOrder[0],
       );
     });
 
+    it('links a mention in a slash-command reply as well', async () => {
+      const harness = await build({
+        channels: [channel({ private_in_discord: false }), later()],
+        pages: [
+          [
+            apiMessage('2', {
+              type: 20,
+              content: 'Read <#900000000000000003> first',
+            }),
+          ],
+        ],
+      });
+      const resolveTargetChannel = minting();
+      const args = runArgs(harness, { resolveTargetChannel });
+      await harness.worker.runSlice(args);
+
+      const asked = resolveTargetChannel.mock.calls.map(([row]) => row.id);
+      expect(
+        resolveTargetChannel.mock.invocationCallOrder[
+          asked.indexOf('mapping-2')
+        ],
+      ).toBeLessThan(args.importBatch.mock.invocationCallOrder[0]);
+    });
+
     it('marks only the row it could not create failed, with the reason', async () => {
       const harness = await build({
         channels: [channel(), later()],
-        pages: [[apiMessage('2')]],
+        pages: [[apiMessage('2', { content: 'see <#900000000000000003>' })]],
       });
       const args = runArgs(harness, {
         resolveTargetChannel: jest.fn(async (mapping: DiscordImportChannel) => {

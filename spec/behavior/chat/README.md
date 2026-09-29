@@ -857,22 +857,20 @@ What follows is the behaviour the archive has once it is in.
     `@unknown-role`;
   - a channel (`<#id>`) reads `#name`, linked to the Frapp channel its messages
     landed in (`/chat?channel=<id>`). A thread links to its parent's channel.
-    On the bot path every new channel of the import is created when the first
-    page with something in it (content, an attachment or an embed) is about to
-    be written. That page proves the bot can read message content, and no
-    earlier page could mention anything, so every mention of an imported
-    channel links. A bot without Discord's message-content permission makes no
-    channel but the one the walk had reached. After that, an import cancelled
-    or failing, or a channel Discord stops showing mid-import, leaves channels
-    never filled, as a deleted import leaves its channels. The link works on
-    web, where like every message link it opens in a new tab. Mobile shows the
-    name without a link, because it only links absolute URLs;
+    On the bot path a new channel of the import is made as soon as a page
+    about to be written mentions it (a thread's mention makes its parent's),
+    so every mention of an imported channel links. A channel no one mentions
+    is made when the import reaches it, as before; one that is mentioned and
+    then never reached (the import stops, or Discord stops showing it) stays
+    in Frapp, empty. The link works on web, where like every message link it
+    opens in a new tab. Mobile shows the name without a link, because it only
+    links absolute URLs;
   - **a channel some members cannot read is never named**: it reads
     `#private-channel`, as Discord shows "No Access" to someone outside it. A
     thread is named only when Discord showed it to everyone, since a private
-    thread may have had none of its messages imported. Otherwise a channel is
-    judged by the Frapp channel its messages landed in, as that channel is
-    now: named only when it is whole-chapter (`PUBLIC`). A skipped channel
+    thread may have had none of its messages imported. A channel with a Frapp
+    channel is judged by that channel as it is now: named only when it is
+    whole-chapter (`PUBLIC`). A channel with none (skipped, or never made)
     landed nowhere, and is named only when Discord showed it to everyone.
     Anything else, including a privacy nobody recorded, reads
     `#private-channel`;

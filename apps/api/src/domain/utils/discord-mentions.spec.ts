@@ -361,6 +361,23 @@ describe('importChannelMentions', () => {
       }
     });
 
+    it('naming a channel never made, which landed nowhere, only when Discord showed it to everyone', () => {
+      // A cancelled import, or an upload part that could not be read.
+      const neverMade = channelRow({
+        private_in_discord: true,
+        new_channel_type: 'PUBLIC',
+        target_channel_id: null,
+      });
+      expect(importChannelMentions([neverMade], NONE)(CHANNEL)).toBe(
+        PRIVATE_CHANNEL,
+      );
+      const publicInDiscord = channelRow({ target_channel_id: null });
+      expect(importChannelMentions([publicInDiscord], NONE)(CHANNEL)).toEqual({
+        name: 'general',
+        frappChannelId: null,
+      });
+    });
+
     it('naming a skipped channel, which landed nowhere, only when Discord showed it to everyone', () => {
       for (const private_in_discord of [true, null]) {
         const lookup = importChannelMentions(
@@ -432,6 +449,19 @@ describe('wholeChapterTargets', () => {
       private: false,
       gone: false,
     });
+  });
+
+  it('asks in chunks PostgREST accepts', async () => {
+    const rows = Array.from({ length: 250 }, (_, i) =>
+      channelRow({ target_channel_id: `target-${i}` }),
+    );
+    const findByIds = jest.fn(async (ids: string[]) =>
+      ids.map((id) => ({ id, type: 'PUBLIC' })),
+    );
+    const targets = await wholeChapterTargets(rows, findByIds);
+    expect(findByIds.mock.calls.every(([ids]) => ids.length <= 100)).toBe(true);
+    expect(targets.size).toBe(250);
+    expect([...targets.values()].every(Boolean)).toBe(true);
   });
 
   it('asks nothing when no row has a target yet', async () => {

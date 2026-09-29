@@ -109,7 +109,6 @@ export interface ExportSliceResult {
   };
 }
 
-/** Everything a slice accumulates and writes back at each checkpoint. */
 /** Making another row's channel failed while a page of this one was written. */
 class DestinationError extends Error {
   constructor(
@@ -121,6 +120,10 @@ class DestinationError extends Error {
   }
 }
 
+/** A channel mention token's id, for making its channel before it is named. */
+const CHANNEL_TOKEN = /<#(\d{1,25})>/g;
+
+/** Everything a slice accumulates and writes back at each checkpoint. */
 interface SliceTotals {
   imported: number;
   skipped: number;
@@ -293,45 +296,46 @@ export class DiscordExportWorkerService {
         .map((file) => [file.relative_path, file]),
     );
 
-    // Every channel this import creates exists before a message that can
-    // mention one is written, so a mention of a channel the walk reaches later
-    // still links to it (#2875). Made lazily, a channel would not exist yet
-    // when an earlier channel's messages mentioned it, and they would keep an
-    // unlinked name for good.
-    //
-    // It waits for the first page with something in it: a message with
-    // content, an attachment or an embed. That page is the proof the bot can
-    // read message content, which the missing-intent check (it needs 25
-    // authored messages to decide) may not have settled yet, and a page with
-    // no content cannot mention anything. So a bot without the intent makes
-    // no channels but the one the walk had reached, which it always made.
-    // After that, an import cancelled or failing, or a channel Discord stops
-    // showing mid-import, leaves channels it never filled, as deleting an
-    // import always has. Threads need nothing here: they land in their
-    // parent's channel. Once per slice, and resumable: a row that has its
-    // target is not asked again.
-    let destinationsReady = false;
-    const ensureDestinations = async (): Promise<void> => {
-      if (destinationsReady || totals.tally.withSubstance === 0) return;
-      for (const mapping of channels) {
-        if (
-          mapping.parent_discord_channel_id ||
-          mapping.mapping_action !== 'create_new' ||
-          mapping.target_channel_id !== null ||
-          mapping.status === 'completed' ||
-          mapping.status === 'skipped'
-        ) {
-          continue;
-        }
-        try {
-          await resolveTargetChannel(mapping, channels);
-        } catch (error) {
-          // The row it could not make is the one that failed, not the one
-          // being walked.
-          throw new DestinationError(mapping, error);
+    // A channel this import creates is made as soon as a page about to be
+    // written mentions it, so the mention links to it (#2875). Made only when
+    // the walk reached it, a channel would not exist yet when an earlier
+    // channel's messages mentioned it, and they would keep an unlinked name
+    // for good. Made ahead only on demand, rather than all at the start: a
+    // channel no one mentions is made when the walk reaches it, as before, so
+    // an import that stops early leaves no more empty channels than it did.
+    // One that is mentioned and then never reached (the import stops, or
+    // Discord stops showing it) stays in Frapp, empty. A thread's mention
+    // makes its parent's channel, where it lands. A row that has its target,
+    // or is finished or skipped, is not asked.
+    const ensureMentionedDestinations = async (
+      page: readonly DiscordApiMessage[],
+    ): Promise<void> => {
+      for (const message of page) {
+        const content =
+          typeof message.content === 'string' ? message.content : '';
+        for (const match of content.matchAll(CHANNEL_TOKEN)) {
+          let row = byDiscordId.get(match[1]);
+          if (row?.parent_discord_channel_id) {
+            row = byDiscordId.get(row.parent_discord_channel_id);
+          }
+          if (
+            !row ||
+            row.mapping_action !== 'create_new' ||
+            row.target_channel_id !== null ||
+            row.status === 'completed' ||
+            row.status === 'skipped'
+          ) {
+            continue;
+          }
+          try {
+            await resolveTargetChannel(row, channels);
+          } catch (error) {
+            // The row it could not make is the one that failed, not the one
+            // being walked.
+            throw new DestinationError(row, error);
+          }
         }
       }
-      destinationsReady = true;
     };
 
     for (const mapping of channels) {
@@ -360,7 +364,7 @@ export class DiscordExportWorkerService {
           totals,
           mediaByRelativePath,
           mentionContext,
-          ensureDestinations,
+          ensureMentionedDestinations,
           checkpoint,
           resolveTargetChannel: (channel) =>
             this.resolveDestination(channel, byDiscordId, (row) =>
@@ -488,8 +492,10 @@ export class DiscordExportWorkerService {
     totals: SliceTotals;
     mediaByRelativePath: Map<string, DiscordImportFile>;
     mentionContext: ImportMentionContext;
-    /** Creates the import's new channels, once; see `runSlice`. */
-    ensureDestinations: () => Promise<void>;
+    /** Makes the new channels a page mentions; see `runSlice`. */
+    ensureMentionedDestinations: (
+      page: readonly DiscordApiMessage[],
+    ) => Promise<void>;
     checkpoint: (patch: {
       imported: number;
       skipped: number;
@@ -520,7 +526,7 @@ export class DiscordExportWorkerService {
       totals,
       mediaByRelativePath,
       mentionContext,
-      ensureDestinations,
+      ensureMentionedDestinations,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -668,7 +674,7 @@ export class DiscordExportWorkerService {
       // `outcome.attachmentsSkipped` below. Adding both double-counts every
       // skipped attachment.
 
-      await ensureDestinations();
+      await ensureMentionedDestinations(page);
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,

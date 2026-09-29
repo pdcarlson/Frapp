@@ -60,14 +60,23 @@ describe('mentionBackfillBlocker', () => {
 
   it('refuses while a new channel is missing, since its mentions would never link', () => {
     const channels = [row({ target_channel_id: null, status: 'pending' })];
-    for (const status of ['failed', 'cancelled'] as const) {
-      const reason = mentionBackfillBlocker(
-        { id: 'imp', status },
-        channels,
-        false,
-      );
-      expect(reason).toContain('#rush');
-    }
+    const failed = mentionBackfillBlocker(
+      { id: 'imp', status: 'failed' },
+      channels,
+      false,
+    );
+    expect(failed).toContain('#rush');
+    // A failed import can be restarted, which makes the channel.
+    expect(failed).toContain('Restart the import first');
+    const cancelled = mentionBackfillBlocker(
+      { id: 'imp', status: 'cancelled' },
+      channels,
+      false,
+    );
+    expect(cancelled).toContain('#rush');
+    // A cancelled one cannot, so restarting is not offered.
+    expect(cancelled).not.toContain('Restart');
+    expect(cancelled).toContain('--allow-unlinked');
     // Unless the operator accepts it for an import that will not finish.
     expect(
       mentionBackfillBlocker(
