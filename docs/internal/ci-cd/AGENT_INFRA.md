@@ -1333,7 +1333,7 @@ Per **ADR-12** this is the **sanctioned opt-in escape hatch** (not a hypothetica
 4. Write `SUPABASE_URL` / `SUPABASE_ANON_KEY` / a scoped, short-lived service-role JWT to `apps/*/.env.local`. Never commit — it is gitignored (`.gitignore` + `apps/web/.gitignore`), and the backstop is the pre-commit **gitleaks** scan (`.githooks/pre-commit` → `scripts/scan-secrets.mjs`, default ruleset per `.gitleaks.toml`), whose `jwt` rule has fired on real JWT material in this repo's history ([`SECRET_SCANNING.md`](SECRET_SCANNING.md)). There is no `*.supabase.co` rule — a project URL is not secret material, so do not rely on one catching a pasted config.
 5. SessionEnd hook calls `delete_branch` (idempotent) and confirms via `list_branches`.
 
-This hook does not exist yet — the SessionEnd teardown + scoped MCP write allowlist are tracked as **#532**. Until it lands, the MCP write tools stay un-allowlisted in `.claude/settings.json` (they prompt, so headless sessions can't use them) and the branch path is unavailable; do not work around it in a chunk PR. (Note: post-#416 there are no Edge Functions in this repo, so `deploy_edge_function` is not part of the bring-up.)
+This hook does not exist yet — the SessionEnd teardown + scoped MCP write allowlist are tracked as **#532**. Until it lands, the MCP write tools stay un-allowlisted in `.claude/settings.json` (they prompt, so headless sessions can't use them) and the branch path is unavailable; do not work around it in a chunk PR. (Note: `deploy_edge_function` is not part of the bring-up either. The repo's one Edge Function, the Discord importer's attachment copy (ADR-26), deploys only through `_deploy.yml`, never by hand.)
 
 ### "Runtime checks BLOCKED" protocol
 

@@ -12,7 +12,7 @@ Each module is delivered as a consistent set of surfaces:
 
 A module gets **no system channel of its own** (decided 2026-09-23, #576). This spec used to promise a `#<module>` channel per enabled module (`#events`, `#dues`, …), created on enable and muted on disable. It was dropped before any was built: nothing posted to such a channel, every paid module would have added an empty channel to every member's list, and once seeded into every chapter, removing them again would take a destructive data migration. A module's cards land in the channel where its slash command ran, and its reminders go out as pushes or direct messages ([`notifications.md`](notifications.md)). The one system channel is `#chapter-audit` ([`chat/integrations.md`](chat/integrations.md#chapter-audit-system-channel-bridge)).
 
-Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/messages`, `POST /v1/channels/messages/:messageId/actions`) — the Edge Functions this section once named were retired by ADR-11 and `supabase/functions/` no longer exists. Heavy compute goes through NestJS RPC; the **client** posts a cache-only `kind="loading"` placeholder, which the Realtime echo of the server's card reconciles in place by `client_message_id`.
+Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/messages`, `POST /v1/channels/messages/:messageId/actions`) — the Edge Functions this section once named were retired by ADR-11. (`supabase/functions/` holds no chat code; its one function copies Discord import attachments, per ADR-26.) Heavy compute goes through NestJS RPC; the **client** posts a cache-only `kind="loading"` placeholder, which the Realtime echo of the server's card reconciles in place by `client_message_id`.
 
 ## Module Gating
 

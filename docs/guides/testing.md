@@ -315,7 +315,16 @@ The chat hot path (send + react) moved from Supabase Edge Functions into the Nes
 - **`apps/api/src/application/services/chat-access.spec.ts`** — pins the `canAccessChannel` predicate matrix (channel types, role-gated permissions, read-only / `announcements:post` gate).
 - **`apps/api/src/application/services/chat-realtime-carrier.spec.ts`** — a source-level guard (#472): the API emits no Realtime Broadcast and mints no bespoke `chapter:<id>` topic. It scans every non-spec `.ts` under `apps/api/src`, not just the chat service, so relocating the code does not evade it; the topic check matches the bare literal (a re-key splits across files) and carries a ledger for `chapter:<id>` strings that are legitimately not topics. Message delivery is the Postgres Changes subscription on `chat_messages`; adding a broadcast fast-path is #1613, not a bug fix.
 
-Both run under `npm run test -w apps/api`. There's no separate Deno tier to install or maintain.
+Both run under `npm run test -w apps/api`. The chat hot path has no Deno tier.
+
+## 5b. Edge Function tests (ADR-26)
+
+`supabase/functions/` holds one function, `discord-attachment-copy`, which copies Discord bot-import attachments from Discord's CDN into Storage (#2848). Its logic is a pure handler (`handler.ts`) that takes `fetch`, the clock and the environment as arguments, so `handler.test.ts` runs it against a fake CDN and a fake Storage with no network.
+
+- **Run:** `npm run check:edge-functions` runs `deno fmt --check`, `deno lint`, `deno check` and `deno test` from `supabase/functions/`. It needs Deno on `PATH`; the repo does not install it.
+- **In CI:** the same script is a step of the required `lint-and-typecheck` job, on the Deno version that step pins.
+- **The API side** (`SupabaseArchiveMediaCopier`, and the worker's batching, deferral and resume) is ordinary Jest, under `npm run test -w apps/api`.
+- **Not runnable in the cloud sandbox:** the local edge runtime is excluded there ([`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)), so a local bot import fails at the copy. The handler can still be exercised against the sandbox's local Storage by importing it under `deno run` with a fake CDN `fetch`.
 
 ## 6. E2E scaffolding
 

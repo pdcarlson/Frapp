@@ -14,8 +14,9 @@
    4. Migrations dry-run, listing what is pending, on every run.
    5. **Build** web and landing (`deploy-vercel.mjs`, `DEPLOY_PHASE=build`, Preview target) when the plan uploads. Each project's `.vercel` is stashed under `$RUNNER_TEMP`.
    6. Migrations apply, on every run.
-   7. Deploy the commit to Render when the plan says so, and verify the API serves the planned commit (`verify-served-commit.mjs`) whenever anything ships. [Deploy verification](#deploy-verification) has the detail.
-   8. **Upload** web and landing (`DEPLOY_PHASE=upload`) when the plan says so, then alias `app.staging.frapp.live` and `staging.frapp.live` to the new deployments.
+   7. Deploy the Supabase Edge Functions (`deploy-edge-functions.mjs`) unless the plan is `stale`, which would roll one back. They go before the API because the API calls them ([Supabase § Edge Functions](supabase.md#edge-functions)).
+   8. Deploy the commit to Render when the plan says so, and verify the API serves the planned commit (`verify-served-commit.mjs`) whenever anything ships. [Deploy verification](#deploy-verification) has the detail.
+   9. **Upload** web and landing (`DEPLOY_PHASE=upload`) when the plan says so, then alias `app.staging.frapp.live` and `staging.frapp.live` to the new deployments.
 
    Each step runs only when the ones before it passed. So a failed build, migration or API verify ships no frontend, and new frontends never go live before the migration and API they call. A run that isn't `main`'s tip never rolls anything back: the API plans `stale` when nothing moves it forward, and web and landing upload only over hosts serving older commits. The job holds the `db-migrate-staging` concurrency group with `cancel-in-progress: false`, so one staging deploy runs at a time and a running one is never cancelled. GitHub still replaces a *pending* run when a third arrives; that run ends `cancelled` and raises the alert, and the next run carries its changes. A `deploy-outcome` job then raises or closes the P1 staging alert ([`ALERT_ROUTING.md`](../ALERT_ROUTING.md#automated-github-issue-alerts)). Production runs the same job, with its own layers (steps 4 to 7 below).
 
@@ -42,7 +43,8 @@ layers are that job's steps named `inputs.environment == 'production'`:
 5. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the _absence_ of a Git link, so a **present** link is the violation.
 6. **Migration rehearsal** → fence → dry-run → **Vercel production builds**
    (both projects, `vercel pull --environment=production` + `vercel build --prod`, each `.vercel`
-   stashed under `$RUNNER_TEMP`) → apply.
+   stashed under `$RUNNER_TEMP`) → apply → **Edge Functions** (`deploy-edge-functions.mjs`, skipped
+   on a dry run and under `migrations-only`).
 7. **Render deploy by `commitId`** → **served-commit check** (`verify-served-commit.mjs`: `/health/ready`
    answers 2xx and reports this commit) → **Vercel production uploads** (each stash restored and
    shipped with `vercel deploy --prebuilt --prod`) → **tag**. A failure after the approval opens the

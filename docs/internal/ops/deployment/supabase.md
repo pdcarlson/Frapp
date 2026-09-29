@@ -85,6 +85,52 @@ Follow the internal promotion and rollback runbooks when promoting schema change
 - `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`
 - `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`
 
+### Edge Functions
+
+The repo has one Supabase Edge Function, `discord-attachment-copy` (`supabase/functions/`). It copies
+a Discord bot import's attachments from Discord's CDN into the `chat-archive` bucket, so the bytes
+never pass through the API on Render ([ADR-26](../../../../spec/architecture/adr/adr-26.md), #2848).
+The API's `SupabaseArchiveMediaCopier` is its only caller.
+
+**How it deploys.** Only through CI, never by hand. `_deploy.yml` runs
+`scripts/ci/deploy-edge-functions.mjs` after the migrations and before the API:
+
+- on staging, every run whose plan is not `stale`;
+- on production, a real `full` run.
+
+The script checks the injected `SUPABASE_PROJECT_REF` against `.github/environments.json`, as the
+migrations do. It then runs `supabase functions deploy <name> --use-api --project-ref <ref>` for
+each function, so Supabase bundles it and the job needs no Docker. Order and gating:
+[CI/CD § How Deployments Are Gated](ci-cd.md#how-deployments-are-gated).
+
+**Its credential.** `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, one per Infisical environment. It is a
+scoped access token for that environment's project alone, with only the **Edge Functions**
+read-write permission. The read-only `SUPABASE_ACCESS_TOKEN` cannot deploy a function.
+[`ENV_REFERENCE.md` § CD Secrets](../../environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only)
+says how to mint it. When it is missing, the staging and production deploys fail at this step, before
+the API.
+
+**Its settings.**
+
+- **`verify_jwt = false`**, in `supabase/config.toml`, which the deploy reads. The function checks the
+  caller's service credential itself, and that check also accepts the newer `sb_secret_…` keys, which
+  the platform's JWT check refuses.
+- **No secrets of its own.** It reads the platform's default `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+  and `SUPABASE_SECRET_KEYS`.
+- **No region pin.** `frapp-prod` is in `us-east-2`, which Edge Functions do not offer as an
+  invocation region.
+
+**Limits it is built around** (Supabase [`functions/limits`](https://supabase.com/docs/guides/functions/limits),
+read 2026-09-29): 256 MB of memory, 2 s of CPU per request with async I/O excluded, and a
+**150 s request idle timeout**, past which the caller gets a 504. A call stops starting transfers at
+60 s, aborts what is still running at 120 s, starts at most 256 MiB, and hands back what it did not
+start as `deferred`. The constants and their reasons are in `handler.ts`.
+
+**To check it is deployed:** Supabase MCP `list_edge_functions` for the project, or the dashboard's
+**Edge Functions** page. Its logs are there too. A bot import whose copy service is missing or
+refusing the API fails with *"Could not copy attachments into the archive: the copy service
+answered …"* on the job.
+
 ### Collect Keys
 
 From each project's dashboard → Settings → API, note:
