@@ -458,6 +458,8 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
 | Offline (composer) | — | `You're offline — messages send when you reconnect.` |
+| Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
+| Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |
 
 The empty-timeline line used to end "messages render live with Supabase
 Realtime." It named the vendor and the transport to a member who wants to know
@@ -468,6 +470,12 @@ The composer's offline line is a **label, not a warning**: the send path queues
 before it touches the network, so the composer stays usable and says what will
 happen. Never reword it into an error — [resilience/connection-state.md](../resilience/connection-state.md) owns
 that rule and the string is shared with mobile.
+
+The two refusal toasts differ because the composer restores a refused message
+all or nothing: its text, files and reply come back together, or not at all if
+the member has typed, attached, staged another reply or left the channel since.
+The second toast therefore says the message is gone, rather than implying it
+will retry (`apps/web/components/chat/composer.tsx`, `submit`).
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
 

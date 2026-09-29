@@ -384,8 +384,23 @@ export interface ComposerReplyTarget {
  * caller that would hit it.
  */
 type ComposerReplyProps =
-  | { replyTo?: undefined; onCancelReply?: undefined }
-  | { replyTo: ComposerReplyTarget | null; onCancelReply: () => void };
+  | {
+      replyTo?: undefined;
+      onCancelReply?: undefined;
+      onRestoreReply?: undefined;
+    }
+  | {
+      replyTo: ComposerReplyTarget | null;
+      onCancelReply: () => void;
+      /**
+       * Re-stage the reply a refused send carried (#1728). Required beside
+       * `replyTo` for the same reason `onCancelReply` is: the caller clears
+       * its target before the send settles, so a caller without this would
+       * put the text back with its reply silently dropped, and Enter would
+       * then post a reply as a top-level message.
+       */
+      onRestoreReply: (messageId: string) => void;
+    };
 
 interface ComposerBaseProps {
   channelId: string;
@@ -409,6 +424,12 @@ interface ComposerBaseProps {
   canPost?: boolean;
   draft: string;
   onChangeDraft: (body: string) => void;
+  /**
+   * Rejects when the outbox refused the message (`outbox.enqueue` threw), and
+   * the composer then puts the message back (see `submit`). Resolving is not
+   * proof it was queued: `sendMessage` resolves after its own toast on the
+   * signed-out path without queuing anything.
+   */
   onSend: (
     body: string,
     attachments: OutboxAttachment[],
@@ -417,7 +438,8 @@ interface ComposerBaseProps {
    * Invoked when the user picks a slash command from the palette. Returns a
    * dispatch result so the composer can toast on failure, or on a partial
    * success (`warning`). The args string is everything after the command token
-   * (already trimmed). The composer clears its own editor on success.
+   * (already trimmed). The composer clears its own editor before
+   * dispatching, whatever the outcome.
    */
   onSlashDispatch?: (
     command: SlashCommand,
@@ -717,6 +739,7 @@ export function Composer({
   isOffline,
   replyTo,
   onCancelReply,
+  onRestoreReply,
   claimShellFocus,
 }: ComposerProps) {
   const { toast } = useToast();
@@ -759,6 +782,21 @@ export function Composer({
   // here regardless of whether anything ever renders it. See `onCreate`.
   const resolvedCanPost = canPost ?? !isReadOnly;
   const sendRef = useRef<() => void>(() => {});
+  /*
+    What is staged as of the last commit, for a refused send to compare
+    against when it settles (`submit`). The closure it runs in holds the values
+    from the moment of sending, which is exactly what it must not trust.
+  */
+  const stagedRef = useRef<{
+    pending: OutboxAttachment[];
+    replyId: string | null;
+  }>({ pending: [], replyId: null });
+  /*
+    Uploads started so far, counted when they start rather than when they
+    stage a chip: a file the member began attaching after a send lands in
+    `pending` later, beside whatever that send's refusal put back.
+  */
+  const uploadsStartedRef = useRef(0);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -1011,22 +1049,96 @@ export function Composer({
         return;
       }
     }
-    void onSend(text, pending);
-    // Only clear when a send was actually issued.
+    /*
+      Cleared optimistically, and put back whole if the send is refused (#1728).
+
+      Not awaited before clearing: `sendMessage` awaits the POST when online, so
+      holding the text until `onSend` resolved would leave it standing beside
+      its own optimistic bubble for a round trip, inviting a second Enter that
+      mints a fresh `client_message_id`. Mobile's `send` makes the same trade.
+
+      What rejects is the outbox write, `outbox.enqueue`: the unscoped
+      `INERT_OUTBOX` in `offline-queue.ts` (no signed-in member or no active
+      chapter), or a Dexie write that fails (over quota, a corrupt store).
+      `sendMessage` removes the optimistic card before rethrowing, so without
+      this the member saw the composer empty itself, nothing in the timeline,
+      and no explanation. API failures never reach here: those rows are queued
+      and keep Retry/Delete.
+
+      All or nothing. The text, the files and the reply belong together, so
+      they come back only into a composer the member has not touched since:
+      an empty editor, no file staged or started uploading, no other reply
+      staged. A file still uploading from before Send doesn't count: it was
+      headed for this message, and lands beside it (if it finishes first, it
+      is a staged file like any other). Anything less
+      pairs pieces of two messages (the old files on new text, a reply strip
+      over text it was never written for), which is worse than a message
+      that is plainly gone. The rejection usually lands within milliseconds,
+      but nothing bounds it, and a remount (a channel switch) destroys the
+      editor outright. The toast says which of the two happened.
+
+      `onSend` is called inside the async wrapper so a synchronous throw
+      becomes the same rejection rather than escaping the click handler.
+    */
+    const sentDoc = editor.getJSON();
+    const sentPending = pending;
+    const sentReplyId = replyTo?.id ?? null;
+    const sentUploads = uploadsStartedRef.current;
+    const sent = (async () => onSend(text, sentPending))();
     editor.commands.clearContent(true);
     setPending([]);
+    void sent.catch((error: unknown) => {
+      Sentry.captureException(error, { tags: { chat_send: "composer" } });
+      // Either value may still be the one sent, if the rejection beat the
+      // re-render that cleared it; that is untouched too.
+      const staged = stagedRef.current;
+      const untouched =
+        !editor.isDestroyed &&
+        editor.isEmpty &&
+        (staged.pending.length === 0 || staged.pending === sentPending) &&
+        (staged.replyId === null || staged.replyId === sentReplyId) &&
+        uploadsStartedRef.current === sentUploads;
+      if (!untouched) {
+        toast({
+          title: "Message not sent",
+          description:
+            "It couldn't be queued for delivery and was discarded. Re-enter it to try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // `emitUpdate: false` so the restore doesn't broadcast a typing ping;
+      // the draft is reported by hand instead, which also keeps the
+      // draft-sync effect above from treating it as a stale restore.
+      editor.commands.setContent(sentDoc, { emitUpdate: false });
+      onChangeDraft(editor.getText());
+      setPending(sentPending);
+      if (sentReplyId) onRestoreReply?.(sentReplyId);
+      toast({
+        title: "Message not sent",
+        description:
+          "It couldn't be queued for delivery. It's back in the composer.",
+        variant: "destructive",
+      });
+    });
   }, [
     editor,
+    onChangeDraft,
+    onRestoreReply,
     onSend,
     onSlashDispatch,
     pending,
     recruitmentVocab,
+    replyTo,
     slashRefusal,
     toast,
   ]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
+  useLayoutEffect(() => {
+    stagedRef.current = { pending, replyId: replyTo?.id ?? null };
+  }, [pending, replyTo]);
 
   const insertEmoji = useCallback(
     (emoji: string) => {
@@ -1056,6 +1168,7 @@ export function Composer({
         });
         return;
       }
+      uploadsStartedRef.current += 1;
       try {
         const signed = await requestUploadUrl.mutateAsync({
           id: channelId,
