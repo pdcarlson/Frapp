@@ -24,6 +24,8 @@
 //   * one still building or queued.
 // `maxDeletions` bounds each project per run, under Vercel's deletion rate
 // limit (200 per ten minutes per team), so a backlog drains over a few runs.
+// Runs close together can still reach that limit; a 429 stops the deletes and
+// leaves the rest for the next run, and is not a failure.
 //
 // Env inputs:
 //   VERCEL_API_KEY            — required
@@ -32,8 +34,11 @@
 //   VERCEL_LANDING_PROJECT_ID — required
 //   VERCEL_STAGING_HOSTS      — required, space-separated staging hostnames
 //
-// Exits 1 when a list, a hostname or a delete fails, so a ceiling that stopped
-// working is a red step rather than the next Vercel usage email.
+// Exits 1 when a list, a hostname or a delete (other than a 429) fails. It runs
+// in its own job of `deploy-staging.yml`, after the deploy job, so that fails
+// this job and not the deploy: everything has shipped by then, and a failed
+// deploy job would raise the P1 staging alert, whose natural fix (a re-run)
+// uploads both apps again.
 // Unit tests: `scripts/ci/__tests__/prune-vercel-staging.test.mjs`.
 
 import { appendFileSync } from "node:fs";
@@ -42,7 +47,7 @@ import { resolveDeploymentByHost } from "./deploy-vercel.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { vercelDeploymentCreatedAt } from "./lib/providers.mjs";
+import { fetchVercelDeployments, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
 
 /** Enough to alias staging back a few merges by hand. */
 export const KEEP_PREVIEWS = 10;
@@ -53,9 +58,6 @@ const MAX_PAGES = 50;
 
 const TERMINAL_STATES = new Set(["READY", "ERROR", "CANCELED"]);
 
-const LIST_URL = ({ projectId, teamId, until }) =>
-  `https://api.vercel.com/v6/deployments?projectId=${encodeURIComponent(projectId)}` +
-  `&teamId=${encodeURIComponent(teamId)}&limit=100${until ? `&until=${until}` : ""}`;
 const DELETE_URL = ({ id, teamId }) =>
   `https://api.vercel.com/v13/deployments/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`;
 
@@ -84,11 +86,7 @@ export async function listDeployments({ apiKey, teamId, projectId, fetchImpl = r
   const all = [];
   let until;
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const response = await fetchImpl(LIST_URL({ projectId, teamId, until }), {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!response.ok) throw new Error(`Vercel could not list deployments for ${projectId} (HTTP ${response.status})`);
-    const body = await response.json();
+    const body = await fetchVercelDeployments({ apiKey, projectId, teamId, until, limit: 100, fetchImpl });
     if (!Array.isArray(body?.deployments)) {
       throw new Error(`Vercel returned an unexpected deployment list for ${projectId} (page ${page + 1})`);
     }
@@ -99,13 +97,20 @@ export async function listDeployments({ apiKey, teamId, projectId, fetchImpl = r
   throw new Error(`${projectId} has more than ${MAX_PAGES} pages of deployments; refusing to prune a partial list`);
 }
 
-/** Delete one deployment. A 404 means it is already gone, which is the goal. */
+/** Vercel's answer to a delete over its rate limit: stop, and let the next run carry on. */
+export class DeleteRateLimited extends Error {}
+
+/**
+ * Delete one deployment. A 404 means it is already gone, which is the goal;
+ * a 429 throws `DeleteRateLimited`, which is not a failure (see the header).
+ */
 export async function deleteDeployment({ apiKey, teamId, id, fetchImpl = resilientFetch }) {
   const response = await fetchImpl(DELETE_URL({ id, teamId }), {
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   if (response.ok || response.status === 404) return;
+  if (response.status === 429) throw new DeleteRateLimited(`HTTP 429 deleting ${id}`);
   const detail = await response.text().catch(() => "");
   throw new Error(`HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
 }
@@ -113,7 +118,9 @@ export async function deleteDeployment({ apiKey, teamId, id, fetchImpl = resilie
 /**
  * Prune every project. Resolves the hostnames first and throws if any can't
  * be, before a single delete. Returns one summary per project, with the ids
- * it deleted and the deletes that failed.
+ * it deleted, the deletes that failed, and `deferred`: how many it left for
+ * the next run once Vercel rate-limited it (every later delete, in every
+ * project, waits too).
  */
 export async function pruneStagingDeployments({
   apiKey,
@@ -131,21 +138,32 @@ export async function pruneStagingDeployments({
   }
 
   const results = [];
+  let rateLimited = false;
   for (const { label, projectId } of projects) {
     const deployments = await listDeployments({ apiKey, teamId, projectId, fetchImpl });
     const { previews, prunable } = selectPrunable(deployments, { keep, protectedIds, maxDeletions });
     const deleted = [];
     const failed = [];
+    let deferred = 0;
     for (const deployment of prunable) {
+      if (rateLimited) {
+        deferred += 1;
+        continue;
+      }
       const id = idOf(deployment);
       try {
         await deleteDeployment({ apiKey, teamId, id, fetchImpl });
         deleted.push(id);
       } catch (error) {
-        failed.push({ id, error: String(error?.message ?? error) });
+        if (error instanceof DeleteRateLimited) {
+          rateLimited = true;
+          deferred += 1;
+        } else {
+          failed.push({ id, error: String(error?.message ?? error) });
+        }
       }
     }
-    results.push({ label, previews, deleted, failed });
+    results.push({ label, previews, deleted, failed, deferred });
   }
   return results;
 }
@@ -163,10 +181,11 @@ async function main() {
 
   const results = await pruneStagingDeployments({ apiKey, teamId, projects, hosts });
   let failures = 0;
-  for (const { label, previews, deleted, failed } of results) {
+  for (const { label, previews, deleted, failed, deferred } of results) {
     console.log(
       `[${label}] ${previews} preview deployment(s); kept the newest ${KEEP_PREVIEWS} and what staging serves; ` +
-        `deleted ${deleted.length}${failed.length ? `, ${failed.length} failed` : ""}.`,
+        `deleted ${deleted.length}${failed.length ? `, ${failed.length} failed` : ""}` +
+        `${deferred ? `, ${deferred} left for the next run (Vercel rate-limited the deletes)` : ""}.`,
     );
     for (const { id, error } of failed) console.error(`::error::[${label}] could not delete ${id}: ${error}`);
     failures += failed.length;
@@ -176,7 +195,10 @@ async function main() {
       process.env.GITHUB_STEP_SUMMARY,
       `### Vercel staging deployments pruned\n\n` +
         results
-          .map(({ label, previews, deleted, failed }) => `- \`${label}\`: ${previews} previews, ${deleted.length} deleted, ${failed.length} failed`)
+          .map(
+            ({ label, previews, deleted, failed, deferred }) =>
+              `- \`${label}\`: ${previews} previews, ${deleted.length} deleted, ${failed.length} failed, ${deferred} left for the next run`,
+          )
           .join("\n") +
         "\n",
     );

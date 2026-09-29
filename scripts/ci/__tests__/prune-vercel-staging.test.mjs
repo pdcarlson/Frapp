@@ -1,10 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+  DeleteRateLimited,
   KEEP_PREVIEWS,
   MAX_DELETIONS_PER_PROJECT,
   deleteDeployment,
@@ -131,10 +134,17 @@ describe("deleteDeployment", () => {
     await deleteDeployment({ apiKey: "k", teamId: "t", id: "dpl_1", fetchImpl: async () => new Response("", { status: 404 }) });
   });
 
+  it("reports a rate limit apart from a failure", async () => {
+    await assert.rejects(
+      deleteDeployment({ apiKey: "k", teamId: "t", id: "dpl_1", fetchImpl: async () => new Response("slow down", { status: 429 }) }),
+      (error) => error instanceof DeleteRateLimited,
+    );
+  });
+
   it("throws on any other failure", async () => {
     await assert.rejects(
-      deleteDeployment({ apiKey: "k", teamId: "t", id: "dpl_1", fetchImpl: async () => new Response("rate", { status: 429 }) }),
-      /HTTP 429/,
+      deleteDeployment({ apiKey: "k", teamId: "t", id: "dpl_1", fetchImpl: async () => new Response("forbidden", { status: 403 }) }),
+      /HTTP 403/,
     );
   });
 });
@@ -159,8 +169,8 @@ describe("pruneStagingDeployments", () => {
       fetchImpl,
     });
     assert.deepEqual(results, [
-      { label: "frapp-web", previews: 4, deleted: ["dpl_2", "dpl_1"], failed: [] },
-      { label: "frapp-landing", previews: 3, deleted: ["dpl_12", "dpl_11"], failed: [] },
+      { label: "frapp-web", previews: 4, deleted: ["dpl_2", "dpl_1"], failed: [], deferred: 0 },
+      { label: "frapp-landing", previews: 3, deleted: ["dpl_12", "dpl_11"], failed: [], deferred: 0 },
     ]);
     const deletes = calls.filter((call) => call.method === "DELETE");
     assert.equal(deletes.length, 4);
@@ -194,7 +204,86 @@ describe("pruneStagingDeployments", () => {
   });
 });
 
+describe("pruneStagingDeployments under Vercel's rate limit", () => {
+  // Runs close together can pass 200 deletes in ten minutes. Stopping there is
+  // the plan, not a failure: the next run carries on.
+  it("stops deleting at the first 429, in every project, and leaves the rest for the next run", async () => {
+    const asked = [];
+    const { fetchImpl } = fakeVercel({
+      pages: { prj_web: [previews(5)], prj_landing: [previews(4, { from: 10 })] },
+      hosts: { h: "dpl_0" },
+      deleteStatus: (id) => {
+        asked.push(id);
+        return id === "dpl_3" ? 429 : 200;
+      },
+    });
+    const results = await pruneStagingDeployments({
+      apiKey: "k",
+      teamId: "t",
+      projects: [
+        { label: "frapp-web", projectId: "prj_web" },
+        { label: "frapp-landing", projectId: "prj_landing" },
+      ],
+      hosts: ["h"],
+      keep: 1,
+      fetchImpl,
+    });
+    assert.deepEqual(asked, ["dpl_4", "dpl_3"], "nothing is asked after the 429");
+    assert.deepEqual(results[0], { label: "frapp-web", previews: 5, deleted: ["dpl_4"], failed: [], deferred: 3 });
+    assert.deepEqual(results[1], { label: "frapp-landing", previews: 4, deleted: [], failed: [], deferred: 3 });
+  });
+});
+
 describe("CLI", () => {
+  /** Run the CLI with `api.vercel.com` answered by a preloaded stub. */
+  function runWithStub(deleteStatus) {
+    const root = mkdtempSync(join(tmpdir(), "prune-cli-"));
+    try {
+      const preload = join(root, "stub.mjs");
+      writeFileSync(
+        preload,
+        [
+          "globalThis.fetch = async (url, init = {}) => {",
+          "  const u = new URL(String(url));",
+          '  if (u.pathname === "/v6/deployments") {',
+          "    const deployments = Array.from({ length: 12 }, (_, i) => ({ uid: `dpl_${i}`, created: 100 - i, state: \"READY\", target: null }));",
+          "    return Response.json({ deployments, pagination: { next: null } });",
+          "  }",
+          `  if (init.method === "DELETE") return new Response("x", { status: ${deleteStatus} });`,
+          '  return Response.json({ id: "dpl_0", target: null, meta: {} });',
+          "};",
+        ].join("\n"),
+      );
+      const env = {
+        ...process.env,
+        VERCEL_API_KEY: "k",
+        VERCEL_TEAM_ID: "t",
+        VERCEL_WEB_PROJECT_ID: "w",
+        VERCEL_LANDING_PROJECT_ID: "l",
+        VERCEL_STAGING_HOSTS: "h",
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+      };
+      delete env.GITHUB_STEP_SUMMARY;
+      return spawnSync(process.execPath, [join(REPO_ROOT, "scripts", "ci", "prune-vercel-staging.mjs")], { env, encoding: "utf8" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  // Its job in deploy-staging.yml is apart from the deploy job: this exit code
+  // is what turns a ceiling that stopped working into a red job on the run.
+  it("exits 1 when a delete fails, and 0 when it deletes or is rate-limited", () => {
+    const failed = runWithStub(500);
+    assert.equal(failed.status, 1, failed.stdout + failed.stderr);
+    assert.match(failed.stderr, /could not delete dpl_/);
+    const ok = runWithStub(200);
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    assert.match(ok.stdout, /\[frapp-web\] 12 preview deployment\(s\).*deleted 2\./);
+    const limited = runWithStub(429);
+    assert.equal(limited.status, 0, limited.stdout + limited.stderr);
+    assert.match(limited.stdout, /left for the next run/);
+  });
+
   it("exits 1 naming each missing input", () => {
     for (const key of ["VERCEL_API_KEY", "VERCEL_TEAM_ID", "VERCEL_WEB_PROJECT_ID", "VERCEL_LANDING_PROJECT_ID", "VERCEL_STAGING_HOSTS"]) {
       const env = {

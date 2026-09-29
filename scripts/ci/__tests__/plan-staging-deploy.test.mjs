@@ -535,7 +535,7 @@ describe("FRONTEND_BUILD_PATHS", () => {
     for (const path of reached) assert.match(path, FRONTEND_BUILD_PATHS, `${path} is part of the web/landing build`);
   });
 
-  it("matches the deploy script and the helpers that decide what reaches vercel build", () => {
+  it("matches the deploy script, the helpers that decide what reaches vercel build, and the workflow pinning its toolchain", () => {
     for (const path of [
       "apps/web/app/page.tsx",
       "apps/landing/next.config.js",
@@ -546,6 +546,7 @@ describe("FRONTEND_BUILD_PATHS", () => {
       "scripts/ci/deploy-vercel.mjs",
       "scripts/ci/lib/vercel-cli.mjs",
       "scripts/ci/lib/vercel-build-env.mjs",
+      ".github/workflows/_deploy.yml",
     ]) {
       assert.match(path, FRONTEND_BUILD_PATHS, path);
     }
@@ -559,7 +560,7 @@ describe("FRONTEND_BUILD_PATHS", () => {
       "apps/mobile/app/index.tsx",
       "apps/web-old/x.ts",
       "supabase/migrations/1_x.sql",
-      ".github/workflows/_deploy.yml",
+      ".github/workflows/ci.yml",
       "scripts/ci/plan-staging-deploy.mjs",
       "apps/api/package.json",
     ]) {

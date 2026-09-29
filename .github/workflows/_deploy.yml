@@ -18,7 +18,7 @@ name: Deploy
 #   plan (staging) / rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
 #   the API by commit → verify it serves the commit → UPLOAD web + landing →
-#   point the staging hosts at them → prune old staging deployments.
+#   point the staging hosts at them.
 # A failure anywhere before the upload ships no frontend: a failed build before
 # anything is applied, a failed migration before the API, a failed API before
 # the frontends that call it. One job, because the built output lives in
@@ -879,21 +879,3 @@ jobs:
             VERCEL_STAGING_ALIAS=staging.frapp.live \
             SERVICE_LABEL=frapp-landing \
             node scripts/ci/ensure-vercel-staging-alias.mjs
-
-      # Keep a fixed number of staging deployments (#2865). Every upload is a
-      # new deployment of both projects, and Vercel keeps each one against the
-      # Hobby team's Function Storage, which production shares. Deletes all but
-      # the newest previews of web and landing; never a production deployment,
-      # nor one a staging hostname serves (read fresh, after the alias above).
-      # On every staging run, uploaded or not, so a backlog drains. Last, so a
-      # failure here ships nothing late; it still fails the run, because a
-      # ceiling that stopped working should not wait for Vercel's next email.
-      - name: Prune old staging deployments (web + landing)
-        if: inputs.environment == 'staging'
-        env:
-          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
-          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
-          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
-          VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
-        run: node scripts/ci/prune-vercel-staging.mjs

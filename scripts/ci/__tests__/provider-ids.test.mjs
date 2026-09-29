@@ -175,6 +175,7 @@ describe("every consumer reads the ids step of its own job", () => {
   // Which environment each job's ids step reads.
   const EXPECTED = new Map([
     ["_deploy.yml/deploy", "${{ inputs.environment }}"],
+    ["deploy-staging.yml/prune-vercel-staging", "staging"],
     ["production-guardrails.yml/guardrails", "production"],
     ["production-release-pin.yml/pin", "production"],
     ["staging-conformance.yml/conformance", "staging"],

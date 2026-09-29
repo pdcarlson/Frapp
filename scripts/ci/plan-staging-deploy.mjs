@@ -106,12 +106,13 @@ export const API_IMAGE_PATHS =
  * Everything web and landing are built from: both apps, every workspace
  * package (the apps import most of them, and a package's own imports reach
  * the rest), the root manifests `npm ci` installs from, the scripts the apps'
- * `build` and `prebuild` run, and the deploy script and helpers that decide
- * which keys reach `vercel build`. `plan-staging-deploy.test.mjs` walks the
+ * `build` and `prebuild` run, the deploy script and helpers that decide which
+ * keys reach `vercel build`, and `_deploy.yml`, which pins the Node version
+ * and the Vercel CLI the bundles are built with. `plan-staging-deploy.test.mjs` walks the
  * apps' build scripts and fails when a file they import is not matched here.
  */
 export const FRONTEND_BUILD_PATHS =
-  /^(apps\/(web|landing)\/|packages\/|package\.json$|package-lock\.json$|turbo\.json$|scripts\/(next-build|sync-brand-assets)\.mjs$|scripts\/lib\/brand-pixels\.mjs$|scripts\/ci\/deploy-vercel\.mjs$|scripts\/ci\/lib\/vercel-(cli|build-env)\.mjs$)/;
+  /^(apps\/(web|landing)\/|packages\/|package\.json$|package-lock\.json$|turbo\.json$|scripts\/(next-build|sync-brand-assets)\.mjs$|scripts\/lib\/brand-pixels\.mjs$|scripts\/ci\/deploy-vercel\.mjs$|scripts\/ci\/lib\/vercel-(cli|build-env)\.mjs$|\.github\/workflows\/_deploy\.yml$)/;
 
 const SHA = /^[0-9a-f]{7,40}$/i;
 
