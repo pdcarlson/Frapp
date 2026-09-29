@@ -1,18 +1,41 @@
-import { decidePush, defaultLevelFor, resolveLevel } from './push-rules';
+import {
+  builtInChannelDefault,
+  decidePush,
+  defaultLevelFor,
+  isAnnouncementChannel,
+  resolveLevel,
+  type PushRuleChannel,
+} from './push-rules';
 import type { ChatNotificationPreferenceRow } from './chat-notification-preference.repository';
+
+/** A PUBLIC channel with this name and id `ch-1`, overridable per case. */
+const ch = (
+  name: string,
+  over: Partial<PushRuleChannel> = {},
+): PushRuleChannel => ({
+  id: 'ch-1',
+  name,
+  type: 'PUBLIC',
+  is_read_only: false,
+  default_notification_level: null,
+  ...over,
+});
 
 describe('defaultLevelFor', () => {
   it('announcements → all', () => {
-    expect(defaultLevelFor('announcements', 'text')).toBe('all');
+    expect(defaultLevelFor(ch('announcements'), 'text')).toBe('all');
   });
   it('chapter-audit → off', () => {
-    expect(defaultLevelFor('chapter-audit', 'text')).toBe('off');
+    expect(defaultLevelFor(ch('chapter-audit'), 'text')).toBe('off');
   });
   it('system_audit kind → off regardless of channel', () => {
-    expect(defaultLevelFor('general', 'system_audit')).toBe('off');
+    expect(defaultLevelFor(ch('random'), 'system_audit')).toBe('off');
+  });
+  it('#general → all (the owner decision on #2771)', () => {
+    expect(defaultLevelFor(ch('general'), 'text')).toBe('all');
   });
   it('every other channel → mentions', () => {
-    expect(defaultLevelFor('general', 'text')).toBe('mentions');
+    expect(defaultLevelFor(ch('random'), 'text')).toBe('mentions');
   });
 });
 
@@ -30,8 +53,7 @@ describe('resolveLevel', () => {
 
   it('channel-specific pref beats kind beats default', () => {
     const r = resolveLevel(
-      'general',
-      'ch-1',
+      ch('random'),
       'text',
       prefs([{ scope: 'channel', scope_id: 'ch-1', level: 'off' }]),
     );
@@ -40,8 +62,7 @@ describe('resolveLevel', () => {
 
   it('kind pref applies when channel pref is absent', () => {
     const r = resolveLevel(
-      'general',
-      'ch-1',
+      ch('random'),
       'text',
       prefs([{ scope: 'kind', scope_kind: 'text', level: 'all' }]),
     );
@@ -49,149 +70,125 @@ describe('resolveLevel', () => {
   });
 
   it('falls back to default when both arms are absent', () => {
-    expect(resolveLevel('general', 'ch-1', 'text', [])).toBe('mentions');
+    expect(resolveLevel(ch('random'), 'text', [])).toBe('mentions');
   });
 });
 
 describe('decidePush', () => {
   it('skips presence even if level=all', () => {
     expect(
-      decidePush(
-        {
-          channelName: 'announcements',
-          messageKind: 'announcement',
-          recipientIsPresent: true,
-          hasMention: false,
-          preferences: [],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('announcements'),
+        messageKind: 'announcement',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
     ).toBe('skip-presence');
   });
 
   it('sends on default announcements level', () => {
     expect(
-      decidePush(
-        {
-          channelName: 'announcements',
-          messageKind: 'announcement',
-          recipientIsPresent: false,
-          hasMention: false,
-          preferences: [],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('announcements'),
+        messageKind: 'announcement',
+        recipientIsPresent: false,
+        hasMention: false,
+        preferences: [],
+      }),
     ).toBe('send');
   });
 
   it('mentions level requires hasMention', () => {
     expect(
-      decidePush(
-        {
-          channelName: 'general',
-          messageKind: 'text',
-          recipientIsPresent: false,
-          hasMention: false,
-          preferences: [],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('random'),
+        messageKind: 'text',
+        recipientIsPresent: false,
+        hasMention: false,
+        preferences: [],
+      }),
     ).toBe('skip-level');
     expect(
-      decidePush(
-        {
-          channelName: 'general',
-          messageKind: 'text',
-          recipientIsPresent: false,
-          hasMention: true,
-          preferences: [],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('random'),
+        messageKind: 'text',
+        recipientIsPresent: false,
+        hasMention: true,
+        preferences: [],
+      }),
     ).toBe('send');
   });
 
   it('system_audit kind is suppressed unless explicitly opted-in', () => {
     expect(
-      decidePush(
-        {
-          channelName: 'chapter-audit',
-          messageKind: 'system_audit',
-          recipientIsPresent: false,
-          hasMention: true,
-          preferences: [],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('chapter-audit'),
+        messageKind: 'system_audit',
+        recipientIsPresent: false,
+        hasMention: true,
+        preferences: [],
+      }),
     ).toBe('skip-level');
     expect(
-      decidePush(
-        {
-          channelName: 'chapter-audit',
-          messageKind: 'system_audit',
-          recipientIsPresent: false,
-          hasMention: false,
-          preferences: [
-            {
-              user_id: 'u',
-              chapter_id: 'c',
-              scope: 'kind',
-              scope_id: null,
-              scope_kind: 'system_audit',
-              level: 'all',
-            },
-          ],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('chapter-audit'),
+        messageKind: 'system_audit',
+        recipientIsPresent: false,
+        hasMention: false,
+        preferences: [
+          {
+            user_id: 'u',
+            chapter_id: 'c',
+            scope: 'kind',
+            scope_id: null,
+            scope_kind: 'system_audit',
+            level: 'all',
+          },
+        ],
+      }),
     ).toBe('send');
   });
 
   it('channel off pref still pushes on a mention (mute override)', () => {
     expect(
-      decidePush(
-        {
-          channelName: 'general',
-          messageKind: 'text',
-          recipientIsPresent: false,
-          hasMention: true,
-          preferences: [
-            {
-              user_id: 'u',
-              chapter_id: 'c',
-              scope: 'channel',
-              scope_id: 'ch-1',
-              scope_kind: null,
-              level: 'off',
-            },
-          ],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('random'),
+        messageKind: 'text',
+        recipientIsPresent: false,
+        hasMention: true,
+        preferences: [
+          {
+            user_id: 'u',
+            chapter_id: 'c',
+            scope: 'channel',
+            scope_id: 'ch-1',
+            scope_kind: null,
+            level: 'off',
+          },
+        ],
+      }),
     ).toBe('send');
   });
 
   it('channel off pref skips when there is no mention', () => {
     expect(
-      decidePush(
-        {
-          channelName: 'general',
-          messageKind: 'text',
-          recipientIsPresent: false,
-          hasMention: false,
-          preferences: [
-            {
-              user_id: 'u',
-              chapter_id: 'c',
-              scope: 'channel',
-              scope_id: 'ch-1',
-              scope_kind: null,
-              level: 'off',
-            },
-          ],
-        },
-        'ch-1',
-      ),
+      decidePush({
+        channel: ch('random'),
+        messageKind: 'text',
+        recipientIsPresent: false,
+        hasMention: false,
+        preferences: [
+          {
+            user_id: 'u',
+            chapter_id: 'c',
+            scope: 'channel',
+            scope_id: 'ch-1',
+            scope_kind: null,
+            level: 'off',
+          },
+        ],
+      }),
     ).toBe('skip-level');
   });
 
@@ -202,16 +199,13 @@ describe('decidePush', () => {
 
     it('never sends, whatever the channel default would be', () => {
       expect(
-        decidePush(
-          {
-            channelName: 'announcements',
-            messageKind: 'imported',
-            recipientIsPresent: false,
-            hasMention: false,
-            preferences: [],
-          },
-          'ch-1',
-        ),
+        decidePush({
+          channel: ch('announcements'),
+          messageKind: 'imported',
+          recipientIsPresent: false,
+          hasMention: false,
+          preferences: [],
+        }),
       ).toBe('skip-level');
     });
 
@@ -220,53 +214,137 @@ describe('decidePush', () => {
       // `@name` tokens, and a mention overrides a muted channel's `off` — so a
       // kind-level default alone would not hold.
       expect(
-        decidePush(
-          {
-            channelName: 'general',
-            messageKind: 'imported',
-            recipientIsPresent: false,
-            hasMention: true,
-            preferences: [],
-          },
-          'ch-1',
-        ),
+        decidePush({
+          channel: ch('random'),
+          messageKind: 'imported',
+          recipientIsPresent: false,
+          hasMention: true,
+          preferences: [],
+        }),
       ).toBe('skip-level');
     });
 
     it('is not lifted by an explicit all-level preference', () => {
       expect(
-        decidePush(
-          {
-            channelName: 'general',
-            messageKind: 'imported',
-            recipientIsPresent: false,
-            hasMention: false,
-            preferences: [
-              {
-                user_id: 'u',
-                chapter_id: 'c',
-                scope: 'kind',
-                scope_id: null,
-                scope_kind: 'imported',
-                level: 'all',
-              },
-              {
-                user_id: 'u',
-                chapter_id: 'c',
-                scope: 'channel',
-                scope_id: 'ch-1',
-                scope_kind: null,
-                level: 'all',
-              },
-            ],
-          },
-          'ch-1',
-        ),
+        decidePush({
+          channel: ch('random'),
+          messageKind: 'imported',
+          recipientIsPresent: false,
+          hasMention: false,
+          preferences: [
+            {
+              user_id: 'u',
+              chapter_id: 'c',
+              scope: 'kind',
+              scope_id: null,
+              scope_kind: 'imported',
+              level: 'all',
+            },
+            {
+              user_id: 'u',
+              chapter_id: 'c',
+              scope: 'channel',
+              scope_id: 'ch-1',
+              scope_kind: null,
+              level: 'all',
+            },
+          ],
+        }),
       ).toBe('skip-level');
     });
 
     it('resolves to an off level, so anything reading a level agrees', () => {
-      expect(defaultLevelFor('announcements', 'imported')).toBe('off');
+      expect(defaultLevelFor(ch('announcements'), 'imported')).toBe('off');
     });
+  });
+});
+
+describe('officer-set channel defaults and DMs (#2771)', () => {
+  it('a stored channel default beats the built-in one', () => {
+    expect(
+      defaultLevelFor(
+        ch('general', { default_notification_level: 'off' }),
+        'text',
+      ),
+    ).toBe('off');
+    expect(
+      defaultLevelFor(
+        ch('random', { default_notification_level: 'all' }),
+        'text',
+      ),
+    ).toBe('all');
+  });
+
+  it('a stored default never lifts audit or imported rows', () => {
+    const loud = ch('chapter-audit', { default_notification_level: 'all' });
+    expect(defaultLevelFor(loud, 'system_audit')).toBe('off');
+    expect(defaultLevelFor(loud, 'imported')).toBe('off');
+  });
+
+  it('a DM and a group DM default to all, whatever is stored', () => {
+    expect(defaultLevelFor(ch('dm-a-b', { type: 'DM' }), 'text')).toBe('all');
+    expect(
+      defaultLevelFor(
+        ch('Rush chairs', {
+          type: 'GROUP_DM',
+          default_notification_level: 'off',
+        }),
+        'text',
+      ),
+    ).toBe('all');
+  });
+
+  it("a member's own channel level beats the officer default", () => {
+    const social = ch('social', { default_notification_level: 'all' });
+    expect(
+      resolveLevel(social, 'text', [
+        {
+          user_id: 'u',
+          chapter_id: 'c',
+          scope: 'channel',
+          scope_id: 'ch-1',
+          scope_kind: null,
+          level: 'mentions',
+        },
+      ]),
+    ).toBe('mentions');
+  });
+
+  it('builtInChannelDefault ignores what is stored', () => {
+    expect(
+      builtInChannelDefault(
+        ch('general', { default_notification_level: 'off' }),
+      ),
+    ).toBe('all');
+    expect(builtInChannelDefault(ch('chapter-audit'))).toBe('off');
+    expect(builtInChannelDefault(ch('random'))).toBe('mentions');
+  });
+});
+
+describe('isAnnouncementChannel', () => {
+  it('matches the seeded channel by name alone', () => {
+    expect(isAnnouncementChannel(ch('announcements'))).toBe(true);
+  });
+  it('matches a public read-only channel whose name contains it', () => {
+    expect(
+      isAnnouncementChannel(
+        ch('Chapter-Announcements', { is_read_only: true }),
+      ),
+    ).toBe(true);
+  });
+  it('does not match one anyone can post in', () => {
+    expect(isAnnouncementChannel(ch('intramural-announcements'))).toBe(false);
+  });
+  it('does not match a private or role-gated one', () => {
+    expect(
+      isAnnouncementChannel(
+        ch('exec-announcements', { type: 'PRIVATE', is_read_only: true }),
+      ),
+    ).toBe(false);
+    expect(
+      isAnnouncementChannel(
+        ch('alumni-announcements', { type: 'ROLE_GATED', is_read_only: true }),
+      ),
+    ).toBe(false);
   });
 });

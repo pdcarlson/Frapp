@@ -68,7 +68,6 @@ import {
   isChatMessageKind,
   isSettableNotificationKind,
 } from '#domain/entities/chat.entity';
-import { NotificationService } from './notification.service';
 import {
   ChannelAccessService,
   type ReportedMessageGrant,
@@ -290,7 +289,6 @@ export class ChatService {
     private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    private readonly notificationService: NotificationService,
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
     private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
@@ -1011,16 +1009,11 @@ export class ChatService {
 
     await this.persistAttachments(message.id, input.channel_id, attachments);
 
-    try {
-      await this.notifyMessageRecipients(input, channel);
-    } catch (error) {
-      this.logger.warn('Failed to send message notification', {
-        messageId: message.id,
-        channelId: input.channel_id,
-        chapterId: input.chapter_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    // No push is sent from here. The push worker handles every
+    // `chat_messages` insert, this one included, and is the only chat push
+    // path (#2771): it applies the member's per-channel level, presence, burst
+    // bundling and the block and read filters. A second path here used to push
+    // DMs and announcements again on top of it, and ignored a muted DM.
 
     // Funnel step 4 (#267): the chapter's first *human* message. Server-
     // originated posts are excluded — the onboarding welcome message would
@@ -1084,80 +1077,6 @@ export class ChatService {
         error: error instanceof Error ? error.message : String(error),
       });
       return [];
-    }
-  }
-
-  private async notifyMessageRecipients(
-    input: SendMessageInput,
-    channel: ChatChannel,
-  ): Promise<void> {
-    // The announcement fan-out pushes the message body to **every member of the
-    // chapter**, so it is only sound for a channel every member can read — which
-    // is PUBLIC, and is what `spec/behavior/chat/README.md` describes
-    // (`#announcements` is all-read, exec-write via `announcements:post`).
-    //
-    // Matching on the name alone made the fan-out reachable from channels most
-    // of the chapter cannot read. That was already true of ROLE_GATED — the
-    // seeded `#alumni` channel is one rename away — and seeding `member_ids`
-    // (#1008) newly made PRIVATE channels postable at all, which would have put
-    // a one-member private channel named `exec-announcements` one send away
-    // from broadcasting its contents chapter-wide.
-    //
-    // `is_read_only` gates the *write* side for the same reason. Without it any
-    // member could post to a PUBLIC, non-read-only channel merely named
-    // `intramural-announcements` and fan an URGENT notification — which
-    // `NotificationService` exempts from the quiet-hours downgrade — to the
-    // whole roster. That contradicts this section of the chat spec, which says
-    // `announcements:post` governs who may author an announcement, and it is
-    // the same name-keying that `allowsInThreadReplies` deliberately avoids.
-    // Together the two flags are the structural shape of an announcements
-    // channel: everyone reads, only the permitted write.
-    const isAnnouncement =
-      channel.type === 'PUBLIC' &&
-      channel.is_read_only &&
-      channel.name.toLowerCase().includes('announcements');
-
-    // Both branches drop everyone who has blocked the sender (#2324), for the
-    // reason the push worker does: each writes an in-app row and pushes the body
-    // to a lock screen, so masking the preview would still buzz the blocker's
-    // phone. A DM is the sharpest case, since "nothing they send reaches the
-    // blocker" is the whole rule. `filterOutBlockers` throws when the block list
-    // cannot be read, and `sendMessage` catches it: the message still lands, but
-    // nobody is notified rather than everybody.
-    const withoutBlockers = (userIds: string[]) =>
-      this.chatBlocks.filterOutBlockers(
-        channel.chapter_id,
-        input.sender_id,
-        userIds,
-      );
-
-    if (isAnnouncement) {
-      await this.notificationService.notifyChapter(
-        channel.chapter_id,
-        {
-          title: 'New Announcement',
-          body: input.content.slice(0, 200),
-          priority: 'URGENT',
-          category: 'announcements',
-          data: { target: { screen: 'chat', channelId: channel.id } },
-        },
-        { filterAudience: withoutBlockers },
-      );
-    } else if (channel.type === 'DM' || channel.type === 'GROUP_DM') {
-      const recipientIds = await withoutBlockers(
-        (channel.member_ids ?? []).filter((id) => id !== input.sender_id),
-      );
-      await Promise.allSettled(
-        recipientIds.map((recipientId) =>
-          this.notificationService.notifyUser(recipientId, channel.chapter_id, {
-            title: 'New Message',
-            body: input.content.slice(0, 200),
-            priority: 'NORMAL',
-            category: 'chat',
-            data: { target: { screen: 'chat', channelId: channel.id } },
-          }),
-        ),
-      );
     }
   }
 
@@ -1813,7 +1732,7 @@ export class ChatService {
     // message do".
     return accessible.map((channel) => ({
       channel_id: channel.id,
-      level: resolveLevel(channel.name, channel.id, 'text', preferences),
+      level: resolveLevel(channel, 'text', preferences),
     }));
   }
 

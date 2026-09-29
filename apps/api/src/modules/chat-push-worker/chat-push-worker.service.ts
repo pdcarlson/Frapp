@@ -12,10 +12,16 @@ import type {
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { BurstBundler } from './burst-bundler';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
-import { decidePush } from './push-rules';
+import {
+  decidePush,
+  isAnnouncementChannel,
+  isDirectChannel,
+} from './push-rules';
 import { canAccessChannel } from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
@@ -45,6 +51,9 @@ interface ChatMessageRow {
 
 /** Alias kept local so the rest of this file reads in its own domain terms. */
 type ChannelRow = CachedChannelRow;
+
+/** The placeholder `ChatService.createGroupDm` names a group DM given no name. */
+const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
 
 /**
  * Push worker (ADR-09).
@@ -106,6 +115,9 @@ export class ChatPushWorkerService
      * asked.
      */
     private readonly chatBlocks: ChatBlockService,
+    /** The sender's display name, which every chat push now carries (#2771). */
+    @Inject(USER_REPOSITORY)
+    private readonly userRepo: IUserRepository,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -266,18 +278,19 @@ export class ChatPushWorkerService
         channel.chapter_id,
       );
 
+      // Read once, and only once a recipient is actually getting a push: most
+      // messages in a `mentions` channel push nobody.
+      let senderName: Promise<string | null> | null = null;
+
       for (const recipientId of recipientIds) {
         const prefs = prefsByUser.get(recipientId) ?? [];
-        const decision = decidePush(
-          {
-            channelName: channel.name,
-            messageKind: row.kind,
-            recipientIsPresent: presenceMap.has(recipientId),
-            hasMention: mentions.includes(recipientId),
-            preferences: prefs,
-          },
-          channel.id,
-        );
+        const decision = decidePush({
+          channel,
+          messageKind: row.kind,
+          recipientIsPresent: presenceMap.has(recipientId),
+          hasMention: mentions.includes(recipientId),
+          preferences: prefs,
+        });
         if (decision !== 'send') continue;
 
         // `sender_id` may be null; `String()` keeps the key well-formed rather than
@@ -288,7 +301,14 @@ export class ChatPushWorkerService
         const burst = this.bundler.record(bundleKey);
         if (burst.action === 'skip') continue;
 
-        const payload = this.buildPayload(channel, row, senderPreview, burst);
+        senderName ??= this.resolveSenderName(row.sender_id);
+        const payload = this.buildPayload(
+          channel,
+          row,
+          senderPreview,
+          burst,
+          await senderName,
+        );
         try {
           await this.notificationService.notifyUser(
             recipientId,
@@ -401,7 +421,7 @@ export class ChatPushWorkerService
     const { data, error } = await this.supabase
       .from('chat_channels')
       .select(
-        'id, chapter_id, name, is_read_only, type, member_ids, required_permissions',
+        'id, chapter_id, name, is_read_only, type, member_ids, required_permissions, default_notification_level',
       )
       .eq('id', channelId)
       .maybeSingle();
@@ -481,18 +501,54 @@ export class ChatPushWorkerService
     }
   }
 
+  /**
+   * The sender's display name, or `null` when there is nothing worth showing:
+   * no sender, a blank name, or a lookup that failed. A failed lookup costs the
+   * name, never the push, so it is logged and swallowed.
+   */
+  private async resolveSenderName(
+    senderId: string | null,
+  ): Promise<string | null> {
+    if (!senderId) return null;
+    try {
+      const [identity] = await this.userRepo.findDisplayIdentitiesByIds([
+        senderId,
+      ]);
+      const name = identity?.display_name?.trim();
+      return name ? name : null;
+    } catch (err) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `chat-push: sender name lookup failed for ${senderId}; pushing without it`,
+        err,
+      );
+      return null;
+    }
+  }
+
   private buildPayload(
     channel: ChannelRow,
     row: ChatMessageRow,
     preview: string,
     burst: ReturnType<BurstBundler['record']>,
+    senderName: string | null,
   ) {
+    // One predicate for the title, the priority and the category, bundled or
+    // not. A burst of announcements is still announcements: it used to go out
+    // as a NORMAL `chat` push, under the member's Chat switch rather than its
+    // own, which only went unnoticed while `ChatService` pushed every
+    // announcement a second time.
+    const isAnnouncement = this.isAnnouncementPush(channel, row.kind);
+    const shared = {
+      title: this.titleFor(channel, isAnnouncement, senderName, burst),
+      category: isAnnouncement ? 'announcements' : 'chat',
+      priority: isAnnouncement ? ('URGENT' as const) : ('NORMAL' as const),
+    };
     if (burst.action === 'bundle') {
       return {
-        title: `New messages in #${channel.name}`,
+        ...shared,
         body: `${burst.count} new messages`,
-        category: 'chat',
-        priority: 'NORMAL' as const,
         data: {
           target: { screen: 'chat', channelId: channel.id },
           bundled: true,
@@ -500,12 +556,9 @@ export class ChatPushWorkerService
         },
       };
     }
-    const isAnnouncement = this.isAnnouncementPush(channel.name, row.kind);
     return {
-      title: this.titleFor(channel.name, row.kind),
+      ...shared,
       body: preview,
-      category: isAnnouncement ? 'announcements' : 'chat',
-      priority: isAnnouncement ? ('URGENT' as const) : ('NORMAL' as const),
       data: { target: { screen: 'chat', channelId: channel.id } },
     };
   }
@@ -523,18 +576,49 @@ export class ChatPushWorkerService
    * mismatch let those pushes escape the member's coarse Chat switch, the one
    * control meant to silence them, with no switch of their own to replace it.
    *
-   * Note this makes the channel *name* load-bearing for whether a member can
-   * mute a push at all. Narrowing that heuristic is part of #1323, which
-   * decides how routine announcements are separated from emergency ones.
+   * Note this makes the channel's name load-bearing for whether a member can
+   * mute a push at all (see `isAnnouncementChannel`). Narrowing that heuristic
+   * is part of #1323, which decides how routine announcements are separated
+   * from emergency ones.
    */
-  private isAnnouncementPush(channelName: string, kind: string): boolean {
-    return kind === 'announcement' || channelName === 'announcements';
+  private isAnnouncementPush(channel: ChannelRow, kind: string): boolean {
+    return kind === 'announcement' || isAnnouncementChannel(channel);
   }
 
-  private titleFor(channelName: string, kind: string): string {
-    return this.isAnnouncementPush(channelName, kind)
-      ? 'New Announcement'
-      : `New message in #${channelName}`;
+  /**
+   * Every title names the sender when there is a name to give (#2771), bundled
+   * or not, the way a messenger's lock-screen push does. Without one, each
+   * falls back to the wording it had before.
+   *
+   * A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
+   * `group-dm-<timestamp>`, both internal, so neither ever reaches a title.
+   */
+  private titleFor(
+    channel: ChannelRow,
+    isAnnouncement: boolean,
+    senderName: string | null,
+    burst: ReturnType<BurstBundler['record']>,
+  ): string {
+    const bundled = burst.action === 'bundle';
+    if (isAnnouncement) {
+      if (senderName) return `Announcement from ${senderName}`;
+      return bundled ? 'New Announcements' : 'New Announcement';
+    }
+    if (isDirectChannel(channel)) {
+      const groupName =
+        channel.type === 'GROUP_DM' && !UNNAMED_GROUP_DM.test(channel.name)
+          ? channel.name
+          : null;
+      if (senderName) {
+        return groupName ? `${senderName} in ${groupName}` : senderName;
+      }
+      if (groupName) return groupName;
+      return bundled ? 'New Messages' : 'New Message';
+    }
+    if (senderName) return `${senderName} in #${channel.name}`;
+    return bundled
+      ? `New messages in #${channel.name}`
+      : `New message in #${channel.name}`;
   }
 
   // ── Internal test helpers ─────────────────────────────────────────────
