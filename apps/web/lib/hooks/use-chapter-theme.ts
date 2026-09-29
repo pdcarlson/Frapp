@@ -93,12 +93,9 @@ export function useChapterTheme() {
   /**
    * The semantic tokens for the current chapter, or `null`.
    *
-   * All-or-nothing, which is the rule this hook has always applied and which
-   * the cache inherits: a row missing the Signet keys (as a row persisted
-   * before them does, until the #1165 sweep reaches it) applies none, and half a map is
-   * worse than none — the stylesheet's
-   * house defaults are internally consistent, one chapter's primary beside the
-   * house ring is not.
+   * All-or-nothing (`hasSignetSemanticRoles` says why), and the cache
+   * inherits that: a row missing any bridged role applies none, and the
+   * stylesheet's house defaults stand.
    */
   const resolved = useMemo(() => {
     const palette = data?.theme_palette;

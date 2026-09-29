@@ -109,8 +109,8 @@ function readString(
  * present and the other missing as "engine path, half-resolved" would pair a
  * chapter's real fill with the *house* foreground (or vice versa) — exactly
  * the uncontrasted combination this hook exists to prevent. Mirrors the
- * all-or-nothing `SIGNET_ROLE_KEYS.every(...)` gate
- * `apps/web/lib/hooks/use-chapter-theme.ts` already applies to this same
+ * all-or-nothing `hasSignetSemanticRoles` gate (`@repo/chapter-theme/accent-vars`)
+ * that `apps/web/lib/hooks/use-chapter-theme.ts` applies to this same
  * `theme_palette` data for the same reason.
  */
 export function useChapterBranding(): ChapterBranding {

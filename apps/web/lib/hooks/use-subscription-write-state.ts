@@ -39,9 +39,8 @@ export function useChapterSubscription(): ChapterSubscription {
   });
 
   // Both fields are on the contract (`CurrentChapterResponseDto`). The status
-  // still goes through `isSubscriptionStatus`: a state the server grows before
-  // this client models it reads as `null`, "not blocked", so a deploy skew
-  // never locks a chapter out of its own UI.
+  // still goes through `isSubscriptionStatus`, which fails open on a state
+  // this client does not model yet.
   const rawStatus = data?.subscription_status;
 
   return {

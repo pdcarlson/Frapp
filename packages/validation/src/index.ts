@@ -120,9 +120,9 @@ export const CurrentChapterPayloadSchema = z
     accent_color: z.string().nullable().optional(),
     subscription_status: subscriptionStatusEnum,
     branding: ChapterBrandingSchema,
-    // Same scalar the config PATCH writes; `GET /v1/chapters/current` returns
-    // the chapter row (`select('*')`), so mobile reads the opt-out here the
-    // way it already reads `enabled_modules` for `isModuleEnabled`.
+    // Same scalar the config PATCH writes. `GET /v1/chapters/current` serves it
+    // in the member view (`CurrentChapterResponseDto`), which is where mobile
+    // reads the opt-out.
     analytics_opt_out: z.boolean().optional(),
   })
   .passthrough();

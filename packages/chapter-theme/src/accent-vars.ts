@@ -68,10 +68,12 @@ export type SignetSemanticRoles = Pick<
  * the #1165 sweep reaches it) fails, and half a map is worse than none. One
  * chapter's primary beside the house ring is not a consistent palette.
  */
-export function hasSignetSemanticRoles(palette: {
-  readonly [key: string]: unknown;
-}): palette is SignetSemanticRoles {
-  return SIGNET_SEMANTIC_ROLES.every((key) => typeof palette[key] === "string");
+export function hasSignetSemanticRoles(
+  palette: object,
+): palette is SignetSemanticRoles {
+  return SIGNET_SEMANTIC_ROLES.every(
+    (key) => typeof Reflect.get(palette, key) === "string",
+  );
 }
 
 /**
