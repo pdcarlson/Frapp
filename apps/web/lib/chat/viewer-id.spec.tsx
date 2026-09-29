@@ -267,6 +267,10 @@ describe("a warm timeline painted from the cached id alone", () => {
       />,
     );
 
+    // The row is drawn — a guard that also passed with nothing on screen would
+    // prove nothing — and drawn as somebody else's.
+    expect(screen.getByText("mine")).toBeInTheDocument();
+    expect(author().text).not.toBeNull();
     expect(author().text).not.toBe("You");
     expect(author().accented).toBe(false);
   });

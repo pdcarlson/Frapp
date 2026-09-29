@@ -1220,6 +1220,52 @@ describe("MessageTimeline runs and day dividers (#2873)", () => {
     expect(rowOf("early").dataset.run).toBe("start");
   });
 
+  it("draws one divider for a day's messages, not one per message", () => {
+    const { container } = renderTimeline([
+      message({ id: "a", client_message_id: "a", content: "one" }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        sender_id: BOB,
+        content: "two",
+        created_at: new Date(2026, 7, 16, 17, 30).toISOString(),
+      }),
+      message({
+        id: "c",
+        client_message_id: "c",
+        content: "three",
+        created_at: new Date(2026, 7, 16, 21, 0).toISOString(),
+      }),
+    ]);
+    expect(container.querySelectorAll('[data-slot="day-divider"]')).toHaveLength(
+      1,
+    );
+  });
+
+  it("hands a follow-on the start of its run, for the gutter's AM/PM", () => {
+    renderTimeline([
+      message({
+        id: "a",
+        client_message_id: "a",
+        content: "before noon",
+        created_at: new Date(2026, 7, 16, 11, 58).toISOString(),
+      }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        content: "after noon",
+        created_at: new Date(2026, 7, 16, 12, 1).toISOString(),
+      }),
+    ]);
+    const gutter = rowOf("after noon").querySelector('[data-slot="gutter-time"]');
+    expect(gutter?.textContent).toBe(
+      new Date(2026, 7, 16, 12, 1).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    );
+  });
+
   it("puts no date on any author line", () => {
     const { container } = renderTimeline([message()]);
     const line = container.querySelector('[data-slot="author-line"]');

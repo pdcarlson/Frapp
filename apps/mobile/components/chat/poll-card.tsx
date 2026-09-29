@@ -85,6 +85,12 @@ export interface PollCardProps {
    * is decided by `messageActionsFor`, not by whether this is passed.
    */
   onOpenActions?: () => void;
+  /**
+   * Scrolls to the parent when this poll is a reply whose parent is shown.
+   * The quote above the row is tappable; this is its screen-reader twin on the
+   * card's own accessible container, as a text reply has on its body.
+   */
+  onJumpToParent?: () => void;
 }
 
 export function PollCard({
@@ -97,6 +103,7 @@ export function PollCard({
   onReact,
   onUnreact,
   onOpenActions,
+  onJumpToParent,
 }: PollCardProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -147,8 +154,10 @@ export function PollCard({
   // reachable), and the screen-reader action on an accessible `View` around
   // the card's own text — never on a bare `Text` (see
   // `messageActionsA11yProps`).
-  const a11yActions = messageActionsA11yProps(onOpenActions);
-  const hasActions = !!onOpenActions;
+  const a11yActions = messageActionsA11yProps(onOpenActions, {
+    onJumpToParent,
+  });
+  const hasActions = "accessibilityActions" in a11yActions;
 
   if (!payload) {
     return (

@@ -115,21 +115,20 @@
     --mention: #E5484D;
     --mention-foreground: #FFFFFF;
     /* The in-body mention chip — the "you were addressed" treatment *inside* a
-     * message bubble, which components.md §11 carried as a TODO-DESIGN until
+     * message body, which components.md §11 carried as a TODO-DESIGN until
      * this pair settled it. NOT the mention red above, and deliberately: that
      * token is a badge fill carrying white text, and foundations §5 states
      * outright that "a future surface that renders mention red **as text** needs
      * a lifted tone first; it does not have one today". This one does render as
      * text, so it takes the amber the Design bar chose instead.
      *
-     * **Opaque, where §5's tint recipe would use 13% alpha, and that is the
-     * whole point.** A chat mention lands inside a bubble, and the self bubble
-     * is `--primary` — a per-chapter colour that can be anything from `#006400`
-     * to `#FFFFFF`. An alpha tint composites over whatever that is, so the chip
-     * text's contrast would be a per-tenant accident: the same message would be
-     * 6.5:1 in one chapter and 1.1:1 in the next. An opaque chip carries its own
-     * ground, so the pair below measures the same on every bubble in every
-     * chapter. `chat-contrast.spec.ts` asserts both halves of that.
+     * **Opaque, where §5's tint recipe would use 13% alpha.** A chat mention
+     * sits on the row, which is `--background` at rest and `--surface-1` while
+     * hovered; an alpha tint would give its text two contrast figures, and an
+     * opaque chip carries its own ground, so the pair below measures the same
+     * in every row state. (It was first argued from the per-chapter `--primary`
+     * self bubble, where a tint measured 1.1:1 in some chapters; the compact
+     * layout removed that bubble, #2873.) `chat-contrast.spec.ts` asserts it.
      *
      * The fill is §5's tint recipe at a heavier 20% over `--card`, resolved to a
      * literal: the recipe's look on the surface a mention usually sits on, with
@@ -328,23 +327,24 @@
    * per chapter for free, and it is the one pair the accent engine *measures*
    * (`--signet-accent-on-primary` against `--signet-accent-primary` at 4.5:1 for
    * every seed, accent-engine.md §8). It is also wrong, and the review caught
-   * it: `components/chat/renderers/text-renderer.tsx` paints the viewer's own
-   * chat bubble `bg-primary text-primary-foreground` — the identical pair. A
-   * member dragging across their own message to copy it would see **nothing
-   * change**. The same collision hits every default `Button` label, the selected
-   * calendar day, and the accent swatch in Settings.
+   * it: `components/chat/renderers/text-renderer.tsx` painted the viewer's own
+   * chat bubble `bg-primary text-primary-foreground` — the identical pair — so a
+   * member dragging across their own message to copy it would have seen
+   * **nothing change**. The bubble is gone since the compact chat layout
+   * (#2873), but the same collision still hits every default `Button` label,
+   * the selected calendar day, and the accent swatch in Settings.
    *
    * Stepping the accent does not fix it either. `--accent-text` is accent-11
-   * against the bubble's accent-9: measured on the house seed that is
+   * against an accent-9 fill: measured on the house seed that is
    * `#E7C86B` on `#DDB844`, about 1.18:1, under the 1.2 the contrast fixture
    * treats as imperceptible — and the text would move from
    * `--primary-foreground` to `--background`, two near-blacks. Both halves of the
-   * highlight would be invisible on exactly the surface people select most.
+   * highlight would be invisible on every accent-filled surface.
    *
    * So selection takes the two ends of the neutral ladder. `--foreground` on
    * `--background` is ~15:1, and neither end is ever painted by the accent
-   * engine, so the highlight cannot collide with any chapter's colour — on the
-   * self bubble it measures ~1.6:1 against the gold fill, which clears
+   * engine, so the highlight cannot collide with any chapter's colour — on a
+   * gold accent fill it measures ~1.6:1, which clears
    * perceptibility, while the text pair it replaces goes from near-black-on-gold
    * to near-black-on-near-white.
    *

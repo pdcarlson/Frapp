@@ -44,10 +44,13 @@ export function formatLocaleDate(value: unknown): string {
 }
 
 /**
- * Chat clock: `"Aug 16, 5:09 PM"` (locale-dependent), or `""` when missing.
+ * A clock with its date: `"Aug 16, 5:09 PM"` (locale-dependent), or `""` when
+ * missing. The chat popovers (pins, saved messages, search) and the events
+ * calendar use it. The thread's author line does not: the date there lives in
+ * the day divider, so it takes {@link formatTimeOfDay}.
  *
- * Empty string, not `"—"`, because the chat meta line concatenates this
- * next to a name and a missing timestamp should not paint an em dash.
+ * Empty string, not `"—"`, because callers concatenate this next to a name
+ * and a missing timestamp should not paint an em dash.
  */
 export function formatClock(value: unknown): string {
   const parsed = parseInstant(value);
@@ -78,15 +81,30 @@ export function formatTimeOfDay(value: unknown): string {
   });
 }
 
+function dayPeriodOf(at: Date): string | undefined {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
+    .formatToParts(at)
+    .find((part) => part.type === "dayPeriod")?.value;
+}
+
 /**
- * {@link formatTimeOfDay} without the day period: `"5:09"`, or `""` when
- * missing. A grouped chat row's hover time, which sits in the 32px avatar
- * gutter; the run's author line above it already says AM or PM. A 24-hour
- * locale has no day period, so this reads the same as the full form there.
+ * {@link formatTimeOfDay} without the day period when `since` is in the same
+ * one: `"5:09"`, or `""` when missing. A grouped chat row's hover time, which
+ * sits in the 32px avatar gutter under a run whose author line (`since`, the
+ * run's first message) already says AM or PM.
+ *
+ * A run is measured row to row, so it can cross noon: a follow-on at 12:20 PM
+ * under an author line reading 11:50 AM keeps its "PM" rather than reading as
+ * 12:20 AM. Without `since`, or in a 24-hour locale with no day period, it is
+ * the short form.
  */
-export function formatTimeOfDayShort(value: unknown): string {
+export function formatTimeOfDayShort(value: unknown, since?: unknown): string {
   const parsed = parseInstant(value);
   if (!parsed) return "";
+  const anchor = parseInstant(since);
+  if (anchor && dayPeriodOf(anchor) !== dayPeriodOf(parsed)) {
+    return formatTimeOfDay(value);
+  }
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
     .formatToParts(parsed)
     .filter((part) => part.type !== "dayPeriod")

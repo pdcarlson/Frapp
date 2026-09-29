@@ -247,7 +247,7 @@ export function MessageRowFrame({
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   // Resolved once and used for both the author line and the avatar initials —
   // two lookups would be two chances for them to drift apart. Both come from
   // `@repo/hooks`: `sender_id` is nullable, so an imported archive message has
@@ -345,13 +345,41 @@ function SelfName({
  * own for the reason `SelfName` is: only a pinned row pulls in the branding
  * hook.
  */
-function PinnedMarker({
+export function PinnedMarker({
   style,
+  lead = true,
 }: {
   style: ReturnType<typeof createStyles>["trailing"];
+  /** Whether it follows text on its line, and so needs the " · " before it. */
+  lead?: boolean;
 }) {
   const { accent } = useChapterBranding();
-  return <Text style={[style, { color: accent }]}>{" · Pinned"}</Text>;
+  return (
+    <Text style={[style, { color: accent }]}>
+      {lead ? " · Pinned" : "Pinned"}
+    </Text>
+  );
+}
+
+/**
+ * The trailing markers under a card, where web draws them too: a card has no
+ * text line of its own to trail. Nothing on a deleted card, or one never
+ * edited or pinned.
+ */
+export function CardMarkers({ message }: { message: ChatMessage }) {
+  const { tokens } = useFrappTheme();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  if (message.is_deleted) return null;
+  const edited = showsEditedMarker(message);
+  if (!edited && !message.is_pinned) return null;
+  return (
+    <Text style={[styles.trailing, styles.cardMarkers]}>
+      {edited ? EDITED_MARKER : ""}
+      {message.is_pinned ? (
+        <PinnedMarker style={styles.trailing} lead={edited} />
+      ) : null}
+    </Text>
+  );
 }
 
 export function MessageItem({
@@ -369,7 +397,7 @@ export function MessageItem({
   onJumpToParent,
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
   const segments = useMemo(
     () => linkSegments(message.content),
     [message.content],
@@ -470,15 +498,19 @@ export function MessageItem({
         onRetry={onRetry}
         onDiscard={onDiscard}
       />
-      <ReactionRow
-        reactions={reactions}
-        messageId={message.id}
-        disabled={!isConfirmed}
-        onReact={onReact}
-        onUnreact={onUnreact}
-        onLongPress={onOpenActions}
-        styles={styles}
-      />
+      {/* A deleted message has nothing left to react to (§11), and reaction
+          rows outlive it server-side, so its old chips would stay live. */}
+      {message.is_deleted ? null : (
+        <ReactionRow
+          reactions={reactions}
+          messageId={message.id}
+          disabled={!isConfirmed}
+          onReact={onReact}
+          onUnreact={onUnreact}
+          onLongPress={onOpenActions}
+          styles={styles}
+        />
+      )}
     </MessageRowFrame>
   );
 }
@@ -720,6 +752,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
+    cardMarkers: { marginTop: tokens.spacing.xs },
     deleted: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,

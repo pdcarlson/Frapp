@@ -13,7 +13,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@/lib/chat/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
-import { MessageItem, MessageRowFrame } from "./message-item";
+import { CardMarkers, MessageItem, MessageRowFrame } from "./message-item";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 
@@ -180,7 +180,9 @@ function ThreadMessageRowBody({
           onReact={onReact}
           onUnreact={onUnreact}
           onOpenActions={openActions}
+          onJumpToParent={quote ? onJumpToParent : undefined}
         />
+        <CardMarkers message={message} />
       </MessageRowFrame>
     );
   }

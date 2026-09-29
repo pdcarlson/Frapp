@@ -23,6 +23,7 @@ import { MessageItem } from "./message-item";
 import {
   tombstoneCanUnblock,
   type MaskedRefreshState,
+  type ThreadRow,
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
@@ -228,8 +229,10 @@ interface TimelineHeaderContext {
 
 /**
  * The row above the oldest loaded message: the older-history read in flight,
- * or its failure with a Retry. Nothing otherwise — the day divider under it
- * already says where the history starts.
+ * or its failure with a Retry. Otherwise a 16px spacer: a row's action bar is
+ * centred on the row's top edge (`message-item.tsx`), so on the first row at
+ * the top of the scroller half of it would sit above the scrollport and be cut
+ * off. The day divider under it already says where the history starts.
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
@@ -261,7 +264,7 @@ function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
       </div>
     );
   }
-  return null;
+  return <div aria-hidden="true" className="h-4" />;
 }
 
 /**
@@ -486,16 +489,31 @@ export const MessageTimeline = forwardRef<
   // Where each run and each day starts. Over the rows the list lets through: a
   // held row is not drawn, so it neither breaks nor joins a run. A tombstone is
   // drawn and names no author, so the row after one always starts a run.
-  const decorated = useMemo(
-    () =>
-      decorateThread(thread.rows).map(({ row, startsDay, startsRun }) => ({
+  const decorated = useMemo(() => {
+    const rows = decorateThread(thread.rows);
+    const out: {
+      message: ChatMessage;
+      visibility: ThreadRow["visibility"];
+      showHeader: boolean;
+      startsDay: boolean;
+      runStartedAt: string;
+    }[] = [];
+    for (let index = 0; index < rows.length; index++) {
+      const { row, startsDay, startsRun } = rows[index]!;
+      out.push({
         message: row.message,
         visibility: row.visibility,
         showHeader: startsRun,
         startsDay,
-      })),
-    [thread.rows],
-  );
+        // The run's first message, whose author line a follow-on's gutter time
+        // is read against (it keeps AM/PM once the run has crossed noon).
+        runStartedAt: startsRun
+          ? row.message.created_at
+          : (out[index - 1]?.runStartedAt ?? row.message.created_at),
+      });
+    }
+    return out;
+  }, [thread.rows]);
 
   const rowKeys = useMemo(
     () =>
@@ -842,6 +860,7 @@ export const MessageTimeline = forwardRef<
                 }
                 viewerId={viewerId}
                 showHeader={entry.showHeader}
+                runStartedAt={entry.runStartedAt}
                 onReact={onReact}
                 onUnreact={onUnreact}
                 onReply={onReply}

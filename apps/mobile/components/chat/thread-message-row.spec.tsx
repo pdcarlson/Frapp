@@ -775,4 +775,62 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
     expect(text).toContain("Casey");
     expect(text).toContain("Formal theme?");
   });
+
+  it("trails Pinned under a pinned poll card, as web does", () => {
+    const poll = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "poll",
+        is_pinned: true,
+        payload: {
+          question: "Formal theme?",
+          options: [
+            { id: "a", label: "Casino" },
+            { id: "b", label: "Masquerade" },
+          ],
+        },
+      }),
+    );
+    expect(flat(renderRow(poll))).toContain("Pinned");
+    expect(
+      flat(renderRow({ ...poll, message: { ...poll.message, is_pinned: false } })),
+    ).not.toContain("Pinned");
+  });
+
+  it("offers a poll reply's jump to a screen reader, as a text reply does", () => {
+    const parent = message({ id: "parent-1", sender_id: FRIEND, content: "which theme?" });
+    const onJumpToMessage = vi.fn();
+    const tree = renderRow(
+      visible(
+        message({
+          id: "poll-reply",
+          sender_id: FRIEND,
+          kind: "poll",
+          reply_to_id: "parent-1",
+          payload: {
+            question: "Formal theme?",
+            options: [
+              { id: "a", label: "Casino" },
+              { id: "b", label: "Masquerade" },
+            ],
+          },
+        }),
+      ),
+      { replyParent: parent, onJumpToMessage },
+    );
+    const host = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.accessibilityActions) &&
+        node.props.accessibilityActions.some(
+          (action: { name?: string }) => action.name === "jumpToParent",
+        ),
+    );
+    act(() =>
+      host.props.onAccessibilityAction({
+        nativeEvent: { actionName: "jumpToParent" },
+      }),
+    );
+    expect(onJumpToMessage).toHaveBeenCalledWith("parent-1");
+  });
 });

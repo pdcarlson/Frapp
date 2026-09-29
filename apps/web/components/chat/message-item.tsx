@@ -87,6 +87,13 @@ export interface MessageItemProps {
    */
   showHeader: boolean;
   /**
+   * `created_at` of the run's first message, whose author line a follow-on's
+   * gutter time is read against: the gutter drops AM/PM only when that line
+   * already says it (`formatTimeOfDayShort`). Optional; without it the gutter
+   * takes the short form.
+   */
+  runStartedAt?: string;
+  /**
    * Resolves a `users.id` to a display name, or `null` when unresolvable.
    * Required rather than optional so a caller cannot silently regress the row to
    * a truncated uuid by forgetting it.
@@ -212,6 +219,7 @@ export function MessageItem({
   viewerId,
   blockState,
   showHeader,
+  runStartedAt,
   nameFor,
   onReact,
   onUnreact,
@@ -597,6 +605,10 @@ export function MessageItem({
       aria-label="Message actions"
       className={cn(
         "absolute right-4 top-0 z-10 flex -translate-y-1/2 items-center gap-0.5",
+        // Wraps rather than spilling past the row's left edge: on a coarse
+        // pointer every icon is 44px, and nine of them (your own message) are
+        // wider than a 375px thread, where the scroller would clip the first.
+        "max-w-[calc(100%-2rem)] flex-wrap justify-end",
         "rounded-[10px] border border-border bg-card p-0.5",
         "transition-opacity",
         "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
@@ -839,8 +851,9 @@ export function MessageItem({
             /*
               A follow-on's own time, revealed with the row. Opacity rather than
               `visibility`, so a screen reader still hears when each message in
-              a run was sent; hours and minutes only, because the run's author
-              line above already says AM or PM and the gutter is 32px wide.
+              a run was sent; hours and minutes only while the run's author
+              line above already says AM or PM (the gutter is 32px wide), and
+              the full time once the run has crossed noon.
             */
             <time
               dateTime={message.created_at}
@@ -851,7 +864,7 @@ export function MessageItem({
                 isTapRevealed && "opacity-100",
               )}
             >
-              {formatTimeOfDayShort(message.created_at)}
+              {formatTimeOfDayShort(message.created_at, runStartedAt)}
             </time>
           )}
         </div>

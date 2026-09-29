@@ -29,8 +29,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Tapping the quote scrolls to the parent (#2775) when the caller passes
  * `onPress`, which it does only for a parent that is loaded and shown. The
- * quote is not announced as a button: it sits inside the message's accessible
- * container, which carries the same jump as a named action.
+ * quote is not announced as a button. It sits above the row's author line, a
+ * focusable element of its own, and the row's body (or a poll card's own
+ * container) carries the same jump as a named action, "Go to the original
+ * message".
  */
 export function ReplyQuote({
   message,

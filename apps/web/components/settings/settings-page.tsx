@@ -1114,7 +1114,7 @@ function SettingsPageContent() {
                   `settings-accent.spec.tsx` pins it against the tokens.
                 */}
                 <CardDescription>
-                  Paints primary buttons, your own chat bubbles and the
+                  Paints primary buttons, your own name in chat and the
                   nav&apos;s active item, lightened where it needs to stand out.
                   Saving derives the rest of the palette from it, and contrast
                   is checked against the dark surfaces it lands on. The Frapp

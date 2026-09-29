@@ -322,6 +322,20 @@ describe("compact layout (#2873)", () => {
     expect(JSON.stringify(pinned.props.style)).toContain('"color":"#C49A3A"');
   });
 
+  it("offers no reactions on a deleted message, not even the add chip", () => {
+    const flat = JSON.stringify(
+      renderItem(
+        message({
+          is_deleted: true,
+          reactions: { [reactionActionType("🔥")]: [OTHER] },
+        }),
+      ).toJSON(),
+    );
+    expect(flat).toContain(DELETED_MESSAGE_PLACEHOLDER);
+    expect(flat).not.toContain("🔥");
+    expect(flat).not.toContain("👍 +");
+  });
+
   it("mutes the text of a send still in flight", () => {
     const tree = renderItem(message({ sender_id: VIEWER, _status: "pending" }));
     // The body is the Text whose own children carry the message.

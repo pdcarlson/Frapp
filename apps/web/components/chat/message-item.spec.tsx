@@ -215,8 +215,11 @@ describe("MessageItem compact layout (#2873)", () => {
     expect(gutter?.getAttribute("dateTime")).toBe(message().created_at);
     // Hours and minutes: the run's author line already says AM or PM.
     expect(gutter?.textContent).toMatch(/^\d{1,2}:09$/);
-    expect(gutter?.className).toContain("opacity-0");
-    expect(gutter?.className).toContain("group-hover/message:opacity-100");
+    // Whole tokens: `group-hover/message:opacity-100` is always present.
+    const hidden = gutter!.className.split(/\s+/);
+    expect(hidden).toContain("opacity-0");
+    expect(hidden).not.toContain("opacity-100");
+    expect(hidden).toContain("group-hover/message:opacity-100");
     unmount();
 
     const revealed = renderItemWithProps({
@@ -224,8 +227,36 @@ describe("MessageItem compact layout (#2873)", () => {
       isTapRevealed: true,
     });
     expect(
-      revealed.container.querySelector('[data-slot="gutter-time"]')?.className,
+      revealed.container
+        .querySelector('[data-slot="gutter-time"]')!
+        .className.split(/\s+/),
     ).toContain("opacity-100");
+  });
+
+  it("keeps AM/PM in the gutter once the run has crossed noon", () => {
+    const noon = new Date(2026, 7, 16, 12, 20).toISOString();
+    const morning = new Date(2026, 7, 16, 11, 50).toISOString();
+    const { container } = renderItemWithProps({
+      message: message({ created_at: noon }),
+      showHeader: false,
+      runStartedAt: morning,
+    });
+    expect(
+      container.querySelector('[data-slot="gutter-time"]')?.textContent,
+    ).toBe(
+      new Date(noon).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    );
+  });
+
+  it("wraps the action bar inside the row rather than spilling past it", () => {
+    const { container } = renderItem(message({ sender_id: VIEWER }));
+    const bar = container.querySelector('[aria-label="Message actions"]')!;
+    const tokens = bar.className.split(/\s+/);
+    expect(tokens).toContain("flex-wrap");
+    expect(tokens).toContain("max-w-[calc(100%-2rem)]");
   });
 
   it("draws no gutter time on the row that starts a run", () => {
@@ -357,16 +388,22 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     const { container } = renderItemWithProps({ isTapRevealed: false });
     const cluster = actionsCluster(container);
 
-    expect(cluster.className).toContain("pointer-events-none");
-    expect(cluster.className).toContain("opacity-0");
+    // Whole tokens, not substrings: the always-present `group-hover/message:`
+    // variants contain these words too.
+    const tokens = cluster.className.split(/\s+/);
+    expect(tokens).toContain("pointer-events-none");
+    expect(tokens).toContain("opacity-0");
+    expect(tokens).not.toContain("opacity-100");
   });
 
   it("shows the action cluster when this row is the one tap-revealed", () => {
     const { container } = renderItemWithProps({ isTapRevealed: true });
     const cluster = actionsCluster(container);
 
-    expect(cluster.className).toContain("pointer-events-auto");
-    expect(cluster.className).toContain("opacity-100");
+    const tokens = cluster.className.split(/\s+/);
+    expect(tokens).toContain("pointer-events-auto");
+    expect(tokens).toContain("opacity-100");
+    expect(tokens).not.toContain("opacity-0");
   });
 
   it("requests a toggle when the row is tapped", async () => {

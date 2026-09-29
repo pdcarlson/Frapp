@@ -351,13 +351,13 @@ describe("TextRenderer over-nested bodies", () => {
 describe("TextRenderer compact body", () => {
   it("draws no text row for an attachment-only message (the empty bubble)", () => {
     const { container } = render(<TextRenderer message={message("")} />);
-    expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
-    expect(container.textContent).toBe("");
+    // Nothing at all: an empty 25px line box is the regression, slot or not.
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("treats whitespace-only content as attachment-only too", () => {
     const { container } = render(<TextRenderer message={message("  \n ")} />);
-    expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("still draws a marker on an attachment-only message that has one", () => {

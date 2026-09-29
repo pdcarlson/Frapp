@@ -83,4 +83,17 @@ describe("formatTimeOfDay", () => {
     expect(short).toMatch(/^\d{1,2}:09$/);
     expect(formatTimeOfDay(value).startsWith(short)).toBe(true);
   });
+
+  it("keeps the day period when the run began in the other one (a run across noon)", () => {
+    const morning = new Date(2026, 7, 16, 11, 50).toISOString();
+    const afternoon = new Date(2026, 7, 16, 12, 20).toISOString();
+    const later = new Date(2026, 7, 16, 11, 55).toISOString();
+    // Same period as the run's author line: the short form.
+    expect(formatTimeOfDayShort(later, morning)).toBe(formatTimeOfDayShort(later));
+    // Across noon, only where the locale has a day period to lose.
+    const hasPeriod = formatTimeOfDay(afternoon) !== formatTimeOfDayShort(afternoon);
+    expect(formatTimeOfDayShort(afternoon, morning)).toBe(
+      hasPeriod ? formatTimeOfDay(afternoon) : formatTimeOfDayShort(afternoon),
+    );
+  });
 });
