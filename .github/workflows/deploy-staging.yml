@@ -70,8 +70,8 @@ jobs:
   # ADR-21's Git unlink froze both staging hosts for days (#1674).
   #
   # Writes a step summary and an annotation saying whether this run DEPLOYED,
-  # FAILED, found the API UP TO DATE (plan `current`; the frontends still
-  # uploaded), or was SUPERSEDED (plan `stale`, or a successful `forward`
+  # FAILED, found the API UP TO DATE (plan `current`; the frontends uploaded
+  # only if they changed, #2865), or was SUPERSEDED (plan `stale`, or a successful `forward`
   # deploy of a commit that isn't main's tip), and upserts or closes one P1
   # tracking issue, so "alert issue open" means "the staging deploy path is
   # broken right now" (owner decision on #2803: P1, as Deploy API was).
@@ -124,3 +124,53 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: node scripts/ci/deploy-alert.mjs
+
+  # ── Keep a fixed number of staging deployments (#2865) ─────────────────────
+  # Every upload is a new deployment of both Vercel projects, and Vercel keeps
+  # each one against the Hobby team's Function Storage, which production
+  # shares. This deletes all but the newest previews of web and landing: never
+  # a production deployment, nor one a staging hostname serves (read fresh,
+  # after the deploy job aliased them): `scripts/ci/prune-vercel-staging.mjs`.
+  #
+  # Its own job, not a step of the deploy job, so a failure here can't fail a
+  # deploy that shipped: that would raise the P1 alert above, and its natural
+  # fix (a re-run) uploads both apps again. A red job on this run is the signal
+  # instead. It runs after every successful deploy job, uploaded or not, so a
+  # backlog drains. The checkout is `main` (the default for `workflow_run`),
+  # not the deployed commit, so the script exists for a run of an older one.
+  prune-vercel-staging:
+    needs: [deploy]
+    if: needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # VERCEL_API_KEY is a `staging` environment secret (#2583).
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # The Node the deploy job runs these scripts on (the prune imports
+      # deploy-vercel.mjs). Built-ins only, so no npm ci.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Read the provider ids
+        id: ids
+        env:
+          TARGET_ENVIRONMENT: staging
+        run: node scripts/ci/provider-ids.mjs
+
+      - name: Prune old staging deployments (web + landing)
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
+          VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
+        run: node scripts/ci/prune-vercel-staging.mjs

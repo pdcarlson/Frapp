@@ -5,8 +5,9 @@ const RENDER_DEPLOYS_URL = (serviceId, cursor) =>
   `https://api.render.com/v1/services/${serviceId}/deploys?limit=10` +
   (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
 
-const VERCEL_DEPLOYMENTS_URL = (projectId, until) =>
-  `https://api.vercel.com/v6/deployments?projectId=${projectId}&limit=20` +
+const VERCEL_DEPLOYMENTS_URL = (projectId, until, { teamId, limit = 20 } = {}) =>
+  `https://api.vercel.com/v6/deployments?projectId=${projectId}&limit=${limit}` +
+  (teamId ? `&teamId=${encodeURIComponent(teamId)}` : "") +
   (until ? `&until=${until}` : "");
 
 // A single un-paginated page (20 Vercel deployments) is only the newest slice.
@@ -47,9 +48,9 @@ export async function fetchRenderDeploys({ apiKey, serviceId, cursor, fetchImpl 
   });
 }
 
-export async function fetchVercelDeployments({ apiKey, projectId, until, fetchImpl = fetch }) {
+export async function fetchVercelDeployments({ apiKey, projectId, until, teamId, limit, fetchImpl = fetch }) {
   return fetchJson({
-    url: VERCEL_DEPLOYMENTS_URL(projectId, until),
+    url: VERCEL_DEPLOYMENTS_URL(projectId, until, { teamId, limit }),
     headers: { Authorization: `Bearer ${apiKey}` },
     what: `Vercel API for project ${projectId}`,
     fetchImpl,
