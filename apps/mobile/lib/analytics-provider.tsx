@@ -7,7 +7,6 @@ import {
 import {
   isAnalyticsOptedOut,
   type AnalyticsProperties,
-  type CurrentChapterPayload,
 } from "@repo/validation";
 import {
   applyAnalyticsOptOut,
@@ -32,7 +31,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const chapterId = useActiveChapterId();
   const chapterQuery = useCurrentChapter();
   const optedOut = isAnalyticsOptedOut(
-    (chapterQuery.data as CurrentChapterPayload | undefined)?.analytics_opt_out,
+    chapterQuery.data?.analytics_opt_out,
   );
 
   useEffect(() => {

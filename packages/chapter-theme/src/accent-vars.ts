@@ -40,6 +40,43 @@ export interface SignetPalette {
 }
 
 /**
+ * The seven roles {@link signetAccentSemanticVars} reads. The alpha family is
+ * not bridged, so a palette needs only these to be painted.
+ */
+export const SIGNET_SEMANTIC_ROLES = [
+  "--signet-accent-primary",
+  "--signet-accent-hover",
+  "--signet-accent-ring",
+  "--signet-accent-subtle-bg",
+  "--signet-accent-border",
+  "--signet-accent-text",
+  "--signet-accent-on-primary",
+] as const;
+
+/** The part of a {@link SignetPalette} the bridge reads. */
+export type SignetSemanticRoles = Pick<
+  SignetPalette,
+  (typeof SIGNET_SEMANTIC_ROLES)[number]
+>;
+
+/**
+ * Whether a stored palette carries every role the bridge reads.
+ *
+ * `chapters.theme_palette` is a `jsonb` blob, and the contract types it
+ * `{ [key: string]: unknown }`, so a client has to check it before handing it
+ * over. All-or-nothing: a row persisted before the Signet keys existed (until
+ * the #1165 sweep reaches it) fails, and half a map is worse than none. One
+ * chapter's primary beside the house ring is not a consistent palette.
+ */
+export function hasSignetSemanticRoles(
+  palette: object,
+): palette is SignetSemanticRoles {
+  return SIGNET_SEMANTIC_ROLES.every(
+    (key) => typeof Reflect.get(palette, key) === "string",
+  );
+}
+
+/**
  * The `--signet-accent-*` roles under the semantic names
  * `spec/ui/design-system/foundations.md` §6 gives the accent slot.
  *
@@ -75,7 +112,7 @@ export interface SignetPalette {
  * consumes the namespaced roles directly.
  */
 export function signetAccentSemanticVars(
-  palette: SignetPalette,
+  palette: SignetSemanticRoles,
 ): Record<string, string> {
   return {
     "--primary": palette["--signet-accent-primary"],

@@ -109,8 +109,8 @@ function readString(
  * present and the other missing as "engine path, half-resolved" would pair a
  * chapter's real fill with the *house* foreground (or vice versa) — exactly
  * the uncontrasted combination this hook exists to prevent. Mirrors the
- * all-or-nothing `SIGNET_ROLE_KEYS.every(...)` gate
- * `apps/web/lib/hooks/use-chapter-theme.ts` already applies to this same
+ * all-or-nothing `hasSignetSemanticRoles` gate (`@repo/chapter-theme/accent-vars`)
+ * that `apps/web/lib/hooks/use-chapter-theme.ts` applies to this same
  * `theme_palette` data for the same reason.
  */
 export function useChapterBranding(): ChapterBranding {
@@ -120,11 +120,12 @@ export function useChapterBranding(): ChapterBranding {
   const surface = tokens.color.surface.card;
   const brandAccent = tokens.color.gold.house;
   const brandOnAccent = tokens.color.gold.onHouse;
-  const chapter = data as Record<string, unknown> | undefined;
-  const accentColor = readString(chapter, "accent_color");
-  const palette = chapter?.["theme_palette"] as
-    | Record<string, unknown>
-    | undefined;
+  // `|| null` rather than `??`: an empty string means unset, as it does for
+  // the palette's roles below.
+  const accentColor = data?.accent_color || null;
+  const logoUrl = data?.logo_url || null;
+  const chapterName = data?.name || null;
+  const palette = data?.theme_palette;
   const generatedAccent = readString(palette, "--signet-accent-text");
   const generatedAccentPrimary = readString(palette, "--signet-accent-primary");
   const generatedAccentOnPrimary = readString(
@@ -148,8 +149,8 @@ export function useChapterBranding(): ChapterBranding {
         accentFallbackApplied: false,
         accentPrimary,
         accentOnPrimary,
-        logoUrl: readString(chapter, "logo_url"),
-        chapterName: readString(chapter, "name"),
+        logoUrl,
+        chapterName,
       };
     }
 
@@ -163,16 +164,17 @@ export function useChapterBranding(): ChapterBranding {
       accentFallbackApplied: resolved.fallbackApplied,
       accentPrimary,
       accentOnPrimary,
-      logoUrl: readString(chapter, "logo_url"),
-      chapterName: readString(chapter, "name"),
+      logoUrl,
+      chapterName,
     };
   }, [
     accentColor,
     accentOnPrimary,
     accentPrimary,
     brandAccent,
-    chapter,
+    chapterName,
     generatedAccent,
+    logoUrl,
     surface,
   ]);
 }
