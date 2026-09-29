@@ -38,6 +38,22 @@ export interface ChannelSummary {
    * `true`, so a server that predates the flag hides nothing.
    */
   hidden: boolean;
+  /**
+   * The chapter category this channel is filed under, or `null` for none.
+   * An id naming a category the list doesn't carry is kept as-is;
+   * `groupChannelsByCategory` sends that row to the default group.
+   */
+  category_id: string | null;
+}
+
+/**
+ * A row from `GET /v1/channels/categories/list`, which the SDK types no more
+ * usefully than the channel list. No `display_order`: the server returns the
+ * rows already in render order, and s04 renders them as they come.
+ */
+export interface ChannelCategorySummary {
+  id: string;
+  name: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,8 +79,23 @@ export function selectChannels(data: unknown): ChannelSummary[] {
         type: typeof type === "string" ? type : "PUBLIC",
         member_ids: memberIds,
         hidden: row.hidden === true,
+        category_id:
+          typeof row.category_id === "string" ? row.category_id : null,
       },
     ];
+  });
+}
+
+/**
+ * Parses the categories list the way `selectChannels` parses channels. A row
+ * with no usable id or name is dropped, and the rest keep their order.
+ */
+export function selectCategories(data: unknown): ChannelCategorySummary[] {
+  if (!Array.isArray(data)) return [];
+  return data.filter(isRecord).flatMap((row) => {
+    const { id, name } = row;
+    if (typeof id !== "string" || typeof name !== "string") return [];
+    return [{ id, name }];
   });
 }
 

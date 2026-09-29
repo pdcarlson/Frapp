@@ -10,8 +10,10 @@ import {
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   canHideConversation,
+  groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
   otherMemberId,
+  useCategories,
   useChannelUnreadCounts,
   useGetOrCreateDm,
   useChannels,
@@ -34,6 +36,7 @@ import {
   hiddenChannels,
   isDirectChannel,
   listedChannels,
+  selectCategories,
   selectChannels,
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
@@ -71,6 +74,7 @@ export default function ChatHomeScreen() {
   const askSheetRef = useRef<BottomSheetModal>(null);
 
   const channelsQuery = useChannels();
+  const categoriesQuery = useCategories();
   const unreadQuery = useChannelUnreadCounts();
   const eventsQuery = useEvents();
   const tasksQuery = useTasks();
@@ -98,8 +102,29 @@ export default function ChatHomeScreen() {
     [unreadQuery.data],
   );
 
-  const directChannels = channels.filter(isDirectChannel);
-  const chapterChannels = channels.filter((c) => !isDirectChannel(c));
+  // Categories are grouping only. While they load, or if the read fails,
+  // `selectCategories` gives `[]` and every channel sits under CHANNELS, the
+  // layout from before categories, rather than the list waiting on them or
+  // losing rows.
+  const categories = useMemo(
+    () => selectCategories(categoriesQuery.data),
+    [categoriesQuery.data],
+  );
+  const sections = useMemo(() => {
+    const grouped = groupChannelsByCategory(channels, categories);
+    return [
+      // Label per `spec/behavior/chat/README.md` § Channel categories: the
+      // default group is "Channels", and it stays first.
+      { key: "channels", label: "CHANNELS", channels: grouped.uncategorized },
+      ...grouped.categories.map(({ category, channels: inCategory }) => ({
+        // Prefixed so a category id can never collide with a fixed key.
+        key: `category:${category.id}`,
+        label: category.name,
+        channels: inCategory,
+      })),
+      { key: "direct", label: "DIRECT", channels: grouped.direct },
+    ].filter((section) => section.channels.length > 0);
+  }, [channels, categories]);
 
   function openChannel(channelId: string) {
     // Object form, because the route takes a param. Note this is invisible to
@@ -228,19 +253,14 @@ export default function ChatHomeScreen() {
             nearest honest pattern is to render only the sections that exist;
             adding a pin is an API change, not a screen decision.
           */}
-          {chapterChannels.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>CHANNELS</Text>
-              {chapterChannels.map(renderChannel)}
+          {sections.map((section) => (
+            <View key={section.key} style={styles.section}>
+              <Text accessibilityRole="header" style={styles.sectionLabel}>
+                {section.label}
+              </Text>
+              {section.channels.map(renderChannel)}
             </View>
-          ) : null}
-
-          {directChannels.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>DIRECT</Text>
-              {directChannels.map(renderChannel)}
-            </View>
-          ) : null}
+          ))}
 
           {hidden.length > 0 ? (
             <View style={styles.section}>
