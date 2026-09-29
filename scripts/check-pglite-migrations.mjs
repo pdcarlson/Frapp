@@ -3812,8 +3812,12 @@ try {
 //     (42501);
 //   - switching accounts detaches what the first attached, and unlinking
 //     restores the Discord name;
-//   - reports on those rows follow the sender, so the officer queue's "not
-//     about the viewer" rule covers reports filed before the link;
+//   - reports on those rows follow the sender when linking, so the officer
+//     queue's "not about the viewer" rule covers reports filed before the
+//     link, and unlinking never points a report back at nobody;
+//   - unlinking or switching in one chapter leaves the same account's link,
+//     rows and reports in another chapter alone;
+//   - a deleted account cannot link;
 //   - account deletion clears the Discord snapshot on the deleted member's
 //     linked rows and on reports about them, and deletes their links.
 //
@@ -3833,13 +3837,18 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
   const q = async (sql) => (await db.query(sql)).rows;
+  // The code, and whether the message carries the function's prefix: the API
+  // maps 23505 / 42501 to 409 / 403 only for the function's own refusals
+  // (`SupabaseDiscordAuthorLinkRepository.link`), so rewording a `raise`
+  // without the prefix would turn them into 500s.
   const errCode = async (sql) => {
     await db.exec("savepoint author_link_probe;");
     try {
       await db.query(sql);
       return null;
     } catch (e) {
-      return e?.code ?? String(e?.message ?? e);
+      const prefixed = String(e?.message ?? "").startsWith("link_discord_author:");
+      return `${e?.code ?? String(e?.message ?? e)}${prefixed ? "" : " (no link_discord_author: prefix)"}`;
     } finally {
       await db.exec("rollback to savepoint author_link_probe;");
     }
@@ -3872,9 +3881,11 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       -- Filed while the row had no sender: it names only the Discord author.
       insert into chat_message_reports (chapter_id, message_id, reporter_user_id, reason, reported_content, reported_author_name)
         select '${A}', id, '${PIN}', 'spam', content, author_name from chat_messages where content = 'a1';
+      insert into chat_message_reports (chapter_id, message_id, reporter_user_id, reason, reported_content, reported_author_name)
+        select '${B}', id, '${JAKE}', 'spam', content, author_name from chat_messages where content = 'b1';
     `);
-    const reportSender = async () =>
-      (await q(`select reported_sender_id, reported_author_name from chat_message_reports where chapter_id = '${A}'`))[0];
+    const reportSender = async (chapter = A) =>
+      (await q(`select reported_sender_id, reported_author_name from chat_message_reports where chapter_id = '${chapter}' and message_id is not null`))[0];
 
     const linked = await q(
       `select messages_linked from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
@@ -3910,6 +3921,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       afterImport,
     );
 
+    // The same account linked in B too, before anything changes in A.
+    await q(`select * from link_discord_author('${B}', '${JAKE}', '${JK}', 'jkslayer')`);
+
     check(
       "another member claiming a linked account is refused with 23505",
       (await errCode(
@@ -3927,8 +3941,8 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     const afterSwitch = await senders(CH_A);
     const switchedReport = await reportSender();
     check(
-      "switching accounts returns the first account's reports to naming nobody",
-      switchedReport?.reported_sender_id === null,
+      "switching accounts leaves reports naming the member who proved the account",
+      switchedReport?.reported_sender_id === JAKE,
       switchedReport,
     );
     check(
@@ -3945,10 +3959,26 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       restored[0]?.n === 1 && afterUnlink.a2 === null && linksLeft[0]?.n === 0,
       { restored, afterUnlink, linksLeft },
     );
+    const bAfterA = await senders(CH_B);
+    const bReport = await reportSender(B);
+    const bLink = await q(`select count(*)::int as n from discord_author_links where chapter_id = '${B}' and user_id = '${JAKE}'`);
+    check(
+      "switching and unlinking in chapter A leave chapter B's link, rows and reports alone",
+      bAfterA.b1 === JAKE && bAfterA.b2 === JAKE && bReport?.reported_sender_id === JAKE && bLink[0]?.n === 1,
+      { bAfterA, bReport, bLink },
+    );
 
     await q(`select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`);
-    await q(`select * from link_discord_author('${B}', '${JAKE}', '${JK}', 'jkslayer')`);
+    // A report whose message is gone (a purged import sets message_id null):
+    // only its reported sender ties it to the member.
+    await db.exec(`
+      insert into chat_message_reports (chapter_id, message_id, reporter_user_id, reported_sender_id, reason, reported_content, reported_author_name)
+        values ('${A}', null, '${PIN}', '${JAKE}', 'spam', 'gone', 'jkslayer');
+    `);
     await q(`select anonymize_user('${JAKE}')`);
+    const orphanReport = await q(
+      `select reported_author_name from chat_message_reports where chapter_id = '${A}' and message_id is null`,
+    );
     const deletedReport = await reportSender();
     const scrubbed = await q(
       `select content, sender_id, author_name, author_avatar_path, author_external_id, payload
@@ -3972,8 +4002,16 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
         pinstripe[0]?.author_external_id === PS &&
         jakeLinks[0]?.n === 0 &&
         deletedReport?.reported_sender_id === JAKE &&
-        deletedReport?.reported_author_name === null,
-      { scrubbed, pinstripe, jakeLinks, deletedReport },
+        deletedReport?.reported_author_name === null &&
+        orphanReport[0]?.reported_author_name === null,
+      { scrubbed, pinstripe, jakeLinks, deletedReport, orphanReport },
+    );
+
+    check(
+      "a deleted account cannot link",
+      (await errCode(
+        `select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
+      )) === "42501",
     );
   } catch (e) {
     check("Discord author links scenario ran", false, String(e?.message ?? e).split("\n")[0]);

@@ -67,6 +67,7 @@ import {
 import { ReportController } from '../controllers/report.controller';
 import { AlumniController } from '../controllers/alumni.controller';
 import { SemesterRolloverController } from '../controllers/semester-rollover.controller';
+import { DiscordAuthorLinkController } from '../controllers/discord-author-link.controller';
 
 /** A route-level marker: its label, its handler, and the class it lives on. */
 type RouteMarker = [string, (...args: never[]) => unknown, Type<unknown>];
@@ -92,6 +93,8 @@ describe('subscription decorator wiring', () => {
     UserController,
     SearchController,
     ChapterController,
+    // #2878: linking a member's Discord history follows chat's billing rule.
+    DiscordAuthorLinkController,
   ];
 
   /**

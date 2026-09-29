@@ -894,8 +894,9 @@ on their imported messages in that chapter are theirs.
     applying unchanged;
   - a report on it names them as the reported sender, so the queue leaves it
     out for them. That includes reports filed before the link: linking points
-    their reported sender at the member, and unlinking points it back at
-    nobody;
+    their reported sender at the member. Unlinking leaves reports as they
+    are: the member proved the account was theirs, and a report about their
+    words stays out of their queue either way;
   - they may delete it, and nobody may edit it (§ Imported archive messages,
     Read-only).
   Unread counts, push and mentions do not change: they key on `kind =

@@ -2315,7 +2315,7 @@ Channels an officer set lose that choice and fall back to the built-in default. 
 
 * **Migration**: `20260929230000_discord_author_links.sql`
 
-A new table, a column and CHECK on `discord_oauth_states`, three functions, an insert trigger on `chat_messages`, and a redefined `anonymize_user` (#2878). Linking has rewritten `chat_messages.sender_id` on the imported rows of every member who linked, and `chat_message_reports.reported_sender_id` on reports about those rows. That is the part a rollback has to undo deliberately.
+A new table, a column and CHECK on `discord_oauth_states`, three functions, an insert trigger on `chat_messages`, and a redefined `anonymize_user` (#2878). Linking has rewritten `chat_messages.sender_id` on the imported rows of every member who linked. That is the part a rollback has to undo deliberately. (It also pointed reports about those rows that named nobody at the member; those stay.)
 
 **Revert the API and web code forward, and keep the migration file.** Revert the #2878 code on `main` and ship that, but keep `supabase/migrations/20260929230000_discord_author_links.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
 
@@ -2323,18 +2323,9 @@ Then undo it in one new forward migration, not by hand, and in this order.
 
 1. **Detach every link.** This is not optional. The server-side refusal to edit an imported message ships with the #2878 API, so after the revert a member still attributed as the sender of an imported row could rewrite it through the API. Detaching returns rows to their Discord name. It leaves rows the member deleted deleted. It cannot restore the Discord snapshot that account deletion already cleared; those rows keep the tombstone as sender, like the member's live messages.
 
-   ```sql
-   update public.chat_message_reports r
-      set reported_sender_id = null
-     from public.chat_messages m, public.discord_author_links l, public.chat_channels c
-    where r.message_id = m.id
-      and r.reported_sender_id = l.user_id
-      and m.kind = 'imported'
-      and m.channel_id = c.id
-      and c.chapter_id = l.chapter_id
-      and m.sender_id = l.user_id
-      and m.author_external_id = l.discord_user_id;
+   Leave `chat_message_reports` as it is. A report that names a member who linked stays naming them, as it does when they unlink, so it stays out of their own officer queue.
 
+   ```sql
    update public.chat_messages m
       set sender_id = null
      from public.discord_author_links l, public.chat_channels c

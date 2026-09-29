@@ -183,9 +183,15 @@ create trigger trg_chat_messages_attach_linked_author
 -- `idx_chat_messages_author_external` (`20260823120000`) serves the author
 -- predicate; this is its first reader.
 
--- Detach one linked account's rows, and the reports on them. Shared by unlink
--- and by a relink to a different account, so the two cannot drift. Returns
--- how many messages went back to their Discord name. Callers hold the lock.
+-- Detach one linked account's rows. Shared by unlink and by a relink to a
+-- different account, so the two cannot drift. Returns how many messages went
+-- back to their Discord name. Callers hold the lock.
+--
+-- Reports are deliberately left alone. A report that names the member stays
+-- naming them: they proved the account was theirs, and a report about their
+-- words must stay out of their own officer queue. Clearing it on unlink would
+-- let an officer unlink, find reports about themselves back in their queue,
+-- and dismiss them.
 --
 -- `chat_messages_author_present` needs `author_name` on a row with no sender.
 -- The importer always writes one ('Unknown Discord user' at worst), and only
@@ -203,18 +209,6 @@ as $$
 declare
   v_count integer;
 begin
-  -- Reports first: they are found through the rows still attributed to the
-  -- member. Only reports that name this member go back to naming nobody.
-  update chat_message_reports r
-     set reported_sender_id = null
-    from chat_messages m
-   where r.message_id = m.id
-     and r.chapter_id = p_chapter_id
-     and r.reported_sender_id = p_user_id
-     and m.kind = 'imported'
-     and m.sender_id = p_user_id
-     and m.author_external_id = p_discord_user_id;
-
   update chat_messages m
      set sender_id = null
    where m.kind = 'imported'
@@ -259,6 +253,20 @@ begin
   end if;
 
   perform pg_advisory_xact_lock(discord_author_link_lock_key(p_chapter_id));
+
+  -- The user row, shared, so a link and the user's account deletion never
+  -- interleave: `anonymize_user` holds it FOR UPDATE, so this waits for a
+  -- deletion in flight and then sees the tombstone. Without it a first link
+  -- racing deletion could commit after the scrub and attach the chapter's
+  -- history, Discord name and all, to the deleted account.
+  if not exists (
+    select 1 from users u
+     where u.id = p_user_id and u.deleted_at is null
+       for share
+  ) then
+    raise exception 'link_discord_author: user is not a member of this chapter'
+      using errcode = 'insufficient_privilege';
+  end if;
 
   -- Defence in depth: the API only calls this for a member of the chapter
   -- whose request is scoped to it, but a link for a non-member would attach a
@@ -398,6 +406,24 @@ begin
       using errcode = 'invalid_parameter_value';
   end if;
 
+  -- #2878: the link lock of every chapter the member linked in, taken BEFORE
+  -- the user row below, in the order the import trigger and the link
+  -- functions take them (link lock, then a key-share on `users` through the
+  -- sender foreign key). Taken after, the two would deadlock. Holding it, an
+  -- import batch whose trigger already attached a row to the member commits
+  -- before the scrub reads, and one that has not yet read the link finds it
+  -- gone. A link made in a chapter not listed here waits on the user row and
+  -- then refuses the tombstone (`link_discord_author`). The one window left,
+  -- an import in such a chapter attaching a row between that link committing
+  -- and this scrub, is closed by the deletion flow's second, converging call
+  -- (`AccountDeletionService`, `p_rescan_cards`), which runs this scrub again.
+  perform pg_advisory_xact_lock(discord_author_link_lock_key(l.chapter_id))
+     from (
+       select distinct chapter_id from discord_author_links
+        where user_id = p_user_id
+        order by chapter_id
+     ) l;
+
   select * into v_user from users where id = p_user_id for update;
   if not found then
     return; -- unknown user: empty result, the API maps this to 404
@@ -433,16 +459,6 @@ begin
   -- #2878: the Discord identity on imported rows attributed to this member.
   -- Unconditional (not under the rescan gate below): it is idempotent, and a
   -- retry after a link made before this migration must still reach it.
-  --
-  -- The link lock first, per chapter the member linked in, so an import batch
-  -- whose trigger already attached a row to them commits before the scrub
-  -- reads, and one that has not yet read the link finds it gone.
-  perform pg_advisory_xact_lock(discord_author_link_lock_key(l.chapter_id))
-     from (
-       select distinct chapter_id from discord_author_links
-        where user_id = p_user_id
-        order by chapter_id
-     ) l;
 
   -- Reports on those rows keep the reported words (data-retention.md), but
   -- not the Discord name: the officer queue falls back to it when the sender
