@@ -432,6 +432,17 @@ export class DiscordExportWorkerService {
       importBatch,
     } = args;
 
+    // A row an earlier run failed on is being resumed: it is running again,
+    // and the old reason no longer applies (#2857).
+    if (mapping.status === 'failed') {
+      await this.importRepo.updateChannel(mapping.id, job.id, {
+        status: 'running',
+        error: null,
+      });
+      mapping.status = 'running';
+      mapping.error = null;
+    }
+
     // Re-derived from Discord's answer on every slice, never from the row.
     // Throws when the channel exists in a DIFFERENT guild — that case is not a
     // skip, it is the shared bot being aimed at another tenant, and it takes

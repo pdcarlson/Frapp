@@ -522,6 +522,20 @@ describe('DiscordExportWorkerService — a channel that fails (#2857)', () => {
     );
   });
 
+  it('clears the old failure when a restart resumes the row', async () => {
+    const harness = await build({
+      channels: [
+        channel({ status: 'failed', error: 'Discord refused the bot.' }),
+      ],
+    });
+    await harness.worker.runSlice(runArgs(harness));
+    expect(harness.repo.updateChannel.mock.calls[0]).toEqual([
+      'mapping-1',
+      IMPORT_ID,
+      { status: 'running', error: null },
+    ]);
+  });
+
   it('keeps the reason the import fails with when that write fails too', async () => {
     const harness = await build();
     harness.bot.fetchMessagePage.mockRejectedValue(new Error('page failed'));

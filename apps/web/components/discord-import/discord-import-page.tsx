@@ -299,7 +299,10 @@ function DiscordImportBody({
                 const percent = importPercent(live);
                 const watchable =
                   live.source === "bot" && WATCHABLE.has(live.status);
-                const watching = openId === row.id && watchable;
+                // Open only while it is also the polled import: a panel on a
+                // row whose status no longer updates would poll for ever.
+                const watching =
+                  openId === row.id && activeId === row.id && watchable;
                 return (
                   <li
                     key={row.id}

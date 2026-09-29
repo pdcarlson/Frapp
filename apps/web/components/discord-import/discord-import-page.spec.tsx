@@ -267,6 +267,33 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(
       running.queryByText("Couldn’t load the import’s channels"),
     ).toBeNull();
+    // It says the read is not current, and can be retried.
+    expect(
+      running.getByText(/Couldn’t refresh the channels/),
+    ).toBeInTheDocument();
+    fireEvent.click(running.getByRole("button", { name: "Try again" }));
+    expect(
+      hooks.progress.mock.results.at(-1)?.value.refetch,
+    ).toHaveBeenCalled();
+  });
+
+  it("closes a bot import's panel when another row becomes the polled one", () => {
+    hooks.rows = [
+      row("moving", "running", "Running server"),
+      { ...row("uploaded", "running", "Uploaded server"), source: "upload" },
+    ];
+    render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
+    );
+    expect(
+      rowOf("Running server").getByText("Importing now"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      rowOf("Uploaded server").getByRole("button", { name: "Watch" }),
+    );
+    // The bot row no longer updates, so its panel must not stay open.
+    expect(rowOf("Running server").queryByText("Importing now")).toBeNull();
   });
 
   it("keeps the row's own progress live after Hide", () => {

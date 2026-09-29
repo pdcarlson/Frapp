@@ -785,6 +785,25 @@ export class DiscordImportWorkerService {
           `Channel mapping for #${mapping.discord_channel_name} points at a channel outside this chapter.`,
         );
       }
+      // Checked here too, for a mapping saved before the service refused it.
+      if (target.type === 'DM' || target.type === 'GROUP_DM') {
+        throw new Error(
+          `Channel mapping for #${mapping.discord_channel_name} points at a direct message. Map the channels again, then restart the import.`,
+        );
+      }
+      // A new-channel row's target is the channel this import made for it,
+      // so it must still have the readers the row asks for. It may not: an
+      // upload mapped before #2856 kept whatever target the client sent, and
+      // a channel can be re-gated while the import runs. Stopping says so,
+      // where carrying on could widen who reads the messages.
+      if (
+        mapping.mapping_action === 'create_new' &&
+        !channelServesMergeKey(target, mapping)
+      ) {
+        throw new Error(
+          `The channel recorded for #${mapping.discord_channel_name} no longer has the readers its mapping asks for. Map the channels again, then restart the import.`,
+        );
+      }
       return mapping.target_channel_id;
     }
     if (mapping.mapping_action !== 'create_new' || !mapping.new_channel_name) {

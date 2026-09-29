@@ -515,6 +515,28 @@ describe('DiscordImportService — channel mapping', () => {
     expect(channelRepo.findById).toHaveBeenCalledWith(OWN_CHANNEL, CHAPTER);
   });
 
+  it('refuses a direct message or group DM as a target (#2856)', async () => {
+    await build();
+    for (const type of ['DM', 'GROUP_DM']) {
+      channelRepo.findById.mockResolvedValueOnce({
+        id: OWN_CHANNEL,
+        chapter_id: CHAPTER,
+        name: 'officers',
+        type,
+      });
+      await expect(
+        service.setChannelMapping(IMPORT_ID, CHAPTER, [
+          {
+            discord_channel_id: '1',
+            discord_channel_name: 'officers',
+            mapping_action: 'use_existing',
+            target_channel_id: OWN_CHANNEL,
+          },
+        ]),
+      ).rejects.toThrow(/can't be imported into a direct message/);
+    }
+  });
+
   it('refuses a new channel with no name', async () => {
     await build();
     await expect(

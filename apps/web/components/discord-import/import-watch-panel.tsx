@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useDiscordImportProgress } from "@repo/hooks";
 import { NestedError, NestedLoading } from "@/components/shared/nested-states";
+import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -66,8 +67,9 @@ export function ImportWatchPanel({
 }) {
   const progress = useDiscordImportProgress(importId, { active });
 
-  // A failed poll keeps the last good read (TanStack Query keeps `data`);
-  // only a panel with nothing to show falls back to the error.
+  // A failed poll keeps the last good read (TanStack Query keeps `data`),
+  // flagged as not current below; only a panel with nothing to show falls
+  // back to the error.
   if (!progress.data && progress.isPending) {
     return <NestedLoading message="Loading the import’s channels…" lines={2} />;
   }
@@ -89,6 +91,21 @@ export function ImportWatchPanel({
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
+      {progress.isError ? (
+        // The last good read stays on screen, but it says it is not current.
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-warning">
+          <span>
+            Couldn’t refresh the channels. This is the last update that loaded.
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void progress.refetch()}
+          >
+            Try again
+          </Button>
+        </div>
+      ) : null}
       <p className="text-xs text-muted-foreground">
         Channels and threads: {progressSummary(data.counts)}
       </p>

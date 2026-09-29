@@ -889,6 +889,14 @@ export class DiscordImportService {
           `The channel chosen for #${channel.discord_channel_name} is not one of this chapter's channels.`,
         );
       }
+      // A DM or group DM is a private conversation between its members, and
+      // chapter history never goes into one (#2856). The web leaves them out
+      // of the picker; this is the rule.
+      if (target.type === 'DM' || target.type === 'GROUP_DM') {
+        throw new BadRequestException(
+          `#${channel.discord_channel_name} can't be imported into a direct message. Pick a channel.`,
+        );
+      }
     }
     if (
       channel.mapping_action === 'create_new' &&

@@ -131,6 +131,8 @@ function channelMapping(
     target_channel_id: SIGNET_CHANNEL,
     new_channel_name: null,
     new_channel_is_read_only: true,
+    new_channel_type: 'PUBLIC',
+    new_channel_required_permissions: null,
     message_count: 8,
     imported_count: 0,
     status: 'pending',
@@ -602,6 +604,27 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.state().status).toBe('failed');
   });
 
+  it('stops rather than import into a direct message a mapping points at (#2856)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.findById.mockResolvedValue({
+      id: SIGNET_CHANNEL,
+      chapter_id: CHAPTER,
+      name: 'officers',
+      type: 'GROUP_DM',
+      required_permissions: null,
+      is_read_only: true,
+      archived_at: null,
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().error).toMatch(/points at a direct message/);
+  });
+
   it('creates a channel once across every part of that channel', async () => {
     // `channelBySnowflake` hands the same object back for each part, so a
     // channel split by `--partition` would otherwise mint one identically-named
@@ -765,6 +788,28 @@ describe('DiscordImportWorkerService — importing', () => {
 
       expect(channelRepo.create).toHaveBeenCalledTimes(1);
       expect(repoRef.inserted().get(SIGNET_CHANNEL)).toBeUndefined();
+    });
+
+    it('stops rather than import into its own recorded channel when that channel has other readers', async () => {
+      // An upload mapped before #2856 kept a client-sent target on a
+      // new-channel row: here a gated row points at the PUBLIC channel.
+      repoRef.channels = [
+        newChannel({
+          id: 'map-1',
+          target_channel_id: SIGNET_CHANNEL,
+          new_channel_type: 'ROLE_GATED',
+          new_channel_required_permissions: ['channels:read:exec'],
+        }),
+      ];
+      const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+      await worker.sweepImports(NOW);
+
+      expect(repoRef.insertMessages).not.toHaveBeenCalled();
+      expect(repoRef.state().status).toBe('failed');
+      expect(repoRef.state().error).toMatch(
+        /no longer has the readers its mapping asks for/,
+      );
     });
 
     it('does not reuse a shared channel that is gone', async () => {
