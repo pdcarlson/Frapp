@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   useActiveChapterId,
@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
+import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import {
   DELETE_ACCOUNT_FAILED,
   useDeleteAccountFlow,
@@ -110,11 +111,30 @@ export function ProfilePanel() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
 
+  // The server payload the draft was last seeded from, so a re-seed can tell a
+  // field the member edited from one they left alone.
+  const seededFrom = useRef<CurrentUser | null>(null);
+
   useEffect(() => {
-    if (userQuery.data) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the profile draft from the query; local edits stay until the next server payload
-      setProfileDraft(userQuery.data as CurrentUser);
-    }
+    if (!userQuery.data) return;
+    const next = userQuery.data as CurrentUser;
+    const previous = seededFrom.current;
+    seededFrom.current = next;
+    setProfileDraft((draft) => {
+      if (!previous) return next;
+      // Keep what the member has typed and not saved. A photo change refetches
+      // this payload mid-edit (#732), as does a window-focus refetch, and a
+      // wholesale re-seed would drop their unsaved name or bio without a word.
+      const merged: CurrentUser = { ...next };
+      for (const key of Object.keys(draft) as (keyof CurrentUser)[]) {
+        if (draft[key] !== previous[key]) {
+          (merged as Record<string, unknown>)[key] = draft[key];
+        }
+      }
+      // The photo is never a draft field: it changes only on the server.
+      merged.avatar_url = next.avatar_url;
+      return merged;
+    });
   }, [userQuery.data]);
 
   useEffect(() => {
@@ -517,6 +537,12 @@ export function ProfilePanel() {
             {profile.email ??
               "Update how your chapter sees you in the directory."}
           </p>
+          <div className="mt-2">
+            <ProfilePhotoControl
+              hasPhoto={!!profile.avatar_url}
+              disabled={isOffline}
+            />
+          </div>
         </div>
       </header>
 

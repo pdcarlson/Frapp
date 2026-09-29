@@ -44,7 +44,6 @@ export function useUpdateUser() {
     mutationFn: async (body: {
       display_name?: string;
       bio?: string;
-      avatar_url?: string;
       graduation_year?: number | null;
       current_city?: string;
       current_company?: string;
@@ -56,6 +55,82 @@ export function useUpdateUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
     },
+  });
+}
+
+/**
+ * Invalidate everything that serves the viewer's photo: their own profile, and
+ * every `["members", …]` read (roster, directory, detail, alumni), where their
+ * row carries it too.
+ */
+function invalidatePhotoReads(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["user", "me"] }),
+    queryClient.invalidateQueries({ queryKey: ["members"] }),
+  ]);
+}
+
+/**
+ * Step 1 of 3 of a profile-photo change: `POST /v1/users/me/avatar-url`.
+ *
+ * Read the ticket with `readSignedUpload` from `@repo/validation`, PUT the
+ * bytes to it, then confirm with {@link useConfirmAvatar}. The PUT is left to
+ * the caller because the two clients hold different things: web a DOM `File`
+ * (`putSignedUpload`), mobile a `file://` URI (`FileSystem.uploadAsync`).
+ *
+ * Chapter-scoped: the photo lands in the caller's folder for the active
+ * chapter, which the confirm checks.
+ */
+export function useRequestAvatarUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (body: {
+      filename: string;
+      content_type: string;
+      size_bytes?: number;
+    }) => {
+      const { data, error } = await client.POST("/v1/users/me/avatar-url", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * Step 3 of 3: `POST /v1/users/me/avatar` makes the uploaded object the
+ * viewer's photo, and the server deletes the one it replaced.
+ *
+ * `mutateAsync` resolves once the reads that show the photo have refetched, so
+ * a caller that clears its busy state on resolve never shows the old photo.
+ */
+export function useConfirmAvatar() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (storagePath: string) => {
+      const { data, error } = await client.POST("/v1/users/me/avatar", {
+        body: { storage_path: storagePath },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidatePhotoReads(queryClient),
+  });
+}
+
+/** `DELETE /v1/users/me/avatar`: back to initials everywhere. */
+export function useRemoveAvatar() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.DELETE("/v1/users/me/avatar");
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidatePhotoReads(queryClient),
   });
 }
 

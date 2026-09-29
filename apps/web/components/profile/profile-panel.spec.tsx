@@ -82,6 +82,10 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/components/profile/blocked-members-card", () => ({
   BlockedMembersCard: () => null,
 }));
+// Likewise the photo control (`profile-photo-control.spec.tsx`).
+vi.mock("@/components/profile/profile-photo-control", () => ({
+  ProfilePhotoControl: () => null,
+}));
 
 vi.mock("@repo/hooks", () => ({
   useCurrentUser: () => mocks.userQuery,
@@ -418,6 +422,26 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
 
     expect(screen.queryByText(/couldn't load your profile/i)).not.toBeInTheDocument();
     expect(screen.getByDisplayValue("Half-typed name")).toBeInTheDocument();
+  });
+
+  it("keeps an unsaved edit when a photo change refetches the profile (#732)", async () => {
+    const { rerender } = render(<ProfilePanel />);
+    const name = screen.getByLabelText("Display name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Half-typed name");
+
+    // What `useConfirmAvatar`'s invalidation lands: a new payload whose only
+    // change is the photo, while the member is mid-edit.
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      bio: "Set elsewhere",
+      avatar_url: "https://signed/photo",
+    };
+    rerender(<ProfilePanel />);
+
+    expect(screen.getByDisplayValue("Half-typed name")).toBeInTheDocument();
+    // A field the member never touched still follows the server.
+    expect(screen.getByDisplayValue("Set elsewhere")).toBeInTheDocument();
   });
 
   it("still fails closed when the fetch failed and nothing is cached", () => {

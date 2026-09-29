@@ -6,6 +6,7 @@ import {
   displayNameOrNull,
   isServerGeneratedDmName,
   isServerGeneratedGroupDmName,
+  resolveAuthorAvatar,
   resolveAuthorLabel,
   resolveAuthorName,
   memberFallbackLabel,
@@ -371,6 +372,58 @@ describe("resolveAuthorName", () => {
     const nameFor = vi.fn(() => null);
     resolveAuthorName({ sender_id: null, author_name: "X" }, nameFor);
     expect(nameFor).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveAuthorAvatar", () => {
+  const avatarFor = (id: string) =>
+    id === "user-a" ? "https://signed/member-a" : null;
+  const imported = { "archive/x.png": "https://signed/imported-x" };
+
+  it("draws a member's own photo from the roster (#732)", () => {
+    expect(
+      resolveAuthorAvatar({ sender_id: "user-a" }, avatarFor, imported),
+    ).toBe("https://signed/member-a");
+  });
+
+  it("prefers the member's photo over an archived snapshot", () => {
+    expect(
+      resolveAuthorAvatar(
+        { sender_id: "user-a", author_avatar_path: "archive/x.png" },
+        avatarFor,
+        imported,
+      ),
+    ).toBe("https://signed/member-a");
+  });
+
+  it("falls back to the imported author's signed avatar", () => {
+    expect(
+      resolveAuthorAvatar(
+        { sender_id: "user-b", author_avatar_path: "archive/x.png" },
+        avatarFor,
+        imported,
+      ),
+    ).toBe("https://signed/imported-x");
+    expect(
+      resolveAuthorAvatar(
+        { sender_id: null, author_avatar_path: "archive/x.png" },
+        avatarFor,
+        imported,
+      ),
+    ).toBe("https://signed/imported-x");
+  });
+
+  it("is null for initials when nothing resolves", () => {
+    expect(resolveAuthorAvatar({ sender_id: "user-b" }, avatarFor, {})).toBe(
+      null,
+    );
+    expect(
+      resolveAuthorAvatar(
+        { sender_id: null, author_avatar_path: "archive/unsigned.png" },
+        avatarFor,
+        undefined,
+      ),
+    ).toBe(null);
   });
 });
 

@@ -26,7 +26,11 @@ import {
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
-import { authorGroupingKey, useAuthorAvatars } from "@repo/hooks";
+import {
+  authorGroupingKey,
+  resolveAuthorAvatar,
+  useAuthorAvatars,
+} from "@repo/hooks";
 import { parseInstant } from "@repo/formatting";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
@@ -352,6 +356,11 @@ export interface MessageTimelineProps {
   viewerId: string | null;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;
+  /**
+   * Resolves `users.id` → the member's signed photo URL; `null` for initials.
+   * From the same roster read as `nameFor` (#732).
+   */
+  avatarFor: (userId: string) => string | null;
   isLoading: boolean;
   loadError: Error | null;
   onRetryLoad?: () => void;
@@ -429,6 +438,7 @@ export const MessageTimeline = forwardRef<
     maskedRefresh,
     viewerId,
     nameFor,
+    avatarFor,
     isLoading,
     loadError,
     onRetryLoad,
@@ -893,9 +903,8 @@ export const MessageTimeline = forwardRef<
                 message={entry.message}
                 blockState={blockState}
                 avatarUrl={
-                  entry.message.author_avatar_path
-                    ? avatars.data?.[entry.message.author_avatar_path]
-                    : undefined
+                  resolveAuthorAvatar(entry.message, avatarFor, avatars.data) ??
+                  undefined
                 }
                 viewerId={viewerId}
                 showHeader={entry.showHeader}

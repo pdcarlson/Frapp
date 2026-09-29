@@ -201,7 +201,11 @@ vi.mock("@repo/hooks", () => ({
   // them, so a payload that is already sorted could not tell a faithful
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
-  useMemberDisplayNames: () => ({ byId: new Map(), nameFor: () => null }),
+  useMemberDisplayNames: () => ({
+    byId: new Map(),
+    nameFor: () => null,
+    avatarFor: () => null,
+  }),
   useChannelNotificationPreferences: () => ({ data: [] }),
   useSetChannelNotificationLevel: () => ({
     isError: false,
