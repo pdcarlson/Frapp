@@ -63,7 +63,7 @@ export class BrandingDto {
 
   @ApiPropertyOptional({
     description:
-      "The chapter's short name, e.g. \"FIJI\". Its mark when it has no logo, " +
+      'The chapter\'s short name, e.g. "FIJI". Its mark when it has no logo, ' +
       'ahead of Greek letters (spec/behavior/branding.md § Chapter mark). An ' +
       'empty string clears it.',
     maxLength: CHAPTER_SHORT_NAME_MAX_LENGTH,

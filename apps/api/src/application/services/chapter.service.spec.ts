@@ -1279,7 +1279,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       logo_path: 'chapters/ch-1/branding/logo.png',
-    } as Chapter);
+    });
 
     await expect(
       service.confirmLogoUpload(
@@ -1302,7 +1302,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       logo_path: null,
-    } as Chapter);
+    });
 
     await expect(
       service.confirmLogoUpload(
@@ -1323,11 +1323,11 @@ describe('ChapterService', () => {
       mockChapterRepo.findById.mockResolvedValue({
         id: 'ch-1',
         logo_path: current,
-      } as Chapter);
+      });
       mockChapterRepo.update.mockResolvedValue({
         id: 'ch-1',
         logo_path: next,
-      } as Chapter);
+      });
       mockStorageProvider.listFiles.mockResolvedValue([
         current,
         next,
@@ -1342,10 +1342,10 @@ describe('ChapterService', () => {
         logo_path: next,
       });
       // The replaced logo and an upload that was never confirmed both go.
-      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
-        'branding',
-        [current, abandoned],
-      );
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('branding', [
+        current,
+        abandoned,
+      ]);
       expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
       expect(mockAuditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({

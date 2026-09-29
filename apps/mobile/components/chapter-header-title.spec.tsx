@@ -43,11 +43,11 @@ function render(): ReactTestRenderer {
 /** Every text node, the `Animated.Text` label included. */
 function texts(tree: ReactTestRenderer): string[] {
   return tree.root
-    .findAll(
-      (node) =>
-        typeof node.type === "string" &&
-        (node.type === Text || node.type === "Animated.Text"),
-    )
+    .findAll((node) => {
+      // The setup stubs both as host strings ("Text", "Animated.Text").
+      const type = String(node.type);
+      return type === String(Text) || type === "Animated.Text";
+    })
     .map((node) => String(node.props.children));
 }
 

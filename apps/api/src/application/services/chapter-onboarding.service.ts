@@ -207,7 +207,8 @@ export class ChapterOnboardingService {
     if (shortName) result.short_name = shortName;
     // Stored only as an opt-out: absent already means shown, so a chapter that
     // keeps its letters carries no key it didn't choose.
-    if (branding.show_greek_letters === false) result.show_greek_letters = false;
+    if (branding.show_greek_letters === false)
+      result.show_greek_letters = false;
     if (branding.designation) result.designation = branding.designation;
     if (branding.school_short) result.school_short = branding.school_short;
     if (

@@ -412,9 +412,7 @@ describe('ChapterOnboardingService', () => {
     };
 
     function welcomeContent(): string {
-      return (
-        messageInsert.mock.calls[0]![0] as { content: string }
-      ).content;
+      return (messageInsert.mock.calls[0]![0] as { content: string }).content;
     }
 
     it('stores a short name and an opt-out from the wizard', async () => {
