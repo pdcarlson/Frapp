@@ -50,6 +50,14 @@ export interface PushDecisionInput {
  * Lift the user's effective level for this (channel, kind). Channel-scoped
  * rows beat kind-scoped rows beat defaults; the table allows both arms so a
  * user can mute a single channel without muting the whole kind.
+ *
+ * **A kind row does not reach a DM or group DM.** A kind override is a
+ * chapter-wide way to quiet channel traffic ("only mentions for ordinary
+ * messages"), and until #2771 DMs were pushed by a separate path that never
+ * read it. Letting it apply now would silently stop every DM for a member who
+ * set `text` to `mentions` to calm #general. A DM is muted from the DM itself,
+ * with its channel row. The kind *defaults* still apply (`defaultLevelFor`), so
+ * a `system_audit` message in a DM still pushes nobody.
  */
 export function resolveLevel(
   channel: PushRuleChannel,
@@ -60,6 +68,7 @@ export function resolveLevel(
     (p) => p.scope === 'channel' && p.scope_id === channel.id,
   );
   if (channelPref) return channelPref.level;
+  if (isDirectChannel(channel)) return defaultLevelFor(channel, messageKind);
   const kindPref = preferences.find(
     (p) => p.scope === 'kind' && p.scope_kind === messageKind,
   );
@@ -82,8 +91,8 @@ export function resolveLevel(
  * 3. The officer-set channel default, when one is stored.
  * 4. The built-in default (`builtInChannelDefault` in `@repo/validation`,
  *    shared with the web officer control that displays it): `all` for the
- *    announcements channel and `#general`, `off` for `#chapter-audit`,
- *    `mentions` for the rest.
+ *    announcements channel (PUBLIC and read-only, `isAnnouncementChannel`) and
+ *    `#general`, `off` for `#chapter-audit`, `mentions` for the rest.
  */
 export function defaultLevelFor(
   channel: PushRuleChannel,

@@ -33,23 +33,23 @@ export function isDirectChannel(
  * Whether a channel is the chapter's announcements channel, for its default
  * level and for the push's title, URGENT priority and category.
  *
- * Two shapes qualify, the union of what the API's two push paths used to check
- * separately before the worker became the only one (#2771):
+ * A PUBLIC, read-only channel whose name contains `announcements`, the seeded
+ * `#announcements` included. Everyone reads it and only `announcements:post`
+ * holders write it, so a chapter-wide URGENT push, which skips quiet hours and
+ * the member's Chat switch, is sound there and nowhere else.
  *
- * - a channel named exactly `announcements`, the seeded one;
- * - a PUBLIC, read-only channel whose name contains `announcements`. Everyone
- *   reads it and only `announcements:post` holders write it, so a chapter-wide
- *   URGENT push is sound. A channel merely *named* `intramural-announcements`
- *   that anyone can post in does not qualify, or any member could page the
- *   whole roster.
+ * The shape is required of the exact name too. The push worker used to accept
+ * any channel *named* `announcements`, so a group DM given that name, or the
+ * seeded channel with read-only switched off, let any member send URGENT
+ * pushes (#2771 review). A channel that fails the test gets ordinary channel
+ * pushes at its ordinary default.
  *
  * Still name-keyed, and so one rename from changing; narrowing it is part of
- * #1323.
+ * #1323. The activity feed finds its announcements channel with this too.
  */
 export function isAnnouncementChannel(
   channel: NotificationDefaultChannel,
 ): boolean {
-  if (channel.name === "announcements") return true;
   return (
     channel.type === "PUBLIC" &&
     channel.is_read_only === true &&
@@ -60,7 +60,7 @@ export function isAnnouncementChannel(
 /**
  * The default a channel has when no officer has set one. This is what the
  * owner's decision on #2771 calls "seeded": `all` for DMs, the announcements
- * channel and `#general`, `off` for `#chapter-audit`, `mentions` for the rest.
+ * channel (see `isAnnouncementChannel`) and `#general`, `off` for `#chapter-audit`, `mentions` for the rest.
  *
  * Seeded by rule rather than by writing a value onto each row, so there is no
  * backfill and a chapter created tomorrow gets the same answer as one created

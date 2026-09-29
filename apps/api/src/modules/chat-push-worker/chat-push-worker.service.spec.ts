@@ -11,6 +11,7 @@ import {
 import { RbacService } from '../../application/services/rbac.service';
 import { ChatBlockService } from '../../application/services/chat-block.service';
 import { ChannelCacheService } from './channel-cache.service';
+import { SYSTEM_SENDER_ID } from '@repo/validation';
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -901,6 +902,86 @@ describe('ChatPushWorkerService', () => {
         'New Message',
         'New Message',
       ]);
+    });
+
+    it('gives a nameless burst the title a single push has, not a plural one', async () => {
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      service.__setChannelForTest(DM);
+      setMembers(['nameless', 'alice']);
+      for (const channelId of ['ch-gen', ANNOUNCEMENT_CHANNEL.id, DM.id]) {
+        for (let i = 0; i < 3; i++) {
+          await send(channelId, {
+            id: `${channelId}-${i}`,
+            sender_id: 'nameless',
+          });
+        }
+      }
+      const bundled = notifyUser.mock.calls
+        .map((c) => c[2] as { title: string; data: { bundled?: boolean } })
+        .filter((p) => p.data.bundled)
+        .map((p) => p.title);
+      expect(bundled).toEqual([
+        'New message in #general',
+        'New Announcement',
+        'New Message',
+      ]);
+    });
+
+    it('keeps the old titles for the system actor, never "Frapp System"', async () => {
+      // An opted-in member's audit-bridge push, and a system DM they opened.
+      findDisplayIdentitiesByIds.mockResolvedValue([
+        {
+          id: SYSTEM_SENDER_ID,
+          display_name: 'Frapp System',
+          avatar_url: null,
+        },
+      ]);
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['a']);
+      await send('ch-gen', { sender_id: SYSTEM_SENDER_ID, kind: 'text' });
+      expect(titles()).toEqual(['New message in #general']);
+      expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+
+    it('does not treat a group DM named announcements as announcements', async () => {
+      service.__setChannelForTest({
+        ...DM,
+        id: 'gdm-ann',
+        name: 'announcements',
+        type: 'GROUP_DM',
+        member_ids: ['sender', 'alice'],
+      });
+      setMembers(['sender', 'alice']);
+      await send('gdm-ann');
+      expect(notifyUser).toHaveBeenCalledWith(
+        'alice',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Sam Rivera in announcements',
+          priority: 'NORMAL',
+          category: 'chat',
+        }),
+      );
+    });
+
+    it('does not treat #announcements with read-only switched off as announcements', async () => {
+      service.__setChannelForTest({
+        ...ANNOUNCEMENT_CHANNEL,
+        is_read_only: false,
+      });
+      setMembers(['sender', 'a']);
+      await send(ANNOUNCEMENT_CHANNEL.id);
+      // An ordinary channel now: `mentions` by default, so no push at all.
+      expect(notifyUser).not.toHaveBeenCalled();
     });
 
     it('still pushes when the sender name cannot be read', async () => {

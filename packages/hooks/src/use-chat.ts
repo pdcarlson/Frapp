@@ -1,5 +1,7 @@
 "use client";
 
+import type { ChatNotificationLevel } from "@repo/validation";
+
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -105,7 +107,7 @@ export function useCategories() {
 }
 
 /** Per-channel notification level. `off` is what the UI calls "muted". */
-export type ChatNotificationLevel = "all" | "mentions" | "off";
+export type { ChatNotificationLevel } from "@repo/validation";
 
 export interface ChannelNotificationPreference {
   channel_id: string;

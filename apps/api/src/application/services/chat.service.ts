@@ -12,6 +12,7 @@ import {
   extractMentionTokens,
   isAllowedUploadExtension,
   isAllowedUploadMime,
+  isDirectChannel,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
   resolveMentions,
@@ -486,10 +487,7 @@ export class ChatService {
     // A DM has no officer, and the push worker defaults every DM to `all`
     // whatever this column holds (`defaultLevelFor`), so a stored value there
     // would be a setting that does nothing. Refused rather than ignored.
-    if (
-      (existing.type === 'DM' || existing.type === 'GROUP_DM') &&
-      data.default_notification_level != null
-    ) {
+    if (isDirectChannel(existing) && data.default_notification_level != null) {
       throw new BadRequestException(
         'A DM or group DM has no channel default notification level',
       );
@@ -1676,9 +1674,10 @@ export class ChatService {
    * earlier cut of this returned only rows that exist in
    * `chat_notification_preferences`, leaving the client to assume `mentions`
    * for everything else. That is wrong for exactly the channels members most
-   * want to turn down: `defaultLevelFor` sends `#announcements` to `all` and
-   * `#chapter-audit` to `off`, and both are seeded into every chapter by
-   * `DEFAULT_CHANNELS`. The control would then have shown "Only @mentions" on a
+   * want to turn down: `defaultLevelFor` sends `#general` and `#announcements`
+   * to `all` and `#chapter-audit` to `off`, all three are seeded into every
+   * chapter by `DEFAULT_CHANNELS`, and officers can set any channel's default
+   * (#2771). The control would then have shown "Only @mentions" on a
    * channel actually pushing every message at URGENT, and — because the popover
    * suppresses a write for the option already displayed as current — the single
    * most natural corrective click did nothing at all.
@@ -1759,8 +1758,10 @@ export class ChatService {
    * `null` rather than a filled-in default, which is the one place this
    * endpoint deliberately differs from its per-channel sibling. A kind
    * preference is chapter-wide, but the default it would fall back to is
-   * **not**: `defaultLevelFor` resolves an `announcement` message to `all` in
-   * a channel named `announcements` and `mentions` anywhere else, so there is
+   * **not**: `defaultLevelFor` resolves an `announcement` message through the
+   * channel's default, which is `all` in the announcements channel, #general
+   * and DMs, whatever an officer set elsewhere, and `mentions` otherwise; and a
+   * kind row never reaches a DM at all (#2771). So there is
    * no single chapter-wide default for a kind to report. Inventing one would
    * be worse than useless in two concrete ways — it would state `mentions` for
    * `announcement` when the seeded `#announcements` channel actually resolves

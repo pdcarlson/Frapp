@@ -21,7 +21,9 @@ const ch = (
 
 describe('defaultLevelFor', () => {
   it('announcements → all', () => {
-    expect(defaultLevelFor(ch('announcements'), 'text')).toBe('all');
+    expect(
+      defaultLevelFor(ch('announcements', { is_read_only: true }), 'text'),
+    ).toBe('all');
   });
   it('chapter-audit → off', () => {
     expect(defaultLevelFor(ch('chapter-audit'), 'text')).toBe('off');
@@ -76,7 +78,7 @@ describe('decidePush', () => {
   it('skips presence even if level=all', () => {
     expect(
       decidePush({
-        channel: ch('announcements'),
+        channel: ch('announcements', { is_read_only: true }),
         messageKind: 'announcement',
         recipientIsPresent: true,
         hasMention: false,
@@ -88,7 +90,7 @@ describe('decidePush', () => {
   it('sends on default announcements level', () => {
     expect(
       decidePush({
-        channel: ch('announcements'),
+        channel: ch('announcements', { is_read_only: true }),
         messageKind: 'announcement',
         recipientIsPresent: false,
         hasMention: false,
@@ -198,7 +200,7 @@ describe('decidePush', () => {
     it('never sends, whatever the channel default would be', () => {
       expect(
         decidePush({
-          channel: ch('announcements'),
+          channel: ch('announcements', { is_read_only: true }),
           messageKind: 'imported',
           recipientIsPresent: false,
           hasMention: false,
@@ -252,7 +254,12 @@ describe('decidePush', () => {
     });
 
     it('resolves to an off level, so anything reading a level agrees', () => {
-      expect(defaultLevelFor(ch('announcements'), 'imported')).toBe('off');
+      expect(
+        defaultLevelFor(
+          ch('announcements', { is_read_only: true }),
+          'imported',
+        ),
+      ).toBe('off');
     });
   });
 });
@@ -306,5 +313,29 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
         },
       ]),
     ).toBe('mentions');
+  });
+
+  it('a kind row does not reach a DM, so a text override cannot silence DMs', () => {
+    const textMentions: ChatNotificationPreferenceRow = {
+      user_id: 'u',
+      chapter_id: 'c',
+      scope: 'kind',
+      scope_id: null,
+      scope_kind: 'text',
+      level: 'mentions',
+    };
+    expect(
+      resolveLevel(ch('dm-a-b', { type: 'DM' }), 'text', [textMentions]),
+    ).toBe('all');
+    // It still governs ordinary channels, as before.
+    expect(resolveLevel(ch('general'), 'text', [textMentions])).toBe(
+      'mentions',
+    );
+  });
+
+  it('a system_audit message in a DM still pushes nobody by default', () => {
+    expect(resolveLevel(ch('dm-a-b', { type: 'DM' }), 'system_audit', [])).toBe(
+      'off',
+    );
   });
 });

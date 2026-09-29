@@ -3510,6 +3510,8 @@ describe('ChatService', () => {
       ...baseChannel,
       id: 'ch-ann',
       name: 'announcements',
+      // As seeded: the announcements default needs a read-only PUBLIC channel.
+      is_read_only: true,
     };
     const audit: ChatChannel = {
       ...baseChannel,

@@ -19,7 +19,9 @@ const ch = (
 describe("builtInChannelDefault", () => {
   it("is all for #general and the announcements channel", () => {
     expect(builtInChannelDefault(ch("general"))).toBe("all");
-    expect(builtInChannelDefault(ch("announcements"))).toBe("all");
+    expect(
+      builtInChannelDefault(ch("announcements", { is_read_only: true })),
+    ).toBe("all");
   });
   it("is off for #chapter-audit", () => {
     expect(builtInChannelDefault(ch("chapter-audit"))).toBe("off");
@@ -37,8 +39,20 @@ describe("builtInChannelDefault", () => {
 });
 
 describe("isAnnouncementChannel", () => {
-  it("matches the seeded channel by name alone", () => {
-    expect(isAnnouncementChannel(ch("announcements"))).toBe(true);
+  it("matches the seeded channel, which is public and read-only", () => {
+    expect(
+      isAnnouncementChannel(ch("announcements", { is_read_only: true })),
+    ).toBe(true);
+  });
+  it("does not match the exact name once anyone can post there", () => {
+    expect(isAnnouncementChannel(ch("announcements"))).toBe(false);
+  });
+  it("does not match a group DM named announcements", () => {
+    expect(
+      isAnnouncementChannel(
+        ch("announcements", { type: "GROUP_DM", is_read_only: false }),
+      ),
+    ).toBe(false);
   });
   it("matches a public read-only channel whose name contains it", () => {
     expect(

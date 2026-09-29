@@ -112,15 +112,17 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   };
 
   /**
-   * `defaultLevelFor` returns `all` for a channel named `announcements` and
-   * `mentions` for anything else. The mute cases below therefore have to run
-   * HERE: on a `mentions`-default channel a seeded `off` changes no outcome, so
-   * those tests would pass with per-channel preferences disabled entirely.
+   * `defaultLevelFor` returns `all` for the announcements channel (PUBLIC and
+   * read-only, as seeded) and `mentions` for `PUBLIC_CHANNEL`. The mute cases
+   * below therefore have to run HERE: on a `mentions`-default channel a seeded
+   * `off` changes no outcome, so those tests would pass with per-channel
+   * preferences disabled entirely.
    */
   const ANNOUNCE_CHANNEL = {
     ...PUBLIC_CHANNEL,
     id: 'ch-announce',
     name: 'announcements',
+    is_read_only: true,
   };
 
   const ROLE_GATED_CHANNEL = {

@@ -580,7 +580,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'chat_channels' and column_name = 'default_notification_level';` returns one row: `default_notification_level | text | YES | null`, and
   `select convalidated from pg_constraint where conname = 'chat_channels_default_notification_level_check';` returns `t`.
-- **Promoter notes**: Ship it before, or with, the API that reads it. The push worker selects the column by name, so a newer API against an unmigrated database fails every channel lookup and sends no chat push at all until the migration lands. An older API ignores the column. The `add column` is idempotent; the `add constraint` is not, so a partial re-run needs the constraint dropped first. Hosted projects are not applied from a cloud-agent session.
+- **Promoter notes**: Ship it before, or with, the API that reads it. Against an unmigrated database the newer code fails twice: the push worker selects the column by name, so every channel lookup fails and no chat push is sent at all, and the new chat-admin page sends `default_notification_level` on every `PATCH /v1/channels/{id}`, so every channel save from chat admin fails with an unknown-column error. An older API ignores the column, and an older web client never sends it. The `add column` is idempotent; the `add constraint` is not, so a partial re-run needs the constraint dropped first. Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-chat-channel-default-push-level-20260929190000) § Rollback chat channel default push level.
 

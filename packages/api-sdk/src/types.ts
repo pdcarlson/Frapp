@@ -3726,7 +3726,7 @@ export interface components {
         };
         SetChannelNotificationLevelDto: {
             /**
-             * @description all = every message; mentions = only when you are mentioned (default); off = muted, though @mentions still notify.
+             * @description all = every message; mentions = only when you are mentioned; off = muted, though @mentions still notify. With no level stored, the channel default applies (officer-set, else `all` for #general, the announcements channel and DMs, `off` for #chapter-audit, `mentions` for the rest); GET /v1/channels/notification-preferences reports it.
              * @enum {string}
              */
             level: "all" | "mentions" | "off";

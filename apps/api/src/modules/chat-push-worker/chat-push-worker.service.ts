@@ -22,6 +22,7 @@ import {
   canAccessChannel,
   isAnnouncementChannel,
   isDirectChannel,
+  SYSTEM_SENDER_ID,
 } from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
@@ -509,7 +510,10 @@ export class ChatPushWorkerService
   private async resolveSenderName(
     senderId: string | null,
   ): Promise<string | null> {
-    if (!senderId) return null;
+    // The system actor ("Frapp System") posts the audit bridge, poll-expiry
+    // notices and invite-accept DMs. #2771 kept their handling as it was, so
+    // they keep the titles they had rather than naming a sender nobody is.
+    if (!senderId || senderId === SYSTEM_SENDER_ID) return null;
     try {
       const [identity] = await this.userRepo.findDisplayIdentitiesByIds([
         senderId,
@@ -541,7 +545,7 @@ export class ChatPushWorkerService
     // announcement a second time.
     const isAnnouncement = this.isAnnouncementPush(channel, row.kind);
     const shared = {
-      title: this.titleFor(channel, isAnnouncement, senderName, burst),
+      title: this.titleFor(channel, isAnnouncement, senderName),
       category: isAnnouncement ? 'announcements' : 'chat',
       priority: isAnnouncement ? ('URGENT' as const) : ('NORMAL' as const),
     };
@@ -588,7 +592,8 @@ export class ChatPushWorkerService
   /**
    * Every title names the sender when there is a name to give (#2771), bundled
    * or not, the way a messenger's lock-screen push does. Without one, each
-   * falls back to the wording it had before.
+   * falls back to the wording a single push had before. A bundle takes the
+   * same title as a single push either way; its body carries the count.
    *
    * A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
    * `group-dm-<timestamp>`, both internal, so neither ever reaches a title.
@@ -597,12 +602,11 @@ export class ChatPushWorkerService
     channel: ChannelRow,
     isAnnouncement: boolean,
     senderName: string | null,
-    burst: ReturnType<BurstBundler['record']>,
   ): string {
-    const bundled = burst.action === 'bundle';
     if (isAnnouncement) {
-      if (senderName) return `Announcement from ${senderName}`;
-      return bundled ? 'New Announcements' : 'New Announcement';
+      return senderName
+        ? `Announcement from ${senderName}`
+        : 'New Announcement';
     }
     if (isDirectChannel(channel)) {
       const groupName =
@@ -612,12 +616,10 @@ export class ChatPushWorkerService
       if (senderName) {
         return groupName ? `${senderName} in ${groupName}` : senderName;
       }
-      if (groupName) return groupName;
-      return bundled ? 'New Messages' : 'New Message';
+      return groupName ?? 'New Message';
     }
-    if (senderName) return `${senderName} in #${channel.name}`;
-    return bundled
-      ? `New messages in #${channel.name}`
+    return senderName
+      ? `${senderName} in #${channel.name}`
       : `New message in #${channel.name}`;
   }
 

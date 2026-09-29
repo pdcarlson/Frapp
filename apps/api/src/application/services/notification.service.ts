@@ -169,26 +169,19 @@ export class NotificationService {
   /**
    * Notify every member of a chapter.
    *
-   * `filterAudience` narrows the roster before anything is written or pushed,
-   * for a caller whose audience depends on something this service does not
-   * own. `ChatService` uses it to drop members who have blocked an
-   * announcement's author (#2324). It runs on the member list this method
-   * already loads, so the caller does not read the roster a second time. If it
-   * throws, nothing is sent to anyone: a filter that cannot decide must not
-   * fall back to the full chapter.
+   * There is no audience filter. Its one caller, `ChatService`'s announcement
+   * fan-out, dropped blockers through one; that path was deleted when the chat
+   * push worker became the only chat push path (#2771), and the worker applies
+   * `ChatBlockService.filterOutBlockers` itself. A caller whose audience
+   * depends on a block, or on anything else this service does not own, belongs
+   * on a per-recipient `notifyUser` loop, not here.
    */
   async notifyChapter(
     chapterId: string,
     payload: NotifyPayload,
-    options: {
-      filterAudience?: (userIds: string[]) => Promise<string[]>;
-    } = {},
   ): Promise<void> {
     const members = await this.memberRepo.findByChapter(chapterId);
-    const roster = [...new Set(members.map((member) => member.user_id))];
-    const userIds = options.filterAudience
-      ? await options.filterAudience(roster)
-      : roster;
+    const userIds = [...new Set(members.map((member) => member.user_id))];
     if (userIds.length === 0) return;
 
     const category = payload.category ?? 'default';
