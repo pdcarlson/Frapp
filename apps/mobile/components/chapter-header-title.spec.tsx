@@ -70,6 +70,20 @@ describe("ChapterHeaderTitle", () => {
     expect(texts(tree)).toContain("Tau Nu");
   });
 
+  it("falls back to the text mark when the logo fails to load", () => {
+    branding.current.logoUrl = "https://storage.example/replaced.png";
+    branding.current.textMark = "FIJI";
+    const tree = render();
+    act(() => {
+      tree.root.findByType(Image).props.onError();
+    });
+    expect(tree.root.findAllByType(Image)).toHaveLength(0);
+    expect(
+      tree.root.findByProps({ testID: "chapter-mark-text" }).findByType(Text)
+        .props.children,
+    ).toBe("FIJI");
+  });
+
   it("draws the text mark in an accent tile under the fixed on-house label", () => {
     branding.current.textMark = "FIJI";
     const tree = render();

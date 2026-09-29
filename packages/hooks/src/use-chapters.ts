@@ -162,10 +162,22 @@ export function useActivateChapter() {
   });
 }
 
+/**
+ * What every write to the current chapter does on success: refetch the
+ * chapter queries, so the shell (the nav tile, the accent) repaints. The
+ * `["chapters"]` prefix covers `["chapters", "current", id]` and the
+ * memberships list alike.
+ */
+function useInvalidateCurrentChapter() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+  };
+}
+
 export function useUpdateChapter() {
   const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const activeChapterId = useActiveChapterId();
+  const invalidate = useInvalidateCurrentChapter();
   return useMutation({
     mutationFn: async (body: {
       name?: string;
@@ -179,12 +191,7 @@ export function useUpdateChapter() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-      queryClient.invalidateQueries({
-        queryKey: chapterQueryKey("current", activeChapterId ?? null),
-      });
-    },
+    onSuccess: invalidate,
   });
 }
 
@@ -196,16 +203,6 @@ export interface ChapterLogoUpload {
   contentType: string;
 }
 
-function useInvalidateCurrentChapter() {
-  const queryClient = useQueryClient();
-  const activeChapterId = useActiveChapterId();
-  return () => {
-    queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-    queryClient.invalidateQueries({
-      queryKey: chapterQueryKey("current", activeChapterId ?? null),
-    });
-  };
-}
 
 /**
  * Upload or replace the active chapter's logo (#2591): mint a signed URL, PUT

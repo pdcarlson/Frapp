@@ -96,20 +96,12 @@ export function ChapterNavHeader({
     const parsed = CurrentChapterPayloadSchema.safeParse(chapterData);
     if (!parsed.success) return null;
     const payload = parsed.data;
-    const mark = resolveChapterMark({
-      logoUrl: chapterData.logo_url,
-      branding: payload.branding,
-      name: payload.name,
-    });
-    // The text the tile shows if a logo fails to load: the same precedence
-    // with the logo taken out.
-    const textMark = resolveChapterMark({
-      branding: payload.branding,
-      name: payload.name,
-    });
     return {
-      mark,
-      fallbackText: textMark.kind === "text" ? textMark.text : "--",
+      mark: resolveChapterMark({
+        logoUrl: chapterData.logo_url,
+        branding: payload.branding,
+        name: payload.name,
+      }),
       name: payload.name,
     };
   }, [chapterData]);
@@ -231,7 +223,7 @@ export function ChapterNavHeader({
 
   const placeholder = chapterFailed ? "!" : "--";
   const mark: ChapterMark = identity?.mark ?? {
-    kind: "text",
+    logoUrl: null,
     text: placeholder,
     source: "initials",
   };
@@ -255,10 +247,7 @@ export function ChapterNavHeader({
             className,
           )}
         >
-          <CrestTile
-            mark={mark}
-            fallbackText={identity?.fallbackText ?? placeholder}
-          />
+          <CrestTile mark={mark} />
           {collapsed ? null : (
             <>
               <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">

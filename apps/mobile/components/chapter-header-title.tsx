@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { StyleProp, TextStyle } from "react-native";
 import { Animated, Image, StyleSheet, Text, View } from "react-native";
 import { signetDarkTokens, type SignetTokens } from "@repo/theme/signet";
@@ -49,16 +49,23 @@ export function ChapterHeaderTitle({
   const { logoUrl, chapterName, textMark, accent } = useChapterBranding();
   const { tokens } = useFrappTheme();
   const markStyles = useMemo(() => createMarkStyles(tokens), [tokens]);
+  // A logo that fails to load falls back to the text mark, not an empty slot.
+  // Replacing a logo deletes the old object (#2592), so a member holding the
+  // chapter read from before the replace has a signed URL to nothing until
+  // the query refetches.
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
+  const showLogo = !!logoUrl && logoUrl !== failedLogoUrl;
 
   const title = label ?? chapterName ?? "Frapp";
 
   return (
     <View style={styles.row}>
-      {logoUrl ? (
+      {showLogo ? (
         <Image
           source={{ uri: logoUrl }}
           style={styles.logo}
           resizeMode="contain"
+          onError={() => setFailedLogoUrl(logoUrl)}
           // The crest repeats the chapter name that renders next to it, so
           // announcing it again would just make screen readers say it twice.
           accessibilityElementsHidden

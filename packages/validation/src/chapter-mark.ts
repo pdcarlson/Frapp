@@ -35,13 +35,17 @@ export type ChapterMarkBranding =
 
 export type ChapterTextMarkSource = "short_name" | "greek_letters";
 
-export type ChapterMark =
-  | { kind: "logo"; url: string }
-  | {
-      kind: "text";
-      text: string;
-      source: ChapterTextMarkSource | "initials";
-    };
+/**
+ * The resolved mark. `logoUrl` wins when set; `text` is always there, both for
+ * a chapter with no logo and as what a surface falls back to when the logo
+ * fails to load (a signed URL that expired, an object replaced since the read).
+ */
+export type ChapterMark = {
+  logoUrl: string | null;
+  text: string;
+  /** Which step produced `text`. */
+  source: ChapterTextMarkSource | "initials";
+};
 
 function nonEmpty(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -60,9 +64,9 @@ export function greekLettersShown(branding: ChapterMarkBranding): boolean {
 
 /**
  * The chapter's Greek letters, or null when it has none or has turned them off.
- * Every surface that would print the letters goes through this, never through
- * `branding.greek_letters` directly, which is what makes the opt-out hold
- * everywhere.
+ * `chapterTextMark` reads the letters only through this, and every surface that
+ * shows the mark reads it through `chapterTextMark` or `resolveChapterMark`,
+ * which is what makes the opt-out hold everywhere.
  */
 export function displayedGreekLetters(
   branding: ChapterMarkBranding,
@@ -95,10 +99,14 @@ export function chapterInitials(name: string | null | undefined): string {
   const trimmed = name?.trim() ?? "";
   if (!trimmed) return "--";
   const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  // By code point (`Array.from`), not UTF-16 unit: indexing units splits an
+  // emoji or a math-alphanumeric letter and renders a lone surrogate as �.
+  if (parts.length === 1) {
+    return Array.from(parts[0]!).slice(0, 2).join("").toUpperCase();
+  }
   return parts
     .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
+    .map((part) => Array.from(part)[0]!.toUpperCase())
     .join("");
 }
 
@@ -109,8 +117,9 @@ export function resolveChapterMark(input: {
   name: string | null | undefined;
 }): ChapterMark {
   const logoUrl = nonEmpty(input.logoUrl);
-  if (logoUrl) return { kind: "logo", url: logoUrl };
-  const text = chapterTextMark(input.branding);
-  if (text) return { kind: "text", ...text };
-  return { kind: "text", text: chapterInitials(input.name), source: "initials" };
+  const text = chapterTextMark(input.branding) ?? {
+    text: chapterInitials(input.name),
+    source: "initials" as const,
+  };
+  return { logoUrl, ...text };
 }

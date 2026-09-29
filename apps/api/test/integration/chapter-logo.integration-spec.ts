@@ -124,18 +124,38 @@ describeIntegration('Chapter logo replacement against live storage', () => {
     expect(await listed()).toEqual([next]);
   });
 
-  it('sweeps an upload that was PUT but never confirmed', async () => {
-    const abandoned = await upload();
-    const kept = await upload();
+  it('leaves a fresh unconfirmed upload for its own confirm', async () => {
+    // Another officer's upload, PUT but not yet confirmed. Deleting it would
+    // fail their confirm with a 400 and, raced, leave the chapter with no logo.
+    const theirs = await upload();
+    const mine = await upload();
 
-    await service.confirmLogoUpload(chapterId, kept, 'user-1');
+    await service.confirmLogoUpload(chapterId, mine, 'user-1');
+    expect(await listed()).toEqual([mine, theirs].sort());
 
-    expect(await listed()).toEqual([kept]);
-    expect(await listed()).not.toContain(abandoned);
+    // Their confirm still works, and removes the logo it replaced.
+    await service.confirmLogoUpload(chapterId, theirs, 'user-2');
+    expect(row.logo_path).toBe(theirs);
+    expect(await listed()).toEqual([theirs]);
+  });
+
+  it('leaves the chapter on an existing object when two confirms race', async () => {
+    const a = await upload();
+    const b = await upload();
+
+    await Promise.all([
+      service.confirmLogoUpload(chapterId, a, 'user-1'),
+      service.confirmLogoUpload(chapterId, b, 'user-2'),
+    ]);
+
+    // Whichever landed last is the logo, and its object is still there.
+    expect([a, b]).toContain(row.logo_path);
+    expect(await listed()).toContain(row.logo_path);
   });
 
   it('refuses a confirm for a minted key nothing was uploaded to', async () => {
     const current = row.logo_path!;
+    const before = await listed();
     const { storagePath } = await service.requestLogoUploadUrl(
       chapterId,
       'crest.png',
@@ -146,6 +166,6 @@ describeIntegration('Chapter logo replacement against live storage', () => {
       service.confirmLogoUpload(chapterId, storagePath, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(row.logo_path).toBe(current);
-    expect(await listed()).toEqual([current]);
+    expect(await listed()).toEqual(before);
   });
 });

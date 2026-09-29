@@ -85,10 +85,9 @@ describe("chapter logo hooks", () => {
     expect(post).toHaveBeenNthCalledWith(2, "/v1/chapters/current/logo", {
       body: { storage_path: STORAGE_PATH },
     });
-    // The shell repaints from the current-chapter query.
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: ["chapters", "current", CHAPTER_ID],
-    });
+    // The shell repaints from the current-chapter query, which the
+    // `["chapters"]` prefix covers.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["chapters"] });
   });
 
   it("never confirms when the PUT is refused, so the old logo stays", async () => {
@@ -125,8 +124,9 @@ describe("chapter logo hooks", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("removes the logo through the DELETE route", async () => {
+  it("removes the logo through the DELETE route and repaints the shell", async () => {
     const del = vi.fn(async () => ({ data: { id: CHAPTER_ID }, error: null }));
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useRemoveChapterLogo(), {
       wrapper: wrapper({ POST: vi.fn(), DELETE: del }),
     });
@@ -134,5 +134,19 @@ describe("chapter logo hooks", () => {
     await act(() => result.current.mutateAsync());
 
     expect(del).toHaveBeenCalledWith("/v1/chapters/current/logo");
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["chapters"] });
+  });
+
+  it("repaints nothing when the removal is refused", async () => {
+    const del = vi.fn(async () => ({ data: null, error: { message: "403" } }));
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useRemoveChapterLogo(), {
+      wrapper: wrapper({ POST: vi.fn(), DELETE: del }),
+    });
+
+    await expect(act(() => result.current.mutateAsync())).rejects.toEqual({
+      message: "403",
+    });
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });

@@ -23,16 +23,10 @@ import { cn } from "@/lib/utils";
  * fails to load (a signed URL that expired under a long session) falls back
  * to the text mark rather than a broken-image glyph.
  */
-export function CrestTile({
-  mark,
-  fallbackText,
-}: {
-  mark: ChapterMark;
-  /** What the tile shows if the logo fails to load. */
-  fallbackText: string;
-}) {
+export function CrestTile({ mark }: { mark: ChapterMark }) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (mark.kind === "logo" && failedUrl !== mark.url) {
+  if (mark.logoUrl && failedUrl !== mark.logoUrl) {
+    const url = mark.logoUrl;
     return (
       <span
         aria-hidden="true"
@@ -43,16 +37,15 @@ export function CrestTile({
             under a key that expires. `message-attachments.tsx` does the same. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={mark.url}
+          src={url}
           alt=""
           data-testid="chapter-mark-logo"
           className="h-full w-full object-contain"
-          onError={() => setFailedUrl(mark.url)}
+          onError={() => setFailedUrl(url)}
         />
       </span>
     );
   }
-  const text = mark.kind === "text" ? mark.text : fallbackText;
   return (
     <span
       aria-hidden="true"
@@ -61,12 +54,12 @@ export function CrestTile({
         "grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-[8px] border border-accent-border bg-accent-subtle font-bold text-accent-text",
         // A short name can run to six characters (CHAPTER_SHORT_NAME_MAX_LENGTH);
         // past four, the tile's 9.5px type overflows 28px, so it steps down.
-        text.length > 4
+        mark.text.length > 4
           ? "text-[7.5px] tracking-normal"
           : "text-[9.5px] tracking-[0.06em]",
       )}
     >
-      {text}
+      {mark.text}
     </span>
   );
 }

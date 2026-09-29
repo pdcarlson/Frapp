@@ -6,8 +6,7 @@ import {
   greekLettersShown,
   resolveChapterMark,
 } from "./chapter-mark";
-import { ChapterBrandingSchema } from "./index";
-import { CHAPTER_SHORT_NAME_MAX_LENGTH } from "./field-limits";
+import { ChapterBrandingSchema, CurrentChapterPayloadSchema } from "./index";
 
 describe("resolveChapterMark (#2876)", () => {
   const everything = {
@@ -22,13 +21,18 @@ describe("resolveChapterMark (#2876)", () => {
         branding: everything,
         name: "Tau Nu",
       }),
-    ).toEqual({ kind: "logo", url: "https://storage.example/logo.png" });
+    ).toEqual({
+      logoUrl: "https://storage.example/logo.png",
+      // Still resolved: it is what shows if the logo fails to load.
+      text: "FIJI",
+      source: "short_name",
+    });
   });
 
   it("uses the short name before Greek letters", () => {
     expect(
       resolveChapterMark({ logoUrl: null, branding: everything, name: "Tau Nu" }),
-    ).toEqual({ kind: "text", text: "FIJI", source: "short_name" });
+    ).toEqual({ logoUrl: null, text: "FIJI", source: "short_name" });
   });
 
   it("uses Greek letters when there is no short name", () => {
@@ -37,7 +41,7 @@ describe("resolveChapterMark (#2876)", () => {
         branding: { greek_letters: "ΣΦΕ" },
         name: "California Eta",
       }),
-    ).toEqual({ kind: "text", text: "ΣΦΕ", source: "greek_letters" });
+    ).toEqual({ logoUrl: null, text: "ΣΦΕ", source: "greek_letters" });
   });
 
   it("skips Greek letters for a chapter that turned them off", () => {
@@ -48,17 +52,17 @@ describe("resolveChapterMark (#2876)", () => {
         branding: { greek_letters: "ΦΓΔ", show_greek_letters: false },
         name: "Tau Nu",
       }),
-    ).toEqual({ kind: "text", text: "TN", source: "initials" });
+    ).toEqual({ logoUrl: null, text: "TN", source: "initials" });
   });
 
   it("falls back to initials when nothing is set", () => {
     expect(resolveChapterMark({ branding: {}, name: "Alpha" })).toEqual({
-      kind: "text",
+      logoUrl: null,
       text: "AL",
       source: "initials",
     });
     expect(resolveChapterMark({ branding: null, name: "" })).toEqual({
-      kind: "text",
+      logoUrl: null,
       text: "--",
       source: "initials",
     });
@@ -71,7 +75,7 @@ describe("resolveChapterMark (#2876)", () => {
         branding: { short_name: "   ", greek_letters: 42 },
         name: "Beta Gamma",
       }),
-    ).toEqual({ kind: "text", text: "BG", source: "initials" });
+    ).toEqual({ logoUrl: null, text: "BG", source: "initials" });
   });
 
   it("trims what it shows", () => {
@@ -111,21 +115,30 @@ describe("chapterInitials", () => {
     expect(chapterInitials("Sigma Phi Epsilon")).toBe("SP");
     expect(chapterInitials("Alpha")).toBe("AL");
   });
+
+  it("never splits a character outside the BMP into a lone surrogate", () => {
+    expect(chapterInitials("😀 Chapter")).toBe("😀C");
+    expect(chapterInitials("a😀")).toBe("A😀");
+    expect(chapterInitials("𝚽 Gamma")).toBe("𝚽G");
+  });
 });
 
 describe("ChapterBrandingSchema short_name", () => {
-  it("accepts a short name up to the cap, and an empty string to clear it", () => {
-    expect(ChapterBrandingSchema.safeParse({ short_name: "FIJI" }).success).toBe(
-      true,
-    );
+  it("parses any stored short name, since the DTO owns the cap", () => {
+    // class-validator counts this as 4 (it drops U+FE0F), so the API stores
+    // it; zod would count 8. A capped read schema would fail the whole chapter
+    // payload and blank the nav for every member.
+    expect(
+      CurrentChapterPayloadSchema.safeParse({
+        name: "Tau Nu",
+        university: "RPI",
+        subscription_status: "active",
+        branding: { short_name: "❤️❤️❤️❤️" },
+      }).success,
+    ).toBe(true);
     expect(ChapterBrandingSchema.safeParse({ short_name: "" }).success).toBe(
       true,
     );
-    expect(
-      ChapterBrandingSchema.safeParse({
-        short_name: "X".repeat(CHAPTER_SHORT_NAME_MAX_LENGTH + 1),
-      }).success,
-    ).toBe(false);
   });
 
   it("keeps show_greek_letters on read", () => {

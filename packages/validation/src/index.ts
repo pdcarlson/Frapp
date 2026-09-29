@@ -93,7 +93,15 @@ export const ChapterBrandingSchema = z
     // The chapter mark's text options (#2876); precedence is `chapter-mark.ts`.
     // An empty string is how Settings clears a short name, since the config
     // PATCH deep-merges and an omitted key keeps its stored value.
-    short_name: z.string().max(CHAPTER_SHORT_NAME_MAX_LENGTH).optional(),
+    //
+    // No `.max()` here, deliberately. This schema also parses the chapter the
+    // API serves (`CurrentChapterPayloadSchema`), where one failed field fails
+    // the whole parse and blanks the nav and Settings for every member. The
+    // cap (`CHAPTER_SHORT_NAME_MAX_LENGTH`) is enforced by the DTO, whose
+    // class-validator count differs from zod's: it drops variation selectors,
+    // so "❤️❤️❤️❤️" is 4 to the API and 8 to zod. A read must accept what the
+    // API accepted; the inputs' `maxLength` is the client-side cap.
+    short_name: z.string().optional(),
     show_greek_letters: z.boolean().optional(),
     designation: z.string().optional(),
     school_short: z.string().optional(),

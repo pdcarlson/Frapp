@@ -1,5 +1,17 @@
 import type { ChapterLogoUpload } from "@repo/hooks";
-import { MAX_UPLOAD_LABEL, inspectUploadFile } from "@repo/validation";
+import {
+  MAX_UPLOAD_LABEL,
+  acceptAttribute,
+  inspectUploadFile,
+} from "@repo/validation";
+
+/** ".jpg, .jpeg, .png, .gif or .webp", read off the kind, not restated. */
+const IMAGE_EXTENSIONS = (() => {
+  const list = acceptAttribute("image").split(",");
+  return list.length > 1
+    ? `${list.slice(0, -1).join(", ")} or ${list[list.length - 1]}`
+    : list.join("");
+})();
 
 /**
  * The file check both logo pickers run (Settings → Chapter and the onboarding
@@ -21,7 +33,7 @@ export function inspectLogoFile(
       message:
         inspected.reason === "size"
           ? `That file is too large. Logos can be up to ${MAX_UPLOAD_LABEL}.`
-          : "Choose a JPEG, PNG, GIF or WebP image.",
+          : `Choose an image file: ${IMAGE_EXTENSIONS}.`,
     };
   }
   return {

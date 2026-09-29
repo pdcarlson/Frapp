@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
@@ -40,6 +40,7 @@ import {
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
   EmailInviteSchema,
+  acceptAttribute,
   dedupeEmails,
   resolveChapterMark,
 } from "@repo/validation";
@@ -1021,6 +1022,10 @@ function ChapterMarkFields({
   onLogoChange: (next: ChapterLogoUpload | null) => void;
 }) {
   const [logoError, setLogoError] = useState<string | null>(null);
+  // Cleared with the queued logo: an input still holding the file would show
+  // its name while nothing is queued, and re-choosing the same file would fire
+  // no change event, so the chapter would be created without it.
+  const logoInput = useRef<HTMLInputElement>(null);
   // The preview's object URL is created and revoked by one effect, so each
   // URL is released exactly when the file it points at is replaced. A memo
   // paired with a cleanup effect would revoke the URL under Strict Mode's
@@ -1042,16 +1047,12 @@ function ChapterMarkFields({
     show_greek_letters: identity.showGreekLetters,
   };
   const mark = resolveChapterMark({ logoUrl, branding, name: identity.name });
-  const textMark = resolveChapterMark({ branding, name: identity.name });
 
   return (
     <fieldset className="space-y-3 rounded-lg border border-border p-3 sm:col-span-2">
       <legend className="px-1 text-sm font-medium">Chapter mark</legend>
       <div className="flex items-center gap-3">
-        <CrestTile
-          mark={mark}
-          fallbackText={textMark.kind === "text" ? textMark.text : "--"}
-        />
+        <CrestTile mark={mark} />
         <p className="text-xs text-muted-foreground">
           How your chapter shows in the nav: your logo, else your short name,
           else your Greek letters.
@@ -1072,9 +1073,10 @@ function ChapterMarkFields({
           <Label htmlFor="wiz-logo">Logo (optional)</Label>
           <div className="flex items-center gap-2">
             <Input
+              ref={logoInput}
               id="wiz-logo"
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
+              accept={acceptAttribute("image")}
               aria-describedby={logoError ? "wiz-logo-error" : undefined}
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -1094,7 +1096,10 @@ function ChapterMarkFields({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => onLogoChange(null)}
+                onClick={() => {
+                  if (logoInput.current) logoInput.current.value = "";
+                  onLogoChange(null);
+                }}
               >
                 Clear
               </Button>

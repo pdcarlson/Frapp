@@ -5,6 +5,8 @@ import { Loader2 } from "lucide-react";
 import type { ChapterLogoUpload } from "@repo/hooks";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
+  acceptAttribute,
+  greekLettersShown,
   resolveChapterMark,
   type PatchChapterConfig,
 } from "@repo/validation";
@@ -80,18 +82,20 @@ export function SettingsChapterMarkCard({
   profileHint,
 }: Props) {
   const [shortName, setShortName] = useState(branding.short_name ?? "");
-  const [showLetters, setShowLetters] = useState(
-    branding.show_greek_letters !== false,
-  );
+  const [showLetters, setShowLetters] = useState(greekLettersShown(branding));
   const [logoError, setLogoError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const logoErrorId = useId();
 
+  // Keyed on the stored values, not the `branding` object, which the page
+  // rebuilds on every render: an object dependency re-seeded on any re-render,
+  // a logo upload starting included, and wiped unsaved edits.
   /* eslint-disable react-hooks/set-state-in-effect -- re-seed the drafts from the chapter config query */
   useEffect(() => {
     setShortName(branding.short_name ?? "");
-    setShowLetters(branding.show_greek_letters !== false);
-  }, [branding]);
+    setShowLetters(greekLettersShown(branding));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the two stored values are the dependency; see above
+  }, [branding.short_name, branding.show_greek_letters]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const draft = {
@@ -100,7 +104,6 @@ export function SettingsChapterMarkCard({
     show_greek_letters: showLetters,
   };
   const mark = resolveChapterMark({ logoUrl, branding: draft, name });
-  const textMark = resolveChapterMark({ branding: draft, name });
 
   async function pickLogo(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -143,10 +146,7 @@ export function SettingsChapterMarkCard({
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-center gap-3">
-          <CrestTile
-            mark={mark}
-            fallbackText={textMark.kind === "text" ? textMark.text : "--"}
-          />
+          <CrestTile mark={mark} />
           <span className="text-sm font-bold text-foreground">{name}</span>
         </div>
 
@@ -157,7 +157,7 @@ export function SettingsChapterMarkCard({
               ref={fileInput}
               id="chapter-logo"
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
+              accept={acceptAttribute("image")}
               className="sr-only"
               disabled={logoDisabled}
               aria-describedby={logoError ? logoErrorId : undefined}

@@ -118,24 +118,41 @@ export function SettingsOrgTab({
 
   // Re-sync drafts whenever the server config changes (e.g. after an archetype
   // switch resets vocabulary, or another officer edits the chapter).
+  //
+  // Keyed on the stored values, never on the objects that carry them: the page
+  // rebuilds `profile`, `branding` and `vocabulary` on every render, so an
+  // object dependency re-ran these on any unrelated re-render (a logo upload
+  // starting, another card saving) and threw away whatever the officer had
+  // typed but not saved.
+  const { name: storedName, university: storedUniversity, donation_url: storedDonation } =
+    profile;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed profile draft from the chapter config query
-    setProfileDraft(profile);
-  }, [profile]);
+    setProfileDraft({
+      name: storedName,
+      university: storedUniversity,
+      donation_url: storedDonation,
+    });
+  }, [storedName, storedUniversity, storedDonation]);
   /* eslint-disable react-hooks/set-state-in-effect -- re-seed branding fields from the chapter config query */
   useEffect(() => {
     setGreekLetters(branding.greek_letters ?? "");
     setDesignation(branding.designation ?? "");
     setSchoolShort(branding.school_short ?? "");
     setFoundedYear(branding.founded_at != null ? String(branding.founded_at) : "");
-  }, [branding]);
+  }, [
+    branding.greek_letters,
+    branding.designation,
+    branding.school_short,
+    branding.founded_at,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
   /* eslint-disable react-hooks/set-state-in-effect -- re-seed vocabulary drafts from the chapter config query */
   useEffect(() => {
     setRecruitment(vocabulary.recruitment ?? "");
     setPledge(vocabulary.pledge ?? "");
     setCohort(vocabulary.class ?? "");
-  }, [vocabulary]);
+  }, [vocabulary.recruitment, vocabulary.pledge, vocabulary.class]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const foundedTrimmed = foundedYear.trim();

@@ -14,7 +14,9 @@ import { describe, expect, it } from "vitest";
  *
  * A file is matched on the field name in either spelling, comments included:
  * a docblock that names the field is cheaper to reword than to reason about.
- * Specs, generated contract files and build output are skipped.
+ * Specs, generated contract files and build output are skipped. Because the
+ * list is per file, a second check looks inside every file, the allowed ones
+ * included, for the field printed into JSX or a template string.
  */
 const REPO_ROOT = join(__dirname, "..", "..", "..");
 const SCANNED = ["apps/web", "apps/mobile", "apps/api/src", "apps/landing", "packages"];
@@ -78,6 +80,25 @@ describe("greek_letters readers (#2876)", () => {
     // through `resolveChapterMark` / `chapterTextMark` instead; if it really is
     // an editor, add it to ALLOWED with the reason.
     expect(unexpected).toEqual([]);
+  });
+
+  it("never prints the field, even in a file allowed to touch it", () => {
+    // ALLOWED is per file, so on its own it can't see a render added inside
+    // an editor (`<p>{identity.greekLetters}</p>` in the wizard). An editor
+    // binds the field to an input (`value={…}`); printing it means putting it
+    // in JSX children or a template string, which is what this catches.
+    const PRINTED = [
+      // JSX child: `>{…greek_letters…}` or `}{…greekLetters…}`, one
+      // expression on one line. Not `=> {`, which opens a function body.
+      /(?:(?<!=)>|\})\s*\{[^{};=\n]*\b(?:greek_letters|greekLetters)\b[^{};\n]*\}/,
+      // Template interpolation: `${…greek_letters…}`
+      /\$\{[^}\n]*\b(?:greek_letters|greekLetters)\b[^}\n]*\}/,
+    ];
+    const printers = readers.filter((path) => {
+      const source = readFileSync(join(REPO_ROOT, path), "utf8");
+      return PRINTED.some((pattern) => pattern.test(source));
+    });
+    expect(printers).toEqual([]);
   });
 
   it("lists no file that no longer touches the field", () => {

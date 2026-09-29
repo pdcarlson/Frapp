@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
+import { MAX_UPLOAD_LABEL } from "@repo/validation";
 import { SettingsOrgTab } from "./settings-org-tab";
 
 const baseMark = {
@@ -284,8 +285,83 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     );
     expect(onUploadLogo).not.toHaveBeenCalled();
     expect(
-      screen.getByText("Choose a JPEG, PNG, GIF or WebP image."),
+      screen.getByText("Choose an image file: .jpg, .jpeg, .png, .gif or .webp."),
     ).toBeInTheDocument();
+  });
+
+  it("refuses an oversized file with the shared size label, keeping other drafts", async () => {
+    const user = userEvent.setup();
+    const onUploadLogo = vi.fn(async () => {});
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        branding={{ designation: "Tau Nu" }}
+        mark={{ ...baseMark, onUploadLogo }}
+      />,
+    );
+    await user.type(screen.getByLabelText(/short name/i), "FIJI");
+    await user.clear(screen.getByLabelText(/chapter designation/i));
+    await user.type(screen.getByLabelText(/chapter designation/i), "Tau Nu II");
+    const huge = new File(["x"], "crest.png", { type: "image/png" });
+    Object.defineProperty(huge, "size", { value: 26 * 1024 * 1024 });
+    await user.upload(screen.getByLabelText(/^logo$/i), huge);
+
+    expect(onUploadLogo).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(`That file is too large. Logos can be up to ${MAX_UPLOAD_LABEL}.`),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/short name/i)).toHaveValue("FIJI");
+    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue("Tau Nu II");
+  });
+
+  it("keeps unsaved drafts when the page re-renders with the same stored values", async () => {
+    // The page rebuilds `branding` and `profile` on every render. A logo
+    // upload starting re-renders it; that must not throw away typed edits.
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        branding={{ greek_letters: "ΦΓΔ" }}
+      />,
+    );
+    await user.type(screen.getByLabelText(/short name/i), "FIJI");
+    await user.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    await user.type(screen.getByLabelText(/chapter name/i), " II");
+
+    rerender(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        profile={{ ...baseProps.profile }}
+        branding={{ greek_letters: "ΦΓΔ" }}
+        mark={{ ...baseMark, logoPending: true }}
+      />,
+    );
+
+    expect(screen.getByLabelText(/short name/i)).toHaveValue("FIJI");
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByLabelText(/chapter name/i)).toHaveValue("Test Chapter II");
+  });
+
+  it("re-seeds the drafts when the stored values really change", () => {
+    const { rerender } = render(
+      <SettingsOrgTab archetypeKey="ifc" {...baseProps} branding={{}} />,
+    );
+    rerender(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        branding={{ short_name: "FIJI", show_greek_letters: false }}
+      />,
+    );
+    expect(screen.getByLabelText(/short name/i)).toHaveValue("FIJI");
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).toHaveAttribute("aria-checked", "false");
   });
 
   it("offers replace and remove once a logo is set", async () => {
