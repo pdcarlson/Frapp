@@ -47,11 +47,6 @@ export interface IDiscordAuthorLinkRepository {
     userId: string,
   ): Promise<DiscordAuthorLink | null>;
 
-  /** Every link in the chapter, as the Discord id → member map. */
-  listByChapter(
-    chapterId: string,
-  ): Promise<Pick<DiscordAuthorLink, 'discord_user_id' | 'user_id'>[]>;
-
   /**
    * Link the account and attach the chapter's imported rows by that author, in
    * one transaction (`link_discord_author`). Linking a different account

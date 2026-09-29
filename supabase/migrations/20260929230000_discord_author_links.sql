@@ -53,7 +53,7 @@ create table if not exists public.discord_author_links (
   discord_user_id  text not null,
   -- The member it attaches to. CASCADE is belt-and-braces: `users` rows are
   -- tombstoned rather than deleted, and `anonymize_user` deletes the link
-  -- itself (section 5).
+  -- itself (section 6).
   user_id          uuid not null references public.users(id) on delete cascade,
   -- What Discord called the account when it was linked, so the profile can say
   -- "Linked as jkslayer". Display only; nothing authorizes on it.
@@ -183,6 +183,51 @@ create trigger trg_chat_messages_attach_linked_author
 -- `idx_chat_messages_author_external` (`20260823120000`) serves the author
 -- predicate; this is its first reader.
 
+-- Detach one linked account's rows, and the reports on them. Shared by unlink
+-- and by a relink to a different account, so the two cannot drift. Returns
+-- how many messages went back to their Discord name. Callers hold the lock.
+--
+-- `chat_messages_author_present` needs `author_name` on a row with no sender.
+-- The importer always writes one ('Unknown Discord user' at worst), and only
+-- account deletion clears it, which deletes the link first.
+create or replace function public.discord_author_detach(
+  p_chapter_id uuid,
+  p_user_id uuid,
+  p_discord_user_id text
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_count integer;
+begin
+  -- Reports first: they are found through the rows still attributed to the
+  -- member. Only reports that name this member go back to naming nobody.
+  update chat_message_reports r
+     set reported_sender_id = null
+    from chat_messages m
+   where r.message_id = m.id
+     and r.chapter_id = p_chapter_id
+     and r.reported_sender_id = p_user_id
+     and m.kind = 'imported'
+     and m.sender_id = p_user_id
+     and m.author_external_id = p_discord_user_id;
+
+  update chat_messages m
+     set sender_id = null
+   where m.kind = 'imported'
+     and m.sender_id = p_user_id
+     and m.author_external_id = p_discord_user_id
+     and m.channel_id in (
+       select c.id from chat_channels c where c.chapter_id = p_chapter_id
+     );
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
 -- Returns the link as stored plus how many messages it attached.
 -- Raises 23505 (unique_violation) when the Discord account is already linked
 -- to a different member of this chapter, and 42501 (insufficient_privilege)
@@ -241,14 +286,7 @@ begin
     from discord_author_links l
    where l.chapter_id = p_chapter_id and l.user_id = p_user_id;
   if found and v_existing.discord_user_id <> p_discord_user_id then
-    update chat_messages m
-       set sender_id = null
-     where m.kind = 'imported'
-       and m.sender_id = p_user_id
-       and m.author_external_id = v_existing.discord_user_id
-       and m.channel_id in (
-         select c.id from chat_channels c where c.chapter_id = p_chapter_id
-       );
+    perform discord_author_detach(p_chapter_id, p_user_id, v_existing.discord_user_id);
     delete from discord_author_links l where l.id = v_existing.id;
   end if;
 
@@ -272,6 +310,21 @@ begin
        select c.id from chat_channels c where c.chapter_id = p_chapter_id
      );
   get diagnostics v_count = row_count;
+
+  -- Reports snapshot their reported sender when filed, and the officer queue
+  -- hides reports about the viewer by that snapshot (`notAbout` in
+  -- `SupabaseChatMessageReportRepository`). A report filed before the link
+  -- named no sender, so without this an officer who links would keep seeing,
+  -- and could dismiss, reports about their own words.
+  update chat_message_reports r
+     set reported_sender_id = p_user_id
+    from chat_messages m
+   where r.message_id = m.id
+     and r.chapter_id = p_chapter_id
+     and r.reported_sender_id is null
+     and m.kind = 'imported'
+     and m.sender_id = p_user_id
+     and m.author_external_id = p_discord_user_id;
 
   return query select v_link.discord_user_id, v_link.discord_username, v_link.linked_at, v_count;
 end;
@@ -302,18 +355,7 @@ begin
     return null;
   end if;
 
-  -- `chat_messages_author_present` needs `author_name` on a row with no
-  -- sender. The importer always writes one ('Unknown Discord user' at worst),
-  -- and only account deletion clears it, which deletes the link first.
-  update chat_messages m
-     set sender_id = null
-   where m.kind = 'imported'
-     and m.sender_id = p_user_id
-     and m.author_external_id = v_link.discord_user_id
-     and m.channel_id in (
-       select c.id from chat_channels c where c.chapter_id = p_chapter_id
-     );
-  get diagnostics v_count = row_count;
+  v_count := discord_author_detach(p_chapter_id, p_user_id, v_link.discord_user_id);
 
   delete from discord_author_links l where l.id = v_link.id;
   return v_count;
@@ -334,7 +376,8 @@ $$;
 -- The rows stay (their sender is the tombstone, exactly like their live
 -- messages), which is why the snapshot can go: nothing needs it to satisfy
 -- `chat_messages_author_present` once `sender_id` is set. Moderation reports
--- keep their own snapshot, per data-retention.md.
+-- keep the reported words, per data-retention.md, but lose the Discord name
+-- for the same reason.
 --
 -- Redefined in full from `20260915210100_anonymize_user_purge_chat_blocks.sql`;
 -- the only change is the block marked #2878.
@@ -390,6 +433,31 @@ begin
   -- #2878: the Discord identity on imported rows attributed to this member.
   -- Unconditional (not under the rescan gate below): it is idempotent, and a
   -- retry after a link made before this migration must still reach it.
+  --
+  -- The link lock first, per chapter the member linked in, so an import batch
+  -- whose trigger already attached a row to them commits before the scrub
+  -- reads, and one that has not yet read the link finds it gone.
+  perform pg_advisory_xact_lock(discord_author_link_lock_key(l.chapter_id))
+     from (
+       select distinct chapter_id from discord_author_links
+        where user_id = p_user_id
+        order by chapter_id
+     ) l;
+
+  -- Reports on those rows keep the reported words (data-retention.md), but
+  -- not the Discord name: the officer queue falls back to it when the sender
+  -- is off the roster, and a deleted member always is.
+  update chat_message_reports r
+     set reported_author_name = null
+   where r.reported_author_name is not null
+     and (r.reported_sender_id = p_user_id
+       or exists (
+         select 1 from chat_messages m
+          where m.id = r.message_id
+            and m.kind = 'imported'
+            and m.sender_id = p_user_id
+       ));
+
   update chat_messages
      set author_name = null,
          author_avatar_path = null,
@@ -463,6 +531,7 @@ $$;
 -- attack the OAuth proof exists to stop.
 revoke execute on function public.link_discord_author(uuid, uuid, text, text) from public;
 revoke execute on function public.unlink_discord_author(uuid, uuid) from public;
+revoke execute on function public.discord_author_detach(uuid, uuid, text) from public;
 revoke execute on function public.chat_messages_attach_linked_author() from public;
 revoke execute on function public.discord_author_link_lock_key(uuid) from public;
 revoke execute on function anonymize_user(uuid, boolean) from public;
@@ -472,18 +541,21 @@ begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke execute on function public.link_discord_author(uuid, uuid, text, text) from anon;
     revoke execute on function public.unlink_discord_author(uuid, uuid) from anon;
+    revoke execute on function public.discord_author_detach(uuid, uuid, text) from anon;
     revoke execute on function public.discord_author_link_lock_key(uuid) from anon;
     revoke execute on function anonymize_user(uuid, boolean) from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke execute on function public.link_discord_author(uuid, uuid, text, text) from authenticated;
     revoke execute on function public.unlink_discord_author(uuid, uuid) from authenticated;
+    revoke execute on function public.discord_author_detach(uuid, uuid, text) from authenticated;
     revoke execute on function public.discord_author_link_lock_key(uuid) from authenticated;
     revoke execute on function anonymize_user(uuid, boolean) from authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     grant execute on function public.link_discord_author(uuid, uuid, text, text) to service_role;
     grant execute on function public.unlink_discord_author(uuid, uuid) to service_role;
+    grant execute on function public.discord_author_detach(uuid, uuid, text) to service_role;
     grant execute on function public.discord_author_link_lock_key(uuid) to service_role;
     grant execute on function anonymize_user(uuid, boolean) to service_role;
   end if;

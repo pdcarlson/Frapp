@@ -10,6 +10,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -20,7 +21,6 @@ import {
   ConfirmDiscordAuthorLinkDto,
   ConfirmDiscordAuthorLinkResponseDto,
   DiscordAuthorLinkDto,
-  DiscordAuthorLinkEntryDto,
   UnlinkDiscordAuthorResponseDto,
 } from '../dtos/discord-author-link.dto';
 
@@ -34,6 +34,12 @@ import {
  * officer route that links anyone (spec/behavior/chat/README.md § Imported
  * archive messages).
  *
+ * `@FreeTier()`, like the chat it attributes: a member can link or unlink in
+ * a chapter whose billing has lapsed for as long as they can still delete the
+ * same messages through `ChatController`. Not `@SubscriptionExempt()`, which
+ * is kept for billing recovery and member safety; account deletion, which
+ * removes the Discord identity outright, is never gated on billing.
+ *
  * The Discord callback is not here. Both Discord flows share
  * `GET /v1/discord/connect/callback`, the one URI registered in Discord's
  * Developer Portal, and it dispatches on the handshake's purpose.
@@ -43,6 +49,7 @@ import {
 @Controller('discord')
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
 export class DiscordAuthorLinkController {
   constructor(private readonly linkService: DiscordAuthorLinkService) {}
 
@@ -99,16 +106,5 @@ export class DiscordAuthorLinkController {
     @CurrentUser() user: { id: string },
   ) {
     return this.linkService.unlink(chapterId, user.id);
-  }
-
-  @Get('author-links')
-  @ApiOperation({
-    summary: 'Which Discord accounts members of this chapter have linked',
-    description:
-      'The Discord id → member map, so a Discord user mention in imported text can link to the member. This chapter only.',
-  })
-  @ApiOkResponse({ type: DiscordAuthorLinkEntryDto, isArray: true })
-  listLinks(@CurrentChapterId() chapterId: string) {
-    return this.linkService.listLinks(chapterId);
   }
 }

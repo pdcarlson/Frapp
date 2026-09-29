@@ -171,6 +171,14 @@ describe("DiscordHistoryCard (#2878)", () => {
     expect(state.confirm).not.toHaveBeenCalled();
   });
 
+  it("ignores an outcome code that only names an inherited property", async () => {
+    window.history.replaceState(null, "", "/profile?discord=constructor");
+    renderCard();
+
+    await waitFor(() => expect(window.location.search).toBe(""));
+    expect(state.toast).not.toHaveBeenCalled();
+  });
+
   it("reports a refused confirm", async () => {
     window.history.replaceState(
       null,

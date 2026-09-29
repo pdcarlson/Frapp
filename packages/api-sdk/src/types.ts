@@ -3082,26 +3082,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/discord/author-links": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Which Discord accounts members of this chapter have linked
-         * @description The Discord id → member map, so a Discord user mention in imported text can link to the member. This chapter only.
-         */
-        get: operations["DiscordAuthorLinkController_listLinks_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/client-policy": {
         parameters: {
             query?: never;
@@ -4764,12 +4744,6 @@ export interface components {
             unlinked: boolean;
             /** @description How many imported messages went back to their Discord name. Messages the caller deleted stay deleted. */
             messages_restored: number;
-        };
-        DiscordAuthorLinkEntryDto: {
-            /** @description A Discord user id (a snowflake, always a string) that a member of this chapter has linked. */
-            discord_user_id: string;
-            /** @description The member it is linked to (`users.id`). */
-            user_id: string;
         };
         ClientPolicyDto: {
             /** @description True when the build named in X-Client-Version is below this deployment's minimum for its platform. The app then shows a blocking update screen. False whenever the header is missing, malformed, or names an unknown platform, and whenever no minimum is set. */
@@ -9538,25 +9512,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfirmDiscordAuthorLinkResponseDto"];
-                };
-            };
-        };
-    };
-    DiscordAuthorLinkController_listLinks_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordAuthorLinkEntryDto"][];
                 };
             };
         };

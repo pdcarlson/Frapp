@@ -147,7 +147,9 @@ export class ChatReportService {
    * **The evidence is snapshotted here, from the row we just authorized.** Both
    * author columns are copied, not only `sender_id`: `chat_messages` enforces
    * `sender_id is not null or author_name is not null`, so a Discord-imported
-   * row names its author in `author_name` with a NULL `sender_id`. Mirroring
+   * row nobody has linked names its author in `author_name` with a NULL
+   * `sender_id` (a linked one carries both, and linking later updates the
+   * snapshot's sender, #2878). Mirroring
    * `sender_id` alone would snapshot nobody for exactly the rows the import
    * purge later hard-deletes, leaving an officer with content and no author.
    *

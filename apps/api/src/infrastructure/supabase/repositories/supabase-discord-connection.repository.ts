@@ -111,6 +111,16 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
     return data ?? null;
   }
 
+  async findStateReturnPath(id: string): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('discord_oauth_states')
+      .select('return_path')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.return_path ?? null;
+  }
+
   async attachPendingConnection(
     stateId: string,
     input: PendingDiscordConnectionInput,

@@ -44,7 +44,6 @@ describe('DiscordAuthorLinkService (#2878)', () => {
   let connections: { consumeAuthorLinkConfirmToken: jest.Mock };
   let links: {
     findByChapterAndUser: jest.Mock;
-    listByChapter: jest.Mock;
     link: jest.Mock;
     unlink: jest.Mock;
   };
@@ -62,7 +61,6 @@ describe('DiscordAuthorLinkService (#2878)', () => {
     };
     links = {
       findByChapterAndUser: jest.fn(async () => null),
-      listByChapter: jest.fn(async () => []),
       link: jest.fn(async () => ({
         discord_user_id: DISCORD_ID,
         discord_username: 'jkslayer',
@@ -217,10 +215,5 @@ describe('DiscordAuthorLinkService (#2878)', () => {
   it('begin delegates to the OAuth handshake for the caller and chapter', async () => {
     await service.begin(CHAPTER, USER);
     expect(oauth.beginAuthorLink).toHaveBeenCalledWith(CHAPTER, USER);
-  });
-
-  it('listLinks reads only the caller chapter', async () => {
-    await service.listLinks(CHAPTER);
-    expect(links.listByChapter).toHaveBeenCalledWith(CHAPTER);
   });
 });

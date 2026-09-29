@@ -34,39 +34,46 @@ const virtuosoProps = vi.hoisted(() => ({
 vi.mock("react-virtuoso", async () => {
   const React = await import("react");
   return {
-  Virtuoso: React.forwardRef(function Virtuoso({
-    data,
-    itemContent,
-    firstItemIndex,
-    followOutput,
-    atTopStateChange,
-    components,
-    context,
-  }: {
-    data: unknown[];
-    itemContent: (index: number, item: unknown) => React.ReactNode;
-    firstItemIndex?: number;
-    followOutput?: unknown;
-    atTopStateChange?: (atTop: boolean) => void;
-    components?: {
-      Header?: (props: { context?: unknown }) => React.ReactNode;
-    };
-    context?: unknown;
-  }, ref: React.Ref<unknown>) {
-    React.useImperativeHandle(ref, () => ({
-      scrollToIndex: virtuosoProps.scrollToIndex,
-    }));
-    virtuosoProps.current = { firstItemIndex, followOutput, atTopStateChange };
-    const Header = components?.Header;
-    return (
-      <div>
-        {Header ? <Header context={context} /> : null}
-        {data.map((item, index) => (
-          <div key={index}>{itemContent(index, item)}</div>
-        ))}
-      </div>
-    );
-  }),
+    Virtuoso: React.forwardRef(function Virtuoso(
+      {
+        data,
+        itemContent,
+        firstItemIndex,
+        followOutput,
+        atTopStateChange,
+        components,
+        context,
+      }: {
+        data: unknown[];
+        itemContent: (index: number, item: unknown) => React.ReactNode;
+        firstItemIndex?: number;
+        followOutput?: unknown;
+        atTopStateChange?: (atTop: boolean) => void;
+        components?: {
+          Header?: (props: { context?: unknown }) => React.ReactNode;
+        };
+        context?: unknown;
+      },
+      ref: React.Ref<unknown>,
+    ) {
+      React.useImperativeHandle(ref, () => ({
+        scrollToIndex: virtuosoProps.scrollToIndex,
+      }));
+      virtuosoProps.current = {
+        firstItemIndex,
+        followOutput,
+        atTopStateChange,
+      };
+      const Header = components?.Header;
+      return (
+        <div>
+          {Header ? <Header context={context} /> : null}
+          {data.map((item, index) => (
+            <div key={index}>{itemContent(index, item)}</div>
+          ))}
+        </div>
+      );
+    }),
   };
 });
 
@@ -77,7 +84,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
 });
 
-const { MessageTimeline } = await import("./message-timeline");
+const { MessageTimeline, importedAvatarUrl } =
+  await import("./message-timeline");
 type MessageTimelineHandle = import("./message-timeline").MessageTimelineHandle;
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -1145,5 +1153,48 @@ describe("MessageTimeline older history (#1571)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("importedAvatarUrl (#2878)", () => {
+  const signed = { "chapters/c/chat-archive/a.png": "https://signed/a.png" };
+
+  it("draws the Discord avatar for an author nobody has linked", () => {
+    expect(
+      importedAvatarUrl(
+        {
+          sender_id: null,
+          author_avatar_path: "chapters/c/chat-archive/a.png",
+        },
+        signed,
+      ),
+    ).toBe("https://signed/a.png");
+  });
+
+  it("never draws it on a linked row, which is the member's message", () => {
+    expect(
+      importedAvatarUrl(
+        {
+          sender_id: "user-jake",
+          author_avatar_path: "chapters/c/chat-archive/a.png",
+        },
+        signed,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("draws nothing without a path or before the URLs are signed", () => {
+    expect(
+      importedAvatarUrl({ sender_id: null, author_avatar_path: null }, signed),
+    ).toBeUndefined();
+    expect(
+      importedAvatarUrl(
+        {
+          sender_id: null,
+          author_avatar_path: "chapters/c/chat-archive/a.png",
+        },
+        undefined,
+      ),
+    ).toBeUndefined();
   });
 });

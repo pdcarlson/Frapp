@@ -7,7 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
-import { ChatService } from './chat.service';
+import { ChatService, tombstoneMetadata } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -2656,11 +2656,12 @@ describe('ChatService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
-    it('lets the linked sender delete their imported message', async () => {
+    it('lets the linked sender delete their imported message, keeping it purgeable with its import', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...baseMessage,
         kind: 'imported',
         author_name: 'jkslayer',
+        metadata: { discord_import_id: 'imp-1', attachment_count: 2 },
       });
 
       mockMessageRepo.update.mockResolvedValue({
@@ -2677,6 +2678,13 @@ describe('ChatService', () => {
         false,
       );
       expect(result.is_deleted).toBe(true);
+      // The import purge selects on `metadata->>discord_import_id`; wiping it
+      // would strand the tombstone when the import is deleted.
+      expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-1', {
+        content: '[message deleted]',
+        is_deleted: true,
+        metadata: { discord_import_id: 'imp-1' },
+      });
     });
 
     it('should reject editing deleted message', async () => {
@@ -4922,5 +4930,35 @@ describe('ChatService', () => {
         expect.objectContaining({ mentions: [] }),
       );
     });
+  });
+});
+
+describe('tombstoneMetadata (#2878)', () => {
+  it('keeps only the import id on an imported row', () => {
+    expect(
+      tombstoneMetadata({
+        kind: 'imported',
+        metadata: { discord_import_id: 'imp-1', attachment_count: 3 },
+      }),
+    ).toEqual({ discord_import_id: 'imp-1' });
+  });
+
+  it('wipes everything on any other row, even one carrying the key', () => {
+    expect(
+      tombstoneMetadata({
+        kind: 'text',
+        metadata: { discord_import_id: 'imp-1', poll: true },
+      }),
+    ).toEqual({});
+  });
+
+  it('keeps nothing when the imported row has no string import id', () => {
+    expect(tombstoneMetadata({ kind: 'imported', metadata: {} })).toEqual({});
+    expect(
+      tombstoneMetadata({
+        kind: 'imported',
+        metadata: { discord_import_id: 7 },
+      }),
+    ).toEqual({});
   });
 });

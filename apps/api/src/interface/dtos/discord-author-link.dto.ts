@@ -64,14 +64,3 @@ export class UnlinkDiscordAuthorResponseDto {
   })
   messages_restored: number;
 }
-
-export class DiscordAuthorLinkEntryDto {
-  @ApiProperty({
-    description:
-      'A Discord user id (a snowflake, always a string) that a member of this chapter has linked.',
-  })
-  discord_user_id: string;
-
-  @ApiProperty({ description: 'The member it is linked to (`users.id`).' })
-  user_id: string;
-}

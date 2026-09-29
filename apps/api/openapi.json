@@ -7631,37 +7631,6 @@
         ]
       }
     },
-    "/v1/discord/author-links": {
-      "get": {
-        "description": "The Discord id → member map, so a Discord user mention in imported text can link to the member. This chapter only.",
-        "operationId": "DiscordAuthorLinkController_listLinks_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DiscordAuthorLinkEntryDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Which Discord accounts members of this chapter have linked",
-        "tags": [
-          "Discord Author Links"
-        ]
-      }
-    },
     "/v1/client-policy": {
       "get": {
         "operationId": "ClientPolicyController_get_v1",
@@ -12412,23 +12381,6 @@
         "required": [
           "unlinked",
           "messages_restored"
-        ]
-      },
-      "DiscordAuthorLinkEntryDto": {
-        "type": "object",
-        "properties": {
-          "discord_user_id": {
-            "type": "string",
-            "description": "A Discord user id (a snowflake, always a string) that a member of this chapter has linked."
-          },
-          "user_id": {
-            "type": "string",
-            "description": "The member it is linked to (`users.id`)."
-          }
-        },
-        "required": [
-          "discord_user_id",
-          "user_id"
         ]
       },
       "ClientPolicyDto": {

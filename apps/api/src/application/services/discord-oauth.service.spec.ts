@@ -115,6 +115,7 @@ async function build(config: Record<string, string | undefined> = {}) {
       stateRow({ purpose: 'author_link', return_path: '/profile' }),
     ),
     consumeAuthorLinkConfirmToken: jest.fn(async () => null),
+    findStateReturnPath: jest.fn(async () => null),
     deleteExpiredStates: jest.fn(async () => 0),
   };
   oauth = {
@@ -1330,14 +1331,41 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     );
   });
 
-  it('refuses to begin a link it cannot finish', async () => {
+  it('refuses to begin a link it cannot finish, in words for a member', async () => {
     const service = await build({ APP_URL: undefined });
-    await expect(service.beginAuthorLink(CHAPTER, USER)).rejects.toMatchObject({
-      status: 503,
-    });
+    const error = await service
+      .beginAuthorLink(CHAPTER, USER)
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ status: 503 });
+    // Not the officer's bot-import sentence about the upload flow.
+    expect((error as Error).message).toBe(
+      "Linking a Discord account isn't available right now. Try again later.",
+    );
     expect(repo.createState).not.toHaveBeenCalled();
   });
 
+  it('sends an expired link attempt back to /profile, where it started', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(null);
+    repo.findStateReturnPath.mockResolvedValue(AUTHOR_LINK_RETURN_PATH);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('expired');
+    const url = new URL(outcome.returnUrl);
+    expect(url.pathname).toBe('/profile');
+    expect(url.searchParams.get('discord')).toBe('expired');
+  });
+
+  it('falls back to the default page when the expired state cannot be read', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(null);
+    repo.findStateReturnPath.mockRejectedValue(new Error('down'));
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(new URL(outcome.returnUrl).pathname).toBe(DEFAULT_RETURN_PATH);
+  });
   it('parks the approving account and binds nothing on the callback', async () => {
     const service = await build();
     repo.consumeState.mockResolvedValue(linkState());

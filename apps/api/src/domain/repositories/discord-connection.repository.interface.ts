@@ -92,6 +92,15 @@ export interface IDiscordConnectionRepository {
   consumeState(id: string, now: Date): Promise<DiscordOAuthState | null>;
 
   /**
+   * Where a handshake that could not be consumed (expired, spent) was going to
+   * return the browser, read without consuming anything. Only for choosing
+   * which page shows the "expired" sentence: a member's link attempt belongs
+   * back on `/profile`, not in the officer import wizard (#2878). Null when the
+   * state does not exist.
+   */
+  findStateReturnPath(id: string): Promise<string | null>;
+
+  /**
    * Park what the callback learned, and mint the token that activates it.
    *
    * The callback does not write `discord_connections`. Discord proves that a

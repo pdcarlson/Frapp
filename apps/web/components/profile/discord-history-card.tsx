@@ -97,7 +97,11 @@ export function DiscordHistoryCard() {
     if (outcome === "pending" && token) {
       handshake.current = token;
     } else {
-      const message = DISCORD_LINK_OUTCOME_MESSAGES[outcome];
+      // Own keys only: `outcome` is whatever the URL says, and a plain object
+      // would answer `?discord=constructor` with a function.
+      const message = Object.hasOwn(DISCORD_LINK_OUTCOME_MESSAGES, outcome)
+        ? DISCORD_LINK_OUTCOME_MESSAGES[outcome]
+        : undefined;
       if (message) {
         toast({
           variant: outcome === "declined" ? undefined : "destructive",

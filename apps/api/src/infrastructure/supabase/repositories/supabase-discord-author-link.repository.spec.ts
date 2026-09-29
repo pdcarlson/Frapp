@@ -73,21 +73,6 @@ describe('SupabaseDiscordAuthorLinkRepository — tenant scope', () => {
     ).toBe(DISCORD_A);
   });
 
-  it('listByChapter never includes another chapter’s link', async () => {
-    const { harness, repo } = build();
-    const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.listByChapter(CHAPTER_A),
-    );
-    // The harness does not apply the column projection, so compare the two
-    // fields the map is for.
-    expect(
-      rows.map(({ discord_user_id, user_id }) => ({
-        discord_user_id,
-        user_id,
-      })),
-    ).toEqual([{ discord_user_id: DISCORD_A, user_id: MEMBER }]);
-  });
-
   it('link passes the caller chapter to the function', async () => {
     const { harness, repo } = build({
       link_discord_author: {
@@ -131,7 +116,13 @@ describe('SupabaseDiscordAuthorLinkRepository — tenant scope', () => {
 describe('SupabaseDiscordAuthorLinkRepository — errors', () => {
   it('maps a claimed account to DiscordAuthorLinkConflictError', async () => {
     const { repo } = build({
-      link_discord_author: { error: { code: '23505', message: 'dup' } },
+      link_discord_author: {
+        error: {
+          code: '23505',
+          message:
+            'link_discord_author: this Discord account is linked to another member',
+        },
+      },
     });
     await expect(
       repo.link(CHAPTER_A, MEMBER, DISCORD_A, null),
@@ -140,11 +131,27 @@ describe('SupabaseDiscordAuthorLinkRepository — errors', () => {
 
   it('maps a non-member to DiscordAuthorLinkNotMemberError', async () => {
     const { repo } = build({
-      link_discord_author: { error: { code: '42501', message: 'no' } },
+      link_discord_author: {
+        error: {
+          code: '42501',
+          message: 'link_discord_author: user is not a member of this chapter',
+        },
+      },
     });
     await expect(
       repo.link(CHAPTER_A, MEMBER, DISCORD_A, null),
     ).rejects.toBeInstanceOf(DiscordAuthorLinkNotMemberError);
+  });
+
+  it('surfaces a missing EXECUTE grant as itself, not as a membership refusal', async () => {
+    const denied = {
+      code: '42501',
+      message: 'permission denied for function link_discord_author',
+    };
+    const { repo } = build({ link_discord_author: { error: denied } });
+    await expect(repo.link(CHAPTER_A, MEMBER, DISCORD_A, null)).rejects.toBe(
+      denied,
+    );
   });
 
   it('treats an empty function result as a failure, not a link', async () => {

@@ -1217,7 +1217,7 @@ export class ChatService {
       );
     }
 
-    return this.softDeleteMessage(messageId, chapterId);
+    return this.softDeleteMessage(message, chapterId);
   }
 
   /**
@@ -1273,7 +1273,7 @@ export class ChatService {
       return { alreadyDeleted: true, channelId: message.channel_id };
     }
 
-    await this.softDeleteMessage(message.id, chapterId);
+    await this.softDeleteMessage(message, chapterId);
     return { alreadyDeleted: false, channelId: message.channel_id };
   }
 
@@ -1330,13 +1330,14 @@ export class ChatService {
    * Callers authorize first; this does not.
    */
   private async softDeleteMessage(
-    messageId: string,
+    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata'>,
     chapterId: string,
   ): Promise<ChatMessage> {
+    const messageId = message.id;
     const deleted = await this.messageRepo.update(messageId, {
       content: '[message deleted]',
       is_deleted: true,
-      metadata: {},
+      metadata: tombstoneMetadata(message),
     });
 
     // Purge after the flag lands, not before. Soft delete leaves the attachment
@@ -2343,4 +2344,22 @@ export class ChatService {
       return {};
     }
   }
+}
+
+/**
+ * What a soft-deleted message keeps of its `metadata`.
+ *
+ * Nothing, except an imported row's `discord_import_id`: it is the only key the
+ * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
+ * so wiping it would leave the tombstone behind when its import is deleted,
+ * still carrying the Discord author and an avatar path into purged storage. A
+ * linked member can delete their own imported messages (#2878), so this is
+ * reachable by any member, not only a moderator.
+ */
+export function tombstoneMetadata(
+  message: Pick<ChatMessage, 'kind' | 'metadata'>,
+): Record<string, unknown> {
+  if (message.kind !== 'imported') return {};
+  const importId: unknown = message.metadata?.discord_import_id;
+  return typeof importId === 'string' ? { discord_import_id: importId } : {};
 }

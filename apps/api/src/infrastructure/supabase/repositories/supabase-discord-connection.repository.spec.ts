@@ -308,6 +308,18 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
     expect(await stale.consumeConfirmToken(token, CHAPTER_A, NOW)).toBeNull();
   });
 
+  it('findStateReturnPath reads where a spent handshake was going, without consuming anything', async () => {
+    const { harness, repo } = build({ a: EARLIER });
+    expect(await repo.findStateReturnPath(STATE_A)).toBe('/discord-import');
+    expect(
+      await repo.findStateReturnPath('0c000000-0000-4000-8000-00000000ffff'),
+    ).toBeNull();
+    const row = harness
+      .rows('discord_oauth_states')
+      .find((entry) => entry.id === STATE_A);
+    expect(row?.consumed_at).toBeNull();
+  });
+
   it('deleteExpiredStates reaps only what is past its expiry', async () => {
     const { harness, repo } = build({ a: EARLIER });
     expect(await repo.deleteExpiredStates(NOW)).toBe(1);

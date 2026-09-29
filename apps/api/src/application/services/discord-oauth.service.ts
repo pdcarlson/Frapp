@@ -527,7 +527,18 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     chapterId: string,
     userId: string,
   ): Promise<{ authorize_url: string; expires_at: string }> {
-    await this.assertAvailable({ fresh: true });
+    try {
+      await this.assertAvailable({ fresh: true });
+    } catch (error) {
+      // `assertAvailable` speaks to an officer about the bot import. A
+      // member linking their own account needs a sentence about that.
+      if (error instanceof ServiceUnavailableException) {
+        throw new ServiceUnavailableException(
+          "Linking a Discord account isn't available right now. Try again later.",
+        );
+      }
+      throw error;
+    }
 
     const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS);
     const state = await this.connectionRepo.createState({
@@ -647,10 +658,23 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     });
 
     if (!consumed) {
-      return finish(
-        'expired',
-        'No live handshake matched the state on the callback.',
-      );
+      // Nothing to consume, but the row may still say where this handshake
+      // was going: a member's expired link attempt belongs back on
+      // `/profile`, not in the officer import wizard (#2878). Best-effort,
+      // and never an oracle: every unconsumable state answers `expired`, and
+      // the path is one this server stored, sanitised again on the way out.
+      let returnPath: string | null = null;
+      if (isUuid(stateId)) {
+        returnPath = await this.connectionRepo
+          .findStateReturnPath(stateId)
+          .catch(() => null);
+      }
+      return {
+        ok: false,
+        code: 'expired',
+        returnUrl: this.buildReturnUrl(returnPath, 'expired'),
+        reason: 'No live handshake matched the state on the callback.',
+      };
     }
 
     if (query.error) {

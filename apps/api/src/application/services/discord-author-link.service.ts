@@ -167,16 +167,4 @@ export class DiscordAuthorLinkService {
     }
     return { unlinked: restored !== null, messages_restored: restored ?? 0 };
   }
-
-  /**
-   * The chapter's Discord id → member map, for rendering a Discord user
-   * mention in imported text as a link to the member (#2875). Nothing here
-   * is new to a member of the chapter: a linked message already carries both
-   * its `author_external_id` and its `sender_id`.
-   */
-  listLinks(
-    chapterId: string,
-  ): Promise<{ discord_user_id: string; user_id: string }[]> {
-    return this.linkRepo.listByChapter(chapterId);
-  }
 }

@@ -19,8 +19,6 @@ export const discordAuthorLinkKeys = {
   all: ["discord-author-link"] as const,
   mine: (chapterId: string | null) =>
     ["discord-author-link", chapterId, "mine"] as const,
-  chapter: (chapterId: string | null) =>
-    ["discord-author-link", chapterId, "chapter"] as const,
 };
 
 /** The caller's link in the active chapter, plus whether linking is offered. */
@@ -37,26 +35,6 @@ export function useDiscordAuthorLink(options?: { enabled?: boolean }) {
     },
     enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 60_000,
-  });
-}
-
-/**
- * The active chapter's Discord id → member map, for linking a Discord user
- * mention in imported text to the member it names (#2875).
- */
-export function useDiscordAuthorLinks(options?: { enabled?: boolean }) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-
-  return useQuery({
-    queryKey: discordAuthorLinkKeys.chapter(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/author-links");
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: !!chapterId && (options?.enabled ?? true),
-    staleTime: 5 * 60_000,
   });
 }
 
@@ -99,9 +77,6 @@ export function useConfirmDiscordAuthorLink() {
       void queryClient.invalidateQueries({
         queryKey: discordAuthorLinkKeys.mine(chapterId),
       });
-      void queryClient.invalidateQueries({
-        queryKey: discordAuthorLinkKeys.chapter(chapterId),
-      });
     },
   });
 }
@@ -120,9 +95,6 @@ export function useUnlinkDiscordAuthor() {
     onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: discordAuthorLinkKeys.mine(chapterId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: discordAuthorLinkKeys.chapter(chapterId),
       });
     },
   });

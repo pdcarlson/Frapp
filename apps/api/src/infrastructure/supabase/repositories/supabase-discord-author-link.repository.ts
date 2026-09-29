@@ -39,17 +39,6 @@ export class SupabaseDiscordAuthorLinkRepository implements IDiscordAuthorLinkRe
     return data ?? null;
   }
 
-  async listByChapter(
-    chapterId: string,
-  ): Promise<Pick<DiscordAuthorLink, 'discord_user_id' | 'user_id'>[]> {
-    const { data, error } = await this.supabase
-      .from('discord_author_links')
-      .select('discord_user_id, user_id')
-      .eq('chapter_id', chapterId);
-    if (error) throw error;
-    return data ?? [];
-  }
-
   async link(
     chapterId: string,
     userId: string,
@@ -63,8 +52,18 @@ export class SupabaseDiscordAuthorLinkRepository implements IDiscordAuthorLinkRe
       p_discord_username: discordUsername,
     });
     if (error) {
-      if (error.code === '23505') throw new DiscordAuthorLinkConflictError();
-      if (error.code === '42501') throw new DiscordAuthorLinkNotMemberError();
+      // Only the function's own refusals, which it prefixes with its name. A
+      // bare 42501 is also what a missing EXECUTE grant raises, and that is a
+      // deployment fault to surface as a 500, not a member-facing 403.
+      const ours =
+        typeof error.message === 'string' &&
+        error.message.startsWith('link_discord_author:');
+      if (ours && error.code === '23505') {
+        throw new DiscordAuthorLinkConflictError();
+      }
+      if (ours && error.code === '42501') {
+        throw new DiscordAuthorLinkNotMemberError();
+      }
       throw error;
     }
     const row = (data ?? [])[0];

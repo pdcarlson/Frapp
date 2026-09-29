@@ -756,8 +756,11 @@ channel that reports a different one fails the import rather than being skipped.
   numbers, and what the check does and does not enforce, are owned by
   [`docs/security/content-validation.md`](../../../docs/security/content-validation.md)
   § 3.
-- **Deleting an import removes what it brought in**: its messages (cascading to
-  attachments and reactions) and its objects in the `chat-archive` bucket. Scoped
+- **Deleting an import removes what it brought in**: its messages, including
+  ones deleted since (a deleted imported message keeps its import id for this,
+  since #2878; one deleted before that lost it and stays as a
+  `[message deleted]` tombstone), cascading to
+  attachments and reactions, and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a
   live channel leaves that channel's live messages — and any *other* import's
   messages — untouched. This is currently the only deletion path that reaps the
@@ -890,7 +893,9 @@ on their imported messages in that chapter are theirs.
   - a member who blocked them stops seeing it, with the masking contract above
     applying unchanged;
   - a report on it names them as the reported sender, so the queue leaves it
-    out for them;
+    out for them. That includes reports filed before the link: linking points
+    their reported sender at the member, and unlinking points it back at
+    nobody;
   - they may delete it, and nobody may edit it (§ Imported archive messages,
     Read-only).
   Unread counts, push and mentions do not change: they key on `kind =
@@ -905,14 +910,21 @@ on their imported messages in that chapter are theirs.
   back to its Discord name, as every row does when the roster misses
   (`resolveAuthorName`).
 - **Deleting the account removes the Discord identity.** `anonymize_user`
-  deletes the member's links and clears the Discord name, avatar path and id
-  on the imported rows attributed to them. Those rows keep the tombstone as
+  deletes the member's links, clears the Discord name, avatar path and id on
+  the imported rows attributed to them, and clears the Discord name on reports
+  about those rows (the reported words stay, per
+  [`data-retention.md`](../data-retention.md#individual-account-deletion)). Those rows keep the tombstone as
   sender, like the member's live messages; without the clear, the roster-miss
   fallback would show their Discord handle again and re-identify them.
-- **User mentions (#2875).** `GET /v1/discord/author-links` is the chapter's
-  Discord id → member map, so a rendered Discord user mention can link to the
-  member it names. It shows members nothing new: a linked row already carries
-  both ids.
+- **Linking follows chat's billing rule.** The link routes are free-tier, like
+  chat: a member can link or unlink for as long as they could delete the same
+  messages. Account deletion, which removes the Discord identity outright, is
+  never gated on billing.
+- **User mentions (#2875).** No Discord id → member map is served. A linked
+  row carries both its `author_external_id` and its `sender_id`, which is what
+  a rendered Discord user mention can link from; a chapter-wide map would hand
+  every member the Discord id of someone whose messages they cannot read, or
+  who linked before anything was imported.
 - **Not in scope here:** Discord avatars for authors nobody has linked (bot
   imports store none, and mobile draws none).
 
