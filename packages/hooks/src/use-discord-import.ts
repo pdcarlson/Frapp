@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -51,6 +52,8 @@ export const discordImportKeys = {
     ["discord-imports", chapterId, "detail", id] as const,
   channels: (chapterId: string | null, id: string) =>
     ["discord-imports", chapterId, "channels", id] as const,
+  progress: (chapterId: string | null, id: string) =>
+    ["discord-imports", chapterId, "progress", id] as const,
   files: (chapterId: string | null, id: string) =>
     ["discord-imports", chapterId, "files", id] as const,
 };
@@ -122,6 +125,58 @@ export function useDiscordImport(
         : false;
     },
   });
+}
+
+/**
+ * How often the Watch view's progress is polled while an import runs (#2857).
+ *
+ * Slower than the detail poll: it names channels, and the worker moves to the
+ * next one at most once a page of messages. Eight small reads a tick, whatever
+ * the server's size, because the full channel list is too large to poll.
+ */
+export const DISCORD_IMPORT_PROGRESS_POLL_MS = 5_000;
+
+/**
+ * One import's progress channel by channel, for the Watch view (#2857):
+ * counts by status, the rows running now, the last ones finished, and the
+ * failures. `active` is whether the import is still moving; a finished one
+ * is read once and not polled.
+ */
+export function useDiscordImportProgress(
+  id: string | null,
+  options: { active: boolean; enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const enabled = !!chapterId && !!id && (options.enabled ?? true);
+
+  const query = useQuery({
+    queryKey: discordImportKeys.progress(chapterId, id ?? ""),
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/discord-imports/{id}/progress",
+        { params: { path: { id: id as string } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    enabled,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: options.active ? DISCORD_IMPORT_PROGRESS_POLL_MS : false,
+  });
+
+  // One last read when the import stops moving. Turning the interval off
+  // fetches nothing, so without it the panel would keep the last poll from
+  // before the import ended, a channel still "importing" on a finished one.
+  const wasActive = useRef(options.active);
+  const { refetch } = query;
+  useEffect(() => {
+    if (wasActive.current && !options.active && enabled) void refetch();
+    wasActive.current = options.active;
+  }, [options.active, enabled, refetch]);
+
+  return query;
 }
 
 /**
@@ -377,10 +432,20 @@ export function useStartDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
-    mutationFn: async (vars: { id: string }) => {
+    /**
+     * `messagesAfter` is a bot import's date cutoff (#2858), an ISO instant;
+     * left out, the import keeps the one it has, which on a first start is
+     * none: all history.
+     */
+    mutationFn: async (vars: { id: string; messagesAfter?: string | null }) => {
       const { data, error } = await client.POST(
         "/v1/discord-imports/{id}/start",
-        { params: { path: { id: vars.id } } },
+        {
+          params: { path: { id: vars.id } },
+          ...(vars.messagesAfter === undefined
+            ? {}
+            : { body: { messages_after: vars.messagesAfter } }),
+        },
       );
       if (error) throw error;
       return data;

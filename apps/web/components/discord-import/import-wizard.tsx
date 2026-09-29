@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useConfirmDiscordUploads,
   useCreateDiscordImport,
@@ -18,6 +18,7 @@ import {
   useStartDiscordImport,
 } from "@repo/hooks";
 import { can, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
+import { parseBareDateLocalMidnight } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
 import { useToast } from "@/hooks/use-toast";
@@ -31,7 +32,13 @@ import {
   type StagedExport,
 } from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
-import { mappingIssues, restageChoices } from "./mapping-issues";
+import {
+  mappingIssues,
+  restageChoices,
+  isImportTarget,
+  withMergeDefaults,
+  type ExistingChannel,
+} from "./mapping-issues";
 import { RoleMappingStep, type RoleStepLock } from "./role-mapping-step";
 import {
   defaultRoleChoice,
@@ -127,6 +134,8 @@ export function ImportWizard({
   // Only the roles the admin changed; the rest read their default, which
   // depends on the Frapp roles and on who could read what.
   const [roleEdits, setRoleEdits] = useState<Record<string, RoleChoice>>({});
+  // A bot import's date cutoff (#2858), as the date input holds it.
+  const [messagesSince, setMessagesSince] = useState("");
 
   const availability = useDiscordAvailability();
   const botConnection = useDiscordConnection();
@@ -176,6 +185,27 @@ export function ImportWizard({
     if (previous) setStep(previous);
   }
 
+  const existingChannels = useChannels();
+  // Null until loaded once: a merge default (#2856) needs the channels it
+  // could merge into.
+  const existingList = useMemo<ExistingChannel[] | null>(
+    () =>
+      existingChannels.data === undefined
+        ? null
+        : asArray<ExistingChannel>(existingChannels.data).map(
+            ({ id, name, type, archived_at }) => ({
+              id,
+              name,
+              type,
+              archived_at,
+            }),
+          ),
+    [existingChannels.data],
+  );
+  // Set when a channel set was staged before the Frapp channels loaded, so
+  // their merge defaults are applied once, when they do.
+  const mergeDefaultsPending = useRef(false);
+
   /**
    * Stage a channel set and start every channel at its default answer.
    *
@@ -187,12 +217,28 @@ export function ImportWizard({
     (next: StagedExport) => {
       const previousChannels = staged?.channels ?? [];
       setChannelChoices((previous) =>
-        restageChoices(previousChannels, previous, next.channels),
+        restageChoices(
+          previousChannels,
+          previous,
+          next.channels,
+          existingList ?? [],
+        ),
       );
+      mergeDefaultsPending.current = existingList === null;
       setStaged(next);
     },
-    [staged],
+    [staged, existingList],
   );
+
+  useEffect(() => {
+    if (!staged || existingList === null || !mergeDefaultsPending.current) {
+      return;
+    }
+    mergeDefaultsPending.current = false;
+    setChannelChoices((previous) =>
+      withMergeDefaults(staged.channels, previous, existingList),
+    );
+  }, [staged, existingList]);
 
   /** Scan the connected server and stage what it found. */
   const scan = useCallback(
@@ -354,17 +400,12 @@ export function ImportWizard({
         matches[role.roleId] = null;
         continue;
       }
-      const fallback = defaultRoleChoice(
-        role,
-        frappRoles,
-        (readsPrivate.get(role.roleId) ?? 0) > 0,
-        canManageRoles,
-      );
+      const fallback = defaultRoleChoice(role, frappRoles, canManageRoles);
       choices[role.roleId] = fallback.choice;
       matches[role.roleId] = fallback.kind;
     }
     return { roleChoices: choices, roleMatches: matches };
-  }, [staged, roleEdits, frappRoles, readsPrivate, canManageRoles]);
+  }, [staged, roleEdits, frappRoles, canManageRoles]);
   const roleProblems = useMemo(
     () =>
       roleIssues(
@@ -389,11 +430,11 @@ export function ImportWizard({
     [staged, roleChoices, frappRoles],
   );
 
-  const existingChannels = useChannels();
   // One list decides both whether Continue is enabled and what Needs
   // attention shows, so the step can never be blocked for a reason it does
-  // not state. A same-name Frapp channel is an issue, never a merge:
-  // `chat_channels` has no unique (chapter_id, name). Until the existing
+  // not state. A new name that is also a Frapp channel's is an issue:
+  // `chat_channels` has no unique (chapter_id, name), and the channels that
+  // merge by default (#2856) were already set to Merge. Until the existing
   // channels have loaded once, a clash cannot be ruled out, so that is an
   // issue too rather than a silent pass. A later refetch that fails keeps the
   // list it already had, which is still good enough to check against.
@@ -405,9 +446,9 @@ export function ImportWizard({
     const issues = mappingIssues(
       staged.channels,
       channelChoices,
-      asArray<{ name: string }>(existingChannels.data).map(
-        (channel) => channel.name,
-      ),
+      asArray<ExistingChannel>(existingChannels.data)
+        .filter(isImportTarget)
+        .map((channel) => channel.name),
       readersOf,
     );
     if (existingChannels.data === undefined) {
@@ -435,6 +476,27 @@ export function ImportWizard({
     readersOf,
   ]);
   const channelsReady = !!staged && channelIssues.length === 0;
+
+  // The chosen day starts at the viewer's own midnight, which is what "from
+  // this date" means to them; sent as that instant. Only a bot import has one.
+  const cutoff = useMemo((): { at: string | null; problem: string | null } => {
+    if (source !== "bot" || !messagesSince) return { at: null, problem: null };
+    const at = parseBareDateLocalMidnight(messagesSince);
+    if (!at) {
+      return {
+        at: null,
+        problem: "Enter a whole date, or clear it to import all history.",
+      };
+    }
+    if (at.getTime() > Date.now()) {
+      return {
+        at: null,
+        problem:
+          "Choose a date in the past, or clear it to import all history.",
+      };
+    }
+    return { at: at.toISOString(), problem: null };
+  }, [source, messagesSince]);
 
   async function submitMappings() {
     if (!importId || !staged || !source) return;
@@ -525,9 +587,12 @@ export function ImportWizard({
   }
 
   async function submitStart() {
-    if (!importId) return;
+    if (!importId || cutoff.problem) return;
     try {
-      await startImport.mutateAsync({ id: importId });
+      await startImport.mutateAsync({
+        id: importId,
+        ...(cutoff.at ? { messagesAfter: cutoff.at } : {}),
+      });
       onStarted(importId);
     } catch (error) {
       toast({
@@ -648,6 +713,9 @@ export function ImportWizard({
             roles={staged.roles}
             roleChoices={roleChoices}
             readersOf={readersOf}
+            messagesSince={messagesSince}
+            onMessagesSinceChange={setMessagesSince}
+            messagesSinceProblem={cutoff.problem}
           />
         ) : null}
       </main>
@@ -725,7 +793,7 @@ export function ImportWizard({
         {step === "review" ? (
           <Button
             onClick={() => void submitStart()}
-            disabled={startImport.isPending}
+            disabled={startImport.isPending || cutoff.problem !== null}
           >
             Start import
           </Button>

@@ -6990,6 +6990,43 @@
         ]
       }
     },
+    "/v1/discord-imports/{id}/progress": {
+      "get": {
+        "description": "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
+        "operationId": "DiscordImportController_getProgress_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportProgressDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Channel-by-channel progress, for watching an import",
+        "tags": [
+          "Discord Import"
+        ]
+      }
+    },
     "/v1/discord-imports/{id}/files": {
       "get": {
         "description": "Rows with a null `uploaded_at` are what an interrupted upload still needs to send.",
@@ -7228,7 +7265,7 @@
     },
     "/v1/discord-imports/{id}/start": {
       "post": {
-        "description": "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).",
+        "description": "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.",
         "operationId": "DiscordImportController_start_v1",
         "parameters": [
           {
@@ -7240,6 +7277,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartDiscordImportDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""
@@ -11623,6 +11670,128 @@
           "consent_acknowledged"
         ]
       },
+      "DiscordImportProgressCountsDto": {
+        "type": "object",
+        "properties": {
+          "pending": {
+            "type": "number"
+          },
+          "running": {
+            "type": "number"
+          },
+          "completed": {
+            "type": "number"
+          },
+          "failed": {
+            "type": "number"
+          },
+          "skipped": {
+            "type": "number",
+            "description": "Skipped by the worker: Discord no longer showed the channel to the bot when it got there."
+          }
+        },
+        "required": [
+          "pending",
+          "running",
+          "completed",
+          "failed",
+          "skipped"
+        ]
+      },
+      "DiscordImportChannelProgressRowDto": {
+        "type": "object",
+        "properties": {
+          "discord_channel_id": {
+            "type": "string"
+          },
+          "discord_channel_name": {
+            "type": "string",
+            "description": "As the scan recorded it; a thread reads `parent › thread`."
+          },
+          "discord_category": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_discord_channel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set on a thread: the channel it lives in."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "skipped"
+            ]
+          },
+          "imported_count": {
+            "type": "number",
+            "description": "Messages written so far."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "target_channel_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Frapp channel it lands in, once known: from mapping time for a merge, and once the worker reaches it for a new channel. Open it at `/chat?channel=<id>`."
+          }
+        },
+        "required": [
+          "discord_channel_id",
+          "discord_channel_name",
+          "discord_category",
+          "parent_discord_channel_id",
+          "status",
+          "imported_count",
+          "error",
+          "target_channel_id"
+        ]
+      },
+      "DiscordImportProgressDto": {
+        "type": "object",
+        "properties": {
+          "counts": {
+            "description": "Channel and thread rows being imported, by status. Rows mapped to skip are in no count.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiscordImportProgressCountsDto"
+              }
+            ]
+          },
+          "running": {
+            "description": "The rows running now, at most 5. On an import that is no longer moving, where it stopped.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportChannelProgressRowDto"
+            }
+          },
+          "recent": {
+            "description": "The rows finished last, most recent first, at most 5.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportChannelProgressRowDto"
+            }
+          },
+          "failed": {
+            "description": "Failed rows with the reason, in import order, at most 20. A restart resumes them.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportChannelProgressRowDto"
+            }
+          }
+        },
+        "required": [
+          "counts",
+          "running",
+          "recent",
+          "failed"
+        ]
+      },
       "DiscordImportUploadFileDto": {
         "type": "object",
         "properties": {
@@ -11730,7 +11899,7 @@
               "use_existing",
               "skip"
             ],
-            "description": "What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer."
+            "description": "What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match with an existing channel is never treated as an answer. Rows of one import that `create_new` with the same `new_channel_name` (compared trimmed, without a leading `#`, in any case) and the same readers (type, gate and read-only) land in ONE new channel, the one the first of them creates (#2856); rows of the same name with different readers get a channel each."
           },
           "target_channel_id": {
             "type": "string",
@@ -11877,6 +12046,17 @@
           "roles",
           "warnings"
         ]
+      },
+      "StartDiscordImportDto": {
+        "type": "object",
+        "properties": {
+          "messages_after": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Bot imports only (#2858): import only messages sent at or after this instant. Omit it, or send null, for all history. It is set when the import is first started and fixed from then on: a later start (a restart) may repeat it or leave it out, not change it. An upload's range is set when exporting, with DiscordChatExporter's `--after`, so an upload refuses it."
+          }
+        }
       },
       "DiscordAvailabilityDto": {
         "type": "object",

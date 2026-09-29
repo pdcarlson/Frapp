@@ -44,6 +44,7 @@ import {
 import type {
   DiscordImport,
   DiscordImportChannel,
+  DiscordImportChannelProgress,
   DiscordImportFileKind,
   DiscordImportFile,
   DiscordImportNewChannelType,
@@ -436,6 +437,18 @@ export class DiscordImportService {
 
   getChannels(id: string, chapterId: string): Promise<DiscordImportChannel[]> {
     return this.importRepo.findChannels(id, chapterId);
+  }
+
+  /**
+   * The Watch view's progress, channel by channel (#2857): counts, what is
+   * running, what finished last, what failed. Chapter-scoped by the
+   * repository, like `getChannels`, whose full list it keeps off the poll.
+   */
+  getProgress(
+    id: string,
+    chapterId: string,
+  ): Promise<DiscordImportChannelProgress> {
+    return this.importRepo.findChannelProgress(id, chapterId);
   }
 
   getFiles(id: string, chapterId: string): Promise<DiscordImportFile[]> {
@@ -876,6 +889,14 @@ export class DiscordImportService {
           `The channel chosen for #${channel.discord_channel_name} is not one of this chapter's channels.`,
         );
       }
+      // A DM or group DM is a private conversation between its members, and
+      // chapter history never goes into one (#2856). The web leaves them out
+      // of the picker; this is the rule.
+      if (target.type === 'DM' || target.type === 'GROUP_DM') {
+        throw new BadRequestException(
+          `#${channel.discord_channel_name} can't be imported into a direct message. Pick a channel.`,
+        );
+      }
     }
     if (
       channel.mapping_action === 'create_new' &&
@@ -955,7 +976,14 @@ export class DiscordImportService {
         discord_channel_name: channel.discord_channel_name,
         discord_category: channel.discord_category ?? null,
         mapping_action: channel.mapping_action,
-        target_channel_id: channel.target_channel_id ?? null,
+        // Only `use_existing` names a target, and only it is validated above.
+        // A `create_new` row's target is the channel THIS import creates,
+        // which the worker writes back and like-named rows reuse (#2856), so
+        // a client-sent id there is dropped, as the bot path drops it.
+        target_channel_id:
+          channel.mapping_action === 'use_existing'
+            ? (channel.target_channel_id ?? null)
+            : null,
         new_channel_name: channel.new_channel_name ?? null,
         new_channel_is_read_only: channel.new_channel_is_read_only ?? true,
         message_count: channel.message_count ?? 0,
@@ -1177,9 +1205,12 @@ export class DiscordImportService {
     id: string,
     chapterId: string,
     canManageRoles: boolean,
+    options: { messagesAfter?: string | null } = {},
   ): Promise<DiscordImport> {
     const job = await this.load(id, chapterId);
     this.assertMutable(job);
+    // Checked before anything below creates a role.
+    const cutoff = this.resolveCutoff(job, options.messagesAfter);
 
     // A bot import has nothing uploaded — it fetches. What it needs instead is
     // a live connection, re-resolved here rather than trusted from the job row,
@@ -1242,7 +1273,62 @@ export class DiscordImportService {
       parts_total: partsTotal,
       error: null,
       role_mapping: roleMapping,
+      // Written only when it changes, so a start that leaves it alone works
+      // against a database that does not have the column yet.
+      ...(cutoff.changed ? { messages_after: cutoff.value } : {}),
     });
+  }
+
+  /**
+   * The date cutoff a start asks for (#2858), checked.
+   *
+   * Left out, it keeps what the import has. It is set on the first start and
+   * fixed from then on: a restart resumes channels already cut at the old
+   * date, and a different date for the rest would leave one import following
+   * two rules. Bot imports only: an upload already holds every message and
+   * its media, so its range is set when exporting (DiscordChatExporter's
+   * `--after`), where it saves the upload too.
+   */
+  private resolveCutoff(
+    job: DiscordImport,
+    requested: string | null | undefined,
+  ): { changed: boolean; value: string | null } {
+    // Undefined, not null, on a row read before the column's migration ran:
+    // a start that asks for no cutoff must not write the column then.
+    const current = job.messages_after ?? null;
+    if (requested === undefined) {
+      return { changed: false, value: current };
+    }
+    // `IsISO8601` also passes shapes `Date` cannot read, such as week dates
+    // ("2025-W01"); those are the caller's mistake, not a 500.
+    const parsed = requested === null ? null : new Date(requested).getTime();
+    if (parsed !== null && !Number.isFinite(parsed)) {
+      throw new BadRequestException(
+        'Send the date cutoff as a date and time, such as 2024-06-01T00:00:00Z.',
+      );
+    }
+    const value = parsed === null ? null : new Date(parsed).toISOString();
+    const instant = (at: string | null) =>
+      at === null ? null : new Date(at).getTime();
+    if (instant(value) === instant(current)) {
+      return { changed: false, value: current };
+    }
+    if (job.source !== 'bot') {
+      throw new BadRequestException(
+        "An upload's date range is set when exporting: add --after <date> to the DiscordChatExporter command.",
+      );
+    }
+    if (job.status !== 'draft') {
+      throw new ConflictException(
+        'This import has already been started, so its date cutoff is fixed. Start a new import to use a different one.',
+      );
+    }
+    if (parsed !== null && parsed > Date.now()) {
+      throw new BadRequestException(
+        'Choose a date in the past, or leave the date empty to import all history.',
+      );
+    }
+    return { changed: true, value };
   }
 
   /**

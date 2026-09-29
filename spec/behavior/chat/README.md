@@ -463,6 +463,21 @@ chooses one at `/discord-import`; everything after the choice is identical.
   straight to the private `chat-archive` bucket through a signed URL, so no
   export byte passes through the API.
 
+**An import may leave out old history (#2858).** *2026-09-29, owner's
+decision: a chapter need not import years it does not want, and every message
+left out is media not copied, stored or paid for.* A bot import's review step
+takes an optional **Import messages from** date, empty by default, meaning all
+history. The day starts at the admin's own midnight. The worker reads each
+channel newest first and ends it at the first older message, so nothing older
+is read past that page, copied or stored. The date is fixed once the import
+starts: a restart keeps it, and changing it is refused, because the channels
+already done and the ones still to go would follow different rules. The
+import's row says "Messages since" the date, since a partial import must say
+so. An upload has no such field, because its media is already uploaded by
+then. Its range is set when exporting, with DiscordChatExporter's own
+`--after <date>`, which the upload step suggests; the API refuses a cutoff on
+an upload.
+
 **The upload path is not deprecated and is offered every time.** It is what
 keeps working if Discord ever throttles or refuses one shared bot across every
 chapter, and it is the only path for a chapter that cannot install apps in its
@@ -472,6 +487,21 @@ progress is counted in channels and threads, a channel Discord no longer shows
 the bot counting as done: its message total is only known once Discord has been
 read, so a message count would read full from the first page (#2816). An upload's
 is counted in messages. Neither reads 100% until the import has completed.
+
+**Watching an import (#2857).** Watch, on a bot import that is queued or
+running, opens it channel by channel: how many channels and threads are done,
+importing, waiting, failed or gone from Discord; the one importing now with its
+message count so far; the last few finished; and the failures with their
+reasons (at most 20 named), each linking to the Frapp channel it lands in once
+there is one. A channel the import fails on is marked failed with the reason,
+and a restart resumes it. The same panel is Details on a finished bot import,
+read once when the import stops rather than polled, and there a channel still
+marked importing is where the import stopped. Hide closes the panel and keeps
+the row's own progress live. Imported messages never arrive live in an open
+chat, so the panel says that opening a channel shows what has landed so far.
+An upload has no such panel: it works through export parts, and its channel
+rows record neither their order nor a part it had to skip, so its progress
+stays the message count above.
 
 **What the bot path costs, stated plainly.** One bot process holds read access
 to every connected chapter's Discord server at once. That is a real cross-tenant
@@ -574,16 +604,32 @@ channel that reports a different one fails the import rather than being skipped.
   that still holds what it brought in stays on it.
 - **Where it lands is the operator's choice, per channel, starting from a safe
   default.** Every channel the bot can read starts as a *new* Frapp channel
-  with its Discord name, so a server with no conflicts needs no per-channel
-  clicks; the channels are grouped by Discord category, with bulk actions per
+  with its Discord name, or as a merge into a like-named one (below), so a
+  server with no conflicts needs no per-channel clicks; the channels are grouped by Discord category, with bulk actions per
   category and for the whole server. *2026-09-28, owner's decision (#2787),
   replacing "always asked": the first real import (78 channels) had to be
-  clicked through one by one.* A new channel is the default because it cannot
-  interleave anything into a live one. **Merging is still never inferred**:
-  `chat_channels` has no unique constraint on `(chapter_id, name)`, so a new
-  name that matches another channel in the same import, or a Frapp channel the
-  admin can see, is listed as something to resolve, never treated as consent
-  to merge. **Known gap (#2799):** the check runs against the admin's own
+  clicked through one by one.* **Like-named channels merge by default.**
+  *2026-09-29, owner's decision (#2856), replacing "merging is still never
+  inferred: a name that matches is listed as something to resolve".*
+  - A channel the scan saw was public, with no private thread, starts as a
+    merge into the Frapp channel of the same name, when exactly one
+    whole-chapter (`PUBLIC`), unarchived channel the admin can see has it.
+    The names compare ignoring case, punctuation and emoji, so
+    `📢-announcements` finds `Announcements`. A merge takes the target's
+    readers, so a channel that was, or may have been, private never merges
+    by default (a manual merge of one is #2800), and an upload, which says
+    nothing about privacy, never does either. Such a channel starts as a new
+    channel, and a name clash, compared the same loose way, is listed as
+    something to resolve: `chat_channels` has no unique constraint on
+    `(chapter_id, name)`. The admin's DMs and group DMs are never a target,
+    by default or by hand.
+  - Channels of one import given the same new name land in **one** new
+    channel when they agree on who reads it and whether it is read only; the
+    worker reuses the channel the first of them created. Channels that share
+    a name but not those settings would become separate channels of one
+    name, so they are listed as something to resolve.
+
+  **Known gap (#2799):** the check runs against the admin's own
   channel list, so a clash with a channel hidden from them (a `PRIVATE`
   channel they are not in, or a `ROLE_GATED` one they cannot read) goes
   unflagged today, and a second channel with that name is created. Everything that blocks the step is listed in one place
@@ -640,9 +686,12 @@ channel that reports a different one fails the import rather than being skipped.
     seeded role, read from the end of the Discord name ("Recording Secretary"
     is a Secretary, "Pledges" are New Members, but "Pledge Educator" is not a
     pledge), except Member, the widest role, which matches only a whole name
-    ("Brothers", never "Board Member"); then a new role if it could read a
-    private channel, and Ignore if it could not, so colour, class-year and
-    game roles create nothing. A viewer who cannot manage roles, or cannot
+    ("Brothers", never "Board Member"); then a new role named after it.
+    *2026-09-29, owner's decision (#2855), replacing "a new role if it could
+    read a private channel, and Ignore if it could not, so colour, class-year
+    and game roles create nothing": a role classifies people (a class year, a
+    committee) even when it gates no channel, and the admin sets any role
+    they don't want to Ignore.* A viewer who cannot manage roles, or cannot
     load the chapter's roles, keeps every role on Ignore and can still import.
     `@everyone`, and the managed roles Discord gives bots and boosters, are
     not offered: the Frapp bot's own role is allowed on every channel it was

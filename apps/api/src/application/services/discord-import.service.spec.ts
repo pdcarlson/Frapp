@@ -64,6 +64,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     completed_at: null,
     purged_at: null,
     cleared_at: null,
+    messages_after: null,
     ...overrides,
   };
 }
@@ -89,6 +90,12 @@ async function build(current: DiscordImport = job()) {
     replaceChannels: jest.fn(async (_id, _chapter, rows) => rows),
     findChannels: jest.fn(async () => []),
     countChannels: jest.fn(async () => ({ total: 0, done: 0 })),
+    findChannelProgress: jest.fn(async () => ({
+      counts: { pending: 0, running: 0, completed: 0, failed: 0, skipped: 0 },
+      running: [],
+      recent: [],
+      failed: [],
+    })),
     markCleared: jest.fn(async () => ({ ...current, cleared_at: 'now' })),
     updateChannel: jest.fn(),
     // Registration enforces the archive ceilings itself now, so the default
@@ -508,6 +515,28 @@ describe('DiscordImportService — channel mapping', () => {
     expect(channelRepo.findById).toHaveBeenCalledWith(OWN_CHANNEL, CHAPTER);
   });
 
+  it('refuses a direct message or group DM as a target (#2856)', async () => {
+    await build();
+    for (const type of ['DM', 'GROUP_DM']) {
+      channelRepo.findById.mockResolvedValueOnce({
+        id: OWN_CHANNEL,
+        chapter_id: CHAPTER,
+        name: 'officers',
+        type,
+      });
+      await expect(
+        service.setChannelMapping(IMPORT_ID, CHAPTER, [
+          {
+            discord_channel_id: '1',
+            discord_channel_name: 'officers',
+            mapping_action: 'use_existing',
+            target_channel_id: OWN_CHANNEL,
+          },
+        ]),
+      ).rejects.toThrow(/can't be imported into a direct message/);
+    }
+  });
+
   it('refuses a new channel with no name', async () => {
     await build();
     await expect(
@@ -521,6 +550,25 @@ describe('DiscordImportService — channel mapping', () => {
         },
       ]),
     ).rejects.toThrow(/Name the new channel/);
+  });
+
+  it('drops a target sent with a new channel, as the bot path does (#2856)', async () => {
+    // A create_new row's target is the channel the import creates for it,
+    // which like-named rows then share; a client-sent id there would be an
+    // unvalidated channel those rows could be sent into.
+    await build();
+    const rows = await service.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
+        target_channel_id: FOREIGN_CHANNEL,
+      },
+    ]);
+
+    expect(rows[0].target_channel_id).toBeNull();
   });
 
   it('marks a skipped channel skipped rather than pending', async () => {
@@ -794,6 +842,90 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
       NotFoundException,
     );
     expect(repo.markCleared).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordImportService — the date cutoff (#2858)', () => {
+  const CUTOFF = '2024-06-01T00:00:00.000Z';
+  const botDraft = (overrides: Partial<DiscordImport> = {}) =>
+    job({ source: 'bot', status: 'draft', guild_id: GUILD, ...overrides });
+  const mapped = () =>
+    repo.findChannels.mockResolvedValue([
+      { id: 'map-1', mapping_action: 'create_new' },
+    ]);
+
+  it('sets it on the first start of a bot import', async () => {
+    await build(botDraft());
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true, {
+      messagesAfter: '2024-06-01T00:00:00Z',
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ status: 'ready', messages_after: CUTOFF }),
+    );
+  });
+
+  it('writes nothing about it when a start leaves it out', async () => {
+    // So a start without one works against a database without the column.
+    await build(botDraft({ status: 'failed', messages_after: CUTOFF }));
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true);
+    expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
+  });
+
+  it('lets a restart repeat it, and refuses to change it once started', async () => {
+    await build(botDraft({ status: 'failed', messages_after: CUTOFF }));
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: CUTOFF });
+    expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
+
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, {
+        messagesAfter: '2023-01-01T00:00:00Z',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: null }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('refuses a date in the future, before creating any role', async () => {
+    await build(botDraft());
+    mapped();
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, {
+        messagesAfter: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    ).rejects.toThrow(/date in the past/);
+    expect(repo.findChannels).not.toHaveBeenCalled();
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('answers a date shape it cannot read with a 400, not a 500', async () => {
+    await build(botDraft());
+    mapped();
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: '2025-W01' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('writes nothing for an explicit null on a row read before the migration', async () => {
+    // No column yet: the row carries no messages_after at all.
+    const unmigrated = botDraft() as Partial<DiscordImport>;
+    delete unmigrated.messages_after;
+    await build(unmigrated as DiscordImport);
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: null });
+    expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
+  });
+
+  it('refuses one on an upload, whose range is set when exporting', async () => {
+    await build(job({ status: 'draft' }));
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: CUTOFF }),
+    ).rejects.toThrow(/--after/);
   });
 });
 

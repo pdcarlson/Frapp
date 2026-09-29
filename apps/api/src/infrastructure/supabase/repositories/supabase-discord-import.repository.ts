@@ -13,9 +13,13 @@ import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.r
 import type {
   DiscordImport,
   DiscordImportChannel,
+  DiscordImportChannelProgress,
+  DiscordImportChannelProgressRow,
+  DiscordImportChannelStatus,
   DiscordImportFile,
   DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
+import { DISCORD_IMPORT_PROGRESS_LIMITS } from '#domain/entities/discord-import.entity';
 import type {
   ImportedAttachmentRow,
   ImportedMessageRow,
@@ -283,6 +287,81 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (total.error) throw total.error;
     if (done.error) throw done.error;
     return { total: total.count ?? 0, done: done.count ?? 0 };
+  }
+
+  async findChannelProgress(
+    importId: string,
+    chapterId: string,
+  ): Promise<DiscordImportChannelProgress> {
+    // Counted and capped, never listed: the Watch view polls this every few
+    // seconds, and a server can hold over a thousand channels and threads.
+    // Scoped through the import embed, like every read of this table.
+    const count = (status: DiscordImportChannelStatus) =>
+      this.supabase
+        .from('discord_import_channels')
+        .select('id, discord_imports!inner(chapter_id)', {
+          count: 'exact',
+          head: true,
+        })
+        .eq('import_id', importId)
+        .eq('discord_imports.chapter_id', chapterId)
+        .neq('mapping_action', 'skip')
+        .eq('status', status);
+    const rows = (status: DiscordImportChannelStatus) =>
+      this.supabase
+        .from('discord_import_channels')
+        .select(
+          'discord_channel_id, discord_channel_name, discord_category, parent_discord_channel_id, status, imported_count, error, target_channel_id, discord_imports!inner(chapter_id)',
+        )
+        .eq('import_id', importId)
+        .eq('discord_imports.chapter_id', chapterId)
+        .neq('mapping_action', 'skip')
+        .eq('status', status);
+
+    const [counts, running, recent, failed] = await Promise.all([
+      Promise.all(PROGRESS_STATUSES.map(count)),
+      rows('running')
+        .order('position', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(DISCORD_IMPORT_PROGRESS_LIMITS.running),
+      // The worker walks rows in `position` order, so the highest finished
+      // position is the one finished last.
+      rows('completed')
+        .order('position', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(DISCORD_IMPORT_PROGRESS_LIMITS.recent),
+      rows('failed')
+        .order('position', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(DISCORD_IMPORT_PROGRESS_LIMITS.failed),
+    ]);
+    for (const result of [...counts, running, recent, failed]) {
+      if (result.error) throw result.error;
+    }
+    const named = (
+      data: DiscordImportChannelProgressRow[] | null,
+    ): DiscordImportChannelProgressRow[] =>
+      (data ?? []).map((row) => ({
+        discord_channel_id: row.discord_channel_id,
+        discord_channel_name: row.discord_channel_name,
+        discord_category: row.discord_category,
+        parent_discord_channel_id: row.parent_discord_channel_id,
+        status: row.status,
+        imported_count: row.imported_count,
+        error: row.error,
+        target_channel_id: row.target_channel_id,
+      }));
+    return {
+      counts: Object.fromEntries(
+        PROGRESS_STATUSES.map((status, index) => [
+          status,
+          counts[index]?.count ?? 0,
+        ]),
+      ) as Record<DiscordImportChannelStatus, number>,
+      running: named(running.data),
+      recent: named(recent.data),
+      failed: named(failed.data),
+    };
   }
 
   async updateChannel(
@@ -637,6 +716,15 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     return ids.length;
   }
 }
+
+/** Every channel status, in the order the Watch panel counts them (#2857). */
+const PROGRESS_STATUSES: readonly DiscordImportChannelStatus[] = [
+  'pending',
+  'running',
+  'completed',
+  'failed',
+  'skipped',
+];
 
 /** Drops the `discord_imports` embed that carried the tenant filter. */
 function stripImportEmbed(row: DiscordImportChannel): DiscordImportChannel {

@@ -1,5 +1,7 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { ChannelChoice } from "./channel-mapping-step";
 import type { StagedChannel, StagedExport, StagedRole } from "./upload-step";
 import type { ImportSource } from "./source-step";
@@ -27,6 +29,9 @@ export function ReviewStep({
   roles,
   roleChoices,
   readersOf,
+  messagesSince = "",
+  onMessagesSinceChange,
+  messagesSinceProblem = null,
 }: {
   staged: StagedExport;
   source: ImportSource;
@@ -34,6 +39,14 @@ export function ReviewStep({
   roles: StagedRole[];
   roleChoices: Record<string, RoleChoice>;
   readersOf: (channel: StagedChannel) => SameAsDiscordReaders | null;
+  /**
+   * Bot path: the date cutoff (#2858) as the date input holds it,
+   * `YYYY-MM-DD` or empty for all history.
+   */
+  messagesSince?: string;
+  onMessagesSinceChange?: (value: string) => void;
+  /** Why the chosen date can't be used, or null. */
+  messagesSinceProblem?: string | null;
 }) {
   const importing = staged.channels.filter(
     (channel) => channelChoices[channel.channelId]?.action !== "skip",
@@ -93,6 +106,37 @@ export function ReviewStep({
         </div>
       </dl>
 
+      {source === "bot" && onMessagesSinceChange ? (
+        <div className="grid gap-1 rounded-lg border border-border p-3">
+          <Label htmlFor="import-messages-since" className="font-semibold">
+            Import messages from
+          </Label>
+          <Input
+            id="import-messages-since"
+            type="date"
+            className="max-w-48"
+            value={messagesSince}
+            max={todayForDateInput()}
+            aria-describedby="import-messages-since-hint"
+            aria-invalid={messagesSinceProblem ? true : undefined}
+            onChange={(event) => onMessagesSinceChange(event.target.value)}
+          />
+          <p
+            id="import-messages-since-hint"
+            className={
+              messagesSinceProblem
+                ? "text-xs text-destructive-text"
+                : "text-xs text-muted-foreground"
+            }
+          >
+            {messagesSinceProblem ??
+              (messagesSince
+                ? "Older messages, and their attachments, are left out. The date can't be changed once the import starts."
+                : "Leave it empty to import the server's whole history.")}
+          </p>
+        </div>
+      ) : null}
+
       <div className="rounded-lg border border-border p-3">
         <p className="font-semibold">
           {importing.length} of {staged.channels.length} channels
@@ -150,4 +194,11 @@ export function ReviewStep({
       </p>
     </div>
   );
+}
+
+/** Today as a date input's `max`, in the viewer's own zone. */
+function todayForDateInput(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }

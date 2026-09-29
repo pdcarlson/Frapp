@@ -26,6 +26,7 @@ import type {
   DiscordImportChannel,
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
+import { snowflakeAtOrAfter } from '#domain/utils/discord-snowflake';
 
 const NOW = new Date('2026-08-24T12:00:00Z');
 const CHAPTER = 'chapter-1';
@@ -501,6 +502,139 @@ describe('DiscordExportWorkerService — walking a channel', () => {
   });
 });
 
+describe('DiscordExportWorkerService — a channel that fails (#2857)', () => {
+  it('records the failure and its reason on the row, then fails the slice', async () => {
+    const harness = await build();
+    harness.bot.fetchMessagePage.mockRejectedValue(
+      new Error('Discord refused the bot (Missing Access).'),
+    );
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      /Missing Access/,
+    );
+    expect(harness.repo.updateChannel).toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      {
+        status: 'failed',
+        error: 'Discord refused the bot (Missing Access).',
+      },
+    );
+  });
+
+  it('clears the old failure when a restart resumes the row', async () => {
+    const harness = await build({
+      channels: [
+        channel({ status: 'failed', error: 'Discord refused the bot.' }),
+      ],
+    });
+    await harness.worker.runSlice(runArgs(harness));
+    expect(harness.repo.updateChannel.mock.calls[0]).toEqual([
+      'mapping-1',
+      IMPORT_ID,
+      { status: 'running', error: null },
+    ]);
+  });
+
+  it('keeps the reason the import fails with when that write fails too', async () => {
+    const harness = await build();
+    harness.bot.fetchMessagePage.mockRejectedValue(new Error('page failed'));
+    harness.repo.updateChannel.mockRejectedValue(new Error('row write failed'));
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      'page failed',
+    );
+  });
+});
+
+describe('DiscordExportWorkerService — the date cutoff (#2858)', () => {
+  const CUTOFF = '2024-06-01T00:00:00.000Z';
+  const at = snowflakeAtOrAfter(Date.parse(CUTOFF));
+  /** A message `offset` ids from the cutoff: newer when positive. */
+  const around = (offset: number, extra: Record<string, unknown> = {}) =>
+    apiMessage(String(at + BigInt(offset)), extra);
+
+  it('imports what came after the cutoff and ends the channel there, even on a full page', async () => {
+    // Newest first, as Discord answers: 60 newer, then older ones.
+    const fullPage = Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) =>
+      around(60 - i),
+    );
+    const harness = await build({ pages: [fullPage, [around(-500)]] });
+    const args = runArgs(harness, {
+      job: job({ messages_after: CUTOFF }),
+    });
+
+    const result = await harness.worker.runSlice(args);
+
+    // Offsets 60..1 are newer, 0 is AT the cutoff and kept too.
+    expect(args.importBatch).toHaveBeenCalledTimes(1);
+    expect(args.importBatch.mock.calls[0][0].messages).toHaveLength(61);
+    // A full page would normally ask for the next; the cutoff ends it.
+    expect(harness.bot.fetchMessagePage).toHaveBeenCalledTimes(1);
+    expect(harness.repo.updateChannel).toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      expect.objectContaining({ status: 'completed', imported_count: 61 }),
+    );
+    expect(result.finished).toBe(true);
+  });
+
+  it('counts only the messages it imports into the total', async () => {
+    const harness = await build({
+      pages: [[around(2), around(1), around(-1), around(-2)]],
+    });
+    const result = await harness.worker.runSlice(
+      runArgs(harness, { job: job({ messages_after: CUTOFF }) }),
+    );
+    expect(result.totals.totalMessages).toBe(2);
+  });
+
+  it('never copies an older message’s attachments', async () => {
+    const photo = (id: string) => ({
+      attachments: [
+        {
+          id: `att-${id}`,
+          filename: 'photo.png',
+          size: 2048,
+          url: `https://cdn.discordapp.com/attachments/1/att-${id}/photo.png`,
+          content_type: 'image/png',
+        },
+      ],
+    });
+    const harness = await build({
+      pages: [[around(1, photo('new')), around(-1, photo('old'))]],
+    });
+    await harness.worker.runSlice(
+      runArgs(harness, { job: job({ messages_after: CUTOFF }) }),
+    );
+
+    const urls = harness.copier.copy.mock.calls.flatMap(([items]) =>
+      items.map((item) => item.url),
+    );
+    expect(urls.some((url) => url.includes('att-new'))).toBe(true);
+    expect(urls.some((url) => url.includes('att-old'))).toBe(false);
+  });
+
+  it('finishes a channel whose newest message is older, reading one page and writing nothing', async () => {
+    const harness = await build({ pages: [[around(-1), around(-2)]] });
+    const args = runArgs(harness, { job: job({ messages_after: CUTOFF }) });
+
+    const result = await harness.worker.runSlice(args);
+
+    expect(args.importBatch).not.toHaveBeenCalled();
+    expect(harness.copier.copy).not.toHaveBeenCalled();
+    expect(harness.bot.fetchMessagePage).toHaveBeenCalledTimes(1);
+    expect(result.finished).toBe(true);
+  });
+
+  it('reads all history without one', async () => {
+    const harness = await build({ pages: [[around(-1), around(-2)]] });
+    const args = runArgs(harness, { job: job({ messages_after: null }) });
+    await harness.worker.runSlice(args);
+    expect(args.importBatch.mock.calls[0][0].messages).toHaveLength(2);
+  });
+});
+
 describe('DiscordExportWorkerService — threads inherit their parent', () => {
   it('sends a thread into its parent’s channel, never creating a second one', async () => {
     // `chat_channels` has no unique (chapter_id, name), so a thread resolved
@@ -535,12 +669,22 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
     // destination of its own. `create_new` mints a channel, so resolving a
     // thread independently would produce a second channel with the same name,
     // which `chat_channels` has no unique `(chapter_id, name)` to reject.
+    // Every call carries the import's rows as its second argument, which
+    // like-named channels share a destination through (#2856). Matched with
+    // `expect.anything()` so the negative check cannot pass on arity alone.
     expect(resolveTargetChannel).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-parent' }),
+      expect.anything(),
     );
     expect(resolveTargetChannel).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-thread' }),
+      expect.anything(),
     );
+    expect(
+      resolveTargetChannel.mock.calls.every(
+        (call: unknown[]) => call.length === 2,
+      ),
+    ).toBe(true);
   });
 
   it('re-verifies an inherited target through the chapter, never trusting the row', async () => {
@@ -581,6 +725,7 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
 
     expect(resolveTargetChannel).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-parent' }),
+      expect.anything(),
     );
   });
 });

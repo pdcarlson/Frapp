@@ -1,6 +1,7 @@
 import type {
   DiscordImport,
   DiscordImportChannel,
+  DiscordImportChannelProgress,
   DiscordImportFile,
   DiscordImportStatus,
 } from '../entities/discord-import.entity';
@@ -149,6 +150,11 @@ export interface IDiscordImportRepository {
     importId: string,
     chapterId: string,
   ): Promise<{ total: number; done: number }>;
+  /** The Watch view's progress (#2857): counted and capped, never listed. */
+  findChannelProgress(
+    importId: string,
+    chapterId: string,
+  ): Promise<DiscordImportChannelProgress>;
   updateChannel(
     id: string,
     importId: string,

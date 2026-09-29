@@ -40,7 +40,7 @@ const {
   permissionsFail: { value: null as null | "error" | "stale" },
   channelsQuery: {
     value: {
-      data: [{ id: "ch-1", name: "general" }] as unknown,
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }] as unknown,
       isPending: false,
       isError: false,
       refetch: (() => Promise.resolve()) as () => Promise<unknown>,
@@ -348,7 +348,7 @@ describe("ImportWizard — the bot path", () => {
     rolesFail.value = false;
     permissionsFail.value = null;
     channelsQuery.value = {
-      data: [{ id: "ch-1", name: "general" }],
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
       isPending: false,
       isError: false,
       refetch: () => Promise.resolve(),
@@ -675,20 +675,250 @@ describe("ImportWizard — the bot path", () => {
     // A failed background refetch keeps its data (TanStack Query v5), and the
     // names were already checked against it.
     channelsQuery.value = {
-      data: [{ id: "ch-1", name: "general" }],
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
       isPending: false,
       isError: true,
       refetch: () => Promise.resolve(),
     };
     scanOneChannel();
     await renderAtChannels();
-    // #general still clashes with the loaded list; nothing else is reported.
+    // #general merges into the loaded list's #general (#2856), which only
+    // the loaded list could have said; nothing asks to load it again.
     expect(
-      await screen.findAllByText(/#general already exists in Frapp/),
-    ).not.toHaveLength(0);
+      await screen.findByText(/Nothing needs attention/),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(/could not load your existing channels/),
     ).not.toBeInTheDocument();
+  });
+
+  it("merges a public channel into the like-named Frapp channel by default (#2856)", async () => {
+    scanOneChannel();
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(setDiscoveredMapping).toHaveBeenCalledWith({
+        id: "import-1",
+        channels: [
+          expect.objectContaining({
+            discord_channel_id: "c1",
+            mapping_action: "use_existing",
+            target_channel_id: "ch-1",
+          }),
+        ],
+      }),
+    );
+  });
+
+  describe("the date cutoff (#2858)", () => {
+    async function renderAtReview() {
+      startImport.mockReset();
+      startImport.mockResolvedValue({});
+      scanOneChannel();
+      await renderAtChannels();
+      await screen.findByText(/Nothing needs attention/);
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await screen.findByRole("heading", { name: "Review and import" });
+    }
+    const since = () =>
+      screen.getByLabelText("Import messages from") as HTMLInputElement;
+
+    it("imports all history when the date is left empty", async () => {
+      await renderAtReview();
+      expect(since().value).toBe("");
+      fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+      await waitFor(() =>
+        expect(startImport).toHaveBeenCalledWith({ id: "import-1" }),
+      );
+    });
+
+    it("sends the chosen day as the viewer's own midnight", async () => {
+      // Pinned away from UTC, or local and UTC midnight are the same instant
+      // and a regression to UTC parsing would still pass (CI runs in UTC).
+      vi.stubEnv("TZ", "America/Denver");
+      try {
+        await renderAtReview();
+        fireEvent.change(since(), { target: { value: "2024-06-01" } });
+        expect(
+          screen.getByText(
+            /Older messages, and their attachments, are left out/,
+          ),
+        ).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+        await waitFor(() =>
+          expect(startImport).toHaveBeenCalledWith({
+            id: "import-1",
+            // Midnight in Denver, UTC−6 in June.
+            messagesAfter: "2024-06-01T06:00:00.000Z",
+          }),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("holds Start on a date in the future", async () => {
+      await renderAtReview();
+      const nextYear = new Date().getFullYear() + 1;
+      fireEvent.change(since(), { target: { value: `${nextYear}-01-01` } });
+      expect(screen.getByText(/Choose a date in the past/)).toBeInTheDocument();
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Start import",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+    });
+  });
+
+  it("never offers a DM or group DM to merge into, or counts one as a clash (#2856)", async () => {
+    channelsQuery.value = {
+      data: [
+        { id: "ch-1", name: "general", type: "PUBLIC" },
+        { id: "gdm-1", name: "officers", type: "GROUP_DM" },
+        { id: "dm-1", name: "dm-a-b", type: "DM" },
+      ],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "officers",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+    await renderAtChannels();
+    // #officers is not merged into the group DM of that name, and a new
+    // #officers does not clash with it.
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
+    const picker = screen.getByLabelText("Merge into") as HTMLSelectElement;
+    expect([...picker.options].map((option) => option.textContent)).toEqual([
+      "Pick a channel…",
+      "#general",
+    ]);
+  });
+
+  it("keeps a private like-named channel as a new one and asks about the clash (#2856)", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+    await renderAtChannels();
+    expect(
+      await screen.findAllByText(/#general already exists in Frapp/),
+    ).not.toHaveLength(0);
+    expect(continueDisabled()).toBe(true);
+  });
+
+  it("never merges a row later, once the Frapp channels were loaded when it was staged (#2856)", async () => {
+    // Loaded, with nothing named #general: #general starts as a new channel.
+    channelsQuery.value = {
+      data: [],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    // A new element each time, or React skips the re-render and the hook is
+    // never asked again.
+    const wizard = () => (
+      <ImportWizard
+        onCancel={() => undefined}
+        onStarted={() => undefined}
+        initialSource="bot"
+        initialStep="consent"
+      />
+    );
+    const { rerender } = render(wizard());
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the roles" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText(/Nothing needs attention/);
+
+    // A refetch brings a #general. The row was decided already, so it stays
+    // a new channel, and the clash is asked about instead of merged silently.
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    rerender(wizard());
+    expect(
+      (await screen.findAllByText(/#general already exists in Frapp/)).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("merges once the Frapp channels load, when the scan beat them (#2856)", async () => {
+    channelsQuery.value = {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    const { rerender } = render(
+      <ImportWizard
+        onCancel={() => undefined}
+        onStarted={() => undefined}
+        initialSource="bot"
+        initialStep="consent"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the roles" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the channels" });
+
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general", type: "PUBLIC" }],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    rerender(
+      <ImportWizard
+        onCancel={() => undefined}
+        onStarted={() => undefined}
+        initialSource="bot"
+        initialStep="consent"
+      />,
+    );
+    expect(
+      await screen.findByText(/Nothing needs attention/),
+    ).toBeInTheDocument();
   });
 
   it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {
@@ -777,20 +1007,22 @@ describe("ImportWizard — the bot path", () => {
         .closest("div.rounded-md")
         ?.querySelector("select") as HTMLSelectElement;
 
-    it("asks about roles before channels, defaulting by name, then a close match, then new or ignore", async () => {
+    it("asks about roles before channels, defaulting by name, then a close match, then a new role", async () => {
       scanWithRoles();
       renderAtConsent();
       await screen.findByRole("heading", { name: "Map the roles" });
 
       expect(becomes("treasurer").value).toBe("role-treasurer");
       expect(becomes("Recording Secretary").value).toBe("role-secretary");
-      // Reads a private channel, matches nothing: a new role.
+      // Matches nothing: a new role, whether or not it read a private
+      // channel (#2855), because a role classifies people either way.
       expect(becomes("Rush Chair").value).toBe("__new__");
+      expect(becomes("Gamers").value).toBe("__new__");
       expect(
-        (screen.getByLabelText("New role name") as HTMLInputElement).value,
-      ).toBe("Rush Chair");
-      // Reads nothing private: creates nothing.
-      expect(becomes("Gamers").value).toBe("__ignore__");
+        screen
+          .getAllByLabelText("New role name")
+          .map((input) => (input as HTMLInputElement).value),
+      ).toEqual(["Rush Chair", "Gamers"]);
 
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
       await waitFor(() =>
@@ -821,9 +1053,9 @@ describe("ImportWizard — the bot path", () => {
             {
               discord_role_id: "r-gamer",
               discord_role_name: "Gamers",
-              action: "ignore",
+              action: "new",
               frapp_role_id: undefined,
-              new_role_name: undefined,
+              new_role_name: "Gamers",
             },
           ],
         }),

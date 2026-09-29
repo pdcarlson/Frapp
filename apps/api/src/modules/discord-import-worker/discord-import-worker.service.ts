@@ -38,6 +38,10 @@ import type {
   DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
+import {
+  channelServesMergeKey,
+  newChannelMergeKey,
+} from '#domain/utils/discord-channel-merge';
 
 /**
  * How long one tick may work before checkpointing and handing the job back.
@@ -308,8 +312,8 @@ export class DiscordImportWorkerService {
         }
         return held;
       },
-      resolveTargetChannel: (mapping) =>
-        this.resolveTargetChannel(mapping, chapterId, job.id),
+      resolveTargetChannel: (mapping, siblings) =>
+        this.resolveTargetChannel(mapping, chapterId, job.id, siblings),
       importBatch: (batch) =>
         this.importBatch({
           batch: batch.messages,
@@ -466,6 +470,7 @@ export class DiscordImportWorkerService {
         mapping,
         chapterId,
         job.id,
+        channels,
       );
       // Counted per channel. `imported` is the job-wide running total, so
       // adding it to the channel row would credit each channel with every
@@ -748,11 +753,19 @@ export class DiscordImportWorkerService {
    * back onto the mapping row immediately — so a re-run reuses that channel
    * instead of minting a second one with the same name. `chat_channels` has no
    * unique constraint on `(chapter_id, name)`, so nothing else would catch it.
+   *
+   * Like-named rows share one (#2856): a row whose `newChannelMergeKey`
+   * matches a row of this import that already has its channel reuses that
+   * channel instead of creating a second of the same name. `siblings` is the
+   * import's rows as this slice loaded them, which carries the targets
+   * written back by earlier slices and, through the write-back below, by
+   * this one.
    */
   private async resolveTargetChannel(
     mapping: DiscordImportChannel,
     chapterId: string,
     importId: string,
+    siblings: readonly DiscordImportChannel[],
   ): Promise<string> {
     if (mapping.target_channel_id) {
       // Re-verified here, not trusted from the row. The service validates the
@@ -772,12 +785,63 @@ export class DiscordImportWorkerService {
           `Channel mapping for #${mapping.discord_channel_name} points at a channel outside this chapter.`,
         );
       }
+      // Checked here too, for a mapping saved before the service refused it.
+      if (target.type === 'DM' || target.type === 'GROUP_DM') {
+        throw new Error(
+          `Channel mapping for #${mapping.discord_channel_name} points at a direct message. Map the channels again, then restart the import.`,
+        );
+      }
+      // A new-channel row's target is the channel this import made for it,
+      // so it must still have the readers the row asks for. It may not: an
+      // upload mapped before #2856 kept whatever target the client sent, and
+      // a channel can be re-gated while the import runs. Stopping says so,
+      // where carrying on could widen who reads the messages.
+      if (
+        mapping.mapping_action === 'create_new' &&
+        !channelServesMergeKey(target, mapping)
+      ) {
+        throw new Error(
+          `The channel recorded for #${mapping.discord_channel_name} no longer has the readers its mapping asks for. Map the channels again, then restart the import.`,
+        );
+      }
       return mapping.target_channel_id;
     }
     if (mapping.mapping_action !== 'create_new' || !mapping.new_channel_name) {
       throw new Error(
         `Channel mapping for #${mapping.discord_channel_name} has no target.`,
       );
+    }
+
+    const key = newChannelMergeKey(mapping);
+    // Every channel a like-named row already has, first found first. A gone
+    // one is passed over for the next, so a group whose first channel was
+    // deleted still lands in one replacement rather than one each.
+    const candidates = key
+      ? [
+          ...new Set(
+            siblings.flatMap((other) =>
+              other.id !== mapping.id &&
+              other.target_channel_id !== null &&
+              newChannelMergeKey(other) === key
+                ? [other.target_channel_id]
+                : [],
+            ),
+          ),
+        ]
+      : [];
+    for (const candidate of candidates) {
+      // Read back through the chapter like any target, and reused only while
+      // the channel itself still has this row's readers: the row that points
+      // at it may carry a target it did not create (an upload mapped before
+      // #2856), or the channel may have been re-gated since.
+      const target = await this.channelRepo.findById(candidate, chapterId);
+      if (target && channelServesMergeKey(target, mapping)) {
+        await this.importRepo.updateChannel(mapping.id, importId, {
+          target_channel_id: target.id,
+        });
+        mapping.target_channel_id = target.id;
+        return target.id;
+      }
     }
 
     const created = await this.channelRepo.create({

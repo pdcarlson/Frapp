@@ -209,6 +209,23 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     }
   });
 
+  it('findChannelProgress filters every read through the import embed (#2857)', async () => {
+    await repo.findChannelProgress(IMPORT_B, CHAPTER_B);
+    // Five counts and three short lists.
+    expect(harness.ops).toHaveLength(8);
+    for (const op of harness.ops) {
+      expect(op.filters.map((f) => [f.column, f.value])).toContainEqual([
+        'discord_imports.chapter_id',
+        CHAPTER_B,
+      ]);
+      expect(op.filters.map((f) => [f.column, f.op, f.value])).toContainEqual([
+        'mapping_action',
+        'neq',
+        'skip',
+      ]);
+    }
+  });
+
   it('countChannels counts the rows being imported, and a skipped one as done', async () => {
     await repo.countChannels(IMPORT_B, CHAPTER_B);
     const [total, done] = harness.ops.map((op) =>
@@ -417,7 +434,7 @@ describe('SupabaseDiscordImportRepository — progress counts and clearing', () 
     ...fields,
   });
 
-  function build(importStatus: string) {
+  function build(importStatus: string, extra: Record<string, unknown>[] = []) {
     const harness = createTenantHarness({
       tenantColumns: {
         discord_import_channels: 'discord_imports.chapter_id',
@@ -464,6 +481,7 @@ describe('SupabaseDiscordImportRepository — progress counts and clearing', () 
           }),
           // Mapped to skip: not being imported, so in neither count.
           channel('left-out', { mapping_action: 'skip', status: 'skipped' }),
+          ...extra,
         ],
       },
     });
@@ -472,6 +490,61 @@ describe('SupabaseDiscordImportRepository — progress counts and clearing', () 
       repo: new SupabaseDiscordImportRepository(harness.client),
     };
   }
+
+  it('findChannelProgress counts by status and names the running, recent and failed rows (#2857)', async () => {
+    const { repo } = build('running', [
+      channel('broke', {
+        mapping_action: 'create_new',
+        status: 'failed',
+        error: 'Missing Access',
+      }),
+    ]);
+    const progress = await repo.findChannelProgress(IMPORT_A, CHAPTER_A);
+
+    // Rows mapped to skip, and another chapter's rows, are in no count.
+    expect(progress.counts).toEqual({
+      pending: 1,
+      running: 1,
+      completed: 1,
+      failed: 1,
+      skipped: 1,
+    });
+    expect(progress.running.map((row) => row.discord_channel_id)).toEqual([
+      'reading',
+    ]);
+    expect(progress.recent.map((row) => row.discord_channel_id)).toEqual([
+      'imported',
+    ]);
+    expect(progress.failed).toEqual([
+      expect.objectContaining({
+        discord_channel_id: 'broke',
+        error: 'Missing Access',
+      }),
+    ]);
+    // The scoping embed stays behind.
+    expect(progress.running[0]).not.toHaveProperty('discord_imports');
+  });
+
+  it('findChannelProgress names the last finished first, and only a few', async () => {
+    const finished = Array.from({ length: 8 }, (_, index) =>
+      channel(`done-${index}`, {
+        mapping_action: 'create_new',
+        status: 'completed',
+        position: index + 10,
+      }),
+    );
+    const { repo } = build('running', finished);
+    const progress = await repo.findChannelProgress(IMPORT_A, CHAPTER_A);
+
+    expect(progress.counts.completed).toBe(9);
+    expect(progress.recent.map((row) => row.discord_channel_id)).toEqual([
+      'done-7',
+      'done-6',
+      'done-5',
+      'done-4',
+      'done-3',
+    ]);
+  });
 
   it('counts the rows being imported as the total, and the finished ones as done', async () => {
     const { repo } = build('running');

@@ -405,6 +405,16 @@ export function UploadStep({
             id&gt; -f Json --media --utc --partition 8mb -o export/
           </code>
         </pre>
+        {/* #2858. An upload's range is set here, not at review: by then its
+            media is already uploaded. `--after` is ExportCommandBase's, so
+            exportguild takes it (checked against DiscordChatExporter's
+            source, 2026-09-29). */}
+        <p className="text-xs">
+          To leave out old history, add{" "}
+          <code className="rounded bg-surface-1 px-1">--after 2023-01-01</code>{" "}
+          with your own date. Older messages and their media then stay out of
+          the export and the upload.
+        </p>
       </div>
 
       <div className="grid gap-1.5">

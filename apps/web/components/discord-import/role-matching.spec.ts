@@ -90,28 +90,34 @@ describe("matchFrappRole (#2818)", () => {
   });
 });
 
-describe("defaultRoleChoice (#2818)", () => {
+describe("defaultRoleChoice (#2855)", () => {
   const role = (roleName: string) => ({ roleId: "r1", roleName });
 
-  it("uses the match, else a new role if it could read a private channel, else Ignore", () => {
-    expect(
-      defaultRoleChoice(role("Treasurer"), frappRoles, true, true),
-    ).toEqual({
+  it("uses the match, else a new role named after it", () => {
+    expect(defaultRoleChoice(role("Treasurer"), frappRoles, true)).toEqual({
       choice: { action: "existing", roleId: "treasurer" },
       kind: "same-name",
     });
-    expect(
-      defaultRoleChoice(role(" Rush Chair "), frappRoles, true, true),
-    ).toEqual({ choice: { action: "new", name: "Rush Chair" }, kind: null });
-    expect(defaultRoleChoice(role("Gamers"), frappRoles, false, true)).toEqual({
-      choice: { action: "ignore" },
+    expect(defaultRoleChoice(role(" Rush Chair "), frappRoles, true)).toEqual({
+      choice: { action: "new", name: "Rush Chair" },
+      kind: null,
+    });
+  });
+
+  it("creates a role that gates no channel too, since roles classify people", () => {
+    // #2818 left these on Ignore; a class year is still worth keeping.
+    expect(defaultRoleChoice(role("Class of 2027"), frappRoles, true)).toEqual({
+      choice: { action: "new", name: "Class of 2027" },
       kind: null,
     });
   });
 
   it("starts everything at Ignore for a viewer who cannot manage roles", () => {
     expect(
-      defaultRoleChoice(role("Treasurer"), frappRoles, true, false).choice,
+      defaultRoleChoice(role("Treasurer"), frappRoles, false).choice,
+    ).toEqual({ action: "ignore" });
+    expect(
+      defaultRoleChoice(role("Class of 2027"), frappRoles, false).choice,
     ).toEqual({ action: "ignore" });
   });
 });

@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -16,6 +17,7 @@ import {
 import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
 import { RawValue } from './raw-value.transform';
+import { DISCORD_IMPORT_PROGRESS_LIMITS } from '#domain/entities/discord-import.entity';
 
 export class CreateDiscordImportDto {
   @ApiProperty({
@@ -43,6 +45,19 @@ export class CreateDiscordImportDto {
   @IsOptional()
   @IsIn(['upload', 'bot'])
   source?: 'upload' | 'bot';
+}
+
+export class StartDiscordImportDto {
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      "Bot imports only (#2858): import only messages sent at or after this instant. Omit it, or send null, for all history. It is set when the import is first started and fixed from then on: a later start (a restart) may repeat it or leave it out, not change it. An upload's range is set when exporting, with DiscordChatExporter's `--after`, so an upload refuses it.",
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  messages_after?: string | null;
 }
 
 export class DiscordDiscoveredRoleDto {
@@ -154,7 +169,7 @@ export class DiscordChannelMappingDto {
   @ApiProperty({
     enum: ['create_new', 'use_existing', 'skip'],
     description:
-      'What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match is never treated as an answer.',
+      'What to do with this Discord channel. Always explicit — `chat_channels` has no unique constraint on (chapter_id, name), so a same-name match with an existing channel is never treated as an answer. Rows of one import that `create_new` with the same `new_channel_name` (compared trimmed, without a leading `#`, in any case) and the same readers (type, gate and read-only) land in ONE new channel, the one the first of them creates (#2856); rows of the same name with different readers get a channel each.',
   })
   @IsIn(['create_new', 'use_existing', 'skip'])
   mapping_action: 'create_new' | 'use_existing' | 'skip';
@@ -275,4 +290,90 @@ export class DiscordUploadTicketDto {
       'The content type the API validated. Send exactly this on the PUT — the bucket allowlist judges what the uploader sends, and a browser reports an empty type for several formats a Discord archive carries.',
   })
   content_type: string;
+}
+
+export class DiscordImportChannelProgressRowDto {
+  @ApiProperty()
+  discord_channel_id: string;
+
+  @ApiProperty({
+    description: 'As the scan recorded it; a thread reads `parent › thread`.',
+  })
+  discord_channel_name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  discord_category: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Set on a thread: the channel it lives in.',
+  })
+  parent_discord_channel_id: string | null;
+
+  @ApiProperty({
+    enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
+  })
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+
+  @ApiProperty({ description: 'Messages written so far.' })
+  imported_count: number;
+
+  @ApiProperty({ type: String, nullable: true })
+  error: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Frapp channel it lands in, once known: from mapping time for a merge, and once the worker reaches it for a new channel. Open it at `/chat?channel=<id>`.',
+  })
+  target_channel_id: string | null;
+}
+
+export class DiscordImportProgressCountsDto {
+  @ApiProperty()
+  pending: number;
+
+  @ApiProperty()
+  running: number;
+
+  @ApiProperty()
+  completed: number;
+
+  @ApiProperty()
+  failed: number;
+
+  @ApiProperty({
+    description:
+      'Skipped by the worker: Discord no longer showed the channel to the bot when it got there.',
+  })
+  skipped: number;
+}
+
+export class DiscordImportProgressDto {
+  @ApiProperty({
+    type: DiscordImportProgressCountsDto,
+    description:
+      'Channel and thread rows being imported, by status. Rows mapped to skip are in no count.',
+  })
+  counts: DiscordImportProgressCountsDto;
+
+  @ApiProperty({
+    type: [DiscordImportChannelProgressRowDto],
+    description: `The rows running now, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.running}. On an import that is no longer moving, where it stopped.`,
+  })
+  running: DiscordImportChannelProgressRowDto[];
+
+  @ApiProperty({
+    type: [DiscordImportChannelProgressRowDto],
+    description: `The rows finished last, most recent first, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.recent}.`,
+  })
+  recent: DiscordImportChannelProgressRowDto[];
+
+  @ApiProperty({
+    type: [DiscordImportChannelProgressRowDto],
+    description: `Failed rows with the reason, in import order, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.failed}. A restart resumes them.`,
+  })
+  failed: DiscordImportChannelProgressRowDto[];
 }

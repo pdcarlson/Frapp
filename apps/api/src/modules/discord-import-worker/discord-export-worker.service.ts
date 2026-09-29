@@ -47,6 +47,11 @@ import type {
   DiscordImportChannel,
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
+import {
+  isAtOrAfter,
+  snowflakeAtOrAfter,
+} from '#domain/utils/discord-snowflake';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * Messages fetched per Discord round trip.
@@ -177,7 +182,11 @@ export class DiscordExportWorkerService {
       totalMessages: number;
       warnings: string[];
     }) => Promise<boolean>;
-    resolveTargetChannel: (mapping: DiscordImportChannel) => Promise<string>;
+    /** `siblings`: the import's rows, which like-named rows share a channel through (#2856). */
+    resolveTargetChannel: (
+      mapping: DiscordImportChannel,
+      siblings: readonly DiscordImportChannel[],
+    ) => Promise<string>;
     importBatch: (batch: {
       messages: DiscordExportMessage[];
       targetChannelId: string;
@@ -259,18 +268,36 @@ export class DiscordExportWorkerService {
         continue;
       }
 
-      const done = await this.runChannel({
-        job,
-        guildId,
-        mapping,
-        deadline,
-        totals,
-        mediaByRelativePath,
-        checkpoint,
-        resolveTargetChannel: (channel) =>
-          this.resolveDestination(channel, byDiscordId, resolveTargetChannel),
-        importBatch,
-      });
+      let done: boolean;
+      try {
+        done = await this.runChannel({
+          job,
+          guildId,
+          mapping,
+          deadline,
+          totals,
+          mediaByRelativePath,
+          checkpoint,
+          resolveTargetChannel: (channel) =>
+            this.resolveDestination(channel, byDiscordId, (row) =>
+              resolveTargetChannel(row, channels),
+            ),
+          importBatch,
+        });
+      } catch (error) {
+        // The row says where the import stopped and why, for the Watch
+        // panel (#2857); the job carries the same reason. A restart resumes
+        // the row from its cursor like any unfinished one. Best effort: the
+        // import is failing anyway, and this write must not replace the
+        // reason it fails with.
+        await this.importRepo
+          .updateChannel(mapping.id, job.id, {
+            status: 'failed',
+            error: toReportableError(error).message,
+          })
+          .catch(() => undefined);
+        throw error;
+      }
       if (!done) return this.sliceResult(totals, false);
     }
 
@@ -405,6 +432,17 @@ export class DiscordExportWorkerService {
       importBatch,
     } = args;
 
+    // A row an earlier run failed on is being resumed: it is running again,
+    // and the old reason no longer applies (#2857).
+    if (mapping.status === 'failed') {
+      await this.importRepo.updateChannel(mapping.id, job.id, {
+        status: 'running',
+        error: null,
+      });
+      mapping.status = 'running';
+      mapping.error = null;
+    }
+
     // Re-derived from Discord's answer on every slice, never from the row.
     // Throws when the channel exists in a DIFFERENT guild — that case is not a
     // skip, it is the shared bot being aimed at another tenant, and it takes
@@ -459,6 +497,12 @@ export class DiscordExportWorkerService {
 
     let before = mapping.cursor_before_snowflake;
     let channelImported = mapping.imported_count;
+    // The date cutoff (#2858), as the smallest id Discord could have minted at
+    // it. Null imports all history.
+    const cutoff =
+      job.messages_after === null || job.messages_after === undefined
+        ? null
+        : snowflakeAtOrAfter(Date.parse(job.messages_after));
 
     for (;;) {
       if (Date.now() >= deadline) return false;
@@ -483,13 +527,26 @@ export class DiscordExportWorkerService {
         return true;
       }
 
+      // Discord answers newest first, so the first message sent before the
+      // cutoff is where this channel ends: what came after it is imported,
+      // and nothing older is read, copied or stored.
+      const page =
+        cutoff === null
+          ? rawPage
+          : rawPage.filter((message) => isAtOrAfter(message.id, cutoff));
+      const reachedCutoff = page.length < rawPage.length;
+      if (page.length === 0) {
+        await this.finishChannel(job, mapping, channelImported);
+        return true;
+      }
+
       // Attachments first: `attachment_count` on the message row has to be the
       // number of attachment rows that will actually exist, and that is only
       // knowable once the bytes have landed. Same ordering, same reason, as the
       // upload path's batch.
       const fetched = await this.copyPageAttachments({
         job,
-        page: rawPage,
+        page,
         mediaByRelativePath,
         totals,
         renewLease: () =>
@@ -508,7 +565,7 @@ export class DiscordExportWorkerService {
       // landed in `mediaByRelativePath`, and sends only the rest.
       if (!fetched.complete) return false;
 
-      totals.totalMessages += rawPage.length;
+      totals.totalMessages += page.length;
       // `fetched.skipped` is deliberately NOT added to the running total.
       //
       // Anything this rejected — too large, a type the bucket refuses, gone
@@ -518,7 +575,7 @@ export class DiscordExportWorkerService {
       // skipped attachment.
 
       const outcome = await importBatch({
-        messages: rawPage.map((message) => toExportShapeMessage(message)),
+        messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,
         mediaByRelativePath,
       });
@@ -567,8 +624,9 @@ export class DiscordExportWorkerService {
       });
       if (!mayContinue) return false;
 
-      // A short page is Discord's only honest end-of-channel signal.
-      if (rawPage.length < EXPORT_PAGE_SIZE) {
+      // A short page is Discord's only honest end-of-channel signal; the
+      // cutoff is this import's own.
+      if (reachedCutoff || rawPage.length < EXPORT_PAGE_SIZE) {
         await this.finishChannel(job, mapping, channelImported);
         return true;
       }

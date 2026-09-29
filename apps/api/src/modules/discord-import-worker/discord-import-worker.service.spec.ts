@@ -77,6 +77,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     completed_at: null,
     purged_at: null,
     cleared_at: null,
+    messages_after: null,
     ...overrides,
   };
 }
@@ -130,6 +131,8 @@ function channelMapping(
     target_channel_id: SIGNET_CHANNEL,
     new_channel_name: null,
     new_channel_is_read_only: true,
+    new_channel_type: 'PUBLIC',
+    new_channel_required_permissions: null,
     message_count: 8,
     imported_count: 0,
     status: 'pending',
@@ -261,7 +264,15 @@ async function buildWorker(
     findById: jest.fn(async (id: string, chapterId: string) =>
       chapterId === CHAPTER &&
       (id === SIGNET_CHANNEL || id === 'created-channel-1')
-        ? { id, chapter_id: chapterId, name: 'general' }
+        ? {
+            id,
+            chapter_id: chapterId,
+            name: 'general',
+            type: 'PUBLIC',
+            required_permissions: null,
+            is_read_only: true,
+            archived_at: null,
+          }
         : null,
     ),
   };
@@ -593,6 +604,27 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.state().status).toBe('failed');
   });
 
+  it('stops rather than import into a direct message a mapping points at (#2856)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.findById.mockResolvedValue({
+      id: SIGNET_CHANNEL,
+      chapter_id: CHAPTER,
+      name: 'officers',
+      type: 'GROUP_DM',
+      required_permissions: null,
+      is_read_only: true,
+      archived_at: null,
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().error).toMatch(/points at a direct message/);
+  });
+
   it('creates a channel once across every part of that channel', async () => {
     // `channelBySnowflake` hands the same object back for each part, so a
     // channel split by `--partition` would otherwise mint one identically-named
@@ -617,6 +649,189 @@ describe('DiscordImportWorkerService — importing', () => {
     await worker.sweepImports(NOW);
 
     expect(channelRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  describe('like-named channels (#2856)', () => {
+    /** The fixture re-keyed as a second Discord channel, ids and all. */
+    const otherChannelPart = () => {
+      const part = JSON.parse(
+        readFileSync(join(FIXTURES, 'part-000.json'), 'utf8'),
+      ) as {
+        channel: { id: string; name: string };
+        messages: { id?: string | null; reference?: unknown }[];
+      };
+      part.channel = { ...part.channel, id: '800000000000000002' };
+      part.messages = part.messages.map((message) => ({
+        ...message,
+        id: message.id ? message.id.replace(/^9/, '7') : message.id,
+      }));
+      return new TextEncoder().encode(JSON.stringify(part));
+    };
+    const twoParts = () => {
+      repoRef.files = [
+        exportFile({ id: 'f0', part_index: 0, relative_path: 'p0.json' }),
+        exportFile({
+          id: 'f1',
+          part_index: 1,
+          relative_path: 'p1.json',
+          storage_path: `chapters/${CHAPTER}/chat-archive/imports/${IMPORT_ID}/export/0001-p1.json`,
+        }),
+      ];
+      const storage = makeStorage(part000());
+      const other = otherChannelPart();
+      storage.downloadFile = jest.fn(async (_bucket: string, path: string) =>
+        path.endsWith('0001-p1.json') ? other : part000(),
+      );
+      return storage;
+    };
+    const newChannel = (overrides: Partial<DiscordImportChannel>) =>
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'general',
+        new_channel_type: 'PUBLIC',
+        new_channel_required_permissions: null,
+        ...overrides,
+      });
+
+    it('lands two Discord channels with one new name and the same readers in one channel', async () => {
+      repoRef.channels = [
+        newChannel({ id: 'map-1' }),
+        newChannel({
+          id: 'map-2',
+          discord_channel_id: '800000000000000002',
+          // Compared the way the wizard compares names.
+          new_channel_name: ' #General ',
+        }),
+      ];
+      const { worker, channelRepo } = await buildWorker(repoRef, twoParts());
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(repoRef.channelUpdates).toContainEqual({
+        target_channel_id: 'created-channel-1',
+      });
+      const landed = [
+        ...(repoRef.inserted().get('created-channel-1')?.keys() ?? []),
+      ];
+      expect(landed.some((id) => id.startsWith('7'))).toBe(true);
+      expect(landed.some((id) => id.startsWith('9'))).toBe(true);
+    });
+
+    it('gives each its own channel when they differ in who reads them', async () => {
+      repoRef.channels = [
+        newChannel({ id: 'map-1' }),
+        newChannel({
+          id: 'map-2',
+          discord_channel_id: '800000000000000002',
+          new_channel_type: 'ROLE_GATED',
+          new_channel_required_permissions: ['channels:read:exec'],
+        }),
+      ];
+      const { worker, channelRepo } = await buildWorker(repoRef, twoParts());
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('lands the rest of a group in one replacement when its first channel is gone', async () => {
+      repoRef.channels = [
+        newChannel({
+          id: 'map-0',
+          discord_channel_id: '800000000000000009',
+          target_channel_id: 'deleted-channel',
+          status: 'completed',
+        }),
+        newChannel({ id: 'map-1' }),
+        newChannel({ id: 'map-2', discord_channel_id: '800000000000000002' }),
+      ];
+      const { worker, channelRepo } = await buildWorker(repoRef, twoParts());
+
+      await worker.sweepImports(NOW);
+
+      // map-1 makes the replacement; map-2 passes over the gone channel to it.
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(
+        repoRef.channels.map((row) => [row.id, row.target_channel_id]),
+      ).toEqual([
+        ['map-0', 'deleted-channel'],
+        ['map-1', 'created-channel-1'],
+        ['map-2', 'created-channel-1'],
+      ]);
+    });
+
+    it('never reuses a channel whose readers are not the row’s own', async () => {
+      // An upload mapped before #2856 could carry a client-sent target on a
+      // new-channel row; that channel is PUBLIC, the row is gated.
+      const gated = {
+        new_channel_type: 'ROLE_GATED' as const,
+        new_channel_required_permissions: ['channels:read:exec'],
+      };
+      repoRef.channels = [
+        newChannel({
+          id: 'map-0',
+          discord_channel_id: '800000000000000009',
+          target_channel_id: SIGNET_CHANNEL,
+          status: 'completed',
+          ...gated,
+        }),
+        newChannel({ id: 'map-1', ...gated }),
+      ];
+      const { worker, channelRepo } = await buildWorker(
+        repoRef,
+        makeStorage(part000()),
+      );
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(repoRef.inserted().get(SIGNET_CHANNEL)).toBeUndefined();
+    });
+
+    it('stops rather than import into its own recorded channel when that channel has other readers', async () => {
+      // An upload mapped before #2856 kept a client-sent target on a
+      // new-channel row: here a gated row points at the PUBLIC channel.
+      repoRef.channels = [
+        newChannel({
+          id: 'map-1',
+          target_channel_id: SIGNET_CHANNEL,
+          new_channel_type: 'ROLE_GATED',
+          new_channel_required_permissions: ['channels:read:exec'],
+        }),
+      ];
+      const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+      await worker.sweepImports(NOW);
+
+      expect(repoRef.insertMessages).not.toHaveBeenCalled();
+      expect(repoRef.state().status).toBe('failed');
+      expect(repoRef.state().error).toMatch(
+        /no longer has the readers its mapping asks for/,
+      );
+    });
+
+    it('does not reuse a shared channel that is gone', async () => {
+      repoRef.channels = [
+        newChannel({
+          id: 'map-0',
+          discord_channel_id: '800000000000000009',
+          target_channel_id: 'deleted-channel',
+          status: 'completed',
+        }),
+        newChannel({ id: 'map-1' }),
+      ];
+      const { worker, channelRepo } = await buildWorker(
+        repoRef,
+        makeStorage(part000()),
+      );
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(repoRef.inserted().get('deleted-channel')).toBeUndefined();
+    });
   });
 
   it("counts a part's messages once even if it is re-opened by a later slice", async () => {

@@ -70,12 +70,25 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
     },
   );
 
+  it('passes a date cutoff through to start (#2858)', async () => {
+    rbacService.memberHasAnyPermission.mockResolvedValue(true);
+    await controller.start(
+      IMPORT_ID,
+      { messages_after: '2024-06-01T00:00:00.000Z' },
+      CHAPTER,
+      USER,
+    );
+    expect(importService.start).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, true, {
+      messagesAfter: '2024-06-01T00:00:00.000Z',
+    });
+  });
+
   it.each([true, false])(
     'passes whether the caller holds roles:manage (%s) to start',
     async (holds) => {
       rbacService.memberHasAnyPermission.mockResolvedValue(holds);
 
-      await controller.start(IMPORT_ID, CHAPTER, USER);
+      await controller.start(IMPORT_ID, {}, CHAPTER, USER);
 
       expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
         CHAPTER,
@@ -86,6 +99,7 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
         IMPORT_ID,
         CHAPTER,
         holds,
+        { messagesAfter: undefined },
       );
     },
   );

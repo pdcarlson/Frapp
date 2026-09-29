@@ -19,8 +19,11 @@ import { useGateCatalog } from "@/components/shared/use-gate-catalog";
 import type { StagedChannel } from "./upload-step";
 import {
   asNewChannel,
+  isImportTarget,
+  newChannelGroups,
   privacyReason,
   type ChannelChoice,
+  type ExistingChannel,
   type MappingIssue,
   type PrivacyReason,
 } from "./mapping-issues";
@@ -61,19 +64,21 @@ function rowId(channelId: string): string {
 /**
  * Where each Discord channel lands.
  *
- * Every readable channel starts as a new Frapp channel with its Discord name
- * (`defaultChoice`), so a server with no clashes needs no per-row clicks.
- * What still needs a decision is listed in Needs attention, which is the same
- * list that keeps Continue disabled: a name clash, a merge with no target, or
- * a channel that was (or may have been) private in Discord with no
- * visibility chosen yet. A private channel starts "Same as Discord" (#2818)
- * when the scan named the roles that could read it, and reads through the
- * role step's answers, so it needs attention only when none of them is
- * mapped.
+ * Every readable channel starts at its `defaultChoice`, so a server with no
+ * clashes needs no per-row clicks: a merge into the like-named Frapp channel
+ * when it was public in Discord (#2856), else a new Frapp channel with its
+ * Discord name. Discord channels given the same new name and the same readers
+ * land in one new channel, which each of their rows says. What still needs a
+ * decision is listed in Needs attention, which is the same list that keeps
+ * Continue disabled: a name clash, a merge with no target, a shared name
+ * whose rows disagree about readers, or a channel that was (or may have
+ * been) private in Discord with no visibility chosen yet. A private channel
+ * starts "Same as Discord" (#2818) when the scan named the roles that could
+ * read it, and reads through the role step's answers, so it needs attention
+ * only when none of them is mapped.
  *
- * Merging is never inferred. `chat_channels` has no unique (chapter_id, name),
- * so a same-name Frapp channel is listed as a clash to resolve, not treated as
- * the answer.
+ * A private channel never merges by default: it would take the target's
+ * readers, which may be the whole chapter (#2800).
  */
 export function ChannelMappingStep({
   channels,
@@ -216,6 +221,10 @@ export function ChannelMappingStep({
       bulk(readable, withVisibility(visibility, permissions, readersOf)),
   );
   const offersDiscord = readable.some((channel) => readersOf(channel));
+  const { together } = useMemo(
+    () => newChannelGroups(channels, choices, readersOf),
+    [channels, choices, readersOf],
+  );
 
   if (channels.length === 0) {
     return (
@@ -229,8 +238,9 @@ export function ChannelMappingStep({
   const importing = readable.filter(
     (channel) => (choices[channel.channelId]?.action ?? "skip") !== "skip",
   ).length;
-  const existingNames = asArray<{ id: string; name: string }>(
-    existingChannels.data,
+  // A DM or group DM is never somewhere to import into (`isImportTarget`).
+  const existingNames = asArray<ExistingChannel>(existingChannels.data).filter(
+    isImportTarget,
   );
   const permissionProps = {
     catalog,
@@ -242,9 +252,11 @@ export function ChannelMappingStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Every channel starts as a new Frapp channel with its Discord name.
-        Change only what you need to. Anything that still needs a decision is
-        listed under Needs attention.
+        Every channel starts as a new Frapp channel with its Discord name,
+        except a public one whose name a whole-chapter Frapp channel already
+        has, which starts merged into it. Channels given the same new name land
+        in one channel. Change only what you need to. Anything that still needs
+        a decision is listed under Needs attention.
       </p>
       {knowsPrivacy ? null : (
         <p className="text-sm text-muted-foreground">
@@ -315,6 +327,7 @@ export function ChannelMappingStep({
             }
             existingNames={existingNames}
             readersOf={readersOf}
+            together={together}
             {...permissionProps}
           />
         ))}
@@ -405,6 +418,7 @@ function CategoryGroup({
   onRow,
   existingNames,
   readersOf,
+  together,
   catalog,
   holders,
   catalogLoading,
@@ -423,6 +437,8 @@ function CategoryGroup({
   onRow: (channel: StagedChannel, patch: Partial<ChannelChoice>) => void;
   existingNames: { id: string; name: string }[];
   readersOf: ReadersOf;
+  /** Per row, how many rows share its new channel (#2856). */
+  together: ReadonlyMap<string, number>;
   catalog: PermissionCatalogEntry[];
   holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
@@ -516,6 +532,7 @@ function CategoryGroup({
               onPatch={(patch) => onRow(channel, patch)}
               existingNames={existingNames}
               readers={readersOf(channel)}
+              sharedBy={together.get(channel.channelId) ?? 0}
               {...permissionProps}
             />
           ))}
@@ -697,6 +714,7 @@ function ChannelRow({
   onPatch,
   existingNames,
   readers,
+  sharedBy,
   catalog,
   holders,
   catalogLoading,
@@ -709,6 +727,8 @@ function ChannelRow({
   existingNames: { id: string; name: string }[];
   /** Who "Same as Discord" resolves to; null where it is not on offer. */
   readers: SameAsDiscordReaders | null;
+  /** How many Discord channels land in this row's new channel, it included. */
+  sharedBy: number;
   catalog: PermissionCatalogEntry[];
   holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
@@ -830,6 +850,13 @@ function ChannelRow({
             </select>
           </div>
         </div>
+      ) : null}
+
+      {action === "create_new" && sharedBy > 1 ? (
+        <p className="text-xs text-muted-foreground">
+          {sharedBy} Discord channels named #{choice?.newName?.trim()} land in
+          one new channel.
+        </p>
       ) : null}
 
       {action === "create_new" && discordReaders ? (

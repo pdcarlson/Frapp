@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -30,10 +31,12 @@ import {
   ConfirmDiscordUploadsDto,
   CreateDiscordImportDto,
   DiscordDiscoveryResponseDto,
+  DiscordImportProgressDto,
   DiscordUploadTicketDto,
   RequestDiscordUploadUrlsDto,
   SetDiscordChannelMappingDto,
   SetDiscordRoleMappingDto,
+  StartDiscordImportDto,
 } from '../dtos/discord-import.dto';
 
 /**
@@ -116,6 +119,22 @@ export class DiscordImportController {
     @CurrentChapterId() chapterId: string,
   ) {
     return this.importService.getChannels(id, chapterId);
+  }
+
+  @Get(':id/progress')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Channel-by-channel progress, for watching an import',
+    description:
+      "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
+  })
+  @ApiOkResponse({ type: DiscordImportProgressDto })
+  getProgress(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.importService.getProgress(id, chapterId);
   }
 
   @Get(':id/files')
@@ -250,10 +269,13 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).',
+      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.',
   })
+  // Optional: every client before #2858 starts with no body at all.
+  @ApiBody({ type: StartDiscordImportDto, required: false })
   async start(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: StartDiscordImportDto,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -265,7 +287,9 @@ export class DiscordImportController {
       userId,
       [SystemPermissions.ROLES_MANAGE],
     );
-    return this.importService.start(id, chapterId, canManageRoles);
+    return this.importService.start(id, chapterId, canManageRoles, {
+      messagesAfter: body?.messages_after,
+    });
   }
 
   @Post(':id/cancel')

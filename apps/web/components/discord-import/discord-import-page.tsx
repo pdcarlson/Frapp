@@ -10,7 +10,7 @@ import {
   useDiscordImport,
   useDiscordImports,
 } from "@repo/hooks";
-import { formatLocaleDateTime } from "@repo/formatting";
+import { formatLocaleDate, formatLocaleDateTime } from "@repo/formatting";
 import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
+import { ImportWatchPanel } from "./import-watch-panel";
 import { importPercent, type ImportRow } from "./import-progress";
 import type { ImportSource } from "./source-step";
 
@@ -48,6 +49,21 @@ const STATUS_VARIANT: Record<
   purged: "outline",
   draft: "outline",
 };
+
+/**
+ * Statuses whose bot import has channel rows worth watching (#2857). Only a
+ * bot import: an upload's rows record neither the order its parts ran in nor
+ * a part it skipped, so its progress stays the message count.
+ */
+const WATCHABLE = new Set([
+  "ready",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+/** Of those, the ones still moving: watched live rather than read once. */
+const MOVING = new Set(["ready", "running"]);
 
 /**
  * Discord import, admin-only.
@@ -76,7 +92,10 @@ export function DiscordImportPage() {
   );
   const [handshake] = useState(() => searchParams.get("handshake"));
   const [wizardOpen, setWizardOpen] = useState(resumingBotWizard);
+  // The import whose detail is polled, which keeps its row live, and the one
+  // whose channel panel is open. Hiding the panel keeps the row live.
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   /**
    * Report the outcome of a connect attempt, exactly once.
@@ -144,6 +163,8 @@ export function DiscordImportPage() {
           setWizardOpen={setWizardOpen}
           activeId={activeId}
           setActiveId={setActiveId}
+          openId={openId}
+          setOpenId={setOpenId}
           resumingBotWizard={resumingBotWizard}
           handshake={handshake}
         />
@@ -157,6 +178,8 @@ function DiscordImportBody({
   setWizardOpen,
   activeId,
   setActiveId,
+  openId,
+  setOpenId,
   resumingBotWizard,
   handshake,
 }: {
@@ -164,6 +187,8 @@ function DiscordImportBody({
   setWizardOpen: (open: boolean) => void;
   activeId: string | null;
   setActiveId: (id: string | null) => void;
+  openId: string | null;
+  setOpenId: (id: string | null) => void;
   resumingBotWizard: boolean;
   handshake: string | null;
 }) {
@@ -241,6 +266,7 @@ function DiscordImportBody({
             onStarted={(id) => {
               setWizardOpen(false);
               setActiveId(id);
+              setOpenId(id);
             }}
           />
         </CardContent>
@@ -271,6 +297,12 @@ function DiscordImportBody({
               {rows.map((row) => {
                 const live = activeRow?.id === row.id ? activeRow : row;
                 const percent = importPercent(live);
+                const watchable =
+                  live.source === "bot" && WATCHABLE.has(live.status);
+                // Open only while it is also the polled import: a panel on a
+                // row whose status no longer updates would poll for ever.
+                const watching =
+                  openId === row.id && activeId === row.id && watchable;
                 return (
                   <li
                     key={row.id}
@@ -283,6 +315,10 @@ function DiscordImportBody({
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {formatLocaleDateTime(live.created_at)}
+                          {/* A partial import says so (#2858). */}
+                          {live.messages_after
+                            ? ` · Messages since ${formatLocaleDate(live.messages_after)}`
+                            : ""}
                         </p>
                       </div>
                       <Badge variant={STATUS_VARIANT[live.status] ?? "outline"}>
@@ -334,8 +370,39 @@ function DiscordImportBody({
                       </details>
                     ) : null}
 
+                    {watching ? (
+                      <ImportWatchPanel
+                        importId={row.id}
+                        active={MOVING.has(live.status)}
+                      />
+                    ) : null}
+
                     <div className="flex justify-end gap-2">
-                      {activeId !== row.id ? (
+                      {/* Watch opens the import channel by channel (#2857);
+                          on a finished import the same panel is its details. */}
+                      {watching ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-expanded="true"
+                          onClick={() => setOpenId(null)}
+                        >
+                          Hide
+                        </Button>
+                      ) : watchable ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-expanded="false"
+                          onClick={() => {
+                            setActiveId(row.id);
+                            setOpenId(row.id);
+                          }}
+                        >
+                          {MOVING.has(live.status) ? "Watch" : "Details"}
+                        </Button>
+                      ) : activeId !== row.id && MOVING.has(live.status) ? (
+                        // An upload: Watch keeps its message count live.
                         <Button
                           variant="ghost"
                           size="sm"
