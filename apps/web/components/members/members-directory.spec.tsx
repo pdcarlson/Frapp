@@ -514,6 +514,72 @@ describe("Actives on a chapter with alumni", () => {
     expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 
+  it("drops a selected member from the count once a refetch moves them to Alumni", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    const { rerender } = render(<MembersDirectory />);
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    // Ada is given Alumni some other way than the bulk bar (her own sheet,
+    // another officer): the refetch takes her row away.
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], is_alumni: true }, CHAPTER[1], ALUMNUS]),
+    );
+    rerender(<MembersDirectory />);
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("offers the Alumni role and alumni class years to filter a search, which lists alumni", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      searchRead,
+      read([ALUMNUS, { ...MEMBERS[0], is_alumni: false }]),
+    );
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-alumni",
+          name: "Alumni",
+          system_key: "ALUMNI",
+          is_system: true,
+          permissions: [],
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    await user.type(screen.getByRole("searchbox"), "a");
+    await screen.findByText(/2 members matching/);
+
+    await user.selectOptions(
+      screen.getByLabelText("Filter members by role"),
+      "r-alumni",
+    );
+    expect(screen.getByText(/1 member matching/)).toBeInTheDocument();
+    expect(screen.getByText("Charles Whitmore III")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /2019/ })).toBeInTheDocument();
+
+    // Clearing the search takes the Alumni option away; the filter falls back
+    // to all rather than silently filtering on an option no longer shown.
+    await user.clear(screen.getByRole("searchbox"));
+    expect(
+      (screen.getByLabelText("Filter members by role") as HTMLSelectElement)
+        .value,
+    ).toBe("all");
+    expect(screen.getByText("2 members")).toBeInTheDocument();
+  });
+
   it("keeps an open sheet on a member who has just been made an alumnus", async () => {
     const user = userEvent.setup();
     Object.assign(membersRead, read(CHAPTER));

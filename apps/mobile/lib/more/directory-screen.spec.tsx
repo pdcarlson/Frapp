@@ -9,10 +9,11 @@ import type { DirectoryRow } from "@/lib/more/directory";
 /**
  * s13 on a chapter with alumni (#2484), rendered.
  *
- * `GET /v1/members` returns the whole chapter and `GET /v1/alumni` the alumni.
- * The fixtures below are those two payloads as the API sends them, not one
- * list split by the flag under test, so what is checked is the screen's own
- * wiring: which payload each tab lists, and what each chip counts.
+ * `GET /v1/members` returns the whole chapter and `GET /v1/alumni` the alumni,
+ * narrowed by the Alumni tab's class-year, city and company filters. The
+ * alumni mock answers those filters, which the members payload can't, so the
+ * filtered-alumni case below is what tells the Alumni tab reading `useAlumni`
+ * apart from one splitting `useMembers` on the flag.
  *
  * It renders `app/(tabs)/directory.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
@@ -66,7 +67,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "c-1",
   useMembers: () => read(MEMBERS),
-  useAlumni: () => read(ALUMNI),
+  useAlumni: (filters?: { company?: string }) =>
+    read(filters?.company === "Acme" ? [CHARLES] : ALUMNI),
   useMemberSearch: (q: string) => (q ? read(state.search) : read(undefined)),
 }));
 
@@ -175,6 +177,23 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     expect([...actives, ...alumni].sort()).toEqual(
       MEMBERS.map((m) => m.display_name).sort(),
     );
+  });
+
+  it("lists what GET /v1/alumni answers for the Alumni tab's filters", () => {
+    const tree = render();
+    act(() => chips(tree).onSelect("alumni"));
+
+    const company = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Filter alumni by company",
+    ) as { onChangeText: (text: string) => void };
+    act(() => company.onChangeText("Acme"));
+
+    expect(listed(tree)).toEqual(["Charles Whitmore III"]);
+    // A filtered list isn't the chapter's total, so the chip drops its count.
+    expect(countOf(tree, "alumni")).toBeNull();
   });
 
   it("searches across both lists", () => {

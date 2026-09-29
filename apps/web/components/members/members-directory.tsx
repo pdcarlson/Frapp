@@ -246,13 +246,24 @@ export function MembersDirectory() {
     () => roleOptions.filter((role) => !role.isPresident),
     [roleOptions],
   );
-  // The Alumni role is left out of the role *filter*: every holder is on the
-  // Alumni tab (#2484), so on this list it could only ever match nothing. It
-  // stays assignable, since bulk-assigning it is how a graduating class moves.
+  // The filters offer what the list on screen can hold (#2484). Outside a
+  // search that is actives only, so the Alumni role is left out of the role
+  // filter, where it could only match nothing; a search spans both tabs, so it
+  // is offered then. It stays assignable either way, since bulk-assigning it
+  // is how a graduating class moves.
   const filterRoleOptions = useMemo(
-    () => roleOptions.filter((role) => !role.isAlumni),
-    [roleOptions],
+    () =>
+      usingSearch ? roleOptions : roleOptions.filter((role) => !role.isAlumni),
+    [roleOptions, usingSearch],
   );
+  // A choice whose option has gone (Alumni picked during a search that has
+  // since been cleared) reads as "all" rather than filtering on something the
+  // select no longer shows.
+  const effectiveRoleFilter =
+    roleFilter === "all" ||
+    filterRoleOptions.some((role) => role.id === roleFilter)
+      ? roleFilter
+      : "all";
 
   const pointsByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -271,16 +282,23 @@ export function MembersDirectory() {
 
   const cohortTerm = vocab("class", orgConfig.data);
   // Cohort options come from the full roster (not the search-narrowed list) so a
-  // selected cohort never silently loses its <option> mid-search.
+  // selected cohort never silently loses its <option> mid-search. Alumni class
+  // years join them only while a search spans both tabs, as the role filter's
+  // Alumni option does.
   const cohortOptions = useMemo(() => {
     const years = new Set<number>();
     for (const member of membersQuery.data ?? []) {
-      if (member.is_alumni === true) continue;
+      if (!usingSearch && member.is_alumni === true) continue;
       if (typeof member.graduation_year === "number")
         years.add(member.graduation_year);
     }
     return [...years].sort((a, b) => b - a);
-  }, [membersQuery.data]);
+  }, [membersQuery.data, usingSearch]);
+  const effectiveCohortFilter =
+    cohortFilter === "all" ||
+    cohortOptions.some((y) => String(y) === cohortFilter)
+      ? cohortFilter
+      : "all";
 
   const pointsOf = (member: MemberProfile) =>
     pointsByUserId.get(member.user_id) ?? 0;
@@ -300,12 +318,15 @@ export function MembersDirectory() {
 
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
-      if (roleFilter !== "all" && !member.role_ids.includes(roleFilter)) {
+      if (
+        effectiveRoleFilter !== "all" &&
+        !member.role_ids.includes(effectiveRoleFilter)
+      ) {
         return false;
       }
       if (
-        cohortFilter !== "all" &&
-        String(member.graduation_year ?? "") !== cohortFilter
+        effectiveCohortFilter !== "all" &&
+        String(member.graduation_year ?? "") !== effectiveCohortFilter
       ) {
         return false;
       }
@@ -315,7 +336,7 @@ export function MembersDirectory() {
         return false;
       return true;
     });
-  }, [members, roleFilter, cohortFilter, statusFilter]);
+  }, [members, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
 
   const sortedMembers = useMemo(() => {
     const factor = sortDir === "asc" ? 1 : -1;
@@ -386,7 +407,7 @@ export function MembersDirectory() {
     setPage(1);
     setSelectedMemberIds([]);
     setBulkRoleId("");
-  }, [trimmedQuery, roleFilter, cohortFilter, statusFilter]);
+  }, [trimmedQuery, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Re-sorting keeps the same population; just return to the first page.
@@ -399,7 +420,15 @@ export function MembersDirectory() {
   const allPageSelected =
     pageMemberIds.length > 0 &&
     pageMemberIds.every((id) => selectedMemberIds.includes(id));
-  const selectedCount = selectedMemberIds.length;
+  // The selection counted and acted on is the part of it that still has a row.
+  // A refetch can move a selected member off this tab (given Alumni from their
+  // sheet, or by another officer), and an id with no row can't be unticked, so
+  // it must not keep inflating "n selected" or the Apply that follows it.
+  const visibleSelectedIds = useMemo(() => {
+    const shown = new Set(sortedMembers.map(memberId));
+    return selectedMemberIds.filter((id) => shown.has(id));
+  }, [selectedMemberIds, sortedMembers]);
+  const selectedCount = visibleSelectedIds.length;
   // Looked up in the unfiltered response, not in `sortedMembers`. The sheet
   // stays open after a role save, and the save refetches the list, so a member
   // an officer has just given the Alumni role (or who no longer matches the
@@ -420,8 +449,8 @@ export function MembersDirectory() {
   // that guessed at both.
   const narrowed =
     usingSearch ||
-    roleFilter !== "all" ||
-    cohortFilter !== "all" ||
+    effectiveRoleFilter !== "all" ||
+    effectiveCohortFilter !== "all" ||
     statusFilter !== "all";
 
   function toggleMember(id: string, isSelected: boolean) {
@@ -475,11 +504,8 @@ export function MembersDirectory() {
         description: `${roleName}: ${succeeded} updated, ${failed} failed. Retry the rest.`,
         variant: "destructive",
       });
-      // Narrow the selection to exactly "the rest". Keeping the members that
-      // succeeded selected was harmless while a role assignment never removed
-      // a row, but assigning Alumni now moves them to the Alumni tab (#2484),
-      // where they would linger in the "n selected" count with no row left to
-      // deselect them from.
+      // Narrow the selection to exactly "the rest", which is what the toast
+      // asks the officer to retry.
       setSelectedMemberIds(
         targets
           .filter((_, index) => results[index]?.status === "rejected")
@@ -629,7 +655,7 @@ export function MembersDirectory() {
           </div>
           <select
             aria-label="Filter members by role"
-            value={roleFilter}
+            value={effectiveRoleFilter}
             onChange={(event) => setRoleFilter(event.target.value)}
             className={dashboardFilterSelectClassName}
           >
@@ -642,7 +668,7 @@ export function MembersDirectory() {
           </select>
           <select
             aria-label={`Filter members by ${cohortTerm}`}
-            value={cohortFilter}
+            value={effectiveCohortFilter}
             onChange={(event) => setCohortFilter(event.target.value)}
             className={dashboardFilterSelectClassName}
           >

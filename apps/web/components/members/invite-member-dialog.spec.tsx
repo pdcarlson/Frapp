@@ -234,6 +234,23 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("Member");
   });
 
+  // `GET /v1/roles` carries `system_key`, so a chapter that renamed Member
+  // still gets it pre-selected, not the Alumni role that sorts first (#2484).
+  it("finds a renamed Member role by its system key", async () => {
+    mockRoles.mockReturnValue({
+      data: [
+        { id: "role-alumni", name: "Alumni", system_key: "ALUMNI" },
+        { id: "role-member", name: "Brother", system_key: "MEMBER" },
+        { id: "role-pledge", name: "New Member", system_key: "NEW_MEMBER" },
+      ],
+      isError: false,
+    });
+    mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Brother");
+  });
+
   it("falls back to the first role only when the catalog has no Member role", async () => {
     mockRoles.mockReturnValue({
       data: [
