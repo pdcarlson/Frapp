@@ -429,15 +429,19 @@ function fakeEditor(initial: string) {
  * #1728 — a send the outbox refused must not cost the member their message.
  *
  * `submit()` used to `void` the send and clear unconditionally, so an
- * `outbox.enqueue` rejection (IndexedDB blocked, over quota, corrupt) emptied
- * the composer and dropped the staged files, with no toast and — because
- * `sendMessage` removes the optimistic card before rethrowing — nothing in the
- * timeline either. The staged reply is the shell's half, pinned in
- * `chat-shell.spec.tsx`.
+ * `outbox.enqueue` rejection emptied the composer and dropped the staged files
+ * and reply, with no toast and — because `sendMessage` removes the optimistic
+ * card before rethrowing — nothing in the timeline either.
+ *
+ * The restore is all or nothing: the message comes back whole into a composer
+ * the member has not touched since, or not at all, and the toast says which.
+ * Re-staging the reply is the shell's half (`chat-shell.spec.tsx`); this suite
+ * pins that the composer asks for it.
  */
 describe("Composer send failure (#1728)", () => {
   const sendButton = () => screen.getByRole("button", { name: "Send" });
   const refused = () => new Error("QuotaExceededError");
+  const REPLY = { id: "msg-1", author: "Alice Chen", preview: "the original" };
 
   let editor: ReturnType<typeof fakeEditor>;
   beforeEach(() => {
@@ -450,20 +454,50 @@ describe("Composer send failure (#1728)", () => {
     editorDouble.current = null;
   });
 
+  /** A send whose rejection the test releases, standing in for a slow one. */
+  function deferredSend() {
+    let reject!: (error: Error) => void;
+    const onSend = vi.fn(
+      () =>
+        new Promise<void>((_, rejectSend) => {
+          reject = rejectSend;
+        }),
+    );
+    return { onSend, refuse: () => act(async () => reject(refused())) };
+  }
+
   function renderComposer(overrides: Partial<ComposerProps> = {}) {
     const props = baseProps({ draft: "hello", ...overrides });
     return { props, ...render(<Composer {...props} />) };
   }
 
-  const failureToast = () =>
+  async function stageFile(container: HTMLElement, name = "notes.pdf") {
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [new File(["%PDF-1.4"], name, { type: "application/pdf" })],
+        },
+      },
+    );
+    return screen.findByRole("button", { name: `Remove ${name}` });
+  }
+
+  const chip = (name = "notes.pdf") =>
+    screen.queryByRole("button", { name: `Remove ${name}` });
+
+  const toastSaying = (description: RegExp) =>
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Message not sent",
+        description: expect.stringMatching(description),
         variant: "destructive",
       }),
     );
+  const BACK = /back in the composer/;
+  const GONE = /^It couldn't be queued for delivery\.$/;
 
-  it("puts the text back and says why when the send rejects", async () => {
+  it("puts the text back and says so when the send rejects", async () => {
     const onSend = vi.fn(async () => {
       throw refused();
     });
@@ -471,40 +505,51 @@ describe("Composer send failure (#1728)", () => {
 
     fireEvent.click(sendButton());
 
-    await waitFor(failureToast);
+    await waitFor(() => toastSaying(BACK));
     expect(onSend).toHaveBeenCalledWith("hello", []);
     expect(editor.getText()).toBe("hello");
     // Reported to the draft too, so it survives a reload like any other text.
     expect(props.onChangeDraft).toHaveBeenLastCalledWith("hello");
+    // Restored without emitting an update, which would reach `onTyping` and
+    // tell the channel the member is typing when they did nothing.
+    expect(editor.commands.setContent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "doc" }),
+      { emitUpdate: false },
+    );
+    expect(props.onTyping).not.toHaveBeenCalled();
     // Caught now, so Sentry's unhandled-rejection handler no longer sees it.
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { chat_send: "composer" },
     });
   });
 
-  it("keeps a staged attachment when the send rejects", async () => {
+  it("puts a staged attachment back with the text", async () => {
     const onSend = vi.fn(async () => {
       throw refused();
     });
     const { container } = renderComposer({ onSend });
-    const file = new File(["%PDF-1.4"], "notes.pdf", {
-      type: "application/pdf",
-    });
-    fireEvent.change(
-      container.querySelector('input[type="file"]') as HTMLInputElement,
-      { target: { files: [file] } },
-    );
-    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+    await stageFile(container);
 
     fireEvent.click(sendButton());
 
-    await waitFor(failureToast);
+    await waitFor(() => toastSaying(BACK));
     expect(onSend).toHaveBeenCalledWith("hello", [
       expect.objectContaining({ filename: "notes.pdf" }),
     ]);
-    expect(
-      screen.getByRole("button", { name: /remove notes\.pdf/i }),
-    ).toBeInTheDocument();
+    expect(chip()).toBeInTheDocument();
+  });
+
+  it("asks the shell to re-stage the reply the send carried", async () => {
+    const onSend = vi.fn(async () => {
+      throw refused();
+    });
+    const onRestoreReply = vi.fn();
+    renderComposer({ onSend, replyTo: REPLY, onCancelReply: vi.fn(), onRestoreReply });
+
+    fireEvent.click(sendButton());
+
+    await waitFor(() => toastSaying(BACK));
+    expect(onRestoreReply).toHaveBeenCalledWith("msg-1");
   });
 
   it("treats a synchronous throw from onSend as the same refusal", async () => {
@@ -515,56 +560,114 @@ describe("Composer send failure (#1728)", () => {
 
     fireEvent.click(sendButton());
 
-    await waitFor(failureToast);
+    await waitFor(() => toastSaying(BACK));
     expect(editor.getText()).toBe("hello");
   });
 
-  it("does not overwrite text typed after the send", async () => {
-    // The rejection lands milliseconds later in practice, but a restore that
-    // clobbered a new message would lose that one instead.
-    let reject!: (error: Error) => void;
-    const onSend = vi.fn(
-      () =>
-        new Promise<void>((_, rejectSend) => {
-          reject = rejectSend;
-        }),
-    );
-    const { props } = renderComposer({ onSend });
+  it("restores none of it over text typed since, and says it is gone", async () => {
+    // Half a restore pairs pieces of two messages: the old file on the new
+    // text, or the old reply over it. The text alone can't come back either,
+    // because it would overwrite what the member is writing now.
+    const { onSend, refuse } = deferredSend();
+    const onRestoreReply = vi.fn();
+    const { container, props } = renderComposer({
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    await stageFile(container);
 
     fireEvent.click(sendButton());
     expect(editor.getText()).toBe("");
+    expect(chip()).not.toBeInTheDocument();
     editor.type("second thought");
-    await act(async () => reject(refused()));
+    await refuse();
 
-    failureToast();
+    toastSaying(GONE);
     expect(editor.getText()).toBe("second thought");
     expect(props.onChangeDraft).not.toHaveBeenCalledWith("hello");
+    expect(chip()).not.toBeInTheDocument();
+    expect(onRestoreReply).not.toHaveBeenCalled();
+  });
+
+  it("restores none of it over a file staged since", async () => {
+    const { onSend, refuse } = deferredSend();
+    const { container } = renderComposer({ onSend });
+    await stageFile(container);
+
+    fireEvent.click(sendButton());
+    await stageFile(container, "photo.pdf");
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("");
+    expect(chip("photo.pdf")).toBeInTheDocument();
+    expect(chip("notes.pdf")).not.toBeInTheDocument();
+  });
+
+  it("restores none of it over a different reply staged since", async () => {
+    // Putting the text back under msg-2's strip would post it as a reply to a
+    // message it was never written for.
+    const { onSend, refuse } = deferredSend();
+    const onRestoreReply = vi.fn();
+    const props = baseProps({
+      draft: "hello",
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    const { rerender } = render(<Composer {...props} />);
+
+    fireEvent.click(sendButton());
+    rerender(
+      <Composer
+        {...baseProps({
+          ...props,
+          replyTo: { id: "msg-2", author: "Bo", preview: "another" },
+        })}
+      />,
+    );
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.getText()).toBe("");
+    expect(onRestoreReply).not.toHaveBeenCalled();
+  });
+
+  it("restores nothing into a destroyed editor, and says it is gone", async () => {
+    // A channel switch remounts `<Composer>` (it is keyed per channel).
+    const { onSend, refuse } = deferredSend();
+    renderComposer({ onSend });
+
+    fireEvent.click(sendButton());
+    editor.isDestroyed = true;
+    await refuse();
+
+    toastSaying(GONE);
+    expect(editor.commands.setContent).not.toHaveBeenCalled();
   });
 
   it("clears the text and files, silently, once the send is queued", async () => {
     // The other direction: restoring on every send would pass every case above
     // and leave each sent message sitting in the composer.
     const onSend = vi.fn(async () => undefined);
-    const { container } = renderComposer({ onSend });
-    fireEvent.change(
-      container.querySelector('input[type="file"]') as HTMLInputElement,
-      {
-        target: {
-          files: [
-            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
-          ],
-        },
-      },
-    );
-    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+    const onRestoreReply = vi.fn();
+    const { container } = renderComposer({
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
+    await stageFile(container);
 
     await act(async () => fireEvent.click(sendButton()));
 
     expect(editor.getText()).toBe("");
-    expect(
-      screen.queryByRole("button", { name: /remove notes\.pdf/i }),
-    ).not.toBeInTheDocument();
+    expect(chip()).not.toBeInTheDocument();
     expect(mockToast).not.toHaveBeenCalled();
+    expect(onRestoreReply).not.toHaveBeenCalled();
   });
 });
 

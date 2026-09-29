@@ -1131,6 +1131,24 @@ export function ChatShell({
   }, []);
   const cancelReply = useCallback(() => setReplyTarget(null), []);
   /**
+   * Re-stage the reply a refused send carried (#1728). The composer calls this
+   * only when it is putting the whole message back into an untouched composer,
+   * so nothing else is staged; `current ??` keeps that true if it ever is.
+   * Scoped to `activeChannelId` as of the send: the composer calls the copy of
+   * this its send closed over, and `<Composer>` is keyed per channel, so a
+   * send refused after a switch finds its editor destroyed and restores
+   * nothing.
+   */
+  const restoreReply = useCallback(
+    (messageId: string) => {
+      if (!activeChannelId) return;
+      setReplyTarget(
+        (current) => current ?? { channelId: activeChannelId, messageId },
+      );
+    },
+    [activeChannelId],
+  );
+  /**
    * Whether to offer Reply on rows in this channel at all. Both `can_post` and
    * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
    * each covers.
@@ -1999,13 +2017,14 @@ export function ChatShell({
             // `replyTo?.id`, not `replyToId`: the derived target is the one the
             // member can actually see staged. Reading the raw id would let a
             // send carry a reply whose strip resolved to nothing.
-            onSend={async (body, attachments) => {
+            onSend={(body, attachments) => {
               const target = replyTo?.id ?? null;
               // Cleared before the await, not after: `channel.send` enqueues to
               // the Dexie outbox and resolves on its own schedule, and a strip
               // still standing after the message appears in the timeline reads
               // as "your reply didn't send" — and would silently attach itself
-              // to whatever the member typed next.
+              // to whatever the member typed next. If the outbox refuses the
+              // send, the composer hands it back through `onRestoreReply`.
               //
               // Only when the target belongs to THIS channel. Clearing
               // unconditionally reproduced the exact bug the channel-scoping
@@ -2013,20 +2032,8 @@ export function ChatShell({
               // answers a ping in #random — that send wiped it — and comes back
               // to #general to a per-channel draft still in the composer and no
               // strip above it, so Enter posts the reply as a top-level message.
-              //
-              // Put back if the send rejects, which means the outbox never took
-              // the message (#1728): the composer restores the text beside it,
-              // and a reply that came back without its strip would post as a
-              // top-level message. Only into an empty slot, so a reply the
-              // member staged in the meantime wins.
-              const staged = replyTo ? replyTarget : null;
-              if (staged) setReplyTarget(null);
-              try {
-                await channel.send(body, { replyToId: target, attachments });
-              } catch (error) {
-                if (staged) setReplyTarget((current) => current ?? staged);
-                throw error;
-              }
+              if (replyTo) setReplyTarget(null);
+              return channel.send(body, { replyToId: target, attachments });
             }}
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(
@@ -2048,6 +2055,7 @@ export function ChatShell({
             isOffline={channel.connection === "offline"}
             replyTo={replyTo}
             onCancelReply={cancelReply}
+            onRestoreReply={restoreReply}
           />
         ) : null}
       </section>
