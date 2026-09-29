@@ -13,21 +13,28 @@
  * importer holds: the message's own `mentions` users, the role mapping the
  * admin chose (#2818), and the import's channel rows. A render-time resolver
  * would need all three shipped to every client on every read, for rows that
- * never change. The rewrite is still reversible: `toImportedMessage` keeps the
- * verbatim text on `payload.source_content` whenever this changed anything,
- * which is also what lets member linking (#2878) re-resolve a user mention to
- * a member later.
+ * never change.
+ *
+ * **The rewrite is permanent, and nothing keeps the original text.** A copy
+ * on `payload` was tried and dropped in review: deleting a message clears
+ * `content` and leaves `payload` alone, so a moderator's delete would have
+ * left the removed words readable by every member of the channel.
  *
  * The output is native Frapp prose, so nothing downstream learns a new syntax:
  * `@Name` is what a member types, and a channel whose Frapp channel exists
  * becomes an ordinary markdown link.
  *
+ * **What the output must never do.** A name is someone else's text, so it is
+ * inserted inert (see {@link inertName}): a Discord nickname such as
+ * `[Verify](https://ev.il)` must not become a link inside another member's
+ * message. And a channel only some members could read is not named at all
+ * (see {@link importChannelMentions}), since Discord shows "No Access" there.
+ *
  * **Code stays literal.** A token inside a fenced block or an inline code span
  * is someone showing the token, not using it, and Discord draws it raw there
- * too. The code scan mirrors `linkSegments` in `@repo/chat-core/links`, which is
- * how mobile decides what is code, so the two surfaces agree on the boundary.
- * A backslash-escaped token (`\<@123>`) is Discord's own way of writing one
- * literally, and stays as written for the same reason.
+ * too. A span closes on a backtick run of exactly its opening length, as in
+ * CommonMark and Discord. A backslash-escaped token (`\<@123>`) is Discord's
+ * own way of writing one literally, and stays as written for the same reason.
  *
  * Pure and I/O-free, like the rest of the importer's mapping, so every token
  * shape is testable without Discord.
@@ -46,6 +53,12 @@ export interface MentionedChannel {
 }
 
 /**
+ * A channel some chapter members cannot read. Its mention is written without
+ * its name, the way Discord shows such a mention to someone outside it.
+ */
+export const PRIVATE_CHANNEL = 'private';
+
+/**
  * What the importer knows when it rewrites one message. Every lookup answers
  * null for an id it cannot name, and the rewrite then writes the neutral
  * placeholder rather than the snowflake.
@@ -53,13 +66,16 @@ export interface MentionedChannel {
 export interface DiscordMentionResolver {
   userName(discordUserId: string): string | null;
   roleName(discordRoleId: string): string | null;
-  channel(discordChannelId: string): MentionedChannel | null;
+  channel(
+    discordChannelId: string,
+  ): MentionedChannel | typeof PRIVATE_CHANNEL | null;
 }
 
 /** Written for an id nothing could name. Never the snowflake. */
 export const UNKNOWN_USER_MENTION = '@unknown-user';
 export const UNKNOWN_ROLE_MENTION = '@unknown-role';
 export const UNKNOWN_CHANNEL_MENTION = '#unknown-channel';
+export const PRIVATE_CHANNEL_MENTION = '#private-channel';
 
 /**
  * One token, matched at a `<`. Snowflakes are digit runs; the bound only stops
@@ -71,17 +87,44 @@ export const UNKNOWN_CHANNEL_MENTION = '#unknown-channel';
 const TOKEN =
   /<(?:@!?(\d{1,25})|@&(\d{1,25})|#(\d{1,25})|a?:(\w{1,32}):\d{1,25}|t:(-?\d{1,15})(?::([tTdDfFR]))?|\/([^<>:\n]{1,100}):\d{1,25})>/y;
 
-/** Characters that would end or reopen a markdown link label or target. */
-const UNSAFE_IN_LINK = /[[\]()\\\n]/;
+/**
+ * Characters in a name that would act on the message around it once web
+ * renders `content` as CommonMark: link and autolink brackets (a disguised
+ * link), the escape, backticks (which move code-span boundaries) and the
+ * asterisk (emphasis that can pair with one later in the message).
+ *
+ * The underscore stays: it is common in Discord usernames, and CommonMark does
+ * not read an underscore inside a word as emphasis. Web renders without GFM,
+ * so `~` and `|` are inert.
+ */
+const MARKUP = /[[\]<>\\`*]/g;
 
-function channelMention(channel: MentionedChannel | null): string {
-  if (!channel) return UNKNOWN_CHANNEL_MENTION;
-  const label = `#${channel.name}`;
-  // A channel name Discord allows but a link label cannot carry stays plain
-  // text: a broken link reads worse than an unlinked name.
-  if (!channel.frappChannelId || UNSAFE_IN_LINK.test(channel.name)) {
-    return label;
-  }
+/**
+ * A name as inert text, or null when nothing readable is left.
+ *
+ * Removed rather than backslash-escaped: mobile draws a body as typed, not as
+ * markdown, so an escape would show there as a stray backslash. Losing a
+ * bracket or an asterisk from a nickname is the smaller cost. Line breaks and
+ * other control characters become spaces, so a name cannot start a new block
+ * either.
+ */
+export function inertName(name: string): string | null {
+  const plain = name
+    .replace(/\p{Cc}/gu, ' ')
+    .replace(MARKUP, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return plain.length > 0 ? plain : null;
+}
+
+function channelMention(
+  channel: MentionedChannel | typeof PRIVATE_CHANNEL | null,
+): string {
+  if (channel === PRIVATE_CHANNEL) return PRIVATE_CHANNEL_MENTION;
+  const name = channel ? inertName(channel.name) : null;
+  if (!channel || !name) return UNKNOWN_CHANNEL_MENTION;
+  const label = `#${name}`;
+  if (!channel.frappChannelId) return label;
   return `[${label}](/chat?channel=${encodeURIComponent(channel.frappChannelId)})`;
 }
 
@@ -116,27 +159,62 @@ function replaceToken(
   const [whole, userId, roleId, channelId, emoji, seconds, style, command] =
     match;
   if (userId !== undefined) {
-    const name = resolver.userName(userId);
+    const raw = resolver.userName(userId);
+    const name = raw === null ? null : inertName(raw);
     return name ? `@${name}` : UNKNOWN_USER_MENTION;
   }
   if (roleId !== undefined) {
-    const name = resolver.roleName(roleId);
+    const raw = resolver.roleName(roleId);
+    const name = raw === null ? null : inertName(raw);
     return name ? `@${name}` : UNKNOWN_ROLE_MENTION;
   }
-  if (channelId !== undefined)
+  if (channelId !== undefined) {
     return channelMention(resolver.channel(channelId));
+  }
   if (emoji !== undefined) return `:${emoji}:`;
   if (seconds !== undefined) return formatTimestamp(seconds, style) ?? whole;
-  if (command !== undefined) return `/${command}`;
+  if (command !== undefined) {
+    const name = inertName(command);
+    return name ? `/${name}` : whole;
+  }
   return whole;
+}
+
+/** Length of the backtick run starting at `at`. */
+function runLength(content: string, at: number): number {
+  let run = 0;
+  while (content[at + run] === '`') run += 1;
+  return run;
+}
+
+/**
+ * Where the backtick run of exactly `run` characters that closes a code span
+ * starts, searching from `from`, or -1. A longer or shorter run is part of the
+ * span's text, not its end.
+ */
+function findCloser(content: string, from: number, run: number): number {
+  let at = content.indexOf('`', from);
+  while (at !== -1) {
+    const length = runLength(content, at);
+    if (length === run) return at;
+    at = content.indexOf('`', at + length);
+  }
+  return -1;
+}
+
+/** True when the character at `at` follows an odd number of backslashes. */
+function isEscaped(content: string, at: number): boolean {
+  let slashes = 0;
+  while (content[at - 1 - slashes] === '\\') slashes += 1;
+  return slashes % 2 === 1;
 }
 
 /**
  * `content` with every Discord token outside code replaced by what it names.
  *
- * Linear in the body: each backtick run is searched for its closer once, and a
- * run length already known to have no closer is not searched for again, the
- * same bound `linkSegments` uses.
+ * Linear in practice: a run length already known to have no closer is not
+ * searched for again, so a body full of unmatched backticks costs one search
+ * per distinct run length.
  */
 export function rewriteDiscordMentions(
   content: string,
@@ -151,15 +229,13 @@ export function rewriteDiscordMentions(
     const char = content[i];
 
     if (char === '`') {
-      let run = 1;
-      while (content[i + run] === '`') run += 1;
-      const fence = '`'.repeat(run);
+      const run = runLength(content, i);
       const close = unclosedTicks.has(run)
         ? -1
-        : content.indexOf(fence, i + run);
+        : findCloser(content, i + run, run);
       if (close === -1) {
         unclosedTicks.add(run);
-        out += fence;
+        out += content.slice(i, i + run);
         i += run;
         continue;
       }
@@ -168,7 +244,7 @@ export function rewriteDiscordMentions(
       continue;
     }
 
-    if (char === '<' && content[i - 1] !== '\\') {
+    if (char === '<' && !isEscaped(content, i)) {
       TOKEN.lastIndex = i;
       const match = TOKEN.exec(content);
       if (match) {
@@ -185,31 +261,67 @@ export function rewriteDiscordMentions(
 }
 
 /**
+ * Whether every member of the chapter can read what landed from this row.
+ *
+ * Only then is a mention of it named. Discord shows "No Access" for a channel
+ * the reader cannot see, and an imported mention is read by everyone in the
+ * channel it sits in, so naming a private one would publish its name (a
+ * private thread's name is often the whole secret).
+ *
+ * Whole chapter means one of:
+ * - the import creates it readable by the whole chapter (`PUBLIC`). A channel
+ *   private in Discord gets that only by the admin choosing it, and it is then
+ *   on every member's channel list anyway;
+ * - the scan found it readable by everyone in Discord (`private_in_discord`
+ *   false), and it merges into an existing channel or was skipped. Its name
+ *   was public in Discord, so naming it discloses nothing new.
+ *
+ * Anything else counts as private: a `ROLE_GATED` destination, a private
+ * thread, and a merged or skipped channel that was private or whose privacy
+ * is unknown (an upload records none). A thread is judged on its own privacy
+ * and on its parent's destination, where its messages landed.
+ */
+function readableByWholeChapter(
+  row: DiscordImportChannel,
+  landedIn: DiscordImportChannel | undefined,
+): boolean {
+  if (!landedIn) return false;
+  const isThread = row !== landedIn;
+  if (isThread && row.private_in_discord !== false) return false;
+  if (landedIn.mapping_action === 'create_new') {
+    return landedIn.new_channel_type === 'PUBLIC';
+  }
+  return landedIn.private_in_discord === false;
+}
+
+/**
  * A channel mention, looked up in the import's own channel rows.
  *
  * Reads the rows **live**, not a copy: the worker writes each row's
  * `target_channel_id` onto the same objects as it creates or finds the Frapp
- * channel, so a channel is linked from the moment its channel exists. A
- * mention of a channel the walk has not reached yet reads as `#name`
- * unlinked, because creating a channel for a mention would make a channel the
- * walk might never fill (it is skipped if Discord no longer shows it).
+ * channel, so a channel is linked from the moment its channel exists. The bot
+ * path creates every new channel before it reads a message, so on that path
+ * every mention of an imported channel links.
  *
  * A thread is named as itself but links to where it landed, its parent's
- * channel. The name is what the channel is called in Frapp when this import
- * made it, else Discord's.
+ * channel. A top-level channel is named what it is called in Frapp when this
+ * import made it, else Discord's name. A channel only some members can read is
+ * {@link PRIVATE_CHANNEL}.
  */
 export function importChannelMentions(
   rows: readonly DiscordImportChannel[],
-): (discordChannelId: string) => MentionedChannel | null {
+): (
+  discordChannelId: string,
+) => MentionedChannel | typeof PRIVATE_CHANNEL | null {
   const byId = new Map(rows.map((row) => [row.discord_channel_id, row]));
   return (discordChannelId) => {
     const row = byId.get(discordChannelId);
     if (!row) return null;
-    const landedIn = row.parent_discord_channel_id
-      ? byId.get(row.parent_discord_channel_id)
-      : row;
+    const isThread = row.parent_discord_channel_id !== null;
+    const landedIn = isThread ? byId.get(row.parent_discord_channel_id!) : row;
+    if (!readableByWholeChapter(row, landedIn)) return PRIVATE_CHANNEL;
     const name =
-      !row.parent_discord_channel_id && row.mapping_action === 'create_new'
+      !isThread && row.mapping_action === 'create_new'
         ? (row.new_channel_name ?? row.discord_channel_name)
         : row.discord_channel_name;
     return {
@@ -233,7 +345,9 @@ export function importChannelMentions(
  *
  * The mapping lists every role the admin was offered, which leaves out the
  * managed roles Discord gives bots and boosters: a mention of one, or of a
- * role deleted in Discord before the scan, is unknown.
+ * role deleted in Discord before the scan, is unknown. So is an entry whose
+ * only name is its own id, which is what `parseRoleMapping` stores for an
+ * entry saved without a name.
  */
 export function roleMentionNames(args: {
   roleMapping: readonly DiscordRoleMapping[];
@@ -246,12 +360,15 @@ export function roleMentionNames(args: {
       entry.action === 'ignore' || !entry.frapp_role_id
         ? null
         : (args.frappRoleNames.get(entry.frapp_role_id) ?? null);
-    names.set(
-      entry.discord_role_id,
+    const discordName =
+      entry.discord_role_name === entry.discord_role_id
+        ? null
+        : entry.discord_role_name;
+    const name =
       mapped ??
-        (entry.action === 'new' ? entry.new_role_name : null) ??
-        entry.discord_role_name,
-    );
+      (entry.action === 'new' ? entry.new_role_name : null) ??
+      discordName;
+    if (name) names.set(entry.discord_role_id, name);
   }
   if (args.guildId) names.set(args.guildId, 'everyone');
   return names;

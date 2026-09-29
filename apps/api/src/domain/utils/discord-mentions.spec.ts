@@ -3,10 +3,13 @@ import type {
   DiscordRoleMapping,
 } from '../entities/discord-import.entity';
 import {
+  PRIVATE_CHANNEL,
+  PRIVATE_CHANNEL_MENTION,
   UNKNOWN_CHANNEL_MENTION,
   UNKNOWN_ROLE_MENTION,
   UNKNOWN_USER_MENTION,
   importChannelMentions,
+  inertName,
   rewriteDiscordMentions,
   roleMentionNames,
   type DiscordMentionResolver,
@@ -53,12 +56,47 @@ describe('rewriteDiscordMentions', () => {
     expect(pending).toBe('#general');
   });
 
-  it('does not link a channel whose name would break the link syntax', () => {
-    const odd = rewriteDiscordMentions(`<#${CHANNEL}>`, {
+  it('writes a channel only some members can read without its name', () => {
+    const hidden = rewriteDiscordMentions(`see <#${CHANNEL}>`, {
       ...resolver,
-      channel: () => ({ name: 'rush [2019]', frappChannelId: FRAPP_CHANNEL }),
+      channel: () => PRIVATE_CHANNEL,
     });
-    expect(odd).toBe('#rush [2019]');
+    expect(hidden).toBe(`see ${PRIVATE_CHANNEL_MENTION}`);
+  });
+
+  describe('a name is inserted as inert text', () => {
+    it('so a nickname cannot plant a link in someone else’s message', () => {
+      const out = rewriteDiscordMentions(`<@${USER}> check this`, {
+        ...resolver,
+        userName: () => '[Verify](https://ev.il)',
+      });
+      expect(out).toBe('@Verify(https://ev.il) check this');
+      expect(out).not.toContain('[');
+    });
+
+    it('so a backtick or an asterisk in a role name cannot reshape the message', () => {
+      const out = rewriteDiscordMentions(`<@&${ROLE}> read \`this\``, {
+        ...resolver,
+        roleName: () => '`*Rush*',
+      });
+      expect(out).toBe('@Rush read `this`');
+    });
+
+    it('so a channel name cannot break its own link', () => {
+      const out = rewriteDiscordMentions(`<#${CHANNEL}>`, {
+        ...resolver,
+        channel: () => ({ name: 'rush [2019]', frappChannelId: FRAPP_CHANNEL }),
+      });
+      expect(out).toBe(`[#rush 2019](/chat?channel=${FRAPP_CHANNEL})`);
+    });
+
+    it('and a name that is nothing but markup reads as unknown', () => {
+      const out = rewriteDiscordMentions(`<@${USER}>`, {
+        ...resolver,
+        userName: () => '[]**',
+      });
+      expect(out).toBe(UNKNOWN_USER_MENTION);
+    });
   });
 
   it('writes custom emoji, still and animated, as :name:', () => {
@@ -117,6 +155,13 @@ describe('rewriteDiscordMentions', () => {
       expect(rewrite(`\`\`<@${USER}>\`\``)).toBe(`\`\`<@${USER}>\`\``);
     });
 
+    it('closing only on a run of the same length, as CommonMark and Discord do', () => {
+      // One backtick opens; the two after the token are not its closer.
+      expect(rewrite(`\`<@${USER}>\`\``)).toBe('`@NiravBanerji``');
+      // A longer run inside a span is part of its text.
+      expect(rewrite(`\` \`\` <@${USER}> \``)).toBe(`\` \`\` <@${USER}> \``);
+    });
+
     it('but not after an unclosed backtick, which is not code', () => {
       expect(rewrite(`\`oops <@${USER}>`)).toBe('`oops @NiravBanerji');
     });
@@ -124,6 +169,10 @@ describe('rewriteDiscordMentions', () => {
 
   it('leaves a backslash-escaped token as written, as Discord does', () => {
     expect(rewrite(`\\<@${USER}>`)).toBe(`\\<@${USER}>`);
+  });
+
+  it('names a token after an escaped backslash, which escapes only itself', () => {
+    expect(rewrite(`C:\\\\<@${USER}>`)).toBe('C:\\\\@NiravBanerji');
   });
 
   it('leaves text with no token alone, angle brackets included', () => {
@@ -175,6 +224,16 @@ function channelRow(
   };
 }
 
+describe('inertName', () => {
+  it('keeps what reads as a name, underscores included', () => {
+    expect(inertName('big_mike (VP)')).toBe('big_mike (VP)');
+  });
+
+  it('turns line breaks into spaces', () => {
+    expect(inertName('two\nlines')).toBe('two lines');
+  });
+});
+
 describe('importChannelMentions', () => {
   it('names a channel the import creates by its Frapp name, linked once it exists', () => {
     const row = channelRow({ new_channel_name: 'General Chat' });
@@ -191,16 +250,82 @@ describe('importChannelMentions', () => {
     });
   });
 
-  it('names a thread as itself and links it to where its parent landed', () => {
-    const parent = channelRow({ target_channel_id: FRAPP_CHANNEL });
+  it('names a thread as itself, not by the name it inherits, and links it to where its parent landed', () => {
+    const parent = channelRow({
+      new_channel_name: 'General Chat',
+      target_channel_id: FRAPP_CHANNEL,
+    });
+    // A thread row carries its parent's decision, new name included.
     const thread = channelRow({
       discord_channel_id: '800000000000000002',
       discord_channel_name: 'rush-week-plans',
+      new_channel_name: 'General Chat',
       parent_discord_channel_id: CHANNEL,
     });
     expect(
       importChannelMentions([parent, thread])('800000000000000002'),
     ).toEqual({ name: 'rush-week-plans', frappChannelId: FRAPP_CHANNEL });
+  });
+
+  describe('a channel only some members can read is private', () => {
+    it('when the import gates what it creates', () => {
+      const lookup = importChannelMentions([
+        channelRow({
+          new_channel_type: 'ROLE_GATED',
+          new_channel_required_permissions: ['channels:read:exec'],
+          private_in_discord: true,
+        }),
+      ]);
+      expect(lookup(CHANNEL)).toBe(PRIVATE_CHANNEL);
+    });
+
+    it('when a thread was private in Discord, even in a public channel', () => {
+      const parent = channelRow({ target_channel_id: FRAPP_CHANNEL });
+      const thread = channelRow({
+        discord_channel_id: '800000000000000002',
+        discord_channel_name: 'expel-vote',
+        parent_discord_channel_id: CHANNEL,
+        private_in_discord: true,
+      });
+      expect(
+        importChannelMentions([parent, thread])('800000000000000002'),
+      ).toBe(PRIVATE_CHANNEL);
+    });
+
+    it('when a merged or skipped channel was private, or its privacy is unknown', () => {
+      for (const private_in_discord of [true, null]) {
+        for (const mapping_action of ['use_existing', 'skip'] as const) {
+          const lookup = importChannelMentions([
+            channelRow({ mapping_action, private_in_discord }),
+          ]);
+          expect(lookup(CHANNEL)).toBe(PRIVATE_CHANNEL);
+        }
+      }
+    });
+
+    it('but not a public Discord channel merged into an existing one', () => {
+      const lookup = importChannelMentions([
+        channelRow({
+          mapping_action: 'use_existing',
+          target_channel_id: FRAPP_CHANNEL,
+          private_in_discord: false,
+        }),
+      ]);
+      expect(lookup(CHANNEL)).toEqual({
+        name: 'general',
+        frappChannelId: FRAPP_CHANNEL,
+      });
+    });
+
+    it('nor one the admin chose to open to the whole chapter', () => {
+      const lookup = importChannelMentions([
+        channelRow({ private_in_discord: true, new_channel_type: 'PUBLIC' }),
+      ]);
+      expect(lookup(CHANNEL)).toEqual({
+        name: 'general',
+        frappChannelId: null,
+      });
+    });
   });
 
   it('never links a channel the admin skipped', () => {
@@ -265,6 +390,16 @@ describe('roleMentionNames', () => {
       guildId: null,
     });
     expect(existing.get(ROLE)).toBe('Brothers 🦁');
+  });
+
+  it('knows nothing of an entry whose only name is its id', () => {
+    // What `parseRoleMapping` stores for an entry saved without a name.
+    const names = roleMentionNames({
+      roleMapping: [entry({ discord_role_name: ROLE })],
+      frappRoleNames: new Map(),
+      guildId: null,
+    });
+    expect(names.has(ROLE)).toBe(false);
   });
 
   it("reads @everyone's role, whose id is the guild's, as everyone", () => {

@@ -509,25 +509,16 @@ describe('DiscordExportWorkerService — walking a channel', () => {
     expect(batch.messages[0].timestamp).toBe('2019-03-04T18:22:11.000+00:00');
   });
 
-  it('names the tokens in a page from what the slice knows (#2875)', async () => {
+  it('names the tokens in a page (#2875)', async () => {
     const harness = await build({
+      channels: [channel({ private_in_discord: false })],
       pages: [
         [
-          // Newest first, as Discord answers: the mention is read in the same
-          // page as the author's own message, whose nickname it borrows.
           apiMessage('2', {
             content: `<@42> <@&750151182395244584> see <#${DISCORD_CHANNEL}>`,
             mentions: [
               { id: '42', username: 'niravb', global_name: 'Nirav Banerji' },
             ],
-          }),
-          apiMessage('1', {
-            author: {
-              id: '42',
-              username: 'niravb',
-              global_name: 'Nirav Banerji',
-            },
-            member: { nick: 'Nirav' },
           }),
         ],
       ],
@@ -549,7 +540,55 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       mentionContext: batch.mentionContext,
     });
     expect(row?.content).toBe(
-      `@Nirav @Brothers see [#general](/chat?channel=${SIGNET_CHANNEL})`,
+      `@Nirav Banerji @Brothers see [#general](/chat?channel=${SIGNET_CHANNEL})`,
+    );
+  });
+
+  it('creates every new channel before reading a message, so a mention of a later one links', async () => {
+    const later = channel({
+      id: 'mapping-2',
+      discord_channel_id: '900000000000000003',
+      discord_channel_name: 'rush-week',
+      mapping_action: 'create_new',
+      target_channel_id: null,
+      new_channel_type: 'PUBLIC',
+      position: 1,
+    });
+    const harness = await build({
+      channels: [channel({ private_in_discord: false }), later],
+      pages: [
+        [
+          apiMessage('2', {
+            content: 'see <#900000000000000003>',
+          }),
+        ],
+      ],
+    });
+    const args = runArgs(harness, {
+      resolveTargetChannel: jest.fn(async (mapping: DiscordImportChannel) => {
+        const target =
+          mapping.id === 'mapping-2' ? 'signet-rush-week' : SIGNET_CHANNEL;
+        mapping.target_channel_id = target;
+        return target;
+      }),
+    });
+    await harness.worker.runSlice(args);
+
+    const batch = args.importBatch.mock.calls[0][0] as {
+      messages: DiscordExportMessage[];
+      mentionContext: ImportMentionContext;
+    };
+    const row = toImportedMessage({
+      message: batch.messages[0],
+      channelId: SIGNET_CHANNEL,
+      importId: IMPORT_ID,
+      resolveAssetPath: () => null,
+      resolveReplyTarget: () => null,
+      attachmentCount: 0,
+      mentionContext: batch.mentionContext,
+    });
+    expect(row?.content).toBe(
+      'see [#rush-week](/chat?channel=signet-rush-week)',
     );
   });
 });

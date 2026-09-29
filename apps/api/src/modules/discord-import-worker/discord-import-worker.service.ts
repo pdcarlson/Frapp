@@ -408,11 +408,10 @@ export class DiscordImportWorkerService {
     // DCE has already named the tokens in an export's text (its JSON writer
     // renders content as plain text), so this only matters for an export made
     // with `--markdown false`. Such an export names no roles, and its
-    // `mentions` users carry their own nicknames.
+    // `mentions` users carry their own names.
     const mentionContext: ImportMentionContext = {
       roleName: () => null,
       channel: importChannelMentions(channels),
-      knownNickname: () => null,
     };
 
     if (job.status !== 'running') {

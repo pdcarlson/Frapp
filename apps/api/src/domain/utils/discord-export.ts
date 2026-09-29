@@ -215,13 +215,6 @@ export interface DiscordImportPayload {
   was_pinned_at_source?: true;
   sticker_names?: string[];
   embed_count?: number;
-  /**
-   * The message text exactly as Discord stored it, kept when the mention
-   * rewrite changed it (#2875). `content` holds what a reader sees; this keeps
-   * the rewrite reversible and holds the user ids a later member link (#2878)
-   * needs, which `@Name` prose no longer carries.
-   */
-  source_content?: string;
 }
 
 export function buildImportPayload(
@@ -294,43 +287,32 @@ export interface ToImportedMessageArgs {
 export interface ImportMentionContext {
   roleName: DiscordMentionResolver['roleName'];
   channel: DiscordMentionResolver['channel'];
-  /**
-   * The server nickname of a user the import has already seen author a
-   * message. Discord's `mentions` users carry no nickname on the REST path,
-   * and a mention should read the way that person's own messages are labelled.
-   */
-  knownNickname(discordUserId: string): string | null;
 }
 
 /**
  * The tokens in one message's `content`, named.
  *
- * A mentioned user is named the way `resolveAuthorName` names an author, so a
- * person reads the same in a mention as on their own messages: nickname first,
- * then display name. A mentioned user the message does not list, and the
- * import has not seen post, is unknown.
+ * A mentioned user reads as the name the message's own `mentions` entry
+ * carries: DCE's `nickname` (what the server showed) on an upload, and
+ * Discord's display name on the bot path, whose REST `mentions` carry no
+ * server nickname. That is deterministic, so one person reads the same in
+ * every mention of an import, though it can differ from the nickname their
+ * own messages are labelled with. A user with no name at all is unknown, not
+ * `resolveAuthorName`'s "Unknown Discord user".
  */
 export function resolveImportedContent(
   message: DiscordExportMessage,
   context: ImportMentionContext,
 ): string {
-  const raw = asString(message.content) ?? '';
   const mentioned = new Map<string, DiscordExportUser>();
   for (const user of Array.isArray(message.mentions) ? message.mentions : []) {
     const id = asString(user?.id);
     if (id) mentioned.set(id, user);
   }
-  return rewriteDiscordMentions(raw, {
-    // `resolveAuthorName`'s order, without its literal fallback: a user with
-    // no name at all is an unknown mention, not a user called "Unknown
-    // Discord user".
+  return rewriteDiscordMentions(asString(message.content) ?? '', {
     userName: (id) => {
       const user = mentioned.get(id);
-      return (
-        asString(user?.nickname) ??
-        context.knownNickname(id) ??
-        asString(user?.name)
-      );
+      return asString(user?.nickname) ?? asString(user?.name);
     },
     roleName: (id) => context.roleName(id),
     channel: (id) => context.channel(id),
@@ -357,13 +339,11 @@ export function toImportedMessage(
     ? args.resolveReplyTarget(replyToExternalId)
     : null;
 
-  const rawContent = asString(message.content) ?? '';
   const content = resolveImportedContent(message, args.mentionContext);
   const payload = buildImportPayload(
     message,
     replyToExternalId && !replyToId ? replyToExternalId : null,
   );
-  if (content !== rawContent) payload.source_content = rawContent;
 
   const avatarRelative = asString(message.author?.avatarUrl);
   const avatarPath = avatarRelative

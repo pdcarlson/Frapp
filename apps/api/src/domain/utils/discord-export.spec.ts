@@ -34,7 +34,6 @@ function mapMessage(
     mentionContext: {
       roleName: () => null,
       channel: () => null,
-      knownNickname: () => null,
     },
     ...overrides,
   });
@@ -207,57 +206,41 @@ describe('toImportedMessage', () => {
       roleName: (id: string) =>
         id === '750151182395244584' ? 'Brothers' : null,
       channel: () => null,
-      knownNickname: (id: string) => (id === '42' ? 'Nirav' : null),
     };
 
-    it('writes the named text as content and keeps what Discord stored', () => {
+    it('writes the named text as content and keeps no copy of the original', () => {
       const raw = '<@&750151182395244584> we need numbers now';
       const row = mapMessage(tokenMessage({ content: raw }), {
         mentionContext: context,
       });
       expect(row?.content).toBe('@Brothers we need numbers now');
-      expect(row?.payload.source_content).toBe(raw);
+      // A delete clears `content` and leaves `payload`, so a copy there would
+      // outlive a moderator's removal.
+      expect(JSON.stringify(row?.payload)).not.toContain('750151182395244584');
       // Named in prose, never resolved to anyone: an archive never notifies.
       expect(row?.mentions).toEqual([]);
     });
 
-    it('stores no copy when there was nothing to name', () => {
-      const row = mapMessage(tokenMessage({ content: 'plain words' }), {
-        mentionContext: context,
-      });
-      expect(row?.content).toBe('plain words');
-      expect(row?.payload).not.toHaveProperty('source_content');
-    });
-
-    it('names a user the way their own messages are labelled: nickname first', () => {
-      const withNick = mapMessage(
+    it('names a user by the name their mention entry carries', () => {
+      // DCE's `nickname` is what the server showed.
+      const upload = mapMessage(
         tokenMessage({
           content: '<@7>',
-          mentions: [{ id: '7', name: 'Nirav Banerji', nickname: 'Nirav B' }],
+          mentions: [{ id: '7', name: 'niravb', nickname: 'Nirav B' }],
         }),
         { mentionContext: context },
       );
-      expect(withNick?.content).toBe('@Nirav B');
+      expect(upload?.content).toBe('@Nirav B');
 
-      // No nickname on the mention (the REST path): a nickname the import has
-      // already seen on the user's own messages beats the display name.
-      const seen = mapMessage(
-        tokenMessage({
-          content: '<@42>',
-          mentions: [{ id: '42', name: 'Nirav Banerji' }],
-        }),
-        { mentionContext: context },
-      );
-      expect(seen?.content).toBe('@Nirav');
-
-      const displayOnly = mapMessage(
+      // The bot path's REST mention carries the display name and no nickname.
+      const bot = mapMessage(
         tokenMessage({
           content: '<@8>',
           mentions: [{ id: '8', name: 'Sam' }],
         }),
         { mentionContext: context },
       );
-      expect(displayOnly?.content).toBe('@Sam');
+      expect(bot?.content).toBe('@Sam');
     });
 
     it('writes a user nothing names as unknown, not as the author fallback', () => {

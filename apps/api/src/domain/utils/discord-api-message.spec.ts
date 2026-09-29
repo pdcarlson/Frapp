@@ -15,7 +15,6 @@ const CHANNEL = 'signet-channel-1';
 const NO_MENTIONS: ImportMentionContext = {
   roleName: () => null,
   channel: () => null,
-  knownNickname: () => null,
 };
 const IMPORT = 'import-1';
 
@@ -93,7 +92,6 @@ describe('toExportShapeMessage', () => {
       mentionContext: NO_MENTIONS,
     });
     expect(row!.content).toBe('@NiravBanerji you up?');
-    expect(row!.payload.source_content).toBe('<@264512362768236544> you up?');
   });
 
   it('prefers the server nickname, which is what the channel actually showed', () => {

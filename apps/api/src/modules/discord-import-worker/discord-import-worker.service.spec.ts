@@ -976,7 +976,7 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
     repoRef = makeRepo(job());
   });
 
-  it('names the tokens an upload still carries, linking a channel of the import', async () => {
+  it('names the tokens an upload still carries, and never a channel it cannot vouch for', async () => {
     // DCE renders tokens as text by default; an export made with
     // `--markdown false` keeps them, and names no roles.
     const part = JSON.parse(
@@ -1001,14 +1001,10 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
 
     const rows = repoRef.insertMessages.mock.calls[0][0] as {
       content: string;
-      payload: { source_content?: string };
     }[];
-    expect(rows[0].content).toBe(
-      `[#general](/chat?channel=${SIGNET_CHANNEL}) @unknown-role @Paul`,
-    );
-    expect(rows[0].payload.source_content).toBe(
-      '<#800000000000000001> <@&500000000000000001> <@6>',
-    );
+    // An upload records no privacy, and this row merges into an existing
+    // channel, so nothing says every member could read it: its name stays out.
+    expect(rows[0].content).toBe('#private-channel @unknown-role @Paul');
   });
 
   it('hands a bot slice role names from the mapping and the Frapp roles', async () => {

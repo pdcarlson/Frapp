@@ -243,17 +243,11 @@ export class DiscordExportWorkerService {
     const byDiscordId = new Map(
       channels.map((channel) => [channel.discord_channel_id, channel]),
     );
-    // Server nicknames of the authors this slice has read, so a mention of
-    // someone reads the way their own messages are labelled: Discord's REST
-    // `mentions` carry no nickname (#2875). Per slice, like the tally below;
-    // an author not yet read this slice is named by their display name.
-    const nicknames = new Map<string, string>();
     const mentionContext: ImportMentionContext = {
       roleName,
-      // The same row objects `runChannel` writes each target onto, so a
-      // channel links from the moment it exists.
+      // The same row objects the destinations are written onto, so a channel
+      // links from the moment it exists (#2875).
       channel: importChannelMentions(channels),
-      knownNickname: (id) => nicknames.get(id) ?? null,
     };
     const totals: SliceTotals = {
       imported: job.imported_messages,
@@ -276,6 +270,41 @@ export class DiscordExportWorkerService {
         .filter((file) => file.kind === 'media' && file.uploaded_at !== null)
         .map((file) => [file.relative_path, file]),
     );
+
+    // Every channel this import creates exists before a message is read, so a
+    // mention of a channel the walk reaches later still links to it (#2875).
+    // Made lazily, a channel would not exist yet when an earlier channel's
+    // messages mentioned it, and those messages would keep an unlinked name
+    // for good. The cost: a channel Discord stops showing mid-import is
+    // skipped by the walk and stays in Frapp, empty. Threads need nothing
+    // here, since they land in their parent's channel. Resumable like the
+    // walk: a row that has its target is not asked again.
+    for (const mapping of channels) {
+      if (
+        mapping.parent_discord_channel_id !== null ||
+        mapping.mapping_action !== 'create_new' ||
+        mapping.target_channel_id !== null ||
+        mapping.status === 'completed' ||
+        mapping.status === 'skipped'
+      ) {
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        return this.sliceResult(totals, false);
+      }
+      try {
+        await resolveTargetChannel(mapping, channels);
+      } catch (error) {
+        // As the walk does: the row says why the import stopped (#2857).
+        await this.importRepo
+          .updateChannel(mapping.id, job.id, {
+            status: 'failed',
+            error: toReportableError(error).message,
+          })
+          .catch(() => undefined);
+        throw error;
+      }
+    }
 
     for (const mapping of channels) {
       if (Date.now() >= deadline) {
@@ -303,7 +332,6 @@ export class DiscordExportWorkerService {
           totals,
           mediaByRelativePath,
           mentionContext,
-          nicknames,
           checkpoint,
           resolveTargetChannel: (channel) =>
             this.resolveDestination(channel, byDiscordId, (row) =>
@@ -427,7 +455,6 @@ export class DiscordExportWorkerService {
     totals: SliceTotals;
     mediaByRelativePath: Map<string, DiscordImportFile>;
     mentionContext: ImportMentionContext;
-    nicknames: Map<string, string>;
     checkpoint: (patch: {
       imported: number;
       skipped: number;
@@ -458,7 +485,6 @@ export class DiscordExportWorkerService {
       totals,
       mediaByRelativePath,
       mentionContext,
-      nicknames,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -605,12 +631,6 @@ export class DiscordExportWorkerService {
       // `importBatch` independently counts it as unresolved and reports it in
       // `outcome.attachmentsSkipped` below. Adding both double-counts every
       // skipped attachment.
-
-      for (const message of page) {
-        const authorId = message.author?.id;
-        const nick = message.member?.nick;
-        if (authorId && nick) nicknames.set(authorId, nick);
-      }
 
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),

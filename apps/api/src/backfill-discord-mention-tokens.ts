@@ -1,27 +1,30 @@
 /**
- * Names the Discord tokens in messages an import already wrote (#2875).
+ * Names the Discord tokens in messages a bot import already wrote (#2875).
  *
- * Imports that ran before the importer learned to name `<@id>`, `<@&id>`,
+ * Bot imports that ran before the importer learned to name `<@id>`, `<@&id>`,
  * `<#id>`, custom emoji and the rest stored them verbatim. This applies the
- * importer's own rewrite (`rewriteDiscordMentions`) to those rows, so they read
- * exactly as a fresh import of the same history would, apart from one
- * difference noted below. A re-import would also fix them, but it re-reads
- * every message from Discord and copies every attachment again. This touches
- * only the rows that carry a token.
+ * importer's own rewrite (`rewriteDiscordMentions`) to those rows. A re-import
+ * would also fix them, but it re-reads every message from Discord and copies
+ * every attachment again; this touches only the rows that carry a token.
  *
- * What it names things from, per import:
- * - roles: the import's saved role mapping and the chapter's current roles,
- *   exactly as the worker does;
- * - channels: the import's channel rows, which by now all carry their target;
- * - users: the name the import stored on that user's own messages
- *   (`author_external_id` → `author_name`, newest first). This is the one
- *   difference from the worker, which also reads the message's own `mentions`:
- *   those were never stored. A mentioned user who never posted in the import
- *   reads as `@unknown-user`.
+ * Bot imports only. An upload's text was already named by DiscordChatExporter,
+ * and an upload records no role mapping to name roles from.
  *
- * Each changed row keeps what Discord stored in `payload.source_content`, as a
- * fresh import does. Re-runnable: a row it already fixed has no token left to
- * name, so a second run leaves it alone.
+ * What it names things from, and how that compares with a fresh import:
+ * - roles and channels: the same lookups the worker uses, read now. By now
+ *   every channel of the import exists, so every mention of an imported
+ *   channel links, as it does in a fresh bot import. A role renamed in Frapp
+ *   since the import reads as its current name.
+ * - users: the display name the import stored on that user's own messages
+ *   (`payload.author_username`, newest first). A fresh import reads the
+ *   display name from the message's own `mentions`, which were never stored,
+ *   so a mentioned user who never posted in the import reads `@unknown-user`
+ *   here.
+ *
+ * `content` is rewritten in place and nothing else changes; like the importer,
+ * it keeps no copy of the original text (see `discord-mentions.ts`).
+ * Re-runnable: a row it already fixed has no token left, so a second run
+ * leaves it alone.
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (bypasses RLS; never logged).
  *
@@ -40,9 +43,13 @@ import {
   roleMentionNames,
 } from '#domain/utils/discord-mentions';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
+import { asRecord, asString } from '#domain/utils/json-guards';
 
 /** Rows read per round trip. */
 const PAGE_SIZE = 500;
+
+/** Updates in flight at once: quicker than one at a time, gentle on PostgREST. */
+const CONCURRENT_UPDATES = 10;
 
 /**
  * A row worth reading: one whose text has a `<` followed by something a token
@@ -82,6 +89,11 @@ async function main(): Promise<void> {
   // Chapter-scoped, so a mistyped import id from another chapter finds nothing.
   const job = await imports.findById(importId, chapterId);
   if (!job) throw new Error(`No import ${importId} in chapter ${chapterId}.`);
+  if (job.source !== 'bot') {
+    throw new Error(
+      `Import ${importId} is an upload; DiscordChatExporter already named its tokens.`,
+    );
+  }
   if (job.status === 'purging' || job.status === 'purged') {
     throw new Error(`Import ${importId} is ${job.status}; nothing to fix.`);
   }
@@ -105,7 +117,7 @@ async function main(): Promise<void> {
     if (userNames.has(discordUserId)) return;
     const { data, error } = await supabase
       .from('chat_messages')
-      .select('author_name')
+      .select('payload')
       .eq('kind', 'imported')
       .eq('metadata->>discord_import_id', importId)
       .eq('author_external_id', discordUserId)
@@ -113,7 +125,10 @@ async function main(): Promise<void> {
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    userNames.set(discordUserId, data?.author_name ?? null);
+    userNames.set(
+      discordUserId,
+      asString(asRecord(data?.payload)?.author_username),
+    );
   };
 
   let scanned = 0;
@@ -126,7 +141,7 @@ async function main(): Promise<void> {
   for (;;) {
     let query = supabase
       .from('chat_messages')
-      .select('id, content, payload')
+      .select('id, content')
       .eq('kind', 'imported')
       .eq('metadata->>discord_import_id', importId)
       .filter('content', 'match', MAY_HOLD_TOKEN)
@@ -138,6 +153,7 @@ async function main(): Promise<void> {
     if (!rows || rows.length === 0) break;
     after = rows[rows.length - 1].id;
 
+    const updates: { id: string; content: string }[] = [];
     for (const row of rows) {
       scanned += 1;
       for (const match of row.content.matchAll(/<@!?(\d{1,25})>/g)) {
@@ -149,35 +165,27 @@ async function main(): Promise<void> {
         channel,
       });
       if (rewritten === row.content) continue;
-      changed += 1;
       if (samples.length < 5) {
         samples.push({ before: row.content, after: rewritten });
       }
-      if (dryRun) continue;
-
-      const payload =
-        row.payload &&
-        typeof row.payload === 'object' &&
-        !Array.isArray(row.payload)
-          ? row.payload
-          : {};
-      const { error: updateError } = await supabase
-        .from('chat_messages')
-        .update({
-          content: rewritten,
-          payload: {
-            ...payload,
-            // A row fixed by an earlier, partial run keeps its first original.
-            source_content:
-              typeof payload.source_content === 'string'
-                ? payload.source_content
-                : row.content,
-          },
-        })
-        .eq('id', row.id)
-        .eq('kind', 'imported');
-      if (updateError) throw updateError;
+      updates.push({ id: row.id, content: rewritten });
     }
+
+    if (!dryRun) {
+      for (let at = 0; at < updates.length; at += CONCURRENT_UPDATES) {
+        await Promise.all(
+          updates.slice(at, at + CONCURRENT_UPDATES).map(async (update) => {
+            const { error: updateError } = await supabase
+              .from('chat_messages')
+              .update({ content: update.content })
+              .eq('id', update.id)
+              .eq('kind', 'imported');
+            if (updateError) throw updateError;
+          }),
+        );
+      }
+    }
+    changed += updates.length;
     console.log(`…${scanned} read, ${changed} ${dryRun ? 'to fix' : 'fixed'}`);
   }
 
