@@ -619,6 +619,113 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(channelRepo.create).toHaveBeenCalledTimes(1);
   });
 
+  describe('like-named channels (#2856)', () => {
+    /** The fixture re-keyed as a second Discord channel, ids and all. */
+    const otherChannelPart = () => {
+      const part = JSON.parse(
+        readFileSync(join(FIXTURES, 'part-000.json'), 'utf8'),
+      ) as {
+        channel: { id: string; name: string };
+        messages: { id?: string | null; reference?: unknown }[];
+      };
+      part.channel = { ...part.channel, id: '800000000000000002' };
+      part.messages = part.messages.map((message) => ({
+        ...message,
+        id: message.id ? message.id.replace(/^9/, '7') : message.id,
+      }));
+      return new TextEncoder().encode(JSON.stringify(part));
+    };
+    const twoParts = () => {
+      repoRef.files = [
+        exportFile({ id: 'f0', part_index: 0, relative_path: 'p0.json' }),
+        exportFile({
+          id: 'f1',
+          part_index: 1,
+          relative_path: 'p1.json',
+          storage_path: `chapters/${CHAPTER}/chat-archive/imports/${IMPORT_ID}/export/0001-p1.json`,
+        }),
+      ];
+      const storage = makeStorage(part000());
+      const other = otherChannelPart();
+      storage.downloadFile = jest.fn(async (_bucket: string, path: string) =>
+        path.endsWith('0001-p1.json') ? other : part000(),
+      ) as typeof storage.downloadFile;
+      return storage;
+    };
+    const newChannel = (overrides: Partial<DiscordImportChannel>) =>
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'general',
+        new_channel_type: 'PUBLIC',
+        new_channel_required_permissions: null,
+        ...overrides,
+      });
+
+    it('lands two Discord channels with one new name and the same readers in one channel', async () => {
+      repoRef.channels = [
+        newChannel({ id: 'map-1' }),
+        newChannel({
+          id: 'map-2',
+          discord_channel_id: '800000000000000002',
+          // Compared the way the wizard compares names.
+          new_channel_name: ' #General ',
+        }),
+      ];
+      const { worker, channelRepo } = await buildWorker(repoRef, twoParts());
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(repoRef.channelUpdates).toContainEqual({
+        target_channel_id: 'created-channel-1',
+      });
+      const landed = [
+        ...(repoRef.inserted().get('created-channel-1')?.keys() ?? []),
+      ];
+      expect(landed.some((id) => id.startsWith('7'))).toBe(true);
+      expect(landed.some((id) => id.startsWith('9'))).toBe(true);
+    });
+
+    it('gives each its own channel when they differ in who reads them', async () => {
+      repoRef.channels = [
+        newChannel({ id: 'map-1' }),
+        newChannel({
+          id: 'map-2',
+          discord_channel_id: '800000000000000002',
+          new_channel_type: 'ROLE_GATED',
+          new_channel_required_permissions: ['channels:read:exec'],
+        }),
+      ];
+      const { worker, channelRepo } = await buildWorker(repoRef, twoParts());
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not reuse a shared channel that is gone', async () => {
+      repoRef.channels = [
+        newChannel({
+          id: 'map-0',
+          discord_channel_id: '800000000000000009',
+          target_channel_id: 'deleted-channel',
+          status: 'completed',
+        }),
+        newChannel({ id: 'map-1' }),
+      ];
+      const { worker, channelRepo } = await buildWorker(
+        repoRef,
+        makeStorage(part000()),
+      );
+
+      await worker.sweepImports(NOW);
+
+      expect(channelRepo.create).toHaveBeenCalledTimes(1);
+      expect(repoRef.inserted().get('deleted-channel')).toBeUndefined();
+    });
+  });
+
   it("counts a part's messages once even if it is re-opened by a later slice", async () => {
     // A slice can end after parsing and before any batch advances the cursor,
     // so the next slice re-opens the same part at message 0. Counting on

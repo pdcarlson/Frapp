@@ -4,8 +4,11 @@ import {
   defaultChoice,
   defaultChoices,
   mappingIssues,
+  mergeTarget,
+  newChannelGroups,
   normaliseChannelName,
   restageChoices,
+  withMergeDefaults,
 } from "./mapping-issues";
 
 const open = (id: string, name: string, category: string | null = null) => ({
@@ -89,6 +92,79 @@ describe("defaultChoice", () => {
   });
 });
 
+describe("mergeTarget and the merge default (#2856)", () => {
+  const frapp = [
+    { id: "f-general", name: "General" },
+    { id: "f-ann", name: "announcements" },
+    { id: "f-rush-1", name: "rush" },
+    { id: "f-rush-2", name: "Rush" },
+  ];
+
+  it("merges a public channel into the one Frapp channel of its name, ignoring case, punctuation and emoji", () => {
+    expect(mergeTarget(open("1", "general"), frapp)).toBe("f-general");
+    expect(mergeTarget(open("2", "📢┃announcements"), frapp)).toBe("f-ann");
+    expect(defaultChoice(open("2", "📢-announcements"), frapp)).toEqual({
+      action: "use_existing",
+      targetChannelId: "f-ann",
+    });
+  });
+
+  it("never guesses between two candidates", () => {
+    expect(mergeTarget(open("1", "rush"), frapp)).toBeNull();
+    expect(defaultChoice(open("1", "rush"), frapp).action).toBe("create_new");
+  });
+
+  it("never merges a channel that was, or may have been, private", () => {
+    const cases = [
+      { ...open("1", "general"), privateInDiscord: true },
+      { ...open("1", "general"), privateThreads: 1 },
+      { ...open("1", "general"), privateInDiscord: null },
+      // An upload says nothing about privacy.
+      { channelId: "1", channelName: "general", category: null },
+    ];
+    for (const channel of cases) {
+      expect(mergeTarget(channel, frapp)).toBeNull();
+      expect(defaultChoice(channel, frapp).action).toBe("create_new");
+    }
+  });
+
+  it("skips an unreadable channel, whatever its name", () => {
+    expect(
+      defaultChoice({ ...open("1", "general"), readable: false }, frapp),
+    ).toEqual({ action: "skip" });
+  });
+
+  it("applies the merge to untouched defaults once the Frapp channels load, and nothing else", () => {
+    const staged = [
+      open("1", "general"),
+      open("2", "memes"),
+      open("3", "announcements"),
+    ];
+    const choices = defaultChoices(staged);
+    // The admin renamed #announcements before the list arrived.
+    choices["3"] = { ...choices["3"]!, newName: "news" };
+    const next = withMergeDefaults(staged, choices, frapp);
+    expect(next["1"]).toEqual({
+      action: "use_existing",
+      targetChannelId: "f-general",
+    });
+    expect(next["2"]).toBe(choices["2"]);
+    expect(next["3"]).toBe(choices["3"]);
+    // Nothing to change gives the same object back.
+    expect(
+      withMergeDefaults([open("2", "memes")], { "2": choices["2"]! }, frapp),
+    ).toEqual({ "2": choices["2"] });
+  });
+
+  it("re-stages with the merge default for a channel it had not seen", () => {
+    const next = restageChoices([], {}, [open("1", "general")], frapp);
+    expect(next["1"]).toEqual({
+      action: "use_existing",
+      targetChannelId: "f-general",
+    });
+  });
+});
+
 describe("mappingIssues", () => {
   const channels = [open("1", "memes"), open("2", "links"), open("3", "rush")];
 
@@ -108,12 +184,50 @@ describe("mappingIssues", () => {
     ]);
   });
 
-  it("flags two channels given the same new name", () => {
+  it("lands two channels given the same new name and readers in one channel (#2856)", () => {
     const choices = defaultChoices(channels);
     choices["2"] = { ...choices["2"]!, newName: "MEMES" };
+    expect(mappingIssues(channels, choices, [])).toEqual([]);
+    expect(newChannelGroups(channels, choices).together).toEqual(
+      new Map([
+        ["1", 2],
+        ["2", 2],
+      ]),
+    );
+  });
+
+  it("flags a shared new name whose channels differ in who reads them or read-only", () => {
+    const choices = defaultChoices(channels);
+    choices["2"] = {
+      ...choices["2"]!,
+      newName: "memes",
+      visibility: "restricted",
+      requiredPermissions: ["channels:read:exec"],
+    };
     const issues = mappingIssues(channels, choices, []);
     expect(issues.map((issue) => issue.channelId)).toEqual(["1", "2"]);
-    expect(issues[0]!.message).toContain("is the new name for 2 channels");
+    expect(issues[0]!.message).toContain(
+      "is the new name for 2 channels that differ in who can read them",
+    );
+
+    const readOnly = defaultChoices(channels);
+    readOnly["2"] = { ...readOnly["2"]!, newName: "memes", readOnly: false };
+    expect(
+      mappingIssues(channels, readOnly, []).map((issue) => issue.channelId),
+    ).toEqual(["1", "2"]);
+  });
+
+  it("judges a shared name only once every channel in it has readers", () => {
+    const choices = defaultChoices(channels);
+    choices["2"] = {
+      ...choices["2"]!,
+      newName: "memes",
+      visibility: undefined,
+    };
+    const issues = mappingIssues(channels, choices, []);
+    // Only the unchosen row's own prompt, no "differ" on either.
+    expect(issues.map((issue) => issue.channelId)).toEqual(["2"]);
+    expect(issues[0]!.message).not.toContain("differ");
   });
 
   it("flags an empty name, a merge with no target, and a restricted channel with no permission", () => {

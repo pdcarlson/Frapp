@@ -535,12 +535,22 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
     // destination of its own. `create_new` mints a channel, so resolving a
     // thread independently would produce a second channel with the same name,
     // which `chat_channels` has no unique `(chapter_id, name)` to reject.
+    // Every call carries the import's rows as its second argument, which
+    // like-named channels share a destination through (#2856). Matched with
+    // `expect.anything()` so the negative check cannot pass on arity alone.
     expect(resolveTargetChannel).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-parent' }),
+      expect.anything(),
     );
     expect(resolveTargetChannel).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-thread' }),
+      expect.anything(),
     );
+    expect(
+      resolveTargetChannel.mock.calls.every(
+        (call: unknown[]) => call.length === 2,
+      ),
+    ).toBe(true);
   });
 
   it('re-verifies an inherited target through the chapter, never trusting the row', async () => {
@@ -581,6 +591,7 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
 
     expect(resolveTargetChannel).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'mapping-parent' }),
+      expect.anything(),
     );
   });
 });

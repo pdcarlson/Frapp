@@ -574,16 +574,29 @@ channel that reports a different one fails the import rather than being skipped.
   that still holds what it brought in stays on it.
 - **Where it lands is the operator's choice, per channel, starting from a safe
   default.** Every channel the bot can read starts as a *new* Frapp channel
-  with its Discord name, so a server with no conflicts needs no per-channel
-  clicks; the channels are grouped by Discord category, with bulk actions per
+  with its Discord name, or as a merge into a like-named one (below), so a
+  server with no conflicts needs no per-channel clicks; the channels are grouped by Discord category, with bulk actions per
   category and for the whole server. *2026-09-28, owner's decision (#2787),
   replacing "always asked": the first real import (78 channels) had to be
-  clicked through one by one.* A new channel is the default because it cannot
-  interleave anything into a live one. **Merging is still never inferred**:
-  `chat_channels` has no unique constraint on `(chapter_id, name)`, so a new
-  name that matches another channel in the same import, or a Frapp channel the
-  admin can see, is listed as something to resolve, never treated as consent
-  to merge. **Known gap (#2799):** the check runs against the admin's own
+  clicked through one by one.* **Like-named channels merge by default.**
+  *2026-09-29, owner's decision (#2856), replacing "merging is still never
+  inferred: a name that matches is listed as something to resolve".*
+  - A channel the scan saw was public, with no private thread, starts as a
+    merge into the Frapp channel of the same name, when the admin can see
+    exactly one. The names compare ignoring case, punctuation and emoji, so
+    `📢-announcements` finds `Announcements`. A merge takes the target's
+    readers, so a channel that was, or may have been, private never merges
+    by default (a manual merge of one is #2800), and an upload, which says
+    nothing about privacy, never does either. Such a channel starts as a new
+    channel, and its name clash is listed as something to resolve:
+    `chat_channels` has no unique constraint on `(chapter_id, name)`.
+  - Channels of one import given the same new name land in **one** new
+    channel when they agree on who reads it and whether it is read only; the
+    worker reuses the channel the first of them created. Channels that share
+    a name but not those settings would become separate channels of one
+    name, so they are listed as something to resolve.
+
+  **Known gap (#2799):** the check runs against the admin's own
   channel list, so a clash with a channel hidden from them (a `PRIVATE`
   channel they are not in, or a `ROLE_GATED` one they cannot read) goes
   unflagged today, and a second channel with that name is created. Everything that blocks the step is listed in one place

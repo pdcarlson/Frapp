@@ -177,7 +177,11 @@ export class DiscordExportWorkerService {
       totalMessages: number;
       warnings: string[];
     }) => Promise<boolean>;
-    resolveTargetChannel: (mapping: DiscordImportChannel) => Promise<string>;
+    /** `siblings`: the import's rows, which like-named rows share a channel through (#2856). */
+    resolveTargetChannel: (
+      mapping: DiscordImportChannel,
+      siblings: readonly DiscordImportChannel[],
+    ) => Promise<string>;
     importBatch: (batch: {
       messages: DiscordExportMessage[];
       targetChannelId: string;
@@ -268,7 +272,9 @@ export class DiscordExportWorkerService {
         mediaByRelativePath,
         checkpoint,
         resolveTargetChannel: (channel) =>
-          this.resolveDestination(channel, byDiscordId, resolveTargetChannel),
+          this.resolveDestination(channel, byDiscordId, (row) =>
+            resolveTargetChannel(row, channels),
+          ),
         importBatch,
       });
       if (!done) return this.sliceResult(totals, false);

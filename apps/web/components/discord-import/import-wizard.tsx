@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useConfirmDiscordUploads,
   useCreateDiscordImport,
@@ -31,7 +31,12 @@ import {
   type StagedExport,
 } from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
-import { mappingIssues, restageChoices } from "./mapping-issues";
+import {
+  mappingIssues,
+  restageChoices,
+  withMergeDefaults,
+  type ExistingChannel,
+} from "./mapping-issues";
 import { RoleMappingStep, type RoleStepLock } from "./role-mapping-step";
 import {
   defaultRoleChoice,
@@ -176,6 +181,22 @@ export function ImportWizard({
     if (previous) setStep(previous);
   }
 
+  const existingChannels = useChannels();
+  // Null until loaded once: a merge default (#2856) needs the channels it
+  // could merge into.
+  const existingList = useMemo<ExistingChannel[] | null>(
+    () =>
+      existingChannels.data === undefined
+        ? null
+        : asArray<ExistingChannel>(existingChannels.data).map(
+            ({ id, name }) => ({ id, name }),
+          ),
+    [existingChannels.data],
+  );
+  // Set when a channel set was staged before the Frapp channels loaded, so
+  // their merge defaults are applied once, when they do.
+  const mergeDefaultsPending = useRef(false);
+
   /**
    * Stage a channel set and start every channel at its default answer.
    *
@@ -187,12 +208,28 @@ export function ImportWizard({
     (next: StagedExport) => {
       const previousChannels = staged?.channels ?? [];
       setChannelChoices((previous) =>
-        restageChoices(previousChannels, previous, next.channels),
+        restageChoices(
+          previousChannels,
+          previous,
+          next.channels,
+          existingList ?? [],
+        ),
       );
+      mergeDefaultsPending.current = existingList === null;
       setStaged(next);
     },
-    [staged],
+    [staged, existingList],
   );
+
+  useEffect(() => {
+    if (!staged || existingList === null || !mergeDefaultsPending.current) {
+      return;
+    }
+    mergeDefaultsPending.current = false;
+    setChannelChoices((previous) =>
+      withMergeDefaults(staged.channels, previous, existingList),
+    );
+  }, [staged, existingList]);
 
   /** Scan the connected server and stage what it found. */
   const scan = useCallback(
@@ -384,11 +421,11 @@ export function ImportWizard({
     [staged, roleChoices, frappRoles],
   );
 
-  const existingChannels = useChannels();
   // One list decides both whether Continue is enabled and what Needs
   // attention shows, so the step can never be blocked for a reason it does
-  // not state. A same-name Frapp channel is an issue, never a merge:
-  // `chat_channels` has no unique (chapter_id, name). Until the existing
+  // not state. A new name that is also a Frapp channel's is an issue:
+  // `chat_channels` has no unique (chapter_id, name), and the channels that
+  // merge by default (#2856) were already set to Merge. Until the existing
   // channels have loaded once, a clash cannot be ruled out, so that is an
   // issue too rather than a silent pass. A later refetch that fails keeps the
   // list it already had, which is still good enough to check against.

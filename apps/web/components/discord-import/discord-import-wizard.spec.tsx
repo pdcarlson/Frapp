@@ -682,13 +682,96 @@ describe("ImportWizard — the bot path", () => {
     };
     scanOneChannel();
     await renderAtChannels();
-    // #general still clashes with the loaded list; nothing else is reported.
+    // #general merges into the loaded list's #general (#2856), which only
+    // the loaded list could have said; nothing asks to load it again.
     expect(
-      await screen.findAllByText(/#general already exists in Frapp/),
-    ).not.toHaveLength(0);
+      await screen.findByText(/Nothing needs attention/),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(/could not load your existing channels/),
     ).not.toBeInTheDocument();
+  });
+
+  it("merges a public channel into the like-named Frapp channel by default (#2856)", async () => {
+    scanOneChannel();
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(setDiscoveredMapping).toHaveBeenCalledWith({
+        id: "import-1",
+        channels: [
+          expect.objectContaining({
+            discord_channel_id: "c1",
+            mapping_action: "use_existing",
+            target_channel_id: "ch-1",
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("keeps a private like-named channel as a new one and asks about the clash (#2856)", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+    await renderAtChannels();
+    expect(
+      await screen.findAllByText(/#general already exists in Frapp/),
+    ).not.toHaveLength(0);
+    expect(continueDisabled()).toBe(true);
+  });
+
+  it("merges once the Frapp channels load, when the scan beat them (#2856)", async () => {
+    channelsQuery.value = {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    scanOneChannel();
+    const { rerender } = render(
+      <ImportWizard
+        onCancel={() => undefined}
+        onStarted={() => undefined}
+        initialSource="bot"
+        initialStep="consent"
+      />,
+    );
+    fireEvent.click(await screen.findByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the roles" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Map the channels" });
+
+    channelsQuery.value = {
+      data: [{ id: "ch-1", name: "general" }],
+      isPending: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    };
+    rerender(
+      <ImportWizard
+        onCancel={() => undefined}
+        onStarted={() => undefined}
+        initialSource="bot"
+        initialStep="consent"
+      />,
+    );
+    expect(
+      await screen.findByText(/Nothing needs attention/),
+    ).toBeInTheDocument();
   });
 
   it("re-asks after a re-scan instead of trusting what the last scan defaulted", async () => {

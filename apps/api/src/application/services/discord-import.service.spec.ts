@@ -523,6 +523,25 @@ describe('DiscordImportService — channel mapping', () => {
     ).rejects.toThrow(/Name the new channel/);
   });
 
+  it('drops a target sent with a new channel, as the bot path does (#2856)', async () => {
+    // A create_new row's target is the channel the import creates for it,
+    // which like-named rows then share; a client-sent id there would be an
+    // unvalidated channel those rows could be sent into.
+    await build();
+    const rows = await service.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
+        target_channel_id: FOREIGN_CHANNEL,
+      },
+    ]);
+
+    expect(rows[0].target_channel_id).toBeNull();
+  });
+
   it('marks a skipped channel skipped rather than pending', async () => {
     await build();
     const rows = await service.setChannelMapping(IMPORT_ID, CHAPTER, [

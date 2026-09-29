@@ -38,6 +38,7 @@ import type {
   DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
+import { newChannelMergeKey } from '#domain/utils/discord-channel-merge';
 
 /**
  * How long one tick may work before checkpointing and handing the job back.
@@ -308,8 +309,8 @@ export class DiscordImportWorkerService {
         }
         return held;
       },
-      resolveTargetChannel: (mapping) =>
-        this.resolveTargetChannel(mapping, chapterId, job.id),
+      resolveTargetChannel: (mapping, siblings) =>
+        this.resolveTargetChannel(mapping, chapterId, job.id, siblings),
       importBatch: (batch) =>
         this.importBatch({
           batch: batch.messages,
@@ -466,6 +467,7 @@ export class DiscordImportWorkerService {
         mapping,
         chapterId,
         job.id,
+        channels,
       );
       // Counted per channel. `imported` is the job-wide running total, so
       // adding it to the channel row would credit each channel with every
@@ -748,11 +750,19 @@ export class DiscordImportWorkerService {
    * back onto the mapping row immediately — so a re-run reuses that channel
    * instead of minting a second one with the same name. `chat_channels` has no
    * unique constraint on `(chapter_id, name)`, so nothing else would catch it.
+   *
+   * Like-named rows share one (#2856): a row whose `newChannelMergeKey`
+   * matches a row of this import that already has its channel reuses that
+   * channel instead of creating a second of the same name. `siblings` is the
+   * import's rows as this slice loaded them, which carries the targets
+   * written back by earlier slices and, through the write-back below, by
+   * this one.
    */
   private async resolveTargetChannel(
     mapping: DiscordImportChannel,
     chapterId: string,
     importId: string,
+    siblings: readonly DiscordImportChannel[],
   ): Promise<string> {
     if (mapping.target_channel_id) {
       // Re-verified here, not trusted from the row. The service validates the
@@ -778,6 +788,33 @@ export class DiscordImportWorkerService {
       throw new Error(
         `Channel mapping for #${mapping.discord_channel_name} has no target.`,
       );
+    }
+
+    const key = newChannelMergeKey(mapping);
+    const shared = key
+      ? siblings.find(
+          (other) =>
+            other.id !== mapping.id &&
+            other.target_channel_id !== null &&
+            newChannelMergeKey(other) === key,
+        )
+      : undefined;
+    if (shared?.target_channel_id) {
+      // A create_new row's target is only ever the channel this import made
+      // for it (the service drops a client-sent one), and it is read back
+      // through the chapter like any target before a message lands in it.
+      // Gone since, it is not reused: this row makes its own.
+      const target = await this.channelRepo.findById(
+        shared.target_channel_id,
+        chapterId,
+      );
+      if (target) {
+        await this.importRepo.updateChannel(mapping.id, importId, {
+          target_channel_id: target.id,
+        });
+        mapping.target_channel_id = target.id;
+        return target.id;
+      }
     }
 
     const created = await this.channelRepo.create({

@@ -955,7 +955,14 @@ export class DiscordImportService {
         discord_channel_name: channel.discord_channel_name,
         discord_category: channel.discord_category ?? null,
         mapping_action: channel.mapping_action,
-        target_channel_id: channel.target_channel_id ?? null,
+        // Only `use_existing` names a target, and only it is validated above.
+        // A `create_new` row's target is the channel THIS import creates,
+        // which the worker writes back and like-named rows reuse (#2856), so
+        // a client-sent id there is dropped, as the bot path drops it.
+        target_channel_id:
+          channel.mapping_action === 'use_existing'
+            ? (channel.target_channel_id ?? null)
+            : null,
         new_channel_name: channel.new_channel_name ?? null,
         new_channel_is_read_only: channel.new_channel_is_read_only ?? true,
         message_count: channel.message_count ?? 0,
