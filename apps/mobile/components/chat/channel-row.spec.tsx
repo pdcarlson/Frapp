@@ -10,6 +10,7 @@ import {
   badgeLabel,
   ChannelRow,
   HIDE_ACTION,
+  PIN_ACTION,
 } from "./channel-row";
 
 /**
@@ -219,5 +220,64 @@ describe("ChannelRow hide affordance", () => {
       nativeEvent: { actionName: HIDE_ACTION },
     });
     expect(onHide).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("ChannelRow pin and DM badge (#2877)", () => {
+  function pressable(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) => (node.type as unknown as string) === "Pressable",
+      { deep: true },
+    )[0]!;
+  }
+
+  it("offers Pin to top, then Hide, as named accessibility actions", () => {
+    const onTogglePin = vi.fn();
+    const onHide = vi.fn();
+    const row = pressable(renderRow({ isDirect: true, onHide, onTogglePin }));
+
+    expect(row.props.accessibilityActions).toEqual([
+      { name: PIN_ACTION, label: "Pin to top" },
+      { name: HIDE_ACTION, label: "Hide conversation" },
+    ]);
+    row.props.onAccessibilityAction({
+      nativeEvent: { actionName: PIN_ACTION },
+    });
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
+    expect(onHide).not.toHaveBeenCalled();
+  });
+
+  it("names the action Unpin from top on a pinned row", () => {
+    const row = pressable(renderRow({ isPinned: true, onTogglePin: vi.fn() }));
+
+    expect(row.props.accessibilityActions).toEqual([
+      { name: PIN_ACTION, label: "Unpin from top" },
+    ]);
+  });
+
+  it("takes the long press from `onLongPress` when given", () => {
+    const onLongPress = vi.fn();
+    const onHide = vi.fn();
+    const row = pressable(renderRow({ isDirect: true, onHide, onLongPress }));
+
+    row.props.onLongPress();
+    expect(onLongPress).toHaveBeenCalled();
+    expect(onHide).not.toHaveBeenCalled();
+  });
+
+  it("draws an unread DM in mention red, like web", () => {
+    const dmStyle = findBadgeStyle(
+      renderRow({ isDirect: true, unreadCount: 1, mentionCount: 0 }),
+    );
+    const channelStyle = findBadgeStyle(
+      renderRow({ isDirect: false, unreadCount: 1, mentionCount: 0 }),
+    );
+
+    expect(dmStyle?.backgroundColor).toBe(
+      signetDarkTokens.color.semantic.mention,
+    );
+    expect(channelStyle?.backgroundColor).toBe(
+      signetDarkTokens.color.border.input,
+    );
   });
 });

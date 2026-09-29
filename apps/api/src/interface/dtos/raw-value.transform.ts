@@ -9,7 +9,8 @@ import { Transform } from 'class-transformer';
  * request that said no. Put it on any field whose `true` is recorded as
  * someone's consent (`accept_terms_privacy`, #2302, and the Discord import's
  * `consent_acknowledged`): with the raw value, `@IsBoolean()` rejects every
- * string.
+ * string. The chat sidebar's filters (#2877) carry it too; every other boolean
+ * field is #2612.
  */
 export const RawValue = (): PropertyDecorator =>
   Transform(({ obj, key }) => (obj as Record<string, unknown>)[key]);
