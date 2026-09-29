@@ -38,12 +38,24 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "@/components/ui/focus";
+import type { ChapterLogoUpload } from "@repo/hooks";
+import { SettingsChapterMarkCard } from "@/components/settings/settings-chapter-mark-card";
 
 type Branding = {
   greek_letters?: string;
+  short_name?: string;
+  show_greek_letters?: boolean;
   designation?: string;
   school_short?: string;
   founded_at?: number;
+};
+
+/** Everything the Chapter mark card needs beyond the branding (#2876). */
+export type ChapterMarkProps = {
+  logoUrl: string | null;
+  onUploadLogo: (upload: ChapterLogoUpload) => Promise<void>;
+  onRemoveLogo: () => Promise<void>;
+  logoPending?: boolean;
 };
 
 type Props = {
@@ -54,6 +66,7 @@ type Props = {
   vocabulary: Record<string, string>;
   branding: Branding;
   profile: { name: string; university: string; donation_url: string };
+  mark: ChapterMarkProps;
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
   /**
@@ -79,6 +92,7 @@ export function SettingsOrgTab({
   vocabulary,
   branding,
   profile,
+  mark,
   canManage,
   canEditProfile,
   onSaveProfile,
@@ -143,9 +157,20 @@ export function SettingsOrgTab({
     event.preventDefault();
     if (!foundedValid) return;
     const brandingDiff: Branding = {};
-    if (greekLetters.trim()) brandingDiff.greek_letters = greekLetters.trim();
-    if (designation.trim()) brandingDiff.designation = designation.trim();
-    if (schoolShort.trim()) brandingDiff.school_short = schoolShort.trim();
+    // The config PATCH deep-merges, so an omitted key keeps its stored value
+    // and a field an officer emptied would silently come back. Sending "" for
+    // a stored value is how a clear reaches the server; a field that was
+    // never set stays out of the diff.
+    const text = (draft: string, stored: string | undefined) => {
+      const trimmed = draft.trim();
+      return trimmed || stored ? trimmed : undefined;
+    };
+    const letters = text(greekLetters, branding.greek_letters);
+    if (letters !== undefined) brandingDiff.greek_letters = letters;
+    const designationValue = text(designation, branding.designation);
+    if (designationValue !== undefined) brandingDiff.designation = designationValue;
+    const schoolShortValue = text(schoolShort, branding.school_short);
+    if (schoolShortValue !== undefined) brandingDiff.school_short = schoolShortValue;
     if (foundedTrimmed && foundedValid) brandingDiff.founded_at = foundedNum;
     void onPatchConfig({ branding: brandingDiff });
   }
@@ -265,13 +290,29 @@ export function SettingsOrgTab({
         </form>
       </Card>
 
+      <SettingsChapterMarkCard
+        name={profile.name}
+        logoUrl={mark.logoUrl}
+        branding={branding}
+        canEditLogo={canEditProfile}
+        canManage={canManage}
+        onUploadLogo={mark.onUploadLogo}
+        onRemoveLogo={mark.onRemoveLogo}
+        logoPending={mark.logoPending}
+        onPatchConfig={onPatchConfig}
+        savingConfig={savingConfig}
+        manageHint={manageHint}
+        profileHint={profileHint}
+      />
+
       {/* Identity & founding (branding config — audited) */}
       <Card>
         <CardHeader>
           <CardTitle>Identity &amp; founding</CardTitle>
           <CardDescription>
-            Greek letters and designation show in the sidebar chapter lockup.
-            Saving writes an entry to the chapter audit log.
+            Your chapter&apos;s letters and founding details. Whether the
+            letters show is set under Chapter mark. Saving writes an entry to
+            the chapter audit log.
           </CardDescription>
         </CardHeader>
         <form onSubmit={saveIdentity}>

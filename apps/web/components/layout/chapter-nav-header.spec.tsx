@@ -277,3 +277,62 @@ describe("ChapterNavHeader", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * The crest tile is the chapter mark (#2876). The beta chapter is a FIJI
+ * chapter: its letters were autofilled from the directory, and by custom it
+ * doesn't show them, which is the case that started this.
+ */
+describe("ChapterNavHeader chapter mark", () => {
+  function withBranding(extra: Record<string, unknown>) {
+    currentChapterQuery.current = {
+      data: { ...chapterPayload("Tau Nu"), ...extra },
+      isError: false,
+    };
+    render(<ChapterNavHeader collapsed />);
+  }
+
+  beforeEach(() => {
+    activeChapterId = "chap-1";
+    chaptersQuery.current = { data: [], isSuccess: true };
+  });
+
+  it("draws the logo when there is one", () => {
+    withBranding({
+      logo_url: "https://storage.example/logo.png",
+      branding: { greek_letters: "ΦΓΔ", short_name: "FIJI" },
+    });
+    expect(screen.getByTestId("chapter-mark-logo")).toHaveAttribute(
+      "src",
+      "https://storage.example/logo.png",
+    );
+    expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the text mark when the logo fails to load", () => {
+    withBranding({
+      logo_url: "https://storage.example/expired.png",
+      branding: { short_name: "FIJI" },
+    });
+    fireEvent.error(screen.getByTestId("chapter-mark-logo"));
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("FIJI");
+  });
+
+  it("shows the short name ahead of the Greek letters", () => {
+    withBranding({ branding: { greek_letters: "ΦΓΔ", short_name: "FIJI" } });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("FIJI");
+  });
+
+  it("never shows Greek letters the chapter turned off", () => {
+    withBranding({
+      branding: { greek_letters: "ΦΓΔ", show_greek_letters: false },
+    });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("TN");
+    expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
+  });
+
+  it("still shows Greek letters for a chapter that never touched the setting", () => {
+    withBranding({ branding: { greek_letters: "ΣΦΕ" } });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΣΦΕ");
+  });
+});

@@ -5,7 +5,12 @@ import Link from "next/link";
 import { AlertTriangle, Check, ChevronDown, Loader2 } from "lucide-react";
 import { useAccessibleChapters, useCurrentChapter } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
-import { CurrentChapterPayloadSchema } from "@repo/validation";
+import {
+  CurrentChapterPayloadSchema,
+  resolveChapterMark,
+  type ChapterMark,
+} from "@repo/validation";
+import { CrestTile } from "@/components/layout/crest-tile";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,37 +61,6 @@ type ChapterNavHeaderProps = {
   onNavigate?: () => void;
 };
 
-function initialsFor(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return "--";
-  const parts = trimmed.split(/\s+/);
-  if (parts.length === 1) {
-    return parts[0]!.slice(0, 2).toUpperCase();
-  }
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
-}
-
-/**
- * The crest tile: 28px, radius 8, accent-subtle fill with accent text.
- *
- * Chapter-tinted on purpose, and not a brand surface. The locked emblem is the
- * product mark and never takes a tenant accent; this tile is the *chapter's*
- * own letters, which is exactly what the accent engine is for.
- */
-function CrestTile({ crest }: { crest: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-accent-border bg-accent-subtle text-[9.5px] font-bold tracking-[0.06em] text-accent-text"
-    >
-      {crest}
-    </span>
-  );
-}
-
 export function ChapterNavHeader({
   collapsed,
   className,
@@ -115,17 +89,27 @@ export function ChapterNavHeader({
     (m) => m.chapter_id === activeChapterId,
   );
 
-  // Crest and name come from the chapter record's branding when it is
-  // populated, and fall back to initials of the name otherwise — the branding
-  // fields live on `chapters.branding` jsonb and predate many chapters.
+  // The crest is the chapter mark, resolved from the logo and the
+  // `chapters.branding` jsonb; a chapter that set none of it gets initials.
   const identity = useMemo(() => {
     if (!chapterData) return null;
     const parsed = CurrentChapterPayloadSchema.safeParse(chapterData);
     if (!parsed.success) return null;
     const payload = parsed.data;
+    const mark = resolveChapterMark({
+      logoUrl: chapterData.logo_url,
+      branding: payload.branding,
+      name: payload.name,
+    });
+    // The text the tile shows if a logo fails to load: the same precedence
+    // with the logo taken out.
+    const textMark = resolveChapterMark({
+      branding: payload.branding,
+      name: payload.name,
+    });
     return {
-      crest:
-        payload.branding?.greek_letters?.trim() || initialsFor(payload.name),
+      mark,
+      fallbackText: textMark.kind === "text" ? textMark.text : "--",
       name: payload.name,
     };
   }, [chapterData]);
@@ -245,7 +229,12 @@ export function ChapterNavHeader({
     );
   }
 
-  const crest = identity?.crest ?? (chapterFailed ? "!" : "--");
+  const placeholder = chapterFailed ? "!" : "--";
+  const mark: ChapterMark = identity?.mark ?? {
+    kind: "text",
+    text: placeholder,
+    source: "initials",
+  };
   const name =
     identity?.name ?? (chapterFailed ? "Chapter unavailable" : "Loading...");
   const otherChapters = memberships.filter(
@@ -266,7 +255,10 @@ export function ChapterNavHeader({
             className,
           )}
         >
-          <CrestTile crest={crest} />
+          <CrestTile
+            mark={mark}
+            fallbackText={identity?.fallbackText ?? placeholder}
+          />
           {collapsed ? null : (
             <>
               <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">

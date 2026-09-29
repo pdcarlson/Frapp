@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
@@ -33,13 +33,22 @@ import {
   useCreateInvite,
   useEmailInvites,
   useOnboardChapter,
+  useUploadChapterLogo,
   type ChapterDirectoryResult,
+  type ChapterLogoUpload,
 } from "@repo/hooks";
-import { EmailInviteSchema, dedupeEmails } from "@repo/validation";
+import {
+  CHAPTER_SHORT_NAME_MAX_LENGTH,
+  EmailInviteSchema,
+  dedupeEmails,
+  resolveChapterMark,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { CrestTile } from "@/components/layout/crest-tile";
 import {
   Command,
   CommandInput,
@@ -56,6 +65,7 @@ import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { buildJoinUrl } from "@/lib/invite-link";
+import { inspectLogoFile } from "@/lib/chapter-logo";
 import { FERPA_URL } from "@/lib/legal-links";
 
 /**
@@ -94,6 +104,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const selectChapter = useSelectChapter();
 
   const onboardChapter = useOnboardChapter();
+  const uploadLogo = useUploadChapterLogo();
   const createInvite = useCreateInvite();
   const emailInvites = useEmailInvites();
 
@@ -106,6 +117,9 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const [identity, setIdentity] = useState<ChapterIdentityForm>(
     EMPTY_CHAPTER_IDENTITY,
   );
+  // The logo waits in the browser until the chapter exists: the logo routes
+  // are chapter-scoped, so nothing can be uploaded before the create lands.
+  const [logo, setLogo] = useState<ChapterLogoUpload | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
@@ -131,6 +145,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
+      // The directory knows letters, not whether an organization shows them,
+      // so these two keep whatever the founder already chose.
+      shortName: identity.shortName,
+      showGreekLetters: identity.showGreekLetters,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
@@ -180,11 +198,31 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
           ? ((chapter as { id?: string }).id ?? null)
           : null;
       if (id) await selectChapter(id);
-      toast({
-        title: "Chapter created",
-        description:
-          "Your chapter is set up. Invite your members to start chatting.",
-      });
+      // After the switch, so the logo routes resolve the new chapter. A failed
+      // upload doesn't undo a created chapter: say so and point at Settings,
+      // where the same control lives.
+      let logoFailed = false;
+      if (id && logo) {
+        try {
+          await uploadLogo.mutateAsync(logo);
+        } catch {
+          logoFailed = true;
+        }
+      }
+      toast(
+        logoFailed
+          ? {
+              title: "Chapter created, but the logo didn't upload",
+              description:
+                "Add it from Settings → Chapter. Everything else is set up.",
+              variant: "destructive",
+            }
+          : {
+              title: "Chapter created",
+              description:
+                "Your chapter is set up. Invite your members to start chatting.",
+            },
+      );
       setStep("invite");
     } catch (error) {
       toast({
@@ -366,6 +404,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                 <IdentityStep
                   identity={identity}
                   onChange={setIdentity}
+                  logo={logo}
+                  onLogoChange={setLogo}
                   isManual={directoryId === null}
                   accepted={acceptedLegal}
                   onAcceptedChange={setAcceptedLegal}
@@ -660,12 +700,16 @@ function ArchetypeStep({
 function IdentityStep({
   identity,
   onChange,
+  logo,
+  onLogoChange,
   isManual,
   accepted,
   onAcceptedChange,
 }: {
   identity: ChapterIdentityForm;
   onChange: (next: ChapterIdentityForm) => void;
+  logo: ChapterLogoUpload | null;
+  onLogoChange: (next: ChapterLogoUpload | null) => void;
   isManual: boolean;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
@@ -746,6 +790,12 @@ function IdentityStep({
             placeholder="1948"
           />
         </div>
+        <ChapterMarkFields
+          identity={identity}
+          onSet={set}
+          logo={logo}
+          onLogoChange={onLogoChange}
+        />
         {/*
           Spans the pair so the grid does not end on a ragged half-row. The
           identity step had six single-column fields — three even pairs — until
@@ -945,5 +995,131 @@ function InviteStep({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The chapter mark step (#2876): what stands for the chapter in the nav, in
+ * the order `resolveChapterMark` reads it. It sits in the identity step rather
+ * than a step of its own because the directory autofill has already filled the
+ * Greek letters here, and a chapter that doesn't show them (FIJI's custom)
+ * needs to say so beside them, before they reach the nav and the welcome
+ * message.
+ */
+function ChapterMarkFields({
+  identity,
+  onSet,
+  logo,
+  onLogoChange,
+}: {
+  identity: ChapterIdentityForm;
+  onSet: <K extends keyof ChapterIdentityForm>(
+    key: K,
+    value: ChapterIdentityForm[K],
+  ) => void;
+  logo: ChapterLogoUpload | null;
+  onLogoChange: (next: ChapterLogoUpload | null) => void;
+}) {
+  const [logoError, setLogoError] = useState<string | null>(null);
+  // The preview's object URL is created and revoked by one effect, so each
+  // URL is released exactly when the file it points at is replaced. A memo
+  // paired with a cleanup effect would revoke the URL under Strict Mode's
+  // mount-unmount-mount and leave the preview on a dead blob.
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!logo) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the URL is an external resource this effect owns
+      setLogoUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(logo.body);
+    setLogoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logo]);
+  const branding = {
+    short_name: identity.shortName,
+    greek_letters: identity.greekLetters,
+    show_greek_letters: identity.showGreekLetters,
+  };
+  const mark = resolveChapterMark({ logoUrl, branding, name: identity.name });
+  const textMark = resolveChapterMark({ branding, name: identity.name });
+
+  return (
+    <fieldset className="space-y-3 rounded-lg border border-border p-3 sm:col-span-2">
+      <legend className="px-1 text-sm font-medium">Chapter mark</legend>
+      <div className="flex items-center gap-3">
+        <CrestTile
+          mark={mark}
+          fallbackText={textMark.kind === "text" ? textMark.text : "--"}
+        />
+        <p className="text-xs text-muted-foreground">
+          How your chapter shows in the nav: your logo, else your short name,
+          else your Greek letters.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="wiz-short-name">Short name (optional)</Label>
+          <Input
+            id="wiz-short-name"
+            value={identity.shortName}
+            onChange={(e) => onSet("shortName", e.target.value)}
+            maxLength={CHAPTER_SHORT_NAME_MAX_LENGTH}
+            placeholder="FIJI"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="wiz-logo">Logo (optional)</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="wiz-logo"
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              aria-describedby={logoError ? "wiz-logo-error" : undefined}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const inspected = inspectLogoFile(file);
+                if (!inspected.ok) {
+                  setLogoError(inspected.message);
+                  e.target.value = "";
+                  return;
+                }
+                setLogoError(null);
+                onLogoChange(inspected.upload);
+              }}
+            />
+            {logo ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onLogoChange(null)}
+              >
+                Clear
+              </Button>
+            ) : null}
+          </div>
+          {logoError ? (
+            <p id="wiz-logo-error" className="text-xs text-destructive">
+              {logoError}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="wiz-show-letters" className="font-normal">
+          Show Greek letters
+          <span className="block text-xs text-muted-foreground">
+            Turn off if your organization doesn&apos;t display its letters.
+          </span>
+        </Label>
+        <Switch
+          id="wiz-show-letters"
+          checked={identity.showGreekLetters}
+          onCheckedChange={(checked) => onSet("showGreekLetters", checked)}
+        />
+      </div>
+    </fieldset>
   );
 }

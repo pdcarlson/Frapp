@@ -1,16 +1,22 @@
+import { useMemo } from "react";
 import type { StyleProp, TextStyle } from "react-native";
-import { Animated, Image, StyleSheet, View } from "react-native";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { Animated, Image, StyleSheet, Text, View } from "react-native";
+import { signetDarkTokens, type SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const LOGO_SIZE = 24;
 
 /**
- * Header title for chapter-scoped screens: the chapter crest beside a label.
+ * Header title for chapter-scoped screens: the chapter mark beside a label.
  *
- * Per `spec/behavior/branding.md`, a chapter with no logo falls back to text,
- * so the label always renders and the image is purely additive.
+ * The mark follows `spec/behavior/branding.md` § Chapter mark (#2876): the
+ * logo, else a tile with the chapter's short name, else its Greek letters
+ * unless it turned them off. With none of those the label stands alone. Unlike
+ * the web nav's tile, which always fills its slot, this one never falls back
+ * to initials: the chapter name renders right beside it, so initials would
+ * only say the name twice. The label always renders, so the mark is purely
+ * additive.
  *
  * `label` overrides the chapter name for a screen that needs to keep its own
  * title. Nothing passes it today: the Home tab it was written for is gone, and
@@ -40,8 +46,9 @@ export function ChapterHeaderTitle({
    */
   style?: Animated.WithAnimatedValue<StyleProp<TextStyle>>;
 }) {
-  const { logoUrl, chapterName } = useChapterBranding();
+  const { logoUrl, chapterName, textMark, accent } = useChapterBranding();
   const { tokens } = useFrappTheme();
+  const markStyles = useMemo(() => createMarkStyles(tokens), [tokens]);
 
   const title = label ?? chapterName ?? "Frapp";
 
@@ -57,6 +64,25 @@ export function ChapterHeaderTitle({
           accessibilityElementsHidden
           importantForAccessibility="no"
         />
+      ) : textMark ? (
+        // Hidden from screen readers for the reason the logo is: the chapter
+        // name beside it already says who this is.
+        <View
+          style={[markStyles.tile, { backgroundColor: accent }]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          testID="chapter-mark-text"
+        >
+          <Text
+            style={[
+              markStyles.text,
+              textMark.length > 4 ? markStyles.textLong : null,
+            ]}
+            numberOfLines={1}
+          >
+            {textMark}
+          </Text>
+        </View>
       ) : null}
       <Animated.Text
         numberOfLines={1}
@@ -88,3 +114,30 @@ const styles = StyleSheet.create({
     ...typeRole(signetDarkTokens.typography.role.title),
   },
 });
+
+/**
+ * The text mark's tile: the logo's 24px footprint, filled with the chapter
+ * accent under the fixed `gold.onHouse` label. That is the pairing mobile's
+ * accent chips already use (`filter-chips.tsx`), and `useChapterBranding`
+ * records its measurement: step 11 under `gold.onHouse` reads at 7.2:1 or
+ * better for every colour the chapter directory seeds.
+ */
+function createMarkStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    tile: {
+      minWidth: LOGO_SIZE,
+      height: LOGO_SIZE,
+      paddingHorizontal: 4,
+      borderRadius: 6,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    text: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.gold.onHouse,
+    },
+    textLong: {
+      ...typeRole(tokens.typography.role.caption),
+    },
+  });
+}
