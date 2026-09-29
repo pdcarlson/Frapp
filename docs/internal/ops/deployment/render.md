@@ -10,6 +10,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | Setting             | Production                                | Staging               |
 | ------------------- | ----------------------------------------- | --------------------- |
 | **Name**            | `frapp-api-prod`                          | `frapp-api-staging`   |
+| **Service ID**      | `renderServiceId` of `production` in [`.github/environments.json`](../../../../.github/environments.json) ([why there](../../../../spec/environments/README.md#environment-identity)) | `renderServiceId` of `staging` there |
 | **Branch**          | `main`                                    | `main`                |
 | **Auto-Deploy**     | **No** — deploys are API-driven by commit | **No** — same, from `deploy-staging.yml` (#2505, #2803) |
 | **Root Directory**  | (leave empty — Dockerfile uses repo root) | (same)                |

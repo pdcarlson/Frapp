@@ -13,7 +13,8 @@ name: Deploy
 #
 # ── The order ───────────────────────────────────────────────────────────────
 #   install (no secrets yet) → move to the trusted ref → local actions,
-#   preflight, env baseline, inject Infisical → back to the deployed commit →
+#   provider ids, preflight, env baseline, inject Infisical → back to the
+#   deployed commit →
 #   plan (staging) / rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
 #   the API by commit → verify it serves the commit → UPLOAD web + landing →
@@ -29,8 +30,11 @@ name: Deploy
 # build, verify and upload follow the plan's outputs. Production's: the
 # provider preflight, the migration rehearsal and its fence, the dry-run stop,
 # the `config.toml` assert and `scope: migrations-only`. Where the two differ
-# in a value (a slug, a service id, `DEPLOY_TARGET`), each has its own step
-# with literals, never an `a && 'x' || 'y'` expression.
+# in a value (a slug, `DEPLOY_TARGET`), each has its own step with literals,
+# never an `a && 'x' || 'y'` expression. The provider ids are the one
+# exception: a single step reads the named environment's Render service id and
+# the Vercel ids from `.github/environments.json` (`provider-ids.mjs`, #2806),
+# and every step that needs one takes that step's output.
 #
 # ── The trust split ─────────────────────────────────────────────────────────
 # Two trees, used in turn. The deployed commit (`inputs.sha`) is what gets
@@ -47,6 +51,9 @@ name: Deploy
 #   * The provider preflight and the served-commit check are verdicts on the
 #     deploy, so they run trusted code: the preflight before the detach, the
 #     served-commit check from a copy taken before it.
+#   * The provider ids are read from the trusted ref's
+#     `.github/environments.json`, so a rollback deploys to the services
+#     today's config names, not the ones an older commit named.
 # The installs come first, on the deployed commit and before any secret is
 # injected (#2801): no install script runs with the Infisical store in its
 # environment. That is all it buys; an install script can still leave
@@ -293,6 +300,15 @@ jobs:
           git checkout --force --detach "$TRUSTED_SHA"
           git --no-pager log -1 --format='Trusted ref for the local actions and checks: %H%n%s'
 
+      # The Render service and the Vercel team and projects, from
+      # `.github/environments.json` at the trusted ref, so a rollback deploys
+      # to the services the config names today (#2806). Not secrets.
+      - name: Read the provider ids
+        id: ids
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: node scripts/ci/provider-ids.mjs
+
       - name: Setup Supabase CLI
         uses: ./.github/actions/supabase-cli
 
@@ -313,18 +329,18 @@ jobs:
       # frapp-landing has no Supabase client, so it is the one thing a
       # database-only run can honestly skip.
       #
-      # The identifiers are the ones the production steps below deploy to, and
-      # `production-guardrails.yml`'s (a test pins them equal), so the
-      # preflight asserts against the services this run ships.
+      # The identifiers are the ones the production steps below deploy to (the
+      # same step outputs), so the preflight asserts against the services this
+      # run ships.
       - name: Provider guardrail preflight
         if: inputs.environment == 'production'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          RENDER_SERVICE_ID: srv-d6lqu41aae7s73f62df0
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           # Through the environment, not interpolated into the script body.
           SCOPE: ${{ inputs.scope }}
         run: |
@@ -410,7 +426,7 @@ jobs:
         env:
           DEPLOY_SHA: ${{ inputs.sha }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
         run: node scripts/ci/plan-staging-deploy.mjs
 
@@ -543,9 +559,9 @@ jobs:
         if: steps.plan.outputs.upload == 'true'
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           DEPLOY_TARGET: preview
           DEPLOY_PHASE: build
           DEPLOY_SHA: ${{ inputs.sha }}
@@ -577,9 +593,9 @@ jobs:
         if: ${{ inputs.environment == 'production' && inputs.scope != 'migrations-only' }}
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           DEPLOY_TARGET: production
           DEPLOY_PHASE: build
           DEPLOY_SHA: ${{ inputs.sha }}
@@ -673,7 +689,7 @@ jobs:
         if: steps.plan.outputs.deploy == 'true'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
+          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ inputs.sha }}
         run: node scripts/ci/deploy-render-production.mjs
@@ -683,7 +699,7 @@ jobs:
         if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: srv-d6lqu41aae7s73f62df0
+          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
           SERVICE_LABEL: frapp-api-prod
           DEPLOY_SHA: ${{ inputs.sha }}
         run: |
@@ -756,9 +772,9 @@ jobs:
         if: steps.plan.outputs.upload == 'true'
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           DEPLOY_TARGET: preview
           DEPLOY_PHASE: upload
           DEPLOY_SHA: ${{ inputs.sha }}
@@ -785,9 +801,9 @@ jobs:
         if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
-          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
-          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
+          VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
+          VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           DEPLOY_TARGET: production
           DEPLOY_PHASE: upload
           DEPLOY_SHA: ${{ inputs.sha }}

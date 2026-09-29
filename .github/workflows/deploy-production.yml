@@ -232,7 +232,8 @@ jobs:
   # that calls a workflow can't) and no secret of its own.
   #
   # A caller's `env:` does not reach a called workflow, which is why this file
-  # has none: the Render and Vercel ids are literals in `_deploy.yml`.
+  # has none: `_deploy.yml` reads the Render and Vercel ids from
+  # `.github/environments.json` itself (#2806).
   deploy:
     name: Migrate, then ship Render + Vercel
     needs: validate

@@ -194,12 +194,22 @@ mismatch before any `link` or `push`**. Before that existed, `--env` was validat
 dropped — `--env staging` and `--env production` were the same program, so a mis-scoped Infisical folder
 would have applied migrations to production while every log line said staging.
 
-Two consequences worth holding together:
+The same file holds each environment's Render service id (`renderServiceId`) and the Vercel team and
+project ids (its `vercel` block), since [#2806](https://github.com/pdcarlson/Frapp/issues/2806). Every
+workflow reads them through `scripts/ci/provider-ids.mjs`, and a test fails on a literal id anywhere under
+`.github/workflows` or `.github/actions`. They are not secrets either: each grants nothing without
+`RENDER_API_KEY` or `VERCEL_API_KEY`.
+
+Three consequences worth holding together:
 
 - **Rotating a project touches every file that names its ref**, not only `.github/environments.json` — see
   [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#backup-reality).
   Missing the file blocks every production migration and fails `migration-order` on every
   migration-bearing PR.
+- **Recreating a Render service or a Vercel project means changing its id in this file.** The deploy,
+  `production-guardrails.yml` and `production-release-pin.yml` all read it from here, and the format
+  check can't tell an old id from a new one, so a stale id deploys to, or asserts against, the object
+  that was replaced.
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
   committed file too would make the pair agree by construction, and the fence would assert nothing.
 

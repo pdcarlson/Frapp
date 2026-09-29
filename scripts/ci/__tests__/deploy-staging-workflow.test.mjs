@@ -427,7 +427,7 @@ describe("deploy-staging.yml: the order", () => {
   it("plans, deploys on the plan's say-so, and verifies what the plan named", () => {
     const deploy = step("Deploy the commit to Render (staging)");
     assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true'");
-    assert.equal(deploy.env.get("RENDER_SERVICE_ID"), "srv-d6lqsq75r7bs73c2fdc0");
+    assert.equal(deploy.env.get("RENDER_SERVICE_ID"), "${{ steps.ids.outputs.render_service_id }}");
     assert.equal(deploy.env.get("SERVICE_LABEL"), "frapp-api-staging");
     const verify = step("Verify staging serves the commit");
     // `verify_sha` is set whenever anything ships (a current plan, or a stale
