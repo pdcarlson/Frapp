@@ -1711,11 +1711,12 @@ export class ChatService {
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
     // BOTH arms are loaded, not just the channel one. Kind-scoped rows became
     // writable in #500, and `resolveLevel` consults them whenever a channel has
-    // no row of its own (in a DM, only a louder one counts) — so reading only the channel arm would report the
-    // pre-#500 answer. A member who sets the `text` kind to `off` would see
-    // every channel rendered `mentions` here while the worker pushed nothing,
-    // which is exactly the "UI that disagrees with the worker about whether you
-    // are muted" this method's contract exists to prevent.
+    // no row of its own (in a DM, only a louder one counts) — so reading only
+    // the channel arm would report the pre-#500 answer. A member who sets the
+    // `text` kind to `off` would see every channel rendered `mentions` here
+    // while the worker pushed nothing, which is exactly the "UI that disagrees
+    // with the worker about whether you are muted" this method's contract
+    // exists to prevent.
     const [channelRows, kindRows, channels] = await Promise.all([
       this.chatNotificationPrefs.findChannelPreferencesForUser(
         userId,

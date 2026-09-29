@@ -305,7 +305,6 @@ export class ChatPushWorkerService
         senderName ??= this.resolveSenderName(row.sender_id);
         const payload = this.buildPayload(
           channel,
-          row,
           senderPreview,
           burst,
           await senderName,
@@ -533,7 +532,6 @@ export class ChatPushWorkerService
 
   private buildPayload(
     channel: ChannelRow,
-    row: ChatMessageRow,
     preview: string,
     burst: ReturnType<BurstBundler['record']>,
     senderName: string | null,
