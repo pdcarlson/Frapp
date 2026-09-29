@@ -71,7 +71,7 @@ function setup(overrides: Partial<ComposerStagingInput> = {}) {
     blockState: READY,
     draft: "the draft",
     setDraft: vi.fn(),
-    send: vi.fn().mockResolvedValue(undefined),
+    send: vi.fn().mockResolvedValue(true),
     edit: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -103,6 +103,20 @@ describe("useComposerStaging — reply", () => {
     act(() => result.current.startReply("r1"));
     act(() => result.current.submit());
     expect(input.send).toHaveBeenCalledWith("the draft", { replyToId: "m1" });
+  });
+
+  it("keeps the reply staged when the send didn't take it", async () => {
+    const send = vi.fn().mockResolvedValue(false);
+    const { result } = setup({ send });
+    act(() => result.current.startReply("m1"));
+    await act(async () => {
+      result.current.submit();
+      await Promise.resolve();
+    });
+    expect(result.current.context).toMatchObject({
+      kind: "reply",
+      title: "Replying to Casey",
+    });
   });
 
   it("sends an ordinary message with no reply target", () => {
@@ -206,13 +220,17 @@ describe("useComposerStaging — edit", () => {
     expect(result.current.isEditing).toBe(false);
   });
 
-  it("won't save an empty message, and says what to do instead", () => {
+  it("says why an empty edit can't be saved, and never sends it", () => {
     const { result, input } = setup();
     act(() => result.current.startEdit("m2"));
+    expect(result.current.editError).toBeNull();
     act(() => result.current.onChangeText("   "));
+    // The composer greys Save out on an empty value; this is its reason.
+    expect(result.current.editError).toBe(EDIT_EMPTY_HINT);
     act(() => result.current.submit());
     expect(input.edit).not.toHaveBeenCalled();
-    expect(result.current.editError).toBe(EDIT_EMPTY_HINT);
+    act(() => result.current.onChangeText("back"));
+    expect(result.current.editError).toBeNull();
   });
 
   it("closes when the message is deleted under it", () => {
@@ -224,6 +242,116 @@ describe("useComposerStaging — edit", () => {
     });
     expect(result.current.isEditing).toBe(false);
     expect(result.current.value).toBe("the draft");
+  });
+
+  it("keeps an open edit while its channel reloads with nothing cached", () => {
+    const { result, rerender, input } = setup();
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("typed text"));
+    rerender({ ...input, byId: new Map() });
+    expect(result.current.isEditing).toBe(true);
+    expect(result.current.value).toBe("typed text");
+  });
+
+  it("saves once, however fast Save is tapped", async () => {
+    let settle!: () => void;
+    const edit = vi.fn(
+      () => new Promise<void>((resolve) => (settle = resolve)),
+    );
+    const { result } = setup({ edit });
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("fixed"));
+    act(() => {
+      result.current.submit();
+      result.current.submit();
+    });
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(result.current.isSavingEdit).toBe(true);
+    await act(async () => {
+      settle();
+      await Promise.resolve();
+    });
+    expect(result.current.isSavingEdit).toBe(false);
+  });
+
+  it("locks only the channel whose edit is saving", () => {
+    const edit = vi.fn(() => new Promise<void>(() => {}));
+    const { result, rerender, input } = setup({ edit });
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("fixed"));
+    act(() => result.current.submit());
+    expect(result.current.isSavingEdit).toBe(true);
+    rerender({ ...input, edit, channelId: "chan-2" });
+    expect(result.current.isSavingEdit).toBe(false);
+  });
+
+  it("never lets a save for one edit close or fault the edit opened after it", async () => {
+    let fail!: (error: Error) => void;
+    let succeed!: () => void;
+    const saves = [
+      () => new Promise<void>((resolve) => (succeed = resolve)),
+      () => new Promise<void>((_, reject) => (fail = reject)),
+    ];
+    const edit = vi.fn(() => saves.shift()!());
+    const byId = index(
+      row("m1", FRIEND),
+      row("m2", VIEWER),
+      row("m3", VIEWER),
+      row("m4", VIEWER),
+    );
+    const { result } = setup({ edit, byId });
+
+    // m2's save succeeds after the member has moved on to m3.
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("m2 fixed"));
+    act(() => result.current.submit());
+    act(() => result.current.startEdit("m3"));
+    act(() => result.current.onChangeText("m3 draft"));
+    await act(async () => {
+      succeed();
+      await Promise.resolve();
+    });
+    expect(result.current.isEditing).toBe(true);
+    expect(result.current.value).toBe("m3 draft");
+
+    // m3's save fails after the member has moved on to m4.
+    act(() => result.current.submit());
+    act(() => result.current.startEdit("m4"));
+    await act(async () => {
+      fail(new Error("Network error"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.value).toBe("body m4");
+    expect(result.current.editError).toBeNull();
+  });
+
+  it("leaves an edit open in another channel alone when a reply is staged", () => {
+    const { result, rerender, input } = setup({
+      byId: index(
+        row("m2", VIEWER),
+        row("d1", FRIEND, { channel_id: "chan-2" }),
+      ),
+    });
+    act(() => result.current.startEdit("m2"));
+    rerender({
+      ...input,
+      channelId: "chan-2",
+      byId: index(
+        row("m2", VIEWER),
+        row("d1", FRIEND, { channel_id: "chan-2" }),
+      ),
+    });
+    act(() => result.current.startReply("d1"));
+    expect(result.current.context?.kind).toBe("reply");
+    rerender({
+      ...input,
+      byId: index(
+        row("m2", VIEWER),
+        row("d1", FRIEND, { channel_id: "chan-2" }),
+      ),
+    });
+    expect(result.current.isEditing).toBe(true);
   });
 
   it("replaces a staged reply, and a reply replaces an edit", () => {

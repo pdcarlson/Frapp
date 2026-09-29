@@ -732,6 +732,36 @@ describe("MessageItem edit and delete", () => {
     expect(screen.getByRole("textbox")).toHaveValue("hello there");
   });
 
+  it("closes the editor when Edit is withdrawn mid-edit, rather than leaving a Save that does nothing (#2775)", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderItemWithProps({
+      message: message({ id: "msg-1", sender_id: VIEWER, content: "hello" }),
+      onEdit: vi.fn(),
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+
+    // The channel was made read-only, or the member became an alumnus: the
+    // shell stops passing `onEdit`.
+    rerender(
+      <div role="list">
+        <MessageItem
+          blockState={NOBODY_BLOCKED}
+          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello" })}
+          viewerId={VIEWER}
+          showHeader
+          nameFor={nameFor}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          isTapRevealed={false}
+          onToggleTapReveal={vi.fn()}
+        />
+      </div>,
+    );
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
   it("keeps the editor open with the draft intact when the save rejects", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn().mockRejectedValue(new Error("network error"));

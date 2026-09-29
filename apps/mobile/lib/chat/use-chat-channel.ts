@@ -114,8 +114,13 @@ export interface UseChatChannelResult {
    * to survive a failed send and reset on a channel switch, and both of those
    * are this hook's existing jobs. A photo staged in #general riding the next
    * message in #dues is the bug that shape prevents.
+   *
+   * Resolves `true` once the message is in the outbox, `false` when nothing
+   * was queued (an empty body, a send already in flight, no runtime, or an
+   * outbox that refused the row), so a caller holding state for this send (a
+   * staged reply) can keep it. Never rejects.
    */
-  send: (content: string, options?: SendOptions) => Promise<void>;
+  send: (content: string, options?: SendOptions) => Promise<boolean>;
   /**
    * Saves an edit of the viewer's own message. Not optimistic: the server row
    * is merged on success, and the Realtime echo of the same edit is a no-op.
@@ -536,8 +541,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         (!body && staged.length === 0) ||
         sendingRef.current
       )
-        return;
+        return false;
       sendingRef.current = true;
+      let queued = false;
       const forChannelId = channelId;
       const generation = ++sendGenerationRef.current;
       // Cancel the debounce first, or a keystroke from under 400ms ago
@@ -559,6 +565,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           replyToId: options?.replyToId ?? null,
           attachments: staged.length > 0 ? staged : undefined,
         });
+        queued = true;
         await drafts.clear(channelId);
       } catch (error) {
         // `sendMessage` awaits `outbox.enqueue` *outside* its own try/catch, so
@@ -587,6 +594,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       } finally {
         sendingRef.current = false;
       }
+      return queued;
     },
     [attachments, cancelDraftTimer, channelId, ctx, drafts],
   );

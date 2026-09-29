@@ -381,7 +381,7 @@ describe("send() failure", () => {
     );
     await waitFor(() => expect(result.current.canSend).toBe(true));
 
-    let sendPromise: Promise<void> = Promise.resolve();
+    let sendPromise: Promise<boolean> = Promise.resolve(false);
     act(() => {
       sendPromise = result.current.send("unsent text");
     });
@@ -449,7 +449,7 @@ describe("send() and the draft debounce", () => {
       result.current.setDraft("about to send");
     });
 
-    let inFlight!: Promise<void>;
+    let inFlight!: Promise<boolean>;
     act(() => {
       inFlight = result.current.send("about to send");
     });
@@ -1098,6 +1098,27 @@ describe("reply, edit and delete (#2775)", () => {
       expect.anything(),
       expect.objectContaining({ content: "answer", replyToId: "m1" }),
     );
+  });
+
+  it("reports whether the message was queued", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    let queued: boolean | undefined;
+    await act(async () => {
+      queued = await result.current.send("answer");
+    });
+    expect(queued).toBe(true);
+
+    mocks.sendMessage.mockRejectedValueOnce(new Error("storage full"));
+    await act(async () => {
+      queued = await result.current.send("again");
+    });
+    expect(queued).toBe(false);
+
+    await act(async () => {
+      queued = await result.current.send("   ");
+    });
+    expect(queued).toBe(false);
   });
 
   it("sends an ordinary message with no reply target", async () => {

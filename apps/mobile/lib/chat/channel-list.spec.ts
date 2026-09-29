@@ -6,6 +6,7 @@ import {
   listedChannels,
   selectChannels,
   selectPostCapability,
+  threadHeaderTitle,
 } from "./channel-list";
 
 /**
@@ -332,5 +333,50 @@ describe("listedChannels", () => {
       "general",
       "dm-shown",
     ]);
+  });
+});
+
+describe("threadHeaderTitle (#2775)", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const CASEY = "33333333-3333-4333-8333-333333333333";
+  const names = { [CASEY]: "Casey" };
+
+  it("prefixes a channel with #", () => {
+    expect(
+      threadHeaderTitle(
+        { id: "c1", name: "general", type: "PUBLIC" },
+        "c1",
+        VIEWER,
+        names,
+      ),
+    ).toBe("#general");
+  });
+
+  it("names the other member for a DM, with no #", () => {
+    expect(
+      threadHeaderTitle(
+        {
+          id: "c2",
+          name: `dm-${VIEWER}-${CASEY}`,
+          type: "DM",
+          member_ids: [VIEWER, CASEY],
+        },
+        "c2",
+        VIEWER,
+        names,
+      ),
+    ).toBe("Casey");
+  });
+
+  it("is empty until the row loads, and for a row that isn't this channel", () => {
+    expect(threadHeaderTitle(undefined, "c1", VIEWER, names)).toBe("");
+    expect(
+      threadHeaderTitle(
+        { id: "c9", name: "dues", type: "PUBLIC" },
+        "c1",
+        VIEWER,
+        names,
+      ),
+    ).toBe("");
   });
 });

@@ -3,11 +3,14 @@ import type { ChatMessage } from "./types";
 
 /**
  * Which of Reply, Edit and Delete a message offers, decided once for web and
- * mobile (#2775). The server enforces every one of these
- * (`ChatService.editMessage` / `deleteMessage` / `sendMessage`); these are the
- * UX pre-filter that keeps a client from offering a control the server will
- * refuse. Two clients deriving them separately is how one of them came to
- * offer Edit on every imported row for a while (see `isOwnMessage`).
+ * mobile (#2775). They are the UX pre-filter that keeps a client from offering
+ * a control that would fail. The server enforces ownership, `channels:manage`,
+ * channel access and the read-only reply rule (`ChatService.editMessage` /
+ * `deleteMessage` / `sendMessage`), but **not** the card and imported-row half
+ * of `canEditMessage`: `editMessage` never reads `kind`, so that half is
+ * client-side only until #2863. Two clients deriving these separately is how
+ * one of them came to offer Edit on every imported row for a while (see
+ * `isOwnMessage`).
  *
  * `spec/behavior/chat/README.md` § Reply threads and § Edit and delete own the
  * rules.
@@ -16,8 +19,10 @@ import type { ChatMessage } from "./types";
 /**
  * Kinds whose renderer is a card in the flow rather than a message bubble.
  *
- * Web's renderer switch (`apps/web/components/chat/renderers/index.tsx`) reads
- * this list, so a kind cannot be a card there and editable here. Mobile draws
+ * Web's `rendersAsBubble` is this list, re-exported. Web's renderer switch
+ * (`apps/web/components/chat/renderers/index.tsx`) is a second statement of it,
+ * and `registry.spec.tsx` there fails if the two disagree, which is what keeps
+ * a kind from being a card on screen and editable here. Mobile draws
  * only `poll` as a card today and every other kind as a bubble, but a card's
  * body lives in `payload`, so its `content` is not the member's words to edit
  * whichever way a client happens to draw it.

@@ -16,11 +16,20 @@
  * two cannot disagree: a reply nobody was shown they were sending is ruled out
  * by construction.
  *
+ * **A reply the send never took stays staged.** The strip clears as the send
+ * goes out, as web's does, and comes back when `send` reports it did not
+ * dispatch (a send already in flight, or an outbox that refused the row), so
+ * the words the member gets back are still a reply.
+ *
  * **An edit never touches the draft.** The composer shows the message being
  * edited in place of the draft, and the draft, persisted per channel, is still
- * there when the edit is saved or cancelled. An edit whose message is gone
- * from the loaded window, or was deleted under it (by an officer, or from
- * another device), closes, since the server would refuse the save.
+ * there when the edit is saved or cancelled. An edit closes when its message
+ * is deleted under it (by an officer, or from another device), since the
+ * server would refuse the save. It does not close merely because the message
+ * isn't in the loaded window: a channel whose cache was collected while the
+ * member was elsewhere starts empty, and the typed edit must survive the
+ * reload. A save against a message that is really gone gets the server's
+ * refusal in the hint.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -64,7 +73,8 @@ export interface ComposerStagingInput {
   blockState: BlockState;
   draft: string;
   setDraft: (body: string) => void;
-  send: (content: string, options?: SendOptions) => Promise<void>;
+  /** Resolves `true` once the message is queued, `false` when it was not. */
+  send: (content: string, options?: SendOptions) => Promise<boolean>;
   edit: (messageId: string, content: string) => Promise<void>;
 }
 
@@ -121,7 +131,13 @@ export function useComposerStaging({
   const [replyTarget, setReplyTarget] = useState<StagedTarget | null>(null);
   const [editing, setEditing] = useState<EditState | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
-  const [savingFor, setSavingFor] = useState<string | null>(null);
+  /** The edit a save is in flight for, which is what `isSavingEdit` reports. */
+  const [savingFor, setSavingFor] = useState<StagedTarget | null>(null);
+  /**
+   * The same, as a ref: the double-save guard. Two taps inside one render
+   * both read the pre-commit state, so a state guard lets both through.
+   */
+  const savingRef = useRef(false);
 
   const activeReply =
     replyTarget && replyTarget.channelId === channelId ? replyTarget : null;
@@ -130,12 +146,14 @@ export function useComposerStaging({
     editing && editing.channelId === channelId
       ? byId.get(editing.messageId)
       : undefined;
+  // A message the window doesn't hold (yet) keeps its edit open; one that is
+  // there and deleted closes it.
+  const editGone = !!editTarget && !canActOnMessage(editTarget);
   const activeEdit =
-    editing && editTarget && canActOnMessage(editTarget) ? editing : null;
-  // The message left the window or was deleted under the open edit. Closed
-  // during render rather than in an effect (React's "adjusting state when a
-  // prop changes"), so no frame shows a strip for a message that is gone.
-  if (editing && editing.channelId === channelId && !activeEdit) {
+    editing && editing.channelId === channelId && !editGone ? editing : null;
+  // Closed during render rather than in an effect (React's "adjusting state
+  // when a prop changes"), so no frame shows a strip for a deleted message.
+  if (editing && editGone) {
     setEditing(null);
     setEditError(null);
   }
@@ -189,9 +207,12 @@ export function useComposerStaging({
     (messageId: string) => {
       const message = byId.get(messageId);
       if (!message) return;
-      // One thing at a time: the strip has room for one, and a send can't be
-      // both an edit and a reply.
-      setEditing(null);
+      // One thing at a time in a channel: the strip has room for one, and a
+      // send can't be both an edit and a reply. An edit left open in another
+      // channel is that channel's, and stays.
+      setEditing((current) =>
+        current?.channelId === message.channel_id ? null : current,
+      );
       setEditError(null);
       setReplyTarget({
         channelId: message.channel_id,
@@ -235,13 +256,12 @@ export function useComposerStaging({
 
   const submit = useCallback(() => {
     if (activeEdit) {
-      if (savingFor !== null) return;
-      const messageId = activeEdit.messageId;
+      if (savingRef.current) return;
+      const { channelId: editChannelId, messageId } = activeEdit;
       const content = activeEdit.value.trim();
-      if (!content) {
-        setEditError(EDIT_EMPTY_HINT);
-        return;
-      }
+      // The composer already withholds Save on an empty edit, and the hint
+      // below says why; this is the belt to that.
+      if (!content) return;
       // Nothing changed: close without a request, so an unchanged save
       // doesn't stamp "edited" on a message nobody rewrote.
       if (content === editTarget?.content.trim()) {
@@ -249,7 +269,8 @@ export function useComposerStaging({
         return;
       }
       setEditError(null);
-      setSavingFor(messageId);
+      savingRef.current = true;
+      setSavingFor({ channelId: editChannelId, messageId });
       void edit(messageId, content)
         .then(() => {
           // Only the edit this save was for: the member may have cancelled it
@@ -268,25 +289,32 @@ export function useComposerStaging({
               : "Couldn't edit message. Try again.",
           );
         })
-        .finally(() => setSavingFor(null));
+        .finally(() => {
+          savingRef.current = false;
+          setSavingFor(null);
+        });
       return;
     }
     // Cleared before the send resolves, as web does: a strip still standing
     // after the reply appears in the thread reads as "your reply didn't send",
-    // and would attach itself to whatever the member typed next.
-    const replyToId = activeReply?.messageId ?? null;
-    if (activeReply) setReplyTarget(null);
-    void send(draft, { replyToId });
-  }, [
-    activeEdit,
-    activeReply,
-    cancelEdit,
-    draft,
-    edit,
-    editTarget,
-    savingFor,
-    send,
-  ]);
+    // and would attach itself to whatever the member typed next. Put back if
+    // the send didn't take it, unless the member has staged another since.
+    const staged = activeReply;
+    if (staged) setReplyTarget(null);
+    void send(draft, { replyToId: staged?.messageId ?? null }).then(
+      (dispatched) => {
+        if (!dispatched && staged) {
+          setReplyTarget((current) => current ?? staged);
+        }
+      },
+    );
+  }, [activeEdit, activeReply, cancelEdit, draft, edit, editTarget, send]);
+
+  // An empty edit can't be saved, and the composer greys Save out; this is
+  // what says why, rather than leaving a dead button.
+  const shownEditError = activeEdit
+    ? (editError ?? (activeEdit.value.trim() ? null : EDIT_EMPTY_HINT))
+    : null;
 
   return {
     context,
@@ -294,8 +322,10 @@ export function useComposerStaging({
     onChangeText,
     submit,
     isEditing: !!activeEdit,
-    isSavingEdit: savingFor !== null,
-    editError: activeEdit ? editError : null,
+    // Keyed like everything else here: a save in flight for #general must
+    // not lock the composer in #dues.
+    isSavingEdit: savingFor !== null && savingFor.channelId === channelId,
+    editError: shownEditError,
     startReply,
     startEdit,
   };

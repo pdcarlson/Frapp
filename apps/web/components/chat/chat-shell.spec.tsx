@@ -544,11 +544,12 @@ vi.mock("./message-timeline", async () => {
       messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
+      onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
       holdFollow?: boolean;
     }
   >(function MessageTimeline(
-    { messages, onDelete, onReply, canManageChannel, holdFollow },
+    { messages, onDelete, onReply, onEdit, canManageChannel, holdFollow },
     ref,
   ) {
     // Models the REAL contract: the timeline can only scroll to a message it
@@ -571,6 +572,8 @@ vi.mock("./message-timeline", async () => {
             rule (#489 AC 4) is expressed by withholding the prop, so it is
             invisible without this echo. */}
         <span data-testid="reply-offered">{String(!!onReply)}</span>
+        {/* Edit is withheld the same way where the member can't post (#2775). */}
+        <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
         {/* One Reply control per message, so a test can stage a reply against
             a top-level message and against a reply — the two cases AC 3's
@@ -2102,6 +2105,25 @@ describe("ChatShell reply-with-quote (#489)", () => {
       );
     });
     expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
+  });
+
+  it("offers no Edit to a member who cannot post here, since an edit is a post (#2775)", async () => {
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-alumni-readable" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent(
+        "chan-alumni-readable",
+      );
+    });
+    expect(screen.getByTestId("edit-offered")).toHaveTextContent("false");
+  });
+
+  it("offers Edit where the member can post", () => {
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("edit-offered")).toHaveTextContent("true");
   });
 });
 

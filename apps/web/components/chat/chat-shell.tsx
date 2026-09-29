@@ -1924,8 +1924,9 @@ export function ChatShell({
               void channel.act(messageId, actionType, payload)
             }
             // An edit authorizes as a post (`spec/behavior/chat/README.md`
-            // § Channel access), so a member who can't post here, such as an
-            // alumnus in an ordinary channel, isn't offered one (#2775).
+            // § Channels → Channel-access enforcement), so a member who can't
+            // post here, such as an alumnus in an ordinary channel, isn't
+            // offered one (#2775).
             onEdit={activeChannel?.can_post !== false ? channel.edit : undefined}
             onDelete={handleDeleteMessage}
             bookmarkedMessageIds={bookmarkedMessageIds}

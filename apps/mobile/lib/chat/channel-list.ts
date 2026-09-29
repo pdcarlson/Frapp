@@ -124,6 +124,25 @@ export function displayChannelName(
   return directChannelDisplayName(channel, viewerId, names);
 }
 
+/**
+ * The s05 thread header (#2775): `#name` for a channel, the other member for a
+ * DM, through the same `displayChannelName` the list uses, so a thread and its
+ * row say the same thing. Empty until the channel row loads, and for a row that
+ * isn't the channel on screen, rather than a placeholder that would flash and
+ * change. `data` is `GET /v1/channels/{id}`, parsed as defensively as the list.
+ */
+export function threadHeaderTitle(
+  data: unknown,
+  channelId: string | null,
+  viewerId: string | null,
+  names: DisplayNameMap,
+): string {
+  const [channel] = selectChannels([data]);
+  if (!channel || channel.id !== channelId) return "";
+  const name = displayChannelName(channel, viewerId, names);
+  return isDirectChannel(channel) ? name : `#${name}`;
+}
+
 /** `channel_id` → counts, so a row lookup is O(1) rather than a scan per row. */
 export function indexUnread(
   rows: { channel_id: string; unread_count: number; mention_count: number }[],

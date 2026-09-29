@@ -21,12 +21,7 @@ import {
   visibleTypingUsers,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import {
-  channelAllowsReplies,
-  DELETE_MESSAGE_CONFIRM_BODY,
-  DELETE_MESSAGE_CONFIRM_LABEL,
-  DELETE_MESSAGE_CONFIRM_TITLE,
-} from "@repo/chat-core/message-actions";
+import { channelAllowsReplies } from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   resolveAuthorName,
@@ -67,20 +62,16 @@ import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
-  displayChannelName,
-  isDirectChannel,
-  selectChannels,
   selectPostCapability,
+  threadHeaderTitle,
 } from "@/lib/chat/channel-list";
+import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const NO_DEPARTED: ReadonlySet<string> = new Set();
-
-/** The alert a failed delete shows; the body is chat-core's classified reason. */
-const DELETE_MESSAGE_FAILED_TITLE = "Couldn't delete message";
 
 /**
  * s05 — Chat thread.
@@ -173,16 +164,12 @@ export default function ChatThreadScreen() {
   const roster = useMemberDisplayNames();
   const { nameFor, refetch: refetchRoster } = roster;
 
-  // The header names the conversation (#2775): `#name` for a channel, the
-  // other member for a DM, through the same `displayChannelName` the Chat list
-  // uses, so a thread and its row say the same thing. Empty until the channel
-  // row loads, rather than a placeholder that would flash and change.
-  const headerTitle = useMemo(() => {
-    const [channel] = selectChannels([channelQuery.data]);
-    if (!channel || channel.id !== channelId) return "";
-    const name = displayChannelName(channel, viewerId, roster.byId);
-    return isDirectChannel(channel) ? name : `#${name}`;
-  }, [channelQuery.data, channelId, viewerId, roster.byId]);
+  // `#name` for a channel, the other member for a DM (#2775).
+  const headerTitle = useMemo(
+    () =>
+      threadHeaderTitle(channelQuery.data, channelId, viewerId, roster.byId),
+    [channelQuery.data, channelId, viewerId, roster.byId],
+  );
 
   // Delete on someone else's message (#2775). The server resolves the
   // permission in the message's own chapter; this only decides whether the
@@ -412,30 +399,8 @@ export default function ChatThreadScreen() {
     submitComposer();
   }, [submitComposer]);
 
-  /**
-   * Delete asks first, in a native alert, with the words web's dialog uses.
-   * Pessimistic, per `spec/ui/resilience/`: the tombstone lands when the
-   * server row does, and a failure says so rather than leaving the message
-   * looking deleted.
-   */
   const handleDelete = useCallback(
-    (messageId: string) => {
-      Alert.alert(DELETE_MESSAGE_CONFIRM_TITLE, DELETE_MESSAGE_CONFIRM_BODY, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: DELETE_MESSAGE_CONFIRM_LABEL,
-          style: "destructive",
-          onPress: () => {
-            remove(messageId).catch((error: unknown) => {
-              Alert.alert(
-                DELETE_MESSAGE_FAILED_TITLE,
-                error instanceof Error ? error.message : undefined,
-              );
-            });
-          },
-        },
-      ]);
-    },
+    (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
     [remove],
   );
 

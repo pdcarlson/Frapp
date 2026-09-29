@@ -386,6 +386,13 @@ export function MessageItem({
   if (isEditing && message.is_deleted) {
     setIsEditing(false);
   }
+  // Edit stopped being allowed while the editor was open: the channel was
+  // made read-only, or the member became an alumnus, and the shell withdrew
+  // `onEdit` (#2775). Save would do nothing, so the editor closes rather than
+  // leave a live button that silently ignores the member.
+  if (isEditing && !canEdit) {
+    setIsEditing(false);
+  }
 
   function startEdit() {
     setEditValue(message.content);

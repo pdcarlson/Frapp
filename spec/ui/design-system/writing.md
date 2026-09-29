@@ -652,10 +652,10 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 |---|---|---|---|
 | Actions sheet rows | — | `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
-| Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `app/(tabs)/chat-thread.tsx` |
-| Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts` |
-| Edit strip | `Editing message` | — · cancel `Cancel edit`; the send control reads `Save edit` to a screen reader | mobile `lib/chat/use-composer-staging.ts`, `components/chat/chat-composer.tsx` |
-| Edit left empty | — | `A message can't be empty. Delete it instead, or cancel the edit.` (the composer hint, error tone) | mobile `lib/chat/use-composer-staging.ts` (`EDIT_EMPTY_HINT`) |
+| Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
+| Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
+| Edit strip | `Editing message` | — · cancel `Cancel edit`; the send control reads `Save edit` to a screen reader | mobile `lib/chat/use-composer-staging.ts`, `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
+| Edit left empty | — | `A message can't be empty. Delete it instead, or cancel the edit.` (the composer hint, error tone, shown while the text is empty, beside the greyed-out Save) | mobile `lib/chat/use-composer-staging.ts` (`EDIT_EMPTY_HINT`) |
 | Edit failed | — | The reason chat-core classified, in the composer hint; the edit stays open with the member's text | mobile `lib/chat/use-composer-staging.ts` |
 | Edited marker | — | `edited` after the time on the meta line (`· edited`, as on web's row header) | mobile `components/chat/message-bubble.tsx` (`EDITED_MARKER`) |
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
