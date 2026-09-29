@@ -50,8 +50,10 @@ export DO_NOT_TRACK=1
 # `supabase start` — so every caller must exclude it, not just bringup. The setup pre-pull
 # previously omitted it and therefore aborted partway through, never caching the images
 # ordered after edge-runtime (pg-meta, studio, supavisor) — defeating its own purpose.
-# The API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12),
-# so edge functions are not needed here. Override with FRAPP_SUPABASE_START_ARGS.
+# The API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12).
+# The one function the repo has, the Discord importer's attachment copy (ADR-26), therefore
+# does not run in the sandbox; its tests run under plain Deno (`npm run check:edge-functions`).
+# Override with FRAPP_SUPABASE_START_ARGS.
 CS_SUPABASE_START_ARGS="${FRAPP_SUPABASE_START_ARGS:--x edge-runtime}"
 
 # Resolve (installing on first use) and invoke the pinned Supabase CLI.

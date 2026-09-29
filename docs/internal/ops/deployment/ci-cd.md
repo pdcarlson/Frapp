@@ -14,8 +14,9 @@
    4. Migrations dry-run, listing what is pending, on every run.
    5. **Build** web and landing (`deploy-vercel.mjs`, `DEPLOY_PHASE=build`, Preview target) when the plan uploads. Each project's `.vercel` is stashed under `$RUNNER_TEMP`.
    6. Migrations apply, on every run.
-   7. Deploy the commit to Render when the plan says so, and verify the API serves the planned commit (`verify-served-commit.mjs`) whenever anything ships. [Deploy verification](#deploy-verification) has the detail.
-   8. **Upload** web and landing (`DEPLOY_PHASE=upload`) when the plan says so, then alias `app.staging.frapp.live` and `staging.frapp.live` to the new deployments.
+   7. Deploy the Supabase Edge Functions (`deploy-edge-functions.mjs`) unless the plan is `stale`, which would roll one back. They go before the API because the API calls them ([Supabase § Edge Functions](supabase.md#edge-functions)).
+   8. Deploy the commit to Render when the plan says so, and verify the API serves the planned commit (`verify-served-commit.mjs`) whenever anything ships. [Deploy verification](#deploy-verification) has the detail.
+   9. **Upload** web and landing (`DEPLOY_PHASE=upload`) when the plan says so, then alias `app.staging.frapp.live` and `staging.frapp.live` to the new deployments.
 
    Each step runs only when the ones before it passed. So a failed build, migration or API verify ships no frontend, and new frontends never go live before the migration and API they call. A run that isn't `main`'s tip never rolls anything back: the API plans `stale` when nothing moves it forward, and web and landing upload only over hosts serving older commits. The job holds the `db-migrate-staging` concurrency group with `cancel-in-progress: false`, so one staging deploy runs at a time and a running one is never cancelled. GitHub still replaces a *pending* run when a third arrives; that run ends `cancelled` and raises the alert, and the next run carries its changes. A `deploy-outcome` job then raises or closes the P1 staging alert ([`ALERT_ROUTING.md`](../ALERT_ROUTING.md#automated-github-issue-alerts)). Production runs the same job, with its own layers (steps 4 to 7 below).
 
@@ -42,7 +43,8 @@ layers are that job's steps named `inputs.environment == 'production'`:
 5. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the _absence_ of a Git link, so a **present** link is the violation.
 6. **Migration rehearsal** → fence → dry-run → **Vercel production builds**
    (both projects, `vercel pull --environment=production` + `vercel build --prod`, each `.vercel`
-   stashed under `$RUNNER_TEMP`) → apply.
+   stashed under `$RUNNER_TEMP`) → apply → **Edge Functions** (`deploy-edge-functions.mjs`, skipped
+   on a dry run and under `migrations-only`).
 7. **Render deploy by `commitId`** → **served-commit check** (`verify-served-commit.mjs`: `/health/ready`
    answers 2xx and reports this commit) → **Vercel production uploads** (each stash restored and
    shipped with `vercel deploy --prebuilt --prod`) → **tag**. A failure after the approval opens the
@@ -232,16 +234,9 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
 
-**CD (deploy workflows)** uses Infisical-injected runtime secrets in `_deploy.yml`, the job `deploy-staging.yml` (staging) and `deploy-production.yml` (production) both call. Variable names are **unified** across environments ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../environment/SECRETS_MANAGEMENT.md#key-design-principles)). Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy):
-
-| Variable                 | Purpose                                                  |
-| ------------------------ | -------------------------------------------------------- |
-| `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
-| `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
-| `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |
+**CD (deploy workflows)** uses Infisical-injected runtime secrets in `_deploy.yml`, the job `deploy-staging.yml` (staging) and `deploy-production.yml` (production) both call. Variable names are **unified** across environments ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../environment/SECRETS_MANAGEMENT.md#key-design-principles)). Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy). Which variables it reads, and what each is for, is kept in one place: [`ENV_REFERENCE.md` § CD Secrets](../../environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only).
 
 Two GitHub secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET`. Like every GitHub secret here they belong in environments restricted to `main`, never in repository scope, because a repository secret is readable from any branch ([#2518](https://github.com/pdcarlson/Frapp/issues/2518)). The deploy-time values themselves come from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)). Which environment holds which secret, including the provider API tokens the deploy workflows use: [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
 
-See `docs/internal/environment/ENV_REFERENCE.md` for the complete variable mapping.
 
 ---

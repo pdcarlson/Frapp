@@ -221,7 +221,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests; the Supabase Edge Functions' Deno fmt, lint, check and tests (`npm run check:edge-functions`) |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`QUALITY_GATES.md` § Two comparisons, two postures](../ci-cd/QUALITY_GATES.md#two-comparisons-two-postures)) |

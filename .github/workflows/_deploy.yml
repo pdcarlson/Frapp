@@ -681,6 +681,33 @@ jobs:
         if: ${{ inputs.environment == 'production' && !inputs.dry_run }}
         run: git diff --quiet HEAD -- supabase/config.toml
 
+      # The Supabase Edge Functions (#2848, ADR-26): after the migrations,
+      # before the API, because the API is what calls them. A new API must not
+      # reach a project whose functions are older than it; a function deployed
+      # ahead of an API that doesn't call it yet is harmless.
+      #
+      # Staging: whenever this run moves staging forward or re-asserts the tip
+      # (`deploy`, `forward`, `current`), never on `stale`, which would roll a
+      # function back. Production: a real, full run, like the API.
+      #
+      # From the deployed tree, as the migrations are, with the same ref fence
+      # (`scripts/ci/deploy-edge-functions.mjs`). The `hashFiles` guard is what
+      # keeps a rollback to a commit from before the functions working: that
+      # commit has neither a function nor the script, so the step skips. The
+      # credential is Infisical's `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, not the
+      # read-only `SUPABASE_ACCESS_TOKEN` (ENV_REFERENCE.md § CD Secrets).
+      - name: Deploy the Edge Functions (staging)
+        if: ${{ inputs.environment == 'staging' && steps.plan.outputs.plan != 'stale' && hashFiles('supabase/functions/*/index.ts') != '' }}
+        env:
+          TARGET_ENVIRONMENT: staging
+        run: node scripts/ci/deploy-edge-functions.mjs
+
+      - name: Deploy the Edge Functions (production)
+        if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' && hashFiles('supabase/functions/*/index.ts') != '' }}
+        env:
+          TARGET_ENVIRONMENT: production
+        run: node scripts/ci/deploy-edge-functions.mjs
+
       # Deploy-by-commit through the Render API (#2505), not a deploy hook: a
       # hook builds whatever is at the tip of the tracked branch, and `main`
       # moves on every merge. The script polls the deploy it created to a

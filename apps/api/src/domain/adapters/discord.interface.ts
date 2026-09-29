@@ -158,14 +158,6 @@ export interface DiscordApplicationInfo {
   redirectUris: string[] | null;
 }
 
-/** An attachment being streamed out of Discord's CDN. */
-export interface DiscordAttachmentStream {
-  body: ReadableStream<Uint8Array>;
-  contentType: string | null;
-  /** From the CDN's `Content-Length`, when it sent one. */
-  contentLength: number | null;
-}
-
 /**
  * The bot's read-only view of a guild.
  *
@@ -235,16 +227,6 @@ export interface IDiscordBotGateway {
     before: string | null;
     limit?: number;
   }): Promise<unknown[]>;
-
-  /**
-   * Open an attachment for streaming out of Discord's CDN.
-   *
-   * Returns a stream, never bytes: an import runs inside the API process
-   * alongside live traffic, and a 100 MB video buffered whole is 100 MB the
-   * request path no longer has. Returns null when the object is gone (a
-   * deleted attachment is a warning, not a failed import).
-   */
-  openAttachment(url: string): Promise<DiscordAttachmentStream | null>;
 }
 
 /** The guild object Discord returns on a `bot`-scope token exchange. */

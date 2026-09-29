@@ -7,7 +7,6 @@ import {
   DiscordApiError,
   DiscordNotConfiguredError,
   type DiscordApplicationInfo,
-  type DiscordAttachmentStream,
   type DiscordChannelDiscovery,
   type DiscordChannelRef,
   type DiscordRoleRef,
@@ -81,9 +80,6 @@ const THREAD_TYPES = new Set<number>([
  * finishes discovering.
  */
 const MAX_ARCHIVED_THREAD_PAGES = 50;
-
-/** Attachment fetches that hang must not hold a slice's whole budget. */
-const ATTACHMENT_FETCH_TIMEOUT_MS = 30_000;
 
 /** The setup check answers a wizard request; it gives up well before that does. */
 const APPLICATION_FETCH_TIMEOUT_MS = 5_000;
@@ -778,101 +774,11 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     return raw;
   }
 
-  // ── attachments ───────────────────────────────────────────────────────────
-
-  /**
-   * Open a CDN object for streaming.
-   *
-   * Plain `fetch`, not `@discordjs/rest`: the CDN is a different host, takes no
-   * bot token, and is not rate-limited on the API's buckets — routing it
-   * through the REST client would queue every attachment behind the message
-   * reads it is supposed to run alongside.
-   *
-   * The body is handed back unread. Nothing in this process ever holds a whole
-   * attachment: the caller pipes it straight into storage.
-   */
-  async openAttachment(url: string): Promise<DiscordAttachmentStream | null> {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return null;
-    }
-    // The URL comes out of a Discord API response, but it reaches `fetch` as a
-    // string and this process can reach internal hosts. Pinning the scheme and
-    // the host family is what keeps a malformed or hostile payload from turning
-    // an attachment fetch into an SSRF against our own network.
-    if (parsed.protocol !== 'https:') return null;
-    if (!isDiscordCdnHost(parsed.hostname)) {
-      this.logger.warn(
-        `Refusing to fetch an attachment from a non-Discord host: ${parsed.hostname}`,
-      );
-      return null;
-    }
-
-    const response = await fetch(parsed, {
-      redirect: 'error',
-      signal: AbortSignal.timeout(ATTACHMENT_FETCH_TIMEOUT_MS),
-    });
-
-    if (!response.ok || !response.body) {
-      // A deleted or expired attachment is a warning on one message, not a
-      // failed import — the message itself still has its text.
-      response.body?.cancel().catch(() => undefined);
-      return null;
-    }
-
-    // `Number(null)` is 0 and `Number.isFinite(0)` is true, so reading the
-    // header straight through turns "no Content-Length" into a declared length
-    // of ZERO — which storage-js then sets as a literal `content-length: 0` on
-    // a streamed PUT and undici rejects as a body/length mismatch. The
-    // attachment is then lost with only a warning. A missing header has to stay
-    // missing so the upload falls back to chunked encoding.
-    //
-    // A gzipped response is the same trap from the other side: the header
-    // reports the COMPRESSED size while `response.body` is decompressed, so a
-    // declared length would be short. Only trust the header when the body is
-    // not re-encoded on the way to us.
-    const rawLength = response.headers.get('content-length');
-    const encoded = (response.headers.get('content-encoding') ?? '').trim();
-    const parsedLength = rawLength === null ? Number.NaN : Number(rawLength);
-    const contentLength =
-      encoded === '' && Number.isFinite(parsedLength) && parsedLength >= 0
-        ? parsedLength
-        : null;
-
-    return {
-      body: response.body,
-      contentType: response.headers.get('content-type'),
-      contentLength,
-    };
-  }
-
   private describe(error: unknown): string {
     const status = statusOf(error);
     const message = error instanceof Error ? error.message : String(error);
     return status ? `${status} ${message}` : message;
   }
-}
-
-/**
- * Hosts Discord serves attachments from.
- *
- * An allowlist rather than a `.discordapp.net` suffix test, because a suffix
- * test matches `cdn.discordapp.net.evil.com`. Subdomains of `discordapp.net`
- * are permitted explicitly (media proxies live there) via a dot-anchored
- * check, which `evil.com` cannot satisfy.
- */
-function isDiscordCdnHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  const exact = [
-    'cdn.discordapp.com',
-    'media.discordapp.net',
-    'images-ext-1.discordapp.net',
-    'images-ext-2.discordapp.net',
-  ];
-  if (exact.includes(host)) return true;
-  return host.endsWith('.discordapp.net') || host.endsWith('.discordapp.com');
 }
 
 /** `#a, #b, #c, #d, #e and N more`, for a one-line warning. */

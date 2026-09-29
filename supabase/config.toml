@@ -48,3 +48,11 @@ file_size_limit = "104857600" # 100MB -- the chat-archive bucket ceiling (Discor
 
 [realtime]
 enabled = true
+
+# The Discord importer's attachment copy (#2848, ADR-26). The platform's JWT
+# check is off because the handler checks the caller's service credential
+# itself: that check also accepts the newer `sb_secret_…` keys, which are not
+# JWTs and which the platform check refuses. The deploy (`_deploy.yml`, through
+# `scripts/ci/deploy-edge-functions.mjs`) reads this setting from here.
+[functions.discord-attachment-copy]
+verify_jwt = false

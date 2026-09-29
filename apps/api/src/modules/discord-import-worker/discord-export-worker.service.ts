@@ -5,7 +5,6 @@ import {
   type IDiscordImportRepository,
 } from '#domain/repositories/discord-import.repository.interface';
 import { archiveQuotaMessage } from '../../application/services/discord-import.service';
-import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
@@ -16,9 +15,11 @@ import {
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import {
-  STORAGE_PROVIDER,
-  type IStorageProvider,
-} from '#domain/adapters/storage.interface';
+  ARCHIVE_MEDIA_COPIER,
+  ArchiveMediaCopyError,
+  type ArchiveMediaCopyItem,
+  type IArchiveMediaCopier,
+} from '#domain/adapters/archive-media-copier.interface';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveMediaObjectPath,
@@ -57,16 +58,24 @@ import type {
 export const EXPORT_PAGE_SIZE = DISCORD_MESSAGE_PAGE_LIMIT;
 
 /**
- * Attachments streamed concurrently within one page.
+ * Attachments sent to the copy function per call.
  *
- * Deliberately small. This runs inside the API process next to live request
- * traffic, and each concurrent transfer is a socket plus whatever the stream
- * pipeline holds — a number chosen for throughput on a dedicated worker would
- * be taken directly out of the request path here. Four keeps a page of
- * image-heavy history moving without the import becoming the reason a member's
- * chat feels slow.
+ * The bytes no longer pass through this process (#2848): each attachment costs
+ * the API a few hundred bytes of JSON, and the function streams the file from
+ * Discord's CDN into Storage itself, several at a time. A call answers within
+ * the function's own time budget and hands back whatever it did not start as
+ * `deferred`, so this is a ceiling on one request's size, not on throughput.
  */
-export const ATTACHMENT_CONCURRENCY = 4;
+export const COPY_BATCH_MAX_ITEMS = 50;
+
+/**
+ * Declared bytes per call, at least one attachment always going.
+ *
+ * Only a hint. Discord's declared size undercounts images by up to 12× (#2830),
+ * which is why the function budgets by the CDN's real `Content-Length` and this
+ * does not try to.
+ */
+export const COPY_BATCH_MAX_DECLARED_BYTES = 256 * 1024 * 1024;
 
 export interface ExportSliceResult {
   messagesImported: number;
@@ -108,7 +117,7 @@ interface SliceTotals {
  *
  * This is the phase-3 counterpart to `DiscordImportWorkerService`'s
  * DiscordChatExporter slice, and it is deliberately only *half* an importer:
- * it fetches, it verifies, it streams attachments, and then it hands each page
+ * it fetches, it verifies, it has attachments copied, and then it hands each page
  * to the phase-2 mapper and the phase-2 write path unchanged. There is exactly
  * one place in this repository that decides how a Discord message becomes a
  * `chat_messages` row, and it is not this file.
@@ -143,8 +152,8 @@ export class DiscordExportWorkerService {
     private readonly connectionRepo: IDiscordConnectionRepository,
     @Inject(DISCORD_BOT_GATEWAY)
     private readonly bot: IDiscordBotGateway,
-    @Inject(STORAGE_PROVIDER)
-    private readonly storage: IStorageProvider,
+    @Inject(ARCHIVE_MEDIA_COPIER)
+    private readonly copier: IArchiveMediaCopier,
   ) {}
 
   /**
@@ -474,18 +483,32 @@ export class DiscordExportWorkerService {
         return true;
       }
 
-      totals.totalMessages += rawPage.length;
-
       // Attachments first: `attachment_count` on the message row has to be the
       // number of attachment rows that will actually exist, and that is only
       // knowable once the bytes have landed. Same ordering, same reason, as the
       // upload path's batch.
-      const fetched = await this.streamPageAttachments({
+      const fetched = await this.copyPageAttachments({
         job,
         page: rawPage,
         mediaByRelativePath,
         totals,
+        renewLease: () =>
+          checkpoint({
+            imported: totals.imported,
+            skipped: totals.skipped,
+            attachmentsImported: totals.attachmentsImported,
+            attachmentsSkipped: totals.attachmentsSkipped,
+            totalMessages: totals.totalMessages,
+            warnings: totals.warnings,
+          }),
       });
+      // The admin cancelled, or another worker took the lease, mid-page. Stop
+      // before anything about the page is written: the cursor still points at
+      // it, so whoever resumes fetches the same page, finds the files that
+      // landed in `mediaByRelativePath`, and sends only the rest.
+      if (!fetched.complete) return false;
+
+      totals.totalMessages += rawPage.length;
       // `fetched.skipped` is deliberately NOT added to the running total.
       //
       // Anything this rejected — too large, a type the bucket refuses, gone
@@ -564,7 +587,7 @@ export class DiscordExportWorkerService {
   }
 
   /**
-   * Stream every not-yet-stored attachment on this page into the archive
+   * Copy every not-yet-stored attachment on this page into the archive
    * bucket, and register each in the manifest.
    *
    * The manifest rows are written **before** the transfers and marked uploaded
@@ -573,14 +596,32 @@ export class DiscordExportWorkerService {
    * finish, and the next slice re-sends it. The opposite order would record
    * success for bytes that never landed and leave a message pointing at an
    * object that is not there.
+   *
+   * The bytes never pass through this process (#2848). Each batch goes to the
+   * copier, which streams Discord's CDN into Storage inside Supabase and
+   * answers per file; only a file it reports `stored` is marked uploaded.
+   *
+   * A page's copies always finish within the slice that started them, even
+   * past the slice deadline, as the in-process copy did before #2848. Yielding
+   * mid-page instead loses every outcome but `stored` (nothing else is
+   * persisted), so the next slice re-sends the same files and repeats their
+   * warnings, and a head of slow failures can hold a page forever.
+   *
+   * What bounds a long page is the lease, renewed through `renewLease` before
+   * every call after the first. The first follows the previous page's
+   * checkpoint, and one call is bounded well inside the lease
+   * (`ARCHIVE_MEDIA_COPY_BUDGET_MS`). `complete: false` means the renewal
+   * refused: the admin cancelled, or another worker took the job.
    */
-  private async streamPageAttachments(args: {
+  private async copyPageAttachments(args: {
     job: DiscordImport;
     page: DiscordApiMessage[];
     mediaByRelativePath: Map<string, DiscordImportFile>;
     totals: SliceTotals;
-  }): Promise<{ skipped: number; reported: string[] }> {
-    const { job, page, mediaByRelativePath, totals } = args;
+    /** The slice's checkpoint: false when the job may no longer advance. */
+    renewLease: () => Promise<boolean>;
+  }): Promise<{ skipped: number; reported: string[]; complete: boolean }> {
+    const { job, page, mediaByRelativePath, totals, renewLease } = args;
     /** Keys this slice already warned about, by name and reason. */
     const reported: string[] = [];
 
@@ -632,7 +673,7 @@ export class DiscordExportWorkerService {
       }
     }
 
-    if (pending.size === 0) return { skipped, reported };
+    if (pending.size === 0) return { skipped, reported, complete: true };
 
     const entries = [...pending.entries()];
     const rows = entries.map(([key, attachment]) => ({
@@ -655,9 +696,9 @@ export class DiscordExportWorkerService {
     // the path where the chapter never sees the bytes go by, so an oversized
     // guild would otherwise import silently until storage filled.
     //
-    // Enforced here, before the objects are streamed, because that is the only
-    // point where refusing still saves the storage — the attachments are pulled
-    // from Discord's CDN and written by `uploadFile` in the loop below.
+    // Enforced here, before any object is copied, because that is the only
+    // point where refusing still saves the storage — the copier pulls the
+    // attachments from Discord's CDN and writes them in the loop below.
     let created;
     try {
       created = await this.importRepo.registerFiles(
@@ -687,104 +728,104 @@ export class DiscordExportWorkerService {
       created.map((file) => [file.relative_path, file]),
     );
 
-    const landed: string[] = [];
-    await this.forEachLimited(
-      entries,
-      ATTACHMENT_CONCURRENCY,
-      async ([key, attachment]) => {
-        const file = createdByPath.get(key);
-        if (!file) return;
-        const url = attachment.url ?? attachment.proxy_url;
-        if (!url) {
-          skipped += 1;
-          return;
-        }
+    let queue: PendingCopy[] = [];
+    for (const [key, attachment] of entries) {
+      const file = createdByPath.get(key);
+      if (!file) continue;
+      const url = attachment.url ?? attachment.proxy_url;
+      if (!url) {
+        skipped += 1;
+        continue;
+      }
+      queue.push({ key, attachment, file, url });
+    }
 
-        try {
-          const stream = await this.bot.openAttachment(url);
-          if (!stream) {
-            // A deleted or expired attachment is a warning on one message, not a
-            // failed import — the message still has its text.
-            totals.warnings.push(
-              `Attachment "${attachment.filename ?? key}" is no longer available from Discord and was not imported.`,
-            );
-            skipped += 1;
-            return;
-          }
+    let sent = false;
+    while (queue.length > 0) {
+      if (sent && !(await renewLease())) {
+        return { skipped, reported, complete: false };
+      }
+      const batch = takeCopyBatch(queue);
+      queue = queue.slice(batch.length);
+      sent = true;
 
-          // Piped, never buffered: the bytes go CDN socket → storage socket, and
-          // at no point is the whole object in this process's heap.
-          await this.storage.uploadFile(
-            file.bucket,
-            file.storage_path,
-            stream.body,
-            stream.contentType ??
-              file.content_type ??
-              'application/octet-stream',
-            { contentLength: stream.contentLength },
-          );
-          landed.push(file.storage_path);
-        } catch (error) {
-          totals.warnings.push(
-            `Could not import attachment "${attachment.filename ?? key}": ${
-              toReportableError(error).message
-            }`,
-          );
-          skipped += 1;
-        }
-      },
-    );
-
-    if (landed.length > 0) {
-      await this.importRepo.markFilesUploaded(
-        job.id,
-        job.chapter_id,
-        landed,
-        new Date().toISOString(),
+      const results = await this.copier.copy(
+        batch.map(({ attachment, file, url }): ArchiveMediaCopyItem => ({
+          url,
+          bucket: file.bucket,
+          path: file.storage_path,
+          contentType: normaliseMimeType(attachment.content_type),
+          declaredSize:
+            typeof attachment.size === 'number' ? attachment.size : null,
+        })),
       );
-      // Feed the in-memory resolver too, not just the database. The batch that
-      // is about to run resolves attachments through THIS map, so a file that
-      // landed a moment ago but is missing here produces a message row with
-      // `attachment_count: 0` — a bubble that renders as if it never had one.
-      for (const path of landed) {
-        const file = created.find((entry) => entry.storage_path === path);
-        if (file) {
+
+      const landed: DiscordImportFile[] = [];
+      const deferred: PendingCopy[] = [];
+      results.forEach((result, index) => {
+        const entry = batch[index];
+        const name = entry.attachment.filename ?? entry.key;
+        switch (result.status) {
+          case 'stored':
+            landed.push(entry.file);
+            return;
+          case 'deferred':
+            deferred.push(entry);
+            return;
+          case 'gone':
+            // A deleted or expired attachment is a warning on one message,
+            // not a failed import — the message still has its text.
+            totals.warnings.push(
+              `Attachment "${name}" is no longer available from Discord and was not imported.`,
+            );
+            break;
+          default:
+            totals.warnings.push(
+              `Could not import attachment "${name}": ${
+                result.reason ?? result.status
+              }`,
+            );
+        }
+        reported.push(entry.key);
+        skipped += 1;
+      });
+
+      // A call that resolved nothing breaks the one promise that ends this
+      // loop. Failing is the honest outcome; retrying would spin forever.
+      if (deferred.length === batch.length) {
+        throw new ArchiveMediaCopyError(
+          'Could not copy attachments into the archive: the copy service accepted a batch and copied none of it. The import stopped rather than retry forever; start it again to resume where it left off.',
+        );
+      }
+
+      // Marked per call rather than once per page, so a later call that throws
+      // costs only its own batch.
+      if (landed.length > 0) {
+        const uploadedAt = new Date().toISOString();
+        await this.importRepo.markFilesUploaded(
+          job.id,
+          job.chapter_id,
+          landed.map((file) => file.storage_path),
+          uploadedAt,
+        );
+        // Feed the in-memory resolver too, not just the database. The batch
+        // that is about to run resolves attachments through THIS map, so a file
+        // that landed a moment ago but is missing here produces a message row
+        // with `attachment_count: 0` — a bubble that renders as if it never had
+        // one. After a cancel or a lost lease it also tells whoever resumes
+        // this page what is already done.
+        for (const file of landed) {
           mediaByRelativePath.set(file.relative_path, {
             ...file,
-            uploaded_at: new Date().toISOString(),
+            uploaded_at: uploadedAt,
           });
         }
       }
+
+      queue = [...deferred, ...queue];
     }
 
-    return { skipped, reported };
-  }
-
-  /**
-   * Run `worker` over `items` with at most `limit` in flight.
-   *
-   * Hand-rolled rather than pulled in, because the alternative — `Promise.all`
-   * over the whole page — is 100 concurrent CDN transfers inside a process
-   * that is also serving members' requests.
-   */
-  private async forEachLimited<T>(
-    items: T[],
-    limit: number,
-    worker: (item: T) => Promise<void>,
-  ): Promise<void> {
-    let cursor = 0;
-    const runners = Array.from(
-      { length: Math.min(limit, items.length) },
-      async () => {
-        for (;;) {
-          const index = cursor;
-          cursor += 1;
-          if (index >= items.length) return;
-          await worker(items[index]);
-        }
-      },
-    );
-    await Promise.all(runners);
+    return { skipped, reported, complete: true };
   }
 }
 
@@ -799,4 +840,34 @@ export class DiscordExportWorkerService {
 function normaliseMimeType(value: string | null | undefined): string | null {
   const bare = value?.split(';')[0]?.trim().toLowerCase();
   return bare && bare.length > 0 ? bare : null;
+}
+
+/** An attachment with a manifest row, waiting for the copier. */
+interface PendingCopy {
+  key: string;
+  attachment: DiscordApiAttachment;
+  file: DiscordImportFile;
+  url: string;
+}
+
+/**
+ * The head of `queue` that goes in one copier call: at most
+ * {@link COPY_BATCH_MAX_ITEMS}, and no more declared bytes than
+ * {@link COPY_BATCH_MAX_DECLARED_BYTES} once it holds one, so a single large
+ * file still goes.
+ */
+function takeCopyBatch(queue: readonly PendingCopy[]): PendingCopy[] {
+  const batch: PendingCopy[] = [];
+  let bytes = 0;
+  for (const entry of queue) {
+    if (batch.length >= COPY_BATCH_MAX_ITEMS) break;
+    const size =
+      typeof entry.attachment.size === 'number' ? entry.attachment.size : 0;
+    if (batch.length > 0 && bytes + size > COPY_BATCH_MAX_DECLARED_BYTES) {
+      break;
+    }
+    batch.push(entry);
+    bytes += size;
+  }
+  return batch;
 }

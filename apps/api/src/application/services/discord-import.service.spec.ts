@@ -128,7 +128,6 @@ async function build(current: DiscordImport = job()) {
     discoverChannels: jest.fn(),
     verifyChannelInGuild: jest.fn(),
     fetchMessagePage: jest.fn(),
-    openAttachment: jest.fn(),
   };
   oauthService = {
     requireGuildId: jest.fn(async () => GUILD),

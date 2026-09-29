@@ -324,4 +324,21 @@ Discord's consent screen instead of its error page. Either proves step 4 and
 nothing else — the consent screen renders happily with the
 Message Content Intent off. Confirm step 5 by eye in the portal.
 
+**Where an import's attachment bytes go, and who bills them** ([ADR-26](../../../../spec/architecture/adr/adr-26.md), #2848).
+Render bills a service's outbound bytes to the public internet, which includes its own requests to
+Supabase. An import's media is the largest thing the importer moves, so which hop carries the bytes
+decides whose bill they land on:
+
+| Path | Where the bytes go | Billed as |
+| --- | --- | --- |
+| Upload (DiscordChatExporter) | The admin's browser PUTs each file to Storage through a signed URL | Nothing on Render. Upload into Storage is ingress on Supabase. |
+| Bot | The API sends the `discord-attachment-copy` Edge Function a batch of URLs and object paths. The function streams each file from Discord's CDN into Storage. | Render: a few hundred bytes of JSON per attachment. Supabase: open whether the function's upload to Storage counts as egress; #2851 records the reading from a staging import. |
+| Bot, before #2848 | Discord's CDN → the API → Storage, inside the API process | Render egress equal to the stored size (the measurement is in ADR-26's context). |
+| Reading the archive later (either path) | Storage → the member's device, through a signed URL | Supabase egress |
+
+The allowances and per-GB rates are the providers' to state and change:
+[Render bandwidth](https://render.com/docs/outbound-bandwidth) and
+[Supabase egress](https://supabase.com/docs/guides/platform/manage-your-usage/egress). Supabase's
+quotas as of the Pro upgrade are in [`supabase.md` § Plan and quotas](supabase.md#plan-and-quotas).
+
 ---

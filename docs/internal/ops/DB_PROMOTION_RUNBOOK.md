@@ -52,8 +52,8 @@ applies it — and then, depending on `scope`:
 
 | `scope`           | What happens                                                                                                                                                                                                | Use it when                                                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the same commit to Render, health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
-| `migrations-only` | Migrates and stops. No Render deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
+| `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the Supabase Edge Functions, deploys the same commit to Render, health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
+| `migrations-only` | Migrates and stops. No Edge Functions or Render deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
 without applying anything, under either scope.
@@ -1439,11 +1439,12 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   runs DiscordChatExporter with `--media`, which downloads the media to their own
   machine, and their **browser** uploads each file straight to this bucket
   through a signed URL on that path. **This is no longer the only writer.** The
-  phase-3 bot path (`20260824140000_discord_bot_connection.sql`) has the API
-  stream attachments out of Discord's CDN into the same bucket through
-  `IStorageProvider` on the service-role key — a different code path, with the
-  MIME check performed in the worker before the transfer rather than by the
-  bucket alone. Do not scope an incident on this bucket to signed-URL uploads.
+  phase-3 bot path (`20260824140000_discord_bot_connection.sql`) copies
+  attachments out of Discord's CDN into the same bucket on the service-role key
+  — a different code path, with the MIME check performed in the worker before
+  the transfer rather than by the bucket alone. *(Corrected 2026-09-29: the API
+  used to stream the bytes itself through `IStorageProvider`; since #2848 the
+  `discord-attachment-copy` Edge Function does the copy inside Supabase, ADR-26.)* Do not scope an incident on this bucket to signed-URL uploads.
   So `allowed_mime_types` is now the enforcement point rather than a second belt
   — and it does enforce, though only over the **declared** header, never the
   bytes. The rejection is **HTTP 400**, not the `415` several comments in this

@@ -9,6 +9,7 @@ import { SupabaseDiscordImportRepository } from '../../infrastructure/supabase/r
 import { SupabaseDiscordConnectionRepository } from '../../infrastructure/supabase/repositories/supabase-discord-connection.repository';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
+import { SupabaseArchiveMediaCopier } from '../../infrastructure/storage/supabase-archive-media-copier.service';
 import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-bot-gateway.service';
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
 import { RbacModule } from '../rbac/rbac.module';
@@ -16,6 +17,7 @@ import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.r
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { ARCHIVE_MEDIA_COPIER } from '#domain/adapters/archive-media-copier.interface';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
@@ -67,6 +69,7 @@ import {
       useClass: SupabaseChatChannelRepository,
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
+    { provide: ARCHIVE_MEDIA_COPIER, useClass: SupabaseArchiveMediaCopier },
     { provide: DISCORD_BOT_GATEWAY, useClass: DiscordBotGatewayService },
     { provide: DISCORD_OAUTH_CLIENT, useClass: DiscordOAuthClientService },
   ],

@@ -1,0 +1,34 @@
+### ADR-26: Discord bot imports copy attachments inside Supabase, through an Edge Function (2026-09-29)
+
+**Decision:** The owner chose this on 2026-09-29 as option 1 on [#2848](https://github.com/pdcarlson/Frapp/issues/2848).
+
+- A bot import's attachments are copied from Discord's CDN into the `chat-archive` bucket by a Supabase Edge Function, `discord-attachment-copy` (`supabase/functions/discord-attachment-copy/`). The file bytes never pass through the API.
+- The API still decides everything about *what* is copied: the manifest rows, the archive quota RPC, the per-file size cap and the MIME allowlist all run before a transfer. It sends the function batches of `{url, bucket, path, contentType, declaredSize}` through `IArchiveMediaCopier` (`SupabaseArchiveMediaCopier`), and marks a file uploaded only when the function reports it `stored`.
+- The function is the only code in the repo that fetches an attachment URL. It carries the Discord CDN host pin (https only, redirects refused) that `DiscordBotGatewayService.openAttachment` used to, and that method is deleted.
+- The function is checked in CI (`lint-and-typecheck` → `npm run check:edge-functions`, Deno) and deployed only by CI, with the API (`_deploy.yml` → `scripts/ci/deploy-edge-functions.mjs`), after the migrations and before the API that calls it. No hand deploys.
+
+**Context:**
+
+- **Render bills the API's outbound bytes.** The bot path used to stream each attachment CDN → API → Storage inside the API process. The download is inbound, which Render does not bill; the upload to Supabase is outbound, which it bills byte for byte. Staging import `9d5a01c8` sent 2.82 GB of Render egress against 2.85 GB stored (Render `get_metrics`, 2026-09-28), and one chapter's history runs 10–20 GB. Stored images also run up to 12× Discord's declared size (#2830), so the bill follows stored bytes, not declared ones.
+- **The DiscordChatExporter upload path has no such cost:** the admin's browser PUTs to Storage with signed URLs.
+- **The platform limits shape the function** (Supabase `functions/limits`, read 2026-09-29): 256 MB memory, 2 s CPU per request with async I/O excluded, a 400 s wall clock on paid plans, and a **150 s request idle timeout**. The last one binds: a function that has not answered by then returns a 504, and the caller learns nothing about which files landed. So a call works to its own time and byte budget (the constants at the top of `handler.ts`) and answers early, handing back as `deferred` the files it did not start and those its deadline cut short after a late start. Every call resolves at least one file, which is what guarantees the worker's loop ends.
+
+**Consequences:**
+
+- **Render egress per attachment is a few hundred bytes of JSON**, not the file. Whether Supabase meters the function's outbound upload to Storage as egress is **not established**: its egress docs meter data sent to a client, and an upload is ingress to Storage. #2851 records a reading before and after a staging import; [`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md) keeps the table of who bills what.
+- **A page's copies finish in the slice that started them**, past the slice's 45 s budget if need be, as the in-process copy did before. Only `stored` outcomes are persisted, so yielding mid-page would re-send and re-warn about the rest, and a head of slow failures could hold a page forever (#2848's review). The lease bounds a long page instead: the worker renews it before every call after a page's first, and one call, retries included, stays well inside it (`ARCHIVE_MEDIA_COPY_BUDGET_MS`). The cost is fairness: while a heavy page copies, that replica's sweeper claims nothing else, no other import and no purge. #2853 tracks yielding mid-page without the re-send problem.
+- **A new deploy surface and a new credential.** Deploying a function needs a Supabase access token with the Edge Functions read-write permission. `SUPABASE_ACCESS_TOKEN` is read-only by design (#2583), so each Infisical environment holds a second, narrower token, `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` (`ENV_REFERENCE.md` § CD Secrets).
+- **No new runtime secret.** The API calls the function with the service-role key it already holds. The function checks that credential itself, in constant time, and accepts the legacy JWT or a newer `sb_secret_…` key, which is why `verify_jwt = false` (`supabase/config.toml`): the platform's JWT check does not understand the new keys, and Supabase retires the legacy ones at the end of 2026.
+- **No region pin.** Production's project is in `us-east-2`, which Edge Functions do not offer as an invocation region, so the API lets the platform choose the region nearest to it.
+- **A failure of the copy service fails the import,** with a message on the job. Treating every file in a failed call as skipped would let an import finish with no media while reporting success. The admin restarts a failed import and it resumes from its cursors.
+- **The cloud sandbox cannot run the function.** Its Docker denies the rlimit the edge-runtime container sets (`CLOUD_SANDBOX.md`), so a bot import there fails at the copy. The handler takes its `fetch`, clock and environment as arguments, so its tests run under plain `deno test` anywhere, and it was run against a local Storage with a fake CDN during #2848.
+
+**Relation to ADR-11.** ADR-11 moved the chat hot path out of Edge Functions because nobody could runtime-verify them, and said "no Edge Functions today", not never: a future function should solve its testability case by case. This function does that by keeping its logic in a pure handler with a Deno suite in a required CI check, and by being thin. It moves bytes and nothing else, and every decision about the archive stays in the NestJS worker and its Jest tier.
+
+**Alternatives considered and not chosen:**
+
+- **Copy media lazily, on first view.** Weaker as an archive: media is lost if the Discord server is deleted before anyone opens the message. And each copy would still transit the API on its own.
+- **A dedicated Render background worker.** Isolates the load from live requests, but saves no bandwidth: Render bills the worker's egress the same way.
+- **Visibility and limits only.** Showing the expected size and capping imports leaves the cost where it is. The declared-size estimate is filed separately, because on the bot path nothing knows attachment sizes before the import reads the messages.
+- **A dedicated shared secret between the API and the function.** A new secret in two places (Infisical and the function's own secrets) for no gain, since the caller already holds a credential that can write to Storage directly.
+- **Batching by declared bytes alone.** Declared image sizes undercount by up to 12× (#2830). The function budgets by the CDN's real `Content-Length` once it arrives, and the API's byte cap per call is only a hint.
