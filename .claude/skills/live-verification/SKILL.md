@@ -20,8 +20,10 @@ when the environment allowlist carries the live-egress lines
 You're done when the claim is reported at the tier that actually ran ([Reporting](#reporting)).
 
 CI deploys staging web and landing with `deploy-staging.yml` after CI passes on `main`, once the
-staging API serves the commit. Once that deploy finishes, staging serves the current build
-([ADR-21](../../../spec/architecture/adr/adr-21.md)).
+staging API serves the commit ([ADR-21](../../../spec/architecture/adr/adr-21.md)). It uploads them
+only when something they are built from changed (#2865), so after an API, docs or mobile merge the
+staging web and landing hosts serve an older commit than `main`'s tip. That is expected, not drift:
+compare against the last commit that changed web or landing.
 
 ## The three rules
 

@@ -438,7 +438,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
 | R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); neither project's Preview env holds a copy (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
-**All rotations happen in one place (Infisical).** Syncs propagate changes to Render automatically. The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only on their next deploy: a merge for staging, a **Deploy production** dispatch for production. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
+**All rotations happen in one place (Infisical).** Syncs propagate changes to Render automatically. The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only when they are next uploaded. For staging that is a re-run of the **Deploy staging** run for `main`'s tip, or the next merge that changes something web or landing is built from; a merge that changes neither uploads nothing (#2865). For production it is a **Deploy production** dispatch. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
 
 ## Emergency Procedures
 
@@ -446,7 +446,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 1. **Immediately** rotate the secret in the source provider (Supabase/Stripe/etc.)
 2. Update the canonical value in Infisical (one place)
-3. The Render syncs propagate automatically; web and landing need a redeploy (staging: re-run the **Deploy staging** run for `main`'s tip, the only run that rebuilds the commit the staging hosts already serve. If the tip's CI failed, it has no deploy run to re-run: re-run that CI if it failed on a flake, otherwise the next green merge rebuilds, and until then the staging frontends keep the old value. Production: dispatch **Deploy production**). Verify all services are healthy
+3. The Render syncs propagate automatically; web and landing need a redeploy (staging: re-run the **Deploy staging** run for `main`'s tip. A re-run uploads web and landing even when nothing they are built from changed; a first run doesn't (#2865). If the tip's CI failed, it has no deploy run to re-run: re-run that CI if it failed on a flake, then re-run the **Deploy staging** run it starts. Otherwise the next green merge that changes web or landing uploads, and until then the staging frontends keep the old value. Production: dispatch **Deploy production**). Verify all services are healthy
 4. If committed to git: notify team, consider force-push to remove
 
 ### Infisical Down

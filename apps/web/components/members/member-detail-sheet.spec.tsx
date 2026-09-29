@@ -3,7 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Shared spy so tests can assert the exact mutation payload the sheet sends.
 const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
-const { dmMutateAsync, mockRouterPush, mockToast, mockCurrentUserId, mockCurrentUserLoading } =
+const {
+  dmMutateAsync,
+  mockRouterPush,
+  mockToast,
+  mockCurrentUserId,
+  mockCurrentUserLoading,
+  mockPermissions,
+} =
   vi.hoisted(() => ({
     dmMutateAsync: vi.fn(),
     mockRouterPush: vi.fn(),
@@ -12,6 +19,7 @@ const { dmMutateAsync, mockRouterPush, mockToast, mockCurrentUserId, mockCurrent
     // button renders by default; self-DM cases override this.
     mockCurrentUserId: { current: "viewer-1" as string | null },
     mockCurrentUserLoading: { current: false },
+    mockPermissions: { current: ["*"] as string[] },
   }));
 
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
@@ -22,8 +30,9 @@ vi.mock("@repo/hooks", () => ({
   useRemoveMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
-  // The custom-roles section is permission-gated; grant everything by default.
-  useMyPermissions: () => ({ data: { permissions: ["*"] } }),
+  // The custom-roles section and the write controls are permission-gated;
+  // grant everything by default.
+  useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
   useCustomRoles: () => customRolesState,
 }));
 
@@ -421,5 +430,63 @@ describe("MemberDetailSheet Message action", () => {
     expect(mockRouterPush).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(mockToast).not.toHaveBeenCalled();
+  });
+});
+
+// Every directory visitor can open this sheet, from both tabs since #2484, so
+// its writes mirror the permissions the server checks on them.
+describe("MemberDetailSheet write controls", () => {
+  beforeEach(() => {
+    mockPermissions.current = ["*"];
+    customRolesState.data = [];
+  });
+
+  function renderLive() {
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={baseMember}
+      />,
+    );
+  }
+
+  it("offers neither role edits nor removal to a viewer with only members:view", () => {
+    mockPermissions.current = ["members:view"];
+    renderLive();
+
+    expect(
+      screen.getByRole("button", { name: "Save role changes" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Remove member/ }),
+    ).toBeDisabled();
+  });
+
+  it("gates role edits on roles:manage and removal on members:remove, separately", () => {
+    mockPermissions.current = ["members:view", "roles:manage"];
+    renderLive();
+
+    expect(
+      screen.getByRole("button", { name: "Save role changes" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /Remove member/ }),
+    ).toBeDisabled();
+  });
+
+  it("enables both for a viewer holding both", () => {
+    mockPermissions.current = [
+      "members:view",
+      "roles:manage",
+      "members:remove",
+    ];
+    renderLive();
+
+    expect(
+      screen.getByRole("button", { name: "Save role changes" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Remove member/ })).toBeEnabled();
   });
 });

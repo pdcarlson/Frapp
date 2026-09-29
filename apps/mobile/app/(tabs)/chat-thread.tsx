@@ -50,6 +50,7 @@ import {
   selectChannelNotificationLevel,
   useNotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
+import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
@@ -126,6 +127,12 @@ export default function ChatThreadScreen() {
     messages,
     isLoading,
     loadError,
+    reload,
+    isReloading,
+    hasOlder,
+    isLoadingOlder,
+    olderError,
+    loadOlder,
     viewerId,
     canSend,
     send,
@@ -363,6 +370,29 @@ export default function ChatThreadScreen() {
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
+
+  // Older history (#2772). The list is inverted, so its end is the top: reaching
+  // it loads the next page, which is appended past the rows on screen and so
+  // leaves them where they are. A failed read waits for Retry in the edge row
+  // rather than re-firing on every scroll.
+  const handleEndReached = useCallback(() => {
+    if (!hasOlder || isLoadingOlder || olderError) return;
+    void loadOlder();
+  }, [hasOlder, isLoadingOlder, olderError, loadOlder]);
+  const handleLoadOlder = useCallback(() => {
+    void loadOlder();
+  }, [loadOlder]);
+  const historyEdge = useMemo(
+    () => (
+      <ThreadHistoryEdge
+        hasOlder={hasOlder}
+        isLoadingOlder={isLoadingOlder}
+        olderError={olderError}
+        onLoadOlder={handleLoadOlder}
+      />
+    ),
+    [hasOlder, isLoadingOlder, olderError, handleLoadOlder],
+  );
 
   // Parent lookup for reply quotes (#1727), built once per window rather
   // than scanned per row — same map web's timeline uses. Built over every
@@ -740,9 +770,16 @@ export default function ChatThreadScreen() {
             // Ahead of the identity gate, as on web (#2243): a failed read
             // must not hide behind "Loading messages…" while `/users/me` is
             // still in flight.
+            // With a Retry: the channel query never refetches on its own
+            // (`staleTime: Infinity`), so without one the member's only way
+            // back was leaving the channel and returning.
             <View style={styles.stateBlock}>
-              <Text style={styles.stateTitle}>Couldn&apos;t load messages</Text>
-              <Text style={styles.stateBody}>{loadError.message}</Text>
+              <ErrorState
+                title="Couldn't load messages"
+                body="Confirm your chapter access and retry."
+                onRetry={reload}
+                isRetrying={isReloading}
+              />
             </View>
           ) : !viewerId && viewerQuery.isError ? (
             <View style={styles.stateBlock}>
@@ -782,6 +819,11 @@ export default function ChatThreadScreen() {
               // optimistic → confirmed transition, which the server id is not.
               keyExtractor={(item) => item.message.client_message_id}
               inverted
+              onEndReached={handleEndReached}
+              onEndReachedThreshold={0.5}
+              // An inverted list draws its footer at the top, above the oldest
+              // loaded row.
+              ListFooterComponent={historyEdge}
               contentContainerStyle={styles.listContent}
               style={styles.flex}
             />

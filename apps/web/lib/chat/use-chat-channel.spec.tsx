@@ -20,7 +20,8 @@ import {
   type ChannelCache,
 } from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
-import { OLDER_PAGE_LIMIT, useChatChannel } from "./use-chat-channel";
+import { OLDER_PAGE_LIMIT } from "@repo/chat-core/history";
+import { useChatChannel } from "./use-chat-channel";
 
 /**
  * #1909 — an `unconfirmed` `/points` row, and the Retry that replays its
@@ -52,7 +53,13 @@ const VIEWER = "user-1";
 const mocks = vi.hoisted(() => {
   const GET = vi.fn();
   const POST = vi.fn();
-  return { GET, POST, apiClient: { GET, POST }, toast: vi.fn() };
+  // The ranged `chat_message_actions` read; a test overrides it to fail.
+  const actionsRange = vi.fn(async () => ({
+    data: [] as unknown[],
+    error: null as unknown,
+    count: 0 as number | null,
+  }));
+  return { GET, POST, apiClient: { GET, POST }, toast: vi.fn(), actionsRange };
 });
 
 vi.mock("@repo/hooks", () => ({
@@ -63,7 +70,13 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/realtime/supabase-realtime", () => ({
   getRealtimeClient: () => ({
     from: () => ({
-      select: () => ({ in: async () => ({ data: [], error: null }) }),
+      select: () => ({
+        in: () => ({
+          order: () => ({
+            range: () => mocks.actionsRange(),
+          }),
+        }),
+      }),
     }),
   }),
 }));
@@ -413,11 +426,13 @@ describe("useChatChannel — a refetch keeps the member's unsent rows (#2486)", 
     // `seedFirstChunk` merges onto the cache, then invalidates with
     // `refetchType: "all"`.
     act(() => {
-      client!.setQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID), (current) =>
-        upsertOptimistic(
-          upsertOptimistic(current!, queuedRow("q-1", "pending")),
-          queuedRow("f-1", "failed"),
-        ),
+      client!.setQueryData<ChannelCache>(
+        chatMessagesKey(CHANNEL_ID),
+        (current) =>
+          upsertOptimistic(
+            upsertOptimistic(current!, queuedRow("q-1", "pending")),
+            queuedRow("f-1", "failed"),
+          ),
       );
     });
     mocks.GET.mockResolvedValue(historyPage(1, 4));
@@ -623,6 +638,26 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     expect(mocks.GET).toHaveBeenCalledTimes(2);
   });
 
+  it("refuses a forward read whose reactions and votes did not load", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    mocks.GET.mockResolvedValueOnce(historyPage(151, 160));
+    mocks.actionsRange.mockResolvedValueOnce({
+      data: [],
+      error: { message: "JWT expired" },
+      count: null,
+    });
+    let added: number | null | undefined;
+    await act(async () => {
+      added = await result.current.loadNewer();
+    });
+
+    // Merged once and never re-read, so a failure rather than partial tallies.
+    expect(added).toBeNull();
+    expect(result.current.messages.map((m) => m.id)).not.toContain("msg-151");
+  });
+
   it("settles a heavy-command notice for a card it delivers", async () => {
     mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
     const { result } = await mountChannel();
@@ -744,7 +779,9 @@ describe("useChatChannel — older history (#1571)", () => {
     const query = mocks.GET.mock.calls[1]![1].params.query;
     expect(query).toEqual({
       limit: OLDER_PAGE_LIMIT,
-      before: new Date(Date.parse(historyRow(101).created_at) + 1).toISOString(),
+      before: new Date(
+        Date.parse(historyRow(101).created_at) + 1,
+      ).toISOString(),
     });
     await waitFor(() => expect(result.current.messages).toHaveLength(149));
     // A full page says nothing about what is left, so there may be more.

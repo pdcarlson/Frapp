@@ -128,10 +128,10 @@ export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
  * which a job result alone can't carry:
  *   deploy  — an API deploy was attempted; the job result is the verdict.
  *   current — the API needed no deploy and this is main's tip: a green job
- *             means the API was verified serving and ready and the frontends
- *             uploaded, which may close the alert, but the summary must not
- *             say the API DEPLOYED (nor that nothing shipped: web and landing
- *             did).
+ *             means the API was verified serving and ready, which may close
+ *             the alert, but the summary must not say the API DEPLOYED. Web
+ *             and landing uploaded only if something they are built from
+ *             changed (#2865), so it must not say they did either.
  *   forward — not main's tip, but deployed forward: a failure raises the
  *             alert like any deploy, but success doesn't close it, since
  *             main's tip may still be failing. The tip's run decides.

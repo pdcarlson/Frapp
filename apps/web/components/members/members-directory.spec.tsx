@@ -16,7 +16,10 @@ import { networkMock } from "@/tests/network";
  * every future restyle without telling anyone which rule broke.
  */
 
-const { mockOffline } = vi.hoisted(() => ({ mockOffline: { value: false } }));
+const { mockOffline, mutateRoles } = vi.hoisted(() => ({
+  mockOffline: { value: false },
+  mutateRoles: vi.fn(),
+}));
 
 type Read = {
   data: unknown;
@@ -79,7 +82,7 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => rolesRead,
   useLeaderboard: () => leaderboardRead,
   useOrgConfig: () => ({ data: undefined }),
-  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
 }));
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
@@ -297,10 +300,9 @@ describe("Directory on the greenfield shell", () => {
     // `ConfirmDialogHost` settles a pending confirmation to `null` on unmount
     // (`confirm-dialog.spec.tsx`, "resolves null when the caller stops
     // rendering the dialog"), so there is no promise left hanging. Keeping it
-    // mounted is what would hurt — `activeMember` is looked up in
-    // `sortedMembers`, which is empty in exactly these branches, so the sheet
-    // would render an unknown member with its roles cleared and a Save that
-    // silently no-ops.
+    // mounted is what would hurt — the list it was opened from is not on
+    // screen in exactly these branches, so the sheet would outlive the body it
+    // belongs to, with a Save the member can no longer see the result of.
     Object.assign(leaderboardRead, read([]), { isError: true });
     rerender(<MembersDirectory />);
 
@@ -385,5 +387,220 @@ describe("Directory on the greenfield shell", () => {
     await user.click(selectAll());
     expect(screen.queryByText(/selected$/)).toBeNull();
     expect(selectAll()).toBeInTheDocument();
+  });
+});
+
+/**
+ * #2484 — a chapter with alumni. `GET /v1/members` and its search return the
+ * whole chapter; alumni are the Alumni tab's, so the Actives list, its count
+ * and its cohort filter leave them out.
+ */
+describe("Actives on a chapter with alumni", () => {
+  const ALUMNUS = {
+    ...MEMBERS[0],
+    id: "m-3",
+    user_id: "u-3",
+    role_ids: ["r-alumni"],
+    display_name: "Charles Whitmore III",
+    graduation_year: 2019,
+    email: "charles@example.test",
+    is_alumni: true,
+  };
+  const CHAPTER = [
+    { ...MEMBERS[0], is_alumni: false },
+    { ...MEMBERS[1], is_alumni: false },
+    ALUMNUS,
+  ];
+
+  it("lists and counts only the members who are not alumni", () => {
+    Object.assign(membersRead, read(CHAPTER));
+    const { container } = render(<MembersDirectory />);
+
+    expect(container.querySelectorAll("ul > li")).toHaveLength(2);
+    expect(screen.queryByText("Charles Whitmore III")).toBeNull();
+    expect(screen.getByText("2 members")).toBeInTheDocument();
+    // The alumnus's class year is not an Actives cohort.
+    expect(screen.queryByRole("option", { name: /2019/ })).toBeNull();
+  });
+
+  it("searches both tabs, since it is the web directory's only name search", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      searchRead,
+      read([ALUMNUS, { ...MEMBERS[0], is_alumni: false }]),
+    );
+    render(<MembersDirectory />);
+
+    await user.type(screen.getByRole("searchbox"), "a");
+
+    expect(await screen.findByText(/2 members matching/)).toBeInTheDocument();
+    expect(screen.getByText("Charles Whitmore III")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Actives and alumni" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers the Alumni role to assign, not to filter a list it can't match", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-alumni",
+          name: "Alumni",
+          system_key: "ALUMNI",
+          is_system: true,
+          permissions: [],
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    const filter = screen.getByLabelText("Filter members by role");
+    expect(
+      within(filter).queryByRole("option", { name: "Role: Alumni" }),
+    ).toBeNull();
+    expect(
+      within(filter).getByRole("option", { name: "Role: Treasurer" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(
+      within(screen.getByLabelText("Select role to assign")).getByRole(
+        "option",
+        { name: "Alumni" },
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("narrows the selection to the failures after a partly failed bulk assign", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    mutateRoles.mockReset();
+    mutateRoles.mockImplementation(({ id }: { id: string }) =>
+      id === "m-2" ? Promise.reject(new Error("nope")) : Promise.resolve({}),
+    );
+    const { rerender } = render(<MembersDirectory />);
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Select role to assign"),
+      "r-1",
+    );
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    // Only Grace's assignment failed, so only Grace is left to retry.
+    expect(await screen.findByText("1 selected")).toBeInTheDocument();
+
+    // Had the role been Alumni, Ada's refetch would move her off this tab;
+    // she must not linger in the count once she is gone.
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], is_alumni: true }, CHAPTER[1], ALUMNUS]),
+    );
+    rerender(<MembersDirectory />);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("drops a selected member from the count once a refetch moves them to Alumni", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    const { rerender } = render(<MembersDirectory />);
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    // Ada is given Alumni some other way than the bulk bar (her own sheet,
+    // another officer): the refetch takes her row away.
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], is_alumni: true }, CHAPTER[1], ALUMNUS]),
+    );
+    rerender(<MembersDirectory />);
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("offers the Alumni role and alumni class years to filter a search, which lists alumni", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      searchRead,
+      read([ALUMNUS, { ...MEMBERS[0], is_alumni: false }]),
+    );
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-alumni",
+          name: "Alumni",
+          system_key: "ALUMNI",
+          is_system: true,
+          permissions: [],
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    await user.type(screen.getByRole("searchbox"), "a");
+    await screen.findByText(/2 members matching/);
+
+    await user.selectOptions(
+      screen.getByLabelText("Filter members by role"),
+      "r-alumni",
+    );
+    expect(screen.getByText(/1 member matching/)).toBeInTheDocument();
+    expect(screen.getByText("Charles Whitmore III")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /2019/ })).toBeInTheDocument();
+
+    // Clearing the search takes the Alumni option away; the filter falls back
+    // to all rather than silently filtering on an option no longer shown.
+    await user.clear(screen.getByRole("searchbox"));
+    expect(
+      (screen.getByLabelText("Filter members by role") as HTMLSelectElement)
+        .value,
+    ).toBe("all");
+    expect(screen.getByText("2 members")).toBeInTheDocument();
+  });
+
+  it("keeps an open sheet on a member who has just been made an alumnus", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    const { rerender } = render(<MembersDirectory />);
+
+    await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
+      "Ada Lovelace",
+    );
+
+    // The officer saved the Alumni role; the refetch flags Ada, so she leaves
+    // this tab's list. Her sheet is still the thing on screen.
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], is_alumni: true }, CHAPTER[1], ALUMNUS]),
+    );
+    rerender(<MembersDirectory />);
+
+    expect(screen.queryByRole("button", { name: /^Ada Lovelace,/ })).toBeNull();
+    expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
+      "Ada Lovelace",
+    );
   });
 });

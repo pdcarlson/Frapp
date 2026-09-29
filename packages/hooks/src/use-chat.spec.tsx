@@ -356,6 +356,24 @@ describe("channelSetFingerprint", () => {
     ).not.toBe(channelSetFingerprint([{ id: "a", name: "announcements" }]));
   });
 
+  it("changes with every field the server default reads (#2771)", () => {
+    const base = {
+      id: "a",
+      name: "announcements",
+      type: "PUBLIC",
+      is_read_only: true,
+      default_notification_level: null,
+    };
+    const print = channelSetFingerprint([base]);
+    for (const change of [
+      { is_read_only: false },
+      { type: "PRIVATE" },
+      { default_notification_level: "off" },
+    ]) {
+      expect(channelSetFingerprint([{ ...base, ...change }])).not.toBe(print);
+    }
+  });
+
   it("skips rows without a string id so a prefs-shaped payload does not fingerprint", () => {
     expect(
       channelSetFingerprint([{ channel_id: "chan-1", level: "mentions" }]),

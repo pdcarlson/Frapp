@@ -1,3 +1,5 @@
+import type { ChatNotificationLevel } from './chat-notification-preference.entity';
+
 export type ChannelType =
   'PUBLIC' | 'PRIVATE' | 'ROLE_GATED' | 'DM' | 'GROUP_DM';
 export type MessageType = 'TEXT' | 'POLL';
@@ -118,6 +120,13 @@ export interface ChatChannel {
    * channel from the active list; it stays directly reachable by id.
    */
   archived_at: string | null;
+  /**
+   * The officer-set default push level for members who have set none (#2771).
+   * `null` means no officer has chosen one, and `builtInChannelDefault`
+   * (`@repo/validation`) applies. Always `null` on a DM or group DM, which
+   * default to `all` regardless.
+   */
+  default_notification_level: ChatNotificationLevel | null;
 }
 
 /**

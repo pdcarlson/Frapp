@@ -19,6 +19,10 @@ import {
   resolveAuthorLabel,
 } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
+import {
+  builtInChannelDefault,
+  type ChatNotificationLevel,
+} from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +86,8 @@ interface AdminChannel {
   required_permissions: string[] | null;
   category_id: string | null;
   is_read_only: boolean;
+  /** Officer-set default push level (#2771); `null` = the built-in default. */
+  default_notification_level: ChatNotificationLevel | null;
 }
 
 interface AdminCategory {
@@ -112,6 +118,19 @@ const CREATABLE_TYPES: Extract<
   ChannelType,
   "PUBLIC" | "PRIVATE" | "ROLE_GATED"
 >[] = ["PUBLIC", "PRIVATE", "ROLE_GATED"];
+
+/**
+ * The channel default a member gets until they choose their own level (#2771),
+ * in the words the member's own notification menu uses for the same levels.
+ */
+const DEFAULT_LEVEL_LABELS: Record<ChatNotificationLevel, string> = {
+  all: "Every message",
+  mentions: "Only @mentions",
+  off: "Mute",
+};
+
+/** Sentinel for "no officer default": the channel uses its built-in one. */
+const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
@@ -303,6 +322,9 @@ function ChatAdminBody() {
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
+  const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
+    BUILT_IN_DEFAULT_LEVEL,
+  );
   const [permissionsDraft, setPermissionsDraft] = useState<Set<string>>(
     new Set(),
   );
@@ -313,6 +335,9 @@ function ChatAdminBody() {
     setDescriptionDraft(channel.description ?? "");
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
     setReadOnlyDraft(channel.is_read_only);
+    setDefaultLevelDraft(
+      channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
+    );
     setPermissionsDraft(new Set(channel.required_permissions ?? []));
   }
 
@@ -343,6 +368,11 @@ function ChatAdminBody() {
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
+          // `null` clears an officer's choice; the built-in default applies.
+          default_notification_level:
+            defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
+              ? null
+              : (defaultLevelDraft as ChatNotificationLevel),
           ...(selectedChannel.type === "ROLE_GATED"
             ? { required_permissions: Array.from(permissionsDraft) }
             : {}),
@@ -890,6 +920,50 @@ function ChatAdminBody() {
                     Read-only (only officers with permission can post)
                   </span>
                 </label>
+                <div className="grid gap-1">
+                  <Label htmlFor="ca-default-level">
+                    Default notifications
+                  </Label>
+                  <Select
+                    value={defaultLevelDraft}
+                    onValueChange={setDefaultLevelDraft}
+                  >
+                    <SelectTrigger id="ca-default-level">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={BUILT_IN_DEFAULT_LEVEL}>
+                        {/* Read from the drafts, so renaming a channel to or
+                            from #general shows the default it would get. */}
+                        Standard (
+                        {
+                          DEFAULT_LEVEL_LABELS[
+                            builtInChannelDefault({
+                              name: nameDraft.trim(),
+                              type: selectedChannel.type,
+                              is_read_only: readOnlyDraft,
+                            })
+                          ]
+                        }
+                        )
+                      </SelectItem>
+                      {(
+                        Object.keys(
+                          DEFAULT_LEVEL_LABELS,
+                        ) as ChatNotificationLevel[]
+                      ).map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {DEFAULT_LEVEL_LABELS[level]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    What members get until they pick their own level for this
+                    channel. Their own choice always wins, and an @mention still
+                    reaches a member who muted it.
+                  </p>
+                </div>
                 {selectedChannel.type === "ROLE_GATED" ? (
                   <div>
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">

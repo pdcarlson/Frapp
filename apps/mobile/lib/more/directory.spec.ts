@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectDirectoryRows } from "./directory";
+import { selectActives, selectDirectoryRows } from "./directory";
 
 describe("selectDirectoryRows", () => {
   it("narrows a member profile into a drawable row", () => {
@@ -76,5 +76,35 @@ describe("selectDirectoryRows", () => {
   it("returns an empty list for an absent payload", () => {
     expect(selectDirectoryRows(undefined)).toEqual([]);
     expect(selectDirectoryRows({ members: [] })).toEqual([]);
+  });
+});
+
+// #2484: a chapter with alumni. `GET /v1/members` returns all of them; the
+// Actives tab must not, or the "Actives" chip counts alumni the "Alumni" chip
+// also counts. That the two tabs partition the chapter is checked against the
+// screen itself, with separate members and alumni payloads, in
+// `directory-screen.spec.tsx`.
+describe("selectActives", () => {
+  const chapter = [
+    { user_id: "u-1", display_name: "Marcus Reid", is_alumni: false },
+    { user_id: "u-2", display_name: "Charles Whitmore III", is_alumni: true },
+    { user_id: "u-3", display_name: "Andre Silva", is_alumni: false },
+    { user_id: "u-4", display_name: "Daniel Kirkpatrick", is_alumni: true },
+  ];
+
+  it("keeps only the members the server did not flag as alumni", () => {
+    expect(
+      selectDirectoryRows(selectActives(chapter)).map((row) => row.displayName),
+    ).toEqual(["Andre Silva", "Marcus Reid"]);
+  });
+
+  it("treats a row without the flag as active, as an older API would send it", () => {
+    expect(
+      selectActives([{ user_id: "u-1", display_name: "Marcus Reid" }]),
+    ).toHaveLength(1);
+  });
+
+  it("is empty for a payload that isn't a list", () => {
+    expect(selectActives(undefined)).toEqual([]);
   });
 });

@@ -878,7 +878,8 @@ deploy job that never started reaches it and files nothing (below). Per run it d
 
 - **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
   whether the run **deployed** something, **failed**, found the API **up to date** (a `current`
-  plan: the API needed no deploy and was verified, and the frontends still uploaded), or was
+  plan: the API needed no deploy and was verified; the frontends uploaded only if something they are
+  built from changed, #2865), or was
   **superseded**, or (production only) **never started** its deploy job, with a per-job result
   table and the deploy plan. `cancelled` and `timed_out` count as failures. For staging that
   includes a pending job GitHub replaced in its concurrency queue (rare, and closed by the next
@@ -887,7 +888,7 @@ deploy job that never started reaches it and files nothing (below). Per run it d
   *"Deploy staging is failing — merges are not reaching staging"* (`incident`, `area:ci`,
   `P1` by owner decision on #2803, assigned to the owner): created if absent, reopened if closed, otherwise commented — never a fresh issue per
   failure, because alert spam is how alerting gets muted. A later **successful** run for `main`'s
-  tip (a deploy, or a verified up-to-date API with the frontends uploaded) closes it as `completed`,
+  tip (a deploy, or a verified up-to-date API) closes it as `completed`,
   along with any issue still open under the two titles it replaced (below). So an open alert issue
   means "the deploy path is broken right now". Production's is *"Deploy production failed —
   production may be partly deployed"* (`P1`, like every production alert), and only a later real

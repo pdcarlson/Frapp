@@ -35,7 +35,7 @@ import {
   useUnbookmarkMessage,
   resolveAuthorLabel,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -539,8 +539,18 @@ export function ChatShell({
     [channelTitles],
   );
 
+  // The same predicate the push worker uses (#2771). An exact-name match could
+  // pick a group DM a member named "announcements" once the real channel is
+  // renamed, and send the officer's /announce there.
   const announcementsChannelId = useMemo(
-    () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
+    () =>
+      channels.find((ch) =>
+        isAnnouncementChannel({
+          name: ch.name,
+          type: ch.type,
+          is_read_only: ch.is_read_only ?? null,
+        }),
+      )?.id ?? null,
     [channels],
   );
 

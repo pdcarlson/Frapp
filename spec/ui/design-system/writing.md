@@ -442,8 +442,10 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading channels | — | `Loading chapter channels...` |
 | Loading messages | — | `Loading messages...` |
-| Loading older messages (above the oldest row, #1571) | — | `Loading earlier messages...` |
+| Loading older messages (above the oldest row, #1571) | — | `Loading earlier messages...` (mobile, #2772: `Loading earlier messages…`, its own ellipsis convention) |
 | Older messages failed | — | `Couldn't load earlier messages.` · `Retry` |
+| Older messages may exist, no read running (mobile, above the oldest row, #2772) | — | `Load earlier messages` (a control: a page the block list holds entirely adds nothing to scroll past) |
+| Start of the channel's history reached (mobile, #2772; web's day divider says it) | — | `This is the start of the conversation.` |
 | Jump looking for its target (newer rows first, then older pages) | — | `Finding that message...` · `Dismiss` |
 | Jump target past the paging bound | — | `That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.` · `Dismiss` |
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |

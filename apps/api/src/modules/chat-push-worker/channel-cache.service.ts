@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { ChatNotificationLevel } from './chat-notification-preference.repository';
 
 /** How long a cached channel row may inform an authorization decision, absent an explicit invalidation. */
 const CHANNEL_CACHE_TTL_MS = 30_000;
@@ -11,6 +12,8 @@ export interface CachedChannelRow {
   type: string;
   member_ids: string[] | null;
   required_permissions: string[] | null;
+  /** The officer-set default push level (#2771); `null` means the built-in one. */
+  default_notification_level: ChatNotificationLevel | null;
 }
 
 /**

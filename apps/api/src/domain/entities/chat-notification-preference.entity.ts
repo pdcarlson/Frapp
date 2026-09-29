@@ -1,3 +1,5 @@
+import type { ChatNotificationLevel } from '@repo/validation';
+
 /**
  * A member's per-scope chat notification setting, persisted to
  * `chat_notification_preferences` (`20260527120000_…preferences.sql`).
@@ -12,7 +14,8 @@
  */
 export type ChatNotificationScope = 'channel' | 'kind';
 
-export type ChatNotificationLevel = 'all' | 'mentions' | 'off';
+/** The one definition lives beside `builtInChannelDefault` in `@repo/validation`. */
+export type { ChatNotificationLevel } from '@repo/validation';
 
 export interface ChatNotificationPreference {
   id: string;
