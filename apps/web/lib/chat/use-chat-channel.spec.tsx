@@ -59,7 +59,19 @@ const mocks = vi.hoisted(() => {
     error: null as unknown,
     count: 0 as number | null,
   }));
-  return { GET, POST, apiClient: { GET, POST }, toast: vi.fn(), actionsRange };
+  // Shared by every store the hook builds, so a test can make the outbox
+  // refuse a send (#1728); unset, it resolves `undefined` as before.
+  const enqueue = vi.fn();
+  const clearAfterSend = vi.fn(async () => {});
+  return {
+    GET,
+    POST,
+    apiClient: { GET, POST },
+    toast: vi.fn(),
+    actionsRange,
+    enqueue,
+    clearAfterSend,
+  };
 });
 
 vi.mock("@repo/hooks", () => ({
@@ -107,7 +119,7 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
 
 vi.mock("./offline-queue", () => ({
   createDexieOutboxStore: (): OutboxStore & { get: () => Promise<null> } => ({
-    enqueue: vi.fn(),
+    enqueue: mocks.enqueue,
     dequeue: vi.fn(async () => {}),
     requeue: vi.fn(async () => {}),
     markFailed: vi.fn(async () => {}),
@@ -129,7 +141,7 @@ vi.mock("./use-channel-draft", () => ({
     draft: "",
     setDraft: vi.fn(),
     cancelPendingSave: vi.fn(),
-    clearAfterSend: vi.fn(async () => {}),
+    clearAfterSend: mocks.clearAfterSend,
   }),
 }));
 
@@ -852,5 +864,44 @@ describe("useChatChannel — older history (#1571)", () => {
       await result.current.loadOlder();
     });
     await waitFor(() => expect(result.current.olderError).toBe(false));
+  });
+});
+
+/**
+ * #1728 — the composer puts a message back only if `send` rejects, so the
+ * hook must let the outbox's refusal through rather than swallow it. The
+ * composer and shell specs stub `send`; this is the real one.
+ */
+describe("useChatChannel — a send the outbox refuses rejects (#1728)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    onlineManager.setOnline(true);
+    mocks.GET.mockReset();
+    mocks.GET.mockResolvedValue({ data: [], error: undefined });
+    mocks.POST.mockReset();
+    mocks.enqueue.mockReset();
+    mocks.clearAfterSend.mockClear();
+  });
+
+  afterEach(() => {
+    mocks.enqueue.mockReset();
+    client?.clear();
+  });
+
+  it("rejects, posts nothing, and keeps the draft", async () => {
+    const refused = new Error("chat outbox has no scope to queue under");
+    mocks.enqueue.mockRejectedValueOnce(refused);
+    const { result } = await mountChannel();
+
+    await act(async () => {
+      await expect(result.current.send("hello")).rejects.toBe(refused);
+    });
+
+    expect(mocks.POST).not.toHaveBeenCalled();
+    // Nothing after the refusal runs: `clearAfterSend` would reset the draft
+    // state the composer is about to report the restored text into.
+    expect(mocks.clearAfterSend).not.toHaveBeenCalled();
+    // `sendMessage` took its optimistic card back out.
+    expect(result.current.messages).toHaveLength(0);
   });
 });
