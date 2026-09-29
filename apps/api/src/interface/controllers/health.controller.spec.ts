@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
-import { HealthController } from './health.controller';
+import { HealthController, LIVENESS_PROBE_TTL_MS } from './health.controller';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { AllExceptionsFilter } from '../filters/all-exceptions.filter';
 import { StripePriceConsistencyService } from '../../infrastructure/billing/stripe-price-consistency.service';
@@ -41,6 +41,8 @@ describe('HealthController', () => {
   beforeEach(async () => {
     dbError = null;
     storageError = null;
+    supabase.from.mockClear();
+    supabase.storage.listBuckets.mockClear();
     stripePriceConsistency.assertConfiguredPrice.mockReset();
     stripePriceConsistency.assertConfiguredPrice.mockResolvedValue(undefined);
 
@@ -144,6 +146,59 @@ describe('HealthController', () => {
       });
       jest.useRealTimers();
     });
+
+    describe('probe cache', () => {
+      beforeEach(() => jest.useFakeTimers());
+      afterEach(() => jest.useRealTimers());
+
+      it('reuses one probe for every call inside the TTL, with a fresh uptime', async () => {
+        const first = await controller.check();
+        jest.advanceTimersByTime(LIVENESS_PROBE_TTL_MS - 1000);
+        dbError = { message: 'connection refused' };
+        const second = await controller.check();
+
+        expect(supabase.from).toHaveBeenCalledTimes(1);
+        expect(supabase.storage.listBuckets).toHaveBeenCalledTimes(1);
+        expect(second).toMatchObject({ status: 'ok', database: 'connected' });
+        expect(second.uptime).toBeGreaterThan(first.uptime);
+      });
+
+      it('probes again once the TTL has passed', async () => {
+        await controller.check();
+        jest.advanceTimersByTime(LIVENESS_PROBE_TTL_MS);
+        dbError = { message: 'connection refused' };
+        const result = await controller.check();
+
+        expect(supabase.from).toHaveBeenCalledTimes(2);
+        expect(result).toMatchObject({ status: 'degraded', database: 'error' });
+      });
+
+      it('shares an in-flight probe between concurrent callers', async () => {
+        const results = await Promise.all([
+          controller.check(),
+          controller.check(),
+          controller.check(),
+        ]);
+
+        expect(supabase.from).toHaveBeenCalledTimes(1);
+        expect(supabase.storage.listBuckets).toHaveBeenCalledTimes(1);
+        for (const result of results) {
+          expect(result).toMatchObject({ status: 'ok' });
+        }
+      });
+
+      it('keeps a timed-out probe as an error for the TTL rather than retrying per call', async () => {
+        supabase.storage.listBuckets.mockReturnValueOnce(new Promise(() => {}));
+
+        const pending = controller.check();
+        await jest.advanceTimersByTimeAsync(3000);
+        await pending;
+        const again = await controller.check();
+
+        expect(supabase.storage.listBuckets).toHaveBeenCalledTimes(1);
+        expect(again).toMatchObject({ status: 'degraded', storage: 'error' });
+      });
+    });
   });
 
   describe('ready (/health/ready, readiness)', () => {
@@ -208,6 +263,18 @@ describe('HealthController', () => {
       await expect(controller.ready()).rejects.toThrow(
         ServiceUnavailableException,
       );
+    });
+
+    // The deploy gate reads this path, so a healthy /health result cached a
+    // moment ago must not hide an outage that started since.
+    it('probes on every call, ignoring a fresh /health result', async () => {
+      await controller.check();
+      dbError = { message: 'connection refused' };
+
+      await expect(controller.ready()).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(supabase.from).toHaveBeenCalledTimes(2);
     });
 
     it('throws ServiceUnavailableException when storage is unreachable', async () => {
