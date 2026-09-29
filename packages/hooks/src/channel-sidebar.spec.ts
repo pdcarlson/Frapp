@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   arrangeChannelSidebar,
+  sidebarSections,
   type ArrangeSidebarInput,
   type SidebarUnreadCounts,
 } from "./channel-sidebar";
+import { groupChannelsByCategory } from "./channel-sections";
 
 interface Row {
   id: string;
@@ -332,5 +334,39 @@ describe("arrangeChannelSidebar", () => {
       ],
     });
     expect(result.sections.map((s) => s.key)).toEqual(["direct"]);
+  });
+});
+
+describe("sidebarSections", () => {
+  const CATEGORY_ID = "0A000000-0000-4000-8000-000000000001";
+  const rows: { id: string; type: string; category_id?: string | null }[] = [
+    { id: "g", type: "PUBLIC", category_id: null },
+    { id: "e", type: "PRIVATE", category_id: CATEGORY_ID },
+    { id: "d", type: "DM", category_id: CATEGORY_ID },
+  ];
+
+  it("keys every section the way the server stores folds", () => {
+    const sections = sidebarSections(
+      groupChannelsByCategory(rows, [{ id: CATEGORY_ID, name: "Executive" }]),
+      { channels: "Channels", direct: "Direct messages" },
+      { label: "System", channels: [{ id: "audit", type: "PUBLIC" }] },
+    );
+    expect(
+      sections.map((s) => [s.key, s.label, s.channels.map((c) => c.id)]),
+    ).toEqual([
+      ["channels", "Channels", ["g"]],
+      // Lower-cased, as Postgres prints a uuid and the server validates it.
+      ["category:0a000000-0000-4000-8000-000000000001", "Executive", ["e"]],
+      ["direct", "Direct messages", ["d"]],
+      ["system", "System", ["audit"]],
+    ]);
+  });
+
+  it("draws no System section unless the client splits one off", () => {
+    const sections = sidebarSections(groupChannelsByCategory(rows, []), {
+      channels: "CHANNELS",
+      direct: "DIRECT",
+    });
+    expect(sections.map((s) => s.key)).toEqual(["channels", "direct"]);
   });
 });

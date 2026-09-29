@@ -136,11 +136,16 @@ function useSidebarWrite<TVars>(
   });
 }
 
-/** Switch one filter. The server keeps the other as it is. */
+/** What a filter write sends: either filter, or both. */
+export type SidebarFilterChange =
+  | { unread_only: boolean; hide_muted?: boolean }
+  | { unread_only?: boolean; hide_muted: boolean };
+
+/** Switch one filter, or both. A filter left out keeps its stored value. */
 export function useSetSidebarFilter() {
   const client = useFrappClient();
   return useSidebarWrite(
-    async (change: { unread_only: boolean } | { hide_muted: boolean }) => {
+    async (change: SidebarFilterChange) => {
       const { data, error } = await client.PATCH("/v1/chat-sidebar", {
         body: change,
       });

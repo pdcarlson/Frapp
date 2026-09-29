@@ -1,7 +1,9 @@
 import {
+  categorySectionKey,
   isDirectChannel,
   type SidebarSectionKey,
 } from "@repo/validation";
+import type { ChannelSections, GroupableChannel } from "./channel-sections";
 
 /**
  * How a member's chat sidebar is arranged (#2877): Pinned first, then the
@@ -86,6 +88,33 @@ export interface ArrangedSidebar<C extends SidebarChannelLike> {
 }
 
 export const PINNED_SECTION_LABEL = "Pinned";
+
+/**
+ * The sections below Pinned, from `groupChannelsByCategory`'s result, keyed the
+ * way `@repo/validation` spells them: the default group, each category in the
+ * chapter's order, the direct messages, then any group a client splits off
+ * before grouping (web's System). Labels stay the client's, since each draws
+ * its own (web's "Direct messages", s04's "DIRECT").
+ */
+export function sidebarSections<
+  C extends SidebarChannelLike & GroupableChannel,
+  K extends { id: string; name: string },
+>(
+  grouped: ChannelSections<C, K>,
+  labels: { channels: string; direct: string },
+  system?: { label: string; channels: readonly C[] },
+): SidebarSectionInput<C>[] {
+  return [
+    { key: "channels", label: labels.channels, channels: grouped.uncategorized },
+    ...grouped.categories.map(({ category, channels }) => ({
+      key: categorySectionKey(category.id),
+      label: category.name,
+      channels,
+    })),
+    { key: "direct", label: labels.direct, channels: grouped.direct },
+    ...(system ? [{ key: "system" as const, ...system }] : []),
+  ];
+}
 
 const NO_UNREAD: SidebarUnreadCounts = { unreadCount: 0, mentionCount: 0 };
 
@@ -203,3 +232,24 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     emptiedByFilters: anyChannel && arranged.length === 0,
   };
 }
+
+// ── Copy ─────────────────────────────────────────────────────────────────────
+//
+// One wording for both clients, rostered in `spec/ui/design-system/writing.md`
+// § Arrange the channel list. "Pin to top" rather than a bare "Pin": the
+// channel menu already has a "Pinned" panel for pinned *messages*, which are
+// chapter-wide, and this pin is the member's own.
+
+export const PIN_TO_TOP_LABEL = "Pin to top";
+export const UNPIN_FROM_TOP_LABEL = "Unpin from top";
+
+export const UNREAD_ONLY_LABEL = "Unread only";
+export const HIDE_MUTED_LABEL = "Hide muted";
+
+export const NO_MATCHING_CHANNELS = "No channels match your filters.";
+export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";
+
+export const SIDEBAR_SAVE_FAILED_TITLE = "Couldn't save your channel list";
+export const SIDEBAR_SAVE_FAILED_BODY =
+  "Nothing changed. Check your connection and try again.";
+

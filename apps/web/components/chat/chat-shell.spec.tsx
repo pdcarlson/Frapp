@@ -165,6 +165,7 @@ const mockBookmarkIsError = vi.fn(() => false);
 const mockLeaveMutateAsync = vi.fn();
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
+const mockSetChannelPinned = vi.fn();
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
@@ -280,6 +281,17 @@ vi.mock("@repo/hooks", () => ({
   HIDE_CONVERSATION_FAILED_BODY: "Nothing changed.",
   HIDE_CONVERSATION_LABEL: "Hide conversation",
   HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
+  // #2877: the member's own sidebar arrangement.
+  useSidebarPreferences: () => ({
+    pinnedIds: new Set<string>(),
+    collapsed: new Set<string>(),
+    filters: { unreadOnly: false, hideMuted: false },
+  }),
+  useSetChannelPinned: () => ({ mutate: mockSetChannelPinned }),
+  useSetSidebarSectionCollapsed: () => ({ mutate: vi.fn() }),
+  useSetSidebarFilter: () => ({ mutate: vi.fn() }),
+  SIDEBAR_SAVE_FAILED_TITLE: "Couldn't save your channel list",
+  SIDEBAR_SAVE_FAILED_BODY: "Nothing changed.",
 }));
 
 // Captured so the hide failure (#2303) is observable; no other case here
@@ -322,11 +334,17 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
+  ChannelFilters: () => null,
   ChannelList: ({
     onPick,
     onHide,
     categories,
+    sidebar,
   }: {
+    sidebar?: {
+      mutedChannelIds: ReadonlySet<string> | undefined;
+      onSetPinned: (ch: { id: string }, pinned: boolean) => void;
+    };
     onPick?: (ch: {
       id: string;
       hidden?: boolean;
@@ -336,6 +354,18 @@ vi.mock("./channel-list", () => ({
     categories?: { id: string; name: string }[];
   }) => (
     <div data-testid="channel-list">
+      {/* The rail's pin control and the muted set it filters with (#2877). */}
+      <button
+        data-testid="rail-pin"
+        onClick={() => sidebar?.onSetPinned({ id: "chan-1" }, true)}
+      >
+        rail pin
+      </button>
+      <span data-testid="rail-muted">
+        {sidebar?.mutedChannelIds === undefined
+          ? "unknown"
+          : [...sidebar.mutedChannelIds].join(",")}
+      </span>
       {/* The rail's Hide on a DM row, and a row from its Hidden conversations
           group (#2303): the shell confirms the first and reopens the second. */}
       <button
@@ -704,6 +734,39 @@ describe("ChatShell channel categories", () => {
     expect(screen.getByTestId("channel-list-categories").textContent).toBe(
       "Executive,Committees",
     );
+  });
+});
+
+describe("ChatShell sidebar arrangement (#2877)", () => {
+  it("hands the rail the channels whose level is off, once the levels load", () => {
+    // `useChannelNotificationPreferences` is mocked to a loaded, empty list,
+    // so the set is known and empty. "unknown" would mean the shell passed
+    // `undefined`, which the rail reads as "levels not loaded, hide nothing".
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("rail-muted").textContent).toBe("");
+  });
+
+  it("pins from the rail and says so when the write fails", () => {
+    mockSetChannelPinned.mockClear();
+    mockToast.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-pin"));
+
+    expect(mockSetChannelPinned).toHaveBeenCalledWith(
+      { channelId: "chan-1", pinned: true },
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+    const [, { onError }] = mockSetChannelPinned.mock.calls[0] as [
+      unknown,
+      { onError: () => void },
+    ];
+    onError();
+    expect(mockToast).toHaveBeenCalledWith({
+      title: "Couldn't save your channel list",
+      description: "Nothing changed.",
+    });
   });
 });
 

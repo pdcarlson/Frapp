@@ -34,6 +34,12 @@ import {
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
+  SIDEBAR_SAVE_FAILED_BODY,
+  SIDEBAR_SAVE_FAILED_TITLE,
+  useSetChannelPinned,
+  useSetSidebarFilter,
+  useSetSidebarSectionCollapsed,
+  useSidebarPreferences,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft } from "lucide-react";
@@ -60,8 +66,10 @@ import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
+  ChannelFilters,
   ChannelList,
   ChannelListSkeleton,
+  type ChannelSidebarControls,
   type ChannelCategory,
   type ChannelUnread,
   type ChatChannel,
@@ -278,6 +286,20 @@ export function ChatShell({
     }
     return map;
   }, [notificationPrefsQuery.data]);
+  // The rail's Hide muted filter reads this. `undefined` until the levels have
+  // loaded, so the filter hides nothing on missing data rather than treating
+  // every channel as unmuted or muted (#2877).
+  const mutedChannelIds = useMemo(
+    () =>
+      notificationPrefsQuery.data
+        ? new Set(
+            notificationPrefsQuery.data
+              .filter((row) => row.level === "off")
+              .map((row) => row.channel_id),
+          )
+        : undefined,
+    [notificationPrefsQuery.data],
+  );
 
   const channels = useMemo(
     () =>
@@ -566,6 +588,42 @@ export function ChatShell({
 
   const channel = useChatChannel(activeChannelId);
   const { toast } = useToast();
+
+  // The member's own arrangement of the rail (#2877): pins, folds, filters.
+  // A failed read leaves the default arrangement, which hides nothing.
+  const sidebarPreferences = useSidebarPreferences();
+  const { mutate: setChannelPinned } = useSetChannelPinned();
+  const { mutate: setSectionCollapsed } = useSetSidebarSectionCollapsed();
+  const { mutate: setSidebarFilter } = useSetSidebarFilter();
+  const sidebarControls = useMemo<ChannelSidebarControls>(() => {
+    // The write already put the cache back on the server's state; this says so.
+    const onError = () =>
+      toast({
+        title: SIDEBAR_SAVE_FAILED_TITLE,
+        description: SIDEBAR_SAVE_FAILED_BODY,
+      });
+    return {
+      preferences: sidebarPreferences,
+      mutedChannelIds,
+      onSetPinned: (channel, pinned) =>
+        setChannelPinned({ channelId: channel.id, pinned }, { onError }),
+      onSetCollapsed: (sectionKey, collapsed) =>
+        setSectionCollapsed({ sectionKey, collapsed }, { onError }),
+      onSetFilters: (change) => setSidebarFilter(change, { onError }),
+      onClearFilters: () =>
+        setSidebarFilter(
+          { unread_only: false, hide_muted: false },
+          { onError },
+        ),
+    };
+  }, [
+    sidebarPreferences,
+    mutedChannelIds,
+    setChannelPinned,
+    setSectionCollapsed,
+    setSidebarFilter,
+    toast,
+  ]);
   // Stable for the timeline's load-at-top effect, which lists it as a
   // dependency; the outcome is the hook's `olderError`/`hasOlder` to report.
   const { loadOlder, loadNewer } = channel;
@@ -1469,6 +1527,10 @@ export function ChatShell({
         */}
         <header className="flex h-12 shrink-0 items-center border-b border-border px-3">
           <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+          <ChannelFilters
+            filters={sidebarPreferences.filters}
+            onChange={sidebarControls.onSetFilters}
+          />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {/*
@@ -1493,6 +1555,7 @@ export function ChatShell({
               unreadByChannelId={unreadByChannelId}
               activeChannelId={activeChannelId}
               onHide={hideFromRail}
+              sidebar={sidebarControls}
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
@@ -1638,6 +1701,20 @@ export function ChatShell({
                   level,
                 });
               }}
+              pinToTop={
+                activeChannel && !activeChannel.hidden
+                  ? {
+                      pinned: sidebarPreferences.pinnedIds.has(
+                        activeChannel.id,
+                      ),
+                      onToggle: () =>
+                        sidebarControls.onSetPinned(
+                          activeChannel,
+                          !sidebarPreferences.pinnedIds.has(activeChannel.id),
+                        ),
+                    }
+                  : undefined
+              }
               hideConversation={
                 activeChannel && canHideConversation(activeChannel)
                   ? {

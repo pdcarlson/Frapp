@@ -1,17 +1,44 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { EyeOff } from "lucide-react";
+import { useCallback, useId, useMemo, useState } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
+  EyeOff,
+  ListFilter,
+  Pin,
+  PinOff,
+} from "lucide-react";
+import {
+  arrangeChannelSidebar,
   canHideConversation,
   directChannelDisplayName,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
   HIDE_CONVERSATION_LABEL,
+  HIDE_MUTED_LABEL,
+  NO_MATCHING_CHANNELS,
+  PIN_TO_TOP_LABEL,
+  SHOW_ALL_CHANNELS_LABEL,
+  sidebarSections,
+  UNPIN_FROM_TOP_LABEL,
+  UNREAD_ONLY_LABEL,
   type DisplayNameMap,
+  type SidebarFilterChange,
+  type SidebarPreferences,
 } from "@repo/hooks";
+import type { SidebarSectionKey } from "@repo/validation";
 import { isDirectChannel } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { CHAT_CONTROL_CLASS } from "./chip";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
 import { Skeleton } from "@/components/shared/async-states";
@@ -98,7 +125,33 @@ export interface ChannelCategory {
 /** Stable empty default, so an absent `categories` prop is not a new array per render. */
 const NO_CATEGORIES: ChannelCategory[] = [];
 
-type Section = { key: string; label: string; channels: ChatChannel[] };
+/**
+ * The sidebar as it was before #2877: nothing pinned, nothing folded, no
+ * filter. What a caller that passes no `sidebar` gets.
+ */
+const DEFAULT_PREFERENCES: SidebarPreferences = {
+  pinnedIds: new Set(),
+  collapsed: new Set(),
+  filters: { unreadOnly: false, hideMuted: false },
+};
+
+/**
+ * The member's own arrangement of the rail (#2877) and the writes that change
+ * it. The rule is `spec/behavior/chat/README.md` § Sidebar arrangement.
+ */
+export interface ChannelSidebarControls {
+  preferences: SidebarPreferences;
+  /**
+   * Channels whose notification level is `off`, or `undefined` while the
+   * levels are not known, in which case Hide muted hides nothing.
+   */
+  mutedChannelIds: ReadonlySet<string> | undefined;
+  onSetPinned: (channel: ChatChannel, pinned: boolean) => void;
+  onSetCollapsed: (key: SidebarSectionKey, collapsed: boolean) => void;
+  onSetFilters: (change: SidebarFilterChange) => void;
+  /** Turn both filters off, from the empty state they caused. */
+  onClearFilters: () => void;
+}
 
 const SYSTEM_CHANNEL_NAMES = new Set(["chapter-audit"]);
 
@@ -184,6 +237,11 @@ export interface ChannelListProps {
    * asks. Absent, no row offers it.
    */
   onHide?: (channel: ChatChannel) => void;
+  /**
+   * Pins, folds and filters (#2877). Absent, the rail draws the default
+   * arrangement and offers no pin or fold control.
+   */
+  sidebar?: ChannelSidebarControls;
 }
 
 /**
@@ -212,7 +270,10 @@ export function ChannelList({
   categories = NO_CATEGORIES,
   onPick,
   onHide,
+  sidebar,
 }: ChannelListProps) {
+  const preferences = sidebar?.preferences ?? DEFAULT_PREFERENCES;
+  const mutedChannelIds = sidebar?.mutedChannelIds;
   const [showHidden, setShowHidden] = useState(false);
   // Resolved once, then used for the row title and the sort key alike, which
   // must agree: sorting on the stored name put a DM under its uuid rather than
@@ -247,26 +308,28 @@ export function ChannelList({
   );
 
   /**
-   * Rail sections, in render order: the uncategorized default group, then one
-   * per category, then DMs, then system.
+   * Rail sections, in render order: Pinned, the uncategorized default group,
+   * one per category, DMs, then system.
    *
    * The category rules (API order, type before category, an unknown
    * `category_id` falls back to uncategorized) are `groupChannelsByCategory`'s,
-   * shared with mobile's s04 so the two clients can't disagree (#1684). What
-   * stays here is web's own: the System group, which is split off first so the
-   * shared rule never sees it, and the title sort inside each section.
+   * shared with mobile's s04 so the two clients can't disagree (#1684), and so
+   * is the arrangement on top of it: pins, the A–Z sort inside every section,
+   * the filters and the folds (`arrangeChannelSidebar`, #2877). What stays here
+   * is web's own: the System group, which is split off first so the shared
+   * grouping never sees it, and the Hidden conversations group.
    *
-   * **Uncategorized keeps the label "Channels" and stays first.**
+   * **Uncategorized keeps the label "Channels" and stays first** below Pinned.
    * `spec/behavior/chat/README.md` § Channels names the fallback group
    * "Channels", which is what this rail already called it — so adopting
    * categories moves no uncategorized channel. A chapter that categorizes
-   * everything just sees that group's empty section disappear, which the render
-   * below already does for any empty section.
+   * everything just sees that group's empty section disappear.
    */
-  const { sections, hiddenDms } = useMemo(() => {
+  const { arranged, hiddenDms } = useMemo(() => {
     // A DM the member hid (#2303) moves to the collapsed group at the end,
     // except while it is the open channel, so a jump into one does not leave
-    // the rail with no row marked current.
+    // the rail with no row marked current. Hiding wins over pinning: a hidden
+    // DM the member had pinned waits in the hidden group like any other.
     const hiddenDms: ChatChannel[] = [];
     const system: ChatChannel[] = [];
     const rest: ChatChannel[] = [];
@@ -281,29 +344,31 @@ export function ChannelList({
       }
     }
 
-    const grouped = groupChannelsByCategory(rest, categories);
-    const result: Section[] = [
-      { key: "channels", label: "Channels", channels: grouped.uncategorized },
-      ...grouped.categories.map(({ category, channels: inCategory }) => ({
-        // Prefixed so a category whose id ever collided with a literal key
-        // below cannot silently replace that section.
-        key: `category:${category.id}`,
-        label: category.name,
-        channels: inCategory,
-      })),
-      { key: "dms", label: "Direct messages", channels: grouped.direct },
-      { key: "system", label: "System", channels: system },
-    ];
-
-    // Sorted off the assembled list rather than a hand-written enumeration of
-    // the buckets: a section added above but forgotten in a second list would
-    // render unsorted, and nothing would catch the omission.
-    for (const section of result) {
-      section.channels.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
-    }
+    const arranged = arrangeChannelSidebar({
+      sections: sidebarSections(
+        groupChannelsByCategory(rest, categories),
+        { channels: "Channels", direct: "Direct messages" },
+        { label: "System", channels: system },
+      ),
+      pinnedIds: preferences.pinnedIds,
+      collapsed: preferences.collapsed,
+      filters: preferences.filters,
+      activeChannelId,
+      titleOf: titleFor,
+      unreadByChannelId,
+      mutedChannelIds,
+    });
     hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
-    return { sections: result, hiddenDms };
-  }, [channels, titleFor, categories, activeChannelId]);
+    return { arranged, hiddenDms };
+  }, [
+    channels,
+    titleFor,
+    categories,
+    activeChannelId,
+    preferences,
+    unreadByChannelId,
+    mutedChannelIds,
+  ]);
 
   const renderRow = (channel: ChatChannel) => {
     const isActive = channel.id === activeChannelId;
@@ -321,6 +386,9 @@ export function ChannelList({
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
+    const pinned = preferences.pinnedIds.has(channel.id);
+    const offersHide =
+      !!onHide && canHideConversation(channel) && !channel.hidden;
     return (
       <li key={channel.id} className="group relative">
         <button
@@ -358,20 +426,13 @@ export function ChannelList({
               </>
             ) : null}
             {/*
-              A lock glyph, not a "Read" badge (`1b` pin 7, `1t`).
-              The badge spent 20-odd pixels of a 240px column
-              spelling out a state the mark can carry, and read
-              "Read" next to a row whose own styling already means
-              read-or-unread — two different senses of the word on
-              one row. `aria-label` keeps it stated for AT, which
-              the badge did only by accident of its text.
+              No read-only mark here any more (#2877). The lock that used to
+              sit at this end meant "read-only" while the same glyph at the
+              start of a row means "private", and the Discord import makes
+              every channel it creates read-only, so it drew on nearly every
+              row. The channel says it is read-only where that matters, in
+              its composer.
             */}
-            {channel.is_read_only && !channel.muted && !isUnread ? (
-              <>
-                <LockGlyph className="h-4 w-4 text-muted-foreground" />
-                <span className="sr-only">Read-only</span>
-              </>
-            ) : null}
             {isUnread ? (
               <Badge
                 variant={hasMention ? "mention" : "secondary"}
@@ -383,7 +444,7 @@ export function ChannelList({
             ) : null}
           </span>
         </button>
-        {onHide && canHideConversation(channel) && !channel.hidden ? (
+        {offersHide ? (
           // A sibling of the row, not inside it: a button cannot hold a
           // button. Revealed on hover and on keyboard focus, and it sits over
           // the badge while shown, the way a row action does in a chat rail.
@@ -394,12 +455,33 @@ export function ChannelList({
           // `⋯` menu instead.
           <button
             type="button"
-            onClick={() => onHide(channel)}
+            onClick={() => onHide?.(channel)}
             aria-label={`${HIDE_CONVERSATION_LABEL} with ${titleFor(channel)}`}
             title={HIDE_CONVERSATION_LABEL}
             className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground pointer-events-none opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
           >
             <EyeOff className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+        {sidebar && !channel.hidden ? (
+          // Beside Hide, on the same terms: revealed on hover and keyboard
+          // focus, inert to touch, where the channel menu's Pin to top row is
+          // the way in.
+          <button
+            type="button"
+            onClick={() => sidebar.onSetPinned(channel, !pinned)}
+            aria-label={`${pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}: ${titleFor(channel)}`}
+            title={pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}
+            className={cn(
+              "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground pointer-events-none opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
+              offersHide ? "right-8" : "right-1",
+            )}
+          >
+            {pinned ? (
+              <PinOff className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Pin className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
         ) : null}
       </li>
@@ -416,30 +498,74 @@ export function ChannelList({
 
   return (
     <div className="space-y-4">
-      {sections.map((section) =>
-        section.channels.length === 0 ? null : (
+      {arranged.sections.map((section) => {
+        const headerId = `channel-section:${section.key}`;
+        return (
           <div key={section.key}>
             {/*
-              The header names the list rather than just sitting above it. With
-              three fixed, memorizable groups a bare label was survivable; the
-              rail now has one section per chapter category, so a screen-reader
-              member navigating by list or by button — the common mode, not
-              linear reading — would otherwise hear "exec-board, button" with no
-              indication of which group it belongs to, and the grouping this
-              component exists to provide would be inaudible.
+              The header names the list rather than just sitting above it: a
+              screen-reader member navigating by list or by button would
+              otherwise hear "exec-board, button" with no indication of which
+              group it belongs to.
+
+              With `sidebar`, the header is also the fold control (#2877), a
+              disclosure button. Folded, it carries the section's own unread
+              total, red when anything inside addresses the member, so folding
+              never hides a mention.
             */}
-            <p
-              id={`channel-section:${section.key}`}
-              className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-            >
-              {section.label}
-            </p>
-            <ul aria-labelledby={`channel-section:${section.key}`}>
-              {section.channels.map(renderRow)}
-            </ul>
+            {sidebar ? (
+              <button
+                type="button"
+                id={headerId}
+                aria-expanded={!section.collapsed}
+                onClick={() =>
+                  sidebar.onSetCollapsed(section.key, !section.collapsed)
+                }
+                className="flex w-full items-center gap-1 px-2 pb-1 text-left text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+              >
+                {section.collapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className="truncate">{section.label}</span>
+                {section.collapsed &&
+                (section.unreadCount > 0 || section.addressed) ? (
+                  <Badge
+                    variant={section.addressed ? "mention" : "secondary"}
+                    className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
+                    aria-label={unreadAnnouncement(section)}
+                  >
+                    {badgeLabel(section.unreadCount, section.mentionCount)}
+                  </Badge>
+                ) : null}
+              </button>
+            ) : (
+              <p
+                id={headerId}
+                className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+              >
+                {section.label}
+              </p>
+            )}
+            {section.rows.length > 0 ? (
+              <ul aria-labelledby={headerId}>{section.rows.map(renderRow)}</ul>
+            ) : null}
           </div>
-        ),
-      )}
+        );
+      })}
+      {arranged.emptiedByFilters && sidebar ? (
+        <div className="space-y-2 rounded-lg border border-border px-3 py-4 text-center text-[12.5px] text-muted-foreground">
+          <p>{NO_MATCHING_CHANNELS}</p>
+          <button
+            type="button"
+            onClick={sidebar.onClearFilters}
+            className="font-semibold text-foreground underline-offset-2 hover:underline"
+          >
+            {SHOW_ALL_CHANNELS_LABEL}
+          </button>
+        </div>
+      ) : null}
       {hiddenDms.length > 0 ? (
         <div>
           <button
@@ -550,3 +676,65 @@ const SKELETON_ROW_WIDTHS = [
   "w-[66%]",
   "w-[48%]",
 ] as const;
+
+/**
+ * The rail's two filters (#2877), behind one control in the Channels header.
+ *
+ * A popover of two switches rather than two chips: the channels column is
+ * 240px wide and its header already carries the column title. The trigger
+ * shows a dot while any filter is on, so a shortened list never reads as a
+ * chapter that simply has fewer channels.
+ */
+export function ChannelFilters({
+  filters,
+  onChange,
+}: {
+  filters: SidebarPreferences["filters"];
+  onChange: (change: SidebarFilterChange) => void;
+}) {
+  const active = filters.unreadOnly || filters.hideMuted;
+  const unreadId = useId();
+  const mutedId = useId();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(CHAT_CONTROL_CLASS, "relative ml-auto")}
+          aria-label={active ? "Filter channels, filters on" : "Filter channels"}
+        >
+          <ListFilter className="h-4 w-4" aria-hidden="true" />
+          {active ? (
+            <span
+              aria-hidden="true"
+              className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary"
+            />
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-60 space-y-3 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={unreadId}>{UNREAD_ONLY_LABEL}</Label>
+          <Switch
+            id={unreadId}
+            checked={filters.unreadOnly}
+            onCheckedChange={(checked) => onChange({ unread_only: checked })}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={mutedId}>{HIDE_MUTED_LABEL}</Label>
+          <Switch
+            id={mutedId}
+            checked={filters.hideMuted}
+            onCheckedChange={(checked) => onChange({ hide_muted: checked })}
+          />
+        </div>
+        <p className="text-[12.5px] text-muted-foreground">
+          Pinned channels, the open channel and anything that mentions you
+          always show.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
