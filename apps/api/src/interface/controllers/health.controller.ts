@@ -20,10 +20,29 @@ import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
 // which is the whole point of it being a liveness check.
 const PROBE_TIMEOUT_MS = 3000;
 
+// How long `/health` reuses one probe result. Render calls it every 5 seconds
+// and every open web or mobile client every 30, and none of them reads the
+// dependency fields: they act on the status code, which is 2xx either way.
+// Probing per call made each hit two Supabase requests, and at that cadence
+// each opened a fresh TLS connection, because undici drops a socket after 4
+// idle seconds. That was most of an idle instance's ~6.5 MB/hour of billed
+// Render egress. `/health/ready` never uses this cache: the deploy gate needs
+// a probe taken now.
+export const LIVENESS_PROBE_TTL_MS = 60_000;
+
+interface DependencyProbes {
+  database: DependencyStatus;
+  storage: DependencyStatus;
+}
+
 @ApiTags('Health')
 @Controller({ version: '' })
 export class HealthController {
   private readonly startedAt = Date.now();
+  private liveness: {
+    probedAt: number;
+    probes: Promise<DependencyProbes>;
+  } | null = null;
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
@@ -40,7 +59,7 @@ export class HealthController {
   })
   @ApiOkResponse({ type: HealthPayloadDto })
   async check(): Promise<HealthPayloadDto> {
-    return this.buildPayload();
+    return this.buildPayload(await this.cachedProbes());
   }
 
   // Strict readiness: the deploy smoke checks (deploy-staging.yml, deploy-production.yml)
@@ -57,7 +76,7 @@ export class HealthController {
   })
   @ApiOkResponse({ type: HealthPayloadDto })
   async ready(): Promise<HealthPayloadDto> {
-    const payload = await this.buildPayload();
+    const payload = this.buildPayload(await this.probe());
 
     if (payload.status === 'degraded') {
       throw new ServiceUnavailableException({
@@ -88,12 +107,32 @@ export class HealthController {
     return payload;
   }
 
-  private async buildPayload(): Promise<HealthPayloadDto> {
+  // The promise is what is cached, so callers arriving while a probe is in
+  // flight share it rather than each starting their own. `probe` never
+  // rejects (every arm resolves to a status), so a cached failure is a
+  // reported `'error'`, never a rejection replayed for the whole TTL.
+  private cachedProbes(): Promise<DependencyProbes> {
+    const now = Date.now();
+    if (this.liveness && now - this.liveness.probedAt < LIVENESS_PROBE_TTL_MS) {
+      return this.liveness.probes;
+    }
+    const probes = this.probe();
+    this.liveness = { probedAt: now, probes };
+    return probes;
+  }
+
+  private async probe(): Promise<DependencyProbes> {
     const [database, storage] = await Promise.all([
       this.probeDatabase(),
       this.probeStorage(),
     ]);
+    return { database, storage };
+  }
 
+  private buildPayload({
+    database,
+    storage,
+  }: DependencyProbes): HealthPayloadDto {
     const payload: HealthPayloadDto = {
       status:
         database === 'connected' && storage === 'connected' ? 'ok' : 'degraded',
