@@ -322,10 +322,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     const newest = newestConfirmed(queryClient.getQueryData<ChannelCache>(key));
     if (!newest) return 0;
     try {
-      const { rows, actions } = await fetchPage(channelId, {
+      const { rows, actions, actionsIncomplete } = await fetchPage(channelId, {
         limit: OLDER_PAGE_LIMIT,
         since: newest.id,
       });
+      // Merged once, like an older page, so partial tallies would stay: a
+      // failed read instead, which the jump reports.
+      if (actionsIncomplete) return null;
       const full = rows.length >= OLDER_PAGE_LIMIT;
       let added = 0;
       queryClient.setQueryData<ChannelCache>(key, (current) => {

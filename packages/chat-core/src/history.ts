@@ -97,9 +97,11 @@ export type FetchHistoryPage = (
  *
  * A failed action read does not reject: the page comes back flagged
  * `actionsIncomplete`, and each reader decides. The newest page paints without
- * them (a thread that cannot be read at all is worse than one missing its
- * tallies, and a later read of the newest page rebuilds it). An older page is
- * refused (`readOlderPage`), because it is merged once and never re-read:
+ * them, as it always has: a thread that cannot be read at all is worse than
+ * one missing its tallies, and the next read of the newest page rebuilds it
+ * (web refetches on reconnect; mobile reads a thread again only once its query
+ * is dropped). An older page is refused (`readOlderPage`), and so is web's
+ * forward read (`loadNewer`), because each is merged once and never re-read:
  * `mergeUnheldRows` skips rows it holds, and Realtime delivers only new action
  * rows, so its tallies would stay partial for as long as the thread is cached.
  *

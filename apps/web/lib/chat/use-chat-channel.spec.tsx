@@ -53,7 +53,13 @@ const VIEWER = "user-1";
 const mocks = vi.hoisted(() => {
   const GET = vi.fn();
   const POST = vi.fn();
-  return { GET, POST, apiClient: { GET, POST }, toast: vi.fn() };
+  // The ranged `chat_message_actions` read; a test overrides it to fail.
+  const actionsRange = vi.fn(async () => ({
+    data: [] as unknown[],
+    error: null as unknown,
+    count: 0 as number | null,
+  }));
+  return { GET, POST, apiClient: { GET, POST }, toast: vi.fn(), actionsRange };
 });
 
 vi.mock("@repo/hooks", () => ({
@@ -67,7 +73,7 @@ vi.mock("@/lib/realtime/supabase-realtime", () => ({
       select: () => ({
         in: () => ({
           order: () => ({
-            range: async () => ({ data: [], error: null, count: 0 }),
+            range: () => mocks.actionsRange(),
           }),
         }),
       }),
@@ -630,6 +636,26 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     expect(result.current.messages).toHaveLength(100);
     // No second read: the rows in hand already are that page.
     expect(mocks.GET).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a forward read whose reactions and votes did not load", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    mocks.GET.mockResolvedValueOnce(historyPage(151, 160));
+    mocks.actionsRange.mockResolvedValueOnce({
+      data: [],
+      error: { message: "JWT expired" },
+      count: null,
+    });
+    let added: number | null | undefined;
+    await act(async () => {
+      added = await result.current.loadNewer();
+    });
+
+    // Merged once and never re-read, so a failure rather than partial tallies.
+    expect(added).toBeNull();
+    expect(result.current.messages.map((m) => m.id)).not.toContain("msg-151");
   });
 
   it("settles a heavy-command notice for a card it delivers", async () => {
