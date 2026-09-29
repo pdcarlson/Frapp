@@ -6,8 +6,8 @@ import { shareAttachment, shareFileName } from "./share-attachment";
 
 /**
  * Sharing an image from the chat viewer (#2874). The share sheet needs a
- * local file, so the image is downloaded first. What these pin: the file is
- * named for the type the viewer drew, never for the sender's filename; a
+ * local file, so the image is downloaded first. What these pin: the file's
+ * extension follows the type the viewer drew, never the sender's filename; a
  * failure anywhere comes back as `false` for the viewer to report; nothing is
  * presented once the viewer has moved on; and iOS never offers Save Image,
  * which would crash the app without a purpose string it doesn't declare.

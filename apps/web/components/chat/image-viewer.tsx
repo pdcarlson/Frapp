@@ -4,9 +4,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type KeyboardEvent,
 } from "react";
+import { useMessageAttachments } from "@repo/hooks";
+import { isViewableImage } from "@repo/chat-core/attachments";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,18 +26,39 @@ export interface ViewerImage {
   url: string;
 }
 
-/** The images of one message, and which one is showing. */
-export interface ViewerGallery {
+/** The fields of an attachment row the viewer reads. */
+interface AttachmentRow {
+  id: string;
+  filename: string;
+  content_type: string | null;
+  download_url: string;
+}
+
+/** A message's images, in order: the attachments `isViewableImage` accepts. */
+export function viewerImages(
+  attachments: readonly AttachmentRow[],
+): ViewerImage[] {
+  return attachments
+    .filter((attachment) => isViewableImage(attachment.content_type))
+    .map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      url: attachment.download_url,
+    }));
+}
+
+/** Which message's images the viewer shows, and which one. */
+export interface ViewerTarget {
+  channelId: string;
   messageId: string;
-  images: readonly ViewerImage[];
-  index: number;
+  imageId: string;
 }
 
 export interface ImageViewerState {
-  gallery: ViewerGallery | null;
-  open: (gallery: ViewerGallery) => void;
+  target: ViewerTarget | null;
+  open: (target: ViewerTarget) => void;
   close: () => void;
-  show: (index: number) => void;
+  show: (imageId: string) => void;
 }
 
 /**
@@ -57,26 +81,22 @@ export function useOpenImageViewer(): ImageViewerState["open"] | null {
  * unmounts once it scrolls out of the window (a new message arriving is
  * enough), which would take an open dialog with it; and React events bubble
  * through a portal along the component tree, so a dialog inside a row would
- * hand every click on the image to the row's own tap handler. The gallery is a
- * snapshot, so a refetch of the message's attachments can't close or reopen
- * it; the host closes it when the message stops being shown.
+ * hand every click on the image to the row's own tap handler.
+ *
+ * It holds ids, not the images: the viewer reads them through the same
+ * attachments query the row does, so a refetch hands it fresh signed URLs
+ * (they last an hour) even after the row has gone. The host closes it when
+ * the message stops being shown.
  */
 export function useImageViewer(): ImageViewerState {
-  const [gallery, setGallery] = useState<ViewerGallery | null>(null);
-  const open = useCallback((next: ViewerGallery) => {
-    if (next.images.length === 0) return;
-    setGallery({
-      ...next,
-      index: Math.min(Math.max(next.index, 0), next.images.length - 1),
-    });
-  }, []);
-  const close = useCallback(() => setGallery(null), []);
+  const [target, setTarget] = useState<ViewerTarget | null>(null);
+  const close = useCallback(() => setTarget(null), []);
   const show = useCallback(
-    (index: number) =>
-      setGallery((current) => (current ? { ...current, index } : current)),
+    (imageId: string) =>
+      setTarget((current) => (current ? { ...current, imageId } : current)),
     [],
   );
-  return { gallery, open, close, show };
+  return { target, open: setTarget, close, show };
 }
 
 /** The attribute each inline preview carries, for focus to find it on close. */
@@ -98,12 +118,38 @@ export const PREVIEW_ATTRIBUTE = "data-attachment-preview";
  * the backdrop dismissal and `aria-modal`.
  */
 export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
-  const { gallery } = viewer;
-  const images = gallery?.images ?? [];
-  const index = gallery?.index ?? null;
+  // Mounted only while open. The attachments query reaches for the API client
+  // context as it renders, so a closed viewer must not, or every timeline
+  // would need that context whether or not anyone opens an image.
+  if (!viewer.target) return null;
+  return <OpenImageViewer target={viewer.target} viewer={viewer} />;
+}
+
+function OpenImageViewer({
+  target,
+  viewer,
+}: {
+  target: ViewerTarget;
+  viewer: ImageViewerState;
+}) {
+  const { close } = viewer;
+  // Already in the cache from the row that opened the viewer, so this costs
+  // no request; it refetches with that row's query, and keeps doing so after
+  // the row has scrolled away.
+  const query = useMessageAttachments(target.channelId, target.messageId, true);
+  const images = query.data ? viewerImages(query.data) : [];
+  const found = images.findIndex((image) => image.id === target.imageId);
+  const index = found === -1 ? null : found;
   const image = index === null ? undefined : images[index];
   const total = images.length;
-  const onIndexChange = viewer.show;
+  const onIndexChange = (next: number) => viewer.show(images[next]!.id);
+
+  // A refetch that no longer lists the image (the attachment was removed)
+  // closes the viewer rather than leaving it open on nothing.
+  const lost = query.data !== undefined && found === -1;
+  useEffect(() => {
+    if (lost) close();
+  }, [lost, close]);
 
   // Stepping wraps. A step control disabled at either end would drop focus to
   // the page the moment it took the step that disabled it, and with it the

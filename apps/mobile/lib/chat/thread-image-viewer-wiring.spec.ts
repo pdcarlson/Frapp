@@ -53,7 +53,7 @@ describe("chat thread image viewer wiring", () => {
   });
 
   it("closes when its message stops being drawn in full", () => {
-    // The gallery is a snapshot, so the screen has to close it when the
+    // The viewer outlives the row that opened it, so the screen has to close it when the
     // message is deleted, tombstoned or held by the block list, or leaves.
     expect(THREAD).toMatch(
       /row\.message\.id === viewedMessageId &&\s*row\.visibility === "visible" &&\s*!row\.message\.is_deleted/,

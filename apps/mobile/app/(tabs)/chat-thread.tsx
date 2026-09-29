@@ -649,7 +649,7 @@ export default function ChatThreadScreen() {
   // It also closes when its message stops being drawn in full: deleted,
   // tombstoned or held by the block list, or gone from the thread. Reset
   // during render, so no frame draws an image the thread no longer shows.
-  const viewedMessageId = imageViewer.gallery?.messageId;
+  const viewedMessageId = imageViewer.target?.messageId;
   if (
     viewedMessageId &&
     !thread.rows.some(
@@ -661,7 +661,7 @@ export default function ChatThreadScreen() {
   ) {
     closeImageViewer();
   }
-  const imageViewerOpen = imageViewer.gallery !== null;
+  const imageViewerOpen = imageViewer.target !== null;
 
   /**
    * What the in-thread pill says, or `null` when it has nothing to add.

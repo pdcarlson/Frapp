@@ -2,11 +2,10 @@ import { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
-import { isViewableImage } from "@repo/chat-core/attachments";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useOpenImageViewer, type ViewerImage } from "./image-viewer";
+import { useOpenImageViewer, viewerImages } from "./image-viewer";
 
 /**
  * Files attached to one message, in the s05 thread.
@@ -31,7 +30,7 @@ import { useOpenImageViewer, type ViewerImage } from "./image-viewer";
  * message body, so degrading to nothing would read as data loss to anyone who
  * remembers seeing the file.
  *
- * An image opens the thread's full-screen viewer, stepping through the
+ * An image opens the thread's image viewer, stepping through the
  * message's other images (#2874). Any other file, and an image outside a
  * screen that hosts a viewer, opens through the signed URL in the browser.
  */
@@ -113,23 +112,12 @@ export function MessageAttachments({
     }
   }
 
-  // The message's images, in order, for the viewer to step through.
-  const images: ViewerImage[] = query.data
-    .filter((attachment) => isViewableImage(attachment.content_type))
-    .map((attachment) => ({
-      id: attachment.id,
-      filename: attachment.filename,
-      contentType: attachment.content_type,
-      url: attachment.download_url,
-    }));
+  const imageIds = new Set(viewerImages(query.data).map((image) => image.id));
 
   return (
     <View style={styles.list}>
       {query.data.map((attachment) => {
-        const imageIndex = images.findIndex(
-          (image) => image.id === attachment.id,
-        );
-        const isImage = imageIndex !== -1;
+        const isImage = imageIds.has(attachment.id);
         return (
           <Pressable
             key={attachment.id}
@@ -143,7 +131,7 @@ export function MessageAttachments({
             }
             onPress={() =>
               isImage && openViewer
-                ? openViewer({ messageId, images, index: imageIndex })
+                ? openViewer({ channelId, messageId, imageId: attachment.id })
                 : void open(attachment.id, attachment.download_url)
             }
             onLongPress={onLongPress}

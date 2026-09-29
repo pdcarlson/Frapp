@@ -512,7 +512,7 @@ export const MessageTimeline = forwardRef<
   // block list, or gone from the loaded window. Reset during render, so no
   // frame draws an image the thread no longer shows.
   const imageViewer = useImageViewer();
-  const viewedMessageId = imageViewer.gallery?.messageId;
+  const viewedMessageId = imageViewer.target?.messageId;
   if (
     viewedMessageId &&
     !visibleMessages.some(

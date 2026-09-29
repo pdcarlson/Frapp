@@ -2,12 +2,11 @@
 
 import { useMessageAttachments } from "@repo/hooks";
 import { formatBytes } from "@repo/formatting";
-import { isViewableImage } from "@repo/chat-core/attachments";
 import { AttachGlyph } from "./chat-glyphs";
 import {
   PREVIEW_ATTRIBUTE,
   useOpenImageViewer,
-  type ViewerImage,
+  viewerImages,
 } from "./image-viewer";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
@@ -31,7 +30,7 @@ interface MessageAttachmentsProps {
  * broken but never *blank* — degrading to nothing here would read as data loss
  * to anyone who remembers seeing the file.
  *
- * An image (`isViewableImage`) previews inline and opens the in-app viewer,
+ * An image (`isViewableImage`, through `viewerImages`) previews inline and opens the in-app viewer,
  * which steps through the message's other images and carries the download
  * (#2874). The timeline hosts the viewer, above its virtualized rows
  * (`useImageViewer`); where nothing hosts one, an image is a download link
@@ -71,13 +70,7 @@ export function MessageAttachments({
     );
   }
 
-  const images: ViewerImage[] = query.data
-    .filter((attachment) => isViewableImage(attachment.content_type))
-    .map((attachment) => ({
-      id: attachment.id,
-      filename: attachment.filename,
-      url: attachment.download_url,
-    }));
+  const imageIds = new Set(viewerImages(query.data).map((image) => image.id));
 
   const rowClass = cn(
     "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
@@ -102,19 +95,17 @@ export function MessageAttachments({
   return (
     <ul className="mt-1 flex flex-col gap-1.5">
       {query.data.map((attachment) => {
-        const imageIndex = images.findIndex(
-          (image) => image.id === attachment.id,
-        );
+        const isImage = imageIds.has(attachment.id);
         return (
           <li key={attachment.id}>
-            {imageIndex !== -1 && openViewer ? (
+            {isImage && openViewer ? (
               <button
                 type="button"
                 {...{ [PREVIEW_ATTRIBUTE]: attachment.id }}
                 aria-label={`View ${attachment.filename}`}
                 aria-haspopup="dialog"
                 onClick={() =>
-                  openViewer({ messageId, images, index: imageIndex })
+                  openViewer({ channelId, messageId, imageId: attachment.id })
                 }
                 className={cn(rowClass, "cursor-zoom-in")}
               >
@@ -142,7 +133,7 @@ export function MessageAttachments({
                 download={attachment.filename}
                 className={rowClass}
               >
-                {imageIndex !== -1 ? (
+                {isImage ? (
                   preview(attachment)
                 ) : (
                   <>

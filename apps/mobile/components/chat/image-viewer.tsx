@@ -22,6 +22,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { isViewableImage } from "@repo/chat-core/attachments";
+import { useMessageAttachments } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -60,23 +62,45 @@ export interface ViewerImage {
   url: string;
 }
 
-/** The images of one message, and which one is showing. */
-export interface ViewerGallery {
-  messageId: string;
-  images: readonly ViewerImage[];
-  index: number;
+/** The fields of an attachment row the viewer reads. */
+interface AttachmentRow {
+  id: string;
+  filename: string;
+  content_type: string | null;
+  download_url: string;
 }
 
-interface OpenGallery extends ViewerGallery {
+/** A message's images, in order: the attachments `isViewableImage` accepts. */
+export function viewerImages(
+  attachments: readonly AttachmentRow[],
+): ViewerImage[] {
+  return attachments
+    .filter((attachment) => isViewableImage(attachment.content_type))
+    .map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      contentType: attachment.content_type,
+      url: attachment.download_url,
+    }));
+}
+
+/** Which message's images the viewer shows, and which one. */
+export interface ViewerTarget {
+  channelId: string;
+  messageId: string;
+  imageId: string;
+}
+
+interface OpenTarget extends ViewerTarget {
   /** Counts opens, so each one starts with fresh share state. */
   session: number;
 }
 
 export interface ImageViewerState {
-  gallery: OpenGallery | null;
-  open: (gallery: ViewerGallery) => void;
+  target: OpenTarget | null;
+  open: (target: ViewerTarget) => void;
   close: () => void;
-  step: (delta: -1 | 1) => void;
+  show: (imageId: string) => void;
 }
 
 /**
@@ -92,73 +116,67 @@ export function useOpenImageViewer(): ImageViewerState["open"] | null {
 }
 
 /**
- * The viewer's state, for the screen that hosts it. The gallery is a snapshot
- * of the message's images, so the host closes it when that message stops
- * being shown (`chat-thread.tsx`).
+ * The viewer's state, for the screen that hosts it.
+ *
+ * It holds ids, not the images: the viewer reads them through the same
+ * attachments query the row does, so a refetch (the app coming back to the
+ * foreground) hands it fresh signed URLs, which last an hour. The host closes
+ * it when the message stops being shown (`chat-thread.tsx`).
  */
 export function useImageViewer(): ImageViewerState {
-  const [gallery, setGallery] = useState<OpenGallery | null>(null);
+  const [target, setTarget] = useState<OpenTarget | null>(null);
   const sessions = useRef(0);
 
-  const open = useCallback((next: ViewerGallery) => {
-    if (next.images.length === 0) return;
+  const open = useCallback((next: ViewerTarget) => {
     // The composer's keyboard would otherwise sit over the bottom of the image
     // and its step controls.
     Keyboard.dismiss();
     sessions.current += 1;
-    setGallery({
-      ...next,
-      index: Math.min(Math.max(next.index, 0), next.images.length - 1),
-      session: sessions.current,
-    });
+    setTarget({ ...next, session: sessions.current });
   }, []);
-  const close = useCallback(() => setGallery(null), []);
-  // Stepping wraps, as web's does: a step control disabled at an end would
-  // drop a screen reader's focus the moment it took the step that disabled it.
-  const step = useCallback((delta: -1 | 1) => {
-    setGallery((current) => {
-      if (!current || current.images.length < 2) return current;
-      const total = current.images.length;
-      return { ...current, index: (current.index + delta + total) % total };
-    });
-  }, []);
+  const close = useCallback(() => setTarget(null), []);
+  const show = useCallback(
+    (imageId: string) =>
+      setTarget((current) => (current ? { ...current, imageId } : current)),
+    [],
+  );
 
   // The viewer covers the whole screen, so Android's back button has to close
   // it rather than pop the navigator underneath.
-  const isOpen = gallery !== null;
+  const isOpen = target !== null;
   useEffect(() => {
     if (!isOpen) return;
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        setGallery(null);
+        setTarget(null);
         return true;
       },
     );
     return () => subscription.remove();
   }, [isOpen]);
 
-  return { gallery, open, close, step };
+  return { target, open, close, show };
 }
 
 export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
-  if (!viewer.gallery) return null;
+  if (!viewer.target) return null;
   // Keyed by the open, so a close unmounts everything an open started (a
   // share in flight, a failure message) and the next open starts clean.
   return (
     <ViewerBody
-      key={viewer.gallery.session}
-      gallery={viewer.gallery}
+      key={viewer.target.session}
+      target={viewer.target}
       viewer={viewer}
     />
   );
 }
 
 function ViewerBody({
-  gallery,
+  target,
   viewer,
 }: {
-  gallery: OpenGallery;
+  target: OpenTarget;
   viewer: ImageViewerState;
 }) {
   const { tokens } = useFrappTheme();
@@ -169,17 +187,24 @@ function ViewerBody({
   // stepping to another one clears it without an effect to reset it.
   const [failedId, setFailedId] = useState<string | null>(null);
 
-  const image = gallery.images[gallery.index]!;
-  const total = gallery.images.length;
+  // Already in the cache from the row that opened the viewer, so this costs
+  // no request, and it refetches with that row's query.
+  const query = useMessageAttachments(target.channelId, target.messageId, true);
+  const images = query.data ? viewerImages(query.data) : [];
+  const index = images.findIndex(
+    (candidate) => candidate.id === target.imageId,
+  );
+  const image = index === -1 ? undefined : images[index];
+  const total = images.length;
 
   // What a share in flight checks before it presents its sheet: the member
   // may have closed the viewer, or stepped to another image, while the
   // download ran, and a sheet appearing then would be about nothing they are
   // looking at.
-  const showing = useRef<string | null>(image.id);
+  const showing = useRef<string | null>(target.imageId);
   useEffect(() => {
-    showing.current = image.id;
-  }, [image.id]);
+    showing.current = target.imageId;
+  }, [target.imageId]);
   useEffect(
     () => () => {
       showing.current = null;
@@ -200,19 +225,35 @@ function ViewerBody({
     return () => clearTimeout(timer);
   }, []);
 
-  async function share(target: ViewerImage) {
+  // A refetch that no longer lists the image (the attachment was removed)
+  // closes the viewer rather than leaving it open on nothing.
+  const lost = query.data !== undefined && image === undefined;
+  const { close } = viewer;
+  useEffect(() => {
+    if (lost) close();
+  }, [lost, close]);
+
+  if (!image) return null;
+
+  // Stepping wraps, as web's does: a step control disabled at an end would
+  // drop a screen reader's focus the moment it took the step that disabled it.
+  function step(delta: -1 | 1) {
+    viewer.show(images[(index + delta + total) % total]!.id);
+  }
+
+  async function share(picked: ViewerImage) {
     // One at a time: iOS rejects a second share sheet while one is showing.
     if (isSharing) return;
     setFailedId(null);
     setIsSharing(true);
     const shared = await shareAttachment(
-      target,
-      () => showing.current === target.id,
+      picked,
+      () => showing.current === picked.id,
     );
     // Nothing to update once the viewer has closed.
     if (showing.current === null) return;
     setIsSharing(false);
-    if (!shared) setFailedId(target.id);
+    if (!shared) setFailedId(picked.id);
   }
 
   return (
@@ -273,7 +314,7 @@ function ViewerBody({
             accessibilityRole="button"
             accessibilityLabel="Previous image"
             hitSlop={8}
-            onPress={() => viewer.step(-1)}
+            onPress={() => step(-1)}
             style={({ pressed }) => [
               styles.control,
               pressed ? styles.pressed : null,
@@ -282,13 +323,13 @@ function ViewerBody({
             <Text style={styles.chevron}>‹</Text>
           </Pressable>
           <Text style={styles.counter}>
-            {gallery.index + 1} of {total}
+            {index + 1} of {total}
           </Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Next image"
             hitSlop={8}
-            onPress={() => viewer.step(1)}
+            onPress={() => step(1)}
             style={({ pressed }) => [
               styles.control,
               pressed ? styles.pressed : null,

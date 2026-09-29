@@ -43,8 +43,8 @@ export function isViewableImage(contentType: string | null): boolean {
 
 /**
  * The file extension for a viewable image's declared type, or `null` for any
- * other type. Mobile names the file it saves or shares with this rather than
- * with the sender's filename, which the API stores unvalidated: a file
+ * other type. Mobile gives the file it shares this extension rather than the
+ * one in the sender's filename, which the API stores unvalidated: a file
  * handed to another app is typed by its extension, so the extension must
  * follow the type the viewer drew, not a name the sender chose.
  */

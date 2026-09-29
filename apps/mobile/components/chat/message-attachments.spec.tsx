@@ -250,7 +250,7 @@ describe("opening an image", () => {
     vi.mocked(WebBrowser.openBrowserAsync).mockClear();
   });
 
-  it("opens the viewer on the tapped image, with the message's other images to step through", () => {
+  it("opens the viewer on the tapped image of this message", () => {
     // The PDF sits between the images and is not one of them.
     hookState.result = {
       isPending: false,
@@ -266,22 +266,9 @@ describe("opening an image", () => {
     act(() => row.props.onPress());
 
     expect(openViewer).toHaveBeenCalledWith({
+      channelId: "chan-1",
       messageId: "msg-1",
-      images: [
-        {
-          id: "att-1",
-          filename: "photo-1.png",
-          contentType: "image/png",
-          url: "https://example.test/signed/photo-1.png",
-        },
-        {
-          id: "att-2",
-          filename: "photo-2.png",
-          contentType: "image/png",
-          url: "https://example.test/signed/photo-2.png",
-        },
-      ],
-      index: 1,
+      imageId: "att-2",
     });
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
   });

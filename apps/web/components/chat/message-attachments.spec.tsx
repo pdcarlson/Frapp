@@ -309,6 +309,40 @@ describe("the image viewer", () => {
     ).toHaveFocus();
   });
 
+  it("takes fresh signed URLs from a refetch while it is open", async () => {
+    // Signed URLs last an hour; a refetch (window focus, after the query goes
+    // stale) replaces them, and an open viewer must not keep the expired one.
+    const view = show(photo(1));
+    const { dialog } = await openViewerOn("photo-1.png");
+
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        { ...photo(1), download_url: "https://storage.test/signed/fresh.png" },
+      ],
+    };
+    view.rerender(<Host count={1} />);
+
+    expect(shownImage(dialog)).toHaveAttribute(
+      "src",
+      "https://storage.test/signed/fresh.png",
+    );
+    expect(
+      within(dialog).getByRole("link", { name: "Download" }),
+    ).toHaveAttribute("href", "https://storage.test/signed/fresh.png");
+  });
+
+  it("closes when a refetch no longer lists the image", async () => {
+    const view = show(photo(1), photo(2));
+    await openViewerOn("photo-2.png");
+
+    hookState.result = { isPending: false, isError: false, data: [photo(1)] };
+    view.rerender(<Host count={1} />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("has no step controls for a single image", async () => {
     show(photo(1));
     const { dialog } = await openViewerOn("photo-1.png");

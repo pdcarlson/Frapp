@@ -7,6 +7,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
 const share = vi.hoisted(() => ({ result: true }));
+const attachments = vi.hoisted(() => ({
+  data: undefined as Record<string, unknown>[] | undefined,
+}));
+vi.mock("@repo/hooks", async () => {
+  const actual =
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+  return {
+    ...actual,
+    // The viewer reads the message's images through the row's query.
+    useMessageAttachments: () => ({
+      isPending: false,
+      isError: false,
+      data: attachments.data,
+    }),
+  };
+});
 vi.mock("@/lib/chat/share-attachment", () => ({
   shareAttachment: vi.fn(async () => share.result),
 }));
@@ -38,9 +54,30 @@ function image(n: number): ViewerImage {
 
 let viewer!: ImageViewerState;
 
+/** The attachment rows the query hands back for these images. */
+function rows(images: ViewerImage[]) {
+  return images.map((picked) => ({
+    id: picked.id,
+    message_id: "msg-1",
+    filename: picked.filename,
+    content_type: picked.contentType,
+    byte_size: 1024,
+    width: null,
+    height: null,
+    download_url: picked.url,
+  }));
+}
+
 /** Opens the viewer on message `msg-1`'s images, at `index`. */
 function openOn(images: ViewerImage[], index: number) {
-  act(() => viewer.open({ messageId: "msg-1", images, index }));
+  attachments.data = rows(images);
+  act(() =>
+    viewer.open({
+      channelId: "chan-1",
+      messageId: "msg-1",
+      imageId: images[index]!.id,
+    }),
+  );
 }
 
 /** Hands the test the screen's viewer state after every commit. */
@@ -50,20 +87,29 @@ function Harness({ onState }: { onState: (state: ImageViewerState) => void }) {
   return <ImageViewer viewer={state} />;
 }
 
+function screen() {
+  return (
+    <FrappThemeProvider>
+      <Harness
+        onState={(state) => {
+          viewer = state;
+        }}
+      />
+    </FrappThemeProvider>
+  );
+}
+
 function render() {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <Harness
-          onState={(state) => {
-            viewer = state;
-          }}
-        />
-      </FrappThemeProvider>,
-    );
+    tree = create(screen());
   });
   return tree;
+}
+
+/** Renders again, as a refetch landing would. */
+function rerender(tree: ReactTestRenderer) {
+  act(() => tree.update(screen()));
 }
 
 function button(tree: ReactTestRenderer, label: string) {
@@ -83,6 +129,7 @@ function textOf(tree: ReactTestRenderer): string {
 beforeEach(() => {
   vi.clearAllMocks();
   share.result = true;
+  attachments.data = undefined;
 });
 
 describe("opening and closing", () => {
@@ -196,8 +243,37 @@ describe("saving or sharing", () => {
     });
     expect(textOf(tree)).toContain("Couldn");
 
-    act(() => viewer.step(1));
+    act(() => button(tree, "Next image").props.onPress());
     expect(textOf(tree)).not.toContain("Couldn");
+  });
+});
+
+describe("fresh signed URLs", () => {
+  it("shows the URL a refetch hands back, not the one it opened with", () => {
+    // Signed URLs last an hour; the query refetches when the app comes back
+    // to the foreground, and an open viewer must use the new one.
+    const tree = render();
+    openOn([image(1)], 0);
+
+    attachments.data = rows([
+      { ...image(1), url: "https://example.test/signed/fresh.png" },
+    ]);
+    rerender(tree);
+
+    expect(shownImage(tree).props.source).toEqual({
+      uri: "https://example.test/signed/fresh.png",
+    });
+  });
+
+  it("closes when a refetch no longer lists the image", () => {
+    const tree = render();
+    openOn([image(1), image(2)], 1);
+
+    attachments.data = rows([image(1)]);
+    rerender(tree);
+
+    expect(tree.toJSON()).toBeNull();
+    expect(viewer.target).toBeNull();
   });
 });
 
