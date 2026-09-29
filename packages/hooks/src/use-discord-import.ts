@@ -418,10 +418,20 @@ export function useStartDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
-    mutationFn: async (vars: { id: string }) => {
+    /**
+     * `messagesAfter` is a bot import's date cutoff (#2858), an ISO instant;
+     * left out, the import keeps the one it has, which on a first start is
+     * none: all history.
+     */
+    mutationFn: async (vars: { id: string; messagesAfter?: string | null }) => {
       const { data, error } = await client.POST(
         "/v1/discord-imports/{id}/start",
-        { params: { path: { id: vars.id } } },
+        {
+          params: { path: { id: vars.id } },
+          ...(vars.messagesAfter === undefined
+            ? {}
+            : { body: { messages_after: vars.messagesAfter } }),
+        },
       );
       if (error) throw error;
       return data;

@@ -142,6 +142,12 @@ export interface DiscordImport {
    * import is cleared, so nothing it brought in is left behind unlisted.
    */
   cleared_at: string | null;
+  /**
+   * Bot path only: import only messages sent at or after this instant; null
+   * imports all history (#2858). Set when the import is first started and
+   * fixed from then on, so every channel follows one rule.
+   */
+  messages_after: string | null;
 }
 
 export interface DiscordImportChannel {

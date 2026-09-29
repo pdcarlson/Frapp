@@ -10,7 +10,7 @@ import {
   useDiscordImport,
   useDiscordImports,
 } from "@repo/hooks";
-import { formatLocaleDateTime } from "@repo/formatting";
+import { formatLocaleDate, formatLocaleDateTime } from "@repo/formatting";
 import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
@@ -297,6 +297,10 @@ function DiscordImportBody({
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {formatLocaleDateTime(live.created_at)}
+                          {/* A partial import says so (#2858). */}
+                          {live.messages_after
+                            ? ` · Messages since ${formatLocaleDate(live.messages_after)}`
+                            : ""}
                         </p>
                       </div>
                       <Badge variant={STATUS_VARIANT[live.status] ?? "outline"}>

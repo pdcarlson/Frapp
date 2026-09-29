@@ -463,6 +463,21 @@ chooses one at `/discord-import`; everything after the choice is identical.
   straight to the private `chat-archive` bucket through a signed URL, so no
   export byte passes through the API.
 
+**An import may leave out old history (#2858).** *2026-09-29, owner's
+decision: a chapter need not import years it does not want, and every message
+left out is media not copied, stored or paid for.* A bot import's review step
+takes an optional **Import messages from** date, empty by default, meaning all
+history. The day starts at the admin's own midnight. The worker reads each
+channel newest first and ends it at the first older message, so nothing older
+is read past that page, copied or stored. The date is fixed once the import
+starts: a restart keeps it, and changing it is refused, because the channels
+already done and the ones still to go would follow different rules. The
+import's row says "Messages since" the date, since a partial import must say
+so. An upload has no such field, because its media is already uploaded by
+then. Its range is set when exporting, with DiscordChatExporter's own
+`--after <date>`, which the upload step suggests; the API refuses a cutoff on
+an upload.
+
 **The upload path is not deprecated and is offered every time.** It is what
 keeps working if Discord ever throttles or refuses one shared bot across every
 chapter, and it is the only path for a chapter that cannot install apps in its

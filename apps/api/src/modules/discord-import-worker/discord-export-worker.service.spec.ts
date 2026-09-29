@@ -26,6 +26,7 @@ import type {
   DiscordImportChannel,
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
+import { snowflakeAtOrAfter } from '#domain/utils/discord-snowflake';
 
 const NOW = new Date('2026-08-24T12:00:00Z');
 const CHAPTER = 'chapter-1';
@@ -498,6 +499,94 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       messages: { id?: string | null; timestamp?: string | null }[];
     };
     expect(batch.messages[0].timestamp).toBe('2019-03-04T18:22:11.000+00:00');
+  });
+});
+
+describe('DiscordExportWorkerService — the date cutoff (#2858)', () => {
+  const CUTOFF = '2024-06-01T00:00:00.000Z';
+  const at = snowflakeAtOrAfter(Date.parse(CUTOFF));
+  /** A message `offset` ids from the cutoff: newer when positive. */
+  const around = (offset: number, extra: Record<string, unknown> = {}) =>
+    apiMessage(String(at + BigInt(offset)), extra);
+
+  it('imports what came after the cutoff and ends the channel there, even on a full page', async () => {
+    // Newest first, as Discord answers: 60 newer, then older ones.
+    const fullPage = Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) =>
+      around(60 - i),
+    );
+    const harness = await build({ pages: [fullPage, [around(-500)]] });
+    const args = runArgs(harness, {
+      job: job({ messages_after: CUTOFF }),
+    });
+
+    const result = await harness.worker.runSlice(args);
+
+    // Offsets 60..1 are newer, 0 is AT the cutoff and kept too.
+    expect(args.importBatch).toHaveBeenCalledTimes(1);
+    expect(args.importBatch.mock.calls[0][0].messages).toHaveLength(61);
+    // A full page would normally ask for the next; the cutoff ends it.
+    expect(harness.bot.fetchMessagePage).toHaveBeenCalledTimes(1);
+    expect(harness.repo.updateChannel).toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      expect.objectContaining({ status: 'completed', imported_count: 61 }),
+    );
+    expect(result.finished).toBe(true);
+  });
+
+  it('counts only the messages it imports into the total', async () => {
+    const harness = await build({
+      pages: [[around(2), around(1), around(-1), around(-2)]],
+    });
+    const result = await harness.worker.runSlice(
+      runArgs(harness, { job: job({ messages_after: CUTOFF }) }),
+    );
+    expect(result.totals.totalMessages).toBe(2);
+  });
+
+  it('never copies an older message’s attachments', async () => {
+    const photo = (id: string) => ({
+      attachments: [
+        {
+          id: `att-${id}`,
+          filename: 'photo.png',
+          size: 2048,
+          url: `https://cdn.discordapp.com/attachments/1/att-${id}/photo.png`,
+          content_type: 'image/png',
+        },
+      ],
+    });
+    const harness = await build({
+      pages: [[around(1, photo('new')), around(-1, photo('old'))]],
+    });
+    await harness.worker.runSlice(
+      runArgs(harness, { job: job({ messages_after: CUTOFF }) }),
+    );
+
+    const urls = harness.copier.copy.mock.calls.flatMap(([items]) =>
+      items.map((item) => item.url),
+    );
+    expect(urls.some((url) => url.includes('att-new'))).toBe(true);
+    expect(urls.some((url) => url.includes('att-old'))).toBe(false);
+  });
+
+  it('finishes a channel whose newest message is older, reading one page and writing nothing', async () => {
+    const harness = await build({ pages: [[around(-1), around(-2)]] });
+    const args = runArgs(harness, { job: job({ messages_after: CUTOFF }) });
+
+    const result = await harness.worker.runSlice(args);
+
+    expect(args.importBatch).not.toHaveBeenCalled();
+    expect(harness.copier.copy).not.toHaveBeenCalled();
+    expect(harness.bot.fetchMessagePage).toHaveBeenCalledTimes(1);
+    expect(result.finished).toBe(true);
+  });
+
+  it('reads all history without one', async () => {
+    const harness = await build({ pages: [[around(-1), around(-2)]] });
+    const args = runArgs(harness, { job: job({ messages_after: null }) });
+    await harness.worker.runSlice(args);
+    expect(args.importBatch.mock.calls[0][0].messages).toHaveLength(2);
   });
 });
 

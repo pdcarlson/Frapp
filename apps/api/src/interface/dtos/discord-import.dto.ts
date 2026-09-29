@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -43,6 +44,19 @@ export class CreateDiscordImportDto {
   @IsOptional()
   @IsIn(['upload', 'bot'])
   source?: 'upload' | 'bot';
+}
+
+export class StartDiscordImportDto {
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      "Bot imports only (#2858): import only messages sent at or after this instant. Omit it, or send null, for all history. It is set when the import is first started and fixed from then on: a later start (a restart) may repeat it or leave it out, not change it. An upload's range is set when exporting, with DiscordChatExporter's `--after`, so an upload refuses it.",
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  messages_after?: string | null;
 }
 
 export class DiscordDiscoveredRoleDto {

@@ -2894,7 +2894,7 @@ export interface paths {
         put?: never;
         /**
          * Queue the import
-         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).
+         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.
          */
         post: operations["DiscordImportController_start_v1"];
         delete?: never;
@@ -4605,6 +4605,13 @@ export interface components {
             roles: components["schemas"]["DiscordDiscoveredRoleDto"][];
             /** @description What could not be enumerated, in the admin’s words — most often private archived threads, which Discord gates behind a Manage Threads permission this read-only bot deliberately does not request. */
             warnings: string[];
+        };
+        StartDiscordImportDto: {
+            /**
+             * Format: date-time
+             * @description Bot imports only (#2858): import only messages sent at or after this instant. Omit it, or send null, for all history. It is set when the import is first started and fixed from then on: a later start (a restart) may repeat it or leave it out, not change it. An upload's range is set when exporting, with DiscordChatExporter's `--after`, so an upload refuses it.
+             */
+            messages_after?: string | null;
         };
         DiscordAvailabilityDto: {
             /** @description False when this environment has no Discord application configured, or when Discord reports that application set up so the connect flow cannot work (checked against Discord, not assumed). The DiscordChatExporter upload flow is unaffected either way — it is a separate path, not a fallback that switches on. */
@@ -9172,7 +9179,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StartDiscordImportDto"];
+            };
+        };
         responses: {
             201: {
                 headers: {

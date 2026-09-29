@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -35,6 +36,7 @@ import {
   RequestDiscordUploadUrlsDto,
   SetDiscordChannelMappingDto,
   SetDiscordRoleMappingDto,
+  StartDiscordImportDto,
 } from '../dtos/discord-import.dto';
 
 /**
@@ -267,10 +269,13 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).',
+      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.',
   })
+  // Optional: every client before #2858 starts with no body at all.
+  @ApiBody({ type: StartDiscordImportDto, required: false })
   async start(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: StartDiscordImportDto,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -282,7 +287,9 @@ export class DiscordImportController {
       userId,
       [SystemPermissions.ROLES_MANAGE],
     );
-    return this.importService.start(id, chapterId, canManageRoles);
+    return this.importService.start(id, chapterId, canManageRoles, {
+      messagesAfter: body?.messages_after,
+    });
   }
 
   @Post(':id/cancel')

@@ -1197,9 +1197,12 @@ export class DiscordImportService {
     id: string,
     chapterId: string,
     canManageRoles: boolean,
+    options: { messagesAfter?: string | null } = {},
   ): Promise<DiscordImport> {
     const job = await this.load(id, chapterId);
     this.assertMutable(job);
+    // Checked before anything below creates a role.
+    const cutoff = this.resolveCutoff(job, options.messagesAfter);
 
     // A bot import has nothing uploaded — it fetches. What it needs instead is
     // a live connection, re-resolved here rather than trusted from the job row,
@@ -1262,7 +1265,51 @@ export class DiscordImportService {
       parts_total: partsTotal,
       error: null,
       role_mapping: roleMapping,
+      // Written only when it changes, so a start that leaves it alone works
+      // against a database that does not have the column yet.
+      ...(cutoff.changed ? { messages_after: cutoff.value } : {}),
     });
+  }
+
+  /**
+   * The date cutoff a start asks for (#2858), checked.
+   *
+   * Left out, it keeps what the import has. It is set on the first start and
+   * fixed from then on: a restart resumes channels already cut at the old
+   * date, and a different date for the rest would leave one import following
+   * two rules. Bot imports only: an upload already holds every message and
+   * its media, so its range is set when exporting (DiscordChatExporter's
+   * `--after`), where it saves the upload too.
+   */
+  private resolveCutoff(
+    job: DiscordImport,
+    requested: string | null | undefined,
+  ): { changed: boolean; value: string | null } {
+    if (requested === undefined) {
+      return { changed: false, value: job.messages_after };
+    }
+    const value = requested === null ? null : new Date(requested).toISOString();
+    const instant = (at: string | null) =>
+      at === null ? null : new Date(at).getTime();
+    if (instant(value) === instant(job.messages_after)) {
+      return { changed: false, value: job.messages_after };
+    }
+    if (job.source !== 'bot') {
+      throw new BadRequestException(
+        "An upload's date range is set when exporting: add --after <date> to the DiscordChatExporter command.",
+      );
+    }
+    if (job.status !== 'draft') {
+      throw new ConflictException(
+        'This import has already been started, so its date cutoff is fixed. Start a new import to use a different one.',
+      );
+    }
+    if (value !== null && new Date(value).getTime() > Date.now()) {
+      throw new BadRequestException(
+        'Choose a date in the past, or leave the date empty to import all history.',
+      );
+    }
+    return { changed: true, value };
   }
 
   /**

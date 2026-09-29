@@ -98,16 +98,18 @@ describe("defaultRoleChoice (#2855)", () => {
       choice: { action: "existing", roleId: "treasurer" },
       kind: "same-name",
     });
-    expect(defaultRoleChoice(role(" Rush Chair "), frappRoles, true)).toEqual(
-      { choice: { action: "new", name: "Rush Chair" }, kind: null },
-    );
+    expect(defaultRoleChoice(role(" Rush Chair "), frappRoles, true)).toEqual({
+      choice: { action: "new", name: "Rush Chair" },
+      kind: null,
+    });
   });
 
   it("creates a role that gates no channel too, since roles classify people", () => {
     // #2818 left these on Ignore; a class year is still worth keeping.
-    expect(defaultRoleChoice(role("Class of 2027"), frappRoles, true)).toEqual(
-      { choice: { action: "new", name: "Class of 2027" }, kind: null },
-    );
+    expect(defaultRoleChoice(role("Class of 2027"), frappRoles, true)).toEqual({
+      choice: { action: "new", name: "Class of 2027" },
+      kind: null,
+    });
   });
 
   it("starts everything at Ignore for a viewer who cannot manage roles", () => {

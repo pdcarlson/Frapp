@@ -64,6 +64,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     completed_at: null,
     purged_at: null,
     cleared_at: null,
+    messages_after: null,
     ...overrides,
   };
 }
@@ -819,6 +820,72 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
       NotFoundException,
     );
     expect(repo.markCleared).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordImportService — the date cutoff (#2858)', () => {
+  const CUTOFF = '2024-06-01T00:00:00.000Z';
+  const botDraft = (overrides: Partial<DiscordImport> = {}) =>
+    job({ source: 'bot', status: 'draft', guild_id: GUILD, ...overrides });
+  const mapped = () =>
+    repo.findChannels.mockResolvedValue([
+      { id: 'map-1', mapping_action: 'create_new' },
+    ]);
+
+  it('sets it on the first start of a bot import', async () => {
+    await build(botDraft());
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true, {
+      messagesAfter: '2024-06-01T00:00:00Z',
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ status: 'ready', messages_after: CUTOFF }),
+    );
+  });
+
+  it('writes nothing about it when a start leaves it out', async () => {
+    // So a start without one works against a database without the column.
+    await build(botDraft({ status: 'failed', messages_after: CUTOFF }));
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true);
+    expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
+  });
+
+  it('lets a restart repeat it, and refuses to change it once started', async () => {
+    await build(botDraft({ status: 'failed', messages_after: CUTOFF }));
+    mapped();
+    await service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: CUTOFF });
+    expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
+
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, {
+        messagesAfter: '2023-01-01T00:00:00Z',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: null }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('refuses a date in the future, before creating any role', async () => {
+    await build(botDraft());
+    mapped();
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, {
+        messagesAfter: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    ).rejects.toThrow(/date in the past/);
+    expect(repo.findChannels).not.toHaveBeenCalled();
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses one on an upload, whose range is set when exporting', async () => {
+    await build(job({ status: 'draft' }));
+    await expect(
+      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: CUTOFF }),
+    ).rejects.toThrow(/--after/);
   });
 });
 

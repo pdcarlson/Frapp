@@ -77,6 +77,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     completed_at: null,
     purged_at: null,
     cleared_at: null,
+    messages_after: null,
     ...overrides,
   };
 }
@@ -649,7 +650,7 @@ describe('DiscordImportWorkerService — importing', () => {
       const other = otherChannelPart();
       storage.downloadFile = jest.fn(async (_bucket: string, path: string) =>
         path.endsWith('0001-p1.json') ? other : part000(),
-      ) as typeof storage.downloadFile;
+      );
       return storage;
     };
     const newChannel = (overrides: Partial<DiscordImportChannel>) =>

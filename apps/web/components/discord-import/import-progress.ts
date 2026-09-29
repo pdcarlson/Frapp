@@ -19,6 +19,8 @@ export type ImportRow = {
   warnings: string[];
   error: string | null;
   created_at: string;
+  /** A bot import's date cutoff (#2858): only messages since it. */
+  messages_after?: string | null;
 };
 
 /**

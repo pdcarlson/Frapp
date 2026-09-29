@@ -2276,3 +2276,19 @@ Work in this order.
    ```
 
    Role mappings saved under this release stay in `discord_imports.role_mapping` in the new shape. The previous code only stores and returns that column, so they are inert.
+
+## Rollback Discord import date cutoff (20260929170000)
+
+* **Migration**: `20260929170000_discord_import_messages_after.sql`
+
+One nullable column on `discord_imports` (#2858). No data is rewritten.
+
+**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration writes `messages_after` when an import starts with a cutoff. Revert the #2858 code on `main` and ship that, but keep `supabase/migrations/20260929170000_discord_import_messages_after.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+Then drop the column in a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260929170000` as applied, so a later re-land would apply nothing:
+
+```sql
+alter table public.discord_imports drop column if exists messages_after;
+```
+
+An import that was running with a cutoff reads all history from where it stopped once the old worker picks it up again: the channels it finished keep only the newer messages, and the rest import everything.

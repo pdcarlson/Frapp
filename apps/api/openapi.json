@@ -7265,7 +7265,7 @@
     },
     "/v1/discord-imports/{id}/start": {
       "post": {
-        "description": "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818).",
+        "description": "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.",
         "operationId": "DiscordImportController_start_v1",
         "parameters": [
           {
@@ -7277,6 +7277,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartDiscordImportDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""
@@ -12036,6 +12046,17 @@
           "roles",
           "warnings"
         ]
+      },
+      "StartDiscordImportDto": {
+        "type": "object",
+        "properties": {
+          "messages_after": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Bot imports only (#2858): import only messages sent at or after this instant. Omit it, or send null, for all history. It is set when the import is first started and fixed from then on: a later start (a restart) may repeat it or leave it out, not change it. An upload's range is set when exporting, with DiscordChatExporter's `--after`, so an upload refuses it."
+          }
+        }
       },
       "DiscordAvailabilityDto": {
         "type": "object",

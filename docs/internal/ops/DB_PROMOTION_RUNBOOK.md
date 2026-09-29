@@ -572,6 +572,17 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-29: An optional date cutoff for Discord bot imports (#2858)
+
+### 20260929170000_discord_import_messages_after.sql
+
+- **Purpose**: Adds `messages_after timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a bot import is first started with a cutoff, and the worker then imports only messages sent at or after it. Null imports all history, which is what every existing import keeps doing. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'messages_after';` returns one row: `messages_after | timestamp with time zone | YES | null`.
+- **Promoter notes**: Ship it before, or with, the API that reads it. The API writes the column only when an import starts with a cutoff, so a newer API against an unmigrated database fails those starts and no others. An older API ignores the column, and imports all history. Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-date-cutoff-20260929170000) § Rollback Discord import date cutoff.
+
 ## 2026-09-28: Discord roles gate the imported private channels (#2818)
 
 ### 20260928203000_discord_import_role_gates.sql

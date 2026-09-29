@@ -711,6 +711,58 @@ describe("ImportWizard — the bot path", () => {
     );
   });
 
+  describe("the date cutoff (#2858)", () => {
+    async function renderAtReview() {
+      startImport.mockReset();
+      startImport.mockResolvedValue({});
+      scanOneChannel();
+      await renderAtChannels();
+      await screen.findByText(/Nothing needs attention/);
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await screen.findByRole("heading", { name: "Review and import" });
+    }
+    const since = () =>
+      screen.getByLabelText("Import messages from") as HTMLInputElement;
+
+    it("imports all history when the date is left empty", async () => {
+      await renderAtReview();
+      expect(since().value).toBe("");
+      fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+      await waitFor(() =>
+        expect(startImport).toHaveBeenCalledWith({ id: "import-1" }),
+      );
+    });
+
+    it("sends the chosen day as the viewer's own midnight", async () => {
+      await renderAtReview();
+      fireEvent.change(since(), { target: { value: "2024-06-01" } });
+      expect(
+        screen.getByText(/Older messages, and their attachments, are left out/),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+      await waitFor(() =>
+        expect(startImport).toHaveBeenCalledWith({
+          id: "import-1",
+          messagesAfter: new Date("2024-06-01T00:00:00").toISOString(),
+        }),
+      );
+    });
+
+    it("holds Start on a date in the future", async () => {
+      await renderAtReview();
+      const nextYear = new Date().getFullYear() + 1;
+      fireEvent.change(since(), { target: { value: `${nextYear}-01-01` } });
+      expect(screen.getByText(/Choose a date in the past/)).toBeInTheDocument();
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Start import",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+    });
+  });
+
   it("keeps a private like-named channel as a new one and asks about the clash (#2856)", async () => {
     discoverChannels.mockResolvedValue({
       channels: [

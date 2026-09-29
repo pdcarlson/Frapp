@@ -126,6 +126,21 @@ describe("DiscordImportPage — row actions", () => {
   });
 });
 
+describe("DiscordImportPage — a date cutoff (#2858)", () => {
+  it("says on the row when an import took only messages since a date", () => {
+    hooks.rows = [
+      {
+        ...row("partial", "completed", "Recent server"),
+        messages_after: "2024-06-01T12:00:00Z",
+      },
+    ];
+    render(<DiscordImportPage />);
+    expect(
+      rowOf("Recent server").getByText(/Messages since/),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("DiscordImportPage — watching an import (#2857)", () => {
   const progress = {
     counts: { pending: 12, running: 1, completed: 3, failed: 1, skipped: 0 },

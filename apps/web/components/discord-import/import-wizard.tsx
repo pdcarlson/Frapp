@@ -18,6 +18,7 @@ import {
   useStartDiscordImport,
 } from "@repo/hooks";
 import { can, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
+import { parseBareDateLocalMidnight } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
 import { useToast } from "@/hooks/use-toast";
@@ -132,6 +133,8 @@ export function ImportWizard({
   // Only the roles the admin changed; the rest read their default, which
   // depends on the Frapp roles and on who could read what.
   const [roleEdits, setRoleEdits] = useState<Record<string, RoleChoice>>({});
+  // A bot import's date cutoff (#2858), as the date input holds it.
+  const [messagesSince, setMessagesSince] = useState("");
 
   const availability = useDiscordAvailability();
   const botConnection = useDiscordConnection();
@@ -468,6 +471,27 @@ export function ImportWizard({
   ]);
   const channelsReady = !!staged && channelIssues.length === 0;
 
+  // The chosen day starts at the viewer's own midnight, which is what "from
+  // this date" means to them; sent as that instant. Only a bot import has one.
+  const cutoff = useMemo((): { at: string | null; problem: string | null } => {
+    if (source !== "bot" || !messagesSince) return { at: null, problem: null };
+    const at = parseBareDateLocalMidnight(messagesSince);
+    if (!at) {
+      return {
+        at: null,
+        problem: "Enter a whole date, or clear it to import all history.",
+      };
+    }
+    if (at.getTime() > Date.now()) {
+      return {
+        at: null,
+        problem:
+          "Choose a date in the past, or clear it to import all history.",
+      };
+    }
+    return { at: at.toISOString(), problem: null };
+  }, [source, messagesSince]);
+
   async function submitMappings() {
     if (!importId || !staged || !source) return;
     const channels = staged.channels.map((channel) => {
@@ -557,9 +581,12 @@ export function ImportWizard({
   }
 
   async function submitStart() {
-    if (!importId) return;
+    if (!importId || cutoff.problem) return;
     try {
-      await startImport.mutateAsync({ id: importId });
+      await startImport.mutateAsync({
+        id: importId,
+        ...(cutoff.at ? { messagesAfter: cutoff.at } : {}),
+      });
       onStarted(importId);
     } catch (error) {
       toast({
@@ -680,6 +707,9 @@ export function ImportWizard({
             roles={staged.roles}
             roleChoices={roleChoices}
             readersOf={readersOf}
+            messagesSince={messagesSince}
+            onMessagesSinceChange={setMessagesSince}
+            messagesSinceProblem={cutoff.problem}
           />
         ) : null}
       </main>
@@ -757,7 +787,7 @@ export function ImportWizard({
         {step === "review" ? (
           <Button
             onClick={() => void submitStart()}
-            disabled={startImport.isPending}
+            disabled={startImport.isPending || cutoff.problem !== null}
           >
             Start import
           </Button>
