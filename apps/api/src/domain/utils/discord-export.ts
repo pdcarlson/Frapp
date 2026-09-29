@@ -15,6 +15,10 @@
  */
 
 import type { DiscordExportPreamble } from '@repo/validation';
+import {
+  rewriteDiscordMentions,
+  type DiscordMentionResolver,
+} from './discord-mentions';
 import { asRecord, asString } from './json-guards';
 
 export type { DiscordExportPreamble } from '@repo/validation';
@@ -64,6 +68,12 @@ export interface DiscordExportMessage {
   embeds?: unknown[] | null;
   stickers?: { name?: string | null }[] | null;
   reactions?: DiscordExportReaction[] | null;
+  /**
+   * The users the message mentions, as DCE writes them (and as the bot path
+   * maps Discord's own `mentions`). What names a `<@id>` token — see
+   * `rewriteDiscordMentions`.
+   */
+  mentions?: DiscordExportUser[] | null;
   reference?: {
     messageId?: string | null;
     channelId?: string | null;
@@ -205,6 +215,13 @@ export interface DiscordImportPayload {
   was_pinned_at_source?: true;
   sticker_names?: string[];
   embed_count?: number;
+  /**
+   * The message text exactly as Discord stored it, kept when the mention
+   * rewrite changed it (#2875). `content` holds what a reader sees; this keeps
+   * the rewrite reversible and holds the user ids a later member link (#2878)
+   * needs, which `@Name` prose no longer carries.
+   */
+  source_content?: string;
 }
 
 export function buildImportPayload(
@@ -266,6 +283,58 @@ export interface ToImportedMessageArgs {
   /** Resolves a Discord snowflake to an already-imported Frapp message id. */
   resolveReplyTarget: (externalMessageId: string) => string | null;
   attachmentCount: number;
+  /** What the import knows for naming the tokens in `content` (#2875). */
+  mentionContext: ImportMentionContext;
+}
+
+/**
+ * The import-wide half of naming a message's tokens. The per-message half, the
+ * users a message mentions, comes from the message itself.
+ */
+export interface ImportMentionContext {
+  roleName: DiscordMentionResolver['roleName'];
+  channel: DiscordMentionResolver['channel'];
+  /**
+   * The server nickname of a user the import has already seen author a
+   * message. Discord's `mentions` users carry no nickname on the REST path,
+   * and a mention should read the way that person's own messages are labelled.
+   */
+  knownNickname(discordUserId: string): string | null;
+}
+
+/**
+ * The tokens in one message's `content`, named.
+ *
+ * A mentioned user is named the way `resolveAuthorName` names an author, so a
+ * person reads the same in a mention as on their own messages: nickname first,
+ * then display name. A mentioned user the message does not list, and the
+ * import has not seen post, is unknown.
+ */
+export function resolveImportedContent(
+  message: DiscordExportMessage,
+  context: ImportMentionContext,
+): string {
+  const raw = asString(message.content) ?? '';
+  const mentioned = new Map<string, DiscordExportUser>();
+  for (const user of Array.isArray(message.mentions) ? message.mentions : []) {
+    const id = asString(user?.id);
+    if (id) mentioned.set(id, user);
+  }
+  return rewriteDiscordMentions(raw, {
+    // `resolveAuthorName`'s order, without its literal fallback: a user with
+    // no name at all is an unknown mention, not a user called "Unknown
+    // Discord user".
+    userName: (id) => {
+      const user = mentioned.get(id);
+      return (
+        asString(user?.nickname) ??
+        context.knownNickname(id) ??
+        asString(user?.name)
+      );
+    },
+    roleName: (id) => context.roleName(id),
+    channel: (id) => context.channel(id),
+  });
 }
 
 /**
@@ -288,6 +357,14 @@ export function toImportedMessage(
     ? args.resolveReplyTarget(replyToExternalId)
     : null;
 
+  const rawContent = asString(message.content) ?? '';
+  const content = resolveImportedContent(message, args.mentionContext);
+  const payload = buildImportPayload(
+    message,
+    replyToExternalId && !replyToId ? replyToExternalId : null,
+  );
+  if (content !== rawContent) payload.source_content = rawContent;
+
   const avatarRelative = asString(message.author?.avatarUrl);
   const avatarPath = avatarRelative
     ? args.resolveAssetPath(avatarRelative)
@@ -303,15 +380,12 @@ export function toImportedMessage(
     author_avatar_path: avatarPath,
     author_external_id: asString(message.author?.id),
     external_message_id: externalMessageId,
-    content: asString(message.content) ?? '',
+    content,
     // The CHECK on `type` allows only TEXT and POLL; `kind` carries the real
     // distinction.
     type: 'TEXT',
     kind: 'imported',
-    payload: buildImportPayload(
-      message,
-      replyToExternalId && !replyToId ? replyToExternalId : null,
-    ),
+    payload,
     metadata: {
       // What the purge deletes on. Without it, "the messages belonging to this
       // import" is unanswerable for a channel two imports merged into.

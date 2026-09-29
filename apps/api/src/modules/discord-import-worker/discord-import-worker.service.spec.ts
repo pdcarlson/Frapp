@@ -8,6 +8,7 @@ import {
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
@@ -253,6 +254,7 @@ let repoRef: ReturnType<typeof makeRepo>;
 async function buildWorker(
   repo: ReturnType<typeof makeRepo>,
   storage: unknown,
+  options: { exportWorker?: { runSlice: jest.Mock } } = {},
 ) {
   const channelRepo = {
     create: jest.fn(async (data: { name: string }) => ({
@@ -277,12 +279,16 @@ async function buildWorker(
     ),
   };
   const connectionRepo = { deleteExpiredStates: jest.fn(async () => 0) };
-  const exportWorker = {
+  const exportWorker = options.exportWorker ?? {
     runSlice: jest.fn(async () => {
       throw new Error(
         'The bot export worker must never be reached by an upload-sourced import.',
       );
     }),
+  };
+  // Role mentions read as the mapped Frapp role's current name (#2875).
+  const rbac = {
+    findByChapter: jest.fn(async () => [{ id: 'role-1', name: 'Brothers' }]),
   };
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -296,6 +302,7 @@ async function buildWorker(
       { provide: DiscordExportWorkerService, useValue: exportWorker },
       // Only the hourly OAuth-state reaper touches this; no import slice does.
       { provide: DISCORD_CONNECTION_REPOSITORY, useValue: connectionRepo },
+      { provide: RbacService, useValue: rbac },
     ],
   }).compile();
   return {
@@ -961,6 +968,104 @@ describe('DiscordImportWorkerService — importing', () => {
 
     const last = repoRef.updates.at(-1) as { warnings: string[] };
     expect(last.warnings.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => {
+  beforeEach(() => {
+    repoRef = makeRepo(job());
+  });
+
+  it('names the tokens an upload still carries, linking a channel of the import', async () => {
+    // DCE renders tokens as text by default; an export made with
+    // `--markdown false` keeps them, and names no roles.
+    const part = JSON.parse(
+      readFileSync(join(FIXTURES, 'part-000.json'), 'utf8'),
+    ) as { messages: Record<string, unknown>[] };
+    part.messages = [
+      {
+        id: '990000000000000001',
+        type: 'Default',
+        timestamp: '2019-04-01T10:00:00Z',
+        content: '<#800000000000000001> <@&500000000000000001> <@6>',
+        author: { id: '6', name: 'pdcarlson', nickname: 'Paul' },
+        mentions: [{ id: '6', name: 'pdcarlson', nickname: 'Paul' }],
+      },
+    ];
+    const { worker } = await buildWorker(
+      repoRef,
+      makeStorage(new TextEncoder().encode(JSON.stringify(part))),
+    );
+
+    await worker.sweepImports(NOW);
+
+    const rows = repoRef.insertMessages.mock.calls[0][0] as {
+      content: string;
+      payload: { source_content?: string };
+    }[];
+    expect(rows[0].content).toBe(
+      `[#general](/chat?channel=${SIGNET_CHANNEL}) @unknown-role @Paul`,
+    );
+    expect(rows[0].payload.source_content).toBe(
+      '<#800000000000000001> <@&500000000000000001> <@6>',
+    );
+  });
+
+  it('hands a bot slice role names from the mapping and the Frapp roles', async () => {
+    const brothers = '750151182395244584';
+    const amongUs = '750151182395244585';
+    repoRef = makeRepo(
+      job({
+        source: 'bot',
+        status: 'running',
+        guild_id: '700000000000000001',
+        role_mapping: [
+          {
+            discord_role_id: brothers,
+            discord_role_name: 'Brothers 🦁',
+            action: 'existing',
+            frapp_role_id: 'role-1',
+            new_role_name: null,
+            read_permission: 'channels:read:brothers',
+          },
+          {
+            discord_role_id: amongUs,
+            discord_role_name: 'Among Us',
+            action: 'ignore',
+            frapp_role_id: null,
+            new_role_name: null,
+            read_permission: null,
+          },
+        ],
+      }),
+    );
+    const exportWorker = {
+      runSlice: jest.fn(async () => ({
+        messagesImported: 0,
+        finished: false,
+        totals: {
+          imported: 0,
+          skipped: 0,
+          attachmentsImported: 0,
+          attachmentsSkipped: 0,
+          totalMessages: 0,
+          warnings: [],
+        },
+      })),
+    };
+    const { worker } = await buildWorker(repoRef, makeStorage(null), {
+      exportWorker,
+    });
+
+    await worker.sweepImports(NOW);
+
+    const { roleName } = exportWorker.runSlice.mock.calls[0][0] as {
+      roleName: (id: string) => string | null;
+    };
+    expect(roleName(brothers)).toBe('Brothers');
+    expect(roleName(amongUs)).toBe('Among Us');
+    expect(roleName('700000000000000001')).toBe('everyone');
+    expect(roleName('1')).toBeNull();
   });
 });
 

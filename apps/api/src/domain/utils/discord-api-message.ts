@@ -70,6 +70,13 @@ export interface DiscordApiMessage {
   attachments?: DiscordApiAttachment[] | null;
   embeds?: unknown[] | null;
   sticker_items?: { name?: string | null }[] | null;
+  /**
+   * The users `content` mentions. Discord's REST message carries plain user
+   * objects here, with no server nickname (the gateway adds a partial
+   * `member`; read when present).
+   */
+  mentions?:
+    (DiscordApiUser & { member?: DiscordApiMessageMember | null })[] | null;
   reactions?:
     | {
         count?: number | null;
@@ -226,6 +233,11 @@ export function toExportShapeMessage(
     embeds: Array.isArray(message.embeds) ? message.embeds : [],
     stickers: (message.sticker_items ?? []).map((sticker) => ({
       name: asString(sticker?.name),
+    })),
+    mentions: (message.mentions ?? []).map((user): DiscordExportUser => ({
+      id: asString(user?.id),
+      name: asString(user?.global_name) ?? asString(user?.username),
+      nickname: asString(user?.member?.nick),
     })),
     reactions: (message.reactions ?? []).map((reaction) => ({
       emoji: {

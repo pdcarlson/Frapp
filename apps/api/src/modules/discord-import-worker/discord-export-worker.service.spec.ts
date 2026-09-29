@@ -27,6 +27,11 @@ import type {
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
 import { snowflakeAtOrAfter } from '#domain/utils/discord-snowflake';
+import {
+  toImportedMessage,
+  type DiscordExportMessage,
+  type ImportMentionContext,
+} from '#domain/utils/discord-export';
 
 const NOW = new Date('2026-08-24T12:00:00Z');
 const CHAPTER = 'chapter-1';
@@ -256,6 +261,9 @@ function runArgs(
   return {
     job: job(),
     deadline: Date.now() + 45_000,
+    roleName: jest.fn((id: string) =>
+      id === '750151182395244584' ? 'Brothers' : null,
+    ),
     checkpoint: jest.fn(async () => true),
     resolveTargetChannel: jest.fn(async () => SIGNET_CHANNEL),
     importBatch: jest.fn(async (batch: { messages: unknown[] }) => ({
@@ -499,6 +507,50 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       messages: { id?: string | null; timestamp?: string | null }[];
     };
     expect(batch.messages[0].timestamp).toBe('2019-03-04T18:22:11.000+00:00');
+  });
+
+  it('names the tokens in a page from what the slice knows (#2875)', async () => {
+    const harness = await build({
+      pages: [
+        [
+          // Newest first, as Discord answers: the mention is read in the same
+          // page as the author's own message, whose nickname it borrows.
+          apiMessage('2', {
+            content: `<@42> <@&750151182395244584> see <#${DISCORD_CHANNEL}>`,
+            mentions: [
+              { id: '42', username: 'niravb', global_name: 'Nirav Banerji' },
+            ],
+          }),
+          apiMessage('1', {
+            author: {
+              id: '42',
+              username: 'niravb',
+              global_name: 'Nirav Banerji',
+            },
+            member: { nick: 'Nirav' },
+          }),
+        ],
+      ],
+    });
+    const args = runArgs(harness);
+    await harness.worker.runSlice(args);
+
+    const batch = args.importBatch.mock.calls[0][0] as {
+      messages: DiscordExportMessage[];
+      mentionContext: ImportMentionContext;
+    };
+    const row = toImportedMessage({
+      message: batch.messages[0],
+      channelId: SIGNET_CHANNEL,
+      importId: IMPORT_ID,
+      resolveAssetPath: () => null,
+      resolveReplyTarget: () => null,
+      attachmentCount: 0,
+      mentionContext: batch.mentionContext,
+    });
+    expect(row?.content).toBe(
+      `@Nirav @Brothers see [#general](/chat?channel=${SIGNET_CHANNEL})`,
+    );
   });
 });
 

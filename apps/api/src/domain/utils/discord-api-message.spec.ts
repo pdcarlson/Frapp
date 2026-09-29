@@ -7,9 +7,16 @@ import {
   toExportShapeMessage,
   type DiscordApiMessage,
 } from './discord-api-message';
-import { toImportedMessage } from './discord-export';
+import { toImportedMessage, type ImportMentionContext } from './discord-export';
 
 const CHANNEL = 'signet-channel-1';
+
+/** An import that can name nothing beyond what a message carries. */
+const NO_MENTIONS: ImportMentionContext = {
+  roleName: () => null,
+  channel: () => null,
+  knownNickname: () => null,
+};
 const IMPORT = 'import-1';
 
 function apiMessage(
@@ -47,6 +54,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: () => null,
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
 
     expect(row).not.toBeNull();
@@ -56,6 +64,36 @@ describe('toExportShapeMessage', () => {
     expect(row!.kind).toBe('imported');
     expect(row!.external_message_id).toBe('1000000000000000001');
     expect(row!.metadata.discord_import_id).toBe(IMPORT);
+  });
+
+  it("carries Discord's mentioned users, so a <@id> token can be named (#2875)", () => {
+    const shaped = toExportShapeMessage(
+      apiMessage({
+        content: '<@264512362768236544> you up?',
+        mentions: [
+          {
+            id: '264512362768236544',
+            username: 'niravb',
+            global_name: 'NiravBanerji',
+          },
+        ],
+      }),
+    );
+    expect(shaped.mentions).toEqual([
+      { id: '264512362768236544', name: 'NiravBanerji', nickname: null },
+    ]);
+
+    const row = toImportedMessage({
+      message: shaped,
+      channelId: CHANNEL,
+      importId: IMPORT,
+      resolveAssetPath: () => null,
+      resolveReplyTarget: () => null,
+      attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
+    });
+    expect(row!.content).toBe('@NiravBanerji you up?');
+    expect(row!.payload.source_content).toBe('<@264512362768236544> you up?');
   });
 
   it('prefers the server nickname, which is what the channel actually showed', () => {
@@ -69,6 +107,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: () => null,
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
     expect(row!.author_name).toBe('Prez');
   });
@@ -94,6 +133,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: () => null,
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
     expect(row!.author_name).toBe('Unknown Discord user');
   });
@@ -125,6 +165,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: (id) => (id === '999' ? 'signet-msg-999' : null),
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
     expect(row!.reply_to_id).toBe('signet-msg-999');
   });
@@ -137,6 +178,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: () => null,
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
     expect(row!.is_pinned).toBe(false);
     expect(row!.payload.was_pinned_at_source).toBe(true);
@@ -152,6 +194,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: () => null,
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
     expect(row!.mentions).toEqual([]);
   });
@@ -172,6 +215,7 @@ describe('toExportShapeMessage', () => {
       resolveAssetPath: () => null,
       resolveReplyTarget: () => null,
       attachmentCount: 0,
+      mentionContext: NO_MENTIONS,
     });
     // Zero-count reactions are dropped; no per-reactor data survives.
     expect(row!.payload.reactions).toEqual([
@@ -191,6 +235,7 @@ describe('toExportShapeMessage', () => {
         resolveAssetPath: () => null,
         resolveReplyTarget: () => null,
         attachmentCount: 0,
+        mentionContext: NO_MENTIONS,
       });
       expect(row).toBeNull();
     }

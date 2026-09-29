@@ -41,7 +41,11 @@ import {
   type DiscordApiMessage,
   type MessageContentTally,
 } from '#domain/utils/discord-api-message';
-import type { DiscordExportMessage } from '#domain/utils/discord-export';
+import type {
+  DiscordExportMessage,
+  ImportMentionContext,
+} from '#domain/utils/discord-export';
+import { importChannelMentions } from '#domain/utils/discord-mentions';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -173,6 +177,8 @@ export class DiscordExportWorkerService {
   async runSlice(args: {
     job: DiscordImport;
     deadline: number;
+    /** What a role mention reads as, from the import's role mapping (#2875). */
+    roleName: (discordRoleId: string) => string | null;
     /** True while the job may still be advanced (not cancelled, lease held). */
     checkpoint: (patch: {
       imported: number;
@@ -191,6 +197,7 @@ export class DiscordExportWorkerService {
       messages: DiscordExportMessage[];
       targetChannelId: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
+      mentionContext: ImportMentionContext;
     }) => Promise<{
       imported: number;
       skipped: number;
@@ -199,8 +206,14 @@ export class DiscordExportWorkerService {
       warnings: string[];
     }>;
   }): Promise<ExportSliceResult> {
-    const { job, deadline, checkpoint, resolveTargetChannel, importBatch } =
-      args;
+    const {
+      job,
+      deadline,
+      roleName,
+      checkpoint,
+      resolveTargetChannel,
+      importBatch,
+    } = args;
 
     // ── the tenant check, first and unconditionally ────────────────────────
     //
@@ -230,6 +243,18 @@ export class DiscordExportWorkerService {
     const byDiscordId = new Map(
       channels.map((channel) => [channel.discord_channel_id, channel]),
     );
+    // Server nicknames of the authors this slice has read, so a mention of
+    // someone reads the way their own messages are labelled: Discord's REST
+    // `mentions` carry no nickname (#2875). Per slice, like the tally below;
+    // an author not yet read this slice is named by their display name.
+    const nicknames = new Map<string, string>();
+    const mentionContext: ImportMentionContext = {
+      roleName,
+      // The same row objects `runChannel` writes each target onto, so a
+      // channel links from the moment it exists.
+      channel: importChannelMentions(channels),
+      knownNickname: (id) => nicknames.get(id) ?? null,
+    };
     const totals: SliceTotals = {
       imported: job.imported_messages,
       skipped: job.messages_skipped,
@@ -277,6 +302,8 @@ export class DiscordExportWorkerService {
           deadline,
           totals,
           mediaByRelativePath,
+          mentionContext,
+          nicknames,
           checkpoint,
           resolveTargetChannel: (channel) =>
             this.resolveDestination(channel, byDiscordId, (row) =>
@@ -399,6 +426,8 @@ export class DiscordExportWorkerService {
     deadline: number;
     totals: SliceTotals;
     mediaByRelativePath: Map<string, DiscordImportFile>;
+    mentionContext: ImportMentionContext;
+    nicknames: Map<string, string>;
     checkpoint: (patch: {
       imported: number;
       skipped: number;
@@ -412,6 +441,7 @@ export class DiscordExportWorkerService {
       messages: DiscordExportMessage[];
       targetChannelId: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
+      mentionContext: ImportMentionContext;
     }) => Promise<{
       imported: number;
       skipped: number;
@@ -427,6 +457,8 @@ export class DiscordExportWorkerService {
       deadline,
       totals,
       mediaByRelativePath,
+      mentionContext,
+      nicknames,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -574,10 +606,17 @@ export class DiscordExportWorkerService {
       // `outcome.attachmentsSkipped` below. Adding both double-counts every
       // skipped attachment.
 
+      for (const message of page) {
+        const authorId = message.author?.id;
+        const nick = message.member?.nick;
+        if (authorId && nick) nicknames.set(authorId, nick);
+      }
+
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,
         mediaByRelativePath,
+        mentionContext,
       });
 
       totals.imported += outcome.imported;

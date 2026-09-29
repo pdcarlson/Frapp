@@ -31,6 +31,11 @@ function mapMessage(
     resolveAssetPath: () => null,
     resolveReplyTarget: () => null,
     attachmentCount: 0,
+    mentionContext: {
+      roleName: () => null,
+      channel: () => null,
+      knownNickname: () => null,
+    },
     ...overrides,
   });
 }
@@ -187,6 +192,81 @@ describe('toImportedMessage', () => {
     expect(mapMessage(byId('900000000000000007'))).toBeNull();
     const noId = part000().messages.find((m) => m.id === null)!;
     expect(mapMessage(noId)).toBeNull();
+  });
+
+  describe('Discord mention tokens (#2875)', () => {
+    const tokenMessage = (
+      overrides: Partial<DiscordExportMessage>,
+    ): DiscordExportMessage => ({
+      id: '910000000000000001',
+      timestamp: '2026-09-28T21:15:00.000+00:00',
+      author: { id: '1', name: 'Pinstripe' },
+      ...overrides,
+    });
+    const context = {
+      roleName: (id: string) =>
+        id === '750151182395244584' ? 'Brothers' : null,
+      channel: () => null,
+      knownNickname: (id: string) => (id === '42' ? 'Nirav' : null),
+    };
+
+    it('writes the named text as content and keeps what Discord stored', () => {
+      const raw = '<@&750151182395244584> we need numbers now';
+      const row = mapMessage(tokenMessage({ content: raw }), {
+        mentionContext: context,
+      });
+      expect(row?.content).toBe('@Brothers we need numbers now');
+      expect(row?.payload.source_content).toBe(raw);
+      // Named in prose, never resolved to anyone: an archive never notifies.
+      expect(row?.mentions).toEqual([]);
+    });
+
+    it('stores no copy when there was nothing to name', () => {
+      const row = mapMessage(tokenMessage({ content: 'plain words' }), {
+        mentionContext: context,
+      });
+      expect(row?.content).toBe('plain words');
+      expect(row?.payload).not.toHaveProperty('source_content');
+    });
+
+    it('names a user the way their own messages are labelled: nickname first', () => {
+      const withNick = mapMessage(
+        tokenMessage({
+          content: '<@7>',
+          mentions: [{ id: '7', name: 'Nirav Banerji', nickname: 'Nirav B' }],
+        }),
+        { mentionContext: context },
+      );
+      expect(withNick?.content).toBe('@Nirav B');
+
+      // No nickname on the mention (the REST path): a nickname the import has
+      // already seen on the user's own messages beats the display name.
+      const seen = mapMessage(
+        tokenMessage({
+          content: '<@42>',
+          mentions: [{ id: '42', name: 'Nirav Banerji' }],
+        }),
+        { mentionContext: context },
+      );
+      expect(seen?.content).toBe('@Nirav');
+
+      const displayOnly = mapMessage(
+        tokenMessage({
+          content: '<@8>',
+          mentions: [{ id: '8', name: 'Sam' }],
+        }),
+        { mentionContext: context },
+      );
+      expect(displayOnly?.content).toBe('@Sam');
+    });
+
+    it('writes a user nothing names as unknown, not as the author fallback', () => {
+      const row = mapMessage(
+        tokenMessage({ content: '<@9>', mentions: [{ id: '9' }] }),
+        { mentionContext: context },
+      );
+      expect(row?.content).toBe('@unknown-user');
+    });
   });
 });
 
