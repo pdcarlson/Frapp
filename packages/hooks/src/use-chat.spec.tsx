@@ -104,7 +104,9 @@ describe("useMarkChannelRead", () => {
   });
 
   it("posts to the channel's read endpoint and invalidates channel queries", async () => {
-    const mockPost = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: { success: true }, error: null });
     const mockClient = { POST: mockPost };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -128,7 +130,9 @@ describe("useMarkChannelRead", () => {
 
   it("surfaces an error without invalidating anything", async () => {
     const mockError = new Error("mark-read failed");
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: mockError });
     const mockClient = { POST: mockPost };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -194,7 +198,9 @@ describe("useLeaveChannel", () => {
 
   it("surfaces an error without invalidating anything", async () => {
     const mockError = new Error("leave failed");
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: mockError });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -343,17 +349,33 @@ describe("channelSetFingerprint", () => {
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
       channelSetFingerprint([
         { id: "a", name: "general" },
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(channelSetFingerprint([{ id: "a", name: "announcements" }]));
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
+      channelSetFingerprint([{ id: "a", name: "announcements" }]),
+    );
+  });
+
+  it("changes with every field the server default reads (#2771)", () => {
+    const base = {
+      id: "a",
+      name: "announcements",
+      type: "PUBLIC",
+      is_read_only: true,
+      default_notification_level: null,
+    };
+    const print = channelSetFingerprint([base]);
+    for (const change of [
+      { is_read_only: false },
+      { type: "PRIVATE" },
+      { default_notification_level: "off" },
+    ]) {
+      expect(channelSetFingerprint([{ ...base, ...change }])).not.toBe(print);
+    }
   });
 
   it("skips rows without a string id so a prefs-shaped payload does not fingerprint", () => {
@@ -521,9 +543,7 @@ describe("useSetChannelNotificationLevel", () => {
 
   it("invalidates the preferences query on error so the control does not keep a level the server never stored", async () => {
     const mockError = new Error("preference write failed");
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: mockError });
+    const mockPut = vi.fn().mockResolvedValue({ data: null, error: mockError });
     const mockClient = { PUT: mockPut };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -551,7 +571,9 @@ describe("useUploadSignedUrl", () => {
     // A legacy .doc usually arrives with `type: ""`. The chat bucket's MIME
     // allowlist rejects an empty Content-Type, so the resolved type the
     // composer requested the URL with is the one that must go on the PUT.
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response);
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200 }) as Response,
+    );
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["bytes"], "minutes.doc", { type: "" });
 

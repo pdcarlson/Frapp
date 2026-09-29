@@ -1711,7 +1711,7 @@ export class ChatService {
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
     // BOTH arms are loaded, not just the channel one. Kind-scoped rows became
     // writable in #500, and `resolveLevel` consults them whenever a channel has
-    // no row of its own — so reading only the channel arm would report the
+    // no row of its own (in a DM, only a louder one counts) — so reading only the channel arm would report the
     // pre-#500 answer. A member who sets the `text` kind to `off` would see
     // every channel rendered `mentions` here while the worker pushed nothing,
     // which is exactly the "UI that disagrees with the worker about whether you
@@ -1770,7 +1770,8 @@ export class ChatService {
    * undo it short of the DELETE below.
    *
    * The effective level for a real message is the per-channel endpoint's
-   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain.
+   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain
+   * (in a DM a kind row counts only when louder than the DM's `all`).
    * This endpoint answers only "what have I overridden".
    *
    * No channel-access check is needed or possible here: a kind is not a
@@ -1796,8 +1797,8 @@ export class ChatService {
   /**
    * Clear the caller's override for one kind, returning it to the default.
    *
-   * The counterpart to the setter, and not optional surface: because a kind
-   * override outranks every channel's name-derived default, an override a
+   * The counterpart to the setter, and not optional surface: because outside
+   * DMs a kind override outranks every channel's default, an override a
    * member cannot remove is a permanent, invisible downgrade of
    * `#announcements`.
    *

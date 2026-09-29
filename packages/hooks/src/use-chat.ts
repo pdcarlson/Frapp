@@ -128,22 +128,35 @@ export const CHANNEL_NOTIFICATION_PREFERENCES_KEY = [
 ] as const;
 
 /**
- * Stable identity of the readable channel set.
+ * Stable identity of the readable channel set, and of every channel field the
+ * server reads to resolve a channel's default level.
  *
  * `id` covers Discord-imported (and future created) channels appearing in the
- * rail; `name` covers a rename to or from `announcements` / `chapter-audit`,
- * which changes the server-resolved default. Order-independent so a refetch
- * that shuffles the list does not look like a set change.
+ * rail. The rest are `builtInChannelDefault`'s and `defaultLevelFor`'s inputs
+ * (#2771): `name` and `type` (a rename to or from `general`, `announcements`
+ * or `chapter-audit`), `is_read_only` (the announcements channel needs it),
+ * and `default_notification_level` (an officer setting or clearing one). A
+ * change to any of them changes a level this member has not set, so it has to
+ * refetch. Order-independent so a refetch that shuffles the list does not look
+ * like a set change.
  */
 export function channelSetFingerprint(channels: unknown): string {
   if (!Array.isArray(channels) || channels.length === 0) return "";
   const parts: string[] = [];
   for (const row of channels) {
     if (row === null || typeof row !== "object") continue;
-    const id = "id" in row ? row.id : undefined;
-    const name = "name" in row ? row.name : undefined;
-    if (typeof id !== "string") continue;
-    parts.push(`${id}:${typeof name === "string" ? name : ""}`);
+    const field = (key: string) => {
+      const value = key in row ? (row as Record<string, unknown>)[key] : null;
+      return typeof value === "string" || typeof value === "boolean"
+        ? String(value)
+        : "";
+    };
+    if (typeof (row as { id?: unknown }).id !== "string") continue;
+    parts.push(
+      ["id", "name", "type", "is_read_only", "default_notification_level"]
+        .map(field)
+        .join(":"),
+    );
   }
   parts.sort();
   return parts.join("\n");

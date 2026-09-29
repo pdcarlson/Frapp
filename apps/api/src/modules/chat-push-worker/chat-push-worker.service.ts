@@ -543,7 +543,7 @@ export class ChatPushWorkerService
     // as a NORMAL `chat` push, under the member's Chat switch rather than its
     // own, which only went unnoticed while `ChatService` pushed every
     // announcement a second time.
-    const isAnnouncement = this.isAnnouncementPush(channel, row.kind);
+    const isAnnouncement = this.isAnnouncementPush(channel);
     const shared = {
       title: this.titleFor(channel, isAnnouncement, senderName),
       category: isAnnouncement ? 'announcements' : 'chat',
@@ -569,24 +569,21 @@ export class ChatPushWorkerService
 
   /**
    * Whether this push is an announcement, for the title, the priority *and*
-   * the category alike.
+   * the category alike, from one predicate so the three cannot disagree (a
+   * mismatch once let URGENT pushes escape the member's Chat switch, #1041).
    *
-   * One predicate because the three used to be written out separately and the
-   * category disagreed with the other two: it keyed on `kind` alone, while the
-   * title and priority also treated any channel *named* `announcements` as one.
-   * So an ordinary message there was titled "New Announcement" and sent URGENT
-   * while labelled `category: 'chat'`. That was merely untidy until URGENT
-   * became exempt from the category preference gate (#1041) — after which the
-   * mismatch let those pushes escape the member's coarse Chat switch, the one
-   * control meant to silence them, with no switch of their own to replace it.
+   * **The channel decides, never the message's `kind`.** `kind` comes from the
+   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` accepts
+   * `announcement` from any member in any channel it may post in, so trusting
+   * it let a member without `announcements:post` send an URGENT push that skips
+   * quiet hours to everyone at `all` in #general, or in any DM (#2771 review).
+   * Only an announcements channel (`isAnnouncementChannel`: PUBLIC, read-only,
+   * so only `announcements:post` holders write there) makes one.
    *
-   * Note this makes the channel's name load-bearing for whether a member can
-   * mute a push at all (see `isAnnouncementChannel`). Narrowing that heuristic
-   * is part of #1323, which decides how routine announcements are separated
-   * from emergency ones.
+   * The channel's name is still load-bearing here; narrowing it is #1323.
    */
-  private isAnnouncementPush(channel: ChannelRow, kind: string): boolean {
-    return kind === 'announcement' || isAnnouncementChannel(channel);
+  private isAnnouncementPush(channel: ChannelRow): boolean {
+    return isAnnouncementChannel(channel);
   }
 
   /**

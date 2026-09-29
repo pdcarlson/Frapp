@@ -51,13 +51,14 @@ export interface PushDecisionInput {
  * rows beat kind-scoped rows beat defaults; the table allows both arms so a
  * user can mute a single channel without muting the whole kind.
  *
- * **A kind row does not reach a DM or group DM.** A kind override is a
- * chapter-wide way to quiet channel traffic ("only mentions for ordinary
- * messages"), and until #2771 DMs were pushed by a separate path that never
- * read it. Letting it apply now would silently stop every DM for a member who
- * set `text` to `mentions` to calm #general. A DM is muted from the DM itself,
- * with its channel row. The kind *defaults* still apply (`defaultLevelFor`), so
- * a `system_audit` message in a DM still pushes nobody.
+ * **In a DM or group DM a kind row can make it louder, never quieter.** A kind
+ * override is a chapter-wide way to tune channel traffic, and until #2771 DMs
+ * were pushed by a separate path that never read it. Letting a `text` row of
+ * `mentions` apply would silently stop every DM for a member who set it to
+ * calm #general, so a kind row below the DM's default is ignored there and a
+ * DM is muted from the DM itself. A kind row above it still counts, so a
+ * `system_audit` opt-in keeps reaching system messages posted into DMs (the
+ * invite-accept notice, a DM poll's expiry), as it did before.
  */
 export function resolveLevel(
   channel: PushRuleChannel,
@@ -68,13 +69,25 @@ export function resolveLevel(
     (p) => p.scope === 'channel' && p.scope_id === channel.id,
   );
   if (channelPref) return channelPref.level;
-  if (isDirectChannel(channel)) return defaultLevelFor(channel, messageKind);
   const kindPref = preferences.find(
     (p) => p.scope === 'kind' && p.scope_kind === messageKind,
   );
+  if (isDirectChannel(channel)) {
+    const fallback = defaultLevelFor(channel, messageKind);
+    return kindPref && LOUDNESS[kindPref.level] > LOUDNESS[fallback]
+      ? kindPref.level
+      : fallback;
+  }
   if (kindPref) return kindPref.level;
   return defaultLevelFor(channel, messageKind);
 }
+
+/** How much each level lets through, for comparing two of them. */
+const LOUDNESS: Record<ChatNotificationLevel, number> = {
+  off: 0,
+  mentions: 1,
+  all: 2,
+};
 
 /**
  * The level for a member who has set nothing for this channel or kind.

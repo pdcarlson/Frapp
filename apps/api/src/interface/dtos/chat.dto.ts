@@ -418,7 +418,7 @@ export class SetChannelNotificationLevelDto {
   @ApiProperty({
     enum: CHAT_NOTIFICATION_LEVELS,
     description:
-      'all = every message; mentions = only when you are mentioned; off = muted, though @mentions still notify. With no level stored, the channel default applies (officer-set, else `all` for #general, the announcements channel and DMs, `off` for #chapter-audit, `mentions` for the rest); GET /v1/channels/notification-preferences reports it.',
+      'all = every message; mentions = only when you are mentioned; off = muted, though @mentions still notify. With no level stored for the channel, a kind-level override applies (outside DMs), else the channel default (officer-set, else `all` for #general, the announcements channel and DMs, `off` for #chapter-audit, `mentions` for the rest); GET /v1/channels/notification-preferences reports it.',
   })
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
@@ -436,7 +436,7 @@ export class SetKindNotificationLevelDto {
   @ApiProperty({
     enum: CHAT_NOTIFICATION_LEVELS,
     description:
-      'all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.',
+      'all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel. In a DM or group DM this applies only when it is louder than the DM default of all, so it cannot quiet a DM.',
   })
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
@@ -455,7 +455,7 @@ export class KindNotificationPreferenceDto {
     type: String,
     nullable: true,
     description:
-      "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.",
+      "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.",
   })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
 }

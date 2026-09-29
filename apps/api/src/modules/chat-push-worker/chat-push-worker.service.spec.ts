@@ -952,6 +952,26 @@ describe('ChatPushWorkerService', () => {
       expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
     });
 
+    it('ignores a client-supplied announcement kind outside an announcements channel', async () => {
+      // `kind` comes from the client, and any member may post one in #general.
+      service.__setChannelForTest({
+        ...CHANNEL,
+        id: 'ch-gen',
+        name: 'general',
+      });
+      setMembers(['sender', 'a']);
+      await send('ch-gen', { kind: 'announcement' });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'a',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Sam Rivera in #general',
+          priority: 'NORMAL',
+          category: 'chat',
+        }),
+      );
+    });
+
     it('does not treat a group DM named announcements as announcements', async () => {
       service.__setChannelForTest({
         ...DM,

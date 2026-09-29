@@ -315,7 +315,7 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
     ).toBe('mentions');
   });
 
-  it('a kind row does not reach a DM, so a text override cannot silence DMs', () => {
+  it('a text kind row cannot silence DMs', () => {
     const textMentions: ChatNotificationPreferenceRow = {
       user_id: 'u',
       chapter_id: 'c',
@@ -333,9 +333,39 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
     );
   });
 
-  it('a system_audit message in a DM still pushes nobody by default', () => {
+  it('a system_audit message in a DM pushes nobody by default', () => {
     expect(resolveLevel(ch('dm-a-b', { type: 'DM' }), 'system_audit', [])).toBe(
       'off',
     );
+  });
+
+  it('a system_audit opt-in still reaches a DM, since it makes it louder', () => {
+    expect(
+      resolveLevel(ch('dm-a-b', { type: 'DM' }), 'system_audit', [
+        {
+          user_id: 'u',
+          chapter_id: 'c',
+          scope: 'kind',
+          scope_id: null,
+          scope_kind: 'system_audit',
+          level: 'all',
+        },
+      ]),
+    ).toBe('all');
+  });
+
+  it('a kind off row cannot quiet a group DM either', () => {
+    expect(
+      resolveLevel(ch('Rush', { type: 'GROUP_DM' }), 'text', [
+        {
+          user_id: 'u',
+          chapter_id: 'c',
+          scope: 'kind',
+          scope_id: null,
+          scope_kind: 'text',
+          level: 'off',
+        },
+      ]),
+    ).toBe('all');
   });
 });

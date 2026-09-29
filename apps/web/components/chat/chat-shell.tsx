@@ -35,7 +35,7 @@ import {
   useUnbookmarkMessage,
   resolveAuthorLabel,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -71,11 +71,7 @@ import {
   MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import {
-  Composer,
-  ComposerShell,
-  notifyDispatchOutcome,
-} from "./composer";
+import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
@@ -362,9 +358,7 @@ export function ChatShell({
   } | null>(null);
   // The jump currently paging older history to reach its target, for the
   // "Finding that message..." line. Keyed like the notice, by message.
-  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(
-    null,
-  );
+  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(null);
   // Older pages this jump has asked for, bounded by `JUMP_MAX_OLDER_PAGES`.
   // Keyed on the attempt and the message, so a new request starts from zero.
   // `caughtUp` records the one forward read (`loadNewer`) each request makes
@@ -533,8 +527,18 @@ export function ChatShell({
     [channelTitles],
   );
 
+  // The same predicate the push worker uses (#2771). An exact-name match could
+  // pick a group DM a member named "announcements" once the real channel is
+  // renamed, and send the officer's /announce there.
   const announcementsChannelId = useMemo(
-    () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
+    () =>
+      channels.find((ch) =>
+        isAnnouncementChannel({
+          name: ch.name,
+          type: ch.type,
+          is_read_only: ch.is_read_only ?? null,
+        }),
+      )?.id ?? null,
     [channels],
   );
 
@@ -1367,7 +1371,8 @@ export function ChatShell({
           : !activeChapterId
             ? "no-chapter"
             : "empty";
-  const timelineReady = channelsPaneState === "ready" && !requestedChannelMissing;
+  const timelineReady =
+    channelsPaneState === "ready" && !requestedChannelMissing;
 
   /**
    * Whether focus is in `ComposerShell` right now — the one thing the upgrade
@@ -1845,20 +1850,20 @@ export function ChatShell({
           </>
         ) : null}
         {timelineReady ? (
-        <>
-        {/*
+          <>
+            {/*
           Above the timeline rather than inside it: the timeline virtualizes,
           and this is the one line that says rows are being held off it while
           the block list cannot vouch for them (#2313).
         */}
-        <BlockListNotice
-          status={blockList.status}
-          heldCount={thread.heldCount}
-          onRetry={blockList.retry}
-          isRetrying={blockList.isRetrying}
-          isPaused={blockList.isPaused}
-        />
-        {/*
+            <BlockListNotice
+              status={blockList.status}
+              heldCount={thread.heldCount}
+              onRetry={blockList.retry}
+              isRetrying={blockList.isRetrying}
+              isPaused={blockList.isPaused}
+            />
+            {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
           this genuinely non-live takes an explicit `aria-live="off"`, not
@@ -1870,111 +1875,111 @@ export function ChatShell({
           below is the decoupled, non-virtualized replacement — it updates
           only when a genuinely new message lands, never on scroll.
         */}
-        <div
-          id="chat-timeline"
-          tabIndex={-1}
-          role="log"
-          aria-live="off"
-          aria-label="Chat timeline"
-          // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
-          // panel most of whose area is an ordinary mouse-click target (blank
-          // space below the last message), not a control reached only
-          // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
-          // leave the ring painted after a routine click into that space.
-          // `focus-visible:` still shows it for the skip link's keyboard-
-          // driven jump, which is the case this needs to stay visible for.
-          className={cn(
-            "min-h-0 flex-1 overflow-hidden rounded-md",
-            FOCUS_RING,
-          )}
-        >
-          <MessageTimeline
-            ref={timeline}
-            channelId={activeChannel?.id}
-            nameFor={nameFor}
-            messages={channel.messages}
-            blockList={{ blockState, thread }}
-            onUnblock={handleUnblock}
-            onReloadMasked={handleReloadMasked}
-            maskedRefresh={maskedRefresh}
-            viewerId={userId}
-            isLoading={channel.isLoading}
-            loadError={channel.loadError}
-            hasOlder={channel.hasOlder}
-            isLoadingOlder={channel.isLoadingOlder}
-            olderError={channel.olderError}
-            onLoadOlder={loadOlderHistory}
-            // Only while the jump is still working. Once it has settled on a
-            // notice the target stays pending (so a late arrival still lands),
-            // but holding follow through that would stop new messages
-            // scrolling into view until the member dismissed it.
-            holdFollow={
-              pendingMessageId !== null &&
-              (pendingJumpChannelId === null ||
-                pendingJumpChannelId === activeChannelId) &&
-              !showUnreachableNotice
-            }
-            onReact={channel.react}
-            onUnreact={channel.unreact}
-            onReply={canReplyHere ? startReply : undefined}
-            // The quote above a reply scrolls to the message it quotes. It used
-            // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
-            // this is the same machinery pins and saved messages already use.
-            onJumpToParent={(message) => jumpToMessage(message.id)}
-            onRetry={channel.retry}
-            onDiscard={channel.discard}
-            // Heavy-command rows bypass the outbox, so `channel.retry` above
-            // cannot reach them. This replays the original request under its
-            // original idempotency key and toasts the outcome through the same
-            // three-way channel a first dispatch uses (#1733).
-            onRetryUnconfirmed={async (replay) => {
-              // Every path here must end in a toast. The first dispatch gets
-              // that guarantee from `runDispatch` in the composer (which also
-              // tags Sentry); this control sits in the timeline and had
-              // neither, so a throw produced a blinking spinner, no message,
-              // and no telemetry — and an officer who concludes Retry is broken
-              // re-types the command, mints a fresh key and double-grants.
-              try {
-                const result = await channel.retryUnconfirmed(replay);
-                notifyDispatchOutcome(toast, replay.command, result);
-              } catch (error) {
-                Sentry.captureException(error, {
-                  tags: { slash_command: `${replay.command}_retry` },
-                });
-                // Non-destructive on purpose: the retry failing says nothing
-                // about whether the original attempt committed, and a red
-                // "failed" is what invites the re-type.
-                toast({
-                  title: "Couldn't retry that command",
-                  description:
-                    "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
-                });
-              }
-            }}
-            onAct={(messageId, actionType, payload) =>
-              void channel.act(messageId, actionType, payload)
-            }
-            onEdit={channel.edit}
-            onDelete={handleDeleteMessage}
-            bookmarkedMessageIds={bookmarkedMessageIds}
-            onToggleBookmark={handleToggleBookmark}
-            canManageChannel={canManageChannel}
-          />
-        </div>
-        {/*
+            <div
+              id="chat-timeline"
+              tabIndex={-1}
+              role="log"
+              aria-live="off"
+              aria-label="Chat timeline"
+              // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
+              // panel most of whose area is an ordinary mouse-click target (blank
+              // space below the last message), not a control reached only
+              // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
+              // leave the ring painted after a routine click into that space.
+              // `focus-visible:` still shows it for the skip link's keyboard-
+              // driven jump, which is the case this needs to stay visible for.
+              className={cn(
+                "min-h-0 flex-1 overflow-hidden rounded-md",
+                FOCUS_RING,
+              )}
+            >
+              <MessageTimeline
+                ref={timeline}
+                channelId={activeChannel?.id}
+                nameFor={nameFor}
+                messages={channel.messages}
+                blockList={{ blockState, thread }}
+                onUnblock={handleUnblock}
+                onReloadMasked={handleReloadMasked}
+                maskedRefresh={maskedRefresh}
+                viewerId={userId}
+                isLoading={channel.isLoading}
+                loadError={channel.loadError}
+                hasOlder={channel.hasOlder}
+                isLoadingOlder={channel.isLoadingOlder}
+                olderError={channel.olderError}
+                onLoadOlder={loadOlderHistory}
+                // Only while the jump is still working. Once it has settled on a
+                // notice the target stays pending (so a late arrival still lands),
+                // but holding follow through that would stop new messages
+                // scrolling into view until the member dismissed it.
+                holdFollow={
+                  pendingMessageId !== null &&
+                  (pendingJumpChannelId === null ||
+                    pendingJumpChannelId === activeChannelId) &&
+                  !showUnreachableNotice
+                }
+                onReact={channel.react}
+                onUnreact={channel.unreact}
+                onReply={canReplyHere ? startReply : undefined}
+                // The quote above a reply scrolls to the message it quotes. It used
+                // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
+                // this is the same machinery pins and saved messages already use.
+                onJumpToParent={(message) => jumpToMessage(message.id)}
+                onRetry={channel.retry}
+                onDiscard={channel.discard}
+                // Heavy-command rows bypass the outbox, so `channel.retry` above
+                // cannot reach them. This replays the original request under its
+                // original idempotency key and toasts the outcome through the same
+                // three-way channel a first dispatch uses (#1733).
+                onRetryUnconfirmed={async (replay) => {
+                  // Every path here must end in a toast. The first dispatch gets
+                  // that guarantee from `runDispatch` in the composer (which also
+                  // tags Sentry); this control sits in the timeline and had
+                  // neither, so a throw produced a blinking spinner, no message,
+                  // and no telemetry — and an officer who concludes Retry is broken
+                  // re-types the command, mints a fresh key and double-grants.
+                  try {
+                    const result = await channel.retryUnconfirmed(replay);
+                    notifyDispatchOutcome(toast, replay.command, result);
+                  } catch (error) {
+                    Sentry.captureException(error, {
+                      tags: { slash_command: `${replay.command}_retry` },
+                    });
+                    // Non-destructive on purpose: the retry failing says nothing
+                    // about whether the original attempt committed, and a red
+                    // "failed" is what invites the re-type.
+                    toast({
+                      title: "Couldn't retry that command",
+                      description:
+                        "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
+                    });
+                  }
+                }}
+                onAct={(messageId, actionType, payload) =>
+                  void channel.act(messageId, actionType, payload)
+                }
+                onEdit={channel.edit}
+                onDelete={handleDeleteMessage}
+                bookmarkedMessageIds={bookmarkedMessageIds}
+                onToggleBookmark={handleToggleBookmark}
+                canManageChannel={canManageChannel}
+              />
+            </div>
+            {/*
           Directly above the composer, which is where Discord and Slack both put
           it and where a 48px header has no room for it. Reserves no space when
           nobody is typing: it is transient status, and a permanently reserved
           strip would push the composer down by a line on every channel.
         */}
-        {typingUsers.length > 0 ? (
-          <p className="shrink-0 px-4 pb-1 text-[12.5px] text-muted-foreground">
-            {typingUsers.length === 1
-              ? "Someone is typing…"
-              : `${typingUsers.length} people are typing…`}
-          </p>
-        ) : null}
-        </>
+            {typingUsers.length > 0 ? (
+              <p className="shrink-0 px-4 pb-1 text-[12.5px] text-muted-foreground">
+                {typingUsers.length === 1
+                  ? "Someone is typing…"
+                  : `${typingUsers.length} people are typing…`}
+              </p>
+            ) : null}
+          </>
         ) : null}
         {activeChannel ? (
           <Composer
