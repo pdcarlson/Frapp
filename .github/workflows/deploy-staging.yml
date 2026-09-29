@@ -130,7 +130,7 @@ jobs:
   # each one against the Hobby team's Function Storage, which production
   # shares. This deletes all but the newest previews of web and landing: never
   # a production deployment, nor one a staging hostname serves (read fresh,
-  # after the deploy job aliased them). Scripts/ci/prune-vercel-staging.mjs.
+  # after the deploy job aliased them): `scripts/ci/prune-vercel-staging.mjs`.
   #
   # Its own job, not a step of the deploy job, so a failure here can't fail a
   # deploy that shipped: that would raise the P1 alert above, and its natural
@@ -153,7 +153,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # Both scripts are Node built-ins only: no setup-node, no npm ci.
+      # The Node the deploy job runs these scripts on (the prune imports
+      # deploy-vercel.mjs). Built-ins only, so no npm ci.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Read the provider ids
         id: ids
         env:
