@@ -1,41 +1,46 @@
 ## 8. Step-by-Step Launch Checklist
 
-### Phase 1: Staging (do this first)
+> **Re-grounded 2026-09-29.** Phases 1 and 2 used to be the first bring-up checklist. They were
+> written for Git-linked Vercel and hook-driven Render deploys, and none of their boxes was ever
+> ticked, although both environments have run for months. The lists below say what is true now and
+> where each fact is checked. The beta's live gate list is epic
+> [#2558](https://github.com/pdcarlson/Frapp/issues/2558), not this page.
 
-> ⚠️ **2026-09-02:** Phase 1's Vercel steps describe the retired push-deploy model — both
-> projects are unlinked from Git (ADR-21), so no push deploys staging web or landing. See the dated
-> note at the top of [Vercel Setup](vercel.md).
+### In place
 
-- [ ] Create Supabase staging project, apply migrations
-- [ ] Create Render staging service (`main` branch), add env vars
-- [ ] Import repo to Vercel 3 times (web, landing, docs)
-- [ ] Add Preview env vars to each Vercel project
-- [ ] Assign staging domains to `main` branch in Vercel
-- [ ] Configure DNS records for staging subdomains
-- [ ] Set up Stripe test mode webhook for staging API URL
-- [ ] Push to `main` → verify all staging sites deploy
-- [ ] Test mobile with Expo Go pointing at staging API
-- [ ] Run through core flows: sign up, create chapter, invite member
+- [x] Supabase `frapp-staging` and `frapp-prod`, named in
+      [`.github/environments.json`](../../../../.github/environments.json). The deploy workflows
+      apply migrations after a rehearsal. The org has been on Pro since 2026-09-28
+      ([`supabase.md`](supabase.md#plan-and-quotas)).
+- [x] Render `frapp-api-staging` and `frapp-api-prod`, both with auto-deploy **off** (read from the
+      Render API on 2026-09-29). The workflows deploy each one by commit
+      ([`render.md` § 5.7](render.md#57-deploy-hooks-for-github-actions)).
+- [x] Vercel `frapp-web` and `frapp-landing`, disconnected from Git. Both take their config from
+      Infisical, not from Vercel's env settings
+      ([`vercel.md` § 4](vercel.md#4-vercel-setup)). There is no docs project.
+- [x] Staging deploys after CI goes green on every merge to `main` (`deploy-staging.yml`).
+- [x] Production deploys by dispatching **Deploy production** with a green `main` SHA
+      ([`ci-cd.md`](ci-cd.md)). The last `full` ship was v1.4.0 (`269d82b6`) on 2026-09-29.
+- [x] **Required reviewers** on the `production` GitHub Environment, the only human gate. Last read
+      on 2026-09-02; re-check it with the
+      [runbook's Environments steps](../GITHUB_BRANCH_PROTECTION_RUNBOOK.md#verification-checklist).
+- [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see
+      [`AGENT_INFRA.md`](../../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60 s monitor
+      is still the finer-grained human path (quota; ask before creating), planned under #2505.
 
-### Phase 2: Production
+### Still open
 
-- [ ] Create Supabase production project, apply migrations
-- [ ] Create Render production service (`main` branch, **Auto-Deploy: No**), add env vars
-- [ ] Add production values to Infisical `prod` (web and landing read them at build time; nothing goes into Vercel's env settings, [`vercel.md` §4.2](vercel.md#42-environment-variables-per-project))
-- [ ] Assign production domains in Vercel
-- [ ] Configure DNS records for production domains
-- [ ] Set up Stripe live mode (after business verification)
-- [ ] Enable **Required reviewers** on the `production` GitHub Environment
-- [ ] Run **Deploy production** with a green `main` SHA (start with the dry-run box, `dry_run_only`, checked)
-- [ ] Verify all production sites deploy
-- [ ] Set up Sentry for error tracking (API + web)
-- [ ] Build production mobile app with EAS
-
-### Phase 3: Ongoing
-
-- [ ] Retire the staging Render deploy hook and turn staging auto-deploy off ([#2679](https://github.com/pdcarlson/Frapp/issues/2679)). Nothing stores a hook after #2505: both API services deploy by commit through the Render API ([`render.md` § 5.7](render.md#57-deploy-hooks-for-github-actions))
-- [ ] Verify CI workflow runs on PRs
-- [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see [`AGENT_INFRA.md`](../../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60 s monitor is still the finer-grained human path (quota; ask before creating), planned under #2505. GitHub cron starts after this file is on `main`
+- [ ] Stripe live mode, after business verification
+      ([`integrations.md` § 7.2](integrations.md#72-live-mode-production)). The beta chapter
+      doesn't collect dues by card, and mobile production carries no Stripe key
+      ([`mobile.md` § 6.3](mobile.md#63-environment-configuration)).
+- [ ] The first production EAS build ([`mobile.md`](mobile.md),
+      [#2526](https://github.com/pdcarlson/Frapp/issues/2526),
+      [#938](https://github.com/pdcarlson/Frapp/issues/938)).
+- [ ] Retire the staging Render deploy hook
+      ([#2679](https://github.com/pdcarlson/Frapp/issues/2679)). Staging's auto-deploy is already
+      off; what's left is regenerating the hook and deleting its stored copies. Nothing stores a
+      hook after #2505 ([`render.md` § 5.7](render.md#57-deploy-hooks-for-github-actions)).
 
 ---
 
