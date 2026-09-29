@@ -23,8 +23,9 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   [Deploy verification](ci-cd.md#deploy-verification) has the details.
 - ⚠️ Render-side auto-deploy **must be off** on staging too (`staging-conformance.yml` asserts
   it): it builds every push before CI and before the migration, and its deploy can cancel the one
-  `deploy-staging.yml` creates. It was still **on** when read on 2026-09-25; turning it off is owner
-  step [#2679](https://github.com/pdcarlson/Frapp/issues/2679).
+  `deploy-staging.yml` creates. It was still **on** when read on 2026-09-25 and **off** when read on
+  2026-09-29 (Render API); what's left of [#2679](https://github.com/pdcarlson/Frapp/issues/2679)
+  is retiring the staging deploy hook.
 - ✅ Production API deployment does **not** use auto-deploy either. `deploy-production.yml` calls
   the Render API with an explicit `commitId`, so what ships is the commit a human named.
   This requires `frapp-api-prod` to have auto-deploy **off** and to track `main`;
