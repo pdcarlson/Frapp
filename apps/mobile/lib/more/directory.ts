@@ -56,3 +56,17 @@ export function selectDirectoryRows(data: unknown): DirectoryRow[] {
     .filter((row): row is DirectoryRow => !!row)
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
+
+/**
+ * The Actives tab's half of `GET /v1/members`: everyone the server did not
+ * flag `is_alumni` (#2484). The endpoint returns the whole chapter because its
+ * other consumers need the whole chapter, so the split is made here, on the
+ * flag the server resolves exactly as it resolves `GET /v1/alumni`, which is
+ * what keeps the two chips from counting one member twice.
+ *
+ * A row without the flag (an API older than the field) counts as active, which
+ * is the unfiltered list this screen showed before the split.
+ */
+export function selectActives(data: unknown): Record<string, unknown>[] {
+  return records(data).filter((row) => row.is_alumni !== true);
+}

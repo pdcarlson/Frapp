@@ -17,7 +17,11 @@ import {
 } from "@/components/state-block";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
-import { type DirectoryRow, selectDirectoryRows } from "@/lib/more/directory";
+import {
+  type DirectoryRow,
+  selectActives,
+  selectDirectoryRows,
+} from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -90,8 +94,8 @@ export default function DirectoryScreen() {
   const deferredAlumniFilters = useDeferredValue(alumniFilters);
   const hasAlumniFilters = Boolean(
     deferredAlumniFilters.graduation_year ||
-      deferredAlumniFilters.city ||
-      deferredAlumniFilters.company,
+    deferredAlumniFilters.city ||
+    deferredAlumniFilters.company,
   );
 
   const membersQuery = useMembers();
@@ -105,17 +109,24 @@ export default function DirectoryScreen() {
       ? membersQuery
       : alumniQuery;
 
-  const rows = useMemo(
-    () => selectDirectoryRows(activeQuery.data),
-    [activeQuery.data],
+  // `GET /v1/members` is the whole chapter; the Actives tab is the part of it
+  // that isn't on the Alumni tab (#2484). Search stays directory-wide: it hides
+  // the chips and looks across both lists.
+  const actives = useMemo(
+    () => selectActives(membersQuery.data),
+    [membersQuery.data],
   );
+  const listData =
+    !isSearching && tab === "actives" ? actives : activeQuery.data;
+
+  const rows = useMemo(() => selectDirectoryRows(listData), [listData]);
   // Counted, not selected: `selectDirectoryRows` maps and sorts, and sorting to
   // read a `.length` would run a full `localeCompare` sort over both lists on
   // every keystroke. `null` until the query succeeds, so a populated tab never
   // advertises "· 0" while it loads.
   const activesCount = useMemo(
-    () => (membersQuery.isSuccess ? countMembers(membersQuery.data) : null),
-    [membersQuery.isSuccess, membersQuery.data],
+    () => (membersQuery.isSuccess ? countMembers(actives) : null),
+    [membersQuery.isSuccess, actives],
   );
   // `null` (no count shown, per the comment above) while filters are active:
   // the chip's job is reporting the chapter's total alumni, and once a filter
@@ -234,7 +245,9 @@ export default function DirectoryScreen() {
         data={rows}
         keyExtractor={(row) => row.userId}
         ListHeaderComponent={header}
-        ListEmptyComponent={<View style={styles.emptyWrap}>{renderBody()}</View>}
+        ListEmptyComponent={
+          <View style={styles.emptyWrap}>{renderBody()}</View>
+        }
         renderItem={({ item }) => (
           <MemberRow
             row={item}

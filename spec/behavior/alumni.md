@@ -27,6 +27,7 @@ If a chapter has no Alumni role, these checks fail open to the caller's normal p
 ## Alumni Directory
 
 - A separate, searchable directory of alumni members.
+- **Actives and alumni don't overlap.** The directory's Actives list and count are the chapter minus its alumni, and its Alumni list is `GET /v1/alumni`. A member is an alumnus when they hold the Alumni role, resolved by `system_key` as under Role identity above. Every member profile carries that answer as `is_alumni`, computed by the same lookup that builds `GET /v1/alumni`, so the two lists can't both count one member (#2484). A chapter whose Alumni role has no key has no alumni on either count. `GET /v1/members` itself still returns everyone: its other readers (attendance, tasks, points, roles) need the whole chapter. Name search is not split: on web and mobile it spans both lists, since it is the directory's only name, email and custom-field search.
 - In addition to the standard profile fields (name, role, join date), alumni can self-report: graduation year, current city, and current company/organization.
 - The alumni directory is visible to all chapter members (active and alumni).
 - Search/filter by graduation year, city, or company.

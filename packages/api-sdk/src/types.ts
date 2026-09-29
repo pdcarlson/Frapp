@@ -3474,6 +3474,8 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /** @description Whether the member holds the chapter's Alumni system role, resolved the same way GET /alumni resolves it — a directory splitting actives from alumni filters on this rather than on role ids. */
+            is_alumni: boolean;
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
             custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
         };

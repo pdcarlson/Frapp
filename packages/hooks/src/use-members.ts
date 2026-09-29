@@ -229,6 +229,13 @@ export function useUpdateMemberRoles() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
+      // Granting or revoking the Alumni role moves a member between the
+      // directory's two tabs (#2484): Actives filters `GET /v1/members` on
+      // `is_alumni`, Alumni is `GET /v1/alumni`. Refetching only the first
+      // would drop a newly graduated member from Actives while the cached
+      // Alumni list still lacks them, so for up to a minute they'd be on
+      // neither tab.
+      queryClient.invalidateQueries({ queryKey: ["alumni", chapterId] });
     },
   });
 }
@@ -247,6 +254,8 @@ export function useRemoveMember() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
+      // A removed alumnus is gone from the Alumni tab too.
+      queryClient.invalidateQueries({ queryKey: ["alumni", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["chapters", chapterId] });
     },
   });
