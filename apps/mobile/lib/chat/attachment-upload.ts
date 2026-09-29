@@ -172,25 +172,81 @@ export async function byteSizeOf(
   return info.exists && typeof info.size === "number" ? info.size : 0;
 }
 
-async function pickAndUploadPhotoUnguarded(
-  channelId: string,
-  requestUploadUrl: RequestUploadUrl,
-): Promise<AttachmentPickResult> {
+/** What a pick-and-upload needs from its caller, beyond the bytes. */
+export interface ImageUploadOptions {
+  /** The allowlist the pick is gated on and transcoded towards. */
+  kind: UploadKind;
+  /** Mints the signed URL; the caller holds the mutation and its route. */
+  requestUploadUrl: (body: {
+    filename: string;
+    content_type: string;
+    size_bytes: number;
+  }) => Promise<unknown>;
+  /** Square-crop in the picker. Re-encodes, so a GIF keeps one frame. */
+  cropSquare?: boolean;
+  /** The sentences a refusal reads as, in the caller's own words. */
+  copy: {
+    /** Library access was refused and the prompt can be shown again. */
+    askAccess: string;
+    /** Refused for good: only the Settings app can grant it now. */
+    settingsAccess: string;
+    type: string;
+    size: string;
+  };
+}
+
+/** The upload finished; the object is in the bucket at `storagePath`. */
+export interface UploadedImage {
+  storagePath: string;
+  filename: string;
+  contentType: string;
+  byteSize: number;
+}
+
+export type ImageUploadResult =
+  | { status: "cancelled" }
+  | { status: "uploaded"; image: UploadedImage }
+  | { status: "refused"; reason: string };
+
+export const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.";
+
+/**
+ * The sentence to show for a failed request.
+ *
+ * `@repo/hooks` mutations throw the API's error body, a plain object whose
+ * `message` the API wrote for a member to read (a 400's reason). A thrown
+ * `Error` is something else: a native networking failure or a parse error,
+ * whose text is platform jargon, so it reads as the generic sentence.
+ */
+export function uploadFailureReason(err: unknown): string {
+  if (err && typeof err === "object" && !(err instanceof Error)) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message.length > 0) return message;
+    if (Array.isArray(message) && typeof message[0] === "string") {
+      return message[0];
+    }
+  }
+  return UPLOAD_FAILED;
+}
+
+async function pickAndUploadImageUnguarded(
+  options: ImageUploadOptions,
+): Promise<ImageUploadResult> {
+  const { kind, copy } = options;
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
     return {
       status: "refused",
-      reason: permission.canAskAgain
-        ? "Frapp needs access to your photos to send one."
-        : "Allow photo access for Frapp in Settings to send a photo.",
+      reason: permission.canAskAgain ? copy.askAccess : copy.settingsAccess,
     };
   }
 
   const picked = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
-    // No `allowsEditing`: it forces a crop UI the drawing does not call for,
-    // and on Android it silently re-encodes, which would defeat the
-    // conditional transcode above.
+    // Off for chat: the crop UI is not drawn there, and on Android it silently
+    // re-encodes, which would defeat the conditional transcode above. On for a
+    // profile photo, which every surface draws in a circle.
+    ...(options.cropSquare ? { allowsEditing: true, aspect: [1, 1] } : {}),
     allowsMultipleSelection: false,
   });
   if (picked.canceled) return { status: "cancelled" };
@@ -200,9 +256,9 @@ async function pickAndUploadPhotoUnguarded(
 
   let uploadable: Awaited<ReturnType<typeof resolveUploadable>>;
   try {
-    uploadable = await resolveUploadable(asset);
+    uploadable = await resolveUploadable(asset, kind);
   } catch {
-    return { status: "refused", reason: TYPE_REFUSAL };
+    return { status: "refused", reason: copy.type };
   }
 
   // `asset.fileSize` describes what the member picked. If `resolveUploadable`
@@ -217,7 +273,7 @@ async function pickAndUploadPhotoUnguarded(
 
   // Gate before minting, so an oversized or wrong-typed pick costs no request
   // and reads as a sentence rather than a raw storage error.
-  const inspected = inspectUploadFile("document", {
+  const inspected = inspectUploadFile(kind, {
     name: uploadable.filename,
     type: uploadable.contentType,
     size,
@@ -225,20 +281,17 @@ async function pickAndUploadPhotoUnguarded(
   if (!inspected.ok) {
     return {
       status: "refused",
-      reason: inspected.reason === "size" ? SIZE_REFUSAL : TYPE_REFUSAL,
+      reason: inspected.reason === "size" ? copy.size : copy.type,
     };
   }
 
   try {
-    const ticket = await requestUploadUrl({
-      id: channelId,
-      body: {
-        filename: uploadable.filename,
-        content_type: inspected.contentType,
-        // Declared so the API's own 25 MB check runs and answers with a
-        // readable 400 instead of the bucket's raw one.
-        size_bytes: size,
-      },
+    const ticket = await options.requestUploadUrl({
+      filename: uploadable.filename,
+      content_type: inspected.contentType,
+      // Declared so the API's own 25 MB check runs and answers with a
+      // readable 400 instead of the bucket's raw one.
+      size_bytes: size,
     });
     const { signedUrl, storagePath } = readSignedUpload(ticket);
 
@@ -252,15 +305,12 @@ async function pickAndUploadPhotoUnguarded(
       headers: { "Content-Type": inspected.contentType },
     });
     if (response.status < 200 || response.status >= 300) {
-      return {
-        status: "refused",
-        reason: "Couldn't upload that photo. Try again in a moment.",
-      };
+      return { status: "refused", reason: UPLOAD_FAILED };
     }
 
     return {
-      status: "attached",
-      attachment: {
+      status: "uploaded",
+      image: {
         storagePath,
         filename: uploadable.filename,
         contentType: inspected.contentType,
@@ -268,41 +318,54 @@ async function pickAndUploadPhotoUnguarded(
       },
     };
   } catch (err) {
-    return {
-      status: "refused",
-      reason:
-        err instanceof Error && err.message.length > 0
-          ? err.message
-          : "Couldn't upload that photo. Try again in a moment.",
-    };
+    return { status: "refused", reason: uploadFailureReason(err) };
   }
 }
 
 /**
- * The contract above says this never throws, so enforce that in one place.
+ * Pick one photo from the library and PUT it to a freshly minted signed URL:
+ * the pipeline chat attachments ({@link pickAndUploadPhoto}) and the profile
+ * photo (`lib/more/profile-photo.ts`) share, so a fix to either reaches both.
  *
+ * The contract is that this never throws, so it is enforced in one place.
  * Three awaits sit outside the inner try blocks and can reject for reasons a
  * member can actually hit: `requestMediaLibraryPermissionsAsync` and
  * `launchImageLibraryAsync` (Android rejects a second launch while one is
  * already open), and `getInfoAsync` on an asset the picker could not
  * materialize — a limited-permission iOS library pick, or a provider URI.
- *
  * Guarding each one individually is the version of this that rots: the next
- * await added above inherits nothing. A rejection escaping here would reach the
- * screen's fire-and-forget IIFE and become an unhandled rejection, which on
- * this platform means no chip, no hint, and a spinner that simply stops — the
- * attach button appearing to do nothing at all.
+ * await added above inherits nothing. A rejection escaping here would reach a
+ * screen's fire-and-forget handler and become an unhandled rejection, which on
+ * this platform means no hint and a spinner that simply stops.
  */
-export async function pickAndUploadPhoto(
-  channelId: string,
-  requestUploadUrl: RequestUploadUrl,
-): Promise<AttachmentPickResult> {
+export async function pickAndUploadImage(
+  options: ImageUploadOptions,
+): Promise<ImageUploadResult> {
   try {
-    return await pickAndUploadPhotoUnguarded(channelId, requestUploadUrl);
+    return await pickAndUploadImageUnguarded(options);
   } catch {
     return {
       status: "refused",
       reason: "Couldn't add that photo. Try again in a moment.",
     };
   }
+}
+
+/** Pick a photo and put it in the bucket, returning the claim the next send carries. */
+export async function pickAndUploadPhoto(
+  channelId: string,
+  requestUploadUrl: RequestUploadUrl,
+): Promise<AttachmentPickResult> {
+  const result = await pickAndUploadImage({
+    kind: "document",
+    requestUploadUrl: (body) => requestUploadUrl({ id: channelId, body }),
+    copy: {
+      askAccess: "Frapp needs access to your photos to send one.",
+      settingsAccess: "Allow photo access for Frapp in Settings to send a photo.",
+      type: TYPE_REFUSAL,
+      size: SIZE_REFUSAL,
+    },
+  });
+  if (result.status !== "uploaded") return result;
+  return { status: "attached", attachment: result.image };
 }

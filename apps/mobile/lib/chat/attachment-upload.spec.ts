@@ -6,6 +6,7 @@ import {
   pickAndUploadPhoto,
   resolveUploadable,
   safeBasename,
+  uploadFailureReason,
 } from "./attachment-upload";
 
 /**
@@ -368,5 +369,47 @@ describe("pickAndUploadPhoto", () => {
 
     expect(result.status).toBe("refused");
     expect(fs.uploadAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("uploadFailureReason", () => {
+  it("reads the API's message off a thrown error body", () => {
+    expect(uploadFailureReason({ statusCode: 400, message: "Too big" })).toBe(
+      "Too big",
+    );
+    // class-validator answers with a list.
+    expect(uploadFailureReason({ message: ["filename must be a string"] })).toBe(
+      "filename must be a string",
+    );
+  });
+
+  it("does not show a thrown Error's text, which is platform jargon", () => {
+    expect(uploadFailureReason(new Error("NSURLErrorDomain -1009"))).toBe(
+      "Couldn't upload that photo. Try again in a moment.",
+    );
+    expect(uploadFailureReason(undefined)).toBe(
+      "Couldn't upload that photo. Try again in a moment.",
+    );
+  });
+
+  it("reaches the chat composer too: a refused mint reads as the API's reason", async () => {
+    vi.mocked(ImagePicker).requestMediaLibraryPermissionsAsync.mockResolvedValue({
+      granted: true,
+      canAskAgain: true,
+    } as never);
+    vi.mocked(ImagePicker).launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: "file:///p.png", fileName: "p.png", mimeType: "image/png" }],
+    } as never);
+
+    const result = await pickAndUploadPhoto(
+      "channel-1",
+      vi.fn().mockRejectedValue({ message: "You can't post in this channel" }),
+    );
+
+    expect(result).toEqual({
+      status: "refused",
+      reason: "You can't post in this channel",
+    });
   });
 });

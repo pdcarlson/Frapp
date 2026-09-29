@@ -51,6 +51,8 @@ describe('ProfilePhotoUrlService', () => {
     ['a dot segment', 'chapters/ch-1/profiles/user-1/..'],
     ['another bucket layout', 'chapters/ch-1/documents/d/a.pdf'],
     ['a plain-http URL', 'http://example.com/a.jpg'],
+    // No code ever wrote a URL here; only the old free-text PATCH could have.
+    ['an https URL', 'https://evil.example/pixel.gif?u=user-1'],
     ['a javascript: URL', 'javascript:alert(1)'],
   ])('serves null for %s and signs nothing (#2519)', async (_label, value) => {
     const [result] = await service.signRows(
@@ -59,17 +61,6 @@ describe('ProfilePhotoUrlService', () => {
     );
 
     expect(result.avatar_url).toBeNull();
-    expect(storage.getSignedDownloadUrls).not.toHaveBeenCalled();
-  });
-
-  it('passes an https URL through unsigned', async () => {
-    const url = 'https://lh3.googleusercontent.com/a/photo';
-    const [result] = await service.signRows(
-      [row('user-1', url)],
-      (r) => r.user_id,
-    );
-
-    expect(result.avatar_url).toBe(url);
     expect(storage.getSignedDownloadUrls).not.toHaveBeenCalled();
   });
 
@@ -144,5 +135,35 @@ describe('ProfilePhotoUrlService', () => {
     );
 
     expect(result.avatar_url).toBeNull();
+  });
+
+  it('never evicts a URL the same call is about to serve, and keeps hits fresh', async () => {
+    // Fill the cache to its bound; `first` is the oldest entry.
+    const first = 'chapters/ch-1/profiles/user-0/p.jpg';
+    const rows = Array.from({ length: 5000 }, (_, i) =>
+      row(`user-${i}`, `chapters/ch-1/profiles/user-${i}/p.jpg`),
+    );
+    await service.signRows(rows, (r) => r.user_id);
+    storage.getSignedDownloadUrls.mockClear();
+
+    // A hit on the oldest entry plus a miss that pushes the cache past it.
+    const [hit, miss] = await service.signRows(
+      [
+        row('user-0', first),
+        row('user-new', 'chapters/ch-1/profiles/user-new/p.jpg'),
+      ],
+      (r) => r.user_id,
+    );
+    expect(hit.avatar_url).toMatch(/^signed:/);
+    expect(miss.avatar_url).toMatch(/^signed:/);
+
+    // The hit moved to the most recent end, so it survived the trim and is
+    // still served from the cache.
+    const [again] = await service.signRows(
+      [row('user-0', first)],
+      (r) => r.user_id,
+    );
+    expect(again.avatar_url).toBe(hit.avatar_url);
+    expect(storage.getSignedDownloadUrls).toHaveBeenCalledTimes(1);
   });
 });

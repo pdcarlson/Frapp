@@ -241,7 +241,7 @@ describe('MemberService', () => {
         {
           id: 'user-2',
           display_name: 'Dana Lowe',
-          avatar_url: 'https://example.test/a.png',
+          avatar_url: 'chapters/chapter-1/profiles/user-2/a.png',
         },
       ]);
 
@@ -252,7 +252,7 @@ describe('MemberService', () => {
         {
           user_id: 'user-2',
           display_name: 'Dana Lowe',
-          avatar_url: 'https://example.test/a.png',
+          avatar_url: 'signed:chapters/chapter-1/profiles/user-2/a.png',
         },
       ]);
     });
@@ -1535,6 +1535,77 @@ describe('MemberService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('member-1');
+    });
+  });
+
+  // #732: every public member read hands clients a signed URL, never the bare
+  // private-bucket path, which renders nothing. One case per read, so dropping
+  // the signing from any one of them fails here.
+  describe('every member read signs the stored photo path', () => {
+    const PHOTO = 'chapters/chapter-1/profiles/user-1/p.jpg';
+    const member = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'chapter-1',
+      role_ids: ['role-alumni'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    const user = {
+      id: 'user-1',
+      supabase_auth_id: 'auth-1',
+      email: 'ann@example.com',
+      display_name: 'Ann Lee',
+      avatar_url: PHOTO,
+      bio: null,
+      graduation_year: 2020,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+
+    beforeEach(() => {
+      mockRepo.findByChapter.mockResolvedValue([member]);
+      mockUserRepo.findByIds.mockResolvedValue([user]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Ann Lee', avatar_url: PHOTO },
+      ]);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
+        id: 'role-alumni',
+        chapter_id: 'chapter-1',
+        name: 'Alumni',
+        permissions: [],
+        is_system: true,
+        display_order: 5,
+        color: null,
+        created_at: '2024-01-01',
+      });
+    });
+
+    it.each([
+      [
+        'the directory (findByChapter)',
+        () => service.findByChapter('chapter-1'),
+      ],
+      [
+        'the activity feed roster (findRosterWithJoinDates)',
+        () => service.findRosterWithJoinDates('chapter-1'),
+      ],
+      [
+        'search (searchByChapterAndName)',
+        () => service.searchByChapterAndName('chapter-1', 'ann', 'viewer-1'),
+      ],
+      [
+        'the alumni directory (findAlumniByChapter)',
+        () => service.findAlumniByChapter('chapter-1'),
+      ],
+    ])('%s', async (_label, read) => {
+      const rows = await read();
+
+      expect(rows.map((row) => row.avatar_url)).toEqual([`signed:${PHOTO}`]);
     });
   });
 

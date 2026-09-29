@@ -43,6 +43,22 @@ export function parseProfilePhotoPath(
 }
 
 /**
+ * `value` when it is a profile-photo path in `userId`'s own folder, else null.
+ *
+ * The one ownership rule for a stored `users.avatar_url`: what the read path
+ * signs (`ProfilePhotoUrlService`) and what a photo change may delete
+ * (`UserService`). Any other value, a URL included, could only have been
+ * written through the free-text `PATCH /v1/users/me` that #2519 closed.
+ */
+export function ownProfilePhotoPath(
+  value: string | null | undefined,
+  userId: string,
+): string | null {
+  if (!value) return null;
+  return parseProfilePhotoPath(value)?.userId === userId ? value : null;
+}
+
+/**
  * Generated-report storage layout, shared by the export path
  * (ReportExportService) and the two purges that reap it — the scheduled
  * retention sweep and the account-deletion sweep (ReportRetentionService).

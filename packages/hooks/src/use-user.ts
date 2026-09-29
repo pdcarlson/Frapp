@@ -59,15 +59,24 @@ export function useUpdateUser() {
 }
 
 /**
- * Invalidate everything that serves the viewer's photo: their own profile, and
- * every `["members", …]` read (roster, directory, detail, alumni), where their
- * row carries it too.
+ * Every query key whose rows carry the viewer's signed photo: their own
+ * profile, every `["members", …]` read (roster, directory, detail, search),
+ * the alumni directory, and the activity feed's actors. The server deletes the
+ * replaced object, so a key left out here keeps rendering a URL to nothing.
  */
+export const PHOTO_QUERY_KEYS = [
+  ["user", "me"],
+  ["members"],
+  ["alumni"],
+  ["activity-feed"],
+] as const;
+
 function invalidatePhotoReads(queryClient: ReturnType<typeof useQueryClient>) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["user", "me"] }),
-    queryClient.invalidateQueries({ queryKey: ["members"] }),
-  ]);
+  return Promise.all(
+    PHOTO_QUERY_KEYS.map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey }),
+    ),
+  );
 }
 
 /**

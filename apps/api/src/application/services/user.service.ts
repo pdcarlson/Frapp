@@ -23,10 +23,18 @@ import {
 import { User } from '#domain/entities/user.entity';
 import {
   PROFILES_BUCKET,
+  ownProfilePhotoPath,
   parseProfilePhotoPath,
   profileFolderPrefix,
 } from '#domain/constants/storage';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
+
+/**
+ * How old an unconfirmed upload in a member's folder must be before a photo
+ * change deletes it. A day is far past any upload a device is still about to
+ * confirm, so the delete can never race one.
+ */
+const STRAY_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class UserService {
@@ -46,15 +54,7 @@ export class UserService {
   }
 
   async update(id: string, data: Partial<User>): Promise<User> {
-    // Tombstone guard: during account deletion there is a short window where
-    // the auth account (and therefore the caller's token) still works after
-    // the PII scrub. Without this check a profile edit landing in that window
-    // would write PII back onto the anonymized row.
-    const existing = await this.userRepo.findById(id);
-    if (!existing) throw new NotFoundException('User not found');
-    if (existing.deleted_at) {
-      throw new GoneException(ACCOUNT_DELETED_MESSAGE);
-    }
+    await this.requireLiveUser(id);
     return this.userRepo.update(id, data);
   }
 
@@ -116,12 +116,22 @@ export class UserService {
    * The path must sit directly in the caller's own folder for the chapter the
    * request is scoped to, which is where `requestAvatarUploadUrl` puts it, and
    * the object must exist: a confirm with nothing behind it would otherwise
-   * store a photo that renders broken on every surface. Older objects in that
-   * folder (the replaced photo, uploads never confirmed) and the previous photo
-   * in another chapter's folder are then deleted, best-effort. The member's
-   * photo has already changed by then, and whatever a failed delete leaves is
-   * still under the member's own folders, which a chapter departure and an
-   * account deletion purge in full (#711).
+   * store a photo that renders broken on every surface.
+   *
+   * Then two kinds of object are deleted, best-effort:
+   *
+   * - the photo this one replaced, wherever it lives;
+   * - uploads in this folder older than {@link STRAY_UPLOAD_AGE_MS} that were
+   *   never confirmed.
+   *
+   * A younger unconfirmed upload is left alone, even though it is clutter,
+   * because it can be another device's upload that is about to be confirmed.
+   * Deleting it would fail that confirm, and when two confirms race, each
+   * deleting the other's object would leave the photo pointing at nothing.
+   *
+   * The member's photo has already changed by the time the deletes run.
+   * Whatever a failed delete leaves is still under the member's own folders,
+   * which a chapter departure and an account deletion purge in full (#711).
    */
   async confirmAvatarUpload(
     chapterId: string,
@@ -137,11 +147,11 @@ export class UserService {
     }
 
     const existing = await this.requireLiveUser(userId);
-    const stored = await this.storageProvider.listFiles(
+    const stored = await this.storageProvider.listObjects(
       PROFILES_BUCKET,
       folder,
     );
-    if (!stored.includes(storagePath)) {
+    if (!stored.some((object) => object.path === storagePath)) {
       throw new BadRequestException(
         'No uploaded photo at storage_path. Upload it before confirming.',
       );
@@ -151,12 +161,20 @@ export class UserService {
       avatar_url: storagePath,
     });
 
-    const stale = stored.filter((path) => path !== storagePath);
-    const previous = this.ownPhotoPath(existing);
-    if (previous && previous !== storagePath && !stale.includes(previous)) {
-      stale.push(previous);
-    }
-    await this.deletePhotosQuietly(userId, stale);
+    const staleBefore = Date.now() - STRAY_UPLOAD_AGE_MS;
+    const doomed = new Set(
+      stored
+        .filter(
+          (object) =>
+            object.path !== storagePath &&
+            object.createdAt !== null &&
+            object.createdAt.getTime() < staleBefore,
+        )
+        .map((object) => object.path),
+    );
+    const previous = ownProfilePhotoPath(existing.avatar_url, userId);
+    if (previous && previous !== storagePath) doomed.add(previous);
+    await this.deletePhotosQuietly(userId, [...doomed]);
 
     return this.withSignedPhoto(user);
   }
@@ -167,12 +185,19 @@ export class UserService {
     if (!existing.avatar_url) return this.withSignedPhoto(existing);
 
     const user = await this.userRepo.update(userId, { avatar_url: null });
-    const previous = this.ownPhotoPath(existing);
+    const previous = ownProfilePhotoPath(existing.avatar_url, userId);
     if (previous) await this.deletePhotosQuietly(userId, [previous]);
     return this.withSignedPhoto(user);
   }
 
-  /** The user row, refusing a missing or tombstoned account like `update`. */
+  /**
+   * The user row, refusing a missing or tombstoned account.
+   *
+   * Tombstone guard: during account deletion there is a short window where
+   * the auth account (and therefore the caller's token) still works after the
+   * PII scrub. Without this check a profile edit landing in that window would
+   * write PII back onto the anonymized row.
+   */
   private async requireLiveUser(id: string): Promise<User> {
     const existing = await this.userRepo.findById(id);
     if (!existing) throw new NotFoundException('User not found');
@@ -180,13 +205,6 @@ export class UserService {
       throw new GoneException(ACCOUNT_DELETED_MESSAGE);
     }
     return existing;
-  }
-
-  /** The stored photo path when it is one of this user's own objects. */
-  private ownPhotoPath(user: User): string | null {
-    if (!user.avatar_url) return null;
-    const parsed = parseProfilePhotoPath(user.avatar_url);
-    return parsed?.userId === user.id ? user.avatar_url : null;
   }
 
   private async deletePhotosQuietly(

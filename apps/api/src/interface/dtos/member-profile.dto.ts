@@ -90,10 +90,9 @@ export class MemberRosterEntryDto {
   display_name: string;
 
   /**
-   * Served but not yet read by either client: both chat surfaces draw initials of
-   * the resolved name, which is what `components.md` specifies. Kept because it
-   * is part of a display identity and an image avatar would otherwise need a
-   * contract change — but it is the one field here with no consumer today.
+   * The member's photo as a signed URL (`ProfilePhotoUrlService`), or null for
+   * initials. Web chat draws it beside each message through
+   * `useMemberDisplayNames().avatarFor` (#732); mobile does not yet (#2884).
    */
   @ApiProperty({ type: String, nullable: true })
   avatar_url: string | null;

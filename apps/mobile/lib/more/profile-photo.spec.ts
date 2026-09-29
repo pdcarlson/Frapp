@@ -155,4 +155,33 @@ describe("pickAndSetProfilePhoto", () => {
 
     await expect(run()).resolves.toMatchObject({ status: "refused" });
   });
+
+  it("shows the API's own reason when the confirm is refused", async () => {
+    granted();
+    picked({ uri: "file:///me.png", fileName: "me.png", mimeType: "image/png" });
+    // What a `@repo/hooks` mutation throws: the API's error body, not an Error.
+    confirm.mockRejectedValue({
+      statusCode: 400,
+      message: "storage_path must be a photo in your own profile folder",
+    });
+
+    await expect(run()).resolves.toEqual({
+      status: "refused",
+      reason: "storage_path must be a photo in your own profile folder",
+    });
+  });
+
+  it("keeps platform jargon out: a native failure reads as the generic sentence", async () => {
+    granted();
+    picked({ uri: "file:///me.png", fileName: "me.png", mimeType: "image/png" });
+    fs.uploadAsync.mockRejectedValue(
+      new Error("The operation couldn't be completed. (NSURLErrorDomain error -1009.)"),
+    );
+
+    await expect(run()).resolves.toEqual({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+    });
+    expect(confirm).not.toHaveBeenCalled();
+  });
 });

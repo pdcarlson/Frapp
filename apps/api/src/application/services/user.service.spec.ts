@@ -257,6 +257,15 @@ describe('UserService', () => {
   describe('profile photo confirm, remove and read', () => {
     const FOLDER = 'chapters/ch-1/profiles/user-1';
     const NEW_PATH = `${FOLDER}/new.jpg`;
+    const HOUR = 60 * 60 * 1000;
+
+    /** Objects as `listObjects` returns them, each `hoursOld` old. */
+    function stored(...entries: [string, number][]) {
+      return entries.map(([path, hoursOld]) => ({
+        path,
+        createdAt: new Date(Date.now() - hoursOld * HOUR),
+      }));
+    }
 
     function userWith(avatar_url: string | null, deleted_at?: string) {
       return {
@@ -286,13 +295,15 @@ describe('UserService', () => {
       );
     });
 
-    it('stores the path, deletes the replaced photo and stray uploads, and returns it signed', async () => {
+    it('stores the path, deletes the replaced photo and day-old strays, and returns it signed', async () => {
       mockRepo.findById.mockResolvedValue(userWith(`${FOLDER}/old.jpg`));
-      mockStorageProvider.listFiles.mockResolvedValue([
-        `${FOLDER}/old.jpg`,
-        `${FOLDER}/never-confirmed.png`,
-        NEW_PATH,
-      ]);
+      mockStorageProvider.listObjects.mockResolvedValue(
+        stored(
+          [`${FOLDER}/old.jpg`, 1],
+          [`${FOLDER}/never-confirmed.png`, 30],
+          [NEW_PATH, 0],
+        ),
+      );
 
       const result = await service.confirmAvatarUpload(
         'ch-1',
@@ -304,16 +315,45 @@ describe('UserService', () => {
         avatar_url: NEW_PATH,
       });
       expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('profiles', [
-        `${FOLDER}/old.jpg`,
         `${FOLDER}/never-confirmed.png`,
+        `${FOLDER}/old.jpg`,
       ]);
       expect(result.avatar_url).toBe(`signed:${NEW_PATH}`);
+    });
+
+    it("leaves another device's recent, unconfirmed upload alone", async () => {
+      // Two confirms racing used to delete each other's objects: each listed
+      // the folder, then deleted everything but its own path.
+      const phones = `${FOLDER}/phone.jpg`;
+      mockRepo.findById.mockResolvedValue(userWith(null));
+      mockStorageProvider.listObjects.mockResolvedValue(
+        stored([phones, 0.1], [NEW_PATH, 0]),
+      );
+
+      await service.confirmAvatarUpload('ch-1', 'user-1', NEW_PATH);
+
+      const deleted = mockStorageProvider.deleteFiles.mock.calls.flatMap(
+        ([, paths]) => paths,
+      );
+      expect(deleted).not.toContain(phones);
+    });
+
+    it('never deletes an object whose age storage did not report', async () => {
+      mockRepo.findById.mockResolvedValue(userWith(null));
+      mockStorageProvider.listObjects.mockResolvedValue([
+        { path: `${FOLDER}/unknown-age.jpg`, createdAt: null },
+        { path: NEW_PATH, createdAt: new Date() },
+      ]);
+
+      await service.confirmAvatarUpload('ch-1', 'user-1', NEW_PATH);
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
     });
 
     it("also deletes the previous photo when it sits in another chapter's folder", async () => {
       const elsewhere = 'chapters/ch-2/profiles/user-1/old.jpg';
       mockRepo.findById.mockResolvedValue(userWith(elsewhere));
-      mockStorageProvider.listFiles.mockResolvedValue([NEW_PATH]);
+      mockStorageProvider.listObjects.mockResolvedValue(stored([NEW_PATH, 0]));
 
       await service.confirmAvatarUpload('ch-1', 'user-1', NEW_PATH);
 
@@ -340,7 +380,9 @@ describe('UserService', () => {
 
     it('refuses to confirm a path with nothing uploaded behind it', async () => {
       mockRepo.findById.mockResolvedValue(userWith(`${FOLDER}/old.jpg`));
-      mockStorageProvider.listFiles.mockResolvedValue([`${FOLDER}/old.jpg`]);
+      mockStorageProvider.listObjects.mockResolvedValue(
+        stored([`${FOLDER}/old.jpg`, 1]),
+      );
 
       await expect(
         service.confirmAvatarUpload('ch-1', 'user-1', NEW_PATH),
@@ -365,10 +407,9 @@ describe('UserService', () => {
 
     it('keeps the new photo when deleting the old one fails', async () => {
       mockRepo.findById.mockResolvedValue(userWith(`${FOLDER}/old.jpg`));
-      mockStorageProvider.listFiles.mockResolvedValue([
-        `${FOLDER}/old.jpg`,
-        NEW_PATH,
-      ]);
+      mockStorageProvider.listObjects.mockResolvedValue(
+        stored([`${FOLDER}/old.jpg`, 1], [NEW_PATH, 0]),
+      );
       mockStorageProvider.deleteFiles.mockRejectedValue(new Error('down'));
 
       const result = await service.confirmAvatarUpload(

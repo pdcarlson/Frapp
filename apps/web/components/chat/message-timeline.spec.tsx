@@ -77,6 +77,19 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
 });
 
+// Radix's `AvatarImage` mounts its `<img>` only after the browser loads it,
+// which jsdom never does, so the photo a row was handed would be invisible.
+// Stood in by a marker carrying the `src`, beside the real fallback.
+vi.mock("@/components/ui/avatar", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    AvatarImage: ({ src }: { src?: string }) => (
+      <span data-testid="avatar-photo" data-src={src} />
+    ),
+  };
+});
+
 const { MessageTimeline } = await import("./message-timeline");
 type MessageTimelineHandle = import("./message-timeline").MessageTimelineHandle;
 
@@ -1164,5 +1177,25 @@ describe("MessageTimeline older history (#1571)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MessageTimeline — member photos (#732)", () => {
+  it("draws a member's photo from the roster beside their message", () => {
+    renderTimeline([message({ id: "m-1", sender_id: ALICE })], {
+      avatarFor: (id: string) => (id === ALICE ? "https://signed/alice" : null),
+    });
+
+    expect(screen.getByTestId("avatar-photo").getAttribute("data-src")).toBe(
+      "https://signed/alice",
+    );
+  });
+
+  it("keeps initials for a member with no photo", () => {
+    renderTimeline([message({ id: "m-1", sender_id: BOB })], {
+      avatarFor: (id: string) => (id === ALICE ? "https://signed/alice" : null),
+    });
+
+    expect(screen.queryByTestId("avatar-photo")).toBeNull();
   });
 });
