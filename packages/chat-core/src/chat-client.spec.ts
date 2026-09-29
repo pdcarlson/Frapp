@@ -242,6 +242,19 @@ describe("editMessage", () => {
         response: { status: 200 },
       }),
     };
+    // The row being edited is on screen, so the cache holds it.
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "original body",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
       queryClient,
@@ -269,6 +282,55 @@ describe("editMessage", () => {
       | undefined;
     expect(cache?.byId["msg-1"]?.content).toBe("edited body");
     expect(cache?.byId["msg-1"]?.edited_at).toBe("2026-01-01T00:01:00.000Z");
+  });
+
+  it("never splices in a row the window doesn't hold, which would break older-page paging (#2775)", async () => {
+    const queryClient = new QueryClient();
+    // The window holds only a newer message; the edited one is older than it.
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-new",
+          channel_id: "chan-1",
+          sender_id: "user-2",
+          content: "newest",
+          created_at: "2026-02-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: {
+          id: "msg-old",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "edited body",
+          created_at: "2026-01-01T00:00:00.000Z",
+          edited_at: "2026-02-02T00:00:00.000Z",
+        },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+      toast,
+      onError,
+    });
+
+    await editMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-old",
+      content: "edited body",
+    });
+
+    const cache = queryClient.getQueryData(
+      chatMessagesKey("chan-1"),
+    ) as ChannelCache;
+    expect(cache.order).toEqual(["msg-new"]);
+    expect(cache.byId["msg-old"]).toBeUndefined();
   });
 
   it("rejects rather than crash-toasting when the response carries no error but no body either", async () => {
@@ -1466,5 +1528,49 @@ describe("sendMessage — outbox faults (#1718)", () => {
     ).resolves.toBeUndefined();
 
     expect(apiClient.POST).toHaveBeenCalled();
+  });
+});
+
+describe("deleteMessage on a row the window doesn't hold (#2775)", () => {
+  it("never splices the tombstone in, which would break older-page paging", async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-new",
+          channel_id: "chan-1",
+          sender_id: "user-2",
+          content: "newest",
+          created_at: "2026-02-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    const apiClient = {
+      DELETE: vi.fn().mockResolvedValue({
+        data: {
+          id: "msg-old",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "[message deleted]",
+          is_deleted: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+    });
+
+    await deleteMessage(ctx, { channelId: "chan-1", messageId: "msg-old" });
+
+    const cache = queryClient.getQueryData(
+      chatMessagesKey("chan-1"),
+    ) as ChannelCache;
+    expect(cache.order).toEqual(["msg-new"]);
+    expect(cache.byId["msg-old"]).toBeUndefined();
   });
 });

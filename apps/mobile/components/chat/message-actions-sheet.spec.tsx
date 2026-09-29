@@ -67,9 +67,22 @@ import {
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
 
+/** Someone else's message, in a channel the viewer can't reply in. */
+const SOMEONE_ELSES = {
+  canReply: false,
+  canEdit: false,
+  canDelete: false,
+  canReport: true,
+} as const;
+
 function render(
   target: MessageActionsTarget | null,
   onSenderDeparted?: (userId: string) => void,
+  handlers: {
+    onReply?: (messageId: string) => void;
+    onEdit?: (messageId: string) => void;
+    onDelete?: (messageId: string) => void;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -79,6 +92,7 @@ function render(
           ref={createRef<MessageActionsSheetHandle>()}
           target={target}
           onSenderDeparted={onSenderDeparted}
+          {...handlers}
         />
       </FrappThemeProvider>,
     );
@@ -97,6 +111,17 @@ function pressByLabel(tree: ReactTestRenderer, label: string) {
       typeof candidate.props.onPress === "function",
   );
   act(() => node.props.onPress());
+}
+
+/** Whether the menu draws a pressable row with this label. */
+function hasRow(tree: ReactTestRenderer, label: string): boolean {
+  return (
+    tree.root.findAll(
+      (candidate) =>
+        candidate.props.accessibilityLabel === label &&
+        typeof candidate.props.onPress === "function",
+    ).length > 0
+  );
 }
 
 async function flush() {
@@ -127,9 +152,93 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
+  const OWN = {
+    messageId: "m9",
+    canReply: true,
+    canEdit: true,
+    canDelete: true,
+    canReport: false,
+    blockUserId: null,
+    senderName: "Vic",
+    senderInDirectory: true,
+  };
+
+  it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
+    const tree = render(OWN);
+    expect(hasRow(tree, "Reply")).toBe(true);
+    expect(hasRow(tree, "Edit message")).toBe(true);
+    expect(hasRow(tree, "Delete message")).toBe(true);
+    expect(hasRow(tree, "Report message")).toBe(false);
+    expect(text(tree)).not.toContain("Block");
+  });
+
+  it("offers only the rows the target allows", () => {
+    const tree = render({
+      ...SOMEONE_ELSES,
+      canReply: true,
+      canDelete: true,
+      messageId: "m1",
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+    });
+    expect(hasRow(tree, "Reply")).toBe(true);
+    expect(hasRow(tree, "Edit message")).toBe(false);
+    expect(hasRow(tree, "Delete message")).toBe(true);
+    expect(hasRow(tree, "Report message")).toBe(true);
+  });
+
+  it("hands each row's message to the thread", () => {
+    const onReply = vi.fn();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const tree = render(OWN, undefined, { onReply, onEdit, onDelete });
+    pressByLabel(tree, "Reply");
+    pressByLabel(tree, "Edit message");
+    pressByLabel(tree, "Delete message");
+    expect(onReply).toHaveBeenCalledWith("m9");
+    expect(onEdit).toHaveBeenCalledWith("m9");
+    expect(onDelete).toHaveBeenCalledWith("m9");
+  });
+
+  it("closes the menu before handing off, so it never covers the strip or the alert", () => {
+    const dismiss = vi.fn();
+    const onReply = vi.fn();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={OWN}
+            onReply={onReply}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        </FrappThemeProvider>,
+        {
+          // The stand-in modal is a host string; hand the refs an instance
+          // that records the dismiss.
+          createNodeMock: (element) =>
+            element.type === "BottomSheetModal" ? { dismiss } : null,
+        },
+      );
+    });
+    for (const label of ["Reply", "Edit message", "Delete message"]) {
+      dismiss.mockClear();
+      pressByLabel(tree, label);
+      expect(dismiss).toHaveBeenCalled();
+    }
+  });
+});
+
 describe("MessageActionsSheet — menu", () => {
   it("offers Report and Block for a blockable sender", () => {
     const tree = render({
+      ...SOMEONE_ELSES,
       messageId: "m1",
       blockUserId: BLOCKED,
       senderName: "Blake",
@@ -141,6 +250,7 @@ describe("MessageActionsSheet — menu", () => {
 
   it("offers Report only when the sender cannot be blocked (system actor, imported row)", () => {
     const tree = render({
+      ...SOMEONE_ELSES,
       messageId: "m1",
       blockUserId: null,
       senderName: "Frapp",
@@ -153,6 +263,7 @@ describe("MessageActionsSheet — menu", () => {
   it("confirms before blocking, and blocks only on the destructive choice", async () => {
     blockActions.block.mockResolvedValue(undefined);
     const tree = render({
+      ...SOMEONE_ELSES,
       messageId: "m1",
       blockUserId: BLOCKED,
       senderName: "Blake",
@@ -175,6 +286,7 @@ describe("MessageActionsSheet — menu", () => {
 
   it("describes Block the way every other surface does", () => {
     const tree = render({
+      ...SOMEONE_ELSES,
       messageId: "m1",
       blockUserId: BLOCKED,
       senderName: "Blake",
@@ -191,6 +303,7 @@ describe("MessageActionsSheet — menu", () => {
     const onSenderDeparted = vi.fn();
     const tree = render(
       {
+        ...SOMEONE_ELSES,
         messageId: "m1",
         blockUserId: BLOCKED,
         senderName: null,
@@ -215,6 +328,7 @@ describe("MessageActionsSheet — menu", () => {
 
 describe("MessageActionsSheet — report", () => {
   const target: MessageActionsTarget = {
+    ...SOMEONE_ELSES,
     messageId: "m1",
     blockUserId: BLOCKED,
     senderName: "Blake",

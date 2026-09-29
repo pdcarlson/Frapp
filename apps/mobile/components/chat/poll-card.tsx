@@ -92,8 +92,9 @@ export interface PollCardProps {
   /**
    * Opens the message actions sheet — the same one `MessageBubble` uses. A
    * poll's question and options are member-authored text, so a poll from
-   * someone else is reportable like any message (#2312 §2). Absent on the
-   * viewer's own poll.
+   * someone else is reportable like any message (#2312 §2). The viewer's own
+   * poll gets it too, for Reply and Delete (#2775); which rows the sheet shows
+   * is decided by `messageActionsFor`, not by whether this is passed.
    */
   onOpenActions?: () => void;
 }

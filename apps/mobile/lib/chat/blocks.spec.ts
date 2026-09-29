@@ -11,11 +11,13 @@ import {
   messageActionsFor,
   rosterMembership,
   type MemberLookup,
+  type MessageActionsContext,
 } from "./blocks";
 
 // The classifier these actions sit beside moved to `@repo/chat-core/blocks`
-// with its spec (#2313). What stays here is the mobile message-actions sheet's
-// own rules, which web does not offer.
+// with its spec (#2313), and the Reply/Edit/Delete rules are chat-core's
+// `message-actions` (#2775). What is pinned here is how the mobile sheet
+// combines them with Report and Block, which web does not offer.
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
@@ -46,31 +48,76 @@ function one(raw: RawChatMessage): ChatMessage {
   return message!;
 }
 
+/** A member in an ordinary channel they can post and reply in, no `channels:manage`. */
+function context(
+  isMember: MemberLookup = everyoneIsAMember,
+  overrides: Partial<MessageActionsContext> = {},
+): MessageActionsContext {
+  return {
+    isMember,
+    canReply: true,
+    canPost: true,
+    canManageChannel: false,
+    ...overrides,
+  };
+}
+
 describe("messageActionsFor", () => {
   const base = one(restRow("m1", FRIEND));
+  const mine = one(restRow("m2", VIEWER));
 
-  it("offers report and block on someone else's confirmed message", () => {
-    expect(messageActionsFor(base, VIEWER, everyoneIsAMember)).toEqual({
+  it("offers reply, report and block on someone else's confirmed message", () => {
+    expect(messageActionsFor(base, VIEWER, context())).toEqual({
       canOpen: true,
+      canReply: true,
+      canEdit: false,
+      canDelete: false,
       canReport: true,
       canBlock: true,
     });
   });
 
-  it("offers nothing on the viewer's own message", () => {
-    expect(
-      messageActionsFor(
-        { ...base, sender_id: VIEWER },
-        VIEWER,
-        everyoneIsAMember,
-      ).canOpen,
-    ).toBe(false);
+  it("offers reply, edit and delete on the viewer's own message, and never report or block", () => {
+    expect(messageActionsFor(mine, VIEWER, context())).toEqual({
+      canOpen: true,
+      canReply: true,
+      canEdit: true,
+      canDelete: true,
+      canReport: false,
+      canBlock: false,
+    });
+    expect(canOpenMessageActions(mine, VIEWER)).toBe(true);
+  });
+
+  it("offers delete on anyone's message with channels:manage, and still never edit", () => {
+    const actions = messageActionsFor(
+      base,
+      VIEWER,
+      context(everyoneIsAMember, { canManageChannel: true }),
+    );
+    expect(actions.canDelete).toBe(true);
+    expect(actions.canEdit).toBe(false);
+  });
+
+  it("withholds reply where the channel takes none, and edit where the viewer can't post", () => {
+    const readOnly = messageActionsFor(
+      mine,
+      VIEWER,
+      context(everyoneIsAMember, { canReply: false, canPost: false }),
+    );
+    expect(readOnly.canReply).toBe(false);
+    expect(readOnly.canEdit).toBe(false);
+    expect(readOnly.canDelete).toBe(true);
+  });
+
+  it("never offers edit on the viewer's own poll", () => {
+    const poll = one(restRow("m3", VIEWER, { kind: "poll" }));
+    expect(messageActionsFor(poll, VIEWER, context()).canEdit).toBe(false);
+    expect(messageActionsFor(poll, VIEWER, context()).canDelete).toBe(true);
   });
 
   it("offers nothing before the viewer is known", () => {
-    expect(messageActionsFor(base, null, everyoneIsAMember).canOpen).toBe(
-      false,
-    );
+    expect(messageActionsFor(base, null, context()).canOpen).toBe(false);
     expect(canOpenMessageActions(base, null)).toBe(false);
   });
 
@@ -79,36 +126,31 @@ describe("messageActionsFor", () => {
       { ...base, _status: "pending" as const },
       { ...base, _status: "failed" as const },
       { ...base, is_deleted: true },
+      { ...mine, _status: "pending" as const },
+      { ...mine, is_deleted: true },
     ]) {
-      expect(messageActionsFor(row, VIEWER, everyoneIsAMember).canOpen).toBe(
-        false,
-      );
+      expect(messageActionsFor(row, VIEWER, context()).canOpen).toBe(false);
       expect(canOpenMessageActions(row, VIEWER)).toBe(false);
     }
   });
 
   it("reports but never blocks the system actor", () => {
-    expect(
-      messageActionsFor(
-        { ...base, sender_id: SYSTEM_SENDER_ID },
-        VIEWER,
-        everyoneIsAMember,
-      ),
-    ).toEqual({ canOpen: true, canReport: true, canBlock: false });
+    const actions = messageActionsFor(
+      { ...base, sender_id: SYSTEM_SENDER_ID },
+      VIEWER,
+      context(),
+    );
+    expect(actions.canReport).toBe(true);
+    expect(actions.canBlock).toBe(false);
   });
 
-  it("reports but never blocks an imported row", () => {
-    expect(
-      messageActionsFor(
-        { ...base, sender_id: null },
-        VIEWER,
-        everyoneIsAMember,
-      ),
-    ).toEqual({
-      canOpen: true,
-      canReport: true,
-      canBlock: false,
-    });
+  it("reports but never blocks or edits an imported row", () => {
+    const imported = one(restRow("m4", null, { kind: "imported" }));
+    const actions = messageActionsFor(imported, VIEWER, context());
+    expect(actions.canReport).toBe(true);
+    expect(actions.canBlock).toBe(false);
+    expect(actions.canEdit).toBe(false);
+    expect(actions.canDelete).toBe(false);
   });
 
   it("offers Block to a sender the cached roster does not list — a brand-new member looks exactly like that", () => {
@@ -119,11 +161,9 @@ describe("messageActionsFor", () => {
       isPending: false,
       isError: false,
     });
-    expect(messageActionsFor(base, VIEWER, staleRoster)).toEqual({
-      canOpen: true,
-      canReport: true,
-      canBlock: true,
-    });
+    expect(messageActionsFor(base, VIEWER, context(staleRoster)).canBlock).toBe(
+      true,
+    );
   });
 
   it("still offers Block while the roster cannot say, leaving the 404 to the confirmation", () => {
@@ -132,7 +172,8 @@ describe("messageActionsFor", () => {
       { byId: {}, isPending: false, isError: true },
     ]) {
       expect(
-        messageActionsFor(base, VIEWER, rosterMembership(roster)).canBlock,
+        messageActionsFor(base, VIEWER, context(rosterMembership(roster)))
+          .canBlock,
       ).toBe(true);
     }
   });
@@ -142,11 +183,9 @@ describe("messageActionsFor", () => {
       { byId: { [VIEWER]: "Vic" }, isPending: false, isError: false },
       new Set([FRIEND]),
     );
-    expect(messageActionsFor(base, VIEWER, afterA404)).toEqual({
-      canOpen: true,
-      canReport: true,
-      canBlock: false,
-    });
+    const actions = messageActionsFor(base, VIEWER, context(afterA404));
+    expect(actions.canReport).toBe(true);
+    expect(actions.canBlock).toBe(false);
   });
 });
 

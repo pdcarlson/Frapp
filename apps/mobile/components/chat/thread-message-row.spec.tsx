@@ -46,7 +46,10 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { MESSAGE_ACTIONS_A11Y_LABEL } from "./message-bubble";
+import {
+  JUMP_TO_PARENT_A11Y_LABEL,
+  MESSAGE_ACTIONS_A11Y_LABEL,
+} from "./message-bubble";
 import { ThreadMessageRow } from "./thread-message-row";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -102,6 +105,7 @@ function renderRow(
     blockState?: BlockState;
     replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
+    onJumpToMessage?: (messageId: string) => void;
     onUnblock?: (userId: string) => void;
     maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
     onReload?: (userId: string) => void;
@@ -123,6 +127,7 @@ function renderRow(
           onReact={vi.fn()}
           onUnreact={vi.fn()}
           onOpenActions={overrides.onOpenActions ?? vi.fn()}
+          onJumpToMessage={overrides.onJumpToMessage ?? vi.fn()}
           onUnblock={overrides.onUnblock ?? vi.fn()}
           maskedRefresh={overrides.maskedRefresh ?? new Map()}
           onReload={overrides.onReload ?? vi.fn()}
@@ -393,6 +398,79 @@ describe("ThreadMessageRow — reply quotes (finding 7, #2312 §1)", () => {
     );
     expect(flat(tree)).toContain(parentWords);
   });
+
+  /** The quote's own pressable: the one that jumps rather than long-presses alone. */
+  function quoteJump(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        typeof node.props.onPress === "function" &&
+        node.props.accessibilityRole === "text",
+    );
+  }
+
+  it("jumps to a shown parent when the quote is tapped (#2775)", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const onJumpToMessage = vi.fn();
+      const tree = renderRow(
+        { message: reply({ sender_id: sender }), visibility: "visible" },
+        { replyParent: parent(), onJumpToMessage },
+      );
+      const [quote] = quoteJump(tree);
+      expect(quote).toBeDefined();
+      act(() => quote!.props.onPress());
+      expect(onJumpToMessage).toHaveBeenCalledWith("parent-1");
+    }
+  });
+
+  it("offers the jump to a screen reader as a named action, since the quote isn't a button", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const onJumpToMessage = vi.fn();
+      const tree = renderRow(
+        { message: reply({ sender_id: sender }), visibility: "visible" },
+        { replyParent: parent(), onJumpToMessage },
+      );
+      const container = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          Array.isArray(node.props.accessibilityActions) &&
+          node.props.accessibilityActions.some(
+            (action: { label?: string }) =>
+              action.label === JUMP_TO_PARENT_A11Y_LABEL,
+          ),
+      );
+      act(() =>
+        container.props.onAccessibilityAction({
+          nativeEvent: { actionName: "jumpToParent" },
+        }),
+      );
+      expect(onJumpToMessage).toHaveBeenCalledWith("parent-1");
+    }
+  });
+
+  it("opens the actions from a long-press on the quote, on either side", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const onOpenActions = vi.fn();
+      const target = reply({ sender_id: sender });
+      const tree = renderRow(
+        { message: target, visibility: "visible" },
+        { replyParent: parent(), onOpenActions },
+      );
+      const [quote] = quoteJump(tree);
+      act(() => quote!.props.onLongPress());
+      expect(onOpenActions).toHaveBeenCalledWith(target);
+    }
+  });
+
+  it("never offers the jump for a parent it cannot show", () => {
+    for (const replyParent of [null, parent({ sender_id: BLOCKED })]) {
+      const tree = renderRow(
+        { message: reply(), visibility: "visible" },
+        { replyParent },
+      );
+      expect(quoteJump(tree)).toHaveLength(0);
+    }
+  });
 });
 
 describe("ThreadMessageRow — message actions", () => {
@@ -515,15 +593,75 @@ describe("ThreadMessageRow — message actions", () => {
     expect(onOpenActions).toHaveBeenCalledTimes(1);
   });
 
-  it("offers nothing on the viewer's own message", () => {
-    const tree = renderRow({
-      message: message({ sender_id: VIEWER }),
-      visibility: "visible",
-    });
-    expect(longPressTargets(tree)).toHaveLength(0);
-    expect(JSON.stringify(tree.toJSON())).not.toContain(
-      MESSAGE_ACTIONS_A11Y_LABEL,
+  it("opens the sheet from the viewer's own message too, for Reply, Edit and Delete (#2775)", () => {
+    const onOpenActions = vi.fn();
+    const own = message({ sender_id: VIEWER });
+    const tree = renderRow(
+      { message: own, visibility: "visible" },
+      { onOpenActions },
     );
+    // The row itself: the non-accessible wrapper, not a chip inside it.
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessible === false &&
+        typeof node.props.onLongPress === "function",
+    );
+    act(() => row.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledWith(own);
+    expect(JSON.stringify(tree.toJSON())).toContain(MESSAGE_ACTIONS_A11Y_LABEL);
+  });
+
+  it("opens the actions from a long-press on a link, not the browser", () => {
+    for (const sender of [FRIEND, VIEWER]) {
+      const onOpenActions = vi.fn();
+      const target = message({
+        sender_id: sender,
+        content: "see https://frapp.live/rush",
+      });
+      const tree = renderRow(
+        { message: target, visibility: "visible" },
+        { onOpenActions },
+      );
+      const link = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          node.props.accessibilityRole === "link",
+      );
+      act(() => link.props.onLongPress());
+      expect(onOpenActions).toHaveBeenCalledWith(target);
+    }
+  });
+
+  it("opens the actions from the viewer's own photo, the whole of a photo-only message", () => {
+    attachmentHook.data = [
+      {
+        id: "att-1",
+        filename: "IMG_0001.jpg",
+        content_type: "image/jpeg",
+        download_url: "https://example.test/signed",
+        width: 100,
+        height: 100,
+        byte_size: 1024,
+      },
+    ];
+    const onOpenActions = vi.fn();
+    const own = message({
+      sender_id: VIEWER,
+      content: "",
+      attachment_count: 1,
+    });
+    const tree = renderRow(
+      { message: own, visibility: "visible" },
+      { onOpenActions },
+    );
+    const photo = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Open IMG_0001.jpg",
+    );
+    act(() => photo.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledWith(own);
   });
 
   it("offers nothing on a row still in flight", () => {

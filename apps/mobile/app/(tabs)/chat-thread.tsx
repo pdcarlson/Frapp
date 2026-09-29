@@ -21,8 +21,11 @@ import {
   visibleTypingUsers,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { channelAllowsReplies } from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  CHANNEL_LIST_KEY,
   resolveAuthorName,
   useActiveChapterId,
   useChannel,
@@ -30,9 +33,11 @@ import {
   useCurrentUser,
   useMarkChannelRead,
   useMemberDisplayNames,
+  usePermissionList,
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -59,7 +64,13 @@ import { messageActionsFor, rosterMembership } from "@/lib/chat/blocks";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
-import { selectPostCapability } from "@/lib/chat/channel-list";
+import {
+  selectPostCapability,
+  threadHeaderTitle,
+} from "@/lib/chat/channel-list";
+import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
+import { useComposerStaging } from "@/lib/chat/use-composer-staging";
+import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { getKeyboardPath } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -103,10 +114,12 @@ export default function ChatThreadScreen() {
 
   // Channel-level metadata (#704) — mobile had no read-only/post gating of any
   // kind before this, unlike web's `chat-shell.tsx`. `can_post` already folds
-  // in `is_read_only`; `isReadOnly` is only read separately to pick which of
-  // the two disabled hints applies (read-only-without-permission vs. the
-  // alumni restriction — the two cases `spec/ui/design-system/writing.md` §
-  // Chat documents). `selectPostCapability` parses the payload defensively
+  // in `is_read_only` for posting; `isReadOnly` is read separately to pick
+  // which of the two disabled hints applies (read-only-without-permission vs.
+  // the alumni restriction — the two cases `spec/ui/design-system/writing.md`
+  // § Chat documents), and it is load-bearing for Reply: `can_post` is true in
+  // #announcements for an `announcements:post` holder, yet nobody replies
+  // there (`channelAllowsReplies`, #2775). `selectPostCapability` parses the payload defensively
   // the same way `selectChannels` does — `GET /v1/channels/{id}` infers as
   // `never` in the generated SDK.
   const channelQuery = useChannel(channelId ?? "");
@@ -128,6 +141,8 @@ export default function ChatThreadScreen() {
     viewerId,
     canSend,
     send,
+    edit,
+    remove,
     react,
     unreact,
     act,
@@ -160,6 +175,39 @@ export default function ChatThreadScreen() {
   // join on the message payload could only ever have covered the latter.
   const roster = useMemberDisplayNames();
   const { nameFor, refetch: refetchRoster } = roster;
+
+  // `#name` for a channel, the other member for a DM (#2775).
+  // The cached list is read, not subscribed to: the fallback must not start
+  // a list fetch of its own from inside a thread.
+  const queryClient = useQueryClient();
+  const headerTitle = useMemo(
+    () =>
+      threadHeaderTitle({
+        row: channelQuery.data,
+        list: queryClient.getQueryData(CHANNEL_LIST_KEY),
+        channelId,
+        viewerId,
+        names: roster.byId,
+        isFetching: channelQuery.isFetching,
+      }),
+    [
+      channelQuery.data,
+      channelQuery.isFetching,
+      queryClient,
+      channelId,
+      viewerId,
+      roster.byId,
+    ],
+  );
+
+  // Delete on someone else's message (#2775). The server resolves the
+  // permission in the message's own chapter; this only decides whether the
+  // row is likely to succeed, as web's `canManageChannel` does.
+  const canManageChannel = can("channels:manage", usePermissionList());
+  const canReplyHere = channelAllowsReplies({
+    can_post: channelCanPost,
+    is_read_only: channelIsReadOnly,
+  });
 
   // Members a block attempt proved are not in this chapter (the API's 404
   // `Member not found`), kept per chapter because membership and blocks are.
@@ -324,14 +372,6 @@ export default function ChatThreadScreen() {
     [setDraft, emitTyping],
   );
 
-  const handleSend = useCallback(() => {
-    // Clear first: `attachError` sits ahead of `sendError` in the hint chain
-    // below, and a stale photo-permission line would hide the one report that
-    // a message never reached the outbox.
-    setAttachError(null);
-    void send(draft);
-  }, [send, draft]);
-
   // The viewer's block list, applied on top of the server's mask (#2257,
   // #2315). The server masks what it serves, but a row that arrived over the
   // live echo was never evaluated, so the thread decides per row from
@@ -388,6 +428,41 @@ export default function ChatThreadScreen() {
     return index;
   }, [messages]);
 
+  // A staged reply or an open edit (#2775), keyed by channel. Typing into the
+  // draft still emits typing; typing into an edit does not, since nothing new
+  // is on its way.
+  const staging = useComposerStaging({
+    channelId,
+    viewerId,
+    byId,
+    nameFor,
+    blockState,
+    draft,
+    setDraft: handleChangeText,
+    send,
+    edit,
+  });
+  const submitComposer = staging.submit;
+  const handleSend = useCallback(() => {
+    // Clear first: `attachError` sits ahead of `sendError` in the hint chain
+    // below, and a stale photo-permission line would hide the one report that
+    // a message never reached the outbox.
+    setAttachError(null);
+    submitComposer();
+  }, [submitComposer]);
+
+  const handleDelete = useCallback(
+    (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
+    [remove],
+  );
+
+  // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
+  const {
+    listRef,
+    jumpToMessage,
+    onScrollToIndexFailed: handleScrollToIndexFailed,
+  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+
   const { unblock, reloadMaskedCopies } = useBlockActions();
   const handleUnblock = useCallback(
     (userId: string) => {
@@ -422,13 +497,19 @@ export default function ChatThreadScreen() {
   );
   const openActions = useCallback(
     (message: ChatMessage) => {
-      const actions = messageActionsFor(message, viewerId, isMember);
+      const actions = messageActionsFor(message, viewerId, {
+        isMember,
+        canReply: canReplyHere,
+        canPost: channelCanPost,
+        canManageChannel,
+      });
       if (!actions.canOpen) return;
       // A sender the roster cannot vouch for most likely joined after it was
       // read. Block is offered regardless; re-reading the roster is what lets
       // the next long-press name them and say they stay in the directory.
       // TanStack dedupes onto a read already in flight.
       if (
+        actions.canReport &&
         isBlockableSender(message.sender_id) &&
         isMember(message.sender_id) === null
       ) {
@@ -436,6 +517,10 @@ export default function ChatThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
+        canReply: actions.canReply,
+        canEdit: actions.canEdit,
+        canDelete: actions.canDelete,
+        canReport: actions.canReport,
         blockUserId: actions.canBlock ? message.sender_id : null,
         senderName: resolveAuthorName(message, nameFor),
         senderInDirectory:
@@ -443,7 +528,15 @@ export default function ChatThreadScreen() {
       });
       actionsSheetRef.current?.present();
     },
-    [isMember, nameFor, refetchRoster, viewerId],
+    [
+      canManageChannel,
+      canReplyHere,
+      channelCanPost,
+      isMember,
+      nameFor,
+      refetchRoster,
+      viewerId,
+    ],
   );
 
   const renderItem = useCallback(
@@ -469,6 +562,7 @@ export default function ChatThreadScreen() {
           onReact={(id, emoji) => void react(id, emoji)}
           onUnreact={(id, emoji) => void unreact(id, emoji)}
           onOpenActions={openActions}
+          onJumpToMessage={jumpToMessage}
           onUnblock={handleUnblock}
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
@@ -489,6 +583,7 @@ export default function ChatThreadScreen() {
       byId,
       blockState,
       openActions,
+      jumpToMessage,
       handleUnblock,
       maskedRefresh,
       handleReload,
@@ -606,8 +701,12 @@ export default function ChatThreadScreen() {
             >
               <Text style={styles.backChevron}>‹</Text>
             </Pressable>
-            <Text numberOfLines={1} style={styles.headerTitle}>
-              Thread
+            <Text
+              accessibilityRole="header"
+              numberOfLines={1}
+              style={styles.headerTitle}
+            >
+              {headerTitle}
             </Text>
             {channelId ? (
               <NotificationLevelControl
@@ -703,6 +802,8 @@ export default function ChatThreadScreen() {
             </View>
           ) : (
             <FlatList
+              ref={listRef}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
               data={inverted}
               renderItem={renderItem}
               // `client_message_id` is always present and is stable across the
@@ -765,10 +866,11 @@ export default function ChatThreadScreen() {
           and would contradict the banner directly above it.
         */}
           <ChatComposer
-            value={draft}
-            onChangeText={handleChangeText}
+            value={staging.value}
+            onChangeText={staging.onChangeText}
             onSend={handleSend}
-            canSend={canSend && channelCanPost}
+            canSend={canSend && channelCanPost && !staging.isSavingEdit}
+            context={staging.context}
             placeholder="Message"
             // A send that never reached the outbox has no failed bubble to show
             // (nothing was queued), so this line is the only report of it.
@@ -778,6 +880,7 @@ export default function ChatThreadScreen() {
             // holds the rule for the surfaces that have to block instead.
             disabledHint={
               attachError ??
+              staging.editError ??
               sendError ??
               // `canSend` first. It is false until `ctx` resolves, and
               // `ChatComposer` keys `editable` on it — so leading with the
@@ -798,9 +901,13 @@ export default function ChatThreadScreen() {
                     ? "You're offline — messages send when you reconnect, but photos need a connection."
                     : null)
             }
-            hintTone={sendError || attachError ? "error" : "muted"}
-            attachments={attachments}
-            onAttach={handleAttach}
+            hintTone={
+              sendError || attachError || staging.editError ? "error" : "muted"
+            }
+            // An edit changes text only, so the staged photos and the attach
+            // control stand aside until it is saved or cancelled.
+            attachments={staging.isEditing ? undefined : attachments}
+            onAttach={staging.isEditing ? undefined : handleAttach}
             onRemoveAttachment={removeAttachment}
             isUploading={isUploading}
             // An upload is a live PUT with no outbox behind it, unlike a send —
@@ -842,6 +949,9 @@ export default function ChatThreadScreen() {
         ref={actionsSheetRef}
         target={actionTarget}
         onSenderDeparted={markDeparted}
+        onReply={staging.startReply}
+        onEdit={staging.startEdit}
+        onDelete={handleDelete}
       />
     </SafeAreaView>
   );

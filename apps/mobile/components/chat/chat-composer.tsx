@@ -26,11 +26,33 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the glyph), refused (the hint line, in the error tone), and staged (chips
  * above the input).
  *
+ * **Reply and Edit stage above the input** (#2775) as one strip, `context`:
+ * "Replying to <name>" with the parent's preview, or "Editing message". The
+ * strip is the member's only sign that the next send is not an ordinary
+ * message, so it always carries a cancel. While editing, the send control
+ * saves the edit and says so to a screen reader, and the caller withholds the
+ * attach control, since an edit changes text only.
+ *
  * This is a plain `TextInput`, deliberately. `BottomSheetTextInput` is mandatory
  * only *inside* a gorhom sheet (`spec/ui/mobile/patterns.md` § Bottom sheets);
  * the thread is a full route, so a plain input is correct and a sheet input
  * would break outside its host.
  */
+
+/** What the next send does besides posting: answer a message, or save an edit. */
+export interface ComposerContext {
+  kind: "reply" | "edit";
+  /** The strip's first line: `Replying to <name>` or `Editing message`. */
+  title: string;
+  /** One line of what is being replied to or edited, or `null` for none. */
+  preview: string | null;
+  onCancel: () => void;
+}
+
+/** The strip's cancel, spoken. */
+export function composerCancelLabel(kind: ComposerContext["kind"]): string {
+  return kind === "reply" ? "Cancel reply" : "Cancel edit";
+}
 
 export interface ChatComposerProps {
   value: string;
@@ -64,6 +86,8 @@ export interface ChatComposerProps {
    * a control that disappears reads as a missing feature.
    */
   attachDisabledReason?: string | null;
+  /** A staged reply or an edit in progress; `null` for an ordinary send. */
+  context?: ComposerContext | null;
 }
 
 export function ChatComposer({
@@ -79,6 +103,7 @@ export function ChatComposer({
   onRemoveAttachment,
   isUploading = false,
   attachDisabledReason,
+  context = null,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -105,6 +130,33 @@ export function ChatComposer({
         >
           {disabledHint}
         </Text>
+      ) : null}
+
+      {context ? (
+        <View style={styles.context}>
+          <View style={styles.contextText}>
+            <Text numberOfLines={1} style={styles.contextTitle}>
+              {context.title}
+            </Text>
+            {context.preview ? (
+              <Text numberOfLines={1} style={styles.contextPreview}>
+                {context.preview}
+              </Text>
+            ) : null}
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={composerCancelLabel(context.kind)}
+            hitSlop={12}
+            onPress={context.onCancel}
+            style={({ pressed }) => [
+              styles.chipRemove,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text style={styles.chipRemoveGlyph}>×</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {attachments.length > 0 ? (
@@ -175,7 +227,9 @@ export function ChatComposer({
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Send message"
+          accessibilityLabel={
+            context?.kind === "edit" ? "Save edit" : "Send message"
+          }
           accessibilityState={{ disabled: !isSendable }}
           disabled={!isSendable}
           onPress={onSend}
@@ -213,6 +267,31 @@ function createStyles(tokens: SignetTokens) {
     },
     chips: {
       gap: tokens.spacing.xs,
+    },
+    // The quote rule a sent reply carries (`reply-quote.tsx`), so the staged
+    // strip reads as the quote the message is about to show.
+    context: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      borderLeftWidth: 2,
+      borderLeftColor: tokens.color.border.hairline,
+      paddingLeft: tokens.spacing.sm,
+    },
+    contextText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    contextTitle: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: tokens.color.text.mutedForeground,
+    },
+    contextPreview: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
     },
     // Same surface recipe as a rendered file attachment
     // (`message-attachments.tsx`), so a staged photo and a sent one read as

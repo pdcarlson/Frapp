@@ -13,27 +13,15 @@ import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 import { TextRenderer } from "./text-renderer";
 
-/** Kinds whose renderer is a card in the flow rather than a message bubble. */
-const CARD_KINDS = new Set([
-  "poll",
-  "announcement",
-  "system_audit",
-  "loading",
-  "points",
-  "task",
-  "event",
-  "dues",
-  "hours",
-  "rush",
-]);
-
 /**
  * Does this message render as a bubble (§11) rather than as a card?
  *
  * The row layout needs the answer before it renders the body: a bubble is
- * sided — self right, incoming left with an avatar — and a card is not. This
- * mirrors the switch below rather than being a second, independent list, so a
- * kind cannot be a bubble in one place and a card in the other.
+ * sided — self right, incoming left with an avatar — and a card is not. The
+ * card-kind list lives in `@repo/chat-core/message-actions`, because which
+ * kinds are cards also decides which messages offer Edit, on both clients
+ * (#2775). The switch below is a second statement of the same list;
+ * `registry.spec.tsx` fails if the two disagree.
  *
  * **Deletion does not enter into it**, which is the point. `MessageRenderer`
  * routes every deleted row to `TextRenderer` whatever its kind, but the *layout*
@@ -43,9 +31,7 @@ const CARD_KINDS = new Set([
  * deleted — reflowing the thread around the one row nobody should still be
  * looking at.
  */
-export function rendersAsBubble(message: { kind?: string | null }): boolean {
-  return !CARD_KINDS.has(message.kind ?? "text");
-}
+export { rendersAsBubble } from "@repo/chat-core/message-actions";
 
 export interface MessageRendererProps {
   message: ChatMessage;

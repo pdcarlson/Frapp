@@ -531,6 +531,33 @@ describe("MessageItem reply-with-quote (#489)", () => {
  * message when `canManageChannel` is set (mirrors the server's
  * `channels:manage` override).
  */
+describe("MessageItem edited marker", () => {
+  const edited = { edited_at: new Date(2026, 7, 16, 17, 12).toISOString() };
+
+  it("marks an edited message from someone else in its header", () => {
+    renderItem(message(edited));
+    expect(screen.getByText("(edited)")).toBeInTheDocument();
+  });
+
+  it("marks the viewer's own edited message in its caption", () => {
+    renderItem(message({ ...edited, sender_id: VIEWER }));
+    expect(screen.getByText("(edited)")).toBeInTheDocument();
+  });
+
+  it("drops the marker once the message is deleted, on either side", () => {
+    const { unmount } = renderItem(message({ ...edited, is_deleted: true }));
+    expect(screen.queryByText("(edited)")).not.toBeInTheDocument();
+    unmount();
+    renderItem(message({ ...edited, is_deleted: true, sender_id: VIEWER }));
+    expect(screen.queryByText("(edited)")).not.toBeInTheDocument();
+  });
+
+  it("marks nothing on a message never edited", () => {
+    renderItem(message());
+    expect(screen.queryByText("(edited)")).not.toBeInTheDocument();
+  });
+});
+
 describe("MessageItem edit and delete", () => {
   it("offers Edit on the viewer's own text message when onEdit is provided", () => {
     renderItemWithProps({
@@ -730,6 +757,36 @@ describe("MessageItem edit and delete", () => {
     );
 
     expect(screen.getByRole("textbox")).toHaveValue("hello there");
+  });
+
+  it("closes the editor when Edit is withdrawn mid-edit, rather than leaving a Save that does nothing (#2775)", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderItemWithProps({
+      message: message({ id: "msg-1", sender_id: VIEWER, content: "hello" }),
+      onEdit: vi.fn(),
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+
+    // The channel was made read-only, or the member became an alumnus: the
+    // shell stops passing `onEdit`.
+    rerender(
+      <div role="list">
+        <MessageItem
+          blockState={NOBODY_BLOCKED}
+          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello" })}
+          viewerId={VIEWER}
+          showHeader
+          nameFor={nameFor}
+          onReact={vi.fn()}
+          onUnreact={vi.fn()}
+          isTapRevealed={false}
+          onToggleTapReveal={vi.fn()}
+        />
+      </div>,
+    );
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("keeps the editor open with the draft intact when the save rejects", async () => {

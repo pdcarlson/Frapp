@@ -6,6 +6,8 @@ import {
   listedChannels,
   selectChannels,
   selectPostCapability,
+  THREAD_HEADER_FALLBACK,
+  threadHeaderTitle,
 } from "./channel-list";
 
 /**
@@ -332,5 +334,61 @@ describe("listedChannels", () => {
       "general",
       "dm-shown",
     ]);
+  });
+});
+
+describe("threadHeaderTitle (#2775)", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const CASEY = "33333333-3333-4333-8333-333333333333";
+  const names = { [CASEY]: "Casey" };
+  const title = (overrides: Partial<Parameters<typeof threadHeaderTitle>[0]>) =>
+    threadHeaderTitle({
+      row: undefined,
+      list: undefined,
+      channelId: "c1",
+      viewerId: VIEWER,
+      names,
+      isFetching: false,
+      ...overrides,
+    });
+
+  it("prefixes a channel with #", () => {
+    expect(title({ row: { id: "c1", name: "general", type: "PUBLIC" } })).toBe(
+      "#general",
+    );
+  });
+
+  it("names the other member for a DM, with no #", () => {
+    expect(
+      title({
+        channelId: "c2",
+        row: {
+          id: "c2",
+          name: `dm-${VIEWER}-${CASEY}`,
+          type: "DM",
+          member_ids: [VIEWER, CASEY],
+        },
+      }),
+    ).toBe("Casey");
+  });
+
+  it("falls back to the cached list row while the channel's own read hasn't landed", () => {
+    expect(
+      title({
+        list: [
+          { id: "c9", name: "dues", type: "PUBLIC" },
+          { id: "c1", name: "general", type: "PUBLIC" },
+        ],
+      }),
+    ).toBe("#general");
+  });
+
+  it("stays empty while the read is in flight, then says Thread if nothing named it", () => {
+    expect(title({ isFetching: true })).toBe("");
+    expect(title({})).toBe(THREAD_HEADER_FALLBACK);
+    // A row for another channel names nothing.
+    expect(title({ row: { id: "c9", name: "dues", type: "PUBLIC" } })).toBe(
+      THREAD_HEADER_FALLBACK,
+    );
   });
 });

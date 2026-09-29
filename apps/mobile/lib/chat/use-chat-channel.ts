@@ -42,7 +42,9 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  deleteMessage,
   discardOutboxRow,
+  editMessage,
   flushOutbox,
   hydrateOutboxIntoCache,
   react as reactAction,
@@ -50,6 +52,7 @@ import {
   sendMessage,
   unreact as unreactAction,
   type CardActionArgs,
+  type ChatErrorFn,
 } from "@repo/chat-core/chat-client";
 import { emptyCache, selectMessages } from "@repo/chat-core/cache";
 import {
@@ -75,6 +78,33 @@ import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
 const DRAFT_SAVE_DEBOUNCE_MS = 400;
+
+export interface SendOptions {
+  /**
+   * The message this one replies to, already root-normalized
+   * (`replyTargetId` in `@repo/chat-core/message-actions`).
+   */
+  replyToId?: string | null;
+}
+
+/**
+ * Runs a chat-core edit or delete and turns its failure into an `Error`
+ * carrying the member-facing description chat-core classified, since mobile
+ * has no toast to show it (#999).
+ */
+async function withFailureMessage(
+  run: (onError: ChatErrorFn) => Promise<void>,
+  fallback: string,
+): Promise<void> {
+  let described: string | null = null;
+  try {
+    await run((input) => {
+      described = input.description ?? input.title;
+    });
+  } catch {
+    throw new Error(described ?? fallback);
+  }
+}
 
 export interface UseChatChannelResult {
   messages: ChatMessage[];
@@ -108,8 +138,25 @@ export interface UseChatChannelResult {
    * to survive a failed send and reset on a channel switch, and both of those
    * are this hook's existing jobs. A photo staged in #general riding the next
    * message in #dues is the bug that shape prevents.
+   *
+   * Resolves `true` once the message is in the outbox, `false` when nothing
+   * was queued (an empty body, an earlier send still in flight, no runtime, or an
+   * outbox that refused the row), so a caller holding state for this send (a
+   * staged reply) can keep it. Never rejects.
    */
-  send: (content: string) => Promise<void>;
+  send: (content: string, options?: SendOptions) => Promise<boolean>;
+  /**
+   * Saves an edit of the viewer's own message. Not optimistic: the server row
+   * is merged on success, and the Realtime echo of the same edit is a no-op.
+   * Rejects with a member-facing message on failure, and changes nothing.
+   */
+  edit: (messageId: string, content: string) => Promise<void>;
+  /**
+   * Soft-deletes a message (own, or any with `channels:manage`). Pessimistic
+   * like `edit`, per `spec/ui/resilience/`: the tombstone lands when the
+   * server says so. Rejects with a member-facing message on failure.
+   */
+  remove: (messageId: string) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
@@ -489,7 +536,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
    */
   const sendGenerationRef = useRef(0);
   const send = useCallback(
-    async (content: string) => {
+    async (content: string, options?: SendOptions) => {
       const body = content.trim();
       // Snapshotted before the await, and cleared by identity afterwards: a
       // photo that finishes uploading while this send is in flight must not be
@@ -512,8 +559,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         (!body && staged.length === 0) ||
         sendingRef.current
       )
-        return;
+        return false;
       sendingRef.current = true;
+      let queued = false;
       const forChannelId = channelId;
       const generation = ++sendGenerationRef.current;
       // Cancel the debounce first, or a keystroke from under 400ms ago
@@ -532,8 +580,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         await sendMessage(ctx, {
           channelId,
           content: body,
+          replyToId: options?.replyToId ?? null,
           attachments: staged.length > 0 ? staged : undefined,
         });
+        queued = true;
         await drafts.clear(channelId);
       } catch (error) {
         // `sendMessage` awaits `outbox.enqueue` *outside* its own try/catch, so
@@ -562,8 +612,37 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       } finally {
         sendingRef.current = false;
       }
+      return queued;
     },
     [attachments, cancelDraftTimer, channelId, ctx, drafts],
+  );
+
+  const edit = useCallback(
+    async (messageId: string, content: string) => {
+      if (!channelId || !ctx) {
+        throw new Error("Couldn't edit message. Try again.");
+      }
+      await withFailureMessage(
+        (onError) =>
+          editMessage({ ...ctx, onError }, { channelId, messageId, content }),
+        "Couldn't edit message. Try again.",
+      );
+    },
+    [channelId, ctx],
+  );
+
+  const remove = useCallback(
+    async (messageId: string) => {
+      if (!channelId || !ctx) {
+        throw new Error("Couldn't delete message. Try again.");
+      }
+      await withFailureMessage(
+        (onError) =>
+          deleteMessage({ ...ctx, onError }, { channelId, messageId }),
+        "Couldn't delete message. Try again.",
+      );
+    },
+    [channelId, ctx],
   );
 
   const addAttachment = useCallback((attachment: OutboxAttachment) => {
@@ -667,6 +746,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     viewerId,
     canSend: !!ctx && !!channelId,
     send,
+    edit,
+    remove,
     react,
     unreact,
     act,

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -9,6 +10,11 @@ import {
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
+import { linkSegments, type LinkSegment } from "@repo/chat-core/links";
+import {
+  EDITED_MARKER,
+  showsEditedMarker,
+} from "@repo/chat-core/message-actions";
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -24,6 +30,11 @@ import {
 } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
 import { MessageAttachments } from "./message-attachments";
+import {
+  linkA11yActions,
+  MessageText,
+  runLinkA11yAction,
+} from "./message-text";
 import { ReplyQuote } from "./reply-quote";
 
 /**
@@ -88,11 +99,18 @@ export interface MessageBubbleProps {
    */
   replyParentHidden?: string;
   /**
-   * Opens the message actions sheet (report, block — #2257). Passed only for a
-   * message that offers them (`messageActionsFor` in `lib/chat/blocks.ts`), so
-   * its absence is what keeps the long-press off the viewer's own bubble.
+   * Opens the message actions sheet (reply, edit, delete, report, block —
+   * #2257, #2775). Passed only for a row that offers them
+   * (`canOpenMessageActions` in `lib/chat/blocks.ts`): a confirmed, undeleted
+   * message, the viewer's own included.
    */
   onOpenActions?: () => void;
+  /**
+   * Scrolls the thread to the quoted parent. Passed only when the parent is
+   * loaded and shown, so a quote reading "Original message not loaded" or a
+   * block-list placeholder is not a control.
+   */
+  onJumpToParent?: () => void;
 }
 
 /** The drawn quick reaction. A fuller picker is not in this slice. */
@@ -105,6 +123,13 @@ const MESSAGE_ACTIONS: AccessibilityActionInfo[] = [
   { name: "longpress", label: MESSAGE_ACTIONS_A11Y_LABEL },
 ];
 
+/** A reply quote's tap, for a screen reader that cannot reach the quote itself. */
+export const JUMP_TO_PARENT_A11Y_LABEL = "Go to the original message";
+const JUMP_TO_PARENT_ACTION: AccessibilityActionInfo = {
+  name: "jumpToParent",
+  label: JUMP_TO_PARENT_A11Y_LABEL,
+};
+
 type MessageActionsA11yProps =
   | {
       accessibilityActions: AccessibilityActionInfo[];
@@ -113,8 +138,8 @@ type MessageActionsA11yProps =
   | Record<string, never>;
 
 /**
- * The accessibility half of a message's long-press, for the containers a
- * screen reader lands on.
+ * The accessibility half of a message's long-press, and of its links, for the
+ * containers a screen reader lands on.
  *
  * The gesture lives on a wrapping `Pressable` marked `accessible={false}` —
  * an accessible wrapper would fold the reaction chips and attachment buttons
@@ -123,17 +148,31 @@ type MessageActionsA11yProps =
  * never a bare `<Text>`: custom actions on a `Text` are not reliably surfaced
  * by VoiceOver under the new architecture, and a `View` with `accessible` is the
  * element iOS exposes them on. `longpress` with a label is a named custom action
- * in the iOS actions rotor and the double-tap-and-hold on Android. Returns
- * nothing when there are no actions to open.
+ * in the iOS actions rotor and the double-tap-and-hold on Android.
+ *
+ * That same accessible container makes the body's link `Text`s unreachable on
+ * their own, so each link rides it too, as "Open <link>" (`linkA11yActions`).
+ * Returns nothing when there is nothing to offer.
  */
 export function messageActionsA11yProps(
   onOpenActions: (() => void) | undefined,
+  body: { links?: LinkSegment[]; onJumpToParent?: () => void } = {},
 ): MessageActionsA11yProps {
-  if (!onOpenActions) return {};
+  const links = body.links ?? [];
+  const actions = [
+    ...(onOpenActions ? MESSAGE_ACTIONS : []),
+    ...(body.onJumpToParent ? [JUMP_TO_PARENT_ACTION] : []),
+    ...linkA11yActions(links),
+  ];
+  if (actions.length === 0) return {};
   return {
-    accessibilityActions: MESSAGE_ACTIONS,
+    accessibilityActions: actions,
     onAccessibilityAction: (event) => {
-      if (event.nativeEvent.actionName === "longpress") onOpenActions();
+      const { actionName } = event.nativeEvent;
+      if (actionName === "longpress") onOpenActions?.();
+      else if (actionName === JUMP_TO_PARENT_ACTION.name) {
+        body.onJumpToParent?.();
+      } else runLinkA11yAction(links, actionName);
     },
   };
 }
@@ -193,9 +232,14 @@ export function MessageBubble({
   replyParent,
   replyParentHidden,
   onOpenActions,
+  onJumpToParent,
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const segments = useMemo(
+    () => linkSegments(message.content),
+    [message.content],
+  );
   const isMine = message.sender_id === viewerId;
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
@@ -222,10 +266,13 @@ export function MessageBubble({
         time={time}
         isConfirmed={isConfirmed}
         reactions={reactions}
+        segments={segments}
         onRetry={onRetry}
         onDiscard={onDiscard}
         onReact={onReact}
         onUnreact={onUnreact}
+        onOpenActions={onOpenActions}
+        onJumpToParent={onJumpToParent}
         styles={styles}
       />
     );
@@ -265,8 +312,12 @@ export function MessageBubble({
       />
     ) : null;
 
-  const a11yActions = messageActionsA11yProps(onOpenActions);
-  const hasActions = !!onOpenActions;
+  const hasText = !message.is_deleted && message.content.length > 0;
+  const headerA11y = messageActionsA11yProps(onOpenActions);
+  const bodyA11y = messageActionsA11yProps(onOpenActions, {
+    links: hasText ? segments : [],
+    onJumpToParent: quoteJump(message, onJumpToParent),
+  });
 
   const quote =
     message.reply_to_id && !message.is_deleted ? (
@@ -278,14 +329,23 @@ export function MessageBubble({
         viewerId={viewerId}
         borderColor={tokens.color.border.hairline}
         textColor={tokens.color.text.muted}
+        onPress={onJumpToParent}
+        onLongPress={onOpenActions}
       />
     ) : null;
 
   const text = message.is_deleted ? (
     <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
-  ) : message.content.length > 0 ? (
-    <Text style={styles.bodyTheirs}>{message.content}</Text>
+  ) : hasText ? (
+    <MessageText
+      segments={segments}
+      style={styles.bodyTheirs}
+      onLongPress={onOpenActions}
+    />
   ) : null;
+  const meta = showsEditedMarker(message)
+    ? `${authorLabel} · ${time} ${EDITED_MARKER}`
+    : `${authorLabel} · ${time}`;
 
   return (
     // The long-press target is the whole row, so a file-only message has one
@@ -308,12 +368,12 @@ export function MessageBubble({
       </View>
 
       <View style={styles.theirsColumn}>
-        <View accessible={hasActions} {...a11yActions}>
-          <Text style={styles.metaText}>{`${authorLabel} · ${time}`}</Text>
+        <View accessible={"accessibilityActions" in headerA11y} {...headerA11y}>
+          <Text style={styles.metaText}>{meta}</Text>
         </View>
         <View style={styles.bubbleTheirs}>
           {quote || text ? (
-            <View accessible={hasActions} {...a11yActions}>
+            <View accessible={"accessibilityActions" in bodyA11y} {...bodyA11y}>
               {quote}
               {text}
             </View>
@@ -350,10 +410,13 @@ function MineMessageBubble({
   time,
   isConfirmed,
   reactions,
+  segments,
   onRetry,
   onDiscard,
   onReact,
   onUnreact,
+  onOpenActions,
+  onJumpToParent,
   styles,
 }: {
   message: ChatMessage;
@@ -364,10 +427,13 @@ function MineMessageBubble({
   time: string;
   isConfirmed: boolean;
   reactions: ReactionGroup[];
+  segments: LinkSegment[];
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  onOpenActions: (() => void) | undefined;
+  onJumpToParent: (() => void) | undefined;
   styles: ReturnType<typeof createStyles>;
 }) {
   // The chapter accent, not Signet's house gold — components.md:210 makes the
@@ -379,7 +445,9 @@ function MineMessageBubble({
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
 
   // A deleted message shows none: the API 404s the attachment list anyway, but
-  // the client must not offer the affordance in the first place.
+  // the client must not offer the affordance in the first place. The row's
+  // long-press is forwarded for the same reason the incoming branch forwards
+  // it: an attachment is its own `Pressable` and claims the touch.
   const attachments =
     !message.is_deleted && message.attachment_count > 0 ? (
       <MessageAttachments
@@ -388,45 +456,74 @@ function MineMessageBubble({
         count={message.attachment_count}
         isMine
         accentOnPrimary={accentOnPrimary}
+        onLongPress={onOpenActions}
       />
     ) : null;
 
-  const body = message.is_deleted ? (
+  const hasText = !message.is_deleted && message.content.length > 0;
+  const quote =
+    message.reply_to_id && !message.is_deleted ? (
+      <ReplyQuote
+        message={message}
+        replyParent={replyParent}
+        hiddenText={replyParentHidden}
+        nameFor={nameFor}
+        viewerId={viewerId}
+        borderColor={accentOnPrimary}
+        textColor={accentOnPrimary}
+        onPress={onJumpToParent}
+        onLongPress={onOpenActions}
+      />
+    ) : null;
+
+  const text = message.is_deleted ? (
     <Text style={[styles.deleted, { color: accentOnPrimary }]}>
       {DELETED_MESSAGE_PLACEHOLDER}
     </Text>
-  ) : (
-    <>
-      {message.content.length > 0 ? (
-        <Text style={[styles.bodyMine, { color: accentOnPrimary }]}>
-          {message.content}
-        </Text>
-      ) : null}
-      {attachments}
-    </>
-  );
+  ) : hasText ? (
+    <MessageText
+      segments={segments}
+      style={[styles.bodyMine, { color: accentOnPrimary }]}
+      onLongPress={onOpenActions}
+    />
+  ) : null;
+
+  // Same split as the incoming branch: the actions ride an accessible `View`
+  // around the quote and text, never the `Pressable` holding the photos, which
+  // would fold them into one element (`messageActionsA11yProps`).
+  const bodyA11y = messageActionsA11yProps(onOpenActions, {
+    links: hasText ? segments : [],
+    onJumpToParent: quoteJump(message, onJumpToParent),
+  });
 
   const chrome = deliveryChrome(message);
 
   return (
-    <View style={styles.rowMine}>
+    // Your own message has a long-press since #2775 (Reply, Edit, Delete);
+    // `accessible={false}` for the reason the incoming row gives.
+    <Pressable
+      accessible={false}
+      onLongPress={onOpenActions}
+      disabled={!onOpenActions}
+      style={styles.rowMine}
+    >
       <View style={[styles.bubbleMine, { backgroundColor: accentPrimary }]}>
-        {message.reply_to_id && !message.is_deleted ? (
-          <ReplyQuote
-            message={message}
-            replyParent={replyParent}
-            hiddenText={replyParentHidden}
-            nameFor={nameFor}
-            viewerId={viewerId}
-            borderColor={accentOnPrimary}
-            textColor={accentOnPrimary}
-          />
+        {quote || text ? (
+          <View accessible={"accessibilityActions" in bodyA11y} {...bodyA11y}>
+            {quote}
+            {text}
+          </View>
         ) : null}
-        {body}
+        {attachments}
       </View>
 
       <View style={styles.metaMine}>
-        <MineDeliveryMeta chrome={chrome} time={time} styles={styles} />
+        <MineDeliveryMeta
+          chrome={chrome}
+          time={time}
+          edited={showsEditedMarker(message)}
+          styles={styles}
+        />
       </View>
 
       {chrome.status === "failed" ? (
@@ -456,11 +553,22 @@ function MineMessageBubble({
         disabled={!isConfirmed}
         onReact={onReact}
         onUnreact={onUnreact}
+        onLongPress={onOpenActions}
         styles={styles}
         align="flex-end"
       />
-    </View>
+    </Pressable>
   );
+}
+
+/** The quote's jump, when the row draws a quote at all. */
+function quoteJump(
+  message: ChatMessage,
+  onJumpToParent: (() => void) | undefined,
+): (() => void) | undefined {
+  return message.reply_to_id && !message.is_deleted
+    ? onJumpToParent
+    : undefined;
 }
 
 /**
@@ -474,10 +582,13 @@ function MineMessageBubble({
 function MineDeliveryMeta({
   chrome,
   time,
+  edited,
   styles,
 }: {
   chrome: DeliveryChrome;
   time: string;
+  /** Only a confirmed row can have been edited; the other states ignore it. */
+  edited: boolean;
   styles: ReturnType<typeof createStyles>;
 }) {
   switch (chrome.status) {
@@ -496,7 +607,11 @@ function MineDeliveryMeta({
         </>
       );
     case "confirmed":
-      return <Text style={styles.metaText}>{time}</Text>;
+      return (
+        <Text style={styles.metaText}>
+          {edited ? `${time} ${EDITED_MARKER}` : time}
+        </Text>
+      );
     default: {
       const _never: never = chrome;
       return _never;

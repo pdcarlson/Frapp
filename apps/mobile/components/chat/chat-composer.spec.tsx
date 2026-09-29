@@ -154,3 +154,44 @@ describe("ChatComposer staged attachments", () => {
     expect(byLabel(tree, "Remove photo.jpg")).toBeDefined();
   });
 });
+
+describe("ChatComposer reply and edit strip (#2775)", () => {
+  it("shows a staged reply with a cancel", () => {
+    const onCancel = vi.fn();
+    const { tree } = renderComposer({
+      context: {
+        kind: "reply",
+        title: "Replying to Casey",
+        preview: "see you at chapter",
+        onCancel,
+      },
+    });
+    const drawn = JSON.stringify(tree.toJSON());
+    expect(drawn).toContain("Replying to Casey");
+    expect(drawn).toContain("see you at chapter");
+    act(() => byLabel(tree, "Cancel reply")!.props.onPress());
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(byLabel(tree, "Send message")).toBeDefined();
+  });
+
+  it("says the send saves the edit while one is open", () => {
+    const { tree } = renderComposer({
+      value: "fixed",
+      context: {
+        kind: "edit",
+        title: "Editing message",
+        preview: null,
+        onCancel: vi.fn(),
+      },
+    });
+    expect(byLabel(tree, "Save edit")).toBeDefined();
+    expect(byLabel(tree, "Send message")).toBeUndefined();
+    expect(byLabel(tree, "Cancel edit")).toBeDefined();
+  });
+
+  it("draws no strip for an ordinary send", () => {
+    const { tree } = renderComposer();
+    expect(byLabel(tree, "Cancel reply")).toBeUndefined();
+    expect(byLabel(tree, "Cancel edit")).toBeUndefined();
+  });
+});

@@ -12,6 +12,14 @@ import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
+import {
+  canActOnMessage,
+  canDeleteMessage,
+  canEditMessage,
+  EDITED_MARKER,
+  isOwnMessage,
+  showsEditedMarker,
+} from "@repo/chat-core/message-actions";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
 import {
   hiddenQuoteText,
@@ -271,16 +279,10 @@ export function MessageItem({
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
-  // `sender_id` is nullable — an imported archive row names its author in
-  // `author_name` and has no roster entry — so the sender is checked before the
-  // comparison rather than relying on `viewerId` being a string. Dropping the old
-  // `!!viewerId &&` guard removed the thing that used to make `null === null`
-  // false, and that combination fails *open*: it would feed `canDelete` and
-  // offer Edit and Delete on every imported message. The gate upstream means a
-  // falsy `viewerId` should never arrive, but "should never" is the wrong
-  // strength of argument for a permission affordance, and an authorless row is
-  // genuinely nobody's own message whatever the viewer id is.
-  const isMine = !!message.sender_id && message.sender_id === viewerId;
+  // `isOwnMessage` checks the sender before comparing: an imported archive row
+  // has no `sender_id`, and `null === null` would otherwise offer Edit and
+  // Delete on every imported message.
+  const isMine = isOwnMessage(message, viewerId);
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
   // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".
@@ -308,12 +310,13 @@ export function MessageItem({
   // never act on a placeholder id.
   const isConfirmed = message._status === "confirmed";
   const selfBubble = isMine && rendersAsBubble(message);
-  const showActions = !message.is_deleted && isConfirmed;
-  // Edit is server-enforced own-only (no `channels:manage` override, unlike
-  // delete) and only makes sense for the plain-text bubble kind — `selfBubble`
-  // already encodes both halves of that.
-  const canEdit = selfBubble && !!onEdit;
-  const canDelete = (isMine || !!canManageChannel) && !!onDelete;
+  const showActions = canActOnMessage(message);
+  // The rules are shared with mobile (`@repo/chat-core/message-actions`, #2775):
+  // Edit is own-only with no `channels:manage` override, and only on a
+  // plain-text bubble; Delete is own, or anyone's with `channels:manage`.
+  const canEdit = canEditMessage(message, viewerId) && !!onEdit;
+  const canDelete =
+    canDeleteMessage(message, viewerId, !!canManageChannel) && !!onDelete;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
@@ -383,6 +386,13 @@ export function MessageItem({
   // server correctly rejects a save against a deleted message, but the row
   // should not sit there still showing a stale, now-pointless draft form.
   if (isEditing && message.is_deleted) {
+    setIsEditing(false);
+  }
+  // Edit stopped being allowed while the editor was open: the channel was
+  // made read-only, or the member became an alumnus, and the shell withdrew
+  // `onEdit` (#2775). Save would do nothing, so the editor closes rather than
+  // leave a live button that silently ignores the member.
+  if (isEditing && !canEdit) {
     setIsEditing(false);
   }
 
@@ -908,7 +918,7 @@ export function MessageItem({
           */}
           <div className="mr-1 mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
             <span>{formatClock(message.created_at)}</span>
-            {message.edited_at ? <span>· edited</span> : null}
+            {showsEditedMarker(message) ? <span>{EDITED_MARKER}</span> : null}
             {message.is_pinned ? (
               <span className="inline-flex items-center gap-1 text-accent-text">
                 <PinGlyph className="h-3.5 w-3.5" />
@@ -1001,7 +1011,7 @@ export function MessageItem({
             </span>
             <span aria-hidden="true">·</span>
             <span>{formatClock(message.created_at)}</span>
-            {message.edited_at ? <span>(edited)</span> : null}
+            {showsEditedMarker(message) ? <span>{EDITED_MARKER}</span> : null}
             {message.is_pinned ? (
               <Badge variant="outline" className="h-6 gap-1 px-2">
                 <PinGlyph className="h-3.5 w-3.5" /> Pinned

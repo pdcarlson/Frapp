@@ -55,6 +55,7 @@ import {
   applyReactionDelete,
   applyReactionInsert,
   emptyCache,
+  holdsServerRow,
   mergeServerRow,
   removeMessage,
 } from "./cache";
@@ -478,12 +479,38 @@ class ChatRealtimeManager {
           // INSERT / UPDATE — full row is present and authoritative about its
           // content, and says nothing about the viewer's block list: this path
           // has no viewer. `asEcho` makes that explicit (#2315).
+          //
+          // An UPDATE (an edit, pin or soft delete) of a row the cache doesn't
+          // hold is not merged. An old message the window never loaded would
+          // otherwise be spliced in below the newest page, become the cache's
+          // oldest confirmed row, and make the older-page read (`history.ts`)
+          // skip everything in between for good (#2775, #2871). Writing
+          // through `patchCache` would also create an empty cache for a
+          // channel whose first read hasn't landed.
+          //
+          // And only an INSERT moves the last-seen cursor: ADR-05 advances it
+          // from new tail rows. An UPDATE is of a message already at or
+          // behind the tail, so moving the cursor to it only ever moved it
+          // back, and the next reconnect or poll re-read a page this client
+          // already holds.
+          const isUpdate = payload.eventType === "UPDATE";
+          this.settleNotices(state.channelId, [next]);
+          if (
+            isUpdate &&
+            !holdsServerRow(
+              this.ctx?.queryClient.getQueryData<ChannelCache>(
+                chatMessagesKey(state.channelId),
+              ),
+              next,
+            )
+          ) {
+            return;
+          }
           const echo = asEcho(next);
           this.patchCache(state.channelId, (cache) =>
             mergeServerRow(cache, echo),
           );
-          this.settleNotices(state.channelId, [next]);
-          this.writeLastSeen(state.channelId, next.id);
+          if (!isUpdate) this.writeLastSeen(state.channelId, next.id);
           return;
         }
         // DELETE — default replica identity gives us only `old.id`, so we
@@ -501,8 +528,7 @@ class ChatRealtimeManager {
 
     channel.on("broadcast", { event: "typing" }, (msg) => {
       const payload = msg.payload as
-        | { userId?: string; displayName?: string | null }
-        | undefined;
+        { userId?: string; displayName?: string | null } | undefined;
       if (!payload?.userId) return;
       state.typingUsers.set(payload.userId, Date.now() + 4000);
       this.emitStatus();
@@ -642,7 +668,9 @@ class ChatRealtimeManager {
   private dispatchActionDelete(actionId: string): void {
     for (const channelId of this.channels.keys()) {
       this.patchCache(channelId, (cache) =>
-        cache.actionIndex[actionId] ? applyReactionDelete(cache, actionId) : cache,
+        cache.actionIndex[actionId]
+          ? applyReactionDelete(cache, actionId)
+          : cache,
       );
     }
   }

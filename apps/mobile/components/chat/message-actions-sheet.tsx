@@ -53,13 +53,18 @@ import {
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The member-safety actions on one message: report it, or block its sender
- * (#2257, App Store Guideline 1.2). Opened by long-pressing someone else's
- * bubble or poll card in s05, or by the "Message actions" accessibility action
- * on either.
+ * The actions on one message: reply to it, edit or delete it (#2775), and the
+ * member-safety pair, report it or block its sender (#2257, App Store
+ * Guideline 1.2). Opened by long-pressing a bubble or poll card in s05, or by
+ * the "Message actions" accessibility action on either.
  *
- * **Two sheets, not one with panes.** The menu is two rows and sizes to its
- * content; the report form is seven reasons, a text field and a button, which
+ * **Reply, Edit and Delete hand off to the thread.** Reply and Edit stage in
+ * the composer and Delete asks for confirmation in a native alert, so each row
+ * closes the sheet and tells the screen which message it was for.
+ *
+ * **Two sheets, not one with panes.** The menu is at most four rows (Reply,
+ * Edit and Delete on your own message; Reply, Delete, Report and Block on
+ * someone else's) and sizes to its content; the report form is seven reasons, a text field and a button, which
  * on a small phone with the keyboard up is taller than the screen. A bounded
  * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
  * fixed detent with the sheet-aware scroll view as its direct child
@@ -68,7 +73,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `stackBehavior="replace"`), where s19 stacks its assignee picker on top.
  *
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
- * `lib/chat/blocks.ts`: this component is never opened on the viewer's own
+ * `lib/chat/blocks.ts`: Report and Block never show on the viewer's own
  * message, and `canBlock` is false for the system actor, imported rows and a
  * sender a block attempt already proved has left the chapter — never merely
  * because the cached roster does not list them yet.
@@ -88,6 +93,11 @@ const REPORT_SNAP_POINTS = ["85%"];
 export interface MessageActionsTarget {
   /** Server id — the sheet only opens on confirmed rows. */
   messageId: string;
+  canReply: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  /** False on the viewer's own message. */
+  canReport: boolean;
   /** `users.id` to block; `null` when the sender is not blockable. */
   blockUserId: string | null;
   /** Resolved display name, or `null` when the roster cannot name them. */
@@ -119,12 +129,21 @@ export interface MessageActionsSheetProps {
    * (`isMemberNotFound`): the caller can stop offering Block for them.
    */
   onSenderDeparted?: (userId: string) => void;
+  /** Stage a reply to this message in the composer. */
+  onReply?: (messageId: string) => void;
+  /** Start editing this message in the composer. */
+  onEdit?: (messageId: string) => void;
+  /** Confirm, then delete, this message. */
+  onDelete?: (messageId: string) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
   MessageActionsSheetHandle,
   MessageActionsSheetProps
->(function MessageActionsSheet({ target, onSenderDeparted }, ref) {
+>(function MessageActionsSheet(
+  { target, onSenderDeparted, onReply, onEdit, onDelete },
+  ref,
+) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -184,6 +203,16 @@ export const MessageActionsSheet = forwardRef<
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
   const senderInDirectory = target?.senderInDirectory ?? false;
+
+  /** Closes the menu, then hands the message to the thread. */
+  const handOff = useCallback(
+    (run: ((messageId: string) => void) | undefined) => {
+      const messageId = target?.messageId;
+      menuRef.current?.dismiss();
+      if (messageId && run) run(messageId);
+    },
+    [target],
+  );
 
   // The report sheet's `stackBehavior="replace"` dismisses the menu as it
   // mounts, so closing the form returns to the thread, not to the menu.
@@ -258,21 +287,40 @@ export const MessageActionsSheet = forwardRef<
             title="Message"
             onCancel={() => menuRef.current?.dismiss()}
           />
-          <ListSection>
-            <ListRow
-              label="Report message"
-              description="Your chapter's officers will be able to see it."
-              onPress={openReport}
-            />
-            {canBlock ? (
+          {target?.canReply || target?.canEdit || target?.canDelete ? (
+            <ListSection>
+              {target.canReply ? (
+                <ListRow label="Reply" onPress={() => handOff(onReply)} />
+              ) : null}
+              {target.canEdit ? (
+                <ListRow label="Edit message" onPress={() => handOff(onEdit)} />
+              ) : null}
+              {target.canDelete ? (
+                <ListRow
+                  label="Delete message"
+                  destructive
+                  onPress={() => handOff(onDelete)}
+                />
+              ) : null}
+            </ListSection>
+          ) : null}
+          {target?.canReport ? (
+            <ListSection>
               <ListRow
-                label={`Block ${senderLabel}`}
-                description={BLOCK_ROW_DESCRIPTION}
-                destructive
-                onPress={() => startBlock("menu")}
+                label="Report message"
+                description="Your chapter's officers will be able to see it."
+                onPress={openReport}
               />
-            ) : null}
-          </ListSection>
+              {canBlock ? (
+                <ListRow
+                  label={`Block ${senderLabel}`}
+                  description={BLOCK_ROW_DESCRIPTION}
+                  destructive
+                  onPress={() => startBlock("menu")}
+                />
+              ) : null}
+            </ListSection>
+          ) : null}
         </BottomSheetView>
       </BottomSheetModal>
 
