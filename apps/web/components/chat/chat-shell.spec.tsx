@@ -49,6 +49,7 @@ const {
   mockUseChatChannel,
   mockComposerMount,
   mockComposerMountProps,
+  mockSendReturned,
   mockUseMyPermissions,
   searchHit,
 } = vi.hoisted(() => ({
@@ -66,6 +67,12 @@ const {
    * when Tiptap constructs the editor rather than during render.
    */
   mockComposerMountProps: vi.fn(),
+  /**
+   * What the shell's `onSend` returned to the stub composer. The real composer
+   * restores a refused message only if that is `channel.send`'s own promise
+   * (#1728), so a shell that voided it would silently undo the fix.
+   */
+  mockSendReturned: vi.fn(),
   mockUseMyPermissions: vi.fn(() => ({
     data: { permissions: [] as string[] },
   })),
@@ -407,6 +414,7 @@ vi.mock("./composer", () => ({
     onSend,
     replyTo,
     onCancelReply,
+    onRestoreReply,
   }: {
     channelId: string;
     // The shell-to-editor handoff (#2176) is entirely carried by these two:
@@ -414,7 +422,7 @@ vi.mock("./composer", () => ({
     // `claimShellFocus` is the caret the shell's `<textarea>` was holding.
     draft?: string;
     claimShellFocus?: () => boolean;
-    onSend?: (body: string, attachments: unknown[]) => void;
+    onSend?: (body: string, attachments: unknown[]) => unknown;
     replyTo?: {
       id: string;
       author: string | null;
@@ -422,6 +430,7 @@ vi.mock("./composer", () => ({
       hidden?: string | null;
     } | null;
     onCancelReply?: () => void;
+    onRestoreReply?: (messageId: string) => void;
   }) => {
     // Deliberately mount-only: the assertion below needs "did this
     // component get a fresh instance", which an exhaustive `[channelId]`
@@ -453,11 +462,22 @@ vi.mock("./composer", () => ({
           {replyTo?.preview ?? ""}
         </span>
         <span data-testid="composer-reply-hidden">{replyTo?.hidden ?? ""}</span>
-        <button data-testid="composer-send" onClick={() => onSend?.("hi", [])}>
+        <button
+          data-testid="composer-send"
+          onClick={() => mockSendReturned(onSend?.("hi", []))}
+        >
           send
         </button>
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
           cancel reply
+        </button>
+        {/* What the real composer calls when the outbox refused a send and it
+            is putting the whole message back (#1728). */}
+        <button
+          data-testid="composer-restore-reply"
+          onClick={() => onRestoreReply?.("msg-1")}
+        >
+          restore reply
         </button>
       </div>
     );
@@ -669,6 +689,7 @@ beforeEach(() => {
   mockUseChatChannel.mockReturnValue(chatChannelResult());
   mockComposerMount.mockClear();
   mockComposerMountProps.mockClear();
+  mockSendReturned.mockClear();
   mockUseMyPermissions.mockReset();
   mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
   mockBookmarkIsError.mockReturnValue(false);
@@ -2092,6 +2113,43 @@ describe("ChatShell reply-with-quote (#489)", () => {
     });
 
     expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+  });
+
+  it("hands channel.send's own promise back to the composer (#1728)", () => {
+    // The composer learns the outbox refused a send only by that promise
+    // rejecting; a shell that dropped it would leave the composer emptied with
+    // no toast, and every composer test green.
+    const channel = withMessages([ROOT]);
+    const settled = Promise.resolve();
+    channel.send.mockReturnValueOnce(settled);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(mockSendReturned.mock.calls[0]?.[0]).toBe(settled);
+  });
+
+  it("re-stages a reply the composer hands back from a refused send (#1728)", () => {
+    // The composer clears optimistically and, when the outbox refuses the
+    // send, puts the text back. The shell cleared its target before the await,
+    // so without this the text would return with no strip, and Enter would
+    // post the reply as a top-level message.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+
+    fireEvent.click(screen.getByTestId("composer-restore-reply"));
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(channel.send).toHaveBeenLastCalledWith("hi", {
+      replyToId: "msg-1",
+      attachments: [],
+    });
   });
 
   it("offers no Reply control to a member who cannot post here (alumni)", async () => {

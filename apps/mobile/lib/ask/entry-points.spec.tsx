@@ -34,6 +34,7 @@ vi.mock("@repo/hooks", () => {
   return {
     useNowDate: () => now,
     useChannels: () => empty,
+    useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
     useEvents: () => empty,
     useTasks: () => empty,
@@ -43,6 +44,11 @@ vi.mock("@repo/hooks", () => {
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),
     canHideConversation: () => false,
     otherMemberId: () => null,
+    groupChannelsByCategory: () => ({
+      uncategorized: [],
+      categories: [],
+      direct: [],
+    }),
     HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
   };
 });
