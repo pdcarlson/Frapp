@@ -535,6 +535,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
       if (error instanceof ServiceUnavailableException) {
         throw new ServiceUnavailableException(
           "Linking a Discord account isn't available right now. Try again later.",
+          { cause: toReportableError(error) },
         );
       }
       throw error;
