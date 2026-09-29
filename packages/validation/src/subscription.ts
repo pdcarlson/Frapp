@@ -37,12 +37,12 @@ const SUBSCRIPTION_STATUSES = [
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
 /**
- * Narrows an unknown value off the wire to a `SubscriptionStatus`.
+ * Narrows a value off the wire to a `SubscriptionStatus`.
  *
- * `CurrentChapterPayloadSchema` is `.passthrough()` and callers often read the
- * raw record, so the status arrives untyped. An unrecognised value means the
- * server grew a state this client does not model — treat that as "not
- * blocked", so a deploy skew never locks a chapter out of its own UI.
+ * The contract types the field, but a deployed client can be older than the
+ * API it talks to. An unrecognised value means the server grew a state this
+ * client does not model — treat that as "not blocked", so a deploy skew never
+ * locks a chapter out of its own UI.
  */
 export function isSubscriptionStatus(
   value: unknown,

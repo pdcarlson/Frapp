@@ -16,6 +16,10 @@ import {
   signetFillChecks,
   type SignetPalette,
 } from "./signet.js";
+import {
+  hasSignetSemanticRoles,
+  SIGNET_SEMANTIC_ROLES,
+} from "./accent-vars.js";
 import { generateRadixColors } from "./vendor/generate-radix-colors.js";
 
 /**
@@ -741,6 +745,52 @@ describe("signetAccentSemanticVars", () => {
 
   it("is a pure function of the palette it is handed", () => {
     expect(signetAccentSemanticVars(palette)).toEqual(semantic);
+  });
+
+  it("reads exactly the roles SIGNET_SEMANTIC_ROLES names", () => {
+    // The list is what a client checks a stored palette against before calling
+    // the bridge, so a role the bridge reads but the list omits would write
+    // `undefined` onto `:root` for a partial row.
+    const read = new Set<string>();
+    const tracking = new Proxy(palette, {
+      get(target, key, receiver) {
+        if (typeof key === "string") read.add(key);
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    signetAccentSemanticVars(tracking);
+    expect([...read].sort()).toEqual([...SIGNET_SEMANTIC_ROLES].sort());
+  });
+});
+
+describe("hasSignetSemanticRoles", () => {
+  const { palette } = deriveSignetPalette("#8B0000");
+
+  it("accepts the palette the engine persists", () => {
+    expect(hasSignetSemanticRoles(palette)).toBe(true);
+  });
+
+  it("accepts a palette with only the bridged roles", () => {
+    const roles = Object.fromEntries(
+      SIGNET_SEMANTIC_ROLES.map((key) => [key, palette[key]]),
+    );
+    expect(hasSignetSemanticRoles(roles)).toBe(true);
+  });
+
+  it("rejects an empty palette", () => {
+    expect(hasSignetSemanticRoles({})).toBe(false);
+  });
+
+  it.each(SIGNET_SEMANTIC_ROLES)("rejects a palette missing %s", (role) => {
+    const partial: Record<string, unknown> = { ...palette };
+    delete partial[role];
+    expect(hasSignetSemanticRoles(partial)).toBe(false);
+  });
+
+  it("rejects a role that is not a string", () => {
+    expect(
+      hasSignetSemanticRoles({ ...palette, "--signet-accent-ring": 7 }),
+    ).toBe(false);
   });
 });
 
