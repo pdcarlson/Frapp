@@ -46,9 +46,12 @@ name: Release
 #      same App restriction (run 34254679932: object `bca315f9` exists,
 #      `refs/tags/v1.0.0` does not, 403 Resource not accessible by
 #      integration). Do not widen the GitHub App token to cover workflow
-#      files. Mint the ref with RELEASE_GITHUB_TOKEN (a *user* PAT,
-#      contents:write; an `automation` environment secret, #2518) or from a
-#      laptop.
+#      files. Mint the ref with RELEASE_GITHUB_TOKEN (a *user* PAT with the
+#      Contents AND Workflows permissions, read and write; an `automation`
+#      environment secret, #2518) or from a laptop. With Contents alone the PAT
+#      makes the tag object and is refused the ref the same way (runs
+#      36506993182 and 36517450128; Workflows added, run 36517657454 minted
+#      v1.4.0).
 #
 # Bump semantics (including why the PR number is parsed from the SUBJECT line
 # only) live in `scripts/ci/resolve-release-bump.mjs`. Unit tests:
@@ -67,8 +70,9 @@ on:
         default: auto
         type: string
     secrets:
-      # User PAT (contents:write), not the Actions App. Needed when the live
-      # SHA's `.github/workflows` tree differs from default-branch HEAD.
+      # User PAT with Contents and Workflows (read and write), not the Actions
+      # App. Needed when the live SHA's `.github/workflows` tree differs from
+      # default-branch HEAD, which is what Workflows is for.
       RELEASE_GITHUB_TOKEN:
         required: false
   workflow_dispatch:
@@ -216,8 +220,9 @@ jobs:
             # GitHub App; it refuses a tag whose tree's `.github/workflows`
             # differs from default-branch HEAD (run 34247752847). POST /git/tags
             # still works with contents:write (run 34254679932 left object
-            # bca315f9). POST /git/refs is the same App check — 403 unless
-            # GH_TOKEN is a *user* PAT (RELEASE_GITHUB_TOKEN).
+            # bca315f9). POST /git/refs is the same check — 403 unless
+            # GH_TOKEN is a *user* PAT (RELEASE_GITHUB_TOKEN) that also holds
+            # the Workflows permission (run 36506993182 had Contents only).
             TAG_OBJ="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/tags" \
               -f tag="$TAG" \
               -f message="Release $TAG" \
@@ -234,7 +239,9 @@ jobs:
               echo "$REF_OUT"
               echo "::error::Failed to create refs/tags/${TAG} pointing at ${TAG_OBJ} on ${SHA}."
               if printf '%s' "$REF_OUT" | grep -q 'Resource not accessible by integration'; then
-                echo "::error::The GitHub App cannot create that tag ref when ${SHA}'s workflow tree differs from default-branch HEAD (run 34254679932). Set RELEASE_GITHUB_TOKEN, a secret of the automation environment (never a repository secret, #2518), to a user PAT with contents:write and re-run the Release workflow, not Deploy production. Or mint the ref and the GitHub Release from a laptop against this TAG_OBJ. Do not widen the Actions App to cover workflow files."
+                echo "::error::The GitHub App cannot create that tag ref when ${SHA}'s workflow tree differs from default-branch HEAD (run 34254679932). Set RELEASE_GITHUB_TOKEN, a secret of the automation environment (never a repository secret, #2518), to a user PAT with the Contents and Workflows permissions (read and write) and re-run the Release workflow, not Deploy production. Or mint the ref and the GitHub Release from a laptop against this TAG_OBJ. Do not widen the Actions App to cover workflow files."
+              elif printf '%s' "$REF_OUT" | grep -q 'Resource not accessible by personal access token'; then
+                echo "::error::RELEASE_GITHUB_TOKEN made the tag object but was refused the ref: ${SHA}'s workflow tree differs from default-branch HEAD, which needs the token's Workflows permission (read and write) as well as Contents (run 36506993182). Add Workflows to the token and re-run the Release workflow, not Deploy production. Production is not affected."
               fi
               exit 1
             fi

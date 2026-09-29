@@ -338,7 +338,10 @@ describe("the workflows that run this script grant the scope it needs", () => {
   // was rejected because the GitHub App token cannot update workflow files
   // and that SHA's release.yml differed from main. Run 34254679932: POST
   // /git/tags succeeded (object bca315f9) and POST /git/refs still 403'd.
-  // Contents API + contents:write is not enough; a user PAT is.
+  // Contents API + contents:write is not enough; a user PAT is, and it needs
+  // the Workflows permission too (run 36506993182 had Contents only).
+  // `workflows: write` on this job's own token stays refused below: only the
+  // user PAT may carry it.
   it("release.yml mints the tag via the Contents API, not git push", () => {
     const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
     const start = text.indexOf("- name: Create tag");
@@ -350,6 +353,9 @@ describe("the workflows that run this script grant the scope it needs", () => {
     assert.match(step, /GH_TOKEN:/);
     assert.match(step, /secrets\.RELEASE_GITHUB_TOKEN \|\| secrets\.GITHUB_TOKEN/);
     assert.match(step, /34254679932/);
+    // Each token that can be refused the ref gets its own fix in the error.
+    assert.match(step, /Resource not accessible by integration/);
+    assert.match(step, /Resource not accessible by personal access token'[^\n]*\n[^\n]*Workflows permission/);
     assert.match(step, /git fetch origin "refs\/tags\/\$\{TAG\}:refs\/tags\/\$\{TAG\}"/);
     assert.doesNotMatch(step, /git push origin/);
     assert.doesNotMatch(step, /git tag -a/);
