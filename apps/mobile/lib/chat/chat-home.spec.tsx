@@ -57,8 +57,12 @@ const {
   setPinned: vi.fn(),
   setCollapsed: vi.fn(),
   setFilter: vi.fn(),
-  // What s04 hands the write hooks, so a failure's report is observable.
-  writeOptions: { value: undefined as { onError?: () => void } | undefined },
+  // What s04 hands each write hook, so a failure's report is observable.
+  writeOptions: {
+    pin: undefined as { onError?: () => void } | undefined,
+    fold: undefined as { onError?: () => void } | undefined,
+    filter: undefined as { onError?: () => void } | undefined,
+  },
   // Loaded-but-failed state for the two reads the filters depend on.
   queryErrors: { unread: false, levels: false },
 }));
@@ -104,11 +108,17 @@ vi.mock("@repo/hooks", async () => {
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
     useSidebarPreferences: () => sidebarPrefs.value,
     useSetChannelPinned: (options?: { onError?: () => void }) => {
-      writeOptions.value = options;
+      writeOptions.pin = options;
       return { mutate: setPinned };
     },
-    useSetSidebarSectionCollapsed: () => ({ mutate: setCollapsed }),
-    useSetSidebarFilter: () => ({ mutate: setFilter }),
+    useSetSidebarSectionCollapsed: (options?: { onError?: () => void }) => {
+      writeOptions.fold = options;
+      return { mutate: setCollapsed };
+    },
+    useSetSidebarFilter: (options?: { onError?: () => void }) => {
+      writeOptions.filter = options;
+      return { mutate: setFilter };
+    },
     useChannelNotificationPreferences: () => ({
       ...query(levelsData.value),
       isError: queryErrors.levels,
@@ -480,8 +490,17 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     const tree = render();
 
     // The label carries the folded total, since the badge is not read alone.
-    const header = pressableLabelled(tree, "CHANNELS, 1 mention, 2 unread");
+    // The label says it is folded and carries the total, since iOS announces
+    // neither the collapsed state nor the badge; the hint says what a
+    // double-tap does, since a header has no button trait.
+    const header = pressableLabelled(
+      tree,
+      "CHANNELS, folded, 1 mention, 2 unread",
+    );
     expect(header.props.accessibilityRole).toBe("header");
+    expect(header.props.accessibilityHint).toBe(
+      "Double-tap to show its channels.",
+    );
     expect(header.props.accessibilityState).toEqual({ expanded: false });
     expect(rows(tree)).toHaveLength(0);
     expect(
@@ -604,18 +623,21 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     });
   });
 
-  it("tells the member when a write fails, through the hook's own onError", () => {
-    channelsData.value = [general];
-    render();
+  it.each(["pin", "fold", "filter"] as const)(
+    "tells the member when a %s write fails, through the hook's own onError",
+    (hook) => {
+      channelsData.value = [general];
+      render();
 
-    // A hook option rather than `mutate`'s per-call option, which TanStack
-    // fires only for the latest write on the hook.
-    writeOptions.value?.onError?.();
-    expect(vi.mocked(Alert.alert)).toHaveBeenLastCalledWith(
-      "Couldn't save your channel list",
-      "Nothing changed. Check your connection and try again.",
-    );
-  });
+      // A hook option rather than `mutate`'s per-call option, which TanStack
+      // fires only for the latest write on the hook.
+      writeOptions[hook]?.onError?.();
+      expect(vi.mocked(Alert.alert)).toHaveBeenLastCalledWith(
+        "Couldn't save your channel list",
+        "Nothing changed. Check your connection and try again.",
+      );
+    },
+  );
 });
 
 describe("Chat home filters on unknown data (#2877)", () => {
@@ -652,6 +674,29 @@ describe("Chat home filters on unknown data (#2877)", () => {
       "general",
       "social",
     ]);
+  });
+
+  it("draws no stale badge on a row or a folded header after a failed refetch", () => {
+    channelsData.value = [general, social];
+    // The last good read had a mention in #general; the refetch since failed.
+    unreadData.value = [
+      { channel_id: general.id, unread_count: 2, mention_count: 1 },
+    ];
+    queryErrors.unread = true;
+    const tree = render();
+
+    expect(rowNamed(tree, "general").props.mentionCount).toBe(0);
+    expect(rowNamed(tree, "general").props.unreadCount).toBe(0);
+    // The screen says so instead.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          String(node.props.children).startsWith(
+            "Unread counts are unavailable",
+          ),
+      ),
+    ).toHaveLength(1);
   });
 
   it("filters once the reads are healthy", () => {

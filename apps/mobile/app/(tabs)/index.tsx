@@ -50,7 +50,6 @@ import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import {
   displayChannelName,
-  indexUnread,
   hiddenChannels,
   isDirectChannel,
   listedChannels,
@@ -116,9 +115,17 @@ export default function ChatHomeScreen() {
   );
   const channels = useMemo(() => listedChannels(allChannels), [allChannels]);
   const hidden = useMemo(() => hiddenChannels(allChannels), [allChannels]);
-  const unread = useMemo(
-    () => indexUnread(unreadQuery.data ?? []),
-    [unreadQuery.data],
+  // One map for the rows' badges and the arrangement alike, so a folded
+  // header and the rows never disagree. `undefined` while the counts are
+  // unknown (pending, or the last read failed): rows then draw no badge, as the
+  // warning below says, and Unread only hides nothing.
+  const unreadByChannelId = useMemo(
+    () =>
+      sidebarUnreadCounts({
+        data: unreadQuery.data,
+        isError: unreadQuery.isError,
+      }),
+    [unreadQuery.data, unreadQuery.isError],
   );
 
   // The member's own arrangement (#2877): pins, folded sections and the two
@@ -153,10 +160,6 @@ export default function ChatHomeScreen() {
     // Both filters apply only while their data is known. The shared helpers
     // give `undefined` while a read is pending or its last attempt failed, so
     // a filter never hides a row on missing or stale data.
-    const unreadByChannelId = sidebarUnreadCounts({
-      data: unreadQuery.data,
-      isError: unreadQuery.isError,
-    });
     const mutedChannelIds = sidebarMutedChannelIds({
       data: notificationPrefsQuery.data,
       isError: notificationPrefsQuery.isError,
@@ -181,8 +184,7 @@ export default function ChatHomeScreen() {
     channels,
     categories,
     preferences,
-    unreadQuery.data,
-    unreadQuery.isError,
+    unreadByChannelId,
     notificationPrefsQuery.data,
     notificationPrefsQuery.isError,
     viewerId,
@@ -210,7 +212,7 @@ export default function ChatHomeScreen() {
   }
 
   function renderChannel(channel: ChannelSummary) {
-    const counts = unread[channel.id];
+    const counts = unreadByChannelId?.get(channel.id);
     const name = displayChannelName(channel, viewerId, memberNames);
     const pinned = preferences.pinnedIds.has(channel.id);
     const togglePin = () =>
@@ -228,8 +230,8 @@ export default function ChatHomeScreen() {
         name={name}
         isDirect={isDirectChannel(channel)}
         isPinned={pinned}
-        unreadCount={counts?.unread ?? 0}
-        mentionCount={counts?.mentions ?? 0}
+        unreadCount={counts?.unreadCount ?? 0}
+        mentionCount={counts?.mentionCount ?? 0}
         onPress={() => openChannel(channel.id)}
         onHide={hide}
         onTogglePin={togglePin}
@@ -358,19 +360,27 @@ export default function ChatHomeScreen() {
           {arranged.sections.map((section) => (
             <View key={section.key} style={styles.section}>
               {/*
-                A header that folds: the header role keeps each section on the
-                screen reader's headings rotor, as before #2877, and the
-                expanded state says it folds. The label carries a folded
-                section's total, since the badge inside is not read on its own.
+                A header that folds. The header role keeps each section on the
+                screen reader's headings rotor, as before #2877. A header has
+                no button trait, and iOS never announces "collapsed", so the
+                label says whether the section is folded and the hint says what
+                a double-tap does. A folded label also carries the section's
+                total, since the badge inside is not read on its own.
               */}
               <Pressable
                 accessibilityRole="header"
                 accessibilityState={{ expanded: !section.collapsed }}
                 accessibilityLabel={
-                  section.collapsed &&
-                  (section.unreadCount > 0 || section.addressed)
-                    ? `${section.label}, ${foldedSectionAnnouncement(section)}`
+                  section.collapsed
+                    ? section.unreadCount > 0 || section.addressed
+                      ? `${section.label}, folded, ${foldedSectionAnnouncement(section)}`
+                      : `${section.label}, folded`
                     : section.label
+                }
+                accessibilityHint={
+                  section.collapsed
+                    ? "Double-tap to show its channels."
+                    : "Double-tap to fold this section."
                 }
                 onPress={() =>
                   setSectionCollapsed({

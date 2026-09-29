@@ -37,6 +37,7 @@ import {
   SIDEBAR_SAVE_FAILED_BODY,
   SIDEBAR_SAVE_FAILED_TITLE,
   sidebarMutedChannelIds,
+  sidebarUnreadCounts,
   useSetChannelPinned,
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
@@ -72,7 +73,6 @@ import {
   ChannelListSkeleton,
   type ChannelSidebarControls,
   type ChannelCategory,
-  type ChannelUnread,
   type ChatChannel,
 } from "./channel-list";
 import {
@@ -861,23 +861,21 @@ export function ChatShell({
   // definition would disagree on exactly those cases
   // (`spec/behavior/chat/README.md` § Read Receipts).
   const unreadQuery = useChannelUnreadCounts();
-  const unreadByChannelId = useMemo(() => {
-    // A failed fetch must not read as "everything is read". `ChannelList` maps
-    // an absent row to zero, so handing it an empty map on error would render
-    // every row calm and unbadged — telling a member they have no @-mentions
-    // at the exact moment we cannot know. `undefined` means "no counts",
-    // which the rail shows as neither read nor unread. Mobile guards the same
-    // case (`apps/mobile/app/(tabs)/index.tsx`).
-    if (unreadQuery.isError || !unreadQuery.data) return undefined;
-    const map = new Map<string, ChannelUnread>();
-    for (const row of unreadQuery.data) {
-      map.set(row.channel_id, {
-        unreadCount: row.unread_count,
-        mentionCount: row.mention_count,
-      });
-    }
-    return map;
-  }, [unreadQuery.data, unreadQuery.isError]);
+  // A failed fetch must not read as "everything is read". `ChannelList` maps
+  // an absent row to zero, so handing it an empty map on error would render
+  // every row calm and unbadged — telling a member they have no @-mentions at
+  // the exact moment we cannot know. `sidebarUnreadCounts` gives `undefined`
+  // then ("no counts"), which the rail shows as neither read nor unread, and
+  // which the sidebar's Unread only filter reads as unknown. Mobile's s04 uses
+  // the same helper.
+  const unreadByChannelId = useMemo(
+    () =>
+      sidebarUnreadCounts({
+        data: unreadQuery.data,
+        isError: unreadQuery.isError,
+      }),
+    [unreadQuery.data, unreadQuery.isError],
+  );
 
   // Fail closed while the chapter config is loading or errored. Slash
   // dispatch (`/poll`, `/announce`) flows through the NestJS chat send

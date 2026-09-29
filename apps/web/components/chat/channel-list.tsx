@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useId, useMemo, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  EyeOff,
-  ListFilter,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, EyeOff, ListFilter } from "lucide-react";
 import {
   arrangeChannelSidebar,
   canHideConversation,
@@ -26,6 +21,7 @@ import {
   type DisplayNameMap,
   type SidebarFilterChange,
   type SidebarPreferences,
+  type SidebarUnreadCounts,
 } from "@repo/hooks";
 import type { SidebarSectionKey } from "@repo/validation";
 import { isDirectChannel } from "@repo/validation";
@@ -91,10 +87,7 @@ export interface ChatChannel {
  * channel as entirely unread, and a second definition would disagree on exactly
  * those cases.
  */
-export interface ChannelUnread {
-  unreadCount: number;
-  mentionCount: number;
-}
+export type ChannelUnread = SidebarUnreadCounts;
 
 const NO_UNREAD: ChannelUnread = { unreadCount: 0, mentionCount: 0 };
 

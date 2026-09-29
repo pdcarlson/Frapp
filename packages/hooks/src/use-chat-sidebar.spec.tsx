@@ -144,10 +144,14 @@ describe("sidebar writes", () => {
     const { queryClient, Wrapper } = setup({ GET, PUT });
     queryClient.setQueryData(KEY, stored);
 
-    const { result } = renderHook(() => useSetChannelPinned(), {
-      wrapper: Wrapper,
-    });
-    act(() => result.current.mutate({ channelId: "social", pinned: true }));
+    // The sidebar is on screen, so a re-read would really go out.
+    const { result } = renderHook(
+      () => ({ read: useChatSidebar(), write: useSetChannelPinned() }),
+      { wrapper: Wrapper },
+    );
+    act(() =>
+      result.current.write.mutate({ channelId: "social", pinned: true }),
+    );
 
     await waitFor(() =>
       expect(
@@ -160,7 +164,7 @@ describe("sidebar writes", () => {
 
     const fromServer = { ...stored, pinned_channel_ids: ["social", "general"] };
     answer.resolve({ data: fromServer, error: null });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.write.isSuccess).toBe(true));
     expect(
       queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
     ).toEqual(["social", "general"]);
@@ -297,6 +301,31 @@ describe("sidebar writes", () => {
     first.resolve({ data: null, error: new Error("a failed") });
     second.resolve({ data: null, error: new Error("b failed") });
     await waitFor(() => expect(onError).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not seed a cleared cache with the answer to a write sent before the clear", async () => {
+    // Signing out or switching account clears the cache. The key names the
+    // chapter, not the member, so writing the old answer back would show the
+    // next member of this chapter the last member's arrangement.
+    const answer = deferred<{ data: ChatSidebar; error: null }>();
+    const PUT = vi.fn(() => answer.promise);
+    const { queryClient, Wrapper } = setup({ GET, PUT });
+    queryClient.setQueryData(KEY, stored);
+
+    const { result } = renderHook(() => useSetChannelPinned(), {
+      wrapper: Wrapper,
+    });
+    act(() => result.current.mutate({ channelId: "social", pinned: true }));
+    await waitFor(() => expect(PUT).toHaveBeenCalled());
+
+    queryClient.clear();
+    answer.resolve({
+      data: { ...stored, pinned_channel_ids: ["general", "social"] },
+      error: null,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(queryClient.getQueryData(KEY)).toBeUndefined();
   });
 
   it("files a write under the chapter it was sent for, across a chapter switch", async () => {

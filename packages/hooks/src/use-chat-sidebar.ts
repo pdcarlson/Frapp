@@ -153,7 +153,10 @@ function useSidebarWrite<TVars>(
       queryClient.setQueryData<ChatSidebar>(key, (current) =>
         current ? optimistic(current, vars) : current,
       );
-      return { chapterId };
+      return {
+        chapterId,
+        entry: queryClient.getQueryCache().find({ queryKey: key, exact: true }),
+      };
     },
     onError: () => {
       options.onError?.();
@@ -166,6 +169,18 @@ function useSidebarWrite<TVars>(
       const key = chatSidebarKeys.chapter(context.chapterId);
       const overlapped = tracker.overlapped;
       tracker.overlapped = false;
+      // Only into the cache entry this write started against. The key names
+      // the chapter, not the member, and signing out or switching account
+      // clears the cache: a write still in flight across that must not seed
+      // the next member's sidebar for this chapter with the last member's
+      // arrangement. A new entry is someone else's read; leave it alone.
+      if (
+        !context.entry ||
+        queryClient.getQueryCache().find({ queryKey: key, exact: true }) !==
+          context.entry
+      ) {
+        return;
+      }
       if (!error && !overlapped && data) {
         queryClient.setQueryData(key, data);
       } else {

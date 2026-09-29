@@ -169,6 +169,9 @@ const mockSetChannelPinned = vi.fn();
 // #2877: what the shell hands the pin hook, and the levels the rail filters on.
 const sidebarState = {
   pinOptions: undefined as { onError?: () => void } | undefined,
+  foldOptions: undefined as { onError?: () => void } | undefined,
+  filterOptions: undefined as { onError?: () => void } | undefined,
+  levelsError: false,
   pinnedIds: new Set<string>(),
   levels: [] as { channel_id: string; level: string }[],
 };
@@ -203,10 +206,13 @@ vi.mock("./use-unblock-flow", () => ({
 }));
 
 vi.mock("@repo/hooks", async () => ({
-  // The shared helper runs for real, so the shell's use of it is under test.
-  sidebarMutedChannelIds: (
-    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
-  ).sidebarMutedChannelIds,
+  // The shared helpers run for real, so the shell's use of them is under test.
+  ...(await vi
+    .importActual<typeof import("@repo/hooks")>("@repo/hooks")
+    .then(({ sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
+      sidebarMutedChannelIds,
+      sidebarUnreadCounts,
+    }))),
   useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
@@ -222,7 +228,7 @@ vi.mock("@repo/hooks", async () => ({
   useMemberDisplayNames: () => ({ byId: new Map(), nameFor: () => null }),
   useChannelNotificationPreferences: () => ({
     data: sidebarState.levels,
-    isError: false,
+    isError: sidebarState.levelsError,
   }),
   useSetChannelNotificationLevel: () => ({
     isError: false,
@@ -305,8 +311,14 @@ vi.mock("@repo/hooks", async () => ({
     return { mutate: mockSetChannelPinned };
   },
 
-  useSetSidebarSectionCollapsed: () => ({ mutate: vi.fn() }),
-  useSetSidebarFilter: () => ({ mutate: vi.fn() }),
+  useSetSidebarSectionCollapsed: (options?: { onError?: () => void }) => {
+    sidebarState.foldOptions = options;
+    return { mutate: vi.fn() };
+  },
+  useSetSidebarFilter: (options?: { onError?: () => void }) => {
+    sidebarState.filterOptions = options;
+    return { mutate: vi.fn() };
+  },
   SIDEBAR_SAVE_FAILED_TITLE: "Couldn't save your channel list",
   SIDEBAR_SAVE_FAILED_BODY: "Nothing changed.",
 }));
@@ -769,7 +781,32 @@ describe("ChatShell sidebar arrangement (#2877)", () => {
   afterEach(() => {
     sidebarState.pinnedIds = new Set();
     sidebarState.levels = [];
+    sidebarState.levelsError = false;
   });
+
+  it("hands the rail no muted set while the levels' last read failed", () => {
+    // Stale rows are still there beside the error; filtering on them could
+    // hide a channel the member has since unmuted.
+    sidebarState.levels = [{ channel_id: "chan-general", level: "off" }];
+    sidebarState.levelsError = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("rail-muted").textContent).toBe("unknown");
+  });
+
+  it.each(["foldOptions", "filterOptions"] as const)(
+    "reports a failed write through the %s hook option too",
+    (options) => {
+      mockToast.mockClear();
+      render(<ChatShell initialChannelId="chan-general" />);
+
+      sidebarState[options]?.onError?.();
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Couldn't save your channel list",
+        description: "Nothing changed.",
+      });
+    },
+  );
 
   it("hands the rail the channels whose level is off, and no others", () => {
     sidebarState.levels = [
