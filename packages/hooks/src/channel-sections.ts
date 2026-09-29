@@ -2,10 +2,10 @@
  * How a chat channel list divides into category sections, shared so web's rail
  * and mobile's s04 apply one rule instead of two copies free to disagree
  * (#1684). The behavior is owned by `spec/behavior/chat/README.md` § Channels
- * (the "Channel categories" rule): named groups, with anything unassigned in a default "Channels"
- * group. Labels, sorting inside a section, and any extra sections a client
- * draws (web's System group, both clients' Hidden conversations) stay with the
- * client.
+ * (the "Channel categories" rule): named groups, with anything unassigned in a
+ * default "Channels" group. Labels, sorting inside a section, and any extra
+ * sections a client draws (web's System group, both clients' Hidden
+ * conversations) stay with the client.
  */
 
 import { isDirectChannel } from "@repo/validation";
