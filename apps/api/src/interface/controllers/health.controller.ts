@@ -27,9 +27,9 @@ const PROBE_TIMEOUT_MS = 3000;
 // each opened a fresh TLS connection, because undici drops a socket after 4
 // idle seconds. Measured against Supabase (2026-09-29), that is ~2.4 KB sent
 // per probe before TCP/IP headers, which puts the probes at an estimated 60%
-// of an idle instance's ~6.5 MB/hour of billed Render egress. `/health/ready` never uses
-// this cache: the deploy gate, and anyone checking a recovery, needs a probe
-// taken now.
+// of an idle instance's ~6.5 MB/hour of billed Render egress. `/health/ready`
+// never uses this cache: the deploy gate, and anyone checking a recovery,
+// needs a probe taken now.
 export const LIVENESS_PROBE_TTL_MS = 60_000;
 
 interface DependencyProbes {
