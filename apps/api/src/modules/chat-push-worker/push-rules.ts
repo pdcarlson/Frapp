@@ -11,6 +11,7 @@
  * default, then the built-in one — so read it rather than a summary here.
  */
 
+import { builtInChannelDefault, isDirectChannel } from '@repo/validation';
 import type {
   ChatNotificationLevel,
   ChatNotificationPreferenceRow,
@@ -43,37 +44,6 @@ export interface PushDecisionInput {
   hasMention: boolean;
   /** Pref rows for the (user, chapter). Empty means "no preference set". */
   preferences: ChatNotificationPreferenceRow[];
-}
-
-/**
- * Whether a channel is the chapter's announcements channel, for the default
- * level here and for the push's title, priority and category in the worker.
- *
- * Two shapes qualify, the union of what the two push paths used to check
- * separately before the worker became the only one (#2771):
- *
- * - a channel named exactly `announcements`, the seeded one;
- * - a PUBLIC, read-only channel whose name contains `announcements`, which is
- *   what `ChatService`'s own fan-out keyed on. Everyone reads it and only the
- *   `announcements:post` holders write it, so a chapter-wide URGENT push is
- *   sound. A channel merely *named* `intramural-announcements` that anyone can
- *   post in does not qualify, or any member could page the whole roster.
- *
- * Still name-keyed, and so still one rename from changing; narrowing it is
- * part of #1323.
- */
-export function isAnnouncementChannel(channel: PushRuleChannel): boolean {
-  if (channel.name === 'announcements') return true;
-  return (
-    channel.type === 'PUBLIC' &&
-    channel.is_read_only === true &&
-    channel.name.toLowerCase().includes('announcements')
-  );
-}
-
-/** A 1:1 or group DM. Every message there is addressed to its members. */
-export function isDirectChannel(channel: Pick<PushRuleChannel, 'type'>) {
-  return channel.type === 'DM' || channel.type === 'GROUP_DM';
 }
 
 /**
@@ -110,11 +80,10 @@ export function resolveLevel(
  *    otherwise. Until #2771 this came from a second push path in `ChatService`
  *    that ignored the member's own mute; now a DM mute holds.
  * 3. The officer-set channel default, when one is stored.
- * 4. The built-in default, which is what an officer's "seeded" value is until
- *    they change it: `all` for the announcements channel and `#general`,
- *    `off` for `#chapter-audit`, `mentions` for the rest. Seeding it by rule
- *    rather than by writing rows means no backfill, and a chapter created
- *    tomorrow gets the same answer as one created a year ago.
+ * 4. The built-in default (`builtInChannelDefault` in `@repo/validation`,
+ *    shared with the web officer control that displays it): `all` for the
+ *    announcements channel and `#general`, `off` for `#chapter-audit`,
+ *    `mentions` for the rest.
  */
 export function defaultLevelFor(
   channel: PushRuleChannel,
@@ -132,21 +101,6 @@ export function defaultLevelFor(
     return channel.default_notification_level;
   }
   return builtInChannelDefault(channel);
-}
-
-/**
- * The default a chapter channel has before any officer sets one. Exported for
- * the channel payload, which reports it so the officer control can show what
- * "unset" currently means.
- */
-export function builtInChannelDefault(
-  channel: PushRuleChannel,
-): ChatNotificationLevel {
-  if (isDirectChannel(channel)) return 'all';
-  if (isAnnouncementChannel(channel)) return 'all';
-  if (channel.name === 'general') return 'all';
-  if (channel.name === 'chapter-audit') return 'off';
-  return 'mentions';
 }
 
 export type PushOutcome = 'send' | 'skip-level' | 'skip-presence';

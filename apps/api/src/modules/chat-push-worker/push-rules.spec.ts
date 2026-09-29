@@ -1,8 +1,6 @@
 import {
-  builtInChannelDefault,
   decidePush,
   defaultLevelFor,
-  isAnnouncementChannel,
   resolveLevel,
   type PushRuleChannel,
 } from './push-rules';
@@ -308,43 +306,5 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
         },
       ]),
     ).toBe('mentions');
-  });
-
-  it('builtInChannelDefault ignores what is stored', () => {
-    expect(
-      builtInChannelDefault(
-        ch('general', { default_notification_level: 'off' }),
-      ),
-    ).toBe('all');
-    expect(builtInChannelDefault(ch('chapter-audit'))).toBe('off');
-    expect(builtInChannelDefault(ch('random'))).toBe('mentions');
-  });
-});
-
-describe('isAnnouncementChannel', () => {
-  it('matches the seeded channel by name alone', () => {
-    expect(isAnnouncementChannel(ch('announcements'))).toBe(true);
-  });
-  it('matches a public read-only channel whose name contains it', () => {
-    expect(
-      isAnnouncementChannel(
-        ch('Chapter-Announcements', { is_read_only: true }),
-      ),
-    ).toBe(true);
-  });
-  it('does not match one anyone can post in', () => {
-    expect(isAnnouncementChannel(ch('intramural-announcements'))).toBe(false);
-  });
-  it('does not match a private or role-gated one', () => {
-    expect(
-      isAnnouncementChannel(
-        ch('exec-announcements', { type: 'PRIVATE', is_read_only: true }),
-      ),
-    ).toBe(false);
-    expect(
-      isAnnouncementChannel(
-        ch('alumni-announcements', { type: 'ROLE_GATED', is_read_only: true }),
-      ),
-    ).toBe(false);
   });
 });

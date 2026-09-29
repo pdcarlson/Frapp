@@ -293,6 +293,11 @@ export function useUpdateChannel() {
         /** `null` clears the channel back to uncategorized; `undefined` leaves it untouched. */
         category_id?: string | null;
         is_read_only?: boolean;
+        /**
+         * The officer-set default push level (#2771). `null` clears it back to
+         * the built-in default; `undefined` leaves it untouched.
+         */
+        default_notification_level?: ChatNotificationLevel | null;
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/channels/{id}", {

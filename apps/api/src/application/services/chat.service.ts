@@ -477,10 +477,23 @@ export class ChatService {
         | 'required_permissions'
         | 'category_id'
         | 'is_read_only'
+        | 'default_notification_level'
       >
     >,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+
+    // A DM has no officer, and the push worker defaults every DM to `all`
+    // whatever this column holds (`defaultLevelFor`), so a stored value there
+    // would be a setting that does nothing. Refused rather than ignored.
+    if (
+      (existing.type === 'DM' || existing.type === 'GROUP_DM') &&
+      data.default_notification_level != null
+    ) {
+      throw new BadRequestException(
+        'A DM or group DM has no channel default notification level',
+      );
+    }
 
     // `type` is not updatable, so the existing row decides whether the gate
     // applies. Only guard when the caller actually sends the field — omitting it
@@ -1692,7 +1705,8 @@ export class ChatService {
    * out of the `["channels"]` prefix, so this stopped being invalidated twice
    * on every channel switch; the per-call cost went up and the call count went
    * down. If it ever does show up, the fix is a projection on `findByChapter`
-   * (only `id` and `name` are used here), not a return to guessing defaults
+   * (`resolveLevel` reads `id`, `name`, `type`, `is_read_only` and
+   * `default_notification_level`), not a return to guessing defaults
    * client-side.
    */
   async getChannelNotificationPreferences(chapterId: string, userId: string) {

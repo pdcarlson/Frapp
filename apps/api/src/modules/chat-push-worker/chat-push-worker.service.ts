@@ -17,12 +17,12 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { NotificationService } from '../../application/services/notification.service';
 import { BurstBundler } from './burst-bundler';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
+import { decidePush } from './push-rules';
 import {
-  decidePush,
+  canAccessChannel,
   isAnnouncementChannel,
   isDirectChannel,
-} from './push-rules';
-import { canAccessChannel } from '@repo/validation';
+} from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { ChatBlockService } from '../../application/services/chat-block.service';

@@ -115,6 +115,7 @@ describe('ChatService', () => {
     is_read_only: false,
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
+    default_notification_level: null,
   };
 
   const baseMessage: ChatMessage = {
@@ -508,6 +509,54 @@ describe('ChatService', () => {
       expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
         name: 'renamed',
       });
+    });
+
+    describe('default_notification_level (#2771)', () => {
+      it('passes an officer-set default through, and evicts the push cache', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+        await service.updateChannel('chan-1', 'ch-1', {
+          default_notification_level: 'mentions',
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          default_notification_level: 'mentions',
+        });
+        // The worker reads this column from its channel cache, so a change
+        // that did not evict would keep pushing on the old default.
+        expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-1');
+      });
+
+      it('passes null through, which clears it back to the built-in default', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          default_notification_level: null,
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          default_notification_level: null,
+        });
+      });
+
+      it.each(['DM', 'GROUP_DM'] as const)(
+        'refuses a default on a %s, which always defaults to all',
+        async (type) => {
+          mockChannelRepo.findById.mockResolvedValue({
+            ...baseChannel,
+            type,
+            member_ids: ['user-1', 'user-2'],
+          });
+
+          await expect(
+            service.updateChannel('chan-1', 'ch-1', {
+              default_notification_level: 'off',
+            }),
+          ).rejects.toThrow(BadRequestException);
+          expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        },
+      );
     });
 
     it('should allow clearing required_permissions on a non-ROLE_GATED channel', async () => {

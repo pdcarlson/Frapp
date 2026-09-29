@@ -2292,3 +2292,21 @@ alter table public.discord_imports drop column if exists messages_after;
 ```
 
 An import that was running with a cutoff reads all history from where it stopped once the old worker picks it up again: the channels it finished keep only the newer messages, and the rest import everything.
+
+## Rollback chat channel default push level (20260929190000)
+
+* **Migration**: `20260929190000_chat_channels_default_notification_level.sql`
+
+One nullable column and its CHECK on `chat_channels` (#2771). No data is rewritten.
+
+**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration selects `default_notification_level` in the push worker and writes it from `PATCH /v1/channels/{id}`. Revert the #2771 code on `main` and ship that, but keep `supabase/migrations/20260929190000_chat_channels_default_notification_level.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+Then drop the column in a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260929190000` as applied, so a later re-land would apply nothing:
+
+```sql
+alter table public.chat_channels
+  drop constraint if exists chat_channels_default_notification_level_check;
+alter table public.chat_channels drop column if exists default_notification_level;
+```
+
+Channels an officer set lose that choice and fall back to the built-in default. Members' own levels are in `chat_notification_preferences` and are untouched.

@@ -3609,6 +3609,11 @@ export interface components {
             /** Format: uuid */
             category_id?: string | null;
             is_read_only?: boolean;
+            /**
+             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.
+             * @enum {string|null}
+             */
+            default_notification_level?: "all" | "mentions" | "off" | null;
         };
         CreateDmDto: {
             /** @description The other member user ID */
