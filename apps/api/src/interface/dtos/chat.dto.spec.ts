@@ -2,7 +2,7 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
-import { GetChannelMessagesQueryDto } from './chat.dto';
+import { GetChannelMessagesQueryDto, UpdateChannelDto } from './chat.dto';
 
 const VALID_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const VALID_ISO = '2026-04-01T12:00:00.000Z';
@@ -87,5 +87,40 @@ describe('GetChannelMessagesQueryDto', () => {
     await expect(transform({ since: 'not-a-uuid' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+/**
+ * `default_notification_level` (#2771) takes `null` as a value, not an
+ * absence: it clears an officer's choice back to the built-in default. Run
+ * through the real pipe, as `PATCH /v1/channels/:id` does, because the service
+ * specs hand the service a plain object and never exercise the decorators.
+ */
+describe('UpdateChannelDto.default_notification_level', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (body: Record<string, unknown>) =>
+    pipe.transform(body, { type: 'body', metatype: UpdateChannelDto });
+
+  it.each(['all', 'mentions', 'off'])('accepts %s', async (level) => {
+    await expect(
+      transform({ default_notification_level: level }),
+    ).resolves.toMatchObject({ default_notification_level: level });
+  });
+
+  it('accepts null, which clears it', async () => {
+    await expect(
+      transform({ default_notification_level: null }),
+    ).resolves.toMatchObject({ default_notification_level: null });
+  });
+
+  it('leaves it out when omitted', async () => {
+    const result = await transform({ name: 'general' });
+    expect(result.default_notification_level).toBeUndefined();
+  });
+
+  it('rejects any other value', async () => {
+    await expect(
+      transform({ default_notification_level: 'loud' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

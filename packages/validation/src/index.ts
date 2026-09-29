@@ -1094,3 +1094,14 @@ export {
 } from "./recurrence";
 export type { RecurrenceRule } from "./recurrence";
 export { MISSING_SIGNED_UPLOAD, readSignedUpload } from "./signed-upload";
+
+export {
+  CHAT_NOTIFICATION_LEVELS,
+  builtInChannelDefault,
+  isAnnouncementChannel,
+  isDirectChannel,
+} from "./chat-notification-defaults";
+export type {
+  ChatNotificationLevel,
+  NotificationDefaultChannel,
+} from "./chat-notification-defaults";

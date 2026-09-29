@@ -17,7 +17,10 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
+import {
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  CHAT_NOTIFICATION_LEVELS,
+} from '@repo/validation';
 import {
   CHAT_MESSAGE_KINDS,
   SETTABLE_NOTIFICATION_KINDS,
@@ -110,6 +113,20 @@ export class UpdateChannelDto {
   @IsOptional()
   @IsBoolean()
   is_read_only?: boolean;
+
+  // Nullable for the reason `category_id` is: `null` clears an officer's
+  // choice and returns the channel to its built-in default, which has to be
+  // expressible distinctly from "leave this field alone".
+  @ApiPropertyOptional({
+    enum: CHAT_NOTIFICATION_LEVELS,
+    type: String,
+    nullable: true,
+    description:
+      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.",
+  })
+  @IsOptional()
+  @IsIn(CHAT_NOTIFICATION_LEVELS)
+  default_notification_level?: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
 }
 
 export class CreateDmDto {
@@ -383,17 +400,25 @@ export class ChannelUnreadCountDto {
  *
  * `off` is what the UI calls "muted". It is not absolute: `decidePush` lifts it
  * when the message mentions the recipient, which is the spec'd mention override
- * (`spec/behavior/notifications.md` § Per-Channel Mute). `mentions` is the
- * default for ordinary channels, so setting a channel to `mentions` is a reset
- * to default rather than a distinct third state the user has to reason about.
+ * (`spec/behavior/notifications.md` § Per-Channel Mute). A channel's default
+ * is not always `mentions`: officers can set one per channel, and without one
+ * `#general` and the announcements channel default to `all` (#2771). So a
+ * member's stored `mentions` is a real choice, not a reset to default.
+ *
+ * The same three values are the `chat_channels.default_notification_level`
+ * CHECK constraint.
+ *
+ * Defined in `@repo/validation` beside `builtInChannelDefault`, and imported at
+ * the top of this file: `UpdateChannelDto`'s decorator reads it before a local
+ * `const` here would be initialized.
  */
-export const CHAT_NOTIFICATION_LEVELS = ['all', 'mentions', 'off'] as const;
+export { CHAT_NOTIFICATION_LEVELS };
 
 export class SetChannelNotificationLevelDto {
   @ApiProperty({
     enum: CHAT_NOTIFICATION_LEVELS,
     description:
-      'all = every message; mentions = only when you are mentioned (default); off = muted, though @mentions still notify.',
+      'all = every message; mentions = only when you are mentioned; off = muted, though @mentions still notify. With no level stored for the channel, a kind-level override applies (outside DMs), else the channel default (officer-set, else `all` for #general, the announcements channel and DMs, `off` for #chapter-audit, `mentions` for the rest); GET /v1/channels/notification-preferences reports it.',
   })
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
@@ -411,7 +436,7 @@ export class SetKindNotificationLevelDto {
   @ApiProperty({
     enum: CHAT_NOTIFICATION_LEVELS,
     description:
-      'all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel.',
+      'all = every message of this kind; mentions = only when you are mentioned; off = muted, though @mentions still notify — the one exception is the system_audit kind, whose off a mention does not lift. A channel-scoped preference outranks this one for messages in that channel. In a DM or group DM this applies only when it is louder than the DM default of all, so it cannot quiet a DM.',
   })
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
@@ -430,7 +455,7 @@ export class KindNotificationPreferenceDto {
     type: String,
     nullable: true,
     description:
-      "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.",
+      "The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.",
   })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
 }

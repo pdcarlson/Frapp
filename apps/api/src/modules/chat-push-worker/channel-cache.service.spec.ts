@@ -14,6 +14,7 @@ describe('ChannelCacheService', () => {
     type: 'PUBLIC',
     member_ids: null,
     required_permissions: null,
+    default_notification_level: null,
   };
 
   beforeEach(() => {

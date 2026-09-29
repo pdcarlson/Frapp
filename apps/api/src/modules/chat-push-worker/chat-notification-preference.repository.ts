@@ -1,3 +1,4 @@
+import type { ChatNotificationLevel } from '@repo/validation';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
@@ -29,8 +30,8 @@ import { fetchAllPages } from '../../infrastructure/supabase/supabase.utils';
  */
 export const PREFERENCE_PAGE_SIZE = 500;
 
-/** Per-channel-or-kind notification level (ADR-06). */
-export type ChatNotificationLevel = 'all' | 'mentions' | 'off';
+/** Per-channel-or-kind notification level (ADR-06), defined in `@repo/validation`. */
+export type { ChatNotificationLevel } from '@repo/validation';
 
 export interface ChatNotificationPreferenceRow {
   user_id: string;

@@ -115,6 +115,7 @@ describe('ChatService', () => {
     is_read_only: false,
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
+    default_notification_level: null,
   };
 
   const baseMessage: ChatMessage = {
@@ -508,6 +509,54 @@ describe('ChatService', () => {
       expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
         name: 'renamed',
       });
+    });
+
+    describe('default_notification_level (#2771)', () => {
+      it('passes an officer-set default through, and evicts the push cache', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+        await service.updateChannel('chan-1', 'ch-1', {
+          default_notification_level: 'mentions',
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          default_notification_level: 'mentions',
+        });
+        // The worker reads this column from its channel cache, so a change
+        // that did not evict would keep pushing on the old default.
+        expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-1');
+      });
+
+      it('passes null through, which clears it back to the built-in default', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          default_notification_level: null,
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          default_notification_level: null,
+        });
+      });
+
+      it.each(['DM', 'GROUP_DM'] as const)(
+        'refuses a default on a %s, which always defaults to all',
+        async (type) => {
+          mockChannelRepo.findById.mockResolvedValue({
+            ...baseChannel,
+            type,
+            member_ids: ['user-1', 'user-2'],
+          });
+
+          await expect(
+            service.updateChannel('chan-1', 'ch-1', {
+              default_notification_level: 'off',
+            }),
+          ).rejects.toThrow(BadRequestException);
+          expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        },
+      );
     });
 
     it('should allow clearing required_permissions on a non-ROLE_GATED channel', async () => {
@@ -3461,6 +3510,8 @@ describe('ChatService', () => {
       ...baseChannel,
       id: 'ch-ann',
       name: 'announcements',
+      // As seeded: the announcements default needs a read-only PUBLIC channel.
+      is_read_only: true,
     };
     const audit: ChatChannel = {
       ...baseChannel,
@@ -3491,7 +3542,8 @@ describe('ChatService', () => {
       );
 
       expect(result).toEqual([
-        { channel_id: 'ch-chan-1', level: 'mentions' },
+        // `baseChannel` is #general, which defaults to `all` (#2771).
+        { channel_id: 'ch-chan-1', level: 'all' },
         { channel_id: 'ch-ann', level: 'all' },
         { channel_id: 'ch-audit', level: 'off' },
       ]);
@@ -3522,7 +3574,8 @@ describe('ChatService', () => {
 
       // `announcements` defaults to `all`; the stored `off` must win.
       expect(result).toEqual([
-        { channel_id: 'ch-chan-1', level: 'mentions' },
+        // `baseChannel` is #general, which defaults to `all` (#2771).
+        { channel_id: 'ch-chan-1', level: 'all' },
         { channel_id: 'ch-ann', level: 'off' },
       ]);
     });
@@ -3569,7 +3622,7 @@ describe('ChatService', () => {
         'user-1',
       );
 
-      expect(result).toEqual([{ channel_id: 'ch-chan-1', level: 'mentions' }]);
+      expect(result).toEqual([{ channel_id: 'ch-chan-1', level: 'all' }]);
       expect(result.some((r) => r.channel_id === 'ch-secret')).toBe(false);
     });
 
@@ -4291,240 +4344,12 @@ describe('ChatService', () => {
   });
 
   // ── Notification triggers ──────────────────────────────────────────
-
-  describe('sendMessage notifications', () => {
-    it('should notify DM recipients', async () => {
-      const dmChannel: ChatChannel = {
-        ...baseChannel,
-        type: 'DM',
-        member_ids: ['user-1', 'user-2'],
-      };
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue(dmChannel);
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello!',
-      });
-
-      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
-        'user-2',
-        'ch-1',
-        expect.objectContaining({
-          title: 'New Message',
-          priority: 'NORMAL',
-          category: 'chat',
-        }),
-      );
-    });
-
-    it('should notify chapter for announcement messages', async () => {
-      const announcementChannel: ChatChannel = {
-        ...baseChannel,
-        name: 'announcements',
-        type: 'PUBLIC',
-        // The seeded shape: everyone reads, only `announcements:post` writes.
-        is_read_only: true,
-      };
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue(announcementChannel);
-      // A read-only channel is postable only with the permission — which is the
-      // point: `announcements:post` is what authorizes an announcement.
-      mockRbac.getEffectivePermissions.mockResolvedValue([
-        'announcements:post',
-      ]);
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Important update!',
-      });
-
-      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
-        'ch-1',
-        expect.objectContaining({
-          title: 'New Announcement',
-          priority: 'URGENT',
-          category: 'announcements',
-        }),
-        expect.objectContaining({ filterAudience: expect.any(Function) }),
-      );
-    });
-
-    // ── Blocks (#2324) ───────────────────────────────────────────────
-    //
-    // This path writes an in-app row and pushes the body, independently of the
-    // chat push worker, so it owes the same audience filter the worker applies.
-
-    it('does not notify a DM recipient who has blocked the sender', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue({
-        ...baseChannel,
-        type: 'GROUP_DM',
-        member_ids: ['user-1', 'user-2', 'user-blocker'],
-      });
-      mockChatBlocks.filterOutBlockers.mockResolvedValue(['user-2']);
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello!',
-      });
-
-      expect(mockChatBlocks.filterOutBlockers).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-        ['user-2', 'user-blocker'],
-      );
-      expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
-      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
-        'user-2',
-        'ch-1',
-        expect.anything(),
-      );
-    });
-
-    it('drops blockers from the announcement fan-out', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue({
-        ...baseChannel,
-        name: 'announcements',
-        type: 'PUBLIC',
-        is_read_only: true,
-      });
-      mockRbac.getEffectivePermissions.mockResolvedValue([
-        'announcements:post',
-      ]);
-      mockChatBlocks.filterOutBlockers.mockResolvedValue(['user-2']);
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Important update!',
-      });
-
-      // The filter is handed to `notifyChapter`, which runs it on the roster it
-      // loads. Run it the way that method would.
-      const [, , options] = mockNotificationService.notifyChapter.mock
-        .calls[0] as unknown as [
-        string,
-        unknown,
-        { filterAudience: (ids: string[]) => Promise<string[]> },
-      ];
-      await expect(
-        options.filterAudience(['user-1', 'user-2', 'user-blocker']),
-      ).resolves.toEqual(['user-2']);
-      expect(mockChatBlocks.filterOutBlockers).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-        ['user-1', 'user-2', 'user-blocker'],
-      );
-    });
-
-    it('notifies nobody, and still sends, when the block list cannot be read', async () => {
-      // Fail closed on the notification, not on the message: the send has
-      // already committed, and every DM recipient going un-notified is the safe
-      // side of pushing a blocked member's words to the blocker.
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue({
-        ...baseChannel,
-        type: 'DM',
-        member_ids: ['user-1', 'user-2'],
-      });
-      mockChatBlocks.filterOutBlockers.mockRejectedValue(new Error('pg down'));
-
-      const result = await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello!',
-      });
-
-      expect(result.message).toEqual(baseMessage);
-      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
-    });
-
-    // #1008: the fan-out pushes the message body to EVERY chapter member, so it
-    // is only sound where every member can read the channel. Matching on the
-    // name alone, a PRIVATE channel named `exec-announcements` — newly postable
-    // once its creator is seeded — would have broadcast its contents chapter-wide.
-    it.each(['PRIVATE', 'ROLE_GATED'] as const)(
-      'should not fan an announcement-named %s channel out to the chapter',
-      async (type) => {
-        mockMessageRepo.create.mockResolvedValue(baseMessage);
-        mockChannelRepo.findById.mockResolvedValue({
-          ...baseChannel,
-          name: 'exec-announcements',
-          type,
-          member_ids: type === 'PRIVATE' ? ['user-1'] : null,
-          required_permissions: type === 'ROLE_GATED' ? ['roles:manage'] : null,
-        });
-        // The sender must be able to POST for the notification to be reached at
-        // all; the point of the test is what happens after that, not the gate.
-        if (type === 'ROLE_GATED') {
-          mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
-        }
-
-        await service.sendMessage({
-          chapter_id: 'ch-1',
-          channel_id: 'ch-chan-1',
-          sender_id: 'user-1',
-          content: 'Private exec discussion',
-        });
-
-        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
-      },
-    );
-
-    // A PUBLIC channel anyone can post to must not be able to fan an URGENT,
-    // quiet-hours-exempt push to the whole roster just because it is named
-    // `*-announcements`. `announcements:post` is what governs authorship.
-    it('should not fan out from a PUBLIC channel that is not read-only', async () => {
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue({
-        ...baseChannel,
-        name: 'intramural-announcements',
-        type: 'PUBLIC',
-        is_read_only: false,
-      });
-
-      await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'anyone can post this',
-      });
-
-      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
-    });
-
-    it('should not fail if notification throws on sendMessage', async () => {
-      const dmChannel: ChatChannel = {
-        ...baseChannel,
-        type: 'DM',
-        member_ids: ['user-1', 'user-2'],
-      };
-      mockMessageRepo.create.mockResolvedValue(baseMessage);
-      mockChannelRepo.findById.mockResolvedValue(dmChannel);
-      mockNotificationService.notifyUser.mockRejectedValue(
-        new Error('push failed'),
-      );
-
-      const result = await service.sendMessage({
-        chapter_id: 'ch-1',
-        channel_id: 'ch-chan-1',
-        sender_id: 'user-1',
-        content: 'Hello!',
-      });
-
-      expect(result.message).toEqual(baseMessage);
-    });
-  });
+  //
+  // None. `sendMessage` pushes nothing itself: the chat push worker is the only
+  // chat push path (#2771), and its DM, announcement, mute and block cases are
+  // proven in `chat-push-worker.service.spec.ts`. `ChatService` no longer
+  // injects `NotificationService` at all, and `chat-read-surface-ledger.spec.ts`
+  // fails if a notify call reappears in this file.
 
   // ── Hot-path actions (chat_message_actions) ──────────────────────────
 

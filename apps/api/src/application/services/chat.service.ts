@@ -12,6 +12,7 @@ import {
   extractMentionTokens,
   isAllowedUploadExtension,
   isAllowedUploadMime,
+  isDirectChannel,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
   resolveMentions,
@@ -68,7 +69,6 @@ import {
   isChatMessageKind,
   isSettableNotificationKind,
 } from '#domain/entities/chat.entity';
-import { NotificationService } from './notification.service';
 import {
   ChannelAccessService,
   type ReportedMessageGrant,
@@ -290,7 +290,6 @@ export class ChatService {
     private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    private readonly notificationService: NotificationService,
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
     private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
@@ -479,10 +478,20 @@ export class ChatService {
         | 'required_permissions'
         | 'category_id'
         | 'is_read_only'
+        | 'default_notification_level'
       >
     >,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+
+    // A DM has no officer, and the push worker defaults every DM to `all`
+    // whatever this column holds (`defaultLevelFor`), so a stored value there
+    // would be a setting that does nothing. Refused rather than ignored.
+    if (isDirectChannel(existing) && data.default_notification_level != null) {
+      throw new BadRequestException(
+        'A DM or group DM has no channel default notification level',
+      );
+    }
 
     // `type` is not updatable, so the existing row decides whether the gate
     // applies. Only guard when the caller actually sends the field — omitting it
@@ -1011,16 +1020,11 @@ export class ChatService {
 
     await this.persistAttachments(message.id, input.channel_id, attachments);
 
-    try {
-      await this.notifyMessageRecipients(input, channel);
-    } catch (error) {
-      this.logger.warn('Failed to send message notification', {
-        messageId: message.id,
-        channelId: input.channel_id,
-        chapterId: input.chapter_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    // No push is sent from here. The push worker handles every
+    // `chat_messages` insert, this one included, and is the only chat push
+    // path (#2771): it applies the member's per-channel level, presence, burst
+    // bundling and the block and read filters. A second path here used to push
+    // DMs and announcements again on top of it, and ignored a muted DM.
 
     // Funnel step 4 (#267): the chapter's first *human* message. Server-
     // originated posts are excluded — the onboarding welcome message would
@@ -1084,80 +1088,6 @@ export class ChatService {
         error: error instanceof Error ? error.message : String(error),
       });
       return [];
-    }
-  }
-
-  private async notifyMessageRecipients(
-    input: SendMessageInput,
-    channel: ChatChannel,
-  ): Promise<void> {
-    // The announcement fan-out pushes the message body to **every member of the
-    // chapter**, so it is only sound for a channel every member can read — which
-    // is PUBLIC, and is what `spec/behavior/chat/README.md` describes
-    // (`#announcements` is all-read, exec-write via `announcements:post`).
-    //
-    // Matching on the name alone made the fan-out reachable from channels most
-    // of the chapter cannot read. That was already true of ROLE_GATED — the
-    // seeded `#alumni` channel is one rename away — and seeding `member_ids`
-    // (#1008) newly made PRIVATE channels postable at all, which would have put
-    // a one-member private channel named `exec-announcements` one send away
-    // from broadcasting its contents chapter-wide.
-    //
-    // `is_read_only` gates the *write* side for the same reason. Without it any
-    // member could post to a PUBLIC, non-read-only channel merely named
-    // `intramural-announcements` and fan an URGENT notification — which
-    // `NotificationService` exempts from the quiet-hours downgrade — to the
-    // whole roster. That contradicts this section of the chat spec, which says
-    // `announcements:post` governs who may author an announcement, and it is
-    // the same name-keying that `allowsInThreadReplies` deliberately avoids.
-    // Together the two flags are the structural shape of an announcements
-    // channel: everyone reads, only the permitted write.
-    const isAnnouncement =
-      channel.type === 'PUBLIC' &&
-      channel.is_read_only &&
-      channel.name.toLowerCase().includes('announcements');
-
-    // Both branches drop everyone who has blocked the sender (#2324), for the
-    // reason the push worker does: each writes an in-app row and pushes the body
-    // to a lock screen, so masking the preview would still buzz the blocker's
-    // phone. A DM is the sharpest case, since "nothing they send reaches the
-    // blocker" is the whole rule. `filterOutBlockers` throws when the block list
-    // cannot be read, and `sendMessage` catches it: the message still lands, but
-    // nobody is notified rather than everybody.
-    const withoutBlockers = (userIds: string[]) =>
-      this.chatBlocks.filterOutBlockers(
-        channel.chapter_id,
-        input.sender_id,
-        userIds,
-      );
-
-    if (isAnnouncement) {
-      await this.notificationService.notifyChapter(
-        channel.chapter_id,
-        {
-          title: 'New Announcement',
-          body: input.content.slice(0, 200),
-          priority: 'URGENT',
-          category: 'announcements',
-          data: { target: { screen: 'chat', channelId: channel.id } },
-        },
-        { filterAudience: withoutBlockers },
-      );
-    } else if (channel.type === 'DM' || channel.type === 'GROUP_DM') {
-      const recipientIds = await withoutBlockers(
-        (channel.member_ids ?? []).filter((id) => id !== input.sender_id),
-      );
-      await Promise.allSettled(
-        recipientIds.map((recipientId) =>
-          this.notificationService.notifyUser(recipientId, channel.chapter_id, {
-            title: 'New Message',
-            body: input.content.slice(0, 200),
-            priority: 'NORMAL',
-            category: 'chat',
-            data: { target: { screen: 'chat', channelId: channel.id } },
-          }),
-        ),
-      );
     }
   }
 
@@ -1744,9 +1674,10 @@ export class ChatService {
    * earlier cut of this returned only rows that exist in
    * `chat_notification_preferences`, leaving the client to assume `mentions`
    * for everything else. That is wrong for exactly the channels members most
-   * want to turn down: `defaultLevelFor` sends `#announcements` to `all` and
-   * `#chapter-audit` to `off`, and both are seeded into every chapter by
-   * `DEFAULT_CHANNELS`. The control would then have shown "Only @mentions" on a
+   * want to turn down: `defaultLevelFor` sends `#general` and `#announcements`
+   * to `all` and `#chapter-audit` to `off`, all three are seeded into every
+   * chapter by `DEFAULT_CHANNELS`, and officers can set any channel's default
+   * (#2771). The control would then have shown "Only @mentions" on a
    * channel actually pushing every message at URGENT, and — because the popover
    * suppresses a write for the option already displayed as current — the single
    * most natural corrective click did nothing at all.
@@ -1773,17 +1704,19 @@ export class ChatService {
    * out of the `["channels"]` prefix, so this stopped being invalidated twice
    * on every channel switch; the per-call cost went up and the call count went
    * down. If it ever does show up, the fix is a projection on `findByChapter`
-   * (only `id` and `name` are used here), not a return to guessing defaults
+   * (`resolveLevel` reads `id`, `name`, `type`, `is_read_only` and
+   * `default_notification_level`), not a return to guessing defaults
    * client-side.
    */
   async getChannelNotificationPreferences(chapterId: string, userId: string) {
     // BOTH arms are loaded, not just the channel one. Kind-scoped rows became
     // writable in #500, and `resolveLevel` consults them whenever a channel has
-    // no row of its own — so reading only the channel arm would report the
-    // pre-#500 answer. A member who sets the `text` kind to `off` would see
-    // every channel rendered `mentions` here while the worker pushed nothing,
-    // which is exactly the "UI that disagrees with the worker about whether you
-    // are muted" this method's contract exists to prevent.
+    // no row of its own (in a DM, only a louder one counts) — so reading only
+    // the channel arm would report the pre-#500 answer. A member who sets the
+    // `text` kind to `off` would see every channel rendered `mentions` here
+    // while the worker pushed nothing, which is exactly the "UI that disagrees
+    // with the worker about whether you are muted" this method's contract
+    // exists to prevent.
     const [channelRows, kindRows, channels] = await Promise.all([
       this.chatNotificationPrefs.findChannelPreferencesForUser(
         userId,
@@ -1813,7 +1746,7 @@ export class ChatService {
     // message do".
     return accessible.map((channel) => ({
       channel_id: channel.id,
-      level: resolveLevel(channel.name, channel.id, 'text', preferences),
+      level: resolveLevel(channel, 'text', preferences),
     }));
   }
 
@@ -1826,8 +1759,10 @@ export class ChatService {
    * `null` rather than a filled-in default, which is the one place this
    * endpoint deliberately differs from its per-channel sibling. A kind
    * preference is chapter-wide, but the default it would fall back to is
-   * **not**: `defaultLevelFor` resolves an `announcement` message to `all` in
-   * a channel named `announcements` and `mentions` anywhere else, so there is
+   * **not**: `defaultLevelFor` resolves an `announcement` message through the
+   * channel's default, which is `all` in the announcements channel, #general
+   * and DMs, whatever an officer set elsewhere, and `mentions` otherwise; and a
+   * kind row never reaches a DM at all (#2771). So there is
    * no single chapter-wide default for a kind to report. Inventing one would
    * be worse than useless in two concrete ways — it would state `mentions` for
    * `announcement` when the seeded `#announcements` channel actually resolves
@@ -1836,7 +1771,8 @@ export class ChatService {
    * undo it short of the DELETE below.
    *
    * The effective level for a real message is the per-channel endpoint's
-   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain.
+   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain
+   * (in a DM a kind row counts only when louder than the DM's `all`).
    * This endpoint answers only "what have I overridden".
    *
    * No channel-access check is needed or possible here: a kind is not a
@@ -1862,8 +1798,8 @@ export class ChatService {
   /**
    * Clear the caller's override for one kind, returning it to the default.
    *
-   * The counterpart to the setter, and not optional surface: because a kind
-   * override outranks every channel's name-derived default, an override a
+   * The counterpart to the setter, and not optional surface: because outside
+   * DMs a kind override outranks every channel's default, an override a
    * member cannot remove is a permanent, invisible downgrade of
    * `#announcements`.
    *

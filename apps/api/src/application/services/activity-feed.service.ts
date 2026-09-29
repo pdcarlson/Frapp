@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { can } from '@repo/validation';
+import { can, isAnnouncementChannel } from '@repo/validation';
 import { EventService } from './event.service';
 import { PointsService } from './points.service';
 import { BackworkService } from './backwork.service';
@@ -297,18 +297,13 @@ export class ActivityFeedService {
   ): Promise<ActivityFeedItem[]> {
     // Resolved the same way the chat sidebar resolves the caller's visible
     // channel list — never a direct `chat_messages` scan keyed on a channel
-    // name, which would bypass `assertChannelAccess` entirely. The
-    // name+flags heuristic itself mirrors `ChatService`'s own
-    // `notifyMessageRecipients` (chat.service.ts) — an officer renaming the
-    // seeded channel silently drops this domain from the feed, the same
-    // accepted risk that heuristic already carries elsewhere in the app.
+    // name, which would bypass `assertChannelAccess` entirely. Which channel
+    // is the announcements channel is `isAnnouncementChannel`, the predicate
+    // the push worker uses too, so the feed and the URGENT push cannot
+    // disagree about it. It is name-keyed: an officer renaming the seeded
+    // channel silently drops this domain from the feed (#1323).
     const channels = await this.chatService.getChannels(chapterId, userId);
-    const announcementChannel = channels.find(
-      (channel) =>
-        channel.type === 'PUBLIC' &&
-        channel.is_read_only &&
-        channel.name.toLowerCase().includes('announcements'),
-    );
+    const announcementChannel = channels.find(isAnnouncementChannel);
     if (!announcementChannel) return [];
 
     // Two kinds of row are filtered out after the read, so it over-fetches and

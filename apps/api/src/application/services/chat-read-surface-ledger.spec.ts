@@ -330,8 +330,8 @@ const HTTP_LEDGER: Record<string, Entry> = {
     },
   },
   NotificationController_listNotifications_v1: {
-    // Serves every in-app row, whoever wrote it. The chat rows
-    // `ChatService.notifyMessageRecipients` writes for DMs and announcements are
+    // Serves every in-app row, whoever wrote it. The chat rows the push worker
+    // writes (DMs and announcements among them, since #2771) are
     // masked at write time: no row is written for a member who had blocked the
     // sender (PUSH_LEDGER below holds the proofs), and a row written before the
     // block stays, as notification history, though the thread now tombstones
@@ -431,20 +431,6 @@ const PUSH_LEDGER: Record<string, Entry> = {
       test: 'does not notify a recipient who has blocked the sender',
     },
   },
-  'ChatService.notifyMessageRecipients (DM and group DM)': {
-    status: 'masked',
-    proof: {
-      spec: CHAT_SERVICE_SPEC,
-      test: 'does not notify a DM recipient who has blocked the sender',
-    },
-  },
-  'ChatService.notifyMessageRecipients (announcements)': {
-    status: 'masked',
-    proof: {
-      spec: CHAT_SERVICE_SPEC,
-      test: 'drops blockers from the announcement fan-out',
-    },
-  },
   'reactions (no push exists)': {
     status: 'masked',
     proof: {
@@ -479,13 +465,6 @@ const MEMBER_TEXT: Entry = {
  * tree, so a mention in a comment or a string does not count.
  */
 const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
-  'application/services/chat.service.ts': {
-    calls: 3,
-    entries: [
-      PUSH_LEDGER['ChatService.notifyMessageRecipients (DM and group DM)'],
-      PUSH_LEDGER['ChatService.notifyMessageRecipients (announcements)'],
-    ],
-  },
   'modules/chat-push-worker/chat-push-worker.service.ts': {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],

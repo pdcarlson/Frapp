@@ -185,12 +185,13 @@ export function selectUnreadIds(data: unknown): string[] {
 /**
  * Count of unread rows whose target is **not** chat.
  *
- * `ChatService` writes a `notifications` row (`target.screen: "chat"`) for
- * every DM, group-DM, and announcement message, on top of the read-receipt
- * count `useChannelUnreadCounts` already returns for that same channel — see
- * `chat.service.ts`'s `notifyMessageRecipients`. Summing `selectUnreadIds`'s
- * total with the channel-unread total would therefore double-count exactly
- * those messages. The app-icon badge (`use-badge-sync.ts`) needs this
+ * The API's chat push worker writes a `notifications` row
+ * (`target.screen: "chat"`) for every chat push it sends (DMs, group DMs,
+ * announcements, mentions, and any channel at level `all`), on top of the
+ * read-receipt count `useChannelUnreadCounts` already returns for that same
+ * channel — see `chat-push-worker.service.ts`'s `buildPayload`. Summing
+ * `selectUnreadIds`'s total with the channel-unread total would therefore
+ * double-count exactly those messages. The app-icon badge (`use-badge-sync.ts`) needs this
  * exclusion; "Mark all read" does not — it must still clear chat-sourced rows
  * — so this is a separate selector rather than a change to `selectUnreadIds`.
  */
