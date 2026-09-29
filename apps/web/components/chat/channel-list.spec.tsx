@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import {
+  ChannelFilters,
   ChannelList,
   badgeLabel,
+  type ChannelSidebarControls,
   unreadAnnouncement,
   type ChannelCategory,
   type ChatChannel,
@@ -487,5 +489,331 @@ describe("ChannelList hide and reopen (#2303)", () => {
     expect(
       screen.queryByRole("button", { name: /^Hidden conversations/ }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// ── Sidebar arrangement (#2877) ─────────────────────────────────────────────
+//
+// The arrangement itself (pins, sort, filters, folds) is pinned in
+// `@repo/hooks`' `channel-sidebar.spec.ts`. These cases pin what the rail adds:
+// that it renders that output, draws the fold control and the folded badge,
+// offers pin, and shows the filtered-out empty state.
+
+const announcements: ChatChannel = {
+  id: "c-ann",
+  name: "announcements",
+  type: "PUBLIC",
+  is_read_only: true,
+};
+const exec: ChatChannel = { id: "c-exec", name: "exec", type: "PRIVATE" };
+
+function sidebarControls(
+  overrides: Partial<ChannelSidebarControls> = {},
+): ChannelSidebarControls {
+  return {
+    preferences: {
+      pinnedIds: new Set(),
+      collapsed: new Set(),
+      filters: { unreadOnly: false, hideMuted: false },
+    },
+    mutedChannelIds: new Set(),
+    onSetPinned: vi.fn(),
+    onSetCollapsed: vi.fn(),
+    onSetFilters: vi.fn(),
+    onClearFilters: vi.fn(),
+    ...overrides,
+  };
+}
+
+function renderArranged(
+  sidebar: ChannelSidebarControls,
+  unread: Map<string, ChannelUnread> = new Map(),
+  activeChannelId: string | null = null,
+) {
+  return render(
+    <ChannelList
+      channels={[general, announcements, exec, dm]}
+      activeChannelId={activeChannelId}
+      viewerId={VIEWER}
+      memberNames={NAMES}
+      unreadByChannelId={unread}
+      onPick={vi.fn()}
+      onHide={vi.fn()}
+      sidebar={sidebar}
+    />,
+  );
+}
+
+/** The fold headers, in DOM order, with their expanded state. */
+function headers() {
+  return screen
+    .getAllByRole("button", { expanded: true })
+    .concat(screen.queryAllByRole("button", { expanded: false }))
+    .filter((node) => node.id.startsWith("channel-section:"))
+    .sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    )
+    .map(
+      (node) =>
+        `${node.textContent}${node.getAttribute("aria-expanded") === "false" ? " (folded)" : ""}`,
+    );
+}
+
+describe("ChannelList sidebar arrangement (#2877)", () => {
+  it("draws a Pinned section on top, with the pinned rows moved into it", () => {
+    renderArranged(
+      sidebarControls({
+        preferences: {
+          pinnedIds: new Set(["c-exec"]),
+          collapsed: new Set(),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+    );
+
+    expect(headers()).toEqual(["Pinned", "Channels", "Direct messages"]);
+    const pinnedList = screen.getByRole("list", { name: "Pinned" });
+    expect(pinnedList).toHaveTextContent("exec");
+    expect(screen.getByRole("list", { name: "Channels" })).not.toHaveTextContent(
+      "exec",
+    );
+  });
+
+  it("folds a section from its header", () => {
+    const onSetCollapsed = vi.fn();
+    renderArranged(sidebarControls({ onSetCollapsed }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Channels" }));
+
+    expect(onSetCollapsed).toHaveBeenCalledWith("channels", true);
+  });
+
+  it("shows a folded section's total on its header, red when it holds a mention", () => {
+    renderArranged(
+      sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["channels"]),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+      new Map([
+        ["c-gen", { unreadCount: 3, mentionCount: 0 }],
+        ["c-ann", { unreadCount: 2, mentionCount: 1 }],
+      ]),
+    );
+
+    const header = screen.getByRole("button", { name: /Channels/ });
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(header).toHaveTextContent("@ 1");
+    expect(
+      screen.getByLabelText("1 mention, 5 unread"),
+    ).toBeInTheDocument();
+    // Folded: no rows drawn under it.
+    expect(screen.queryByRole("list", { name: /Channels/ })).toBeNull();
+  });
+
+  it("keeps the open channel under its folded header", () => {
+    renderArranged(
+      sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["channels"]),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+      new Map(),
+      "c-gen",
+    );
+
+    expect(screen.getByRole("button", { current: "page" })).toHaveTextContent(
+      "general",
+    );
+  });
+
+  it("pins and unpins from the row", () => {
+    const onSetPinned = vi.fn();
+    renderArranged(
+      sidebarControls({
+        onSetPinned,
+        preferences: {
+          pinnedIds: new Set(["c-exec"]),
+          collapsed: new Set(),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin to top: general" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unpin from top: exec" }),
+    );
+
+    expect(onSetPinned).toHaveBeenNthCalledWith(1, general, true);
+    expect(onSetPinned).toHaveBeenNthCalledWith(2, exec, false);
+  });
+
+  describe("hiding outranks pinning", () => {
+    const hiddenDm: ChatChannel = { ...dm, hidden: true };
+    const pinnedDm = sidebarControls({
+      preferences: {
+        pinnedIds: new Set([dm.id]),
+        collapsed: new Set(),
+        filters: { unreadOnly: false, hideMuted: false },
+      },
+    });
+    const renderHidden = (activeChannelId: string | null) =>
+      render(
+        <ChannelList
+          channels={[general, hiddenDm]}
+          activeChannelId={activeChannelId}
+          viewerId={VIEWER}
+          memberNames={NAMES}
+          onPick={vi.fn()}
+          onHide={vi.fn()}
+          sidebar={pinnedDm}
+        />,
+      );
+
+    it("keeps a pinned DM the member hid in the hidden group", () => {
+      renderHidden(null);
+
+      expect(headers()).toEqual(["Channels"]);
+      expect(
+        screen.getByRole("button", { name: "Hidden conversations (1)" }),
+      ).toBeInTheDocument();
+    });
+
+    it("draws the open one under Direct messages, with no pin control", () => {
+      renderHidden(hiddenDm.id);
+
+      expect(headers()).toEqual(["Channels", "Direct messages"]);
+      expect(
+        screen.getByRole("list", { name: "Direct messages" }),
+      ).toHaveTextContent("Alice Chen");
+      expect(
+        screen.queryByRole("button", { name: /from top: Alice Chen/ }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("says the filters emptied the list and offers to clear them", () => {
+    const onClearFilters = vi.fn();
+    renderArranged(
+      sidebarControls({
+        onClearFilters,
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(),
+          filters: { unreadOnly: true, hideMuted: false },
+        },
+      }),
+    );
+
+    expect(screen.getByText("No channels match your filters.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show all channels" }));
+    expect(onClearFilters).toHaveBeenCalled();
+  });
+
+  it("draws no read-only mark on a row, and keeps the private lock at its start", () => {
+    // The right-hand lock meant "read-only" while the same glyph at the start
+    // of a row means "private" (#2877). Only the second survives.
+    renderArranged(sidebarControls());
+
+    expect(screen.queryByText("Read-only")).toBeNull();
+    const announcementsRow = screen.getByRole("button", {
+      name: "announcements",
+    });
+    expect(announcementsRow.querySelector("svg")).toBeNull();
+    const execRow = screen.getByRole("button", { name: "exec" });
+    expect(execRow.querySelector("svg")).not.toBeNull();
+  });
+
+  it("drops a muted row under Hide muted, keeping one that mentions the member", () => {
+    const random: ChatChannel = { id: "c-rand", name: "random", type: "PUBLIC" };
+    render(
+      <ChannelList
+        channels={[general, random, announcements]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={
+          new Map([["c-ann", { unreadCount: 1, mentionCount: 1 }]])
+        }
+        onPick={vi.fn()}
+        sidebar={sidebarControls({
+          mutedChannelIds: new Set(["c-gen", "c-ann"]),
+          preferences: {
+            pinnedIds: new Set(),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: true },
+          },
+        })}
+      />,
+    );
+
+    const rows = screen.getByRole("list", { name: "Channels" });
+    expect(rows).toHaveTextContent("announcements");
+    expect(rows).toHaveTextContent("random");
+    expect(rows).not.toHaveTextContent("general");
+  });
+
+  it("announces a folded Direct messages header as direct messages", () => {
+    renderArranged(
+      sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["direct"]),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+      new Map([["c-dm", { unreadCount: 3, mentionCount: 0 }]]),
+    );
+
+    expect(
+      screen.getByLabelText("3 unread messages, including direct messages"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no fold or pin control without `sidebar`", () => {
+    renderList([general, dm]);
+
+    expect(screen.queryByRole("button", { expanded: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Pin to top/ })).toBeNull();
+  });
+});
+
+describe("ChannelFilters (#2877)", () => {
+  it("switches each filter on its own", () => {
+    const onChange = vi.fn();
+    render(
+      <ChannelFilters
+        filters={{ unreadOnly: false, hideMuted: true }}
+        onChange={onChange}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: "Filter channels, filters on",
+    });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("switch", { name: "Unread only" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Hide muted" }));
+
+    expect(onChange).toHaveBeenNthCalledWith(1, { unread_only: true });
+    expect(onChange).toHaveBeenNthCalledWith(2, { hide_muted: false });
+  });
+
+  it("names the trigger plainly while no filter is on", () => {
+    render(
+      <ChannelFilters
+        filters={{ unreadOnly: false, hideMuted: false }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Filter channels" }),
+    ).toBeInTheDocument();
   });
 });

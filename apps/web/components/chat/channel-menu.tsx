@@ -27,6 +27,8 @@ import {
   HIDE_CONVERSATION_CONFIRM_ACTION,
   HIDE_CONVERSATION_CONFIRM_BODY,
   HIDE_CONVERSATION_LABEL,
+  PIN_TO_TOP_LABEL,
+  UNPIN_FROM_TOP_LABEL,
   hideConversationConfirmTitle,
   type ChatNotificationLevel,
 } from "@repo/hooks";
@@ -64,6 +66,11 @@ import {
  * **Hide conversation** (#2303) is a fifth row, on a 1:1 DM only, and its panel
  * is the confirmation. The same view swap carries it, so it needs no dialog of
  * its own stacked over a popover.
+ *
+ * **Pin to top** (#2877) is the one row that opens no panel: it pins or unpins
+ * the open channel in the member's own sidebar and closes the menu. It is here
+ * as well as on the rail row because the row's control appears only on hover,
+ * which a touch screen never has.
  */
 
 type View = "menu" | "search" | "pins" | "saved" | "notifications" | "hide";
@@ -106,6 +113,11 @@ type ChannelMenuProps = {
     name: string;
     onHide: () => void;
   };
+  /** Pin or unpin the open channel in the member's sidebar. Absent, no row. */
+  pinToTop?: {
+    pinned: boolean;
+    onToggle: () => void;
+  };
 };
 
 type MenuRow = {
@@ -147,6 +159,7 @@ export function ChannelMenu({
   notificationSaving,
   onChangeNotificationLevel,
   hideConversation,
+  pinToTop,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
@@ -275,6 +288,24 @@ export function ChannelMenu({
                 </button>
               </li>
             ))}
+            {pinToTop ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    pinToTop.onToggle();
+                    close();
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
+                >
+                  <PinGlyph
+                    className="h-5 w-5 shrink-0 text-muted-foreground"
+                    active={pinToTop.pinned}
+                  />
+                  {pinToTop.pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}
+                </button>
+              </li>
+            ) : null}
           </ul>
         ) : (
           <>

@@ -41,7 +41,11 @@ import {
   type DiscordApiMessage,
   type MessageContentTally,
 } from '#domain/utils/discord-api-message';
-import type { DiscordExportMessage } from '#domain/utils/discord-export';
+import type {
+  DiscordExportMessage,
+  ImportMentionContext,
+} from '#domain/utils/discord-export';
+import { importChannelMentions } from '#domain/utils/discord-mentions';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -104,6 +108,20 @@ export interface ExportSliceResult {
     warnings: string[];
   };
 }
+
+/** Making another row's channel failed while a page of this one was written. */
+class DestinationError extends Error {
+  constructor(
+    readonly mapping: DiscordImportChannel,
+    readonly cause: unknown,
+  ) {
+    super(toReportableError(cause).message);
+    this.name = 'DestinationError';
+  }
+}
+
+/** A channel mention token's id, for making its channel before it is named. */
+const CHANNEL_TOKEN = /<#(\d{1,25})>/g;
 
 /** Everything a slice accumulates and writes back at each checkpoint. */
 interface SliceTotals {
@@ -173,6 +191,15 @@ export class DiscordExportWorkerService {
   async runSlice(args: {
     job: DiscordImport;
     deadline: number;
+    /** What a role mention reads as, from the import's role mapping (#2875). */
+    roleName: (discordRoleId: string) => string | null;
+    /**
+     * Whether each Frapp channel the rows point at is readable by the whole
+     * chapter; a mention of a channel is named only then (#2875).
+     */
+    wholeChapterTargets: (
+      rows: readonly DiscordImportChannel[],
+    ) => Promise<ReadonlyMap<string, boolean>>;
     /** True while the job may still be advanced (not cancelled, lease held). */
     checkpoint: (patch: {
       imported: number;
@@ -191,6 +218,7 @@ export class DiscordExportWorkerService {
       messages: DiscordExportMessage[];
       targetChannelId: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
+      mentionContext: ImportMentionContext;
     }) => Promise<{
       imported: number;
       skipped: number;
@@ -199,8 +227,15 @@ export class DiscordExportWorkerService {
       warnings: string[];
     }>;
   }): Promise<ExportSliceResult> {
-    const { job, deadline, checkpoint, resolveTargetChannel, importBatch } =
-      args;
+    const {
+      job,
+      deadline,
+      roleName,
+      wholeChapterTargets,
+      checkpoint,
+      resolveTargetChannel,
+      importBatch,
+    } = args;
 
     // ── the tenant check, first and unconditionally ────────────────────────
     //
@@ -230,6 +265,15 @@ export class DiscordExportWorkerService {
     const byDiscordId = new Map(
       channels.map((channel) => [channel.discord_channel_id, channel]),
     );
+    const mentionContext: ImportMentionContext = {
+      roleName,
+      // The same row objects the destinations are written onto, so a channel
+      // links from the moment it exists (#2875).
+      channel: importChannelMentions(
+        channels,
+        await wholeChapterTargets(channels),
+      ),
+    };
     const totals: SliceTotals = {
       imported: job.imported_messages,
       skipped: job.messages_skipped,
@@ -251,6 +295,48 @@ export class DiscordExportWorkerService {
         .filter((file) => file.kind === 'media' && file.uploaded_at !== null)
         .map((file) => [file.relative_path, file]),
     );
+
+    // A channel this import creates is made as soon as a page about to be
+    // written mentions it, so the mention links to it (#2875). Made only when
+    // the walk reached it, a channel would not exist yet when an earlier
+    // channel's messages mentioned it, and they would keep an unlinked name
+    // for good. Made ahead only on demand, rather than all at the start: a
+    // channel no one mentions is made when the walk reaches it, as before, so
+    // an import that stops early leaves no more empty channels than it did.
+    // One that is mentioned and then never reached (the import stops, or
+    // Discord stops showing it) stays in Frapp, empty. A thread's mention
+    // makes its parent's channel, where it lands. A row that has its target,
+    // or is finished or skipped, is not asked.
+    const ensureMentionedDestinations = async (
+      page: readonly DiscordApiMessage[],
+    ): Promise<void> => {
+      for (const message of page) {
+        const content =
+          typeof message.content === 'string' ? message.content : '';
+        for (const match of content.matchAll(CHANNEL_TOKEN)) {
+          let row = byDiscordId.get(match[1]);
+          if (row?.parent_discord_channel_id) {
+            row = byDiscordId.get(row.parent_discord_channel_id);
+          }
+          if (
+            !row ||
+            row.mapping_action !== 'create_new' ||
+            row.target_channel_id !== null ||
+            row.status === 'completed' ||
+            row.status === 'skipped'
+          ) {
+            continue;
+          }
+          try {
+            await resolveTargetChannel(row, channels);
+          } catch (error) {
+            // The row it could not make is the one that failed, not the one
+            // being walked.
+            throw new DestinationError(row, error);
+          }
+        }
+      }
+    };
 
     for (const mapping of channels) {
       if (Date.now() >= deadline) {
@@ -277,6 +363,8 @@ export class DiscordExportWorkerService {
           deadline,
           totals,
           mediaByRelativePath,
+          mentionContext,
+          ensureMentionedDestinations,
           checkpoint,
           resolveTargetChannel: (channel) =>
             this.resolveDestination(channel, byDiscordId, (row) =>
@@ -289,14 +377,18 @@ export class DiscordExportWorkerService {
         // panel (#2857); the job carries the same reason. A restart resumes
         // the row from its cursor like any unfinished one. Best effort: the
         // import is failing anyway, and this write must not replace the
-        // reason it fails with.
+        // reason it fails with. A channel that could not be made names its
+        // own row, not the one being walked.
+        const failed =
+          error instanceof DestinationError ? error.mapping : mapping;
+        const cause = error instanceof DestinationError ? error.cause : error;
         await this.importRepo
-          .updateChannel(mapping.id, job.id, {
+          .updateChannel(failed.id, job.id, {
             status: 'failed',
-            error: toReportableError(error).message,
+            error: toReportableError(cause).message,
           })
           .catch(() => undefined);
-        throw error;
+        throw cause;
       }
       if (!done) return this.sliceResult(totals, false);
     }
@@ -399,6 +491,11 @@ export class DiscordExportWorkerService {
     deadline: number;
     totals: SliceTotals;
     mediaByRelativePath: Map<string, DiscordImportFile>;
+    mentionContext: ImportMentionContext;
+    /** Makes the new channels a page mentions; see `runSlice`. */
+    ensureMentionedDestinations: (
+      page: readonly DiscordApiMessage[],
+    ) => Promise<void>;
     checkpoint: (patch: {
       imported: number;
       skipped: number;
@@ -412,6 +509,7 @@ export class DiscordExportWorkerService {
       messages: DiscordExportMessage[];
       targetChannelId: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
+      mentionContext: ImportMentionContext;
     }) => Promise<{
       imported: number;
       skipped: number;
@@ -427,6 +525,8 @@ export class DiscordExportWorkerService {
       deadline,
       totals,
       mediaByRelativePath,
+      mentionContext,
+      ensureMentionedDestinations,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -574,10 +674,12 @@ export class DiscordExportWorkerService {
       // `outcome.attachmentsSkipped` below. Adding both double-counts every
       // skipped attachment.
 
+      await ensureMentionedDestinations(page);
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,
         mediaByRelativePath,
+        mentionContext,
       });
 
       totals.imported += outcome.imported;

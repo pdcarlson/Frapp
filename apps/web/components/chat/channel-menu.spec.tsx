@@ -386,3 +386,39 @@ describe("ChannelMenu hide conversation", () => {
     expect(onHide).not.toHaveBeenCalled();
   });
 });
+
+describe("ChannelMenu pin to top (#2877)", () => {
+  it("offers no row without `pinToTop`", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+
+    expect(
+      screen.queryByRole("button", { name: "Pin to top" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("pins the open channel and closes the menu", async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+    renderMenu({ pinToTop: { pinned: false, onToggle } });
+    await openMenu(user);
+
+    await user.click(screen.getByRole("button", { name: "Pin to top" }));
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Pin to top" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says Unpin from top on a pinned channel", async () => {
+    const user = userEvent.setup();
+    renderMenu({ pinToTop: { pinned: true, onToggle: vi.fn() } });
+    await openMenu(user);
+
+    expect(
+      screen.getByRole("button", { name: "Unpin from top" }),
+    ).toBeInTheDocument();
+  });
+});

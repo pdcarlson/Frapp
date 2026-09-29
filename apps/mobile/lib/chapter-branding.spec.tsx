@@ -87,6 +87,45 @@ describe("useChapterBranding", () => {
     expect(result.current.accentFallbackApplied).toBe(true);
   });
 
+  it("exposes the chapter mark's text through the shared precedence (#2876)", async () => {
+    const { result } = renderBranding(
+      {
+        fiji: {
+          name: "Tau Nu",
+          branding: { greek_letters: "ΦΓΔ", short_name: "FIJI" },
+        },
+        optedOut: {
+          name: "Tau Nu",
+          branding: { greek_letters: "ΦΓΔ", show_greek_letters: false },
+        },
+        letters: { name: "California Eta", branding: { greek_letters: "ΣΦΕ" } },
+      },
+      "fiji",
+    );
+    await waitFor(() => expect(result.current.textMark).toBe("FIJI"));
+
+    const optedOut = renderBranding(
+      {
+        optedOut: {
+          name: "Tau Nu",
+          branding: { greek_letters: "ΦΓΔ", show_greek_letters: false },
+        },
+      },
+      "optedOut",
+    );
+    await waitFor(() =>
+      expect(optedOut.result.current.chapterName).toBe("Tau Nu"),
+    );
+    // Stored letters, turned off: nothing, never ΦΓΔ.
+    expect(optedOut.result.current.textMark).toBeNull();
+
+    const letters = renderBranding(
+      { letters: { name: "California Eta", branding: { greek_letters: "ΣΦΕ" } } },
+      "letters",
+    );
+    await waitFor(() => expect(letters.result.current.textMark).toBe("ΣΦΕ"));
+  });
+
   it("exposes the signed logo url, and null when no logo is set", async () => {
     const { result } = renderBranding(
       {

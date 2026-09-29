@@ -165,6 +165,19 @@ const mockBookmarkIsError = vi.fn(() => false);
 const mockLeaveMutateAsync = vi.fn();
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
+const mockSetChannelPinned = vi.fn();
+const mockSetSectionCollapsed = vi.fn();
+const mockSetSidebarFilter = vi.fn();
+// #2877: what the shell hands the pin hook, and the levels the rail filters on.
+const sidebarState = {
+  pinOptions: undefined as { onError?: () => void } | undefined,
+  foldOptions: undefined as { onError?: () => void } | undefined,
+  filterOptions: undefined as { onError?: () => void } | undefined,
+  levelsError: false,
+  unreadError: false,
+  pinnedIds: new Set<string>(),
+  levels: [] as { channel_id: string; level: string }[],
+};
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
@@ -195,7 +208,14 @@ vi.mock("./use-unblock-flow", () => ({
   }),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The shared helpers run for real, so the shell's use of them is under test.
+  ...(await vi
+    .importActual<typeof import("@repo/hooks")>("@repo/hooks")
+    .then(({ sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
+      sidebarMutedChannelIds,
+      sidebarUnreadCounts,
+    }))),
   useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
@@ -209,7 +229,10 @@ vi.mock("@repo/hooks", () => ({
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({ byId: new Map(), nameFor: () => null }),
-  useChannelNotificationPreferences: () => ({ data: [] }),
+  useChannelNotificationPreferences: () => ({
+    data: sidebarState.levels,
+    isError: sidebarState.levelsError,
+  }),
   useSetChannelNotificationLevel: () => ({
     isError: false,
     isPending: false,
@@ -218,7 +241,10 @@ vi.mock("@repo/hooks", () => ({
     mutate: vi.fn(),
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
-  useChannelUnreadCounts: () => ({ data: [], isError: false }),
+  useChannelUnreadCounts: () => ({
+    data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
+    isError: sidebarState.unreadError,
+  }),
   useOrgConfig: () => ({
     data: { isModuleEnabled: () => true },
     isError: false,
@@ -280,6 +306,27 @@ vi.mock("@repo/hooks", () => ({
   HIDE_CONVERSATION_FAILED_BODY: "Nothing changed.",
   HIDE_CONVERSATION_LABEL: "Hide conversation",
   HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
+  // #2877: the member's own sidebar arrangement.
+  useSidebarPreferences: () => ({
+    pinnedIds: sidebarState.pinnedIds,
+    collapsed: new Set<string>(),
+    filters: { unreadOnly: false, hideMuted: false },
+  }),
+  useSetChannelPinned: (options?: { onError?: () => void }) => {
+    sidebarState.pinOptions = options;
+    return { mutate: mockSetChannelPinned };
+  },
+
+  useSetSidebarSectionCollapsed: (options?: { onError?: () => void }) => {
+    sidebarState.foldOptions = options;
+    return { mutate: mockSetSectionCollapsed };
+  },
+  useSetSidebarFilter: (options?: { onError?: () => void }) => {
+    sidebarState.filterOptions = options;
+    return { mutate: mockSetSidebarFilter };
+  },
+  SIDEBAR_SAVE_FAILED_TITLE: "Couldn't save your channel list",
+  SIDEBAR_SAVE_FAILED_BODY: "Nothing changed.",
 }));
 
 // Captured so the hide failure (#2303) is observable; no other case here
@@ -322,11 +369,32 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
+  ChannelFilters: ({
+    onChange,
+  }: {
+    onChange: (change: { hide_muted: boolean }) => void;
+  }) => (
+    <button
+      data-testid="filters-hide-muted"
+      onClick={() => onChange({ hide_muted: true })}
+    >
+      hide muted
+    </button>
+  ),
   ChannelList: ({
     onPick,
     onHide,
     categories,
+    sidebar,
+    unreadByChannelId,
   }: {
+    unreadByChannelId?: Map<string, unknown>;
+    sidebar?: {
+      mutedChannelIds: ReadonlySet<string> | undefined;
+      onSetPinned: (ch: { id: string }, pinned: boolean) => void;
+      onSetCollapsed: (sectionKey: string, collapsed: boolean) => void;
+      onClearFilters: () => void;
+    };
     onPick?: (ch: {
       id: string;
       hidden?: boolean;
@@ -336,6 +404,35 @@ vi.mock("./channel-list", () => ({
     categories?: { id: string; name: string }[];
   }) => (
     <div data-testid="channel-list">
+      {/* The rail's pin control and the muted set it filters with (#2877). */}
+      <button
+        data-testid="rail-pin"
+        onClick={() => sidebar?.onSetPinned({ id: "chan-1" }, true)}
+      >
+        rail pin
+      </button>
+      <button
+        data-testid="rail-fold"
+        onClick={() => sidebar?.onSetCollapsed("channels", true)}
+      >
+        rail fold
+      </button>
+      <button
+        data-testid="rail-clear-filters"
+        onClick={() => sidebar?.onClearFilters()}
+      >
+        rail clear filters
+      </button>
+      <span data-testid="rail-unread">
+        {unreadByChannelId === undefined
+          ? "unknown"
+          : [...unreadByChannelId.keys()].join(",")}
+      </span>
+      <span data-testid="rail-muted">
+        {sidebar?.mutedChannelIds === undefined
+          ? "unknown"
+          : [...sidebar.mutedChannelIds].join(",")}
+      </span>
       {/* The rail's Hide on a DM row, and a row from its Hidden conversations
           group (#2303): the shell confirms the first and reopens the second. */}
       <button
@@ -512,7 +609,9 @@ vi.mock("./channel-menu", () => ({
     onJumpToSearchHit,
     onJumpToBookmark,
     hideConversation,
+    pinToTop,
   }: {
+    pinToTop?: { pinned: boolean; onToggle: () => void };
     messages: Array<{ id: string }>;
     hiddenPins: { blocked: number; held: number };
     onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
@@ -527,6 +626,15 @@ vi.mock("./channel-menu", () => ({
       <span data-testid="menu-hidden-pins">
         {`${hiddenPins.blocked}/${hiddenPins.held}`}
       </span>
+      {pinToTop ? (
+        <button
+          type="button"
+          data-testid="menu-pin"
+          onClick={pinToTop.onToggle}
+        >
+          {pinToTop.pinned ? "unpin" : "pin"}
+        </button>
+      ) : null}
       {hideConversation ? (
         <button
           type="button"
@@ -704,6 +812,135 @@ describe("ChatShell channel categories", () => {
     expect(screen.getByTestId("channel-list-categories").textContent).toBe(
       "Executive,Committees",
     );
+  });
+});
+
+describe("ChatShell sidebar arrangement (#2877)", () => {
+  afterEach(() => {
+    sidebarState.pinnedIds = new Set();
+    sidebarState.levels = [];
+    sidebarState.levelsError = false;
+    sidebarState.unreadError = false;
+  });
+
+  it("hands the rail the unread counts, and none while their last read failed", () => {
+    // The stale rows are still there beside the error; drawing them, or
+    // filtering on them, would claim counts the rail cannot vouch for.
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-unread").textContent).toBe("chan-general");
+    unmount();
+
+    sidebarState.unreadError = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-unread").textContent).toBe("unknown");
+  });
+
+  it("hands the rail no muted set while the levels' last read failed", () => {
+    // Stale rows are still there beside the error; filtering on them could
+    // hide a channel the member has since unmuted.
+    sidebarState.levels = [{ channel_id: "chan-general", level: "off" }];
+    sidebarState.levelsError = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("rail-muted").textContent).toBe("unknown");
+  });
+
+  it.each(["foldOptions", "filterOptions"] as const)(
+    "reports a failed write through the %s hook option too",
+    (options) => {
+      mockToast.mockClear();
+      render(<ChatShell initialChannelId="chan-general" />);
+
+      sidebarState[options]?.onError?.();
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Couldn't save your channel list",
+        description: "Nothing changed.",
+      });
+    },
+  );
+
+  it("hands the rail the channels whose level is off, and no others", () => {
+    sidebarState.levels = [
+      { channel_id: "chan-general", level: "off" },
+      { channel_id: "chan-random", level: "mentions" },
+    ];
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("rail-muted").textContent).toBe("chan-general");
+  });
+
+  it("pins from the rail, and reports failures through the hook's own onError", () => {
+    mockSetChannelPinned.mockClear();
+    mockToast.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-pin"));
+
+    expect(mockSetChannelPinned).toHaveBeenCalledWith({
+      channelId: "chan-1",
+      pinned: true,
+    });
+    // A hook option rather than `mutate`'s per-call option, which TanStack
+    // fires only for the latest write on the hook.
+    sidebarState.pinOptions?.onError?.();
+    expect(mockToast).toHaveBeenCalledWith({
+      title: "Couldn't save your channel list",
+      description: "Nothing changed.",
+    });
+  });
+
+  it("folds a section from the rail", () => {
+    mockSetSectionCollapsed.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-fold"));
+
+    expect(mockSetSectionCollapsed).toHaveBeenCalledWith({
+      sectionKey: "channels",
+      collapsed: true,
+    });
+  });
+
+  it("switches a filter from the header, sending only that filter", () => {
+    mockSetSidebarFilter.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("filters-hide-muted"));
+
+    expect(mockSetSidebarFilter).toHaveBeenCalledWith({ hide_muted: true });
+  });
+
+  it("clears both filters from the rail's empty state", () => {
+    mockSetSidebarFilter.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-clear-filters"));
+
+    expect(mockSetSidebarFilter).toHaveBeenCalledWith({
+      unread_only: false,
+      hide_muted: false,
+    });
+  });
+
+  it("pins the open channel from the channel menu, and unpins it once pinned", () => {
+    mockSetChannelPinned.mockClear();
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("menu-pin"));
+    expect(mockSetChannelPinned).toHaveBeenLastCalledWith({
+      channelId: "chan-general",
+      pinned: true,
+    });
+    unmount();
+
+    sidebarState.pinnedIds = new Set(["chan-general"]);
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("menu-pin").textContent).toBe("unpin");
+    fireEvent.click(screen.getByTestId("menu-pin"));
+    expect(mockSetChannelPinned).toHaveBeenLastCalledWith({
+      channelId: "chan-general",
+      pinned: false,
+    });
   });
 });
 

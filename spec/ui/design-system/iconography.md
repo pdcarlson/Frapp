@@ -229,6 +229,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Semantic intent | Glyph |
 |---|---|
 | Pinned message | `PinGlyph` |
+| Pin a channel to the top of your own list (#2877), filled while pinned | `PinGlyph` |
 | Bookmarked message (personal) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |

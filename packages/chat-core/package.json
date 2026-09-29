@@ -19,7 +19,8 @@
     "./block-copy": "./src/block-copy.ts",
     "./message-actions": "./src/message-actions.ts",
     "./grouping": "./src/grouping.ts",
-    "./links": "./src/links.ts"
+    "./links": "./src/links.ts",
+    "./attachments": "./src/attachments.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

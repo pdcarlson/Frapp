@@ -33,7 +33,10 @@ export {
 
 export type ChatGlyphProps = DuotoneGlyphProps;
 
-/** Pinned message — pin body filled, needle stroke-only. */
+/**
+ * Pinned message — pin body filled, needle stroke-only. Also a channel pinned
+ * to the top of the member's own list (#2877), filled while it is pinned.
+ */
 export function PinGlyph({ className, active }: ChatGlyphProps) {
   return (
     <Svg className={className}>

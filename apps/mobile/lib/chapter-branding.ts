@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useCurrentChapter } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { chapterTextMark } from "@repo/validation";
 import { useFrappTheme } from "./theme";
 
 export type ChapterBranding = {
@@ -40,6 +41,13 @@ export type ChapterBranding = {
   logoUrl: string | null;
   /** Falls back to text branding when there is no logo (spec/behavior/branding.md). */
   chapterName: string | null;
+  /**
+   * The chapter mark's text for when there is no logo: its short name, else
+   * its Greek letters unless it turned them off, else null (#2876). From
+   * `chapterTextMark`, the precedence every surface shares, so the opt-out
+   * holds here without this hook reading the letters itself.
+   */
+  textMark: string | null;
 };
 
 function readString(
@@ -126,6 +134,9 @@ export function useChapterBranding(): ChapterBranding {
   const accentColor = data?.accent_color || null;
   const logoUrl = data?.logo_url || null;
   const chapterName = data?.name || null;
+  const textMark =
+    chapterTextMark(data?.branding as Record<string, unknown> | undefined)
+      ?.text ?? null;
   const palette = data?.theme_palette;
   const generatedAccent = readString(palette, "--signet-accent-text");
   const generatedAccentPrimary = readString(palette, "--signet-accent-primary");
@@ -152,6 +163,7 @@ export function useChapterBranding(): ChapterBranding {
         accentOnPrimary,
         logoUrl,
         chapterName,
+        textMark,
       };
     }
 
@@ -167,6 +179,7 @@ export function useChapterBranding(): ChapterBranding {
       accentOnPrimary,
       logoUrl,
       chapterName,
+      textMark,
     };
   }, [
     accentColor,
@@ -177,5 +190,6 @@ export function useChapterBranding(): ChapterBranding {
     generatedAccent,
     logoUrl,
     surface,
+    textMark,
   ]);
 }

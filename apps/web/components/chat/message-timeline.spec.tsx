@@ -34,39 +34,46 @@ const virtuosoProps = vi.hoisted(() => ({
 vi.mock("react-virtuoso", async () => {
   const React = await import("react");
   return {
-  Virtuoso: React.forwardRef(function Virtuoso({
-    data,
-    itemContent,
-    firstItemIndex,
-    followOutput,
-    atTopStateChange,
-    components,
-    context,
-  }: {
-    data: unknown[];
-    itemContent: (index: number, item: unknown) => React.ReactNode;
-    firstItemIndex?: number;
-    followOutput?: unknown;
-    atTopStateChange?: (atTop: boolean) => void;
-    components?: {
-      Header?: (props: { context?: unknown }) => React.ReactNode;
-    };
-    context?: unknown;
-  }, ref: React.Ref<unknown>) {
-    React.useImperativeHandle(ref, () => ({
-      scrollToIndex: virtuosoProps.scrollToIndex,
-    }));
-    virtuosoProps.current = { firstItemIndex, followOutput, atTopStateChange };
-    const Header = components?.Header;
-    return (
-      <div>
-        {Header ? <Header context={context} /> : null}
-        {data.map((item, index) => (
-          <div key={index}>{itemContent(index, item)}</div>
-        ))}
-      </div>
-    );
-  }),
+    Virtuoso: React.forwardRef(function Virtuoso(
+      {
+        data,
+        itemContent,
+        firstItemIndex,
+        followOutput,
+        atTopStateChange,
+        components,
+        context,
+      }: {
+        data: unknown[];
+        itemContent: (index: number, item: unknown) => React.ReactNode;
+        firstItemIndex?: number;
+        followOutput?: unknown;
+        atTopStateChange?: (atTop: boolean) => void;
+        components?: {
+          Header?: (props: { context?: unknown }) => React.ReactNode;
+        };
+        context?: unknown;
+      },
+      ref: React.Ref<unknown>,
+    ) {
+      React.useImperativeHandle(ref, () => ({
+        scrollToIndex: virtuosoProps.scrollToIndex,
+      }));
+      virtuosoProps.current = {
+        firstItemIndex,
+        followOutput,
+        atTopStateChange,
+      };
+      const Header = components?.Header;
+      return (
+        <div>
+          {Header ? <Header context={context} /> : null}
+          {data.map((item, index) => (
+            <div key={index}>{itemContent(index, item)}</div>
+          ))}
+        </div>
+      );
+    }),
   };
 });
 
@@ -74,7 +81,28 @@ vi.mock("react-virtuoso", async () => {
 // does not mount.
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
+  return {
+    ...actual,
+    useAuthorAvatars: () => ({ data: {} }),
+    // Only a message with `attachment_count > 0` mounts the list that reads
+    // this; the image viewer cases below are the ones that do.
+    useMessageAttachments: () => ({
+      isPending: false,
+      isError: false,
+      data: [
+        {
+          id: "att-1",
+          message_id: "m1",
+          filename: "photo.png",
+          content_type: "image/png",
+          byte_size: 2048,
+          width: null,
+          height: null,
+          download_url: "https://storage.test/signed/photo.png",
+        },
+      ],
+    }),
+  };
 });
 
 const { MessageTimeline } = await import("./message-timeline");
@@ -1284,5 +1312,75 @@ describe("MessageTimeline runs and day dividers (#2873)", () => {
     const { container } = renderTimeline([message()]);
     const line = container.querySelector('[data-slot="author-line"]');
     expect(line?.textContent).not.toMatch(/Aug|16,/);
+  });
+});
+
+/**
+ * #2874: the timeline hosts the image viewer above its virtualized rows, so
+ * it has to close the viewer itself when the message it shows stops being
+ * drawn in full; the row that opened it may not be mounted to do it.
+ */
+describe("the image viewer", () => {
+  const withPhoto = (overrides: Partial<ChatMessage> = {}) =>
+    message({ id: "m1", attachment_count: 1, ...overrides });
+
+  async function openViewer() {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "View photo.png" }));
+    return screen.findByRole("dialog");
+  }
+
+  it("opens from a message's image", async () => {
+    renderTimeline([withPhoto()]);
+    const dialog = await openViewer();
+    expect(dialog).toHaveAccessibleName("photo.png");
+  });
+
+  it("closes when the message is deleted", async () => {
+    const view = renderTimeline([withPhoto()]);
+    await openViewer();
+
+    const deleted = [withPhoto({ is_deleted: true })];
+    view.rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={deleted}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(deleted, VIEWER)}
+      />,
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes when the sender is blocked and the message becomes a tombstone", async () => {
+    const messages = [withPhoto()];
+    const view = renderTimeline(messages);
+    await openViewer();
+
+    view.rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(
+          messages,
+          VIEWER,
+          blockState("ready", { ids: [ALICE] }),
+        )}
+      />,
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

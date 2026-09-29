@@ -30,7 +30,15 @@ import {
   toImportedAttachments,
   toImportedMessage,
   type DiscordExportMessage,
+  type ImportMentionContext,
 } from '#domain/utils/discord-export';
+import {
+  importChannelMentions,
+  roleMentionNames,
+  wholeChapterTargets,
+} from '#domain/utils/discord-mentions';
+import { parseRoleMapping } from '#domain/utils/discord-role-gates';
+import { RbacService } from '../../application/services/rbac.service';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -128,6 +136,7 @@ export class DiscordImportWorkerService {
     private readonly exportWorker: DiscordExportWorkerService,
     @Inject(DISCORD_CONNECTION_REPOSITORY)
     private readonly connectionRepo: IDiscordConnectionRepository,
+    private readonly rbac: RbacService,
   ) {}
 
   /**
@@ -270,9 +279,25 @@ export class DiscordImportWorkerService {
       }
     }
 
+    // What a role mention reads as (#2875), read once per slice so a role
+    // renamed in Frapp mid-import is named as it is now from the next slice on.
+    const frappRoleNames = new Map(
+      (await this.rbac.findByChapter(chapterId)).map((role) => [
+        role.id,
+        role.name,
+      ]),
+    );
+    const roleNames = roleMentionNames({
+      roleMapping: parseRoleMapping(job.role_mapping),
+      frappRoleNames,
+      guildId: job.guild_id,
+    });
+
     const result = await this.exportWorker.runSlice({
       job,
       deadline,
+      roleName: (id) => roleNames.get(id) ?? null,
+      wholeChapterTargets: (rows) => this.wholeChapterTargets(chapterId, rows),
       /**
        * One checkpoint, two questions, both of which must be answered before
        * the next page is fetched: may this job still be advanced (the admin has
@@ -320,6 +345,7 @@ export class DiscordImportWorkerService {
           targetChannelId: batch.targetChannelId,
           importId: job.id,
           mediaByRelativePath: batch.mediaByRelativePath,
+          mentionContext: batch.mentionContext,
         }),
     });
 
@@ -381,6 +407,17 @@ export class DiscordImportWorkerService {
     const channelBySnowflake = new Map(
       channels.map((channel) => [channel.discord_channel_id, channel]),
     );
+    // DCE has already named the tokens in an export's text (its JSON writer
+    // renders content as plain text), so this only matters for an export made
+    // with `--markdown false`. Such an export names no roles, and its
+    // `mentions` users carry their own names.
+    const mentionContext: ImportMentionContext = {
+      roleName: () => null,
+      channel: importChannelMentions(
+        channels,
+        await this.wholeChapterTargets(chapterId, channels),
+      ),
+    };
 
     if (job.status !== 'running') {
       const started = await this.importRepo.updateIfStatus(
@@ -509,6 +546,7 @@ export class DiscordImportWorkerService {
           targetChannelId,
           importId: job.id,
           mediaByRelativePath,
+          mentionContext,
         });
 
         imported += outcome.imported;
@@ -614,11 +652,26 @@ export class DiscordImportWorkerService {
     };
   }
 
+  /**
+   * Whether each Frapp channel this import's rows point at is readable by the
+   * whole chapter, which decides whether a mention of it is named (#2875).
+   * Chapter-scoped, like every other read of a target.
+   */
+  private wholeChapterTargets(
+    chapterId: string,
+    rows: readonly DiscordImportChannel[],
+  ): Promise<Map<string, boolean>> {
+    return wholeChapterTargets(rows, (ids) =>
+      this.channelRepo.findByIds(chapterId, ids),
+    );
+  }
+
   private async importBatch(args: {
     batch: DiscordExportMessage[];
     targetChannelId: string;
     importId: string;
     mediaByRelativePath: Map<string, DiscordImportFile>;
+    mentionContext: ImportMentionContext;
   }): Promise<{
     imported: number;
     skipped: number;
@@ -626,7 +679,13 @@ export class DiscordImportWorkerService {
     attachmentsSkipped: number;
     warnings: string[];
   }> {
-    const { batch, targetChannelId, importId, mediaByRelativePath } = args;
+    const {
+      batch,
+      targetChannelId,
+      importId,
+      mediaByRelativePath,
+      mentionContext,
+    } = args;
     const warnings: string[] = [];
 
     const snowflakes = batch
@@ -689,6 +748,7 @@ export class DiscordImportWorkerService {
         resolveAssetPath,
         resolveReplyTarget: (externalId) => existing.get(externalId) ?? null,
         attachmentCount: attachments.length,
+        mentionContext,
       });
       if (!row) {
         warnings.push(

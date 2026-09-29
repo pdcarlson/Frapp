@@ -19,6 +19,11 @@ import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import { cn } from "@/lib/utils";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
+import {
+  ImageViewer,
+  ImageViewerProvider,
+  useImageViewer,
+} from "./image-viewer";
 import { MessageItem } from "./message-item";
 import {
   tombstoneCanUnblock,
@@ -465,6 +470,22 @@ export const MessageTimeline = forwardRef<
     [thread.rows],
   );
 
+  // The image viewer (#2874) lives here, above the virtualized rows, so a row
+  // scrolling out of the window can't take an open viewer with it. It closes
+  // when its message stops being drawn in full: deleted, masked or held by the
+  // block list, or gone from the loaded window. Reset during render, so no
+  // frame draws an image the thread no longer shows.
+  const imageViewer = useImageViewer();
+  const viewedMessageId = imageViewer.target?.messageId;
+  if (
+    viewedMessageId &&
+    !visibleMessages.some(
+      (message) => message.id === viewedMessageId && !message.is_deleted,
+    )
+  ) {
+    imageViewer.close();
+  }
+
   // One batched request for every distinct imported-author avatar visible in
   // this window, rather than one per message (#1231). A miss (no avatar, out
   // of chapter, or unsigned) just means that row keeps its initials fallback.
@@ -793,108 +814,111 @@ export const MessageTimeline = forwardRef<
   }
 
   return (
-    <div className="h-full">
-      <Virtuoso
-        ref={virtuoso}
-        data={decorated}
-        firstItemIndex={firstItemIndex}
-        // Until the list is armed it is still settling onto its bottom, and
-        // the live page landing over the cached tail prepends rows; following
-        // those is what keeps a cold open at the newest message.
-        followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
-        initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
-        atTopStateChange={handleAtTop}
-        context={headerContext}
-        components={{
-          List: TimelineList,
-          Scroller: TimelineScroller,
-          Header: TimelineHeader,
-        }}
-        itemContent={(_, entry) => (
-          <>
-            {entry.startsDay ? (
-              // components.md §11 § Grouping: a hairline either side of a
-              // centred 12.5 / 600 caption, and the only date in the thread.
-              <div
-                data-slot="day-divider"
-                className="flex items-center gap-3 px-5 pb-1 pt-4 text-[12.5px] font-semibold text-muted-foreground"
-              >
-                <span aria-hidden="true" className="h-px flex-1 bg-border" />
-                <span>{dayDividerLabel(entry.message.created_at)}</span>
-                <span aria-hidden="true" className="h-px flex-1 bg-border" />
-              </div>
-            ) : null}
-            {entry.visibility === "tombstone" ? (
-              <BlockedMessageTombstone
-                senderName={
-                  entry.message.sender_id
-                    ? nameFor(entry.message.sender_id)
-                    : null
-                }
-                canUnblock={tombstoneCanUnblock(entry.message, blockState)}
-                onUnblock={() => {
-                  if (entry.message.sender_id) {
-                    onUnblock(entry.message.sender_id);
+    <ImageViewerProvider value={imageViewer.open}>
+      <div className="h-full">
+        <Virtuoso
+          ref={virtuoso}
+          data={decorated}
+          firstItemIndex={firstItemIndex}
+          // Until the list is armed it is still settling onto its bottom, and
+          // the live page landing over the cached tail prepends rows; following
+          // those is what keeps a cold open at the newest message.
+          followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
+          initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
+          atTopStateChange={handleAtTop}
+          context={headerContext}
+          components={{
+            List: TimelineList,
+            Scroller: TimelineScroller,
+            Header: TimelineHeader,
+          }}
+          itemContent={(_, entry) => (
+            <>
+              {entry.startsDay ? (
+                // components.md §11 § Grouping: a hairline either side of a
+                // centred 12.5 / 600 caption, and the only date in the thread.
+                <div
+                  data-slot="day-divider"
+                  className="flex items-center gap-3 px-5 pb-1 pt-4 text-[12.5px] font-semibold text-muted-foreground"
+                >
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                  <span>{dayDividerLabel(entry.message.created_at)}</span>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                </div>
+              ) : null}
+              {entry.visibility === "tombstone" ? (
+                <BlockedMessageTombstone
+                  senderName={
+                    entry.message.sender_id
+                      ? nameFor(entry.message.sender_id)
+                      : null
                   }
-                }}
-                reload={
-                  entry.message.sender_id
-                    ? (maskedRefresh.get(entry.message.sender_id) ?? null)
-                    : null
-                }
-                onReload={() => {
-                  if (entry.message.sender_id) {
-                    onReloadMasked(entry.message.sender_id);
+                  canUnblock={tombstoneCanUnblock(entry.message, blockState)}
+                  onUnblock={() => {
+                    if (entry.message.sender_id) {
+                      onUnblock(entry.message.sender_id);
+                    }
+                  }}
+                  reload={
+                    entry.message.sender_id
+                      ? (maskedRefresh.get(entry.message.sender_id) ?? null)
+                      : null
                   }
-                }}
-                showHeader={entry.showHeader}
-              />
-            ) : (
-              <MessageItem
-                nameFor={nameFor}
-                message={entry.message}
-                blockState={blockState}
-                avatarUrl={
-                  entry.message.author_avatar_path
-                    ? avatars.data?.[entry.message.author_avatar_path]
-                    : undefined
-                }
-                viewerId={viewerId}
-                showHeader={entry.showHeader}
-                runStartedAt={entry.runStartedAt}
-                onReact={onReact}
-                onUnreact={onUnreact}
-                onReply={onReply}
-                onJumpToParent={onJumpToParent}
-                // The parent, or `null` when it is outside the loaded window.
-                // `MessageItem` decides whether to draw a quote from
-                // `message.reply_to_id`, not from this prop, so `null` and
-                // `undefined` are equivalent to it — the `?? null` is here to say
-                // "looked up and absent" rather than to drive a branch.
-                replyParent={
-                  entry.message.reply_to_id
-                    ? (byId.get(entry.message.reply_to_id) ?? null)
-                    : undefined
-                }
-                onRetry={onRetry}
-                onDiscard={onDiscard}
-                onRetryUnconfirmed={onRetryUnconfirmed}
-                onAct={onAct}
-                onEdit={onEdit}
-                onDelete={onDelete}
-                isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
-                onToggleBookmark={onToggleBookmark}
-                canManageChannel={canManageChannel}
-                isTapRevealed={tapRevealed.isRevealed(entry.message)}
-                onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
-              />
-            )}
-          </>
-        )}
-        computeItemKey={(_, entry) =>
-          entry.message.client_message_id ?? entry.message.id
-        }
-      />
-    </div>
+                  onReload={() => {
+                    if (entry.message.sender_id) {
+                      onReloadMasked(entry.message.sender_id);
+                    }
+                  }}
+                  showHeader={entry.showHeader}
+                />
+              ) : (
+                <MessageItem
+                  nameFor={nameFor}
+                  message={entry.message}
+                  blockState={blockState}
+                  avatarUrl={
+                    entry.message.author_avatar_path
+                      ? avatars.data?.[entry.message.author_avatar_path]
+                      : undefined
+                  }
+                  viewerId={viewerId}
+                  showHeader={entry.showHeader}
+                  runStartedAt={entry.runStartedAt}
+                  onReact={onReact}
+                  onUnreact={onUnreact}
+                  onReply={onReply}
+                  onJumpToParent={onJumpToParent}
+                  // The parent, or `null` when it is outside the loaded window.
+                  // `MessageItem` decides whether to draw a quote from
+                  // `message.reply_to_id`, not from this prop, so `null` and
+                  // `undefined` are equivalent to it — the `?? null` is here to say
+                  // "looked up and absent" rather than to drive a branch.
+                  replyParent={
+                    entry.message.reply_to_id
+                      ? (byId.get(entry.message.reply_to_id) ?? null)
+                      : undefined
+                  }
+                  onRetry={onRetry}
+                  onDiscard={onDiscard}
+                  onRetryUnconfirmed={onRetryUnconfirmed}
+                  onAct={onAct}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
+                  onToggleBookmark={onToggleBookmark}
+                  canManageChannel={canManageChannel}
+                  isTapRevealed={tapRevealed.isRevealed(entry.message)}
+                  onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
+                />
+              )}
+            </>
+          )}
+          computeItemKey={(_, entry) =>
+            entry.message.client_message_id ?? entry.message.id
+          }
+        />
+      </div>
+      <ImageViewer viewer={imageViewer} />
+    </ImageViewerProvider>
   );
 });

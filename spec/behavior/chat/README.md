@@ -52,7 +52,7 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 - **1-on-1:** Initiated by selecting a member. Creates (or reuses) a DM-type channel between exactly two users. Chapter-scoped.
 - **Group DM:** User selects multiple members (up to 10). Creates a GROUP_DM-type channel. Chapter-scoped.
-- DMs appear in a separate "Messages" section in the UI, not mixed with chapter channels.
+- DMs appear in their own section of the channel list ("Direct messages" on web, `DIRECT` on mobile), not mixed with chapter channels, except that a DM the member pins moves up into Pinned beside pinned channels (§ Sidebar arrangement).
 - DMs are not role-gated; they are scoped by an explicit member list stored on the channel.
 - A user can leave a Group DM (`POST /v1/channels/:id/leave`), which removes them from the channel's member list. Once membership drops to one remaining member, the Group DM is archived (`chat_channels.archived_at` set) and drops out of the active channel list; it stays directly readable by id, so the last member's history is not deleted. No client offers Leave on a Group DM yet.
 - **A user can hide a 1-on-1 DM from their own list** (#2303). The same route does it: on a `DM` it hides rather than leaves, and on any non-DM channel it is still rejected, since there is no exit from a chapter channel. A hide is per member and destroys nothing. The channel row, its `member_ids` and its messages are untouched, and the other member's list and thread are exactly as they were: they are not told, and nothing they can see changes. It is not a leave, because a 1:1 DM whose member list dropped to one would stop being a conversation with anyone, and archiving it would take it off the other member's list too.
@@ -63,6 +63,27 @@ Chat is not a module — it is the spine of the app, and every other capability 
   - The per-member state is `channel_read_receipts.hidden_at` (`20260925200000`), the one row that already exists per channel and member.
 - **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md). They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations. This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
 - **System DM on invite accept.** When a member accepts an invite, the inviter receives a `kind="system_audit"` message in their DM channel with that member — `"Alex Chen accepted your invite."` This is the same server-originated system-message pattern as the audit bridge, but targeted to a DM rather than `#chapter-audit`.
+
+## Sidebar arrangement
+
+Each member arranges their own channel list (#2877, owner decision 2026-09-29). The arrangement belongs to the member and the chapter together: it follows the member between web and mobile, it differs per chapter, and nobody else can read or change it, an officer included. The categories themselves stay the chapter's (§ Channels).
+
+- **Sections, top to bottom:** Pinned, the default Channels group, one section per category in the chapter's order, Direct messages, then System on web (`#chapter-audit`). Hidden conversations stays at the end, as § Direct Messages describes. An empty section is not drawn.
+- **Pin.** A member can pin any channel or DM they can read. A pinned row moves out of its section into Pinned; it isn't shown twice. Pins carry no order of their own. Hiding a DM outranks pinning it: a hidden DM stays in Hidden conversations, and while web keeps an open one on the rail (§ Direct Messages) it sits under Direct messages, not Pinned. A hidden row offers no pin control. A pin is removed with its channel, and one on a channel the member can no longer read is left out of every response. Pinning needs read access (403 without it, 404 outside the chapter). Unpinning needs none, so a member can always clear a pin.
+- **Sort.** Every section, Pinned included, sorts A–Z by the title the row shows, so a DM sorts under the other member's name. Channels inside a category have no chapter-set order. **Recent activity** is the second sort Paul approved; it waits on a last-message projection (#1191), so neither client offers it yet.
+- **Filters,** off by default, either or both on:
+  - **Unread only** keeps rows with something unread by the server's counts (§ Read Receipts), an @-mention included.
+  - **Hide muted** drops rows whose effective notification level is `off` ([`../notifications.md`](../notifications.md#chat-notification-preferences)). A muted row that addresses the member stays: an unread @-mention, or anything unread in a DM. That matches push, where a mention gets past a mute.
+  - With both on, a row must pass both.
+  - The filters never remove the open channel or a pinned row.
+  - A filter applies only while its data is known. If the unread counts or the notification levels are loading or failed to load, that filter hides nothing, so missing data never reads as "nothing unread".
+  - When the filters leave no rows, the list says so and offers to turn both off, rather than drawing an empty sidebar.
+  - There is no filter for read-only channels: `#announcements` is read-only, and a member folds an archive category instead.
+- **Folds.** Any section header, Pinned included, folds its section, and the choice is remembered. A folded header shows the unread total of the rows inside it that pass the filters, in the mention red when any of them addresses the member, so folding never hides a mention. The open channel stays visible under a folded header.
+- **Where it lives.** `chat_sidebar_preferences` holds one row per (member, chapter): the two filters and the folded section keys. `chat_sidebar_pins` holds one row per pinned (member, channel). A member with no row gets every default: nothing pinned, nothing folded, no filter. Both tables are per-user current state, so account deletion purges them ([`../data-retention.md`](../data-retention.md)). A section key is `pinned`, `channels`, `direct`, `system`, or `category:<uuid>`. `isSidebarSectionKey` in `@repo/validation` is the one grammar for the API and both clients. Folding a `category:` key needs a category in the member's chapter, which bounds the stored keys by the chapter's categories. Unfolding needs none.
+- **API.** `GET /v1/chat-sidebar`; `PATCH /v1/chat-sidebar` switches one filter or both, and a filter left out keeps its value; `PUT` and `DELETE /v1/chat-sidebar/collapsed/{sectionKey}`; `PUT` and `DELETE /v1/chat-sidebar/pins/{channelId}`. Every write is idempotent and answers with the whole arrangement. Folding is one database statement over the stored array (`set_chat_sidebar_section_collapsed`), so two devices folding different sections at the same moment both land.
+- **One rule for both clients.** Web's rail and mobile's s04 render the output of `arrangeChannelSidebar` in `@repo/hooks`, which sits on `groupChannelsByCategory` (§ Channels), and read the arrangement through `useChatSidebar`. The unread counts and mute levels it reads are the server's, never recomputed, and reach it through `sidebarUnreadCounts` and `sidebarMutedChannelIds`, which report either as unknown while its read is pending or its last attempt failed. Writes show at once. A write that overlapped no other takes its own answer as the list; overlapping writes end with one re-read of the server, since their answers can arrive out of order. A failed write puts the list back on the server's state and tells the member, every time, not only for the latest write. A write still in flight when the member signs out, switches account or switches chapter never puts its own answer into the list read after that, so the next member of the chapter never sees the last one's arrangement; it only prompts a re-read, which goes out as whoever is signed in now. Its failure isn't reported either, since whoever is on screen then didn't make it. While the unread counts are unknown, both clients draw no unread badges, on rows or folded headers alike; mobile also says the counts are unavailable once a read has failed.
+- **Rows carry no read-only mark.** Web used to draw a lock at the end of every read-only row, the same glyph that marks a private channel at the start of a row. The Discord import makes every channel it creates read-only, so the lock appeared on nearly every row. A read-only channel says so in its composer instead.
 
 ## Messages
 
@@ -84,16 +105,18 @@ A message whose formatting nests too deep renders as its raw text, exactly as ty
 
 **File and image uploads:**
 
-- Users can attach files to messages. Images render as inline previews; other files render as downloadable links with filename, size, and type.
+- Users can attach files to messages. Images render as inline previews that open in an in-app viewer; other files render as downloadable links with their filename and size.
 - Files are stored in Supabase Storage under `chapters/{chapter_id}/chat/{channel_id}/{message_id}/{filename}`.
 - Size limit: `MAX_UPLOAD_BYTES` per file ([`content-validation.md` § 3](../../../docs/security/content-validation.md#3-size)). Configurable per chapter (admin setting) is specified, not yet implemented.
 - Allowed file types: the `document` kind in `@repo/validation`, the same list as chapter documents and Backwork; membership and rationale live in [`content-validation.md`](../../../docs/security/content-validation.md) § Validations Required.
 - Upload flow: client requests signed URL from API, uploads directly to Storage, then sends message with attachment metadata.
-- **The trust boundary is the `chat` bucket's `allowed_mime_types`, not the API's check.** `ChatService.requestChatUploadUrl` validates the extension and MIME against the `document` kind before minting a URL, but a signed upload URL **cannot pin a content type** — the client sets its own `Content-Type` on the PUT, and the API never sees the bytes. So the service-layer check gates URL *issuance* only: it turns a rejection into a readable error rather than a failed PUT, and is not a second line of defence. The bucket gates the **declared header, never the bytes**, so a member can store HTML under an `image/png` declaration; it comes back typed `image/png`. What keeps that out of a renderer on this surface is the **download** side: `ChatService.listMessageAttachments` signs every attachment with `IStorageProvider.getSignedDownloadUrls(..., forceDownload: true)`, which sets `Content-Disposition: attachment` for the whole batch (#1231 — batched into one provider call per bucket rather than one per row; the underlying batch API takes this option once for the call, not once per path, so it can no longer carry a per-file *filename* the way the old single-row `downloadAs` did — web restores the display name client-side via an `<a download>` attribute, which is UX only, not the mitigation). **Turning `forceDownload` off — for instance to render image previews inline — removes the mitigation**, so an inline-preview change must re-establish it another way; an `<img>` tag is the one exception, since it never executes a response as HTML/script regardless of `Content-Disposition` (`resolveAuthorAvatars` relies on exactly this to leave avatars undisposed). Do not relax the bucket list on the belief that something server-side resolves types behind it. Measured request/response, and what was deliberately not measured, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces; see also [`../../../docs/security/content-validation.md`](../../../docs/security/content-validation.md).
+- **The trust boundary is the `chat` bucket's `allowed_mime_types`, not the API's check.** `ChatService.requestChatUploadUrl` validates the extension and MIME against the `document` kind before minting a URL, but a signed upload URL **cannot pin a content type** — the client sets its own `Content-Type` on the PUT, and the API never sees the bytes. So the service-layer check gates URL *issuance* only: it turns a rejection into a readable error rather than a failed PUT, and is not a second line of defence. The bucket gates the **declared header, never the bytes**, so a member can store HTML under an `image/png` declaration; it comes back typed `image/png`. What keeps that out of a renderer on this surface is the **download** side: `ChatService.listMessageAttachments` signs every attachment with `IStorageProvider.getSignedDownloadUrls(..., forceDownload: true)`, which sets `Content-Disposition: attachment` for the whole batch (#1231 — batched into one provider call per bucket rather than one per row; the underlying batch API takes this option once for the call, not once per path, so it can no longer carry a per-file *filename* the way the old single-row `downloadAs` did — web restores the display name client-side via an `<a download>` attribute, which is UX only, not the mitigation). **Turning `forceDownload` off — for instance to render image previews inline — removes the mitigation**, so an inline-preview change must re-establish it another way; an `<img>` tag is the one exception, since it never executes a response as HTML/script regardless of `Content-Disposition` (`resolveAuthorAvatars` relies on exactly this to leave avatars undisposed, and the image viewer below on the same basis). Do not relax the bucket list on the belief that something server-side resolves types behind it. Measured request/response, and what was deliberately not measured, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces; see also [`../../../docs/security/content-validation.md`](../../../docs/security/content-validation.md).
 - **An attachment is a row, never text in the body.** It lands in `chat_message_attachments` (`message_id`, `channel_id`, `bucket`, `storage_path`, `filename`, `content_type`, `byte_size`, `width`, `height`, `external_url`), keyed unique on `(message_id, bucket, storage_path)` — per message, not per object — and cascading from the message. The composer sends the uploaded descriptors alongside the body; the server re-derives `channel_id` from the message and re-checks every `storage_path` against the `chapters/{chapter_id}/chat/{channel_id}/` prefix it minted, so a client can claim only objects it was given a URL for. Until #TBD this was appended into `content` as the literal string `📎 <filename> (<storagePath>)`, which left the object with no link back to the message — it could not be rendered, listed, or cleaned up on delete, and a member could edit the sigil out and orphan the file. `width`/`height` are nullable and unpopulated by every writer today, including this upload path — #1505 tracks deciding whether to add an image-dimension dependency to fill them in. `byte_size` has the same gap for legacy Discord-import rows specifically (the `20260823121000` backfill recovered `storage_path`/`filename` from message prose but could not recover a size — that requires a storage metadata call a SQL migration must not make); `scripts/backfill-chat-attachment-byte-size.mjs` closes it as a re-runnable one-off script (#1231), reading each object's stored size from `IStorageProvider`-equivalent listing metadata rather than downloading it.
 - **A message may be nothing but a file.** An empty body with at least one attachment is a valid send.
 - **Attachments are fetched, not embedded in the message.** `GET /v1/channels/{id}/messages/{messageId}/attachments` returns the rows with a one-hour signed download URL each, batched into as few `getSignedDownloadUrls` calls as the attachments' buckets require (#1231) rather than one per row. They are a separate read for two reasons that point the same way: every bucket is private so a URL has to be minted per request and cannot be cached with the message, and the message cache is fed partly by Realtime rows, which cannot carry a join. `chat_messages.metadata.attachment_count` — a count, never a copy of the data — rides on the row so a client knows whether the call is worth making; without it a file-only message would render as an empty bubble for everyone except its sender.
-- **Sending** an attachment is web-only today: the mobile composer has no picker (`chat-composer.tsx` omits the affordance deliberately rather than shipping it inert). **Reading** one works on both. Mobile briefly showed a count instead — "1 attachment · open on web" — as a deliberate stopgap, because web can send a message that is nothing but a file and the backfill removed the filename text from every historical attachment message, so those messages would otherwise have rendered as empty bubbles indistinguishable from a rendering bug. That was honest but it was a dead end, so it is gone: `apps/mobile/components/chat/message-attachments.tsx` now lists the files, previewing images inline and opening everything else through the signed URL.
+- **An image opens in a viewer, not as a download** (#2874). An attachment whose declared type is on `isViewableImage`'s raster list (`@repo/chat-core/attachments`: JPEG, PNG, GIF, WebP, BMP) previews inline, and clicking or tapping it opens it large. Web opens a dialog (`apps/web/components/chat/image-viewer.tsx`), hosted by the timeline above its virtualized rows so a row scrolling away can't take it with it. Esc, the backdrop or the close button dismisses it; focus stays inside while it is open and returns to the preview of the image it was showing, when that row is still on the page (the timeline may have scrolled it out of its window, and then Radix's default applies); the arrow keys step through the message's other images, wrapping at the ends. Its **Download** action is the same link to the same signed URL a file row is, so the download is still forced by the URL's `Content-Disposition`. Mobile opens an overlay over the whole thread (`apps/mobile/components/chat/image-viewer.tsx`, an in-tree overlay per [`../../ui/mobile/patterns.md`](../../ui/mobile/patterns.md) § Overlays) with pinch, pan and double-tap to zoom. It covers the thread but not the navigator header and tab bar, which the frozen tab layout draws ([#2889](https://github.com/pdcarlson/Frapp/issues/2889)). Its **Share** action downloads the image and hands it to the system share sheet. The file keeps the sender's name as its stem, made safe to be one path segment, but its extension comes from the declared type, never from that name (`shareFileName`). On iOS that sheet offers Save to Files but not Save Image: saving to Photos needs a purpose string the app doesn't declare yet ([#2888](https://github.com/pdcarlson/Frapp/issues/2888)). On Android it lists the installed apps that accept an image. Both clients close the viewer when its message stops being shown in full (deleted, masked or held by the block list) or when a refetch no longer lists the image. The viewer holds only which message and image it shows and reads the images through the same attachments query as the row, so a refetch hands it fresh signed URLs; they last an hour. Every other attachment stays a file row that downloads, including SVG, TIFF and HEIC, and AVIF, which Android can't decode before Android 12.
+  - **Why this keeps the trust rule above.** The rule is that nothing member-uploaded is ever *served inline as a document*. The viewer never navigates to the file or embeds it as a document: it draws the signed URL in an `<img>` (web) or an `Image` (mobile), which decode it as an image or fail, and never run it as HTML or script, whatever its `Content-Disposition` or its real bytes. The URL is unchanged and still signed with `forceDownload: true`, so a member who opens it directly, or through the download action, gets a download. Mobile's Share hands a downloaded copy to another app, which types a file by its extension, so the extension comes from the declared type and never from the sender's unvalidated `filename`: HTML bytes typed `image/png` under the name `a.html` leave as `a.png`, never as a page. The type list is a rendering choice, not a second defence: the bucket gates the declared type and never the bytes, so a lying `image/png` reaches the viewer and shows as a broken image.
+- **Sending** an attachment works on both clients. Web attaches any `document`-kind file. Mobile sends photos from the library (#2464, `apps/mobile/lib/chat/attachment-upload.ts`), transcoding only a type the allowlist rejects, and has no picker for other files. **Reading** one works on both. Mobile briefly showed a count instead — "1 attachment · open on web" — as a deliberate stopgap, because web can send a message that is nothing but a file and the backfill removed the filename text from every historical attachment message, so those messages would otherwise have rendered as empty bubbles indistinguishable from a rendering bug. That was honest but it was a dead end, so it is gone: `apps/mobile/components/chat/message-attachments.tsx` now lists the files, previewing images inline and opening everything else through the signed URL.
 - **The renderer mounts only for a message that has attachments, on both clients.** Not merely "does not fetch" — the query hook reaches for the API client context on render, so mounting it for every plain-text row would make the overwhelming majority of messages depend on a context they have never needed. `attachment_count` is what decides, and it costs no request to read. A deleted message shows none either: the API 404s the list, but the client must not offer the affordance in the first place.
 
 **Reply threads:**
@@ -828,6 +851,83 @@ What follows is the behaviour the archive has once it is in.
   always empty. A mention overrides a per-channel mute in the push rules, so
   resolving `@name` tokens out of archive prose would let an import lift a mute a
   member deliberately set.
+- **Discord's mention tokens are named at import (#2875).** *2026-09-29:
+  decided at import rather than at render.* Discord stores a mention as a
+  token and draws the name when it is viewed, so history read over its API
+  says `<@&750151182395244584> we need numbers now`. The names come from what
+  only the importer holds: the message's own mentioned users, the role
+  mapping, and the import's channels. Resolving at render would ship all three
+  to every client on every read, for rows that never change. Nothing in the
+  archive rules requires imported text to stay byte-for-byte. **The rewrite is
+  permanent, and the original text is not kept**: a copy on `payload` was
+  rejected because deleting a message clears `content` and leaves `payload`, so
+  a moderator's delete would have left the removed words readable. Linking a
+  user mention to a member (#2878) therefore cannot start from this row's text;
+  it needs the user ids from Discord again (a bot re-read), or a store of them
+  that a delete also clears. The rewrite is `rewriteDiscordMentions`
+  (`apps/api/src/domain/utils/discord-mentions.ts`), run by the mapper both
+  import paths share:
+  - a user (`<@id>`, `<@!id>`) reads `@` plus the name the message's own
+    mentioned-user entry carries. On the bot path that is their Discord display
+    name, which can differ from the server nickname their own messages are
+    labelled with: Discord's API returns no nickname for a mentioned user, and
+    taking one from whatever the import happened to have read already named the
+    same person two ways. An upload's entry is DiscordChatExporter's, which
+    carries the nickname;
+  - a role (`<@&id>`) reads `@` plus the mapped Frapp role's current name, or its
+    Discord name when it was set to Ignore; `@everyone`'s role reads
+    `@everyone`. An upload has no role mapping, so there it reads
+    `@unknown-role`;
+  - a channel (`<#id>`) reads `#name`, linked to the Frapp channel its messages
+    landed in (`/chat?channel=<id>`). A thread links to its parent's channel.
+    On the bot path a new channel of the import is made as soon as a page
+    about to be written mentions it (a thread's mention makes its parent's),
+    so every mention of an imported channel links. A channel no one mentions
+    is made when the import reaches it, as before; one that is mentioned and
+    then never reached (the import stops, or Discord stops showing it) stays
+    in Frapp, empty. The link works on web, where like every message link it
+    opens in a new tab. Mobile shows the name without a link, because it only
+    links absolute URLs;
+  - **a channel some members cannot read is never named**: it reads
+    `#private-channel`, as Discord shows "No Access" to someone outside it. A
+    thread is named only when Discord showed it to everyone, since a private
+    thread may have had none of its messages imported. A channel with a Frapp
+    channel is judged by that channel as it is now: named only when it is
+    whole-chapter (`PUBLIC`). A channel with none (skipped, or never made)
+    landed nowhere, and is named only when Discord showed it to everyone.
+    Anything else, including a privacy nobody recorded, reads
+    `#private-channel`;
+  - a custom emoji reads `:name:`, a timestamp (`<t:…>`) an absolute UTC time,
+    and a slash command `/name`;
+  - an id none of that can name reads `@unknown-user`, `@unknown-role` or
+    `#unknown-channel`, never the snowflake. That includes roles and channels
+    deleted in Discord before the import, and the bot and booster roles the
+    role step does not offer;
+  - a token inside inline code or a fenced block, or escaped with a backslash,
+    stays as written, as Discord shows it;
+  - a name is inserted as plain text, since it is someone else's words inside
+    another member's message: brackets, angle brackets, backslashes, backticks,
+    asterisks, underscores at a word's edge and bidirectional controls are
+    dropped from it. So a nickname cannot make a disguised link, restyle the
+    words around it, or reorder them. A nickname that is itself a URL stays
+    one, and mobile links it, showing the address it opens.
+
+  The web mention chip marks `@` plus one word, so a name with a space is only
+  partly marked, and the `@unknown-*` placeholders are marked too, as they are
+  in a member's own message.
+
+  An upload has little to do: DiscordChatExporter's JSON already renders tokens
+  as text unless it was run with `--markdown false`. For an import that ran
+  before this, `apps/api/src/backfill-discord-mention-tokens.ts` applies the
+  same rewrite to the rows already written. It runs only on an import that has
+  stopped. While a failed or cancelled import has a new channel that was never
+  made, it refuses unless told `--allow-unlinked`, since a rewritten mention
+  can never be linked later: a failed import can be restarted first, and a
+  cancelled one never will be. It names a user by the name the import stored on their own
+  messages, since the mentioned-user lists were never kept: someone mentioned
+  who never posted reads `@unknown-user`, and an upload's users read as their
+  Discord username.
+
 - **Moderating an archived message is not live.** The Realtime exclusion is a
   row rule, not an operation rule, so a soft-delete, pin or edit of an imported
   message reaches other members on their next channel read rather than

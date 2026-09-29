@@ -14,7 +14,10 @@ import {
   usePermissionsCatalog,
   useSemesterRollover,
   useSemesters,
+  useRemoveChapterLogo,
   useUpdateChapter,
+  useUploadChapterLogo,
+  type ChapterLogoUpload,
   type SemesterArchive,
 } from "@repo/hooks";
 import {
@@ -79,6 +82,8 @@ import {
 
 type Branding = {
   greek_letters?: string;
+  short_name?: string;
+  show_greek_letters?: boolean;
   designation?: string;
   school_short?: string;
   founded_at?: number;
@@ -217,6 +222,8 @@ function SettingsPageContent() {
   const catalogQuery = usePermissionsCatalog();
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
+  const uploadLogo = useUploadChapterLogo();
+  const removeLogo = useRemoveChapterLogo();
   const patchOrgConfig = usePatchOrgConfig();
   // Which settings are saving, not merely whether something is. One shared
   // `isPending` used to disable every control on every tab at once (#881).
@@ -430,6 +437,14 @@ function SettingsPageContent() {
       typeof brandingRaw.greek_letters === "string"
         ? brandingRaw.greek_letters
         : undefined,
+    short_name:
+      typeof brandingRaw.short_name === "string"
+        ? brandingRaw.short_name
+        : undefined,
+    show_greek_letters:
+      typeof brandingRaw.show_greek_letters === "boolean"
+        ? brandingRaw.show_greek_letters
+        : undefined,
     designation:
       typeof brandingRaw.designation === "string"
         ? brandingRaw.designation
@@ -525,6 +540,38 @@ function SettingsPageContent() {
     } catch (error) {
       toast({
         title: "Couldn't save chapter profile",
+        description: getErrorMessage(error, "Retry or check your connection."),
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function saveLogo(upload: ChapterLogoUpload) {
+    try {
+      await uploadLogo.mutateAsync(upload);
+      toast({
+        title: "Logo saved",
+        description: "An entry was written to the chapter audit log.",
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't upload the logo",
+        description: getErrorMessage(error, "Retry or check your connection."),
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function deleteLogo() {
+    try {
+      await removeLogo.mutateAsync();
+      toast({
+        title: "Logo removed",
+        description: "Your chapter mark falls back to its short name or letters.",
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't remove the logo",
         description: getErrorMessage(error, "Retry or check your connection."),
         variant: "destructive",
       });
@@ -732,6 +779,12 @@ function SettingsPageContent() {
                 vocabulary={vocabulary}
                 branding={branding}
                 profile={profile}
+                mark={{
+                  logoUrl: chapterQuery.data?.logo_url ?? null,
+                  onUploadLogo: saveLogo,
+                  onRemoveLogo: deleteLogo,
+                  logoPending: uploadLogo.isPending || removeLogo.isPending,
+                }}
                 canManage={canManage}
                 canEditProfile={canEditProfile}
                 onSaveProfile={saveProfile}

@@ -73,6 +73,47 @@ export function FilterChips({
   );
 }
 
+/**
+ * Chips that switch on and off independently, in `FilterChips`' recipe: s04's
+ * Unread only and Hide muted (#2877), which can both be on at once, so they are
+ * switches rather than one tab list.
+ */
+export function ToggleChips<K extends string>({
+  chips,
+  onToggle,
+}: {
+  chips: readonly { key: K; label: string; on: boolean }[];
+  onToggle: (key: K, next: boolean) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+
+  return (
+    <View style={styles.chipRow}>
+      {chips.map((chip) => (
+        <Pressable
+          key={chip.key}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: chip.on }}
+          accessibilityLabel={chip.label}
+          onPress={() => onToggle(chip.key, !chip.on)}
+          style={[
+            styles.chip,
+            chip.on ? { backgroundColor: accent } : styles.chipIdle,
+          ]}
+        >
+          <Text
+            style={[styles.chipText, chip.on ? styles.chipTextSelected : null]}
+          >
+            {chip.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export function SearchField({
   value,
   onChangeText,

@@ -114,7 +114,9 @@ two spec cases that drove the deleted field were rewritten against what they act
 resolution, and grouping dropping an empty category) rather than deleted.
 
 The "N channels" count above the list is deleted too (`1t`), and the read-only "Read" badge is now a
-lock glyph with an `sr-only` label (`1b` pin 7).
+lock glyph with an `sr-only` label (`1b` pin 7). *(2026-09-29, #2877: that lock is gone as well. It
+shared its glyph with the private-channel mark at the start of a row, and the Discord import made
+it appear on nearly every row; a read-only channel now says so only in its composer.)*
 
 ## 4. Ask entry and AI chrome — lane 3 or 7
 
