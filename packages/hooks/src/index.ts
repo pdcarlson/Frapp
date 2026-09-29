@@ -11,6 +11,7 @@ export * from "./use-attendance";
 export * from "./use-points";
 export * from "./use-chat";
 export * from "./hide-conversation";
+export * from "./channel-sections";
 export * from "./use-chat-safety";
 export * from "./use-chat-reports";
 export * from "./use-billing";

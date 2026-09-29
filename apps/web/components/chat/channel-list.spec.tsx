@@ -185,6 +185,9 @@ describe("ChannelList category grouping", () => {
     ]);
     expect(channelsUnder(container, "Direct messages")).toEqual(["Alice Chen"]);
     expect(channelsUnder(container, "System")).toEqual(["chapter-audit"]);
+    // System rows are split off before the shared category grouping runs, so
+    // chapter-audit must not also show up in the default group.
+    expect(channelsUnder(container, "Channels")).toEqual(["general"]);
   });
 
   it("hides a category with no channels", () => {

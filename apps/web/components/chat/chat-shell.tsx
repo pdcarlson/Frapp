@@ -1131,6 +1131,24 @@ export function ChatShell({
   }, []);
   const cancelReply = useCallback(() => setReplyTarget(null), []);
   /**
+   * Re-stage the reply a refused send carried (#1728). The composer calls this
+   * only when it is putting the whole message back into an untouched composer,
+   * so nothing else is staged; `current ??` keeps that true if it ever is.
+   * Scoped to `activeChannelId` as of the send: the composer calls the copy of
+   * this its send closed over, and `<Composer>` is keyed per channel, so a
+   * send refused after a switch finds its editor destroyed and restores
+   * nothing.
+   */
+  const restoreReply = useCallback(
+    (messageId: string) => {
+      if (!activeChannelId) return;
+      setReplyTarget(
+        (current) => current ?? { channelId: activeChannelId, messageId },
+      );
+    },
+    [activeChannelId],
+  );
+  /**
    * Whether to offer Reply on rows in this channel at all. Both `can_post` and
    * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
    * each covers.
@@ -2005,7 +2023,8 @@ export function ChatShell({
               // the Dexie outbox and resolves on its own schedule, and a strip
               // still standing after the message appears in the timeline reads
               // as "your reply didn't send" — and would silently attach itself
-              // to whatever the member typed next.
+              // to whatever the member typed next. If the outbox refuses the
+              // send, the composer hands it back through `onRestoreReply`.
               //
               // Only when the target belongs to THIS channel. Clearing
               // unconditionally reproduced the exact bug the channel-scoping
@@ -2036,6 +2055,7 @@ export function ChatShell({
             isOffline={channel.connection === "offline"}
             replyTo={replyTo}
             onCancelReply={cancelReply}
+            onRestoreReply={restoreReply}
           />
         ) : null}
       </section>
