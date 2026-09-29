@@ -265,8 +265,9 @@ describe("opening an image", () => {
       .find((node) => node.props.accessibilityLabel === "View photo-2.png")!;
     act(() => row.props.onPress());
 
-    expect(openViewer).toHaveBeenCalledWith(
-      [
+    expect(openViewer).toHaveBeenCalledWith({
+      messageId: "msg-1",
+      images: [
         {
           id: "att-1",
           filename: "photo-1.png",
@@ -280,8 +281,8 @@ describe("opening an image", () => {
           url: "https://example.test/signed/photo-2.png",
         },
       ],
-      1,
-    );
+      index: 1,
+    });
     expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
   });
 

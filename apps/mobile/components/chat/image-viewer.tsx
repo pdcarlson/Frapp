@@ -26,17 +26,20 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   UNZOOMED,
+  fittedSize,
   settle,
   toggleZoom,
   zoomAbout,
+  type Size,
   type ZoomState,
 } from "@/lib/chat/image-zoom";
 import { shareAttachment } from "@/lib/chat/share-attachment";
 
 /**
- * The chat thread's full-screen image viewer (#2874): tapping an image in a
- * message opens it here, with pinch, pan and double-tap to zoom and a save or
- * share action. Web's counterpart is `apps/web/components/chat/image-viewer.tsx`.
+ * The chat thread's image viewer (#2874): tapping an image in a message opens
+ * it over the whole thread, with pinch, pan and double-tap to zoom and a share
+ * action. It covers the thread, not the navigator's header and tab bar, which
+ * the frozen tab layout draws (#2889). Web's counterpart is `apps/web/components/chat/image-viewer.tsx`.
  *
  * It draws the attachment's signed URL in an `Image`, which never runs a
  * response as a document, so it keeps the trust rule the forced download
@@ -57,14 +60,21 @@ export interface ViewerImage {
   url: string;
 }
 
-interface Gallery {
+/** The images of one message, and which one is showing. */
+export interface ViewerGallery {
+  messageId: string;
   images: readonly ViewerImage[];
   index: number;
 }
 
+interface OpenGallery extends ViewerGallery {
+  /** Counts opens, so each one starts with fresh share state. */
+  session: number;
+}
+
 export interface ImageViewerState {
-  gallery: Gallery | null;
-  open: (images: readonly ViewerImage[], index: number) => void;
+  gallery: OpenGallery | null;
+  open: (gallery: ViewerGallery) => void;
   close: () => void;
   step: (delta: -1 | 1) => void;
 }
@@ -81,17 +91,25 @@ export function useOpenImageViewer(): ImageViewerState["open"] | null {
   return useContext(ImageViewerContext);
 }
 
+/**
+ * The viewer's state, for the screen that hosts it. The gallery is a snapshot
+ * of the message's images, so the host closes it when that message stops
+ * being shown (`chat-thread.tsx`).
+ */
 export function useImageViewer(): ImageViewerState {
-  const [gallery, setGallery] = useState<Gallery | null>(null);
+  const [gallery, setGallery] = useState<OpenGallery | null>(null);
+  const sessions = useRef(0);
 
-  const open = useCallback((images: readonly ViewerImage[], index: number) => {
-    if (images.length === 0) return;
+  const open = useCallback((next: ViewerGallery) => {
+    if (next.images.length === 0) return;
     // The composer's keyboard would otherwise sit over the bottom of the image
     // and its step controls.
     Keyboard.dismiss();
+    sessions.current += 1;
     setGallery({
-      images,
-      index: Math.min(Math.max(index, 0), images.length - 1),
+      ...next,
+      index: Math.min(Math.max(next.index, 0), next.images.length - 1),
+      session: sessions.current,
     });
   }, []);
   const close = useCallback(() => setGallery(null), []);
@@ -124,42 +142,75 @@ export function useImageViewer(): ImageViewerState {
 }
 
 export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
+  if (!viewer.gallery) return null;
+  // Keyed by the open, so a close unmounts everything an open started (a
+  // share in flight, a failure message) and the next open starts clean.
+  return (
+    <ViewerBody
+      key={viewer.gallery.session}
+      gallery={viewer.gallery}
+      viewer={viewer}
+    />
+  );
+}
+
+function ViewerBody({
+  gallery,
+  viewer,
+}: {
+  gallery: OpenGallery;
+  viewer: ImageViewerState;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
   const [isSharing, setIsSharing] = useState(false);
-  // Which image a save or share failed on: the message is about that image,
-  // so stepping to another one clears it without an effect to reset it.
+  // Which image a share failed on: the message is about that image, so
+  // stepping to another one clears it without an effect to reset it.
   const [failedId, setFailedId] = useState<string | null>(null);
 
-  const { gallery } = viewer;
-  const image = gallery ? gallery.images[gallery.index] : undefined;
+  const image = gallery.images[gallery.index]!;
+  const total = gallery.images.length;
+
+  // What a share in flight checks before it presents its sheet: the member
+  // may have closed the viewer, or stepped to another image, while the
+  // download ran, and a sheet appearing then would be about nothing they are
+  // looking at.
+  const showing = useRef<string | null>(image.id);
+  useEffect(() => {
+    showing.current = image.id;
+  }, [image.id]);
+  useEffect(
+    () => () => {
+      showing.current = null;
+    },
+    [],
+  );
 
   // Opening hides the image that had a screen reader's focus, which clears
   // that focus rather than moving it, so put it on the viewer's title. From a
   // later task, as the mute menu does: on Android an event sent from this
   // commit's effect arrives before the view exists and is dropped.
-  const isOpen = gallery !== null;
   useEffect(() => {
-    if (!isOpen) return;
     const timer = setTimeout(() => {
       if (titleRef.current) {
         AccessibilityInfo.sendAccessibilityEvent(titleRef.current, "focus");
       }
     }, 0);
     return () => clearTimeout(timer);
-  }, [isOpen]);
-
-  if (!gallery || !image) return null;
-
-  const total = gallery.images.length;
+  }, []);
 
   async function share(target: ViewerImage) {
     // One at a time: iOS rejects a second share sheet while one is showing.
     if (isSharing) return;
     setFailedId(null);
     setIsSharing(true);
-    const shared = await shareAttachment(target);
+    const shared = await shareAttachment(
+      target,
+      () => showing.current === target.id,
+    );
+    // Nothing to update once the viewer has closed.
+    if (showing.current === null) return;
     setIsSharing(false);
     if (!shared) setFailedId(target.id);
   }
@@ -189,7 +240,7 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
         </Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Save or share image"
+          accessibilityLabel="Share image"
           accessibilityState={{ busy: isSharing, disabled: isSharing }}
           disabled={isSharing}
           hitSlop={8}
@@ -202,7 +253,7 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
           <Text
             style={isSharing ? styles.controlLabelBusy : styles.controlLabel}
           >
-            {isSharing ? "Saving…" : "Share"}
+            {isSharing ? "Preparing…" : "Share"}
           </Text>
         </Pressable>
       </View>
@@ -212,7 +263,7 @@ export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
 
       {failedId === image.id ? (
         <Text accessibilityLiveRegion="polite" style={styles.error}>
-          Couldn&apos;t save or share that image. Try again.
+          Couldn&apos;t share that image. Try again.
         </Text>
       ) : null}
 
@@ -267,6 +318,10 @@ function ZoomableImage({ image }: { image: ViewerImage }) {
   const y = useSharedValue(UNZOOMED.y);
   const stageWidth = useSharedValue(0);
   const stageHeight = useSharedValue(0);
+  // The image's own size, once it has loaded, for the fitted size the pan is
+  // bounded by.
+  const naturalWidth = useSharedValue(0);
+  const naturalHeight = useSharedValue(0);
 
   const gesture = useMemo(() => {
     function apply(next: ZoomState, animate: boolean) {
@@ -285,9 +340,20 @@ function ZoomableImage({ image }: { image: ViewerImage }) {
       "worklet";
       return { scale: scale.get(), x: x.get(), y: y.get() };
     }
+    function stage(): Size {
+      "worklet";
+      return { width: stageWidth.get(), height: stageHeight.get() };
+    }
+    function content(): Size {
+      "worklet";
+      return fittedSize(
+        { width: naturalWidth.get(), height: naturalHeight.get() },
+        stage(),
+      );
+    }
     function rest() {
       "worklet";
-      apply(settle(current(), stageWidth.get(), stageHeight.get()), true);
+      apply(settle(current(), stage(), content()), true);
     }
 
     // Focal points arrive in the stage's coordinates, which start at its top
@@ -325,15 +391,24 @@ function ZoomableImage({ image }: { image: ViewerImage }) {
             current(),
             event.x - stageWidth.get() / 2,
             event.y - stageHeight.get() / 2,
-            stageWidth.get(),
-            stageHeight.get(),
+            stage(),
+            content(),
           ),
           true,
         );
       });
 
     return Gesture.Race(doubleTap, Gesture.Simultaneous(pinch, pan));
-  }, [duration, scale, x, y, stageWidth, stageHeight]);
+  }, [
+    duration,
+    scale,
+    x,
+    y,
+    stageWidth,
+    stageHeight,
+    naturalWidth,
+    naturalHeight,
+  ]);
 
   const zoomStyle = useAnimatedStyle(() => ({
     transform: [
@@ -358,6 +433,10 @@ function ZoomableImage({ image }: { image: ViewerImage }) {
           accessibilityLabel={image.filename}
           accessibilityHint="Pinch or double-tap to zoom"
           resizeMode="contain"
+          onLoad={(event) => {
+            naturalWidth.set(event.nativeEvent.source.width);
+            naturalHeight.set(event.nativeEvent.source.height);
+          }}
           style={[styles.image, zoomStyle]}
         />
       </View>

@@ -143,7 +143,7 @@ export function MessageAttachments({
             }
             onPress={() =>
               isImage && openViewer
-                ? openViewer(images, imageIndex)
+                ? openViewer({ messageId, images, index: imageIndex })
                 : void open(attachment.id, attachment.download_url)
             }
             onLongPress={onLongPress}

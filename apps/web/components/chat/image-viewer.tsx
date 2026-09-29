@@ -1,6 +1,12 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,19 +23,64 @@ export interface ViewerImage {
   url: string;
 }
 
-interface ImageViewerProps {
-  /** The message's images, in order. */
+/** The images of one message, and which one is showing. */
+export interface ViewerGallery {
+  messageId: string;
   images: readonly ViewerImage[];
-  /** Which one is showing, or `null` when the viewer is closed. */
-  index: number | null;
-  onIndexChange: (index: number) => void;
-  onClose: () => void;
-  /**
-   * Where focus goes when the viewer closes: the preview of the image it was
-   * showing, which may not be the one that opened it.
-   */
-  onCloseAutoFocus: (event: Event, index: number) => void;
+  index: number;
 }
+
+export interface ImageViewerState {
+  gallery: ViewerGallery | null;
+  open: (gallery: ViewerGallery) => void;
+  close: () => void;
+  show: (index: number) => void;
+}
+
+/**
+ * Opens the viewer on one of a message's images. Provided by the timeline;
+ * null where no surface hosts a viewer, and there an image is a download
+ * link like any other file.
+ */
+const ImageViewerContext = createContext<ImageViewerState["open"] | null>(null);
+
+export const ImageViewerProvider = ImageViewerContext.Provider;
+
+export function useOpenImageViewer(): ImageViewerState["open"] | null {
+  return useContext(ImageViewerContext);
+}
+
+/**
+ * The viewer's state, for the surface that hosts it.
+ *
+ * It lives above the timeline's virtualized rows, never in a row: a row
+ * unmounts once it scrolls out of the window (a new message arriving is
+ * enough), which would take an open dialog with it; and React events bubble
+ * through a portal along the component tree, so a dialog inside a row would
+ * hand every click on the image to the row's own tap handler. The gallery is a
+ * snapshot, so a refetch of the message's attachments can't close or reopen
+ * it; the host closes it when the message stops being shown.
+ */
+export function useImageViewer(): ImageViewerState {
+  const [gallery, setGallery] = useState<ViewerGallery | null>(null);
+  const open = useCallback((next: ViewerGallery) => {
+    if (next.images.length === 0) return;
+    setGallery({
+      ...next,
+      index: Math.min(Math.max(next.index, 0), next.images.length - 1),
+    });
+  }, []);
+  const close = useCallback(() => setGallery(null), []);
+  const show = useCallback(
+    (index: number) =>
+      setGallery((current) => (current ? { ...current, index } : current)),
+    [],
+  );
+  return { gallery, open, close, show };
+}
+
+/** The attribute each inline preview carries, for focus to find it on close. */
+export const PREVIEW_ATTRIBUTE = "data-attachment-preview";
 
 /**
  * A message's images, large, in a dialog (#2874). Clicking an inline preview
@@ -46,15 +97,13 @@ interface ImageViewerProps {
  * Built on the shared `Dialog` (Radix), which brings the focus trap, Esc,
  * the backdrop dismissal and `aria-modal`.
  */
-export function ImageViewer({
-  images,
-  index,
-  onIndexChange,
-  onClose,
-  onCloseAutoFocus,
-}: ImageViewerProps) {
+export function ImageViewer({ viewer }: { viewer: ImageViewerState }) {
+  const { gallery } = viewer;
+  const images = gallery?.images ?? [];
+  const index = gallery?.index ?? null;
   const image = index === null ? undefined : images[index];
   const total = images.length;
+  const onIndexChange = viewer.show;
 
   // Stepping wraps. A step control disabled at either end would drop focus to
   // the page the moment it took the step that disabled it, and with it the
@@ -78,7 +127,7 @@ export function ImageViewer({
     <Dialog
       open={image !== undefined}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) viewer.close();
       }}
     >
       {image ? (
@@ -100,7 +149,18 @@ export function ImageViewer({
             event.preventDefault();
             (event.currentTarget as HTMLElement | null)?.focus();
           }}
-          onCloseAutoFocus={(event) => onCloseAutoFocus(event, index!)}
+          // Back to the preview of the image it was showing, which may not be
+          // the one that opened it. Looked up now rather than held, because
+          // the row may have been virtualized away and drawn again since; if
+          // it isn't on the page, Radix's default applies.
+          onCloseAutoFocus={(event) => {
+            const preview = Array.from(
+              document.querySelectorAll<HTMLElement>(`[${PREVIEW_ATTRIBUTE}]`),
+            ).find((node) => node.getAttribute(PREVIEW_ATTRIBUTE) === image.id);
+            if (!preview) return;
+            event.preventDefault();
+            preview.focus();
+          }}
         >
           {/* `pr-10` keeps the row clear of the dialog's own close button. */}
           <div className="flex min-w-0 items-center gap-2 pr-10">

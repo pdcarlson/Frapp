@@ -232,27 +232,29 @@ vi.mock("expo-network", () => ({
 // New-in-S1 native modules: mocked suite-wide so importing any file that
 // touches the provider stack never loads native code in the node/jsdom env.
 vi.mock("react-native-gesture-handler", () => {
-  // The chat image viewer's pinch, pan and double-tap (#2874). Gestures need a
-  // device, so a builder here only records its kind and returns itself from
-  // every configuration call; `lib/chat/image-zoom.spec.ts` tests the
-  // arithmetic the callbacks run.
+  // The chat image viewer's pinch, pan and double-tap (#2874). A gesture
+  // needs a device, so a builder here records its kind and the callbacks it
+  // was given, and `GestureDetector` is a host node carrying the composed
+  // gesture, so a spec can find a callback and run it with a made-up event.
   const builder = (kind: string) => {
-    const gesture: Record<string, unknown> = { kind };
-    for (const method of [
-      "onStart",
-      "onChange",
-      "onUpdate",
-      "onEnd",
-      "averageTouches",
-      "numberOfTaps",
-    ]) {
+    const gesture: Record<string, unknown> & {
+      handlers: Record<string, (...args: unknown[]) => void>;
+    } = { kind, handlers: {} };
+    for (const method of ["onStart", "onChange", "onUpdate", "onEnd"]) {
+      gesture[method] = (handler: (...args: unknown[]) => void) => {
+        gesture.handlers[method] = handler;
+        return gesture;
+      };
+    }
+    for (const method of ["averageTouches", "numberOfTaps"]) {
       gesture[method] = () => gesture;
     }
     return gesture;
   };
   return {
     GestureHandlerRootView: "GestureHandlerRootView",
-    GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+    GestureDetector: (props: Record<string, unknown>) =>
+      React.createElement("GestureDetector", props),
     Gesture: {
       Pinch: () => builder("pinch"),
       Pan: () => builder("pan"),
@@ -269,7 +271,8 @@ vi.mock("react-native-gesture-handler", () => {
 // Only the chat image viewer animates directly (the sheets' own use is behind
 // the `@gorhom/bottom-sheet` mock). A shared value is a plain box read and
 // written through `get`/`set`, the React Compiler-safe accessors the viewer
-// uses, and an animated style is computed once, at render.
+// uses. An animated style re-runs its updater on every read, the way the UI
+// thread does, so a spec that runs a gesture callback can read the result.
 vi.mock("react-native-reanimated", () => ({
   default: { Image: "Animated.Image", View: "Animated.View" },
   useSharedValue: <T>(initial: T) =>
@@ -284,7 +287,16 @@ vi.mock("react-native-reanimated", () => ({
         };
       })(),
     ).current,
-  useAnimatedStyle: <T>(updater: () => T) => updater(),
+  useAnimatedStyle: <T extends object>(updater: () => T) =>
+    new Proxy({} as T, {
+      get: (_target, key) => updater()[key as keyof T],
+      ownKeys: () => Reflect.ownKeys(updater()),
+      getOwnPropertyDescriptor: (_target, key) => ({
+        configurable: true,
+        enumerable: true,
+        value: updater()[key as keyof T],
+      }),
+    }),
   withTiming: <T>(value: T) => value,
 }));
 

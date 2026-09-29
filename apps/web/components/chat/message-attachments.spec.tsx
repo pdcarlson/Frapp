@@ -11,6 +11,8 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 const { MessageAttachments } = await import("./message-attachments");
+const { ImageViewer, ImageViewerProvider, useImageViewer } =
+  await import("./image-viewer");
 
 /**
  * Chat attachments on web, and the image viewer they open (#2874).
@@ -45,15 +47,37 @@ function photo(n: number) {
   });
 }
 
+/**
+ * The attachments inside a message row, with the viewer hosted outside that
+ * row, the way the timeline hosts it above its virtualized rows.
+ */
+function Host({
+  count,
+  onRowClick,
+}: {
+  count: number;
+  onRowClick?: () => void;
+}) {
+  const viewer = useImageViewer();
+  return (
+    <ImageViewerProvider value={viewer.open}>
+      {/* A stand-in for `MessageItem`'s row, which toggles its action tray on
+          a click that isn't on a control. */}
+      <div onClick={onRowClick}>
+        <MessageAttachments
+          channelId="chan-1"
+          messageId="msg-1"
+          count={count}
+        />
+      </div>
+      <ImageViewer viewer={viewer} />
+    </ImageViewerProvider>
+  );
+}
+
 function show(...rows: ReturnType<typeof attachment>[]) {
   hookState.result = { isPending: false, isError: false, data: rows };
-  return render(
-    <MessageAttachments
-      channelId="chan-1"
-      messageId="msg-1"
-      count={rows.length}
-    />,
-  );
+  return render(<Host count={rows.length} />);
 }
 
 async function openViewerOn(filename: string) {
@@ -93,6 +117,26 @@ describe("the attachment list", () => {
     );
     expect(row).toHaveAttribute("download", "minutes.pdf");
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("keeps an image a download link where nothing hosts a viewer", () => {
+    hookState.result = { isPending: false, isError: false, data: [photo(1)] };
+    render(
+      <MessageAttachments channelId="chan-1" messageId="msg-1" count={1} />,
+    );
+
+    const link = screen.getByRole("link", { name: "photo-1.png" });
+    expect(link).toHaveAttribute("download", "photo-1.png");
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("names a preview in its alt text, so an image that fails to load still says what it was", () => {
+    show(photo(1));
+    expect(
+      screen
+        .getByRole("button", { name: "View photo-1.png" })
+        .querySelector("img"),
+    ).toHaveAttribute("alt", "photo-1.png");
   });
 
   it("keeps an SVG a download row, never drawn", () => {
@@ -166,6 +210,29 @@ describe("the image viewer", () => {
     await user.click(document.querySelector(".fixed.inset-0")!);
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("is modal: the page behind it takes no pointer input", async () => {
+    // A non-modal Radix dialog still loops Tab inside itself, so the Tab test
+    // below can't tell the two apart; this can.
+    show(photo(1));
+    await openViewerOn("photo-1.png");
+
+    expect(document.body).toHaveStyle({ pointerEvents: "none" });
+  });
+
+  it("keeps clicks inside it away from the message row underneath", async () => {
+    // React events bubble through a portal along the component tree, so a
+    // viewer mounted inside the row would toggle the row's action tray.
+    hookState.result = { isPending: false, isError: false, data: [photo(1)] };
+    const onRowClick = vi.fn();
+    render(<Host count={1} onRowClick={onRowClick} />);
+    const { user, dialog } = await openViewerOn("photo-1.png");
+    onRowClick.mockClear();
+
+    await user.click(shownImage(dialog));
+
+    expect(onRowClick).not.toHaveBeenCalled();
   });
 
   it("traps focus while it is open", async () => {

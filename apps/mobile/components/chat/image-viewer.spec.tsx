@@ -20,11 +20,12 @@ import {
 } from "./image-viewer";
 
 /**
- * The chat thread's image viewer on mobile (#2874). What a device would show
- * (the pinch, the full-screen overlay) can't run here; `lib/chat/image-zoom.spec.ts`
- * pins the zoom arithmetic, and this pins the rest: it opens on the tapped
- * image, steps through the message's others, closes (Android's back button
- * included), and saves or shares the image it is showing.
+ * The chat thread's image viewer on mobile (#2874). A real pinch needs a
+ * device; `lib/chat/image-zoom.spec.ts` pins the zoom arithmetic, and this pins
+ * the rest: it opens on the tapped image, steps through the message's others,
+ * closes (Android's back button included), shares the image it is showing,
+ * and feeds its gestures to that arithmetic the right way round. The gesture
+ * mock in `vitest.setup.ts` records each callback so a test can run it.
  */
 function image(n: number): ViewerImage {
   return {
@@ -36,6 +37,11 @@ function image(n: number): ViewerImage {
 }
 
 let viewer!: ImageViewerState;
+
+/** Opens the viewer on message `msg-1`'s images, at `index`. */
+function openOn(images: ViewerImage[], index: number) {
+  act(() => viewer.open({ messageId: "msg-1", images, index }));
+}
 
 /** Hands the test the screen's viewer state after every commit. */
 function Harness({ onState }: { onState: (state: ImageViewerState) => void }) {
@@ -86,7 +92,7 @@ describe("opening and closing", () => {
 
   it("opens on the tapped image, drawn from its signed URL", () => {
     const tree = render();
-    act(() => viewer.open([image(1), image(2), image(3)], 1));
+    openOn([image(1), image(2), image(3)], 1);
 
     expect(shownImage(tree).props.source).toEqual({ uri: image(2).url });
     expect(textOf(tree)).toContain("photo-2.png");
@@ -95,13 +101,13 @@ describe("opening and closing", () => {
 
   it("dismisses the keyboard, which would cover the image", () => {
     render();
-    act(() => viewer.open([image(1)], 0));
+    openOn([image(1)], 0);
     expect(Keyboard.dismiss).toHaveBeenCalled();
   });
 
   it("closes from its close button", () => {
     const tree = render();
-    act(() => viewer.open([image(1)], 0));
+    openOn([image(1)], 0);
     act(() => button(tree, "Close image").props.onPress());
 
     expect(tree.toJSON()).toBeNull();
@@ -109,7 +115,7 @@ describe("opening and closing", () => {
 
   it("closes on Android's back button instead of leaving the thread", () => {
     const tree = render();
-    act(() => viewer.open([image(1)], 0));
+    openOn([image(1)], 0);
 
     const addListener = vi.mocked(BackHandler.addEventListener);
     expect(addListener).toHaveBeenCalledWith(
@@ -128,7 +134,7 @@ describe("opening and closing", () => {
 
   it("covers the container it is drawn in, and is modal to VoiceOver", () => {
     const tree = render();
-    act(() => viewer.open([image(1)], 0));
+    openOn([image(1)], 0);
     const root = tree.root.findAll(
       (node) => node.props.accessibilityViewIsModal === true,
     )[0]!;
@@ -140,7 +146,7 @@ describe("opening and closing", () => {
 describe("stepping through a message's images", () => {
   it("steps forward and back, wrapping at each end", () => {
     const tree = render();
-    act(() => viewer.open([image(1), image(2), image(3)], 0));
+    openOn([image(1), image(2), image(3)], 0);
 
     act(() => button(tree, "Next image").props.onPress());
     expect(shownImage(tree).props.source).toEqual({ uri: image(2).url });
@@ -159,7 +165,7 @@ describe("stepping through a message's images", () => {
 
   it("has no step controls for a single image", () => {
     const tree = render();
-    act(() => viewer.open([image(1)], 0));
+    openOn([image(1)], 0);
     expect(button(tree, "Next image")).toBeUndefined();
   });
 });
@@ -167,27 +173,198 @@ describe("stepping through a message's images", () => {
 describe("saving or sharing", () => {
   it("shares the image it is showing", async () => {
     const tree = render();
-    act(() => viewer.open([image(1), image(2)], 1));
+    openOn([image(1), image(2)], 1);
 
     await act(async () => {
-      button(tree, "Save or share image").props.onPress();
+      button(tree, "Share image").props.onPress();
     });
 
-    expect(shareAttachment).toHaveBeenCalledWith(image(2));
+    expect(shareAttachment).toHaveBeenCalledWith(
+      image(2),
+      expect.any(Function),
+    );
     expect(textOf(tree)).not.toContain("Couldn");
   });
 
   it("says so when it couldn't, and forgets it on the next image", async () => {
     share.result = false;
     const tree = render();
-    act(() => viewer.open([image(1), image(2)], 0));
+    openOn([image(1), image(2)], 0);
 
     await act(async () => {
-      button(tree, "Save or share image").props.onPress();
+      button(tree, "Share image").props.onPress();
     });
     expect(textOf(tree)).toContain("Couldn");
 
     act(() => viewer.step(1));
     expect(textOf(tree)).not.toContain("Couldn");
+  });
+});
+
+describe("state that belongs to one open", () => {
+  it("forgets a failed share once the viewer closes", async () => {
+    share.result = false;
+    const tree = render();
+    openOn([image(1)], 0);
+    await act(async () => {
+      button(tree, "Share image").props.onPress();
+    });
+    expect(textOf(tree)).toContain("Couldn");
+
+    act(() => button(tree, "Close image").props.onPress());
+    openOn([image(1)], 0);
+
+    expect(textOf(tree)).not.toContain("Couldn");
+  });
+
+  it("presents no share sheet for an image the member has since closed", async () => {
+    // The download can take seconds. `shareAttachment` asks before it
+    // presents, and the answer must be no once the viewer has closed.
+    let finish!: (shared: boolean) => void;
+    vi.mocked(shareAttachment).mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (finish = resolve)),
+    );
+    const tree = render();
+    openOn([image(1)], 0);
+    act(() => button(tree, "Share image").props.onPress());
+    const shouldPresent = vi.mocked(shareAttachment).mock.calls[0]![1]!;
+    expect(shouldPresent()).toBe(true);
+
+    act(() => button(tree, "Close image").props.onPress());
+    expect(shouldPresent()).toBe(false);
+
+    await act(async () => finish(true));
+    expect(tree.toJSON()).toBeNull();
+  });
+
+  it("presents no share sheet for an image the member has stepped away from", () => {
+    vi.mocked(shareAttachment).mockImplementationOnce(
+      () => new Promise<boolean>(() => {}),
+    );
+    const tree = render();
+    openOn([image(1), image(2)], 0);
+    act(() => button(tree, "Share image").props.onPress());
+    const shouldPresent = vi.mocked(shareAttachment).mock.calls[0]![1]!;
+
+    act(() => button(tree, "Next image").props.onPress());
+
+    expect(shouldPresent()).toBe(false);
+  });
+});
+
+describe("the zoom gestures", () => {
+  type Handlers = Record<string, (...args: unknown[]) => void>;
+  type Built = { kind: string; handlers?: Handlers; gestures?: Built[] };
+
+  const STAGE = { width: 400, height: 800 };
+
+  /** The viewer's gestures, found by kind in the composed tree. */
+  function gestures(tree: ReactTestRenderer) {
+    const root = tree.root.findByType(
+      "GestureDetector" as unknown as React.ElementType,
+    ).props.gesture as Built;
+    const found: Record<string, Handlers> = {};
+    const walk = (node: Built) => {
+      if (node.handlers) found[node.kind] = node.handlers;
+      node.gestures?.forEach(walk);
+    };
+    walk(root);
+    return found;
+  }
+
+  function transform(tree: ReactTestRenderer) {
+    const [, zoom] = shownImage(tree).props.style as [
+      unknown,
+      { transform: Record<string, number>[] },
+    ];
+    return Object.assign({}, ...zoom.transform) as {
+      translateX: number;
+      translateY: number;
+      scale: number;
+    };
+  }
+
+  function openZoomable(natural?: { width: number; height: number }) {
+    const tree = render();
+    openOn([image(1)], 0);
+    const stage = tree.root.findByType(
+      "GestureDetector" as unknown as React.ElementType,
+    ).children[0] as ReactTestRenderer["root"];
+    act(() =>
+      stage.props.onLayout({
+        nativeEvent: { layout: { x: 0, y: 0, ...STAGE } },
+      }),
+    );
+    if (natural) {
+      act(() =>
+        shownImage(tree).props.onLoad({ nativeEvent: { source: natural } }),
+      );
+    }
+    return tree;
+  }
+
+  it("composes a pinch, a pan and a double-tap", () => {
+    const found = gestures(openZoomable());
+    expect(Object.keys(found).sort()).toEqual(["pan", "pinch", "tap"]);
+  });
+
+  it("zooms a pinch into the fingers, measured from the stage's centre", () => {
+    const tree = openZoomable();
+    // Fingers 100pt right of the centre: that point must stay put.
+    gestures(tree).pinch!.onChange!({
+      scaleChange: 2,
+      focalX: STAGE.width / 2 + 100,
+      focalY: STAGE.height / 2,
+    });
+
+    expect(transform(tree)).toEqual({
+      translateX: -100,
+      translateY: 0,
+      scale: 2,
+    });
+  });
+
+  it("pans only once zoomed", () => {
+    const tree = openZoomable();
+    const found = gestures(tree);
+
+    found.pan!.onChange!({ changeX: 30, changeY: 0 });
+    expect(transform(tree).translateX).toBe(0);
+
+    found.pinch!.onChange!({
+      scaleChange: 2,
+      focalX: STAGE.width / 2,
+      focalY: STAGE.height / 2,
+    });
+    found.pan!.onChange!({ changeX: 30, changeY: 0 });
+    expect(transform(tree).translateX).toBe(30);
+  });
+
+  it("brings a letterboxed image back to its own edges, not the stage's, when the fingers lift", () => {
+    // A 4:3 photo draws 400x300 on the 400x800 stage.
+    const tree = openZoomable({ width: 4000, height: 3000 });
+    const found = gestures(tree);
+    found.pinch!.onChange!({
+      scaleChange: 4,
+      focalX: STAGE.width / 2,
+      focalY: STAGE.height / 2,
+    });
+    found.pan!.onChange!({ changeX: 0, changeY: 900 });
+
+    found.pan!.onEnd!();
+
+    // 4x300 = 1200 tall on an 800 stage: 200 of travel either way.
+    expect(transform(tree).translateY).toBe(200);
+  });
+
+  it("double-tap zooms in, and again fits", () => {
+    const tree = openZoomable();
+    const tap = gestures(tree).tap!;
+
+    tap.onEnd!({ x: STAGE.width / 2, y: STAGE.height / 2 }, true);
+    expect(transform(tree).scale).toBe(2.5);
+
+    tap.onEnd!({ x: STAGE.width / 2, y: STAGE.height / 2 }, true);
+    expect(transform(tree)).toEqual({ translateX: 0, translateY: 0, scale: 1 });
   });
 });

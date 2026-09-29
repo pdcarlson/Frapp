@@ -54,20 +54,43 @@ export function zoomAbout(
   };
 }
 
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/**
+ * The size the image is drawn at when fitted: `resizeMode="contain"` scales
+ * it to fit the stage, so it letterboxes one way or the other. Until the image
+ * reports its natural size (zero), the stage stands in for it.
+ */
+export function fittedSize(natural: Size, stage: Size): Size {
+  "worklet";
+  if (natural.width <= 0 || natural.height <= 0) return stage;
+  const fit = Math.min(
+    stage.width / natural.width,
+    stage.height / natural.height,
+  );
+  return { width: natural.width * fit, height: natural.height * fit };
+}
+
 /**
  * Where the image comes to rest when the fingers lift: back to fitted if it
- * was shrunk, otherwise with its edges pulled back to the stage's so it can't
- * be dragged off into empty space.
+ * was shrunk, otherwise pulled back until its edges meet the stage's, or
+ * centred on an axis where the zoomed image is still smaller than the stage.
+ * The bound is the drawn image (`content`, from {@link fittedSize}), not the
+ * stage: a letterboxed photo is shorter than the stage, and bounding it by the
+ * stage let it be dragged off into empty space.
  */
 export function settle(
   state: ZoomState,
-  stageWidth: number,
-  stageHeight: number,
+  stage: Size,
+  content: Size,
 ): ZoomState {
   "worklet";
   if (state.scale <= 1) return UNZOOMED;
-  const maxX = ((state.scale - 1) * stageWidth) / 2;
-  const maxY = ((state.scale - 1) * stageHeight) / 2;
+  const maxX = Math.max(0, (state.scale * content.width - stage.width) / 2);
+  const maxY = Math.max(0, (state.scale * content.height - stage.height) / 2);
   return {
     scale: state.scale,
     x: clamp(state.x, -maxX, maxX),
@@ -80,14 +103,14 @@ export function toggleZoom(
   state: ZoomState,
   focalX: number,
   focalY: number,
-  stageWidth: number,
-  stageHeight: number,
+  stage: Size,
+  content: Size,
 ): ZoomState {
   "worklet";
   if (state.scale > 1) return UNZOOMED;
   return settle(
     zoomAbout(state, DOUBLE_TAP_SCALE / state.scale, focalX, focalY),
-    stageWidth,
-    stageHeight,
+    stage,
+    content,
   );
 }

@@ -91,10 +91,6 @@ const SIZE_REFUSAL = `Photos can be up to ${MAX_UPLOAD_LABEL}.`;
 /**
  * Strip any directory part a picker URI or filename might carry.
  *
- * Also used for the local file a shared chat image is downloaded to
- * (`share-attachment.ts`), where the name is whatever the uploader's device
- * called the file.
- *
  * The API derives the storage path from this name, so a separator in it would
  * push the object outside the prefix `validateAttachmentInputs` re-checks the
  * claim against — a 400 at send time, long after the bytes were uploaded.
@@ -103,9 +99,7 @@ export function safeBasename(value: string, fallback: string): string {
   const withoutQuery = value.split("?")[0] ?? value;
   const last = withoutQuery.split("/").pop() ?? "";
   const cleaned = last.replace(/[^A-Za-z0-9._-]/g, "_");
-  // A name made only of dots is a path reference, not a name: `..` would
-  // climb out of whatever directory the caller joins it to.
-  return /^\.*$/.test(cleaned) ? fallback : cleaned;
+  return cleaned.length > 0 && cleaned !== "." ? cleaned : fallback;
 }
 
 /**
