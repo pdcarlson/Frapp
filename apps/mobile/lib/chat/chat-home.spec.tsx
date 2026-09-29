@@ -198,6 +198,14 @@ function rowNamed(tree: ReactTestRenderer, name: string) {
   return row;
 }
 
+function pressableLabelled(tree: ReactTestRenderer, label: string) {
+  return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.accessibilityLabel === label,
+  );
+}
+
 /** The Hidden conversations group's toggle, told apart from the section folds. */
 function hiddenToggles(tree: ReactTestRenderer) {
   return tree.root.findAll(
@@ -447,14 +455,6 @@ describe("Chat home channel categories (#1684)", () => {
 describe("Chat home sidebar arrangement (#2877)", () => {
   const social = { id: "c-social", name: "social", type: "PUBLIC" };
 
-  function pressableLabelled(tree: ReactTestRenderer, label: string) {
-    return tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === label,
-    );
-  }
-
   it("draws PINNED on top with the pinned rows moved into it", () => {
     channelsData.value = [general, social, dmAlice];
     sidebarPrefs.value = {
@@ -677,16 +677,32 @@ describe("Chat home filters on unknown data (#2877)", () => {
   });
 
   it("draws no stale badge on a row or a folded header after a failed refetch", () => {
-    channelsData.value = [general, social];
-    // The last good read had a mention in #general; the refetch since failed.
+    const exec = {
+      id: "c-exec",
+      name: "exec-board",
+      type: "PRIVATE",
+      category_id: "cat-exec",
+    };
+    categoriesData.value = [{ id: "cat-exec", name: "Executive" }];
+    channelsData.value = [general, exec];
+    // The last good read had mentions in both; the refetch since failed.
     unreadData.value = [
       { channel_id: general.id, unread_count: 2, mention_count: 1 },
+      { channel_id: exec.id, unread_count: 3, mention_count: 1 },
     ];
     queryErrors.unread = true;
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      collapsed: new Set(["category:cat-exec"]),
+    };
     const tree = render();
 
     expect(rowNamed(tree, "general").props.mentionCount).toBe(0);
     expect(rowNamed(tree, "general").props.unreadCount).toBe(0);
+    // The folded header carries no stale total either.
+    expect(
+      pressableLabelled(tree, "Executive, folded").props.accessibilityRole,
+    ).toBe("header");
     // The screen says so instead.
     expect(
       tree.root.findAll(
@@ -697,6 +713,24 @@ describe("Chat home filters on unknown data (#2877)", () => {
           ),
       ),
     ).toHaveLength(1);
+  });
+
+  it("names a quiet folded section as folded, and says what a double-tap does", () => {
+    channelsData.value = [general, social];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      collapsed: new Set(["channels"]),
+    };
+    const folded = render();
+    expect(
+      pressableLabelled(folded, "CHANNELS, folded").props.accessibilityHint,
+    ).toBe("Double-tap to show its channels.");
+
+    sidebarPrefs.value = { ...sidebarPrefs.value, collapsed: new Set() };
+    const open = render();
+    expect(pressableLabelled(open, "CHANNELS").props.accessibilityHint).toBe(
+      "Double-tap to fold this section.",
+    );
   });
 
   it("filters once the reads are healthy", () => {

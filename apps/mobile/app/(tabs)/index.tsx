@@ -117,8 +117,8 @@ export default function ChatHomeScreen() {
   const hidden = useMemo(() => hiddenChannels(allChannels), [allChannels]);
   // One map for the rows' badges and the arrangement alike, so a folded
   // header and the rows never disagree. `undefined` while the counts are
-  // unknown (pending, or the last read failed): rows then draw no badge, as the
-  // warning below says, and Unread only hides nothing.
+  // unknown (pending, or the last read failed): rows then draw no badge (after
+  // a failure the warning below says why), and Unread only hides nothing.
   const unreadByChannelId = useMemo(
     () =>
       sidebarUnreadCounts({

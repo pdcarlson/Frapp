@@ -328,6 +328,81 @@ describe("sidebar writes", () => {
     expect(queryClient.getQueryData(KEY)).toBeUndefined();
   });
 
+  it("re-reads for a newer write when the last to settle started before a clear", async () => {
+    const stale = deferred<{ data: ChatSidebar; error: null }>();
+    const fresh = deferred<{ data: null; error: Error }>();
+    const PUT = vi
+      .fn()
+      .mockImplementationOnce(() => stale.promise)
+      .mockImplementationOnce(() => fresh.promise);
+    const { queryClient, Wrapper } = setup({ GET, PUT });
+    queryClient.setQueryData(KEY, stored);
+    const onError = vi.fn();
+
+    const { result } = renderHook(
+      () => ({
+        read: useChatSidebar(),
+        old: useSetChannelPinned({ onError }),
+        next: useSetChannelPinned({ onError }),
+      }),
+      { wrapper: Wrapper },
+    );
+    act(() => result.current.old.mutate({ channelId: "old", pinned: true }));
+    await waitFor(() => expect(PUT).toHaveBeenCalledTimes(1));
+
+    // Sign-out or a switch clears the cache; the list is read again.
+    act(() => queryClient.clear());
+    queryClient.setQueryData(KEY, stored);
+    act(() =>
+      result.current.next.mutate({ channelId: "social", pinned: true }),
+    );
+    await waitFor(() => expect(PUT).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
+      ).toEqual(["general", "social"]),
+    );
+
+    // The newer write fails first; the older one, from before the clear,
+    // settles last and must still hand the current list its re-read.
+    GET.mockClear();
+    fresh.resolve({ data: null, error: new Error("no") });
+    await waitFor(() => expect(result.current.next.isError).toBe(true));
+    stale.resolve({
+      data: { ...stored, pinned_channel_ids: ["general", "old"] },
+      error: null,
+    });
+    await waitFor(() => expect(result.current.old.isSuccess).toBe(true));
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<ChatSidebar>(KEY)?.pinned_channel_ids,
+      ).toEqual(["general"]),
+    );
+    // Only the newer write's failure is reported.
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report a failure to a screen that did not make the write", async () => {
+    const answer = deferred<{ data: null; error: Error }>();
+    const PUT = vi.fn(() => answer.promise);
+    const { queryClient, Wrapper } = setup({ GET, PUT });
+    queryClient.setQueryData(KEY, stored);
+    const onError = vi.fn();
+
+    const { result } = renderHook(() => useSetChannelPinned({ onError }), {
+      wrapper: Wrapper,
+    });
+    act(() => result.current.mutate({ channelId: "social", pinned: true }));
+    await waitFor(() => expect(PUT).toHaveBeenCalled());
+
+    act(() => queryClient.clear());
+    answer.resolve({ data: null, error: new Error("no") });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("files a write under the chapter it was sent for, across a chapter switch", async () => {
     const answer = deferred<{ data: ChatSidebar; error: null }>();
     const PUT = vi.fn(() => answer.promise);

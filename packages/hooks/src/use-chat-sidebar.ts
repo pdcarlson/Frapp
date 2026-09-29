@@ -141,6 +141,15 @@ function useSidebarWrite<TVars>(
 ) {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
+  const isCurrentEntry = (context: {
+    chapterId: string;
+    entry: unknown;
+  }): boolean =>
+    context.entry !== undefined &&
+    queryClient.getQueryCache().find({
+      queryKey: chatSidebarKeys.chapter(context.chapterId),
+      exact: true,
+    }) === context.entry;
   return useMutation({
     mutationFn: request,
     onMutate: async (vars) => {
@@ -158,7 +167,11 @@ function useSidebarWrite<TVars>(
         entry: queryClient.getQueryCache().find({ queryKey: key, exact: true }),
       };
     },
-    onError: () => {
+    onError: (_error, _vars, context) => {
+      // Not when the cache entry this write started against is gone: the
+      // member signed out, switched account or left the chapter, and whoever
+      // is on screen now made no such write.
+      if (context?.entry && !isCurrentEntry(context)) return;
       options.onError?.();
     },
     onSettled: (data, error, _vars, context) => {
@@ -169,19 +182,15 @@ function useSidebarWrite<TVars>(
       const key = chatSidebarKeys.chapter(context.chapterId);
       const overlapped = tracker.overlapped;
       tracker.overlapped = false;
-      // Only into the cache entry this write started against. The key names
-      // the chapter, not the member, and signing out or switching account
-      // clears the cache: a write still in flight across that must not seed
-      // the next member's sidebar for this chapter with the last member's
-      // arrangement. A new entry is someone else's read; leave it alone.
-      if (
-        !context.entry ||
-        queryClient.getQueryCache().find({ queryKey: key, exact: true }) !==
-          context.entry
-      ) {
-        return;
-      }
-      if (!error && !overlapped && data) {
+      // A write's own answer goes only into the cache entry it started
+      // against. The key names the chapter, not the member, and signing out,
+      // switching account or switching chapter clears the cache: an answer
+      // written into the new entry could show the next member of this chapter
+      // the last one's arrangement. Anything else re-reads the current entry
+      // instead, which goes out under whoever is signed in now, so it leaks
+      // nothing, and it is how a newer write that overlapped this one gets the
+      // re-read it is owed.
+      if (!error && !overlapped && data && isCurrentEntry(context)) {
         queryClient.setQueryData(key, data);
       } else {
         void queryClient.invalidateQueries({ queryKey: key });

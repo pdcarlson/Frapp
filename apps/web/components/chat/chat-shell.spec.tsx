@@ -172,6 +172,7 @@ const sidebarState = {
   foldOptions: undefined as { onError?: () => void } | undefined,
   filterOptions: undefined as { onError?: () => void } | undefined,
   levelsError: false,
+  unreadError: false,
   pinnedIds: new Set<string>(),
   levels: [] as { channel_id: string; level: string }[],
 };
@@ -238,7 +239,10 @@ vi.mock("@repo/hooks", async () => ({
     mutate: vi.fn(),
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
-  useChannelUnreadCounts: () => ({ data: [], isError: false }),
+  useChannelUnreadCounts: () => ({
+    data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
+    isError: sidebarState.unreadError,
+  }),
   useOrgConfig: () => ({
     data: { isModuleEnabled: () => true },
     isError: false,
@@ -369,7 +373,9 @@ vi.mock("./channel-list", () => ({
     onHide,
     categories,
     sidebar,
+    unreadByChannelId,
   }: {
+    unreadByChannelId?: Map<string, unknown>;
     sidebar?: {
       mutedChannelIds: ReadonlySet<string> | undefined;
       onSetPinned: (ch: { id: string }, pinned: boolean) => void;
@@ -390,6 +396,11 @@ vi.mock("./channel-list", () => ({
       >
         rail pin
       </button>
+      <span data-testid="rail-unread">
+        {unreadByChannelId === undefined
+          ? "unknown"
+          : [...unreadByChannelId.keys()].join(",")}
+      </span>
       <span data-testid="rail-muted">
         {sidebar?.mutedChannelIds === undefined
           ? "unknown"
@@ -782,6 +793,19 @@ describe("ChatShell sidebar arrangement (#2877)", () => {
     sidebarState.pinnedIds = new Set();
     sidebarState.levels = [];
     sidebarState.levelsError = false;
+    sidebarState.unreadError = false;
+  });
+
+  it("hands the rail the unread counts, and none while their last read failed", () => {
+    // The stale rows are still there beside the error; drawing them, or
+    // filtering on them, would claim counts the rail cannot vouch for.
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-unread").textContent).toBe("chan-general");
+    unmount();
+
+    sidebarState.unreadError = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-unread").textContent).toBe("unknown");
   });
 
   it("hands the rail no muted set while the levels' last read failed", () => {
