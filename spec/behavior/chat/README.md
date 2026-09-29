@@ -289,7 +289,7 @@ than pretending otherwise:**
 
 Signet ships chapter channels, **direct messages**, and file uploads. That is user-generated content, and **App Store Review Guideline 1.2** expects a UGC app to give a member a way to report objectionable content and to block an abusive user. Officer moderation (`channels:manage`, above) is real but on its own does not reach a private DM, which is the surface a reviewer probes and the one a harassed member actually needs. These two controls are the member-side answer (#2257); a report is also what lets an officer remove the one message it names, DM or not (§ Officer action below, #2311).
 
-**Status: schema, API, the mobile client, and on web the block list and the officer queue.** The tables exist (`20260915210000`) and the API is live: `POST|GET|PATCH /v1/chat/reports`, `POST /v1/chat/reports/{id}/remove-message`, and `GET|POST|DELETE /v1/chat/blocks` (`ChatReportController` / `ChatBlockController`, both `@SubscriptionExempt()`), and the API applies the caller's block list to the chat messages, reactions and attachments it serves and to whom chat notifies. The `chat_message_actions` read policy withholds a blocked member's reactions from the member who blocked them (`20260924170000`, #2494). [`chat-read-surface-ledger.spec.ts`](../../../apps/api/src/application/services/chat-read-surface-ledger.spec.ts) is the one list of where that holds and where it does not yet. It fails on anything it enumerates and has not classified: every route on the chat controllers, every RLS policy a client could read through, every notify-named call in the API, and every Realtime `postgres_changes` subscription the API opens. What it cannot see is listed at the top of that file; read that before treating a green run as coverage. Its `open` entries are the known gaps, server and client, each with its tracking issue. **The mobile app consumes the member half**: a long-press anywhere on someone else's message or poll — its text, a photo, a reaction chip — or the "Message actions" accessibility action opens Report and Block (Block for every sender who can be blocked at all — not the system actor or an imported row — unless a block attempt this session already came back as the API's 404 `Member not found`. A sender the cached roster does not list still gets Block: that is what a brand-new member looks like, and the long-press re-reads the roster); the thread tombstones a blocked member's messages, quotes and reactions, and holds unmaskable rows while the list is **loading or unavailable**, per § The masking contract (`packages/chat-core/src/blocks.ts`, which both clients classify through); and Settings → Blocked members and the directory's member sheet can undo a block. **The web dashboard applies the same list** (#2313): the `/chat` timeline tombstones, holds, and hides quotes and reactions through the same classifier, with the tombstone's Unblock (`apps/web/components/chat/`), and `/profile` → Blocked members is web's durable undo (`apps/web/components/profile/blocked-members-card.tsx`). Web does not yet offer Report or Block on a message (#2687). **It also renders the officer queue**: Chat Admin's Reported messages card (`apps/web/components/chat-admin/chat-reports-card.tsx`, gated on `members:view` and `channels:manage` like the routes), with the evidence snapshot, the status tabs, Mark reviewed / Dismiss, and the report-scoped Remove below (Mark actioned where the message no longer exists). **Still owed:** Report and Block from a web message (#2687), and the server-side gaps are the ledger's `open` entries. Whether a block hides a blocked member's words *quoted in someone else's reply* (#2312 §1) is settled by the fail-closed rule in the table below. Where the sections below describe the owed parts, they describe what is owed — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
+**Status: schema, API, the mobile client, and on web the block list and the officer queue.** The tables exist (`20260915210000`) and the API is live: `POST|GET|PATCH /v1/chat/reports`, `POST /v1/chat/reports/{id}/remove-message`, and `GET|POST|DELETE /v1/chat/blocks` (`ChatReportController` / `ChatBlockController`, both `@SubscriptionExempt()`), and the API applies the caller's block list to the chat messages, reactions and attachments it serves and to whom chat notifies. The `chat_message_actions` read policy withholds a blocked member's reactions from the member who blocked them (`20260924170000`, #2494). [`chat-read-surface-ledger.spec.ts`](../../../apps/api/src/application/services/chat-read-surface-ledger.spec.ts) is the one list of where that holds and where it does not yet. It fails on anything it enumerates and has not classified: every route on the chat controllers, every RLS policy a client could read through, every notify-named call in the API, and every Realtime `postgres_changes` subscription the API opens. What it cannot see is listed at the top of that file; read that before treating a green run as coverage. Its `open` entries are the known gaps, server and client, each with its tracking issue. **The mobile app consumes the member half**: a long-press anywhere on someone else's message or poll — its text, a photo, a reaction chip — or the "Message actions" accessibility action opens Report and Block (Block for every sender who can be blocked at all — not the system actor or an imported row nobody has linked (§ Linking a member's Discord history) — unless a block attempt this session already came back as the API's 404 `Member not found`. A sender the cached roster does not list still gets Block: that is what a brand-new member looks like, and the long-press re-reads the roster); the thread tombstones a blocked member's messages, quotes and reactions, and holds unmaskable rows while the list is **loading or unavailable**, per § The masking contract (`packages/chat-core/src/blocks.ts`, which both clients classify through); and Settings → Blocked members and the directory's member sheet can undo a block. **The web dashboard applies the same list** (#2313): the `/chat` timeline tombstones, holds, and hides quotes and reactions through the same classifier, with the tombstone's Unblock (`apps/web/components/chat/`), and `/profile` → Blocked members is web's durable undo (`apps/web/components/profile/blocked-members-card.tsx`). Web does not yet offer Report or Block on a message (#2687). **It also renders the officer queue**: Chat Admin's Reported messages card (`apps/web/components/chat-admin/chat-reports-card.tsx`, gated on `members:view` and `channels:manage` like the routes), with the evidence snapshot, the status tabs, Mark reviewed / Dismiss, and the report-scoped Remove below (Mark actioned where the message no longer exists). **Still owed:** Report and Block from a web message (#2687), and the server-side gaps are the ledger's `open` entries. Whether a block hides a blocked member's words *quoted in someone else's reply* (#2312 §1) is settled by the fail-closed rule in the table below. Where the sections below describe the owed parts, they describe what is owed — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
 
 ### Report
 
@@ -736,8 +736,9 @@ channel that reports a different one fails the import rather than being skipped.
     that creates a role or grants a permission, need `roles:manage` as well
     as `channels:manage`, as Settings → Roles would.
     Deleting the import keeps the roles and permissions it made. Importing who
-    holds each Discord role (account linking, and the bot's Server Members
-    intent) is out of scope.
+    holds each Discord role (the bot's Server Members intent) is out of scope,
+    and a member linking their own Discord account (below) puts them in no
+    role either.
 - **Consent is a deliberate friction point.** The admin must confirm they posted
   an in-channel notice in their Discord server before an import can be created.
   Frapp cannot verify it, and says so — but
@@ -764,14 +765,16 @@ channel that reports a different one fails the import rather than being skipped.
 
 What follows is the behaviour the archive has once it is in.
 
-- **Attribution without accounts.** An imported message has `sender_id = null` and
+- **Attribution without accounts, until the author links.** An imported message is written with `sender_id = null` and
   carries `author_name` (the display name as the export recorded it),
   `author_avatar_path` and `author_external_id` (the author's Discord id). The
   alternative — a `users` row per Discord handle — was rejected: a row in `users`
   is reachable from the chapter roster, the members directory, server-side
   mention resolution and `anonymize_user`, so it would publish non-members into
   all four to satisfy a foreign key. A DB constraint guarantees every message
-  names its author through one column or the other.
+  names its author through one column or the other. A member who links their
+  own Discord account becomes the sender of what they wrote (§ Linking a
+  member's Discord history, below).
 - **`author_avatar_path` is served through its own signed-URL endpoint,
   `POST /v1/channels/{id}/messages/avatars`** (`ChatService.resolveAuthorAvatars`,
   #1231) — not a field on the message read, for the same reason attachment
@@ -793,10 +796,11 @@ What follows is the behaviour the archive has once it is in.
   from another channel contributes nothing. A message whose avatar resolves
   to nothing — no avatar, a message id outside the channel, or a signing
   failure — falls back to initials, same as before this shipped.
-- **Read-only.** `imported` is in `SERVER_ONLY_KINDS`: a client cannot post one.
-  Ownership checks compare `sender_id` to the caller, and `null` matches nobody,
-  so an imported message is editable by no one and deletable only by a
-  `channels:manage` moderator.
+- **Read-only.** `imported` is in `SERVER_ONLY_KINDS`: a client cannot post one,
+  and `ChatService.editMessage` refuses to edit one, whoever its sender is
+  (403 `Imported messages cannot be edited`). An unlinked row has `sender_id =
+  null`, which matches nobody, so only a `channels:manage` moderator can delete
+  it. A linked row's sender can delete it like any message of theirs.
 - **Never notifies.** The push worker exits on the kind before it loads the
   chapter roster, and `decidePush` refuses it ahead of every other rule —
   including the mention override, because imported prose is full of `@name`
@@ -833,6 +837,84 @@ What follows is the behaviour the archive has once it is in.
   message reaches other members on their next channel read rather than
   immediately. Deliberate: the archive is static history and moderating it is
   rare, while the alternative reinstates the fan-out the exclusion prevents.
+
+### Linking a member's Discord history
+
+*2026-09-29, owner's decisions (#2878). The decision page compared three
+models, two storage choices and the rights question; what follows is what was
+chosen and why.*
+
+After a chapter moves off Discord, a member's own years of history would
+otherwise read like a stranger's: their Discord handle and a letter avatar. A
+member fixes that by **linking the Discord account they used**, and from then
+on their imported messages in that chapter are theirs.
+
+- **Only the member links, by signing in to Discord.** `/profile` → Discord
+  history sends them through Discord's sign-in with the `identify` scope and
+  nothing else (no bot, no server list), which proves the account is theirs.
+  Rejected: *officer mapping*, where an officer matches Discord authors to
+  members. It is faster at cutover, but an officer would be putting a member's
+  name on words the member may not have written, and a wrong match publishes a
+  false attribution to the whole chapter and aims blocks and reports at the
+  wrong person. Also not built: *officer suggests, member confirms*. It keeps
+  consent with the member but proves nothing, and needs a mapping screen, a
+  suggestion state and a prompt that self-claim does not. It remains an option
+  for members who no longer have their Discord account.
+- **The handshake parks, then the member's own session confirms.** Discord's
+  redirect is unauthenticated, so whoever approved on Discord need not be the
+  member who started it: a member could send their authorize link to someone
+  else and have that person's history attached to themselves. So the callback
+  binds nothing. It parks the Discord account on the single-use handshake and
+  returns the browser to `/profile` with a one-time token, and
+  `POST /v1/discord/author-link/confirm` links only for the member who
+  started the handshake, in the chapter it was started in. It shares the bot
+  connect flow's state table and its one registered callback URL
+  (`/v1/discord/connect/callback`), tagged with a purpose so neither flow can
+  spend the other's handshake.
+- **A link is per chapter, and one account is one member.** Linking in one
+  chapter attaches only that chapter's imported messages and is invisible to
+  every other chapter; a member of two chapters links in each. Within a
+  chapter, a Discord account links to one member (another member claiming it
+  gets 409) and a member links one account (linking a different one replaces
+  the first).
+- **Linking makes the member the sender.** It sets `sender_id` on that
+  author's imported rows in the chapter's channels, and rows imported later
+  attach as they are written. Rejected: resolving a second "effective sender"
+  at read time. Block masking, the shared client classifier, reply quotes,
+  reports and own-message rights all key on `sender_id`, in about ten places
+  on the server and the clients; a second identity field would have to reach
+  every one of them, and missing one leaks a block. So a linked row is simply
+  the member's message:
+  - it renders with the member's current name, and their photo where chat
+    draws member photos (#732 on web);
+  - a member who blocked them stops seeing it, with the masking contract above
+    applying unchanged;
+  - a report on it names them as the reported sender, so the queue leaves it
+    out for them;
+  - they may delete it, and nobody may edit it (§ Imported archive messages,
+    Read-only).
+  Unread counts, push and mentions do not change: they key on `kind =
+  'imported'`, not on the sender. The row keeps `author_name`,
+  `author_external_id` and `author_avatar_path`, which is what lets an unlink
+  put it back.
+- **Unlinking** (`DELETE /v1/discord/author-link`) returns the member's
+  imported rows in that chapter to their Discord name. Rows they deleted stay
+  deleted.
+- **Leaving the chapter keeps the link**, as it keeps the sender on the
+  member's live messages. With the member off the roster, a linked row falls
+  back to its Discord name, as every row does when the roster misses
+  (`resolveAuthorName`).
+- **Deleting the account removes the Discord identity.** `anonymize_user`
+  deletes the member's links and clears the Discord name, avatar path and id
+  on the imported rows attributed to them. Those rows keep the tombstone as
+  sender, like the member's live messages; without the clear, the roster-miss
+  fallback would show their Discord handle again and re-identify them.
+- **User mentions (#2875).** `GET /v1/discord/author-links` is the chapter's
+  Discord id → member map, so a rendered Discord user mention can link to the
+  member it names. It shows members nothing new: a linked row already carries
+  both ids.
+- **Not in scope here:** Discord avatars for authors nobody has linked (bot
+  imports store none, and mobile draws none).
 
 ## Message Kinds and Actions
 

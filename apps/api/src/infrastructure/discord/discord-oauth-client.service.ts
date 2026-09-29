@@ -2,12 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DISCORD_BOT_PERMISSIONS,
+  DISCORD_IDENTIFY_SCOPES,
   DISCORD_OAUTH_SCOPES,
   DiscordApiError,
   DiscordNotConfiguredError,
   type DiscordAuthorizingUser,
   type DiscordTokenExchangeResult,
   type DiscordUserGuild,
+  type DiscordAuthorizeGrant,
   type IDiscordOAuthClient,
 } from '#domain/adapters/discord.interface';
 import { asRecord, asString } from '#domain/utils/json-guards';
@@ -71,10 +73,27 @@ export class DiscordOAuthClientService implements IDiscordOAuthClient {
     return { id: this.configuredClientId, secret: this.clientSecret };
   }
 
-  buildAuthorizeUrl(args: { state: string; redirectUri: string }): string {
+  buildAuthorizeUrl(args: {
+    state: string;
+    redirectUri: string;
+    grant?: DiscordAuthorizeGrant;
+  }): string {
     const { id } = this.credentials();
     const url = new URL(DISCORD_AUTHORIZE_URL);
     url.searchParams.set('client_id', id);
+    if (args.grant === 'identify') {
+      // A member proving which account is theirs (#2878). `identify` only: no
+      // bot, no permissions, no guild list, so the grant can read the
+      // account's id and name and nothing else. `prompt=consent` shows the
+      // account on Discord's screen every time, so a member signed in to the
+      // wrong account sees it before approving rather than after.
+      url.searchParams.set('scope', DISCORD_IDENTIFY_SCOPES.join(' '));
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('redirect_uri', args.redirectUri);
+      url.searchParams.set('state', args.state);
+      url.searchParams.set('prompt', 'consent');
+      return url.toString();
+    }
     url.searchParams.set('scope', DISCORD_OAUTH_SCOPES.join(' '));
     url.searchParams.set('permissions', DISCORD_BOT_PERMISSIONS);
     // `code` rather than the bot-only `none`: `identify` and `guilds` are only

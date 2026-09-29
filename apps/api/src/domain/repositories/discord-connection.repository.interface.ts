@@ -1,5 +1,6 @@
 import type {
   DiscordConnection,
+  DiscordOAuthPurpose,
   DiscordOAuthState,
 } from '../entities/discord-connection.entity';
 
@@ -13,6 +14,14 @@ export interface PendingDiscordConnectionInput {
   discord_user_id: string;
   discord_username: string | null;
   permissions: string;
+  scopes: string;
+  confirm_token: string;
+  confirm_expires_at: string;
+}
+
+export interface PendingDiscordAuthorLinkInput {
+  discord_user_id: string;
+  discord_username: string | null;
   scopes: string;
   confirm_token: string;
   confirm_expires_at: string;
@@ -66,6 +75,7 @@ export interface IDiscordConnectionRepository {
   // ── the OAuth handshake ───────────────────────────────────────────────────
   createState(input: {
     chapter_id: string;
+    purpose: DiscordOAuthPurpose;
     created_by: string | null;
     return_path: string | null;
     expires_at: string;
@@ -108,6 +118,34 @@ export interface IDiscordConnectionRepository {
   consumeConfirmToken(
     token: string,
     chapterId: string,
+    now: Date,
+  ): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Park the Discord account a member's link handshake proved (#2878).
+   *
+   * Only onto an `author_link` handshake the callback just spent, and only
+   * once, like {@link attachPendingConnection}. Writes the account into the
+   * `pending_discord_*` columns and the confirm token; no guild.
+   */
+  attachPendingAuthorLink(
+    stateId: string,
+    input: PendingDiscordAuthorLinkInput,
+  ): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Spend a link handshake's confirm token.
+   *
+   * Matches only an `author_link` handshake in `chapterId` that `userId`
+   * started. The user predicate is the one that matters: the callback is an
+   * unauthenticated redirect, so the browser holding the token may belong to
+   * somebody else, and binding their Discord account to the member who started
+   * the handshake would put that person's history under the wrong name.
+   */
+  consumeAuthorLinkConfirmToken(
+    token: string,
+    chapterId: string,
+    userId: string,
     now: Date,
   ): Promise<DiscordOAuthState | null>;
 

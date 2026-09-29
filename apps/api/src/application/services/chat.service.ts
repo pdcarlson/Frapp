@@ -1166,6 +1166,16 @@ export class ChatService {
       throw new ForbiddenException('You can only edit your own messages');
     }
 
+    // An imported Discord message is a record of what was said then. Its
+    // sender can be a member (they linked their Discord account, #2878), who
+    // may delete it like any message of theirs but not rewrite it. The clients
+    // already hide Edit on imported rows (`canEditMessage` in
+    // `@repo/chat-core`); this is the rule, since a client is not a control.
+    // After the ownership check, so a non-owner learns nothing about the row.
+    if (message.kind === 'imported') {
+      throw new ForbiddenException('Imported messages cannot be edited');
+    }
+
     if (message.is_deleted) {
       throw new BadRequestException('Cannot edit a deleted message');
     }

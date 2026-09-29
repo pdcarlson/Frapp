@@ -3,11 +3,13 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IDiscordConnectionRepository,
+  PendingDiscordAuthorLinkInput,
   PendingDiscordConnectionInput,
   UpsertDiscordConnectionInput,
 } from '#domain/repositories/discord-connection.repository.interface';
 import type {
   DiscordConnection,
+  DiscordOAuthPurpose,
   DiscordOAuthState,
 } from '#domain/entities/discord-connection.entity';
 
@@ -69,12 +71,14 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
 
   async createState(input: {
     chapter_id: string;
+    purpose: DiscordOAuthPurpose;
     created_by: string | null;
     return_path: string | null;
     expires_at: string;
   }): Promise<DiscordOAuthState> {
     const row: TablesInsert<'discord_oauth_states'> = {
       chapter_id: input.chapter_id,
+      purpose: input.purpose,
       created_by: input.created_by,
       return_path: input.return_path,
       expires_at: input.expires_at,
@@ -125,6 +129,8 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
         confirm_expires_at: input.confirm_expires_at,
       })
       .eq('id', stateId)
+      // A member's link handshake never parks a guild (#2878).
+      .eq('purpose', 'connect')
       // Only ever onto a handshake the callback just spent, and only once. A
       // row that already carries a pending guild is one a second callback is
       // trying to overwrite, which is not a thing that legitimately happens.
@@ -150,6 +156,57 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .update({ confirmed_at: nowIso })
       .eq('confirm_token', token)
       .eq('chapter_id', chapterId)
+      // A link handshake's token never activates a guild (#2878).
+      .eq('purpose', 'connect')
+      .is('confirmed_at', null)
+      .gt('confirm_expires_at', nowIso)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
+
+  async attachPendingAuthorLink(
+    stateId: string,
+    input: PendingDiscordAuthorLinkInput,
+  ): Promise<DiscordOAuthState | null> {
+    const { data, error } = await this.supabase
+      .from('discord_oauth_states')
+      .update({
+        pending_discord_user_id: input.discord_user_id,
+        pending_discord_username: input.discord_username,
+        pending_scopes: input.scopes,
+        confirm_token: input.confirm_token,
+        confirm_expires_at: input.confirm_expires_at,
+      })
+      .eq('id', stateId)
+      .eq('purpose', 'author_link')
+      .is('confirm_token', null)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
+
+  async consumeAuthorLinkConfirmToken(
+    token: string,
+    chapterId: string,
+    userId: string,
+    now: Date,
+  ): Promise<DiscordOAuthState | null> {
+    const nowIso = now.toISOString();
+    // Every condition in the UPDATE, as `consumeConfirmToken` does, plus the
+    // one that closes this flow's confused deputy: `created_by`. A member who
+    // sends their authorize URL to somebody else gets that person's consent
+    // parked on their handshake, but the token lands in the OTHER person's
+    // browser, whose session is not `created_by`, so nothing binds.
+    const { data, error } = await this.supabase
+      .from('discord_oauth_states')
+      .update({ confirmed_at: nowIso })
+      .eq('confirm_token', token)
+      .eq('purpose', 'author_link')
+      .eq('chapter_id', chapterId)
+      .eq('created_by', userId)
       .is('confirmed_at', null)
       .gt('confirm_expires_at', nowIso)
       .select()

@@ -2639,6 +2639,46 @@ describe('ChatService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    // #2878: a member who linked their Discord account is the sender of their
+    // imported messages. They may delete them, never rewrite them: an archive
+    // records what was said then. The clients hide Edit; this is the rule.
+    it('refuses to edit an imported message, even for its linked sender', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        kind: 'imported',
+        author_name: 'jkslayer',
+        author_external_id: '3000000000000000001',
+      });
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
+      ).rejects.toThrow('Imported messages cannot be edited');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the linked sender delete their imported message', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        kind: 'imported',
+        author_name: 'jkslayer',
+      });
+
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        kind: 'imported',
+        content: '[message deleted]',
+        is_deleted: true,
+      });
+
+      const result = await service.deleteMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        false,
+      );
+      expect(result.is_deleted).toBe(true);
+    });
+
     it('should reject editing deleted message', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...baseMessage,

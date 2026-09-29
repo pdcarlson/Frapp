@@ -47,6 +47,12 @@ export interface DiscordConnection {
 }
 
 /**
+ * `connect`: an officer installing the bot into the chapter's server.
+ * `author_link`: a member proving which Discord account is theirs (#2878).
+ */
+export type DiscordOAuthPurpose = 'connect' | 'author_link';
+
+/**
  * A pending OAuth handshake.
  *
  * Discord's callback is an unauthenticated top-level browser redirect — no
@@ -61,6 +67,14 @@ export interface DiscordOAuthState {
   /** The state value itself — a server-minted v4 uuid, never caller-derived. */
   id: string;
   chapter_id: string;
+  /**
+   * Which flow minted the handshake. Both share the one callback URL, because
+   * Discord only redirects to URIs registered by hand in its Developer Portal;
+   * the callback dispatches on this, and each confirm consumes only its own
+   * purpose, so a member's link handshake can never activate a guild
+   * connection or the other way round (`20260929230000_discord_author_links.sql`).
+   */
+  purpose: DiscordOAuthPurpose;
   created_by: string | null;
   /**
    * Where to send the browser afterwards.
@@ -105,4 +119,27 @@ export interface DiscordOAuthState {
   confirm_expires_at: string | null;
   /** Set when activated. Non-null means spent; a replayed confirm gets nothing. */
   confirmed_at: string | null;
+}
+
+/**
+ * A member's own Discord account, linked in one chapter (#2878).
+ *
+ * The member proved the account with Discord OAuth (`identify`), so no officer
+ * ever asserts it. Linking sets `chat_messages.sender_id` to `user_id` on the
+ * chapter's imported rows whose `author_external_id` is `discord_user_id`, and
+ * unlinking clears it again; both run in `link_discord_author` /
+ * `unlink_discord_author`, and rows imported later attach through a trigger.
+ *
+ * Unique on `(chapter_id, discord_user_id)` and `(chapter_id, user_id)`, and
+ * never global: a link in one chapter says nothing to another.
+ */
+export interface DiscordAuthorLink {
+  id: string;
+  chapter_id: string;
+  /** Snowflake as text: it exceeds 2^53. */
+  discord_user_id: string;
+  user_id: string;
+  /** What Discord called the account when it was linked. Display only. */
+  discord_username: string | null;
+  linked_at: string;
 }

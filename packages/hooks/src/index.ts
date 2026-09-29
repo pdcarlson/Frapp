@@ -39,3 +39,4 @@ export * from "./use-custom-roles";
 export * from "./use-custom-fields";
 export * from "./use-discord-import";
 export * from "./use-discord-connection";
+export * from "./use-discord-author-link";
