@@ -7813,6 +7813,15 @@
           "greek_letters": {
             "type": "string"
           },
+          "short_name": {
+            "type": "string",
+            "description": "The chapter's short name, e.g. \"FIJI\". Its mark when it has no logo, ahead of Greek letters (spec/behavior/branding.md § Chapter mark). An empty string clears it.",
+            "maxLength": 6
+          },
+          "show_greek_letters": {
+            "type": "boolean",
+            "description": "False hides the Greek letters on every surface that shows them, for organizations that by custom do not display theirs. Absent means shown. The stored letters are kept."
+          },
           "designation": {
             "type": "string"
           },
