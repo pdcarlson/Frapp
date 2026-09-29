@@ -261,15 +261,16 @@ than pretending otherwise:**
   body truncated, not a match-centred snippet.
 - **Results are not grouped by channel.** They are one list ordered newest-first, with a
   per-row channel label when a hit is outside the channel in view.
-- **A jump pages back for an old hit, within a bound.** Both clients open a channel on its
-  newest 50 messages and load older ones, 100 at a time, as the member scrolls up (#1571 web,
-  #2772 mobile; `@repo/chat-core/history`). A hit that
+- **A jump pages back for an old hit, within a bound.** Web opens a channel on its newest 50
+  messages and loads older ones, 100 at a time, as the member scrolls up (#1571; mobile's
+  thread pages the same way through the same `@repo/chat-core/history`, #2772, but has no
+  search or jump, and nothing below applies to it). A hit that
   is not loaded yet first reads what arrived after the newest loaded message (it may be newer
   than the cache, not older), then pages back for it, saying "Finding that message..."
   meanwhile, for up to 20 pages (2,000 messages); the notice in the channel header is the
   fallback, not the normal path. It says the message is further back than that, that the
   channel's history ran out without it, that loading failed, or that the channel's messages
-  failed to load. A refetch (a reconnect, for one) returns the thread to its newest page, and
+  failed to load. On web, a refetch (a reconnect, for one) returns the thread to its newest page, and
   older history loads again as the member scrolls back. So does a jump's forward read that
   comes back full: more arrived than one read returns, so what it read becomes the newest
   page rather than sit across a gap from the older pages (#2807). The target stays pending, so scrolling up still opens it

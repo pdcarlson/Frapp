@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The thread's scrollback (#2772). The paging itself is `@repo/chat-core/history`,
- * whose suite pins the cursor and the merge; `ThreadHistoryEdge` has its own
+ * whose suite pins the cursor and the merge; the hook's scrollback state is
+ * pinned in `use-chat-channel.spec.tsx`, and `ThreadHistoryEdge` has its own
  * suite for the states it draws. What neither can see is whether this screen
  * asks for older pages when the member reaches the top, so until the thread
  * screen is rendered under test (#2705), this reads the source the way
@@ -35,11 +36,10 @@ describe("mobile thread scrollback (#2772)", () => {
     );
   });
 
-  it("reads every page through the shared chat-core paging, not a local copy", () => {
-    expect(HOOK).toMatch(/readNewestPage\(queryClient, channelId, fetchPage\)/);
-    expect(HOOK).toMatch(
-      /readOlderPage\(\s*queryClient,\s*channelId,\s*fetchPage,?\s*\)/,
-    );
+  it("reads every page through the shared chat-core pager, not a local copy", () => {
+    expect(HOOK).toMatch(/createHistoryPager\(/);
+    expect(HOOK).toMatch(/pager\.readNewest\(channelId\)/);
+    expect(HOOK).toMatch(/pager\.loadOlder\(channelId\)/);
     expect(HOOK).not.toMatch(/"\/v1\/channels\/\{id\}\/messages"/);
   });
 });

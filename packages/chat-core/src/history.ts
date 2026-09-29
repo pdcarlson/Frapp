@@ -3,8 +3,9 @@
  * older pages as the member scrolls back (#1571 web, #2772 mobile).
  *
  * Both clients read through here, so the cursor, the merge and the end of
- * history are decided once. What stays in each client's hook is only React
- * state: which read is in flight, and whether the last one failed.
+ * history are decided once, and so is the bookkeeping around them
+ * (`createHistoryPager`): which read is in flight, whether the last one
+ * failed, and where each channel's history starts. A hook only subscribes.
  *
  * Every read lands in the one channel cache the realtime merge, the outbox
  * and the reconnect backfill write to (`chatMessagesKey`), through the
@@ -71,8 +72,13 @@ export type FetchHistoryPage = (
  * The one way a client reads a page: `GET /v1/channels/{id}/messages`, then a
  * single batched select on `chat_message_actions`, so reactions and poll
  * tallies are on the first paint rather than appearing only after a live
- * echo. Rejects when the message read fails. The action read is best-effort:
- * a page with no actions still paints, and live echoes fill them in.
+ * echo. Rejects when either read fails.
+ *
+ * The action read is not best-effort. A page merged without its actions stays
+ * that way: `mergeUnheldRows` never re-merges a row it holds, and Realtime
+ * delivers only new action rows, so a poll read with no votes would show a
+ * partial tally for as long as the thread is cached. A failed page instead
+ * shows Retry (older pages) or goes through the query's retry (the newest).
  *
  * `supabase` may be `null` where a client can boot without one (mobile's
  * `getSupabaseClient`); the page then carries no actions.
@@ -89,10 +95,11 @@ export function createHistoryPageFetcher(
     const rows = Array.isArray(data) ? (data as RawChatMessage[]) : [];
     const messageIds = rows.map((row) => row.id).filter(Boolean);
     if (!supabase || messageIds.length === 0) return { rows, actions: [] };
-    const { data: actions } = await supabase
+    const { data: actions, error: actionsError } = await supabase
       .from("chat_message_actions")
       .select("*")
       .in("message_id", messageIds);
+    if (actionsError) throw actionsError;
     return { rows, actions: (actions ?? []) as RawChatMessageAction[] };
   };
 }
@@ -212,4 +219,108 @@ export function hasOlderHistory(
   if (cache === undefined) return false;
   if (recordedStart === undefined) return true;
   return (oldestConfirmed(cache)?.id ?? null) !== recordedStart;
+}
+
+/** What a pager knows per channel. Replaced, never mutated, on each change. */
+export interface HistoryPagerState {
+  /** The start a short read recorded per channel (`HistoryEdge.start`). */
+  starts: ReadonlyMap<string, string | null>;
+  /** Per channel: an older-page read in flight, or the last one failed. */
+  older: ReadonlyMap<string, "loading" | "error">;
+}
+
+export interface HistoryPager {
+  /** The newest page, for a channel query's `queryFn` (`readNewestPage`). */
+  readNewest: (channelId: string) => Promise<ChannelCache>;
+  /**
+   * The next page of older history (`readOlderPage`). Concurrent calls for
+   * one channel share one read. Resolves what it did; `error` stays in
+   * `older` until the next attempt.
+   */
+  loadOlder: (channelId: string) => Promise<LoadOlderResult>;
+  /** For `useSyncExternalStore`. */
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => HistoryPagerState;
+}
+
+/**
+ * The bookkeeping around paging that both clients' hooks share: the start
+ * each channel's history was found at, one read per channel at a time, and
+ * each channel's older-page status.
+ *
+ * Per channel, not per hook: one hook serves every channel a screen switches
+ * through, and a read that settles after a switch must only ever write its
+ * own channel's status, never the one now on screen. Framework-free, so
+ * chat-core takes no React dependency; a hook reads it through
+ * `useSyncExternalStore`.
+ */
+export function createHistoryPager(
+  queryClient: QueryClient,
+  fetchPage: FetchHistoryPage,
+): HistoryPager {
+  let state: HistoryPagerState = { starts: new Map(), older: new Map() };
+  const listeners = new Set<() => void>();
+  const inFlight = new Map<string, Promise<LoadOlderResult>>();
+
+  const update = (next: HistoryPagerState) => {
+    if (next === state) return;
+    state = next;
+    for (const listener of listeners) listener();
+  };
+  const recordStart = (channelId: string, start: string | null | undefined) => {
+    if (start === undefined) return;
+    if (state.starts.has(channelId) && state.starts.get(channelId) === start) {
+      return;
+    }
+    const starts = new Map(state.starts);
+    starts.set(channelId, start);
+    update({ ...state, starts });
+  };
+  const setOlder = (channelId: string, status: "loading" | "error" | null) => {
+    if ((state.older.get(channelId) ?? null) === status) return;
+    const older = new Map(state.older);
+    if (status === null) older.delete(channelId);
+    else older.set(channelId, status);
+    update({ ...state, older });
+  };
+
+  return {
+    readNewest: async (channelId) => {
+      const newest = await readNewestPage(queryClient, channelId, fetchPage);
+      recordStart(channelId, newest.start);
+      return newest.cache;
+    },
+    loadOlder: (channelId) => {
+      const pending = inFlight.get(channelId);
+      if (pending) return pending;
+      const run = async (): Promise<LoadOlderResult> => {
+        setOlder(channelId, "loading");
+        try {
+          const { outcome, start } = await readOlderPage(
+            queryClient,
+            channelId,
+            fetchPage,
+          );
+          recordStart(channelId, start);
+          setOlder(channelId, null);
+          return outcome;
+        } catch {
+          setOlder(channelId, "error");
+          return "error";
+        }
+      };
+      const promise = run().finally(() => {
+        inFlight.delete(channelId);
+      });
+      inFlight.set(channelId, promise);
+      return promise;
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getSnapshot: () => state,
+  };
 }

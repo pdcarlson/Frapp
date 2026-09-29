@@ -73,45 +73,45 @@ const mocks = vi.hoisted(() => {
    */
   const statusListeners: ((status: unknown) => void)[] = [];
   return {
-  statusListeners,
-  subscribeStatus: vi.fn((cb: (status: unknown) => void) => {
-    statusListeners.push(cb);
-    cb("live");
-    return () => {
-      const at = statusListeners.indexOf(cb);
-      if (at >= 0) statusListeners.splice(at, 1);
-    };
-  }),
-  sendMessage: vi.fn(),
-  flushOutbox: vi.fn(async () => undefined),
-  hydrateOutboxIntoCache: vi.fn(async () => undefined),
-  retryOutboxRow: vi.fn<(ctx: unknown, row: unknown) => Promise<void>>(),
-  discardOutboxRow: vi.fn<(ctx: unknown, row: unknown) => Promise<void>>(),
-  reactAction: vi.fn(async () => undefined),
-  unreactAction: vi.fn(async () => undefined),
-  actOnCard: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
-  bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
-  listForChannel: vi.fn(async () => [] as unknown[]),
-  draftLoad: vi.fn(async () => ""),
-  draftSave: vi.fn(async () => undefined),
-  draftClear: vi.fn(async () => undefined),
-  subscribe: vi.fn(),
-  unsubscribe: vi.fn(),
-  emitTyping: vi.fn(),
-  getTypingUsers: vi.fn(() => [] as string[]),
-  // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`.
-  // Deliberately NOT `null`: mocking the client away skips that branch entirely,
-  // which would leave the cold-start regression below untested.
-  supabaseIn: vi.fn(async () => ({ data: [] as unknown[] })),
-  // Mutable so a test can null `ctx` and prove the write paths refuse. The two
-  // stores arrived with #2228: the hook reads them off the runtime rather than
-  // importing process-wide singletons, so they are never undefined here either.
-  runtime: {
-    ctx: null as unknown,
-    viewerId: null as string | null,
-    outbox: null as unknown,
-    drafts: null as unknown,
-  },
+    statusListeners,
+    subscribeStatus: vi.fn((cb: (status: unknown) => void) => {
+      statusListeners.push(cb);
+      cb("live");
+      return () => {
+        const at = statusListeners.indexOf(cb);
+        if (at >= 0) statusListeners.splice(at, 1);
+      };
+    }),
+    sendMessage: vi.fn(),
+    flushOutbox: vi.fn(async () => undefined),
+    hydrateOutboxIntoCache: vi.fn(async () => undefined),
+    retryOutboxRow: vi.fn<(ctx: unknown, row: unknown) => Promise<void>>(),
+    discardOutboxRow: vi.fn<(ctx: unknown, row: unknown) => Promise<void>>(),
+    reactAction: vi.fn(async () => undefined),
+    unreactAction: vi.fn(async () => undefined),
+    actOnCard: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
+    bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
+    listForChannel: vi.fn(async () => [] as unknown[]),
+    draftLoad: vi.fn(async () => ""),
+    draftSave: vi.fn(async () => undefined),
+    draftClear: vi.fn(async () => undefined),
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    emitTyping: vi.fn(),
+    getTypingUsers: vi.fn(() => [] as string[]),
+    // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`.
+    // Deliberately NOT `null`: mocking the client away skips that branch entirely,
+    // which would leave the cold-start regression below untested.
+    supabaseIn: vi.fn(async () => ({ data: [] as unknown[] })),
+    // Mutable so a test can null `ctx` and prove the write paths refuse. The two
+    // stores arrived with #2228: the hook reads them off the runtime rather than
+    // importing process-wide singletons, so they are never undefined here either.
+    runtime: {
+      ctx: null as unknown,
+      viewerId: null as string | null,
+      outbox: null as unknown,
+      drafts: null as unknown,
+    },
   };
 });
 
@@ -613,7 +613,9 @@ describe("status subscription", () => {
     // returned unsubscriber leaks a listener per channel open, each of which
     // calls setState on an unmounted component for the rest of the session.
     const { unmount } = renderChannel();
-    await waitFor(() => expect(mocks.statusListeners.length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(mocks.statusListeners.length).toBeGreaterThan(0),
+    );
 
     unmount();
 
@@ -817,7 +819,10 @@ describe("react()/unreact() failure surfacing (#999)", () => {
   // is not exercised here (that lives in chat-client.spec.ts) — this proves the
   // hook wires a working `onError` into the ctx it hands chat-core, and that
   // invoking it lands in `reactionError`, which is the half only this hook owns.
-  function captureOnErrorAt(mock: { mock: { calls: unknown[][] } }, index: number) {
+  function captureOnErrorAt(
+    mock: { mock: { calls: unknown[][] } },
+    index: number,
+  ) {
     const call = index < 0 ? mock.mock.calls.at(index) : mock.mock.calls[index];
     const ctxArg = call?.[0] as
       | { onError?: (input: { title: string; description?: string }) => void }
@@ -840,7 +845,12 @@ describe("react()/unreact() failure surfacing (#999)", () => {
 
     const onError = captureOnError(mocks.reactAction)();
     expect(onError).toBeTypeOf("function");
-    act(() => onError!({ title: "Couldn't react", description: "Channel is read-only" }));
+    act(() =>
+      onError!({
+        title: "Couldn't react",
+        description: "Channel is read-only",
+      }),
+    );
 
     expect(result.current.reactionError).toBe("Channel is read-only");
   });
@@ -941,7 +951,9 @@ describe("react()/unreact() failure surfacing (#999)", () => {
     expect(result.current.reactionError).toBeNull();
 
     // Channel A's request finally settles, after the switch.
-    act(() => staleOnError!({ title: "Couldn't react", description: "too late" }));
+    act(() =>
+      staleOnError!({ title: "Couldn't react", description: "too late" }),
+    );
 
     expect(result.current.reactionError).toBeNull();
   });
@@ -964,7 +976,9 @@ describe("react()/unreact() failure surfacing (#999)", () => {
     expect(result.current.reactionError).toBeNull();
 
     // msg-1's request finally settles, after msg-2 already superseded it.
-    act(() => staleOnError!({ title: "Couldn't react", description: "too late" }));
+    act(() =>
+      staleOnError!({ title: "Couldn't react", description: "too late" }),
+    );
 
     expect(result.current.reactionError).toBeNull();
   });
@@ -1011,7 +1025,12 @@ describe("act() failure surfacing (#528/#999)", () => {
     });
 
     const onError = captureOnError(mocks.actOnCard);
-    act(() => onError!({ title: "Couldn't record action", description: "Poll is closed" }));
+    act(() =>
+      onError!({
+        title: "Couldn't record action",
+        description: "Poll is closed",
+      }),
+    );
 
     expect(result.current.actionError).toBe("Poll is closed");
     expect(result.current.reactionError).toBeNull();
@@ -1025,7 +1044,9 @@ describe("act() failure surfacing (#528/#999)", () => {
       await result.current.act("msg-1", "vote", { option_id: "opt-1" });
     });
     const onError = captureOnError(mocks.actOnCard);
-    act(() => onError!({ title: "Couldn't record action", description: "nope" }));
+    act(() =>
+      onError!({ title: "Couldn't record action", description: "nope" }),
+    );
     expect(result.current.actionError).toBe("nope");
 
     act(() => result.current.clearActionError());
@@ -1049,7 +1070,9 @@ describe("act() failure surfacing (#528/#999)", () => {
       await result.current.act("msg-1", "vote", { option_id: "opt-1" });
     });
     const onError = captureOnError(mocks.actOnCard);
-    act(() => onError!({ title: "Couldn't record action", description: "nope" }));
+    act(() =>
+      onError!({ title: "Couldn't record action", description: "nope" }),
+    );
     expect(result.current.actionError).toBe("nope");
 
     rerender({ channelId: "channel-2" });
@@ -1077,8 +1100,150 @@ describe("act() failure surfacing (#528/#999)", () => {
     rerender({ channelId: "channel-2" });
     expect(result.current.actionError).toBeNull();
 
-    act(() => staleOnError!({ title: "Couldn't record action", description: "too late" }));
+    act(() =>
+      staleOnError!({
+        title: "Couldn't record action",
+        description: "too late",
+      }),
+    );
 
     expect(result.current.actionError).toBeNull();
+  });
+});
+
+describe("older history (#2772)", () => {
+  const BASE = Date.parse("2026-09-01T00:00:00.000Z");
+  /** Row `n` was sent `n` seconds after `BASE`, so a higher number is newer. */
+  const histRow = (n: number, channel = CHANNEL) =>
+    ({
+      ...rawRow(`${channel}-m${n}`, new Date(BASE + n * 1000).toISOString()),
+      channel_id: channel,
+    }) as RawChatMessage;
+  const history = (from: number, to: number, channel = CHANNEL) =>
+    Array.from({ length: to - from + 1 }, (_, i) => histRow(from + i, channel));
+
+  /** The API's read over `server`: newest first, `before` strict, `limit` rows. */
+  function serve(server: RawChatMessage[]) {
+    return vi.fn(
+      async (
+        _path: string,
+        init: { params: { query: { limit: number; before?: string } } },
+      ) => {
+        const { limit, before } = init.params.query;
+        const cutoff = before ? Date.parse(before) : Infinity;
+        const data = server
+          .filter((r) => Date.parse(r.created_at) < cutoff)
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+          .slice(0, limit);
+        return { data, error: null };
+      },
+    );
+  }
+
+  it("says there is nothing older once the first page came back short", async () => {
+    const { result } = renderChannel(createClient(serve(history(1, 12))));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+  });
+
+  it("pages back to the start, in order, with a loading state on the way", async () => {
+    const GET = serve(history(1, 120));
+    const { result } = renderChannel(createClient(GET));
+    await waitFor(() => expect(result.current.messages).toHaveLength(50));
+    expect(result.current.hasOlder).toBe(true);
+
+    const gate = deferred();
+    const read = GET.getMockImplementation()!;
+    GET.mockImplementationOnce(async (...args) => {
+      await gate.promise;
+      return read(...args);
+    });
+    let pending: Promise<string> | undefined;
+    act(() => {
+      pending = result.current.loadOlder();
+    });
+    await waitFor(() => expect(result.current.isLoadingOlder).toBe(true));
+
+    gate.resolve();
+    let outcome: string | undefined;
+    await act(async () => {
+      outcome = await pending;
+    });
+
+    expect(outcome).toBe("loaded");
+    expect(result.current.isLoadingOlder).toBe(false);
+    expect(result.current.messages.map((m) => m.id)).toEqual(
+      history(1, 120).map((r) => r.id),
+    );
+    // That read came back short: the thread now holds the channel's first row.
+    expect(result.current.hasOlder).toBe(false);
+  });
+
+  it("reports a failed read until the next attempt, which clears it", async () => {
+    const GET = serve(history(1, 120));
+    const { result } = renderChannel(createClient(GET));
+    await waitFor(() => expect(result.current.messages).toHaveLength(50));
+
+    GET.mockImplementationOnce(async () => ({
+      data: undefined as never,
+      error: new Error("offline") as never,
+    }));
+    await act(async () => {
+      expect(await result.current.loadOlder()).toBe("error");
+    });
+    expect(result.current.olderError).toBe(true);
+    expect(result.current.hasOlder).toBe(true);
+
+    await act(async () => {
+      expect(await result.current.loadOlder()).toBe("loaded");
+    });
+    expect(result.current.olderError).toBe(false);
+  });
+
+  it("keeps each channel's status its own when a read settles after a switch", async () => {
+    const OTHER = "channel-2";
+    const GET = vi.fn(
+      async (
+        path: string,
+        init: {
+          params: {
+            path: { id: string };
+            query: { limit: number; before?: string };
+          };
+        },
+      ) => {
+        const id = init.params.path.id;
+        return serve(history(1, 120, id))(path, init);
+      },
+    );
+    const queryClient = newQueryClient();
+    const view = renderHook(({ id }: { id: string }) => useChatChannel(id), {
+      wrapper: createWrapper(createClient(GET), queryClient),
+      initialProps: { id: CHANNEL },
+    });
+    await waitFor(() => expect(view.result.current.messages).toHaveLength(50));
+
+    const failing = deferred();
+    GET.mockImplementationOnce(async () => {
+      await failing.promise;
+      throw new Error("offline");
+    });
+    let first: Promise<string> | undefined;
+    act(() => {
+      first = view.result.current.loadOlder();
+    });
+
+    view.rerender({ id: OTHER });
+    await waitFor(() => expect(view.result.current.messages).toHaveLength(50));
+    expect(view.result.current.isLoadingOlder).toBe(false);
+
+    failing.resolve();
+    await act(async () => {
+      await first;
+    });
+    // The first channel's failure is its own; the thread on screen is clean.
+    expect(view.result.current.olderError).toBe(false);
+    view.rerender({ id: CHANNEL });
+    expect(view.result.current.olderError).toBe(true);
   });
 });

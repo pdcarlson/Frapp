@@ -17,6 +17,7 @@ import {
 } from "./cache";
 import {
   createHistoryPageFetcher,
+  createHistoryPager,
   FIRST_PAGE_LIMIT,
   hasOlderHistory,
   OLDER_PAGE_LIMIT,
@@ -125,15 +126,17 @@ describe("readNewestPage", () => {
       senderId: "u1",
       content: "sent during the spinner",
     });
-    queryClient.setQueryData<ChannelCache>(
-      KEY,
-      mergeServerRow(upsertOptimistic(emptyCache(), queued), row(500)),
-    );
-    const { cache } = await readNewestPage(
-      queryClient,
-      CHANNEL,
-      fakeServer(rows(1, 60)).fetchPage,
-    );
+    const server = fakeServer(rows(1, 60));
+    // Both land while the request is in flight, so only a read of the cache
+    // taken after the response (#2486) can see them.
+    const duringRead: FetchHistoryPage = async (id, query) => {
+      queryClient.setQueryData<ChannelCache>(
+        KEY,
+        mergeServerRow(upsertOptimistic(emptyCache(), queued), row(500)),
+      );
+      return server.fetchPage(id, query);
+    };
+    const { cache } = await readNewestPage(queryClient, CHANNEL, duringRead);
     expect(ids(cache)).toContain("m500");
     expect(
       selectMessages(cache).some((m) => m.client_message_id === "queued"),
@@ -343,6 +346,16 @@ describe("createHistoryPageFetcher", () => {
     expect(page).toEqual({ rows: rows(1, 2), actions: [] });
   });
 
+  test("rejects when the action read fails, rather than paint a page without its tallies", async () => {
+    const { GET, supabase, inFn } = clients(rows(1, 2));
+    inFn.mockResolvedValue({ data: null, error: new Error("JWT expired") });
+    await expect(
+      createHistoryPageFetcher({ GET } as never, supabase as never)(CHANNEL, {
+        limit: 50,
+      }),
+    ).rejects.toThrow("JWT expired");
+  });
+
   test("rejects when the message read fails", async () => {
     const { GET, supabase } = clients(undefined, new Error("403"));
     await expect(
@@ -350,5 +363,113 @@ describe("createHistoryPageFetcher", () => {
         limit: 50,
       }),
     ).rejects.toThrow("403");
+  });
+});
+
+describe("createHistoryPager", () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  test("records where each channel's history starts, from a short read", async () => {
+    const pager = createHistoryPager(
+      queryClient,
+      fakeServer(rows(1, 7)).fetchPage,
+    );
+    const cache = await pager.readNewest(CHANNEL);
+    queryClient.setQueryData(KEY, cache);
+    expect(pager.getSnapshot().starts.get(CHANNEL)).toBe("m1");
+    expect(
+      hasOlderHistory(cache, pager.getSnapshot().starts.get(CHANNEL)),
+    ).toBe(false);
+  });
+
+  test("moves an older read through loading, and to the start once it comes back short", async () => {
+    const server = fakeServer(rows(1, 120));
+    const pager = createHistoryPager(queryClient, server.fetchPage);
+    queryClient.setQueryData(KEY, await pager.readNewest(CHANNEL));
+    const seen: string[] = [];
+    pager.subscribe(() => {
+      seen.push(pager.getSnapshot().older.get(CHANNEL) ?? "idle");
+    });
+
+    expect(await pager.loadOlder(CHANNEL)).toBe("loaded");
+
+    // Loading first; idle once it settled (recording the start notifies too).
+    expect(seen[0]).toBe("loading");
+    expect(seen.at(-1)).toBe("idle");
+    expect(pager.getSnapshot().starts.get(CHANNEL)).toBe("m1");
+  });
+
+  test("shares one read between concurrent calls for a channel", async () => {
+    const fetchPage = vi.fn(fakeServer(rows(1, 150)).fetchPage);
+    const pager = createHistoryPager(queryClient, fetchPage);
+    queryClient.setQueryData(KEY, await pager.readNewest(CHANNEL));
+
+    const first = pager.loadOlder(CHANNEL);
+    const second = pager.loadOlder(CHANNEL);
+
+    expect(first).toBe(second);
+    await first;
+    // The newest page, then one older read.
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
+  test("keeps a failure on its own channel when it settles after a switch", async () => {
+    const OTHER = "c2";
+    const failing = deferred<never>();
+    const pending = deferred<{ rows: RawChatMessage[]; actions: never[] }>();
+    const fetchPage: FetchHistoryPage = (id) =>
+      id === CHANNEL ? failing.promise : pending.promise;
+    const pager = createHistoryPager(queryClient, fetchPage);
+    queryClient.setQueryData(
+      KEY,
+      mergeServerRows(emptyCache(), rows(101, 150)),
+    );
+    queryClient.setQueryData(
+      chatMessagesKey(OTHER),
+      mergeServerRows(
+        emptyCache(),
+        rows(101, 150).map((r) => ({
+          ...r,
+          id: `o${r.id}`,
+          channel_id: OTHER,
+        })),
+      ),
+    );
+
+    const first = pager.loadOlder(CHANNEL);
+    void pager.loadOlder(OTHER);
+    failing.reject(new Error("offline"));
+    expect(await first).toBe("error");
+
+    expect(pager.getSnapshot().older.get(CHANNEL)).toBe("error");
+    expect(pager.getSnapshot().older.get(OTHER)).toBe("loading");
+    pending.resolve({ rows: [], actions: [] });
+  });
+
+  test("clears a failure on the next attempt", async () => {
+    let fail = true;
+    const { fetchPage } = fakeServer(rows(1, 150));
+    const pager = createHistoryPager(queryClient, async (id, query) => {
+      if (fail) throw new Error("offline");
+      return fetchPage(id, query);
+    });
+    queryClient.setQueryData(
+      KEY,
+      mergeServerRows(emptyCache(), rows(101, 150)),
+    );
+
+    expect(await pager.loadOlder(CHANNEL)).toBe("error");
+    expect(pager.getSnapshot().older.get(CHANNEL)).toBe("error");
+    fail = false;
+    expect(await pager.loadOlder(CHANNEL)).toBe("loaded");
+    expect(pager.getSnapshot().older.has(CHANNEL)).toBe(false);
   });
 });

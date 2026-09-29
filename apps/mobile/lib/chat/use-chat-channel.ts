@@ -31,7 +31,14 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
@@ -47,9 +54,8 @@ import {
 import { emptyCache, selectMessages } from "@repo/chat-core/cache";
 import {
   createHistoryPageFetcher,
+  createHistoryPager,
   hasOlderHistory,
-  readNewestPage,
-  readOlderPage,
   type LoadOlderResult,
 } from "@repo/chat-core/history";
 import {
@@ -166,29 +172,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   // client comes from a provider, not from `ctx`.
   const supabase = useMemo(() => getSupabaseClient(), []);
   // Every page, the newest and each older one, reads through the one chat-core
-  // fetcher, so reactions and poll tallies are on the first paint.
-  const fetchPage = useMemo(
-    () => createHistoryPageFetcher(apiClient, supabase),
-    [apiClient, supabase],
+  // pager, which also keeps where each channel's history starts and each
+  // channel's older-page status — per channel, because this screen stays
+  // mounted across channel switches. Web's hook reads through the same one.
+  const pager = useMemo(
+    () =>
+      createHistoryPager(
+        queryClient,
+        createHistoryPageFetcher(apiClient, supabase),
+      ),
+    [queryClient, apiClient, supabase],
   );
-
-  /*
-    The channel's first row, per channel, once a read has come back short:
-    `null` for a channel with no confirmed rows at all. `hasOlder` is false
-    only while the cache's oldest row is still that row, so a re-read that
-    drops the older pages makes the rest of the history reachable again.
-  */
-  const [channelStarts, setChannelStarts] = useState<
-    ReadonlyMap<string, string | null>
-  >(() => new Map());
-  const recordStart = useCallback((id: string, firstId: string | null) => {
-    setChannelStarts((current) => {
-      if (current.has(id) && current.get(id) === firstId) return current;
-      const next = new Map(current);
-      next.set(id, firstId);
-      return next;
-    });
-  }, []);
+  const pagerState = useSyncExternalStore(pager.subscribe, pager.getSnapshot);
 
   // The newest page. Folded into this key as it stands when the read lands,
   // never started from `emptyCache()`: three other writers target the same key
@@ -202,63 +197,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     queryKey: channelId ? chatMessagesKey(channelId) : ["chat", "none"],
     enabled: !!channelId,
     staleTime: Infinity,
-    queryFn: async () => {
-      if (!channelId) return emptyCache();
-      const newest = await readNewestPage(queryClient, channelId, fetchPage);
-      if (newest.start !== undefined) recordStart(channelId, newest.start);
-      return newest.cache;
-    },
+    queryFn: () => (channelId ? pager.readNewest(channelId) : emptyCache()),
   });
 
-  /*
-    Older history (#2772), one page per call, merged by `readOlderPage` into
-    the same cache the realtime merge, the outbox and the reconnect backfill
-    write to. It only adds rows older than the oldest confirmed one, so it
-    cannot disturb a queued send or a backfilled arrival.
-
-    Per channel, as on web: this screen stays mounted across channel switches,
-    and a read that settles after one must only ever write its own channel's
-    status, never the one now on screen.
-  */
-  const olderInFlight = useRef(new Map<string, Promise<LoadOlderResult>>());
-  const [olderStatus, setOlderStatus] = useState<
-    ReadonlyMap<string, "loading" | "error">
-  >(() => new Map());
-
-  const loadOlder = useCallback((): Promise<LoadOlderResult> => {
-    if (!channelId) return Promise.resolve("start");
-    const inFlight = olderInFlight.current.get(channelId);
-    if (inFlight) return inFlight;
-    const setStatus = (status: "loading" | "error" | null) =>
-      setOlderStatus((current) => {
-        if ((current.get(channelId) ?? null) === status) return current;
-        const next = new Map(current);
-        if (status === null) next.delete(channelId);
-        else next.set(channelId, status);
-        return next;
-      });
-    const run = async (): Promise<LoadOlderResult> => {
-      setStatus("loading");
-      try {
-        const { outcome, start } = await readOlderPage(
-          queryClient,
-          channelId,
-          fetchPage,
-        );
-        if (start !== undefined) recordStart(channelId, start);
-        setStatus(null);
-        return outcome;
-      } catch {
-        setStatus("error");
-        return "error";
-      }
-    };
-    const promise = run().finally(() => {
-      olderInFlight.current.delete(channelId);
-    });
-    olderInFlight.current.set(channelId, promise);
-    return promise;
-  }, [channelId, fetchPage, queryClient, recordStart]);
+  // Older history (#2772), one page per call, merged into the same cache the
+  // realtime merge, the outbox and the reconnect backfill write to. It only
+  // adds rows older than the oldest confirmed one, so it cannot disturb a
+  // queued send or a backfilled arrival.
+  const loadOlder = useCallback(
+    (): Promise<LoadOlderResult> =>
+      channelId ? pager.loadOlder(channelId) : Promise.resolve("start"),
+    [channelId, pager],
+  );
 
   // Ref-counted realtime attach. `useChatRuntime` configures the manager but
   // deliberately does not subscribe — the screen owns its own pair, and the
@@ -689,9 +639,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const messages = useMemo(() => selectMessages(query.data), [query.data]);
 
   const hasOlder =
-    !!channelId && hasOlderHistory(query.data, channelStarts.get(channelId));
+    !!channelId &&
+    hasOlderHistory(query.data, pagerState.starts.get(channelId));
   const olderForChannel = channelId
-    ? (olderStatus.get(channelId) ?? null)
+    ? (pagerState.older.get(channelId) ?? null)
     : null;
 
   return {
