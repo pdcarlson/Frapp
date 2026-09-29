@@ -531,11 +531,19 @@ export function useMessageAttachments(
   channelId: string,
   messageId: string,
   enabled: boolean,
+  /**
+   * `refetchOnMount: false` for an observer that joins a query another one
+   * already reads, such as the chat image viewer joining its row's: every
+   * refetch mints new signed URLs, so refetching on the join would swap the
+   * image being opened for a fresh copy of itself.
+   */
+  options: { refetchOnMount?: boolean } = {},
 ) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", channelId, "messages", messageId, "attachments"],
     enabled: enabled && !!channelId && !!messageId,
+    ...(options.refetchOnMount === false ? { refetchOnMount: false } : {}),
     // Comfortably inside the API's 3600s signed-URL TTL, so a link handed to the
     // DOM is still live when it is used.
     staleTime: 10 * 60_000,
