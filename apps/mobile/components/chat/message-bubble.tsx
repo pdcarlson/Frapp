@@ -11,6 +11,10 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import { linkSegments, type LinkSegment } from "@repo/chat-core/links";
+import {
+  EDITED_MARKER,
+  showsEditedMarker,
+} from "@repo/chat-core/message-actions";
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -171,14 +175,6 @@ export function messageActionsA11yProps(
       } else runLinkA11yAction(links, actionName);
     },
   };
-}
-
-/** The meta line's marker for a message edited since it was sent. */
-export const EDITED_MARKER = "(edited)";
-
-/** Whether a row shows `EDITED_MARKER`: edited, and not since deleted. */
-function showsEdited(message: ChatMessage): boolean {
-  return !!message.edited_at && !message.is_deleted;
 }
 
 export function formatMessageTime(createdAt: string): string {
@@ -347,7 +343,7 @@ export function MessageBubble({
       onLongPress={onOpenActions}
     />
   ) : null;
-  const meta = showsEdited(message)
+  const meta = showsEditedMarker(message)
     ? `${authorLabel} · ${time} ${EDITED_MARKER}`
     : `${authorLabel} · ${time}`;
 
@@ -525,7 +521,7 @@ function MineMessageBubble({
         <MineDeliveryMeta
           chrome={chrome}
           time={time}
-          edited={showsEdited(message)}
+          edited={showsEditedMarker(message)}
           styles={styles}
         />
       </View>

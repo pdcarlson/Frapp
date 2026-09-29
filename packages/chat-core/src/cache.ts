@@ -139,11 +139,21 @@ export function mergeHeldServerRow(
   cache: ChannelCache,
   row: RawChatMessage,
 ): ChannelCache {
+  return holdsServerRow(cache, row) ? mergeServerRow(cache, row) : cache;
+}
+
+/**
+ * Whether the cache holds this row, under its server id or, while its send is
+ * still settling, its `client_message_id`. What `mergeHeldServerRow` checks.
+ */
+export function holdsServerRow(
+  cache: ChannelCache | undefined,
+  row: Pick<RawChatMessage, "id" | "client_message_id">,
+): boolean {
+  if (!cache) return false;
   const held = (key: string | null | undefined) =>
     !!key && Object.prototype.hasOwnProperty.call(cache.byId, key);
-  return held(row.id) || held(row.client_message_id)
-    ? mergeServerRow(cache, row)
-    : cache;
+  return held(row.id) || held(row.client_message_id);
 }
 
 /** Merges many rows (backfill / initial load). */

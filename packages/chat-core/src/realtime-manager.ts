@@ -55,7 +55,7 @@ import {
   applyReactionDelete,
   applyReactionInsert,
   emptyCache,
-  mergeHeldServerRow,
+  holdsServerRow,
   mergeServerRow,
   removeMessage,
 } from "./cache";
@@ -480,20 +480,37 @@ class ChatRealtimeManager {
           // content, and says nothing about the viewer's block list: this path
           // has no viewer. `asEcho` makes that explicit (#2315).
           //
-          // An UPDATE (an edit, pin or soft delete) merges only into a cache
-          // that holds the row. An old message the window never loaded would
+          // An UPDATE (an edit, pin or soft delete) of a row the cache doesn't
+          // hold is not merged. An old message the window never loaded would
           // otherwise be spliced in below the newest page, become the cache's
           // oldest confirmed row, and make the older-page read (`history.ts`)
-          // skip everything in between for good (#2775, #2871). A new message
-          // is an INSERT and always lands.
-          const echo = asEcho(next);
-          const merge =
-            payload.eventType === "UPDATE"
-              ? mergeHeldServerRow
-              : mergeServerRow;
-          this.patchCache(state.channelId, (cache) => merge(cache, echo));
+          // skip everything in between for good (#2775, #2871). Writing
+          // through `patchCache` would also create an empty cache for a
+          // channel whose first read hasn't landed.
+          //
+          // And only an INSERT moves the last-seen cursor: ADR-05 advances it
+          // from new tail rows. An UPDATE is of a message already at or
+          // behind the tail, so moving the cursor to it only ever moved it
+          // back, and the next reconnect or poll re-read a page this client
+          // already holds.
+          const isUpdate = payload.eventType === "UPDATE";
           this.settleNotices(state.channelId, [next]);
-          this.writeLastSeen(state.channelId, next.id);
+          if (
+            isUpdate &&
+            !holdsServerRow(
+              this.ctx?.queryClient.getQueryData<ChannelCache>(
+                chatMessagesKey(state.channelId),
+              ),
+              next,
+            )
+          ) {
+            return;
+          }
+          const echo = asEcho(next);
+          this.patchCache(state.channelId, (cache) =>
+            mergeServerRow(cache, echo),
+          );
+          if (!isUpdate) this.writeLastSeen(state.channelId, next.id);
           return;
         }
         // DELETE — default replica identity gives us only `old.id`, so we

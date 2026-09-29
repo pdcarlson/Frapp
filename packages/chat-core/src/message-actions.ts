@@ -156,6 +156,22 @@ export function channelAllowsReplies(channel: {
   return channel.can_post !== false && !channel.is_read_only;
 }
 
+/** The meta line's marker for a message edited since it was sent. */
+export const EDITED_MARKER = "(edited)";
+
+/**
+ * Whether a row shows `EDITED_MARKER`: edited, and not since deleted.
+ *
+ * A soft delete leaves `edited_at` set (`ChatService.softDeleteMessage` clears
+ * only the content), and "edited" on a tombstone describes words that are gone.
+ */
+export function showsEditedMarker(message: {
+  edited_at?: string | null;
+  is_deleted?: boolean | null;
+}): boolean {
+  return !!message.edited_at && !message.is_deleted;
+}
+
 /** The delete confirmation, one wording for both clients. */
 export const DELETE_MESSAGE_CONFIRM_TITLE = "Delete this message?";
 export const DELETE_MESSAGE_CONFIRM_BODY =

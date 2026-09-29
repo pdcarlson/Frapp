@@ -10,9 +10,11 @@ import {
 } from "./realtime-manager";
 import {
   chatMessagesKey,
+  normalizeRow,
   type ChannelCache,
   type RawChatMessage,
 } from "./types";
+import { emptyCache, upsertOptimistic } from "./cache";
 import type { KeyValueStore } from "./adapters";
 import { persistNotice, readNotices } from "./heavy-command-notices";
 import { visibleTypingUsers, type BlockState } from "./blocks";
@@ -681,6 +683,64 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     expect(cache?.byId["msg-old"]).toBeUndefined();
   });
 
+  test("an UPDATE echo before the channel's first read creates no cache", () => {
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    ch.emitPostgresChange({
+      eventType: "UPDATE",
+      new: {
+        id: "msg-old",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "edited",
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    expect(
+      queryClient.getQueryData(chatMessagesKey("channel-1")),
+    ).toBeUndefined();
+  });
+
+  test("an UPDATE echo of a row still held under its client_message_id lands", () => {
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    queryClient.setQueryData(
+      chatMessagesKey("channel-1"),
+      upsertOptimistic(emptyCache(), {
+        ...normalizeRow({
+          id: "client-pending",
+          channel_id: "channel-1",
+          sender_id: "user-1",
+          kind: "text",
+          content: "sending",
+          created_at: "2026-02-01T00:00:00.000Z",
+          client_message_id: "client-pending",
+        }),
+        _status: "pending",
+      }),
+    );
+    ch.emitPostgresChange({
+      eventType: "UPDATE",
+      new: {
+        id: "msg-server",
+        channel_id: "channel-1",
+        sender_id: "user-1",
+        kind: "text",
+        content: "sent, then edited",
+        created_at: "2026-02-01T00:00:00.000Z",
+        client_message_id: "client-pending",
+      },
+    });
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    expect(cache?.byId["msg-server"]?.content).toBe("sent, then edited");
+    expect(cache?.byId["client-pending"]).toBeUndefined();
+  });
+
   test("an UPDATE echo of a held message still lands", () => {
     chatRealtime.subscribe("channel-1");
     const ch = current("channel-1");
@@ -696,6 +756,15 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     };
     ch.emitPostgresChange({ eventType: "INSERT", new: row });
     ch.emitPostgresChange({
+      eventType: "INSERT",
+      new: {
+        ...row,
+        id: "msg-newer",
+        created_at: "2026-02-01T00:01:00.000Z",
+        client_message_id: "client-newer",
+      },
+    });
+    ch.emitPostgresChange({
       eventType: "UPDATE",
       new: { ...row, content: "after", edited_at: "2026-02-01T00:05:00.000Z" },
     });
@@ -704,6 +773,11 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
       chatMessagesKey("channel-1"),
     );
     expect(cache?.byId["msg-held"]?.content).toBe("after");
+    // Only an INSERT moves the reconnect cursor (ADR-05): the edit of an
+    // older message doesn't drag it back.
+    expect(window.localStorage.getItem("chat:lastSeen:channel-1")).toBe(
+      "msg-newer",
+    );
   });
 
   test("an echo never lands server-evaluated, even carrying a sender_blocked of its own (#2315)", () => {

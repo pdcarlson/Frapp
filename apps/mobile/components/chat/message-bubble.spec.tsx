@@ -46,8 +46,8 @@ import {
   UNAVAILABLE_QUOTE,
   DELETED_MESSAGE_PLACEHOLDER,
 } from "@repo/chat-core/reply-preview";
+import { EDITED_MARKER } from "@repo/chat-core/message-actions";
 import {
-  EDITED_MARKER,
   formatMessageTime,
   groupReactions,
   MessageBubble,
