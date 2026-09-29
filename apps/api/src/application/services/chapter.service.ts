@@ -89,6 +89,12 @@ function isSameAccent(a: string | null, b: string | null): boolean {
 }
 
 const BRANDING_BUCKET = 'branding';
+
+/** The chapter's folder in the `branding` bucket; every logo object sits directly in it. */
+function logoFolder(chapterId: string): string {
+  return `chapters/${chapterId}/branding`;
+}
+
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
 
@@ -548,7 +554,14 @@ export class ChapterService {
       );
     }
 
-    const storagePath = `chapters/${chapterId}/branding/logo.${path.basename(ext)}`;
+    // A fresh key per mint (#2592). The key used to be `logo.<ext>`, fixed per
+    // extension, and a signed upload URL can't overwrite an existing object
+    // without `upsert` at mint time, so replacing a PNG with another PNG got a
+    // 409 from storage (a 500 here). Upserting onto a fixed key isn't the fix
+    // either: it would swap the displayed bytes at PUT time, before any
+    // confirm and so before any audit row. With a unique key the mint never
+    // collides, and confirm stays the only step that changes the logo.
+    const storagePath = `${logoFolder(chapterId)}/logo-${crypto.randomUUID()}.${path.basename(ext)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       BRANDING_BUCKET,
@@ -565,7 +578,8 @@ export class ChapterService {
     /** The member confirming the upload; the audit row's actor. */
     actorUserId: string,
   ): Promise<Chapter> {
-    if (!storagePath.startsWith(`chapters/${chapterId}/branding/`)) {
+    const folder = logoFolder(chapterId);
+    if (!storagePath.startsWith(`${folder}/`)) {
       throw new BadRequestException(
         'storage_path must be within the chapter branding folder',
       );
@@ -588,23 +602,67 @@ export class ChapterService {
     }
     const existing = await this.chapterRepo.findById(chapterId);
     if (!existing) throw new NotFoundException('Chapter not found');
+    // The upload has to have happened (#2592). Confirm used to take any path
+    // under the folder, so it could point `logo_path` at nothing, and now that
+    // it also deletes what the chapter showed before, confirming a path that
+    // was never uploaded would leave the chapter with no logo at all. The
+    // listing is direct children only, so a path in a sub-folder is refused
+    // here too. The same check `ServiceEntryService` runs on a proof upload.
+    const stored = await this.storageProvider.listFiles(
+      BRANDING_BUCKET,
+      folder,
+    );
+    if (!stored.includes(storagePath)) {
+      throw new BadRequestException(
+        'storage_path does not reference an uploaded logo',
+      );
+    }
     const chapter = await this.chapterRepo.update(chapterId, {
       logo_path: storagePath,
     });
-    // Written on every confirm, `from` equal to `to` included. The server
-    // can't see whether the object at a path changed: confirm doesn't check
-    // that an upload happened, so a stored path can name a missing object, and
-    // a later upload to that free key followed by a confirm of the same path
-    // changes the logo without moving the column. Skipping equal paths, as the
-    // profile diff does, would leave that change unaudited. A confirm that
-    // changed nothing costs a redundant row instead, and in an audit log that
-    // is the cheaper mistake. (Replacing a logo with one of the same extension
-    // is refused at the mint today, since the key exists; #2592.)
+    // Written on every confirm, `from` equal to `to` included. A confirm that
+    // re-sends the stored path changed nothing a member can see, but the row
+    // is cheap and a missed change in an audit log is not; the profile diff's
+    // skip-if-equal rule would buy nothing here.
     await this.recordLogoAudit(chapterId, actorUserId, 'chapter_logo_updated', {
       from: existing.logo_path ?? null,
       to: storagePath,
     });
+    await this.sweepLogoFolder(chapterId, storagePath, stored);
     return chapter;
+  }
+
+  /**
+   * Delete every object in the chapter's branding folder except `keep`, after
+   * a confirm has moved `logo_path` onto it (#2592).
+   *
+   * That covers the logo the chapter showed before, and any upload that was
+   * minted and PUT but never confirmed. `listed` is the folder as confirm read
+   * it, before the column moved, so an upload that lands after that read is
+   * left alone for its own confirm.
+   *
+   * After the column update, never before: deleting first would leave the
+   * chapter pointing at a deleted object whenever the update failed. A failed
+   * delete is logged with the paths it left and doesn't fail the confirm. The
+   * logo did change, and with a unique key per upload a stranded object costs
+   * storage but blocks no later upload, which a fixed key used to.
+   */
+  private async sweepLogoFolder(
+    chapterId: string,
+    keep: string,
+    listed: string[],
+  ): Promise<void> {
+    const stale = listed.filter((objectPath) => objectPath !== keep);
+    if (stale.length === 0) return;
+    try {
+      await this.storageProvider.deleteFiles(BRANDING_BUCKET, stale);
+    } catch (error) {
+      this.logger.warn(
+        `Could not delete replaced logo objects for chapter ${chapterId} (${stale.join(
+          ', ',
+        )}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   async deleteLogo(
@@ -617,9 +675,7 @@ export class ChapterService {
     // Object first, then the column: the order `backwork` and chapter
     // documents use. A failure between the two leaves the column naming a
     // deleted object, which a retried DELETE repairs, since the column still
-    // points at it. The reverse order strands the object instead, and with a
-    // fixed key per extension that blocks every later upload of that
-    // extension (#2592).
+    // points at it. The reverse order strands the object instead.
     if (existing.logo_path) {
       await this.storageProvider.deleteFile(
         BRANDING_BUCKET,

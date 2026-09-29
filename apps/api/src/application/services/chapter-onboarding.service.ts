@@ -8,7 +8,7 @@ import {
   type ChapterBrandingInput,
 } from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
-import { LEGAL_POLICY_VERSION } from '@repo/validation';
+import { LEGAL_POLICY_VERSION, chapterTextMark } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   FrappSupabaseClient,
@@ -203,6 +203,11 @@ export class ChapterOnboardingService {
     const result: Branding = {};
     if (!branding) return result;
     if (branding.greek_letters) result.greek_letters = branding.greek_letters;
+    const shortName = branding.short_name?.trim();
+    if (shortName) result.short_name = shortName;
+    // Stored only as an opt-out: absent already means shown, so a chapter that
+    // keeps its letters carries no key it didn't choose.
+    if (branding.show_greek_letters === false) result.show_greek_letters = false;
     if (branding.designation) result.designation = branding.designation;
     if (branding.school_short) result.school_short = branding.school_short;
     if (
@@ -294,9 +299,12 @@ export class ChapterOnboardingService {
 
     if (!channel) return;
 
-    const greek = (branding.greek_letters as string | undefined)?.trim();
+    // The chapter mark's text, not `greek_letters` directly: a chapter that
+    // turned its letters off must not be welcomed by them (#2876), and one
+    // with a short name is welcomed by that ("Welcome to FIJI Tau Nu.").
+    const mark = chapterTextMark(branding)?.text;
     const designation = (branding.designation as string | undefined)?.trim();
-    const identity = [greek, designation].filter(Boolean).join(' ').trim();
+    const identity = [mark, designation].filter(Boolean).join(' ').trim();
     const welcome = identity
       ? `Welcome to ${identity}. Invite your chapter to get the conversation started.`
       : 'Welcome to your chapter. Invite your chapter to get the conversation started.';

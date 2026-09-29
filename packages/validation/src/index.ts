@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  CHAPTER_SHORT_NAME_MAX_LENGTH,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   INVOICE_AMOUNT_MAX_CENTS,
   INVOICE_DESCRIPTION_MAX_LENGTH,
@@ -89,6 +90,11 @@ const subscriptionStatusEnum = z.enum([
 export const ChapterBrandingSchema = z
   .object({
     greek_letters: z.string().optional(),
+    // The chapter mark's text options (#2876); precedence is `chapter-mark.ts`.
+    // An empty string is how Settings clears a short name, since the config
+    // PATCH deep-merges and an omitted key keeps its stored value.
+    short_name: z.string().max(CHAPTER_SHORT_NAME_MAX_LENGTH).optional(),
+    show_greek_letters: z.boolean().optional(),
     designation: z.string().optional(),
     school_short: z.string().optional(),
     founded_at: z.number().int().min(1776).optional(),
@@ -110,8 +116,8 @@ export const ChapterBrandingSchema = z
 /**
  * Subset of the chapter payload consumed by dashboard UI (`GET /v1/chapters/current`).
  * Extra API fields are allowed via `.passthrough()` so this stays a projection, not a strict full-entity schema.
- * Chunk 02 adds optional branding fields (greek_letters, designation, school_short)
- * so ChapterLockup can render real chapter identity.
+ * `branding` carries the chapter identity the nav's chapter tile renders
+ * through `resolveChapterMark` (#2876).
  */
 export const CurrentChapterPayloadSchema = z
   .object({
@@ -1023,7 +1029,22 @@ export {
   INVOICE_TITLE_MAX_LENGTH,
   INVOICE_DESCRIPTION_MAX_LENGTH,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  CHAPTER_SHORT_NAME_MAX_LENGTH,
 };
+
+// ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
+export {
+  chapterInitials,
+  chapterTextMark,
+  displayedGreekLetters,
+  greekLettersShown,
+  resolveChapterMark,
+} from "./chapter-mark";
+export type {
+  ChapterMark,
+  ChapterMarkBranding,
+  ChapterTextMarkSource,
+} from "./chapter-mark";
 
 // ── Upload MIME / extension allowlists + 25 MB size cap ─────────────────────
 export {

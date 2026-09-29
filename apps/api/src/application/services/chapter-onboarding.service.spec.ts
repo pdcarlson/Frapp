@@ -400,6 +400,75 @@ describe('ChapterOnboardingService', () => {
     );
   });
 
+  describe('chapter mark (#2876)', () => {
+    const fijiDto: ChapterOnboardingInput = {
+      ...directoryDto,
+      name: 'Phi Gamma Delta',
+      branding: {
+        greek_letters: 'ΦΓΔ',
+        designation: 'Tau Nu',
+        colors: { accent: '#C9A56F' },
+      },
+    };
+
+    function welcomeContent(): string {
+      return (
+        messageInsert.mock.calls[0]![0] as { content: string }
+      ).content;
+    }
+
+    it('stores a short name and an opt-out from the wizard', async () => {
+      await service.onboard('user-1', {
+        ...fijiDto,
+        branding: {
+          ...fijiDto.branding,
+          short_name: ' FIJI ',
+          show_greek_letters: false,
+        },
+      });
+
+      const [, payload] = chapterService.create.mock.calls[0];
+      expect(payload.config.branding).toMatchObject({
+        greek_letters: 'ΦΓΔ',
+        short_name: 'FIJI',
+        show_greek_letters: false,
+      });
+    });
+
+    it('stores no opt-out key for a chapter that keeps its letters', async () => {
+      await service.onboard('user-1', {
+        ...fijiDto,
+        branding: { ...fijiDto.branding, show_greek_letters: true },
+      });
+
+      const [, payload] = chapterService.create.mock.calls[0];
+      expect(payload.config.branding).not.toHaveProperty('show_greek_letters');
+      expect(payload.config.branding).not.toHaveProperty('short_name');
+    });
+
+    it('welcomes an opted-out chapter without its Greek letters', async () => {
+      await service.onboard('user-1', {
+        ...fijiDto,
+        branding: { ...fijiDto.branding, show_greek_letters: false },
+      });
+
+      expect(welcomeContent()).toBe(
+        'Welcome to Tau Nu. Invite your chapter to get the conversation started.',
+      );
+    });
+
+    it('welcomes a chapter by its short name ahead of its letters', async () => {
+      await service.onboard('user-1', {
+        ...fijiDto,
+        branding: { ...fijiDto.branding, short_name: 'FIJI' },
+      });
+
+      expect(welcomeContent()).toBe(
+        'Welcome to FIJI Tau Nu. Invite your chapter to get the conversation started.',
+      );
+    });
+  });
+
   it('records a directory request for manual entry (no directory_id)', async () => {
     const manualDto: ChapterOnboardingInput = {
       name: 'Made Up Chapter Name',
