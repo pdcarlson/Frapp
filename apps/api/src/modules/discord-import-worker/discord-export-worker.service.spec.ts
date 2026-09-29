@@ -265,8 +265,9 @@ function runArgs(
       id === '750151182395244584' ? 'Brothers' : null,
     ),
     // The harness's merge target is a whole-chapter channel.
-    wholeChapterChannelIds: jest.fn(
-      async (): Promise<ReadonlySet<string>> => new Set([SIGNET_CHANNEL]),
+    wholeChapterTargets: jest.fn(
+      async (): Promise<ReadonlyMap<string, boolean>> =>
+        new Map([[SIGNET_CHANNEL, true]]),
     ),
     checkpoint: jest.fn(async () => true),
     resolveTargetChannel: jest.fn(async () => SIGNET_CHANNEL),
@@ -656,20 +657,27 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       ).toBeLessThan(args.importBatch.mock.invocationCallOrder[0]);
     });
 
-    it('creates nothing for an import that fails its first page', async () => {
-      const blanks = Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) => ({
-        id: String(i),
-        channel_id: DISCORD_CHANNEL,
-        type: 0,
-        content: '',
-        timestamp: '2019-03-04T18:22:11.000+00:00',
-        author: { id: '2', username: 'paul' },
-        attachments: [],
-        embeds: [],
-      }));
+    const blank = (id: string) => ({
+      id,
+      channel_id: DISCORD_CHANNEL,
+      type: 0,
+      content: '',
+      timestamp: '2019-03-04T18:22:11.000+00:00',
+      author: { id: '2', username: 'paul' },
+      attachments: [],
+      embeds: [],
+    });
+
+    it('makes no other channel for a bot that cannot read message content', async () => {
+      const first = channel({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+      });
       const harness = await build({
-        channels: [channel(), later()],
-        pages: [blanks],
+        channels: [first, later()],
+        pages: [
+          Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) => blank(String(i))),
+        ],
       });
       const resolveTargetChannel = minting();
       const args = runArgs(harness, { resolveTargetChannel });
@@ -677,12 +685,35 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       await expect(harness.worker.runSlice(args)).rejects.toThrow(
         MISSING_MESSAGE_CONTENT_INTENT_ERROR,
       );
-      expect(
-        resolveTargetChannel.mock.calls.map(([row]) => row.id),
-      ).not.toContain('mapping-2');
+      // The channel being walked is made when the walk reaches it, as it
+      // always was; nothing else is.
+      expect(resolveTargetChannel.mock.calls.map(([row]) => row.id)).toEqual([
+        'mapping-1',
+      ]);
     });
 
-    it('marks the row it could not create failed, with the reason', async () => {
+    it('waits for a page with content, since a blank one proves nothing and mentions nothing', async () => {
+      // Five blank messages: too few for the missing-intent check to decide.
+      const harness = await build({
+        channels: [channel(), later()],
+        pages: [[1, 2, 3, 4, 5].map((n) => blank(String(n)))],
+      });
+      const resolveTargetChannel = minting();
+      const args = runArgs(harness, { resolveTargetChannel });
+      await harness.worker.runSlice(args);
+
+      const asked = resolveTargetChannel.mock.calls.map(([row]) => row.id);
+      const firstAsk =
+        resolveTargetChannel.mock.invocationCallOrder[
+          asked.indexOf('mapping-2')
+        ];
+      // Only the walk reached it, after the blank page was written.
+      expect(firstAsk).toBeGreaterThan(
+        args.importBatch.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('marks only the row it could not create failed, with the reason', async () => {
       const harness = await build({
         channels: [channel(), later()],
         pages: [[apiMessage('2')]],
@@ -695,11 +726,16 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       });
 
       await expect(harness.worker.runSlice(args)).rejects.toThrow('name taken');
-      expect(harness.repo.updateChannel).toHaveBeenCalledWith(
-        'mapping-2',
-        IMPORT_ID,
-        expect.objectContaining({ status: 'failed', error: 'name taken' }),
+      const failed = harness.repo.updateChannel.mock.calls.filter(
+        ([, , patch]) => (patch as { status?: string }).status === 'failed',
       );
+      expect(failed).toEqual([
+        [
+          'mapping-2',
+          IMPORT_ID,
+          expect.objectContaining({ status: 'failed', error: 'name taken' }),
+        ],
+      ]);
       expect(args.importBatch).not.toHaveBeenCalled();
     });
   });

@@ -45,8 +45,8 @@ import { SupabaseRoleRepository } from './infrastructure/supabase/repositories/s
 import { SupabaseChatChannelRepository } from './infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import {
   importChannelMentions,
-  mergeTargetIds,
   roleMentionNames,
+  wholeChapterTargets,
 } from '#domain/utils/discord-mentions';
 import {
   mentionBackfillBlocker,
@@ -115,20 +115,11 @@ async function main(): Promise<void> {
     frappRoleNames: new Map(frappRoles.map((role) => [role.id, role.name])),
     guildId: job.guild_id,
   });
-  // The merge targets every member can read, as the worker reads them.
-  const mergeTargets = mergeTargetIds(channels);
-  const targets = mergeTargets.length
-    ? await new SupabaseChatChannelRepository(supabase).findByIds(
-        chapterId,
-        mergeTargets,
-      )
-    : [];
+  const channelRepo = new SupabaseChatChannelRepository(supabase);
   const channel = importChannelMentions(
     channels,
-    new Set(
-      targets
-        .filter((target) => target.type === 'PUBLIC')
-        .map((target) => target.id),
+    await wholeChapterTargets(channels, (ids) =>
+      channelRepo.findByIds(chapterId, ids),
     ),
   );
 

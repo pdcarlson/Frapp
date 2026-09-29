@@ -60,18 +60,33 @@ describe('mentionBackfillBlocker', () => {
 
   it('refuses while a new channel is missing, since its mentions would never link', () => {
     const channels = [row({ target_channel_id: null, status: 'pending' })];
-    const reason = mentionBackfillBlocker(
-      { id: 'imp', status: 'failed' },
-      channels,
-      false,
-    );
-    expect(reason).toContain('#rush');
+    for (const status of ['failed', 'cancelled'] as const) {
+      const reason = mentionBackfillBlocker(
+        { id: 'imp', status },
+        channels,
+        false,
+      );
+      expect(reason).toContain('#rush');
+    }
     // Unless the operator accepts it for an import that will not finish.
     expect(
       mentionBackfillBlocker(
         { id: 'imp', status: 'cancelled' },
         channels,
         true,
+      ),
+    ).toBeNull();
+  });
+
+  it('never refuses a completed import for a channel nothing will make', () => {
+    // An upload completes past a part it could not read; that part's channel
+    // stays pending with no target.
+    const channels = [row({ target_channel_id: null, status: 'pending' })];
+    expect(
+      mentionBackfillBlocker(
+        { id: 'imp', status: 'completed' },
+        channels,
+        false,
       ),
     ).toBeNull();
   });
@@ -83,11 +98,7 @@ describe('mentionBackfillBlocker', () => {
       row({ target_channel_id: null, parent_discord_channel_id: '1' }),
     ];
     expect(
-      mentionBackfillBlocker(
-        { id: 'imp', status: 'completed' },
-        channels,
-        false,
-      ),
+      mentionBackfillBlocker({ id: 'imp', status: 'failed' }, channels, false),
     ).toBeNull();
   });
 });

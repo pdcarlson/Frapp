@@ -857,22 +857,25 @@ What follows is the behaviour the archive has once it is in.
     `@unknown-role`;
   - a channel (`<#id>`) reads `#name`, linked to the Frapp channel its messages
     landed in (`/chat?channel=<id>`). A thread links to its parent's channel.
-    The bot path creates every new channel of the import just before it writes
-    its first page, once that page has passed the checks a first page can fail
-    (the channel is in this server, the bot can read message content), so
-    every mention of an imported channel links. The cost is that an import
-    cancelled or failing after that leaves channels it never filled, which a
-    deleted import already leaves. The link works on web, where like every
-    message link it opens in a new tab. Mobile shows the name without a link,
-    because it only links absolute URLs;
+    On the bot path every new channel of the import is created when the first
+    page with something in it (content, an attachment or an embed) is about to
+    be written. That page proves the bot can read message content, and no
+    earlier page could mention anything, so every mention of an imported
+    channel links. A bot without Discord's message-content permission makes no
+    channel but the one the walk had reached. After that, an import cancelled
+    or failing, or a channel Discord stops showing mid-import, leaves channels
+    never filled, as a deleted import leaves its channels. The link works on
+    web, where like every message link it opens in a new tab. Mobile shows the
+    name without a link, because it only links absolute URLs;
   - **a channel some members cannot read is never named**: it reads
-    `#private-channel`, as Discord shows "No Access" to someone outside it.
-    It is judged by where its messages landed, which is who can read them now:
-    a channel the import creates is named when it is created for the whole
-    chapter; one merged into an existing channel when that Frapp channel is
-    whole-chapter; one skipped, whose messages landed nowhere, only when
-    Discord showed it and the thread to everyone. Anything else, including a
-    privacy nobody recorded, reads `#private-channel`;
+    `#private-channel`, as Discord shows "No Access" to someone outside it. A
+    thread is named only when Discord showed it to everyone, since a private
+    thread may have had none of its messages imported. Otherwise a channel is
+    judged by the Frapp channel its messages landed in, as that channel is
+    now: named only when it is whole-chapter (`PUBLIC`). A skipped channel
+    landed nowhere, and is named only when Discord showed it to everyone.
+    Anything else, including a privacy nobody recorded, reads
+    `#private-channel`;
   - a custom emoji reads `:name:`, a timestamp (`<t:…>`) an absolute UTC time,
     and a slash command `/name`;
   - an id none of that can name reads `@unknown-user`, `@unknown-role` or
@@ -896,8 +899,10 @@ What follows is the behaviour the archive has once it is in.
   as text unless it was run with `--markdown false`. For an import that ran
   before this, `apps/api/src/backfill-discord-mention-tokens.ts` applies the
   same rewrite to the rows already written. It runs only on an import that has
-  stopped and whose new channels all exist, since a rewritten mention can never
-  be linked later. It names a user by the name the import stored on their own
+  stopped. While a failed or cancelled import has a new channel that was never
+  made, it refuses unless told `--allow-unlinked`, since a rewritten mention
+  can never be linked later: a failed import can be restarted first, and a
+  cancelled one never will be. It names a user by the name the import stored on their own
   messages, since the mentioned-user lists were never kept: someone mentioned
   who never posted reads `@unknown-user`, and an upload's users read as their
   Discord username.

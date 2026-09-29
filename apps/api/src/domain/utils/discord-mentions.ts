@@ -295,56 +295,65 @@ export function rewriteDiscordMentions(
  * channel it sits in, so naming a private one would publish its name (a
  * private thread's name is often the whole secret).
  *
- * Judged by where the row's messages landed in Frapp, which is what decides
- * who can read them now; a thread by its parent's destination:
- * - a channel the import creates: whole chapter when it is created so
- *   (`PUBLIC`). A channel private in Discord gets that only by the admin
- *   choosing it;
- * - a merge into an existing channel: whole chapter when that Frapp channel is
- *   (`wholeChapterChannelIds`), since its messages are then readable by
- *   everyone however private they were in Discord;
- * - a skipped channel, whose messages landed nowhere: only when the scan found
- *   it, and the thread itself, readable by everyone in Discord.
+ * - A thread is named only when Discord showed it to everyone. A private
+ *   thread may have had none of its messages imported (a date cutoff, a thread
+ *   the bot could not read), so where its parent landed says nothing about who
+ *   has seen it.
+ * - Otherwise it is judged by where its messages landed, which is who can read
+ *   them now: the live type of the Frapp channel (`wholeChapterByChannel`,
+ *   from {@link wholeChapterTargets}). A channel made after that lookup, by
+ *   this very run, has the type its mapping asked for, so that stands in.
+ * - A skipped channel landed nowhere, and is named only when Discord showed it
+ *   to everyone.
  *
  * Anything else is private, including a privacy nobody recorded (an upload
- * records none, so a skipped channel of one is private).
+ * records none) and a target the lookup could not find.
  */
 function readableByWholeChapter(
   row: DiscordImportChannel,
   landedIn: DiscordImportChannel | undefined,
-  wholeChapterChannelIds: ReadonlySet<string>,
+  wholeChapterByChannel: ReadonlyMap<string, boolean>,
 ): boolean {
   if (!landedIn) return false;
-  switch (landedIn.mapping_action) {
-    case 'create_new':
-      return landedIn.new_channel_type === 'PUBLIC';
-    case 'use_existing':
-      return (
-        landedIn.target_channel_id !== null &&
-        wholeChapterChannelIds.has(landedIn.target_channel_id)
-      );
-    default:
-      return (
-        row.private_in_discord === false &&
-        landedIn.private_in_discord === false
-      );
+  if (row !== landedIn && row.private_in_discord !== false) return false;
+  if (landedIn.mapping_action === 'skip') {
+    return landedIn.private_in_discord === false;
   }
+  const target = landedIn.target_channel_id;
+  const known = target ? wholeChapterByChannel.get(target) : undefined;
+  if (known !== undefined) return known;
+  // Not in the lookup: made by this run after it (or not made yet), so it has
+  // the type its mapping asked for. A merge target always predates the run.
+  return (
+    landedIn.mapping_action === 'create_new' &&
+    landedIn.new_channel_type === 'PUBLIC'
+  );
 }
 
 /**
- * The Frapp channels an import merges into, whose types decide whether a
- * mention of a merged channel is named (see `importChannelMentions`).
+ * For each Frapp channel an import's rows already point at, whether every
+ * member of the chapter can read it (`PUBLIC`). The one lookup both the worker
+ * and the backfill name channel mentions by. `findByIds` must be scoped to the
+ * import's chapter; a target it does not return is treated as private.
  */
-export function mergeTargetIds(
+export async function wholeChapterTargets(
   rows: readonly DiscordImportChannel[],
-): string[] {
-  const ids = new Set<string>();
-  for (const row of rows) {
-    if (row.mapping_action === 'use_existing' && row.target_channel_id) {
-      ids.add(row.target_channel_id);
-    }
+  findByIds: (ids: string[]) => Promise<{ id: string; type: string }[]>,
+): Promise<Map<string, boolean>> {
+  const ids = [
+    ...new Set(
+      rows
+        .filter((row) => row.mapping_action !== 'skip')
+        .map((row) => row.target_channel_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const found = ids.length > 0 ? await findByIds(ids) : [];
+  const byId = new Map(ids.map((id) => [id, false]));
+  for (const channel of found) {
+    if (byId.has(channel.id)) byId.set(channel.id, channel.type === 'PUBLIC');
   }
-  return [...ids];
+  return byId;
 }
 
 /**
@@ -352,20 +361,18 @@ export function mergeTargetIds(
  *
  * Reads the rows **live**, not a copy: the worker writes each row's
  * `target_channel_id` onto the same objects as it creates or finds the Frapp
- * channel, so a channel is linked from the moment its channel exists. The bot
- * path creates every new channel before it writes a message, so on that path
- * every mention of an imported channel links.
+ * channel, so a channel is linked from the moment its channel exists. On the
+ * bot path every new channel exists before any message that can mention one is
+ * written, so every mention of an imported channel links.
  *
  * A thread is named as itself but links to where it landed, its parent's
  * channel. A top-level channel is named what it is called in Frapp when this
  * import made it, else Discord's name. A channel only some members can read is
- * {@link PRIVATE_CHANNEL}. `wholeChapterChannelIds` are the Frapp channels,
- * among those the import merges into (`mergeTargetIds`), that every member can
- * read.
+ * {@link PRIVATE_CHANNEL}.
  */
 export function importChannelMentions(
   rows: readonly DiscordImportChannel[],
-  wholeChapterChannelIds: ReadonlySet<string>,
+  wholeChapterByChannel: ReadonlyMap<string, boolean>,
 ): (
   discordChannelId: string,
 ) => MentionedChannel | typeof PRIVATE_CHANNEL | null {
@@ -376,7 +383,7 @@ export function importChannelMentions(
     const parentId = row.parent_discord_channel_id;
     const isThread = Boolean(parentId);
     const landedIn = parentId ? byId.get(parentId) : row;
-    if (!readableByWholeChapter(row, landedIn, wholeChapterChannelIds)) {
+    if (!readableByWholeChapter(row, landedIn, wholeChapterByChannel)) {
       return PRIVATE_CHANNEL;
     }
     const name =

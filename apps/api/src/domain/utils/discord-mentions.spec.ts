@@ -10,9 +10,9 @@ import {
   UNKNOWN_USER_MENTION,
   importChannelMentions,
   inertName,
-  mergeTargetIds,
   rewriteDiscordMentions,
   roleMentionNames,
+  wholeChapterTargets,
   type DiscordMentionResolver,
 } from './discord-mentions';
 
@@ -261,7 +261,9 @@ describe('inertName', () => {
 });
 
 describe('importChannelMentions', () => {
-  const NONE = new Set<string>();
+  const NONE = new Map<string, boolean>();
+  const PUBLIC_TARGET = new Map([[FRAPP_CHANNEL, true]]);
+  const GATED_TARGET = new Map([[FRAPP_CHANNEL, false]]);
 
   it('names a channel the import creates by its Frapp name, linked once it exists', () => {
     const row = channelRow({ new_channel_name: 'General Chat' });
@@ -291,55 +293,75 @@ describe('importChannelMentions', () => {
       parent_discord_channel_id: CHANNEL,
     });
     expect(
-      importChannelMentions([parent, thread], NONE)('800000000000000002'),
+      importChannelMentions(
+        [parent, thread],
+        PUBLIC_TARGET,
+      )('800000000000000002'),
     ).toEqual({ name: 'rush-week-plans', frappChannelId: FRAPP_CHANNEL });
   });
 
-  describe('is named only when its messages landed where every member reads', () => {
-    it('not a channel the import creates restricted, nor a thread in one', () => {
-      const gated = channelRow({
-        new_channel_type: 'ROLE_GATED',
-        new_channel_required_permissions: ['channels:read:exec'],
-        private_in_discord: true,
-        target_channel_id: FRAPP_CHANNEL,
-      });
-      const thread = channelRow({
-        discord_channel_id: '800000000000000002',
-        discord_channel_name: 'expel-vote',
-        parent_discord_channel_id: CHANNEL,
-        new_channel_type: 'ROLE_GATED',
-      });
-      const lookup = importChannelMentions([gated, thread], NONE);
-      expect(lookup(CHANNEL)).toBe(PRIVATE_CHANNEL);
-      expect(lookup('800000000000000002')).toBe(PRIVATE_CHANNEL);
+  describe('is named only when every member can read where it landed', () => {
+    it('judging a channel with a Frapp channel by that channel as it is now', () => {
+      for (const mapping_action of ['create_new', 'use_existing'] as const) {
+        const row = channelRow({
+          mapping_action,
+          target_channel_id: FRAPP_CHANNEL,
+          private_in_discord: true,
+          new_channel_type: 'PUBLIC',
+        });
+        expect(importChannelMentions([row], GATED_TARGET)(CHANNEL)).toBe(
+          PRIVATE_CHANNEL,
+        );
+        expect(importChannelMentions([row], PUBLIC_TARGET)(CHANNEL)).toEqual({
+          name: 'general',
+          frappChannelId: FRAPP_CHANNEL,
+        });
+      }
     });
 
-    it('but one the admin created for the whole chapter, however private it was in Discord', () => {
-      const lookup = importChannelMentions(
-        [channelRow({ private_in_discord: true, new_channel_type: 'PUBLIC' })],
-        NONE,
-      );
-      expect(lookup(CHANNEL)).toEqual({
-        name: 'general',
-        frappChannelId: null,
-      });
-    });
-
-    it('a merge only when the Frapp channel it merged into is whole-chapter', () => {
-      const merged = channelRow({
+    it('treating a target the lookup could not find as private', () => {
+      const row = channelRow({
         mapping_action: 'use_existing',
         target_channel_id: FRAPP_CHANNEL,
-        private_in_discord: true,
+        private_in_discord: false,
       });
-      expect(importChannelMentions([merged], NONE)(CHANNEL)).toBe(
-        PRIVATE_CHANNEL,
-      );
-      expect(
-        importChannelMentions([merged], new Set([FRAPP_CHANNEL]))(CHANNEL),
-      ).toEqual({ name: 'general', frappChannelId: FRAPP_CHANNEL });
+      expect(importChannelMentions([row], NONE)(CHANNEL)).toBe(PRIVATE_CHANNEL);
     });
 
-    it('a skipped channel, which landed nowhere, only when Discord showed it to everyone', () => {
+    it('trusting the mapping for a channel made after the lookup, by this run', () => {
+      const created = channelRow({ target_channel_id: 'made-this-slice' });
+      expect(importChannelMentions([created], NONE)(CHANNEL)).toEqual({
+        name: 'general',
+        frappChannelId: 'made-this-slice',
+      });
+      const gated = channelRow({
+        target_channel_id: 'made-this-slice',
+        new_channel_type: 'ROLE_GATED',
+      });
+      expect(importChannelMentions([gated], NONE)(CHANNEL)).toBe(
+        PRIVATE_CHANNEL,
+      );
+    });
+
+    it('never naming a thread Discord kept private, wherever its parent landed', () => {
+      const parent = channelRow({ target_channel_id: FRAPP_CHANNEL });
+      for (const private_in_discord of [true, null]) {
+        const thread = channelRow({
+          discord_channel_id: '800000000000000002',
+          discord_channel_name: 'expel-vote',
+          parent_discord_channel_id: CHANNEL,
+          private_in_discord,
+        });
+        expect(
+          importChannelMentions(
+            [parent, thread],
+            PUBLIC_TARGET,
+          )('800000000000000002'),
+        ).toBe(PRIVATE_CHANNEL);
+      }
+    });
+
+    it('naming a skipped channel, which landed nowhere, only when Discord showed it to everyone', () => {
       for (const private_in_discord of [true, null]) {
         const lookup = importChannelMentions(
           [channelRow({ mapping_action: 'skip', private_in_discord })],
@@ -355,27 +377,10 @@ describe('importChannelMentions', () => {
             target_channel_id: FRAPP_CHANNEL,
           }),
         ],
-        NONE,
+        PUBLIC_TARGET,
       );
       // Named, never linked.
       expect(open(CHANNEL)).toEqual({ name: 'general', frappChannelId: null });
-    });
-
-    it('and a private thread of a skipped channel is private', () => {
-      const parent = channelRow({
-        mapping_action: 'skip',
-        private_in_discord: false,
-      });
-      const thread = channelRow({
-        discord_channel_id: '800000000000000002',
-        discord_channel_name: 'expel-vote',
-        mapping_action: 'skip',
-        parent_discord_channel_id: CHANNEL,
-        private_in_discord: true,
-      });
-      expect(
-        importChannelMentions([parent, thread], NONE)('800000000000000002'),
-      ).toBe(PRIVATE_CHANNEL);
     });
   });
 
@@ -384,16 +389,55 @@ describe('importChannelMentions', () => {
   });
 });
 
-describe('mergeTargetIds', () => {
-  it('lists each Frapp channel the import merges into, once', () => {
-    expect(
-      mergeTargetIds([
-        channelRow({ mapping_action: 'use_existing', target_channel_id: 'a' }),
-        channelRow({ mapping_action: 'use_existing', target_channel_id: 'a' }),
-        channelRow({ mapping_action: 'create_new', target_channel_id: 'b' }),
-        channelRow({ mapping_action: 'use_existing', target_channel_id: null }),
-      ]),
-    ).toEqual(['a']);
+describe('wholeChapterTargets', () => {
+  it('asks once per target, chapter-scoped by the caller, and counts only PUBLIC as whole-chapter', async () => {
+    const findByIds = jest.fn(async (ids: string[]) =>
+      [
+        { id: 'open', type: 'PUBLIC' },
+        { id: 'gated', type: 'ROLE_GATED' },
+        { id: 'private', type: 'PRIVATE' },
+      ].filter((channel) => ids.includes(channel.id)),
+    );
+    const targets = await wholeChapterTargets(
+      [
+        channelRow({
+          mapping_action: 'use_existing',
+          target_channel_id: 'open',
+        }),
+        channelRow({ mapping_action: 'create_new', target_channel_id: 'open' }),
+        channelRow({
+          mapping_action: 'use_existing',
+          target_channel_id: 'gated',
+        }),
+        channelRow({
+          mapping_action: 'create_new',
+          target_channel_id: 'private',
+        }),
+        channelRow({
+          mapping_action: 'use_existing',
+          target_channel_id: 'gone',
+        }),
+        channelRow({ mapping_action: 'skip', target_channel_id: 'ignored' }),
+        channelRow({ mapping_action: 'create_new', target_channel_id: null }),
+      ],
+      findByIds,
+    );
+    expect(findByIds).toHaveBeenCalledTimes(1);
+    expect(findByIds.mock.calls[0][0].sort()).toEqual(
+      ['gated', 'gone', 'open', 'private'].sort(),
+    );
+    expect(Object.fromEntries(targets)).toEqual({
+      open: true,
+      gated: false,
+      private: false,
+      gone: false,
+    });
+  });
+
+  it('asks nothing when no row has a target yet', async () => {
+    const findByIds = jest.fn(async () => []);
+    await wholeChapterTargets([channelRow({})], findByIds);
+    expect(findByIds).not.toHaveBeenCalled();
   });
 });
 

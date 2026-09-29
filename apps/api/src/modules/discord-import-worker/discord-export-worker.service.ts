@@ -110,6 +110,17 @@ export interface ExportSliceResult {
 }
 
 /** Everything a slice accumulates and writes back at each checkpoint. */
+/** Making another row's channel failed while a page of this one was written. */
+class DestinationError extends Error {
+  constructor(
+    readonly mapping: DiscordImportChannel,
+    readonly cause: unknown,
+  ) {
+    super(toReportableError(cause).message);
+    this.name = 'DestinationError';
+  }
+}
+
 interface SliceTotals {
   imported: number;
   skipped: number;
@@ -180,12 +191,12 @@ export class DiscordExportWorkerService {
     /** What a role mention reads as, from the import's role mapping (#2875). */
     roleName: (discordRoleId: string) => string | null;
     /**
-     * The Frapp channels among the import's merge targets that every member
-     * can read; a mention of a merged channel is named only then (#2875).
+     * Whether each Frapp channel the rows point at is readable by the whole
+     * chapter; a mention of a channel is named only then (#2875).
      */
-    wholeChapterChannelIds: (
+    wholeChapterTargets: (
       rows: readonly DiscordImportChannel[],
-    ) => Promise<ReadonlySet<string>>;
+    ) => Promise<ReadonlyMap<string, boolean>>;
     /** True while the job may still be advanced (not cancelled, lease held). */
     checkpoint: (patch: {
       imported: number;
@@ -217,7 +228,7 @@ export class DiscordExportWorkerService {
       job,
       deadline,
       roleName,
-      wholeChapterChannelIds,
+      wholeChapterTargets,
       checkpoint,
       resolveTargetChannel,
       importBatch,
@@ -257,7 +268,7 @@ export class DiscordExportWorkerService {
       // links from the moment it exists (#2875).
       channel: importChannelMentions(
         channels,
-        await wholeChapterChannelIds(channels),
+        await wholeChapterTargets(channels),
       ),
     };
     const totals: SliceTotals = {
@@ -282,23 +293,26 @@ export class DiscordExportWorkerService {
         .map((file) => [file.relative_path, file]),
     );
 
-    // Every channel this import creates exists before a message is written,
-    // so a mention of a channel the walk reaches later still links to it
-    // (#2875). Made lazily, a channel would not exist yet when an earlier
-    // channel's messages mentioned it, and they would keep an unlinked name
-    // for good.
+    // Every channel this import creates exists before a message that can
+    // mention one is written, so a mention of a channel the walk reaches later
+    // still links to it (#2875). Made lazily, a channel would not exist yet
+    // when an earlier channel's messages mentioned it, and they would keep an
+    // unlinked name for good.
     //
-    // Not done up front: it waits until a page has passed every check a first
-    // page can fail (the channel is in this guild, the bot can read message
-    // content) and is about to be written. An import that fails there, the
-    // common first-slice failure, then leaves no channel behind. Once it has
-    // run, an import cancelled or failing later leaves the channels it made,
-    // empty or not, as deleting an import always has. Threads need nothing
-    // here, since they land in their parent's channel. Once per slice, and
-    // resumable: a row that has its target is not asked again.
+    // It waits for the first page with something in it: a message with
+    // content, an attachment or an embed. That page is the proof the bot can
+    // read message content, which the missing-intent check (it needs 25
+    // authored messages to decide) may not have settled yet, and a page with
+    // no content cannot mention anything. So a bot without the intent makes
+    // no channels but the one the walk had reached, which it always made.
+    // After that, an import cancelled or failing, or a channel Discord stops
+    // showing mid-import, leaves channels it never filled, as deleting an
+    // import always has. Threads need nothing here: they land in their
+    // parent's channel. Once per slice, and resumable: a row that has its
+    // target is not asked again.
     let destinationsReady = false;
     const ensureDestinations = async (): Promise<void> => {
-      if (destinationsReady) return;
+      if (destinationsReady || totals.tally.withSubstance === 0) return;
       for (const mapping of channels) {
         if (
           mapping.parent_discord_channel_id ||
@@ -312,14 +326,9 @@ export class DiscordExportWorkerService {
         try {
           await resolveTargetChannel(mapping, channels);
         } catch (error) {
-          // As the walk does: the row says why the import stopped (#2857).
-          await this.importRepo
-            .updateChannel(mapping.id, job.id, {
-              status: 'failed',
-              error: toReportableError(error).message,
-            })
-            .catch(() => undefined);
-          throw error;
+          // The row it could not make is the one that failed, not the one
+          // being walked.
+          throw new DestinationError(mapping, error);
         }
       }
       destinationsReady = true;
@@ -364,14 +373,18 @@ export class DiscordExportWorkerService {
         // panel (#2857); the job carries the same reason. A restart resumes
         // the row from its cursor like any unfinished one. Best effort: the
         // import is failing anyway, and this write must not replace the
-        // reason it fails with.
+        // reason it fails with. A channel that could not be made names its
+        // own row, not the one being walked.
+        const failed =
+          error instanceof DestinationError ? error.mapping : mapping;
+        const cause = error instanceof DestinationError ? error.cause : error;
         await this.importRepo
-          .updateChannel(mapping.id, job.id, {
+          .updateChannel(failed.id, job.id, {
             status: 'failed',
-            error: toReportableError(error).message,
+            error: toReportableError(cause).message,
           })
           .catch(() => undefined);
-        throw error;
+        throw cause;
       }
       if (!done) return this.sliceResult(totals, false);
     }

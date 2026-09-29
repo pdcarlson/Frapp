@@ -1018,6 +1018,36 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
     );
   });
 
+  it('never names a channel merged into one only some members read', async () => {
+    const part = JSON.parse(
+      readFileSync(join(FIXTURES, 'part-000.json'), 'utf8'),
+    ) as { messages: Record<string, unknown>[] };
+    part.messages = [
+      {
+        id: '990000000000000002',
+        type: 'Default',
+        timestamp: '2019-04-01T10:00:00Z',
+        content: 'see <#800000000000000001>',
+        author: { id: '6', name: 'pdcarlson' },
+      },
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(new TextEncoder().encode(JSON.stringify(part))),
+    );
+    channelRepo.findByIds.mockImplementation(
+      async (chapterId: string, ids: string[]) =>
+        ids.map((id) => ({ id, chapter_id: chapterId, type: 'ROLE_GATED' })),
+    );
+
+    await worker.sweepImports(NOW);
+
+    const rows = repoRef.insertMessages.mock.calls[0][0] as {
+      content: string;
+    }[];
+    expect(rows[0].content).toBe('see #private-channel');
+  });
+
   it('hands a bot slice role names from the mapping and the Frapp roles', async () => {
     const brothers = '750151182395244584';
     const amongUs = '750151182395244585';

@@ -21,11 +21,15 @@ const USER_TOKEN = /<@!?(\d{1,25})>/g;
  * - Purged: nothing is left to fix.
  * - Still able to import (draft, ready, running): the worker may be writing
  *   rows beside the backfill, and new ones are named as they land.
- * - A new channel of the import not created yet: a mention of it would be
- *   written as an unlinked `#name`, and a rewritten row has no token left for
- *   any later run to link. Rows the old worker never reached are the usual
- *   cause (it made channels lazily). `allowUnlinked` accepts that, for an
- *   import that will never finish, such as a cancelled one.
+ * - Stopped early (failed or cancelled) with a new channel not created yet:
+ *   a mention of it would be written as an unlinked `#name`, and a rewritten
+ *   row has no token left for any later run to link. A failed import can be
+ *   restarted, which makes the channel; a cancelled one cannot. `allowUnlinked`
+ *   accepts the unlinked names for an import that will not finish.
+ *
+ * A completed import is never refused for a missing channel: nothing will
+ * make it. An upload completes past a part it could not read, and that part's
+ * channel never exists.
  */
 export function mentionBackfillBlocker(
   job: Pick<DiscordImport, 'id' | 'status'>,
@@ -42,7 +46,7 @@ export function mentionBackfillBlocker(
   ) {
     return `Import ${job.id} is ${job.status}. Run this once it has completed, failed or been cancelled.`;
   }
-  if (allowUnlinked) return null;
+  if (allowUnlinked || job.status === 'completed') return null;
   const missing = channels.filter(
     (row) =>
       !row.parent_discord_channel_id &&
@@ -56,9 +60,11 @@ export function mentionBackfillBlocker(
     .map((row) => `#${row.discord_channel_name}`)
     .join(', ');
   return (
-    `${missing.length} channel(s) of import ${job.id} have no Frapp channel yet (${names}), ` +
-    'so mentions of them would be written unlinked for good. Finish the import first, ' +
-    'or pass --allow-unlinked for one that will not finish.'
+    `Import ${job.id} is ${job.status} and ${missing.length} of its channel(s) have no Frapp channel yet (${names}), ` +
+    'so mentions of them would be written unlinked for good. ' +
+    (job.status === 'failed'
+      ? 'Restart the import first, or pass --allow-unlinked if it will not be restarted.'
+      : 'Pass --allow-unlinked to accept that.')
   );
 }
 

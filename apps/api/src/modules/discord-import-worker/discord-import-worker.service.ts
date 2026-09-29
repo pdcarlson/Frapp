@@ -34,8 +34,8 @@ import {
 } from '#domain/utils/discord-export';
 import {
   importChannelMentions,
-  mergeTargetIds,
   roleMentionNames,
+  wholeChapterTargets,
 } from '#domain/utils/discord-mentions';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import { RbacService } from '../../application/services/rbac.service';
@@ -297,8 +297,7 @@ export class DiscordImportWorkerService {
       job,
       deadline,
       roleName: (id) => roleNames.get(id) ?? null,
-      wholeChapterChannelIds: (rows) =>
-        this.wholeChapterChannelIds(chapterId, rows),
+      wholeChapterTargets: (rows) => this.wholeChapterTargets(chapterId, rows),
       /**
        * One checkpoint, two questions, both of which must be answered before
        * the next page is fetched: may this job still be advanced (the admin has
@@ -416,7 +415,7 @@ export class DiscordImportWorkerService {
       roleName: () => null,
       channel: importChannelMentions(
         channels,
-        await this.wholeChapterChannelIds(chapterId, channels),
+        await this.wholeChapterTargets(chapterId, channels),
       ),
     };
 
@@ -654,22 +653,16 @@ export class DiscordImportWorkerService {
   }
 
   /**
-   * The Frapp channels this import merges into that every member of the
-   * chapter can read. A mention of a merged channel is named only when its
-   * messages landed in one of these (#2875). Chapter-scoped, like every other
-   * read of a target.
+   * Whether each Frapp channel this import's rows point at is readable by the
+   * whole chapter, which decides whether a mention of it is named (#2875).
+   * Chapter-scoped, like every other read of a target.
    */
-  private async wholeChapterChannelIds(
+  private wholeChapterTargets(
     chapterId: string,
     rows: readonly DiscordImportChannel[],
-  ): Promise<ReadonlySet<string>> {
-    const ids = mergeTargetIds(rows);
-    if (ids.length === 0) return new Set();
-    const channels = await this.channelRepo.findByIds(chapterId, ids);
-    return new Set(
-      channels
-        .filter((channel) => channel.type === 'PUBLIC')
-        .map((channel) => channel.id),
+  ): Promise<Map<string, boolean>> {
+    return wholeChapterTargets(rows, (ids) =>
+      this.channelRepo.findByIds(chapterId, ids),
     );
   }
 
