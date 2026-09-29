@@ -159,7 +159,14 @@ export function SettingsOrgTab({
   // The same rule the chapter wizards apply, so a year either one stores never
   // blocks this form's save.
   const foundedNum = parseFoundedYear(foundedTrimmed);
-  const foundedValid = foundedTrimmed === "" || foundedNum !== undefined;
+  // Empty is fine for a chapter with no year stored, but not as a way to
+  // remove one: the config PATCH deep-merges, so an omitted year keeps the
+  // stored value, and `null` would store something the branding schema
+  // refuses on read. Saying so beats a save that reports success and keeps
+  // the year.
+  const foundedCleared = foundedTrimmed === "" && branding.founded_at != null;
+  const foundedValid =
+    (foundedTrimmed === "" && !foundedCleared) || foundedNum !== undefined;
 
   function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -377,6 +384,9 @@ export function SettingsOrgTab({
                 />
                 {!foundedValid ? (
                   <p className="text-xs text-destructive">
+                    {foundedCleared
+                      ? "A founded year can't be removed once saved. "
+                      : null}
                     Enter a year between {FOUNDED_YEAR_MIN} and {latestFoundedYear()}.
                   </p>
                 ) : null}

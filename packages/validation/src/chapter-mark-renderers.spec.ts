@@ -16,7 +16,8 @@ import { describe, expect, it } from "vitest";
  * a docblock that names the field is cheaper to reword than to reason about.
  * Specs, generated contract files and build output are skipped. Because the
  * list is per file, a second check looks inside every file, the allowed ones
- * included, for the field printed into JSX or a template string.
+ * included, for the field printed into JSX, a template string or a
+ * concatenation (`printsTheField`).
  */
 const REPO_ROOT = join(__dirname, "..", "..", "..");
 const SCANNED = ["apps/web", "apps/mobile", "apps/api/src", "apps/landing", "packages"];
@@ -45,6 +46,26 @@ const ALLOWED: Record<string, string> = {
   "apps/mobile/app/(auth)/create-chapter.tsx":
     "the mobile wizard's input for the field",
 };
+
+/**
+ * Whether source prints the field rather than binding it: a JSX child
+ * expression (`{…greekLetters…}` not preceded by `=`, so not an attribute), a
+ * template interpolation, or string concatenation. A prop that prints it
+ * (`label={…}`) or an expression wrapped across lines isn't caught; review
+ * still reads the allowed files.
+ */
+function printsTheField(source: string): boolean {
+  const field = "(?:greek_letters|greekLetters)";
+  return [
+    // JSX child: `{…}` on one line, not an attribute value (`={`) and not a
+    // template interpolation (`${`).
+    new RegExp(`(?<![=$\\w])\\{[^{}\\n]*\\b${field}\\b[^{}\\n]*\\}`),
+    // Template interpolation: `${…}`
+    new RegExp(`\\$\\{[^}\\n]*\\b${field}\\b[^}\\n]*\\}`),
+    // Concatenation: `"…" + x.greek_letters` or `x.greek_letters + "…"`
+    new RegExp(`["'\`]\\s*\\+\\s*[\\w.?]*\\b${field}\\b|\\b${field}\\b\\s*\\+\\s*["'\`]`),
+  ].some((pattern) => pattern.test(source));
+}
 
 function isSource(path: string): boolean {
   if (!/\.(ts|tsx)$/.test(path)) return false;
@@ -84,21 +105,38 @@ describe("greek_letters readers (#2876)", () => {
 
   it("never prints the field, even in a file allowed to touch it", () => {
     // ALLOWED is per file, so on its own it can't see a render added inside
-    // an editor (`<p>{identity.greekLetters}</p>` in the wizard). An editor
-    // binds the field to an input (`value={…}`); printing it means putting it
-    // in JSX children or a template string, which is what this catches.
-    const PRINTED = [
-      // JSX child: `>{…greek_letters…}` or `}{…greekLetters…}`, one
-      // expression on one line. Not `=> {`, which opens a function body.
-      /(?:(?<!=)>|\})\s*\{[^{};=\n]*\b(?:greek_letters|greekLetters)\b[^{};\n]*\}/,
-      // Template interpolation: `${…greek_letters…}`
-      /\$\{[^}\n]*\b(?:greek_letters|greekLetters)\b[^}\n]*\}/,
-    ];
-    const printers = readers.filter((path) => {
-      const source = readFileSync(join(REPO_ROOT, path), "utf8");
-      return PRINTED.some((pattern) => pattern.test(source));
-    });
+    // an editor (`<p>Letters: {identity.greekLetters}</p>` in the wizard). An
+    // editor binds the field to an input (`value={…}`); printing it means a
+    // JSX child expression or a template string, which is what this catches.
+    // The resolver is exempt: handing the letters on, under the opt-out, is
+    // its job.
+    const printers = readers
+      .filter((path) => path !== "packages/validation/src/chapter-mark.ts")
+      .filter((path) =>
+        printsTheField(readFileSync(join(REPO_ROOT, path), "utf8")),
+      );
     expect(printers).toEqual([]);
+  });
+
+  it("recognizes the ways a file prints the field, and not the ways an editor binds it", () => {
+    // Pins the patterns themselves, so a later edit can't quietly narrow them.
+    const printed = [
+      "<p>{identity.greekLetters}</p>",
+      '<p className="text-xs">Letters: {identity.greekLetters}</p>',
+      "<span>{branding.greek_letters ?? \"\"}</span>",
+      "<p>\n  {branding.greek_letters}\n</p>",
+      "const t = `Welcome to ${branding.greek_letters}`;",
+      'const t = "Welcome to " + branding.greek_letters;',
+    ];
+    const bound = [
+      "value={identity.greekLetters}",
+      'onChange={(e) => set("greekLetters", e.target.value)}',
+      "setGreekLetters(branding.greek_letters ?? \"\");",
+      "if (letters !== undefined) brandingDiff.greek_letters = letters;",
+      "greek_letters: identity.greekLetters.trim() || undefined,",
+    ];
+    expect(printed.filter((line) => !printsTheField(line))).toEqual([]);
+    expect(bound.filter(printsTheField)).toEqual([]);
   });
 
   it("lists no file that no longer touches the field", () => {

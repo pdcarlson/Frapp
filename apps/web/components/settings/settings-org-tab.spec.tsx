@@ -347,6 +347,59 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     expect(screen.getByLabelText(/chapter name/i)).toHaveValue("Test Chapter II");
   });
 
+  it("keeps unsaved identity and vocabulary drafts across a re-render with equal values", async () => {
+    // The page rebuilds `branding` and `vocabulary` (`config?.vocabulary ?? {}`)
+    // every render, so each effect must key on values, not the object.
+    const user = userEvent.setup();
+    const stored = { greek_letters: "ΦΓΔ", designation: "Tau Nu", founded_at: 1893 };
+    const { rerender } = render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        branding={{ ...stored }}
+        vocabulary={{ recruitment: "Rush" }}
+      />,
+    );
+    await user.clear(screen.getByLabelText(/chapter designation/i));
+    await user.type(screen.getByLabelText(/chapter designation/i), "Tau Nu II");
+    await user.clear(screen.getByLabelText(/founded year/i));
+    await user.type(screen.getByLabelText(/founded year/i), "1894");
+    await user.clear(screen.getByLabelText(/recruitment process/i));
+    await user.type(screen.getByLabelText(/recruitment process/i), "Recruitment");
+
+    rerender(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        branding={{ ...stored }}
+        vocabulary={{ recruitment: "Rush" }}
+      />,
+    );
+
+    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue("Tau Nu II");
+    expect(screen.getByLabelText(/founded year/i)).toHaveValue(1894);
+    expect(screen.getByLabelText(/recruitment process/i)).toHaveValue("Recruitment");
+  });
+
+  it("refuses to save an emptied founded year instead of silently keeping it", async () => {
+    const user = userEvent.setup();
+    const onPatchConfig = vi.fn();
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        branding={{ founded_at: 1893 }}
+        onPatchConfig={onPatchConfig}
+      />,
+    );
+    await user.clear(screen.getByLabelText(/founded year/i));
+
+    expect(
+      screen.getByText(/A founded year can't be removed once saved/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save identity/i })).toBeDisabled();
+  });
+
   it("re-seeds the drafts when the stored values really change", () => {
     const { rerender } = render(
       <SettingsOrgTab archetypeKey="ifc" {...baseProps} branding={{}} />,
@@ -355,9 +408,18 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
       <SettingsOrgTab
         archetypeKey="ifc"
         {...baseProps}
-        branding={{ short_name: "FIJI", show_greek_letters: false }}
+        profile={{ ...baseProps.profile, name: "Tau Nu" }}
+        branding={{
+          short_name: "FIJI",
+          show_greek_letters: false,
+          designation: "Tau Nu",
+        }}
+        vocabulary={{ recruitment: "Rush" }}
       />,
     );
+    expect(screen.getByLabelText(/chapter name/i)).toHaveValue("Tau Nu");
+    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue("Tau Nu");
+    expect(screen.getByLabelText(/recruitment process/i)).toHaveValue("Rush");
     expect(screen.getByLabelText(/short name/i)).toHaveValue("FIJI");
     expect(
       screen.getByRole("switch", { name: /show greek letters/i }),
