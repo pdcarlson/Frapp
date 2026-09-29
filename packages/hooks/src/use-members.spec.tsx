@@ -7,6 +7,8 @@ import {
   useMemberDisplayNames,
   useMembers,
   useMemberSearch,
+  useRemoveMember,
+  useUpdateMemberRoles,
 } from "./use-members";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -321,5 +323,67 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
 
     expect(result.current.nameFor("user-1")).toBeNull();
+  });
+});
+
+// #2484: the directory's Actives tab filters `GET /v1/members` and its Alumni
+// tab is `GET /v1/alumni`. A write that can move a member between them has to
+// refetch both, or the member sits on neither tab until the alumni cache ages.
+describe("membership writes refetch the alumni list", () => {
+  const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+  });
+
+  function invalidatedKeys(queryClient: QueryClient) {
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    return () => spy.mock.calls.map(([filters]) => filters?.queryKey);
+  }
+
+  it("useUpdateMemberRoles invalidates members and alumni", async () => {
+    const queryClient = new QueryClient();
+    const keys = invalidatedKeys(queryClient);
+    mockUseFrappClient.mockReturnValue({
+      PATCH: vi.fn().mockResolvedValue({ data: {}, error: null }),
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useUpdateMemberRoles(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await result.current.mutateAsync({ id: "member-1", role_ids: ["alumni"] });
+
+    await waitFor(() =>
+      expect(keys()).toEqual(
+        expect.arrayContaining([
+          ["members", CHAPTER_ID],
+          ["alumni", CHAPTER_ID],
+        ]),
+      ),
+    );
+  });
+
+  it("useRemoveMember invalidates members and alumni", async () => {
+    const queryClient = new QueryClient();
+    const keys = invalidatedKeys(queryClient);
+    mockUseFrappClient.mockReturnValue({
+      DELETE: vi.fn().mockResolvedValue({ data: {}, error: null }),
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useRemoveMember(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await result.current.mutateAsync("member-1");
+
+    await waitFor(() =>
+      expect(keys()).toEqual(
+        expect.arrayContaining([
+          ["members", CHAPTER_ID],
+          ["alumni", CHAPTER_ID],
+        ]),
+      ),
+    );
   });
 });

@@ -191,7 +191,17 @@ export function MembersDirectory() {
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
-  const members = useMemo(() => activeQuery.data ?? [], [activeQuery.data]);
+  // The Actives tab is the chapter minus its alumni (#2484), who are listed on
+  // the Alumni tab beside it. `GET /v1/members` and its search both return the
+  // whole chapter, so the split is made here on the server's `is_alumni`,
+  // which it resolves exactly as it builds `GET /v1/alumni` — the two tabs
+  // never both list one member. `!== true` so a row from an API older than the
+  // flag reads as active, the unsplit list this was before.
+  const members = useMemo(
+    () =>
+      (activeQuery.data ?? []).filter((member) => member.is_alumni !== true),
+    [activeQuery.data],
+  );
 
   const roleOptions = useMemo<RoleOption[]>(() => {
     return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
@@ -242,6 +252,7 @@ export function MembersDirectory() {
   const cohortOptions = useMemo(() => {
     const years = new Set<number>();
     for (const member of membersQuery.data ?? []) {
+      if (member.is_alumni === true) continue;
       if (typeof member.graduation_year === "number")
         years.add(member.graduation_year);
     }
@@ -366,11 +377,18 @@ export function MembersDirectory() {
     pageMemberIds.length > 0 &&
     pageMemberIds.every((id) => selectedMemberIds.includes(id));
   const selectedCount = selectedMemberIds.length;
+  // Looked up in the unfiltered response, not in `sortedMembers`. The sheet
+  // stays open after a role save, and the save refetches the list, so a member
+  // an officer has just given the Alumni role (or who no longer matches the
+  // role filter) drops out of this tab while their sheet is still up. Found in
+  // the filtered list, that sheet would lose its member mid-edit and render an
+  // unknown one with its roles cleared.
   const activeMember = useMemo(
     () =>
-      sortedMembers.find((member) => memberId(member) === activeMemberId) ??
-      null,
-    [activeMemberId, sortedMembers],
+      (activeQuery.data ?? []).find(
+        (member) => memberId(member) === activeMemberId,
+      ) ?? null,
+    [activeMemberId, activeQuery.data],
   );
   // A filter or a search term is the difference between "this chapter has no
   // members" and "nothing matched what you asked for" — two different states on

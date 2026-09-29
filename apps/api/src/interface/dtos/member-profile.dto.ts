@@ -47,6 +47,14 @@ export class MemberProfileDto {
   @ApiProperty()
   email: string;
 
+  @ApiProperty({
+    description:
+      "Whether the member holds the chapter's Alumni system role, resolved " +
+      'the same way GET /alumni resolves it — a directory splitting actives ' +
+      'from alumni filters on this rather than on role ids.',
+  })
+  is_alumni: boolean;
+
   @ApiPropertyOptional({
     type: MemberCustomFieldValueDto,
     isArray: true,

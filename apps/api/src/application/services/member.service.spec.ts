@@ -1606,6 +1606,125 @@ describe('MemberService', () => {
       expect(result).toEqual([]);
     });
   });
+
+  // #2484: the directories split actives from alumni on this flag, so it has
+  // to agree with `findAlumniByChapter` member for member — otherwise a
+  // chapter's "Actives" and "Alumni" counts could overlap or leave someone out.
+  describe('is_alumni', () => {
+    const alumniRole = {
+      id: 'role-alumni',
+      chapter_id: 'chapter-1',
+      name: 'Alumni',
+      system_key: SystemRoleKeys.ALUMNI,
+      permissions: [],
+      is_system: true,
+      display_order: 5,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const memberRow = (id: string, roleIds: string[]) => ({
+      id,
+      user_id: `user-of-${id}`,
+      chapter_id: 'chapter-1',
+      role_ids: roleIds,
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+    const userRow = (memberId: string, name: string) => ({
+      id: `user-of-${memberId}`,
+      supabase_auth_id: `auth-of-${memberId}`,
+      email: `${memberId}@example.com`,
+      display_name: name,
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+    const members = [
+      memberRow('active', ['role-member']),
+      memberRow('alumnus', ['role-alumni']),
+      // Both roles at once: the Alumni role is what the lifecycle rule keys
+      // on (spec/behavior/alumni.md), so this member is an alumnus.
+      memberRow('both', ['role-member', 'role-alumni']),
+    ];
+    const users = [
+      userRow('active', 'Active Member'),
+      userRow('alumnus', 'Alumnus'),
+      userRow('both', 'Both Roles'),
+    ];
+
+    beforeEach(() => {
+      mockRepo.findByChapter.mockResolvedValue(members);
+      mockUserRepo.findByIds.mockResolvedValue(users);
+    });
+
+    it('flags exactly the members GET /alumni returns', async () => {
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
+
+      const listed = await service.findByChapter('chapter-1');
+      const alumni = await service.findAlumniByChapter('chapter-1');
+
+      expect(
+        Object.fromEntries(listed.map((m) => [m.id, m.is_alumni])),
+      ).toEqual({ active: false, alumnus: true, both: true });
+      expect(alumni.map((m) => m.id).sort()).toEqual(
+        listed
+          .filter((m) => m.is_alumni)
+          .map((m) => m.id)
+          .sort(),
+      );
+      expect(alumni.every((m) => m.is_alumni)).toBe(true);
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+        'chapter-1',
+        SystemRoleKeys.ALUMNI,
+      );
+    });
+
+    it('is false for everyone when the chapter has no keyed Alumni role', async () => {
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
+
+      const listed = await service.findByChapter('chapter-1');
+
+      expect(listed.map((m) => m.is_alumni)).toEqual([false, false, false]);
+      await expect(service.findAlumniByChapter('chapter-1')).resolves.toEqual(
+        [],
+      );
+    });
+
+    it('rides search results, so a searched Actives list can filter too', async () => {
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
+
+      const result = await service.searchByChapterAndName(
+        'chapter-1',
+        'alumnus',
+        'user-of-active',
+      );
+
+      expect(result).toEqual([
+        expect.objectContaining({ id: 'alumnus', is_alumni: true }),
+      ]);
+    });
+
+    it('rides the single-member read', async () => {
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
+      mockRepo.findById.mockResolvedValue(members[1]);
+      mockUserRepo.findById.mockResolvedValue(users[1]);
+
+      const result = await service.findProfileById(
+        'alumnus',
+        'chapter-1',
+        'user-of-active',
+      );
+
+      expect(result).toMatchObject({ id: 'alumnus', is_alumni: true });
+    });
+  });
+
   describe('dismissOpsNudge', () => {
     const member = {
       id: 'member-1',

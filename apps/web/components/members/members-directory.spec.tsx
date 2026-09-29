@@ -297,10 +297,9 @@ describe("Directory on the greenfield shell", () => {
     // `ConfirmDialogHost` settles a pending confirmation to `null` on unmount
     // (`confirm-dialog.spec.tsx`, "resolves null when the caller stops
     // rendering the dialog"), so there is no promise left hanging. Keeping it
-    // mounted is what would hurt — `activeMember` is looked up in
-    // `sortedMembers`, which is empty in exactly these branches, so the sheet
-    // would render an unknown member with its roles cleared and a Save that
-    // silently no-ops.
+    // mounted is what would hurt — the list it was opened from is not on
+    // screen in exactly these branches, so the sheet would outlive the body it
+    // belongs to, with a Save the member can no longer see the result of.
     Object.assign(leaderboardRead, read([]), { isError: true });
     rerender(<MembersDirectory />);
 
@@ -385,5 +384,78 @@ describe("Directory on the greenfield shell", () => {
     await user.click(selectAll());
     expect(screen.queryByText(/selected$/)).toBeNull();
     expect(selectAll()).toBeInTheDocument();
+  });
+});
+
+/**
+ * #2484 — a chapter with alumni. `GET /v1/members` and its search return the
+ * whole chapter; alumni are the Alumni tab's, so the Actives list, its count
+ * and its cohort filter leave them out.
+ */
+describe("Actives on a chapter with alumni", () => {
+  const ALUMNUS = {
+    ...MEMBERS[0],
+    id: "m-3",
+    user_id: "u-3",
+    role_ids: ["r-alumni"],
+    display_name: "Charles Whitmore III",
+    graduation_year: 2019,
+    email: "charles@example.test",
+    is_alumni: true,
+  };
+  const CHAPTER = [
+    { ...MEMBERS[0], is_alumni: false },
+    { ...MEMBERS[1], is_alumni: false },
+    ALUMNUS,
+  ];
+
+  it("lists and counts only the members who are not alumni", () => {
+    Object.assign(membersRead, read(CHAPTER));
+    const { container } = render(<MembersDirectory />);
+
+    expect(container.querySelectorAll("ul > li")).toHaveLength(2);
+    expect(screen.queryByText("Charles Whitmore III")).toBeNull();
+    expect(screen.getByText("2 members")).toBeInTheDocument();
+    // The alumnus's class year is not an Actives cohort.
+    expect(screen.queryByRole("option", { name: /2019/ })).toBeNull();
+  });
+
+  it("leaves alumni out of a search on this tab too", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      searchRead,
+      read([ALUMNUS, { ...MEMBERS[0], is_alumni: false }]),
+    );
+    render(<MembersDirectory />);
+
+    await user.type(screen.getByRole("searchbox"), "a");
+
+    expect(await screen.findByText(/1 member matching/)).toBeInTheDocument();
+    expect(screen.queryByText("Charles Whitmore III")).toBeNull();
+  });
+
+  it("keeps an open sheet on a member who has just been made an alumnus", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    const { rerender } = render(<MembersDirectory />);
+
+    await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
+      "Ada Lovelace",
+    );
+
+    // The officer saved the Alumni role; the refetch flags Ada, so she leaves
+    // this tab's list. Her sheet is still the thing on screen.
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], is_alumni: true }, CHAPTER[1], ALUMNUS]),
+    );
+    rerender(<MembersDirectory />);
+
+    expect(screen.queryByRole("button", { name: /^Ada Lovelace,/ })).toBeNull();
+    expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
+      "Ada Lovelace",
+    );
   });
 });
