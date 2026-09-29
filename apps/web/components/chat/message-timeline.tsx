@@ -893,7 +893,10 @@ export const MessageTimeline = forwardRef<
                 message={entry.message}
                 blockState={blockState}
                 avatarUrl={
-                  entry.message.author_avatar_path
+                  // The Discord snapshot is only for an author nobody has
+                  // linked. A linked row is the member's message (#2878) and
+                  // keeps its snapshot solely so an unlink can restore it.
+                  entry.message.author_avatar_path && !entry.message.sender_id
                     ? avatars.data?.[entry.message.author_avatar_path]
                     : undefined
                 }

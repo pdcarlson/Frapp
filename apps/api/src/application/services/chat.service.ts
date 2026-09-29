@@ -2275,9 +2275,10 @@ export class ChatService {
   /**
    * Signs `chat-archive` avatar paths for imported authors, batched into as
    * few provider calls as `getSignedDownloadUrls` allows (#1231).
-   * `ChatMessage.author_avatar_path` is stored but never served today —
-   * `resolveAuthorLabel` on the client falls back to initials for every
-   * archived message.
+   * The web timeline draws these for imported rows with no `sender_id`; a
+   * row whose author linked their Discord account (#2878) is the member's
+   * message and draws the member instead. Mobile does not call this yet
+   * (#2886).
    *
    * Channel-scoped, like `listMessageAttachments` — and deliberately never a
    * function of a caller-supplied path at all. `author_avatar_path` and an
