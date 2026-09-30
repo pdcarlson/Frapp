@@ -345,6 +345,27 @@ export async function checkRenderAutoDeploy({
 }
 
 /**
+ * The project's Auth settings, from the Management API's
+ * `GET /v1/projects/{ref}/config/auth`: the one read every Auth check below
+ * makes. Returns `{ data }`, or `{ result }` when the check can't assert:
+ * SKIPPED without credentials, FAIL on an HTTP error. Each check still makes
+ * its own read, so one check's mock or failure never decides another's row.
+ */
+async function readAuthConfig({ id, label, accessToken, projectRef, fetchImpl }) {
+  if (!accessToken || !projectRef) {
+    return { result: result(id, label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set") };
+  }
+  const response = await fetchImpl(
+    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
+  );
+  if (!response.ok) {
+    return { result: result(id, label, FAIL, `Management API returned HTTP ${response.status}`) };
+  }
+  return { data: await response.json() };
+}
+
+/**
  * custom_access_token_hook is enabled.
  *
  * This is the assertion that would have caught #805. Enabling the hook is a
@@ -354,17 +375,9 @@ export async function checkRenderAutoDeploy({
  */
 export async function checkAuthHook({ accessToken, projectRef, fetchImpl = fetch }) {
   const label = "custom_access_token_hook is enabled";
-  if (!accessToken || !projectRef) {
-    return result("auth-hook", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
-  }
-  const response = await fetchImpl(
-    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
-  );
-  if (!response.ok) {
-    return result("auth-hook", label, FAIL, `Management API returned HTTP ${response.status}`);
-  }
-  const data = await response.json();
+  const read = await readAuthConfig({ id: "auth-hook", label, accessToken, projectRef, fetchImpl });
+  if (read.result) return read.result;
+  const { data } = read;
   if (data?.hook_custom_access_token_enabled !== true) {
     return result(
       "auth-hook",
@@ -414,17 +427,9 @@ export async function checkAuthRedirects({
   expectedSiteUrl,
 } = {}) {
   const label = "Redirect allow list covers the web app's paths and the mobile scheme";
-  if (!accessToken || !projectRef) {
-    return result("auth-redirects", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
-  }
-  const response = await fetchImpl(
-    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
-  );
-  if (!response.ok) {
-    return result("auth-redirects", label, FAIL, `Management API returned HTTP ${response.status}`);
-  }
-  const data = await response.json();
+  const read = await readAuthConfig({ id: "auth-redirects", label, accessToken, projectRef, fetchImpl });
+  if (read.result) return read.result;
+  const { data } = read;
   const siteUrl = typeof data?.site_url === "string" ? data.site_url.replace(/\/+$/, "") : "";
   if (!siteUrl) {
     return result("auth-redirects", label, FAIL, "site_url is not set");
@@ -521,17 +526,9 @@ export async function checkAuthSmtp({
     typeof expectedAdminEmail === "string" && expectedAdminEmail.trim()
       ? expectedAdminEmail.trim().toLowerCase()
       : AUTH_SMTP_ADMIN_EMAIL;
-  if (!accessToken || !projectRef) {
-    return result("auth-smtp", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
-  }
-  const response = await fetchImpl(
-    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
-  );
-  if (!response.ok) {
-    return result("auth-smtp", label, FAIL, `Management API returned HTTP ${response.status}`);
-  }
-  const data = await response.json();
+  const read = await readAuthConfig({ id: "auth-smtp", label, accessToken, projectRef, fetchImpl });
+  if (read.result) return read.result;
+  const { data } = read;
   const host = typeof data?.smtp_host === "string" ? data.smtp_host.trim().toLowerCase() : "";
   if (!host) {
     if (whenUnset === "skip") {
@@ -666,22 +663,9 @@ export async function checkAuthMagicLink({
   whenSmtpUnset = "fail",
 } = {}) {
   const label = "Magic Link template uses token_hash on the app host";
-  if (!accessToken || !projectRef) {
-    return result(
-      "auth-magic-link",
-      label,
-      SKIPPED,
-      "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set",
-    );
-  }
-  const response = await fetchImpl(
-    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
-  );
-  if (!response.ok) {
-    return result("auth-magic-link", label, FAIL, `Management API returned HTTP ${response.status}`);
-  }
-  const data = await response.json();
+  const read = await readAuthConfig({ id: "auth-magic-link", label, accessToken, projectRef, fetchImpl });
+  if (read.result) return read.result;
+  const { data } = read;
   const host = typeof data?.smtp_host === "string" ? data.smtp_host.trim() : "";
   if (!host && whenSmtpUnset === "skip") {
     return result(
@@ -769,8 +753,9 @@ export async function checkAuthMagicLink({
  * password already in credential-stuffing lists. It is a dashboard toggle no
  * migration performs (Authentication → Sign In / Providers → Email → "Prevent
  * use of leaked passwords"; Supabase offers it on the Pro plan and up). It was
- * off on `frapp-prod` from about 2026-09-08 with every workflow green, and was
- * found only because a routine happened to read the security advisor (#2289).
+ * off on both projects, on `frapp-prod` from about 2026-09-08, with every
+ * workflow green, and was found only because a routine happened to read the
+ * security advisor (#2289). The owner turned it on for both on 2026-09-29.
  *
  * `password_hibp_enabled` is the field's name in the Management API's
  * `GET /v1/projects/{ref}/config/auth` response schema: a required
@@ -779,22 +764,14 @@ export async function checkAuthMagicLink({
  * FAILs rather than skips: it means the API renamed it, and a check that
  * quietly stopped asserting is the silence this file exists to prevent.
  *
- * Read-only: the same GET `checkAuthHook` makes.
+ * Read-only: the same GET the other Auth checks make ({@link readAuthConfig}).
  */
 export async function checkAuthLeakedPassword({ accessToken, projectRef, fetchImpl = fetch }) {
   const id = "auth-leaked-password";
   const label = "Leaked-password protection is on";
-  if (!accessToken || !projectRef) {
-    return result(id, label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
-  }
-  const response = await fetchImpl(
-    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
-  );
-  if (!response.ok) {
-    return result(id, label, FAIL, `Management API returned HTTP ${response.status}`);
-  }
-  const data = await response.json();
+  const read = await readAuthConfig({ id, label, accessToken, projectRef, fetchImpl });
+  if (read.result) return read.result;
+  const { data } = read;
   if (!data || typeof data !== "object" || !Object.hasOwn(data, "password_hibp_enabled")) {
     return result(
       id,

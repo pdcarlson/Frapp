@@ -190,7 +190,7 @@ timer, fifteen minutes before `db-backup.yml` (06:30) tries to run under it; `ch
 (07:00 UTC) owns migration parity for *every* environment; `production-guardrails.yml` (07:15) owns
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison; `production-auth-conformance.yml`
-(07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link on `frapp-prod`; `production-release-pin.yml` (08:00) owns the three production hosts sharing a peeled `vX.Y.Z`; `production-backup-freshness.yml` (13:15) owns that `backup-production` has a dump success within 36h; `production-backup-storage-freshness.yml` (14:00) owns that `backup-production-storage` has a mirror success within 36h. One real drift still raises exactly
+(07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link + leaked-password protection on `frapp-prod`; `production-release-pin.yml` (08:00) owns the three production hosts sharing a peeled `vX.Y.Z`; `production-backup-freshness.yml` (13:15) owns that `backup-production` has a dump success within 36h; `production-backup-storage-freshness.yml` (14:00) owns that `backup-production-storage` has a mirror success within 36h. One real drift still raises exactly
 one alert, with one documented exception: the three `production-backup` watches (06:15, 13:15 and
 14:00) are **not** independent of one another. The two freshness watches read two jobs of the *same*
 `db-backup.yml` run, both under `environment: production-backup` and both behind the same pair of

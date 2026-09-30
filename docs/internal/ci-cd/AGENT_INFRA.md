@@ -1080,7 +1080,7 @@ shape:
 Runs daily at 07:30 UTC (`workflow_dispatch` for on-demand), asserting live
 `frapp-staging`. Scope is **staging only** for Infisical syncs and the
 sign-in probe. Production Auth hook, redirect allow list, `ACTIVE_HEALTHY`,
-skip-until-on SMTP, and skip-until-SMTP-on Magic Link are a sibling,
+skip-until-on SMTP, skip-until-SMTP-on Magic Link, and leaked-password protection are a sibling,
 `production-auth-conformance.yml`,
 with its own alert title so a recovered staging cannot close a live production
 incident. Remaining production-parity work on those dashboards moved from #1384 into #2505 (ADR-20, amendment of 2026-09-23).
