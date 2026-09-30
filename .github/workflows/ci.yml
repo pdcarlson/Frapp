@@ -874,6 +874,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # An Expo client package's major version is its SDK line, and nothing here
+      # compiles Swift, so a package bumped off the line passes every other step
+      # and first fails in `eas build -p ios` (#2218 did exactly that). This
+      # reads every Expo package package-lock.json installs, transitive ones
+      # included, against the installed expo's bundledNativeModules.json,
+      # offline, and checks that Dependabot's ignore list names every expo-*
+      # dependency (#2330). It runs before `expo export`
+      # because it reads files and builds nothing, so its one-line diagnosis
+      # prints even when an off-line bump also breaks the bundle.
+      - name: Expo packages on the installed SDK line
+        run: npm run check:expo-sdk-line
+
       # Nothing else in CI hands the module graph to Metro; EAS's "Bundle
       # JavaScript" phase was the first place that did (#2388). That is how
       # #2347 shipped: a spec under app/ became a route, Metro followed its
@@ -908,15 +920,6 @@ jobs:
           CI: "1"
           EXPO_NO_TELEMETRY: "1"
         run: npx expo export --platform ios --output-dir "$RUNNER_TEMP/mobile-bundle"
-
-      # An Expo client package's major version is its SDK line, and nothing here
-      # compiles Swift, so a package bumped off the line passes every other step
-      # and first fails in `eas build -p ios` (#2218 did exactly that). This
-      # reads the installed versions against the installed expo's
-      # bundledNativeModules.json, offline, and checks that Dependabot's ignore
-      # list names every expo-* dependency (#2330).
-      - name: Expo packages on the installed SDK line
-        run: npm run check:expo-sdk-line
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build

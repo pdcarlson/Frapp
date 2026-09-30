@@ -17,18 +17,23 @@
 //
 // Two checks, both offline:
 //
-// 1. The SDK line. For every `expo-*` and `@expo/*` dependency of apps/mobile,
-//    the INSTALLED version (what `npm ci` put on disk from the lockfile) must
-//    satisfy the range the installed `expo`'s `bundledNativeModules.json` gives
-//    it. That file is the SDK's own statement of its native module set, and
-//    `npx expo install --check` reads the same map; this reads it directly
-//    because that command also checks packages this gate deliberately leaves
-//    out (below), and needs `EXPO_OFFLINE=1` to stay off the network.
-// 2. The roster. Every `expo-*` dependency has an exact `dependency-name` entry
-//    in the npm ignore list of .github/dependabot.yml, and every `expo-*` entry
-//    there is a dependency. Exact names only: the list must not collapse into an
-//    `expo-*` glob, which would also freeze `expo-server-sdk`, an apps/api
-//    dependency with no tie to the mobile SDK.
+// 1. The SDK line. Every copy of an `expo-*` or `@expo/*` package that
+//    package-lock.json installs (declared or transitive, hoisted or nested)
+//    must satisfy the range the installed `expo`'s `bundledNativeModules.json`
+//    gives it. That file is the SDK's own statement of its native module set;
+//    `npx expo install --check` reads the same map but only for declared
+//    packages, checks ones this gate deliberately leaves out (below), and needs
+//    `EXPO_OFFLINE=1` to stay off the network. Transitive copies matter most:
+//    `expo-modules-core`, the other side of the #2218 break, is one. The
+//    lockfile rather than node_modules, because it is what `npm ci` installs
+//    and it lists nested copies. An `expo-*` / `@expo/*` package apps/mobile
+//    declares (in any dependency section) must also be in the map and installed.
+// 2. The roster. Every `expo-*` package apps/mobile declares has an exact
+//    `dependency-name` entry in the npm ignore list of .github/dependabot.yml,
+//    `expo` and the `@expo/*` glob are there, and every `expo-*` entry there
+//    names a package that is declared or installed. Exact names only: the list
+//    must not collapse into an `expo-*` glob, which would also freeze
+//    `expo-server-sdk`, an apps/api dependency with no tie to the mobile SDK.
 //
 // Out of scope, on purpose: `@sentry/react-native` and `@stripe/stripe-react-
 // native` are in the bundled map too and are held AHEAD of it deliberately.
@@ -121,33 +126,59 @@ export function satisfies(version, range) {
   return installed[0] === 0 && installed[1] === 0 && installed[2] === floor[2];
 }
 
+/** Every package apps/mobile declares, across the sections npm installs from. */
+export function declaredPackages(manifest) {
+  return {
+    ...manifest.optionalDependencies,
+    ...manifest.devDependencies,
+    ...manifest.dependencies,
+  };
+}
+
 /**
- * The SDK-line violations, one message per package.
- *
- * - `dependencies`: apps/mobile's `dependencies` map.
- * - `bundled`: the installed `expo`'s `bundledNativeModules.json`.
- * - `installedVersion(name)`: the version on disk, or null when not installed.
+ * Every installed copy in a package-lock.json (v2/v3) `packages` map, as
+ * `{ path, name, version }`. Workspace links and the root entry carry no
+ * installed copy and are skipped.
  */
-export function sdkLineViolations({ dependencies, bundled, installedVersion }) {
+export function lockfileCopies(lock) {
+  const copies = [];
+  for (const [path, entry] of Object.entries(lock.packages ?? {})) {
+    const at = path.lastIndexOf("node_modules/");
+    if (at === -1 || entry.link) continue;
+    copies.push({ path, name: path.slice(at + "node_modules/".length), version: entry.version });
+  }
+  if (copies.length === 0) throw new Error("package-lock.json lists no installed packages");
+  return copies;
+}
+
+/**
+ * The SDK-line violations, one message per package or copy.
+ *
+ * - `declared`: apps/mobile's declared packages ({@link declaredPackages}).
+ * - `bundled`: the installed `expo`'s `bundledNativeModules.json`.
+ * - `copies`: every installed copy ({@link lockfileCopies}).
+ */
+export function sdkLineViolations({ declared, bundled, copies }) {
   const violations = [];
-  for (const name of Object.keys(dependencies).filter(isExpoPackage).sort()) {
-    const range = bundled[name];
-    if (range === undefined) {
+  const installed = new Set(copies.map((c) => c.name));
+  for (const name of Object.keys(declared).filter(isExpoPackage).sort()) {
+    if (bundled[name] === undefined) {
       if (!UNBUNDLED_EXPO_PACKAGES.has(name)) {
         violations.push(
           `${name}: the installed expo's bundledNativeModules.json has no entry for it, so its SDK line can't be checked`,
         );
       }
-      continue;
+    } else if (!installed.has(name)) {
+      violations.push(`${name}: declared in ${MOBILE_DIR}/package.json but not in package-lock.json (run npm install)`);
     }
-    const version = installedVersion(name);
-    if (version === null) {
-      violations.push(`${name}: declared in ${MOBILE_DIR}/package.json but not installed (run npm ci)`);
-      continue;
-    }
-    if (!satisfies(version, range)) {
-      violations.push(`${name}@${version} is outside this SDK's line: expected ${range}`);
-    }
+  }
+  const offLine = copies
+    .filter((c) => isExpoPackage(c.name) && bundled[c.name] !== undefined)
+    .filter((c) => !satisfies(c.version, bundled[c.name]))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  for (const { path, name, version } of offLine) {
+    const where = path === `node_modules/${name}` ? "" : ` (at ${path})`;
+    violations.push(`${name}@${version}${where} is outside this SDK's line: expected ${bundled[name]}`);
   }
   return violations;
 }
@@ -203,18 +234,25 @@ export function dependabotIgnoreNames(text) {
 }
 
 /**
- * The roster violations: an `expo-*` dependency Dependabot is free to bump, and
- * an `expo-*` ignore entry for a package apps/mobile no longer declares (a
- * stale entry makes the list read as covering a package it doesn't guard).
+ * The roster violations: an Expo package Dependabot is free to bump, and an
+ * `expo-*` ignore entry for a package that is neither declared by apps/mobile
+ * nor installed at all (a stale entry makes the list read as covering a
+ * package it doesn't guard).
  *
- * `@expo/*` needs no per-package check: the list carries that glob, which
- * matches nothing outside the SDK.
+ * `expo` and the `@expo/*` glob are required by name: the glob is what keeps
+ * Dependabot off every `@expo/*` package, declared or transitive, so dropping it
+ * is the same gap as dropping an `expo-*` entry.
  */
-export function rosterViolations({ dependencies, ignoreNames }) {
-  const expoDeps = Object.keys(dependencies).filter((n) => n.startsWith("expo-"));
+export function rosterViolations({ declared, installedNames, ignoreNames }) {
   const listed = new Set(ignoreNames);
+  const required = Object.keys(declared)
+    .filter((n) => n === "expo" || n.startsWith("expo-"))
+    .sort();
+  if ([...Object.keys(declared), ...installedNames].some((n) => n.startsWith("@expo/"))) {
+    required.push("@expo/*");
+  }
   const violations = [];
-  for (const name of expoDeps.sort()) {
+  for (const name of required) {
     if (!listed.has(name)) {
       violations.push(
         `${name}: not in ${DEPENDABOT_CONFIG}'s ignore list, so Dependabot can move it off the SDK line`,
@@ -226,9 +264,9 @@ export function rosterViolations({ dependencies, ignoreNames }) {
       violations.push(
         `${name}: a glob in ${DEPENDABOT_CONFIG}'s ignore list; list Expo client packages by exact name (a glob also freezes expo-server-sdk)`,
       );
-    } else if (!(name in dependencies)) {
+    } else if (!(name in declared) && !installedNames.has(name)) {
       violations.push(
-        `${name}: listed in ${DEPENDABOT_CONFIG}'s ignore list but not a dependency of ${MOBILE_DIR}; remove the stale entry`,
+        `${name}: listed in ${DEPENDABOT_CONFIG}'s ignore list but ${MOBILE_DIR} neither declares nor installs it; remove the stale entry`,
       );
     }
   }
@@ -251,11 +289,8 @@ function readJson(path) {
 }
 
 export function main(root = process.cwd()) {
-  const { dependencies = {} } = readJson(join(root, MOBILE_DIR, "package.json"));
-  const installedVersion = (name) => {
-    const dir = installedPackageDir(root, name);
-    return dir === null ? null : readJson(join(dir, "package.json")).version;
-  };
+  const declared = declaredPackages(readJson(join(root, MOBILE_DIR, "package.json")));
+  const copies = lockfileCopies(readJson(join(root, "package-lock.json")));
 
   // The map comes from the same copy of expo the app resolves, so the SDK it
   // describes is the one that ships.
@@ -274,10 +309,10 @@ export function main(root = process.cwd()) {
 
   return {
     expoVersion,
-    checked: Object.keys(dependencies).filter(isExpoPackage).length,
+    checked: copies.filter((c) => isExpoPackage(c.name) && bundled[c.name] !== undefined).length,
     violations: [
-      ...sdkLineViolations({ dependencies, bundled, installedVersion }),
-      ...rosterViolations({ dependencies, ignoreNames }),
+      ...sdkLineViolations({ declared, bundled, copies }),
+      ...rosterViolations({ declared, installedNames: new Set(copies.map((c) => c.name)), ignoreNames }),
     ],
   };
 }
@@ -286,7 +321,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const { expoVersion, checked, violations } = main();
   if (violations.length === 0) {
     console.log(
-      `✓ ${checked} Expo packages on the expo@${expoVersion} SDK line, and every expo-* dependency is in Dependabot's ignore list`,
+      `✓ ${checked} installed Expo packages on the expo@${expoVersion} SDK line, and Dependabot's ignore list covers them`,
     );
     process.exit(0);
   }

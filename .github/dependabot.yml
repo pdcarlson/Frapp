@@ -204,12 +204,15 @@ updates:
       # #2218 and #2217 moved expo-apple-authentication and expo-localization to
       # 58.0.0, and `eas build -p ios` failed with
       # `type 'Utilities' has no member 'keyWindow'`. Nothing in CI compiles
-      # Swift, so the list is the only gate. Why the rule is mechanical and
-      # what the break looks like: docs/internal/ci-cd/AGENT_INFRA.md
-      # § The ignore list is a runtime constraint, not a preference.
+      # Swift, so a bump off the line passes every build step. Why the rule is
+      # mechanical and what the break looks like:
+      # docs/internal/ci-cd/AGENT_INFRA.md § The ignore list is a runtime
+      # constraint, not a preference.
       # `npm run check:expo-sdk-line` (the mobile-validate CI job) enforces this
-      # roster both ways: an `expo-*` dependency missing here, or an `expo-*`
-      # entry here that apps/mobile no longer declares, fails it (#2330).
+      # roster (#2330): an `expo-*` package apps/mobile declares that is missing
+      # here, a missing `expo` or `@expo/*` entry, or an `expo-*` entry for a
+      # package nothing declares or installs, fails it. It also fails any
+      # installed Expo package that is off the SDK line, whatever this list says.
       #
       # These move only as a version-locked set via a planned SDK upgrade
       # (#2329), like the React family above.

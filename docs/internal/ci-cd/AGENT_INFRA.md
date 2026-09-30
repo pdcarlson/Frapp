@@ -420,12 +420,18 @@ does not have — so "is this really a native module?" is the wrong question to 
 answering it per package is what let ten of them sit outside the list until PR #2338. Read the rule
 this way and the list is mechanically checkable against the manifest; read it as a per-package
 judgement and the gap reopens the next time a client package is added. `npm run
-check:expo-sdk-line` checks it mechanically in the required `mobile-validate` job (#2330). It fails
-on an `expo-*` dependency missing from the list, on an `expo-*` entry for a package `apps/mobile` no
-longer declares, and on any installed `expo-*` or `@expo/*` package outside the range the installed
-`expo`'s `bundledNativeModules.json` gives it. It asserts SDK-line coherence only: a package inside
-its range can still fail to compile. `@sentry/react-native` and `@stripe/stripe-react-native` are
-left out of it on purpose, pending #2336 below.
+check:expo-sdk-line` checks it mechanically in the required `mobile-validate` job (#2330):
+
+- **The roster.** It fails on an `expo-*` package `apps/mobile` declares (in any dependency
+  section) that the list doesn't name exactly, on a missing `expo` or `@expo/*` entry, and on an
+  `expo-*` entry for a package nothing declares or installs.
+- **The SDK line.** It fails on any copy of an `expo-*` or `@expo/*` package that `package-lock.json`
+  installs, transitive ones such as `expo-modules-core` included, whose version is outside the range
+  the installed `expo`'s `bundledNativeModules.json` gives it.
+
+It asserts SDK-line coherence only: a package inside its range can still fail to compile.
+`@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check
+on purpose, pending #2336 below.
 
 That gap cost a production build. Dependabot moved `expo-apple-authentication` (#2218) and
 `expo-localization` (#2217) to `58.0.0` as ordinary semver majors, and the first iOS production EAS
@@ -461,7 +467,8 @@ Two traps for whoever edits that list next:
   rather than left implicit. `check:npm-audit` still fails CI on such an advisory, so it surfaces
   loudly; carrying the fix means doing an SDK-aligned upgrade, not a one-package bump.
 
-  **That gap got wider when the Expo client list was completed to all 21 packages.** It now also
+  **That gap got wider when the Expo client list was completed to every `expo-*` package
+  `apps/mobile` declares** (21 at the time, PR #2338). It now also
   covers `expo-camera`, `expo-image-picker`, `expo-location` and `expo-notifications` — the media,
   location and push surfaces, which had been receiving
   automatic patch and security PRs while they sat outside the list. None of the entries carry
