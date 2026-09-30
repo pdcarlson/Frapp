@@ -67,6 +67,34 @@ export class ListChatReportsQueryDto {
 }
 
 /**
+ * One attachment a report holds, as the queue names it (#2481): what the
+ * member saw of it, never where it is stored. An officer reaches the bytes
+ * only through `GET /v1/chat/reports/{id}/attachments`, while the report is
+ * open.
+ */
+export class ChatReportAttachmentSummaryDto {
+  @ApiProperty()
+  filename: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  content_type: string | null;
+
+  @ApiProperty({ type: Number, nullable: true })
+  byte_size: number | null;
+}
+
+/**
+ * A held attachment with a short-lived signed URL, minted per request.
+ */
+export class ChatReportAttachmentDto extends ChatReportAttachmentSummaryDto {
+  @ApiProperty({
+    description:
+      'Signed download URL, valid for an hour. It forces a download (Content-Disposition: attachment), so opening it saves the file; an <img> still renders an image from it.',
+  })
+  download_url: string;
+}
+
+/**
  * One report as the officer queue serves it.
  *
  * **There is deliberately no `reporter_user_id` on the wire.** The queue is
@@ -131,6 +159,13 @@ export class ChatReportDto {
 
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   resolved_by: string | null;
+
+  @ApiProperty({
+    type: [ChatReportAttachmentSummaryDto],
+    description:
+      "The message's attachments when the report was filed. Until the report is resolved and its files released, no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept.",
+  })
+  reported_attachments: ChatReportAttachmentSummaryDto[];
 }
 
 /**
