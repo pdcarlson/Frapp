@@ -85,6 +85,49 @@ export function useChatReports(status: ChatReportStatus = "open") {
 }
 
 /**
+ * One attachment an open report holds, with a short-lived signed URL (#2481).
+ * The queue row already carries each file's name and size
+ * (`ChatReport["reported_attachments"]`); this is what opens them.
+ */
+export type ChatReportAttachment =
+  components["schemas"]["ChatReportAttachmentDto"];
+
+/**
+ * The files an open report holds, signed for the officer reviewing it
+ * (`GET /v1/chat/reports/{id}/attachments`, #2481). They stay in storage
+ * after the sender deletes the message, until the report is resolved.
+ *
+ * **Fetched on request, not with the queue.** `enabled` is the officer asking
+ * to see them: every read mints fresh signed URLs, and a queue of reported
+ * photos should not load one the officer has not opened. `staleTime` sits well
+ * inside the API's hour-long URL lifetime, as `useMessageAttachments` does,
+ * so a link handed to the DOM is still live when it is used.
+ *
+ * The API answers 409 once the report is resolved (its files are released),
+ * so a caller mounts this for an open report only.
+ */
+export function useChatReportAttachments(reportId: string, enabled: boolean) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      ...chatReportKeys.detail(chapterId!, reportId),
+      "attachments",
+    ] as const,
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/chat/reports/{id}/attachments",
+        { params: { path: { id: reportId } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    enabled: enabled && !!chapterId,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/**
  * Every slice, not just the one the report left. A resolved report moves from
  * `open` into another status's list, so both ends are stale; and a mutation
  * that fails with 404/409 means the cached row no longer matches the server
