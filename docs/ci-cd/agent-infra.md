@@ -102,6 +102,7 @@ summary before running anything from this family.
 | Production backup environment | `.github/workflows/production-backup-env.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. GETs GitHub environment `production-backup` and fails if `protection_rules` contains `required_reviewers` or `wait_timer`. Unreadable or missing is FAIL. `deployment_branch_policy` is not checked: the `main`-only rule is [#2583](https://github.com/pdcarlson/Frapp/issues/2583)'s (set 2026-09-23), and watching it is [#2585](https://github.com/pdcarlson/Frapp/issues/2585). Does **not** name `environment: production` or `environment: production-backup` (#1435): a schedule job that named the env it watches would hang on the same trap. Never PUTs the environment. Logic in `scripts/ci/production-backup-env.mjs`. **Not** a required check. |
 | Production backup freshness | `.github/workflows/production-backup-freshness.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. GETs recent `db-backup.yml` runs on `main` and judges `backup-production` by [`backup-job-freshness.mjs`](../../scripts/ci/lib/backup-job-freshness.mjs); when it fails is the alert's row in [`ALERT_ROUTING.md`](../internal/ops/ALERT_ROUTING.md). Unreadable Actions responses are FAIL. Does **not** name `environment: production` or `environment: production-backup` (#1435). Never PUTs. Reads with `GITHUB_TOKEN`. The script retries with `GITHUB_PAT` on 401/403 only when one is in its environment, which means a local run: the workflow passes none, because a PAT there could only be a repository secret (#2518). The hosted restore leftover stays on its own issue (1861); the reviewer watch stays on its own issue (1956). Logic in `scripts/ci/production-backup-freshness.mjs`. **Not** a required check. |
 | Production backup storage freshness | `.github/workflows/production-backup-storage-freshness.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. GETs recent `db-backup.yml` runs on `main` and judges `backup-production-storage` by [`backup-job-freshness.mjs`](../../scripts/ci/lib/backup-job-freshness.mjs); when it fails is the alert's row in [`ALERT_ROUTING.md`](../internal/ops/ALERT_ROUTING.md). Unreadable Actions responses are FAIL. Does **not** name `environment: production` or `environment: production-backup` (#1435). Never PUTs. Reads with `GITHUB_TOKEN`. The script retries with `GITHUB_PAT` on 401/403 only when one is in its environment, which means a local run: the workflow passes none, because a PAT there could only be a repository secret (#2518). The Postgres dump watch stays on its own issue (1963); the hosted restore leftover stays on its own issue (1861). Logic in `scripts/ci/production-backup-storage-freshness.mjs`. **Not** a required check. |
+| Routine heartbeat | `.github/workflows/routine-heartbeat.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. The five routines ([`routines.md`](routines.md)) are Claude Code Routines, whose run status nothing here can read, and which reports a session that stopped before its job as succeeded ([#2358](https://github.com/pdcarlson/Frapp/issues/2358)). Each run therefore ends by commenting a run record on the heartbeat issue ([`routines.md` § Run record](routines.md#run-record-all-routines)). This GETs those comments and, for each routine's latest scheduled fire, fails on no record or a `stopped` one; when it fails is the alert's row in [`ALERT_ROUTING.md`](../internal/ops/ALERT_ROUTING.md). It judges no fire older than its own first run on `main`, read from its runs, so nothing is judged before the skills that write records merged. Unreadable comments or runs are FAIL. Only the owner's comments count. Reads and alerts with `GITHUB_TOKEN`; names no environment. Logic in `scripts/ci/routine-heartbeat.mjs` (tests: `scripts/ci/__tests__/routine-heartbeat.test.mjs`). **Not** a required check. |
 | Deploy outcome      | Terminal `deploy-outcome` job in each workflow `scripts/ci/deploy-alert.mjs` has a config for (its `ALERT_CONFIGS` table; the alerts they raise are listed in [`ALERT_ROUTING.md`](../internal/ops/ALERT_ROUTING.md#automated-github-issue-alerts)). In each it's the only job with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying what the run did; the outcomes are listed in [§ Deploy visibility](#deploy-visibility-scriptscideploy-alertmjs). Upserts one `incident` alert issue on failure, and closes it on the next successful deploy. The config is selected per workflow by the required `ALERT_CONFIG` env var (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`; `grep -l ALERT_CONFIG scripts/ci/__tests__` finds the ones that pin each workflow's wiring). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | Each deploy verifies itself, inline, by the id of the deploy it created: `deploy-staging.yml` (staging: `scripts/ci/plan-staging-deploy.mjs` decides from the commit staging serves, `scripts/ci/deploy-render-production.mjs` polls the Render deploy to `live`, then `scripts/ci/verify-served-commit.mjs` polls `/health/ready` until it answers 2xx **and** reports the planned commit) and `deploy-production.yml` (production, through the same `_deploy.yml` job since #2805, with the same Render script and served-commit check). A Render or Vercel deploy that ends `canceled` or superseded is a failure on both. There is no push-triggered observer any more. `verify-deployments.yml` was one: its two Vercel jobs were **removed on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)), since ADR-21's unlink meant no push produced a Vercel deployment to find, and its Render job was **retired on 2026-09-25** ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)), when `deploy-api.yml` began deploying staging by commit and staging's auto-deploy became something to turn off ([#2679](https://github.com/pdcarlson/Frapp/issues/2679)). `verify-vercel-deploy.mjs` is called by no workflow, but is **not** dead code: `deploy-vercel.mjs` imports its terminal-state sets, so it is on the production deploy path and must not be deleted or narrowed as unused. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against what it should hold ([§ Schema drift detection](#schema-drift-detection-scriptscicheck-migration-driftmjs)) and upserts one `incident` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
@@ -115,7 +116,7 @@ summary before running anything from this family.
 | PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main]`. GitHub matches that list against the PR **base**. A PR whose base is anything else skips every required check. See [`pr-babysitting.md` → CI branch filters](pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch). |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`) — **that bare form is a LIVE apply and a human step**; from an agent session run only `npm run configure:branch-protection:verify`. See **Branch protection script** below and `CONTRIBUTING.md`. |
 | AI code review      | **Repository-managed Git pre-push gate**, not CI — [`.githooks/pre-push`](../../.githooks/pre-push) is installed through the root `prepare` script for agents and humans. A push of unreviewed work is blocked until `.cache/diff-review/<SHA>` exists (a clean merge of `main` needs none) — `/diff-review` writes the marker; `/code-review` adds coverage but replaces nothing: it is only conditionally model-invocable and does not write the marker (the `claude-review.yml` CI workflow was removed 2026-06-04; the advisory `codex-review.yml` was removed 2026-09-21). See `ai-code-review-runbook.md` |
-| Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual, except the `vitest` and `sentry` groups. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
+| Dependency updates  | `.github/dependabot.yml` opens the PRs. **Not** a required check (it opens PRs, it doesn't gate them). Schedule, grouping and the ignore list: [`dependency-updates.md`](dependency-updates.md). |
 | Vercel              | Both projects are unlinked from Git (**`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02**), so no push deploys anything. Every deployment is built on a runner and uploaded: staging by `deploy-staging.yml` after green CI on `main`, production by `deploy-production.yml` from a dispatched SHA. From the unlink until #1578 (2026-09-04) staging web and landing stayed frozen at their last Git builds: landing `2bf143b` (2026-09-01T20:19Z), web `0372c6d` (2026-09-02T02:41:42Z). See the note directly below. Its team and project ids live in `.github/environments.json`, and no workflow or action names one ([§ Environment identity](../../spec/environments/README.md#environment-identity), #2806). |
 
 > **Vercel Git integration retired — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02; canonical
@@ -275,8 +276,7 @@ packages themselves and need no `npx turbo run build --filter='./packages/*'` be
 `npm install && npm run check-types` works on a cold clone. The CI job **`clean-checkout-typecheck`**
 exists solely to keep that true: it runs `npm ci`, `npm run check-types` and `npm run lint` with no
 `needs:` and no `uses: ./.github/actions/turbo-packages-build` — the composite action that restores
-the turbo cache and prebuilds the packages. Every job that *does* use it (ADR-15 Lever A — eight of
-them) is blind to this regression, which is why this one must not — so do not "optimize" that
+the turbo cache and prebuilds the packages. Every job that *does* use it (ADR-15 Lever A) is blind to this regression, which is why this one must not — so do not "optimize" that
 one-line `uses:` into this job. `web-production-build` carries the same prohibition for a
 **different** reason: it guards the pruned `npm ci --omit=dev` production install shape, where
 `clean-checkout-typecheck` guards unbuilt package types on a dev tree. `scripts/ci/__tests__/turbo-packages-build-action.test.mjs`
@@ -295,378 +295,9 @@ Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../.clau
 
 ## Dependency updates (Dependabot)
 
-Config: [`.github/dependabot.yml`](../../.github/dependabot.yml). This is the automated half of
-the supply-chain story; the blocking half is `npm run check:npm-audit` (above), which fails CI on any
-non-allowlisted high/critical advisory.
+Dependabot's schedule, grouping and ignore-list rule, and the write-ups behind several ignore entries, live in [`dependency-updates.md`](dependency-updates.md); the reason for every entry is commented inline in [`.github/dependabot.yml`](../../.github/dependabot.yml). Cite that file and a heading, never `§N`.
 
-**One ecosystem entry, at the root.** `apps/*` and `packages/*` are npm workspaces resolving through
-a single root `package-lock.json`, so one `npm` entry covers all eighteen. Per-workspace entries would
-open duplicate PRs against the same lockfile — don't add them.
-
-**Schedule and noise floor.** Weekly, Monday 09:00 UTC, `open-pull-requests-limit: 6`. Minor and
-patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are deliberately left
-ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
-the [Autonomous PR lifecycle](../../AGENTS.md), which is why grouping is aggressive.
-
-**The exceptions to "majors arrive alone": the `vitest` and `sentry` groups.** The `sentry` group
-(`@sentry/nestjs` + `@sentry/nextjs`, which pin `@sentry/core` and `@sentry/node` exactly) groups
-majors only, since their minors already share `npm-minor-and-patch`; its `sentry-security` twin
-covers the security lane at every update type. It replaced the Sentry 11 hold when #2722 landed:
-Sentry 11 had arrived as two single-package PRs (#2712, #2714), and neither could go green.
-
-**The `vitest` group.** `vitest` and
-`@vitest/coverage-v8` are grouped at *every* update type, because they peer-require each other at an
-exact version. Moving one half alone does not fail — npm silently lands a **second** vitest and
-leaves half the tree on the old version, *which* half depending on which package moved — so a patch
-splits the tree just as badly as a major does. Grouping by update type is the normal noise-floor
-lever; this group exists for correctness instead, and it costs +1 PR on the weeks vitest ships. A
-second group entry carries `applies-to: security-updates`, because groups default to the
-version-update lane only. See
-[The vitest 5 major is held on jest-dom's matcher types](#the-vitest-5-major-is-held-on-jest-doms-matcher-types)
-below for the measured trees and why one of the two PRs went green anyway.
-
-The limit went 5 → 6 with that group, and the 6th slot is *its*, not new headroom: the group fires
-on every week vitest ships, and Dependabot drops overflow past the cap **silently** — no error, no
-comment, nothing saying a PR was withheld. Security PRs are exempt from the limit and never counted
-against it, so a full queue cannot suppress one. Add another always-on group and this needs raising
-again by one.
-
-**Who babysits.** Nobody special — Dependabot PRs flow through the normal lifecycle: CI runs (`npm
-ci`, lint, type-check, `api-tests`, `web-tests`, `api-docker-build`) plus the audit gate, and an
-agent triages red checks infra-vs-code exactly as for a human-authored PR. Commits land as
-`chore(deps): …` / `chore(deps-dev): …`; PRs are labelled `area:deps` and carry no release label, so
-they take the default `release:patch` bump.
-
-### Dependabot resolves with the root `packageManager` npm
-
-With the root `package.json`'s `packageManager` field set, Dependabot re-resolves the lockfile with
-that npm. Its job runs `corepack npm@<pin> install <pkg>@<version> --workspace=<ws> --force
---ignore-scripts --package-lock-only`: the Dependabot Updates run that opened #2930 logs `corepack
-npm@11.6.2 install ws@8.22.0 --workspace=apps/api …` (2026-09-30). So the pin decides whether
-Dependabot's lockfiles install. Nothing in CI or the Dockerfiles runs the pinned npm: `npm ci` uses
-whatever npm `setup-node`'s Node 24 bundles. Turbo does read the field, but only to detect npm. CI's
-package build fails if the field is missing or malformed, and turbo ignores the version.
-
-At `npm@11.6.2` the pin broke #2930. The re-resolve dropped `node_modules/@emnapi/core` and
-`@emnapi/runtime`, which the optional `@img/sharp-wasm32` and `@unrs/resolver-binding-wasm32-wasi`
-need. It also stripped every `libc` field and nested `@types/node` under four workspaces, so `npm ci`
-failed with `Missing: @emnapi/runtime@1.11.3 from lock file`. Replaying Dependabot's three commands
-from the same base commit under 11.6.2 reproduces its lockfile byte for byte. Under 11.19.0 the diff
-is the three bumps alone (2026-09-30). `@dependabot recreate` and `@dependabot rebase` re-resolve
-with the pin on `main`, so neither could repair that lockfile while `main` pinned 11.6.2. Once the
-pin moves, either one regenerates an older Dependabot PR's lockfile with the new npm.
-
-**Keep the pin at the npm that CI's Node bundles**, so Dependabot resolves with the npm CI installs
-with. On 2026-09-30 that was npm 11.19.0 with Node 24.21.0 (the "Environment details" group of
-`setup-node` in CI run 36733233631). The pin is fixed and CI's Node floats, so the two drift apart
-whenever the runner's Node 24 moves to a newer npm, and nothing flags it.
-`scripts/ci/__tests__/package-manager-pin.test.mjs` fails only a pin that isn't an exact `npm@x.y.z`
-or is below 11.19.0.
-
-Before moving the pin, replay a bump from `main` with `npx npm@<candidate> install <pkg>@<version>
---workspace=<ws> --force --ignore-scripts --package-lock-only`. The lockfile diff must be that bump
-alone: every `@emnapi/*` entry and `libc` field still present, and no new nested copy (#2723). The
-replay checks the lockfile's integrity, not that it matches Dependabot's output. From npm 11.10,
-Dependabot probably also passes `--min-release-age` for its cooldown: #2930's run logged that 11.6.2
-couldn't take the flag, and it filtered out recently published versions under a cooldown
-`.github/dependabot.yml` doesn't set (2026-09-30).
-
-The pin reaches Dependabot only. A hand repair runs whatever npm the local Node bundles, which is why
-the Prevention list under [`security-fixes.md` § npm audit triage](../security/security-fixes.md#npm-audit-triage-issue-245)
-says to re-resolve with `npx npm@<pin>`.
-
-### A grouped bump of a peer-depended package can land a second copy, not an upgrade
-
-Dependabot [#2369](https://github.com/pdcarlson/Frapp/pull/2369) moved `apps/api` from
-`@nestjs/*@^11.2.1` to `^11.2.4` and reddened five jobs at once — `lint-and-typecheck`,
-`clean-checkout-typecheck`, `api-contract-check`, `api-tests` and `api-docker-build` — on type
-errors naming the *same* type on both sides (`Argument of type 'INestApplication<any>' is not
-assignable to parameter of type 'INestApplication<any>'`): one import path under
-`apps/api/node_modules/@nestjs/common`, the other under the root `node_modules/@nestjs/common`.
-When nothing in a Dependabot diff but `package-lock.json` explains a wall of red, that is the shape
-to recognise.
-
-It is the duplicate-hoisted-copy trap of
-[`security-fixes.md`](../security/security-fixes.md#why-the-pin-bump-alone-was-not-enough) — its
-§ *Prevention* rule "Check for a duplicate hoisted copy afterward", and the `next`/`geist` case
-under § *Why the pin bump alone was not enough* — arriving through the Dependabot lane instead of an
-advisory sweep. Six packages outside the bumped set peer-depend on the root `@nestjs/common` node
-(`@nestjs/config`, `@nestjs/swagger`, `@nestjs/schedule`, `@sentry/nestjs`, …) on ranges as loose as
-`^11.0.0`, so when the only *direct* dependant moves, the old node still satisfies every one of
-them: npm keeps it, re-marked `"peer": true`, and nests the new version under
-`apps/api/node_modules/` instead. TypeScript is structural, so two copies are not incompatible by
-themselves — what breaks is the declarations inside them that structural typing cannot relate.
-`VersionValue` is `string | typeof VERSION_NEUTRAL | Array<…>` and `VERSION_NEUTRAL` is declared
-`unique symbol`, so two copies declare two distinct symbol types. That is where *this* error bottoms
-out — `Type 'unique symbol' is not assignable to type 'VersionValue | undefined'` — and it is what
-`tsc` names first on the way back up through `VersioningOptions` to the `INestApplication` mismatch
-the jobs report. Do not read it as the only break: `tsc` stops at the first incompatible property,
-and neutralising that symbol in both copies leaves the two `INestApplication` types unrelated
-anyway, through the generic `on` signature reached via `connectMicroservice` (checked by compiling
-two copies against each other, 2026-09-18). This is npm's tree builder, not Dependabot — a plain
-`npm install --package-lock-only` on the same manifest change reproduces the nesting exactly
-(2026-09-18, npm 11.19.1).
-
-**Read the remedy in that document, not here**, `npm update <pkg>`-before-entry-deletion order
-included. What this lane adds to that record is that for a *grouped* bump the cheaper lever is
-enough, provided the siblings move together: with all four `apps/api` ranges at `^11.2.5`,
-`npm update @nestjs/common @nestjs/core @nestjs/platform-express @nestjs/testing
---package-lock-only` off `origin/main` resolved one hoisted 11.2.5 apiece and no nested copy —
-byte-identical to deleting those four lockfile entries by hand and re-resolving (2026-09-18,
-Node 24.20.0 / npm 11.19.0). Mind the versions there: the fix shipped **11.2.5**, one patch past
-what #2369 proposed, because that release landed while the PR sat red.
-
-`npm dedupe` is not a lever for this — neither it nor a root `overrides` entry moves an existing
-peer resolution, as that same record states. In this repo it never gets that far anyway: it
-re-resolves the whole tree and exits `ERESOLVE` on the `openapi-typescript` peer conflict under
-[TypeScript 7 is native `tsc` plus a TypeScript 6 compiler
-API](#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api) below.
-
-### The ignore list is a runtime constraint, not a preference
-
-`react`, `react-dom`, `react-test-renderer`, the `react-native*` family and the Expo client packages
-are ignored. React is pinned to an **exact** version in every workspace plus a root `overrides`
-entry: React Native bundles a `react-native-renderer` that asserts exact version equality with
-`react` at runtime, while its peer range does not express that. npm will
-therefore accept a newer React silently, hoist it, and kill `apps/mobile` on first render with
-"Invalid hook call" — a failure **only booting the app on a device catches**, never CI. See
-[`AGENTS.md` § Gotchas](../../AGENTS.md) and PR #842. These packages move as a version-locked set
-through a planned Expo SDK upgrade (#2329), never as isolated bumps. (#289 was the SDK 54 → 57
-upgrade, closed `completed` by PR #927; #2329 is the open tracker for the next one.)
-
-**The membership rule**, since the list is not simply "everything RN-shaped": a package belongs in it
-if it is either (a) exact-version-locked to React (`react`, `react-dom`, `react-test-renderer`) or
-(b) a native module whose binary must match the Expo SDK's prebuilt set (`react-native*`, the
-`expo-*` client packages, `@expo/*`, `@react-native-async-storage/*`). JS-only libraries on caret
-ranges stay updatable even when they look RN-adjacent — `@react-navigation/native` and
-`@gorhom/bottom-sheet` are deliberately **not** ignored, because a bad bump there fails
-`check-types` or a test rather than dying silently on a device.
-
-That `check-types` safety net is the reason JS-only libraries stay updatable, and it **does not
-cover a package that ships native code**: `@sentry/react-native` and `@stripe/stripe-react-native`
-both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and both are
-outside the ignore list — so a bad bump on either fails as a native compile with no CI signal, not
-as a type error. They are also deliberately held *ahead* of the versions the SDK specifies. Whether
-that exemption is right, and on what grounds, is #2336; it is an open question, not a decision this
-rule has made.
-
-**For the `expo-*` client packages, apply (b) mechanically, not as a judgement:** *every* `expo-*`
-entry in `apps/mobile/package.json` belongs in the list, whatever the package looks like from the
-JS side. An Expo client package's major version **is** its SDK line — the `58.x` release of any of
-them is built against `expo-modules-core@58` and freely calls native API that `expo-modules-core@57`
-does not have — so "is this really a native module?" is the wrong question to ask of one, and
-answering it per package is what let ten of them sit outside the list until PR #2338. Read the rule
-this way and the list is mechanically checkable against the manifest; read it as a per-package
-judgement and the gap reopens the next time a client package is added. `npm run
-check:expo-sdk-line` checks it mechanically in the required `mobile-validate` job (#2330):
-
-- **The roster.** It fails on an `expo-*` package `apps/mobile` declares (in any dependency
-  section) that the list doesn't name exactly, on a missing `expo` or `@expo/*` entry, on one of
-  those entries whose `update-types` leave out `version-update:semver-major` (a major is the next
-  SDK), on any glob that matches `apps/api`'s `expo-server-sdk`, and on an exact `expo-*` entry for a
-  package `apps/mobile` doesn't declare that isn't an installed package the SDK's map lists.
-- **The SDK line.** It fails on any copy `package-lock.json` installs, transitive ones such as
-  `expo-modules-core` included, of a package the installed `expo`'s `bundledNativeModules.json`
-  lists under `expo-*` or `@expo/*`, when its version is outside the range the map gives it, and on
-  a declared range in `apps/mobile/package.json` whose floor is off that range.
-  Installed Expo packages the map doesn't list (`expo-modules-jsi`, `expo-modules-autolinking`, the
-  `@expo/*` tooling on its own version lines) aren't checked; `expo`'s own dependency ranges pin
-  them.
-
-It asserts SDK-line coherence only: a package inside its range can still fail to compile.
-`@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check
-on purpose, pending #2336 above, and so is the `react-native-*` family, which moves with React.
-
-That gap cost a production build. Dependabot moved `expo-apple-authentication` (#2218) and
-`expo-localization` (#2217) to `58.0.0` as ordinary semver majors, and the first iOS production EAS
-build failed in the Xcode native compile with `type 'Utilities' has no member 'keyWindow'`:
-`expo-apple-authentication@58.0.0`'s `ios/AppleAuthenticationRequest.swift` calls
-`Utilities.keyWindow()`, and `expo-modules-core@57.0.11` declares `Utilities` with only
-`urlFrom(string:)` and `currentViewController()` — in the 57 line that window lookup lives on a
-different type, `SceneGeometry.keyWindow(for:)`. **Nothing in CI compiles this class of break:**
-the `expo prebuild` job runs with `--no-install`, which generates the native project without
-compiling it, so no Swift is built anywhere in CI and the failure first appears at `eas build -p
-ios`. At the time the list was the only gate; since #2330 the SDK-line check fails a bump off the
-line before merge, because it reads versions rather than compiling anything.
-
-Pinning back to the SDK line is the supported configuration, not a workaround — `~57.0.x` is what
-Expo ships for SDK 57 — but it is **not free, and the PR that did it did not verify the runtime
-path.** `58.0.0` also carried two iOS fixes on the Sign in with Apple path that the 57 line does not
-have: an uncatchable `fatalError` when no key window is found (replaced upstream by a catchable
-exception), and a missing `.runOnQueue(.main)` on `requestAsync`, which leaves
-`ASAuthorizationController.performRequests()` on `expo-modules-core`'s background async queue. Both
-are tracked in #2334, and both arrive for free with #2329. Do not read the pin as evidence that
-native SIWA was exercised — the mobile unit suite mocks the module and never loads it.
-
-Two traps for whoever edits that list next:
-
-- **Do not collapse the Expo entries into `expo-*`.** That glob also matches `expo-server-sdk`, an
-  `apps/api` dependency (the push-delivery client) with no relationship to the mobile SDK lock.
-  Globbing it would freeze the API's push library silently and indefinitely. The client packages are
-  listed individually for exactly this reason; if an SDK upgrade adds a new one, append it (the
-  SDK-line check fails until you do, and refuses an `expo-*` glob).
-- **Ignore conditions also suppress Dependabot _security_ updates.** A CVE in React, React Native or
-  an Expo client package will **not** open a PR automatically. This is an accepted trade — an
-  isolated security bump in that set breaks the runtime — but it is a real gap, so it is written down
-  rather than left implicit. `check:npm-audit` still fails CI on such an advisory, so it surfaces
-  loudly; carrying the fix means doing an SDK-aligned upgrade, not a one-package bump.
-
-  **That gap got wider when the Expo client list was completed to every `expo-*` package
-  `apps/mobile` declares** (21 at the time, PR #2338). It now also
-  covers `expo-camera`, `expo-image-picker`, `expo-location` and `expo-notifications` — the media,
-  location and push surfaces, which had been receiving
-  automatic patch and security PRs while they sat outside the list. None of the entries carry
-  `update-types`, so in-SDK `57.0.x` patches are frozen alongside the SDK-line majors that actually
-  caused the break; scoping them to `version-update:semver-major` (the shape `eslint` already uses
-  in the same file) would block the break and let patches flow. Whether to do that is #2331 — an
-  open question, not a decision this section has made.
-
-`@types/react` is deliberately **not** ignored: it is types-only, carries no runtime equality
-assertion, and a bad bump fails `npm run check-types` in CI — which is precisely the safety net that
-makes auto-updates tolerable.
-
-**Dependabot does not manage the root `overrides` block.** Those entries (`handlebars`, `undici`,
-`path-to-regexp`, … — added by #861 to force patched versions of *transitive* dependencies) are
-invisible to it, so they neither get bumped nor get cleaned up as the direct dependencies that pulled
-them in move on. Reviewing that block is a manual job; `npm run check:npm-audit` is what tells you an
-override is no longer doing its work.
-
-### Dependabot PRs need no docs exemption
-
-They used to. `docs-spec-sync` was a required check under `enforce_admins: true` that failed any PR
-touching non-`docs/` files without touching `docs/` — and a Dependabot PR changes `package.json` /
-`package-lock.json` and nothing else, so without a step-level exemption keyed on the PR author every
-one of them was permanently unmergeable, not merely red. The gate was deleted in #1597 and the
-exemption went with it.
-
-The lesson worth keeping is why the exemption existed at all: a required check that a whole category
-of legitimate PR **cannot** satisfy is not a gate, it is a block. That was the argument for deleting
-the gate, and it is the test to apply before adding any check to `DOCS_CHECKS`.
-
-### `colorjs.io` is ignored: it is a vendored-generator pin, not a dependency
-
-`packages/chapter-theme/src/vendor/generate-radix-colors.ts` is upstream Radix source held
-byte-for-byte, and its runtime deps are pinned to match upstream's own `package.json`. `colorjs.io`
-sits at an exact `0.5.2`, so Dependabot read `0.7.1` as a *minor* under 0.x semver and swept it into
-the grouped PR — where its new `Coords` type (`[number | null, …]`, for CSS Color 4 `none`
-components) produced 24 type errors in a file that must not be hand-edited, taking `packages-build`,
-`clean-checkout-typecheck` and `api-docker-build` down with it (#1003).
-
-That is the gate doing its job: the `noUncheckedIndexedAccess: false` note in that package's
-`tsconfig.json` says outright that typechecking the vendored file is what surfaces "a breaking change
-in `colorjs.io`'s API, found on resync". Moving the pin means re-vendoring the generator from an
-upstream commit that also moved and re-running `signet.spec.ts` — a resync, not a bump. The ignore
-entry keeps that a human decision instead of a weekly red PR. The generator's other two pins stay
-under Dependabot; the reasoning for each is in
-[`packages/chapter-theme/src/vendor/README.md`](../../packages/chapter-theme/src/vendor/README.md).
-
-### The ESLint 10 major is held on a plugin, not on our code
-
-`eslint` and `@eslint/js` ignore **major** updates only; 9.x minors and patches still flow. The
-blocker is `eslint-plugin-react`: 7.37.5 is its newest published release and its peer range still
-ends at `^9.7`. ESLint 10 removed the deprecated `context` methods the plugin calls, so it throws
-`contextOrFilename.getFilename is not a function` out of its React-version detection path and takes
-React workspace lint (`apps/web`, `apps/landing`) down with it.
-
-The two packages move as a set — `@eslint/js@10` peer-requires `eslint@^10`, so bumping either alone
-fails `npm ci` with `ERESOLVE`. That is why both carry the ignore rather than just one.
-
-What makes this a *hold* rather than an open question: it was measured. Pinning
-`settings.react.version` in `packages/eslint-config/{next,react-internal}.js` skips the detection
-path entirely, and the whole monorepo then lints clean under ESLint 10 — the plugin has no other
-v10 incompatibility we trip. That workaround was rejected for now because it runs a core plugin
-outside its declared peer range and hardcodes a React version that has to be hand-synced with the
-real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
-upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
-
-### The vitest 5 major is held on jest-dom's matcher types
-
-`vitest` and `@vitest/coverage-v8` ignore **major** updates only; 4.x minors and patches still flow.
-They are named rather than globbed as `@vitest/*` on purpose — `@vitest/eslint-plugin` (the renamed
-`eslint-plugin-vitest`) sits in that scope but peers `vitest: "*"` and versions on its own line, so
-a glob would freeze its majors forever and drag it into a group premised on the exact peer pin. Same
-rule as `expo-*` vs `expo-server-sdk` above. Two independent things break under vitest 5, and only
-the first is a hold.
-
-**Upstream, and the reason this is a hold.** vitest 5 widened its assertion interface to two type
-parameters (`interface Assertion<R extends void | Promise<void> = void, T = unknown>`).
-`@testing-library/jest-dom` still augments the one-parameter shape (`interface Assertion<T = any>`).
-TypeScript merges a generic interface's declarations only when the type parameter lists are
-*identical*, so the augmentation quietly fails to merge and **every jest-dom matcher stops
-existing**. `tsc` emits one error per matcher call site, and `apps/web` has **1,637 of them across
-82 spec files** (2026-09-21; counted by matching the jest-dom matcher names against
-`apps/web/**/*.spec.tsx`, and spot-checked against #2439's `lint-and-typecheck` log, whose per-file
-error lines match site for site). So `check-types` fails in the four figures, not the dozens, all of
-it reading `Property 'toBeInTheDocument' does not exist on type 'Assertion<void, HTMLElement>'`, and
-it takes `lint-and-typecheck` and `clean-checkout-typecheck` down wholesale.
-`@testing-library/jest-dom@7.0.1` is the newest published release (2026-09-21,
-`npm view @testing-library/jest-dom version`) — there is nothing to upgrade to.
-
-When a wall of `TS2339: Property 'toBeX' does not exist on type 'Assertion<…>'` appears after a test
-runner bump and nothing in the diff touched the specs, this arity mismatch is the shape to
-recognise. The matchers did not break; the augmentation stopped merging.
-
-What makes this a *hold* rather than an open question: it was measured, like the ESLint 10 hold. The
-only in-repo fix is a hand-written augmentation re-declaring jest-dom's matcher surface against the
-two-parameter interface — **50 matchers**, hand-synced with every jest-dom release, for a package
-whose own types are meant to be the source of truth. Rejected for the same reason the ESLint 10
-`settings.react.version` workaround was.
-
-**Ours, and not covered by the hold lifting.** `apps/mobile/lib/theme.spec.tsx:104` fails under
-vitest 5 with `AssertionError: expected undefined to be defined` (1 failed / 1000 passed). It finds a
-`Platform.select` call made at *module load* by scanning `vi.mocked(Platform.select).mock.calls`, and
-under vitest 5 the call is not there. Not root-caused to a named vitest 5 change. Note
-`apps/mobile/vitest.config.ts` *leaves `clearMocks` at its default of off* — deliberately, per the
-NOTE at its line 12 — specifically to keep that record alive. There is **no `clearMocks` key**: the
-constraint is real but nothing pins it, so a vitest release that flips the default breaks
-`theme.spec.tsx` with nothing in the config to stop it. The rewrite should retire that dependency
-rather than deepen it. So when jest-dom ships, this is still not a pure version bump.
-
-**Why neither Dependabot PR was the upgrade it claimed to be.** Worth recording in detail, because
-CI said so in only one of the two cases. `@vitest/coverage-v8` peer-requires `vitest` at an *exact*
-version and vitest returns the favour, so moving one half never fails the install — **npm duplicates
-instead**. `vitest` is declared by 12 workspaces and `@vitest/coverage-v8` once at the root, which
-today resolves to a single hoisted `node_modules/vitest`. That node has **13** consumers, not 12:
-`@repo/api-sdk` runs `vitest run` while declaring no `vitest` devDependency of its own, so it binds
-to the hoisted copy — `ci.yml` says so in as many words ("The package uses the hoisted workspace
-vitest; this step does not add a lockfile entry"). Move one half and that node splits in two
-(counted 2026-09-21 from each branch's `package-lock.json`, npm 10.9.7):
-
-| branch | root `vitest` | root `coverage-v8` | nested workspace copies | CI |
-| --- | --- | --- | --- | --- |
-| `main` | 4.1.11 | 4.1.11 | none | green |
-| [#2437](https://github.com/pdcarlson/Frapp/pull/2437) (`coverage-v8` alone) | **5.0.1** | 5.0.1 | **12 × 4.1.11** | **green** |
-| [#2439](https://github.com/pdcarlson/Frapp/pull/2439) (`vitest` alone) | 4.1.11 | 4.1.11 | **12 × 5.0.1** | red |
-
-One install becomes thirteen either way — the duplicate-hoisted-copy trap of
-[A grouped bump of a peer-depended package can land a second copy, not an upgrade](#a-grouped-bump-of-a-peer-depended-package-can-land-a-second-copy-not-an-upgrade)
-above, reached through the ungrouped-**major** lane rather than the grouped one. Nested copies are
-not merely wasteful here:
-[A group regeneration can drop `jsdom`, and vitest resolves it from the root](#a-group-regeneration-can-drop-jsdom-and-vitest-resolves-it-from-the-root)
-below records what a relocated vitest actually breaks, because vitest loads its environment from its
-own install location.
-
-The asymmetry is the part to internalise. #2439 moved the copy the **tests** load, so it went red and
-argued for itself. #2437 moved only the copy **coverage** loads — and **nothing in CI runs
-`test:cov`** — so it went fully green, with coverage bound to vitest 5.0.1 while every suite except
-`@repo/api-sdk`'s ran on 4.1.11. (`@repo/api-sdk` is the 13th consumer above: its suite ran on
-5.0.1, in `lint-and-typecheck`, and passed — the only vitest 5 runtime evidence this repo has.) That
-PR would have merged. A green Dependabot PR touching a package CI never exercises is worth one look
-at the lockfile before trusting the checkmark.
-
-The `vitest` **group** is the permanent half of the fix and is *not* part of the hold: it keeps the
-family together at every update type, so the split cannot recur when the hold lifts. It is two
-entries — groups default to `applies-to: version-updates`, and security updates ignore groups
-unless one opts in, so a security bump of either package alone would rebuild the same split tree
-(dormant while Dependabot alerts stay disabled, #921).
-
-Lifting the hold needs **both** blockers cleared, not just jest-dom: drop the two `ignore` entries
-once jest-dom ships vitest 5 types **and** `apps/mobile/lib/theme.spec.tsx` no longer depends on an
-import-time mock call. Dropping them on jest-dom alone lands a PR that is red on `mobile-validate` —
-the failure this section predicts. **Keep the group** either way. Tracking:
-[#2445](https://github.com/pdcarlson/Frapp/issues/2445).
-
-### eslint-plugin-react-hooks 7 compiler rules
+## eslint-plugin-react-hooks 7 compiler rules
 
 `eslint-plugin-react-hooks` 7.x enables React Compiler rules on top of the two classic
 Rules of Hooks. We do not run `babel-plugin-react-compiler`. Shared presets
@@ -692,7 +323,7 @@ rollout. Adopting a *new* compiler rule that appears in a later plugin bump is s
 dedicated cleanup (fix or scoped disable each finding, then add the rule to the
 allowlist), not a Dependabot follow-through.
 
-### TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
+## TypeScript 7 is native `tsc` plus a TypeScript 6 compiler API
 
 TypeScript 7.0 is a native Go compiler. The npm `typescript@7` package ships `tsc` and a
 version stub — `require('typescript').createProgram` is `undefined`. Tools that import the
@@ -727,14 +358,11 @@ alias. TypeScript 7 also stopped inferring `rootDir` from the common source dire
 packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
-set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`,
-`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`, except `@repo/hooks`,
-which builds via `tsc -p tsconfig.build.json` so its `*.spec.ts` / `*.spec.tsx` files stay out of
-the build — they import `vitest` and `@testing-library/react`, which Vercel's production install
-omits; `tsconfig.json` still includes them so `check-types` keeps covering them), and `@repo/api-sdk`
+set is `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`,
+`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`), and `@repo/api-sdk`
 (`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
 do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,
-`@repo/chat-core`) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`
+`@repo/hooks`, `@repo/chat-core`, which the apps consume as source) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`
 on `tsconfig.build.json` only, so `nest build` emits the API entry at dist/main.js. Do not set
 `rootDir` on `apps/api/tsconfig.json`: `"."` would let a stray `tsc -p tsconfig.json` emit
 dist/src/main.js instead of failing TS5011, and `"./src"` would hide `test/` from ESLint's
@@ -757,7 +385,7 @@ is the 6.x alias — Next will try to `npm install typescript` (which resolves t
 
 Both apps also set `typescript.tsconfigPath` to their own `tsconfig.build.json`, which extends
 the app's `tsconfig.json` and excludes test directories, the four test suffixes, and the
-`vitest` / `playwright` configs. Same reason as `@repo/hooks` above, one layer up: the app
+`vitest` / `playwright` configs. The app
 `tsconfig.json` includes every `.ts` / `.tsx` file under the app, so those files land in the
 program `next build` type-checks and import packages Vercel's production install omits. Next's
 checker already drops diagnostics from files *named* `*.test.*`, `*.spec.*`, `__tests__/` or
@@ -796,50 +424,6 @@ run. Re-evaluate when TypeScript 7.1 ships a stable programmatic API *and* those
 widen; until then the aliases move independently — native 7.x patches on `@typescript/native`,
 6.0.x patches on the `typescript` alias (stay below 6.1 for `typescript-eslint`).
 
-### A group regeneration can drop `jsdom`, and vitest resolves it from the root
-
-`vitest` declares `jsdom` as an **optional** peer (`peerDependenciesMeta.jsdom.optional`), and npm
-never auto-installs optional peers. It also loads the environment from *its own* install location —
-the hoisted root `node_modules/vitest` — so the workspace-level `jsdom` devDependencies in
-`apps/web`, `packages/hooks` and `packages/chat-core` are invisible to it. The jsdom suites passed
-only because a stale root `jsdom@29.1.1` node lingered in the lockfile as an auto-installed peer of
-an older vitest, which nothing declared and nothing guaranteed.
-
-#1395 — the weekly `npm-minor-and-patch` group — regenerated the lockfile, that root node went away,
-and every `environment: "jsdom"` config plus every `/** @vitest-environment jsdom */` spec failed
-with `Cannot find package 'jsdom' imported from …/node_modules/vitest/dist/chunks/…`. `web-tests`
-and `mobile-validate` went red with nothing in the diff that looked like a cause: the group touched
-no test file, and the jsdom line in each workspace manifest was unchanged.
-
-`jsdom` is now an explicit **root** devDependency, so the hoisted copy is intentional and `npm ci`
-reproduces it. Two neighbouring declarations were missing for the same reason — hoisting luck rather
-than intent — and are now explicit: `@testing-library/react` in `apps/mobile` (eight specs import
-it), and the `react-dom` peer that `@testing-library/react` needs in `packages/hooks`. Without that
-second one npm re-resolves the peer to the newest `^19` on any bump of the testing-library edge,
-which collides with the exact `react@19.2.3` pin and fails the install outright with `ERESOLVE`.
-
-The general rule: **declare what a workspace imports.** A package that resolves only because npm
-happened to hoist it is a red suite waiting for the next regeneration — and the failure surfaces in
-a PR that never touched it.
-
-### Alerts and security updates are a repo Settings toggle
-
-Dependabot **alerts** and **security updates** live in repo Settings → Advanced Security, not in this
-file. **The read half is answered as of 2026-09-02: alerts are DISABLED on this repo.**
-`GET /repos/pdcarlson/Frapp/vulnerability-alerts` returns **404 `"disabled"`** when called direct
-(node `fetch`) — not the `403` this paragraph used to record, which was the agent proxy's
-GitHub-credential layer answering rather than GitHub, and therefore said nothing about the toggle
-either way (see **The `api.github.com` route rule** under Work status). A session can now read this
-setting; it still cannot flip it — the GitHub MCP exposes no repo-security-settings tool and the
-REST route above is a read channel. So #921 stays open as `[human]`, now scoped to the write half:
-turning alerts (and security updates) on in repo Settings. The alerts toggle is the half that was
-read directly; the security-updates toggle follows from it (alerts are a prerequisite) but was not
-itself read. Read that alongside § *The ignore list is a runtime constraint, not a preference*
-above: security PRs for the React/RN/Expo set are suppressed there deliberately, and with the
-repo-level toggle off no alert is being raised for anything else either — so `npm run
-check:npm-audit` in CI is the only vulnerability signal this repo actually has today, and unlike a
-Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` rows above).
-
 ## Claude Code project settings
 
 `.claude/settings.json` ships repo-wide config for Claude Code sessions (cloud and local). Current contents:
@@ -870,7 +454,7 @@ drift this layer exists to stop (stage 4 of the CI/CD redesign, [#1382](https://
 | `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: <message> }`, where the message folds in the error's `cause` (undici leaves `message` as the bare "fetch failed" and hangs the real diagnosis there). `data` is `null` only when a real HTTP response carried an empty body, so a truthy `data` is **not** evidence a response was received — check `status !== 0` for that. |
 | `scripts/ci/lib/providers.mjs` | `fetchJson`, `fetchRenderDeploys`, `fetchVercelDeployments`, `findVercelDeploymentBySha`, `vercelDeploymentCreatedAt` | `fetchJson` is the shared ok-check-throw-json wrapper (was three near-identical copies, #1351); `fetchRenderDeploys` / `fetchVercelDeployments` list one page through it. `findVercelDeploymentBySha` pages back through the Vercel listing, bounded, looking for a SHA — use it rather than the single-page fetcher when matching against a specific commit, since a page holds only the newest slice and an older SHA can fall off it (#1377). |
 | `scripts/ci/lib/polling.mjs` | `createClock`, `pollUntilTerminal` | `createClock` is an injectable clock, so a poll loop's tests run without sleeping. `pollUntilTerminal` is the shared "fetch, classify, sleep, repeat until terminal or timeout" loop behind the pollers (`verify-vercel-deploy.mjs`, `deploy-render-production.mjs`, `deploy-vercel.mjs`, `verify-served-commit.mjs`; #1351, #2505) — it owns only the loop mechanics; each caller's `classify` closure keeps its own terminal-state judgment (the deploy-path pollers treat a cancel as failure where `verify-vercel-deploy.mjs`'s classifier treats it as neutral, deliberately not unified). |
-| `scripts/ci/lib/alert-issue.mjs` | `ALERT_LOOKUP_LABEL`, `ALERT_ASSIGNEE`, `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert` | The create/reopen/comment/close upsert contract for `incident` alert issues, and the one place their label and assignee are set. |
+| `scripts/ci/lib/alert-issue.mjs` | `defineAlert`, `isDefinedAlert`, `selectAlertConfig`, `findAlertIssues`, `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert`, `withAgentNote`, `ALERT_LOOKUP_LABEL`, `ALERT_ASSIGNEE` | The create/reopen/comment/close upsert contract for `incident` alert issues, and the one place their label and assignee are set. An alert's identity is declared once with `defineAlert({ title, labels })`, and the find, raise and resolve functions take that value as `alert`, refusing anything else (#1731). `selectAlertConfig` picks a script's config by name and throws on a missing or unknown one. |
 
 Every one of these takes an injectable `fetchImpl` (or clock), which is what keeps the suites offline.
 
@@ -987,7 +571,8 @@ Consequences worth knowing before editing the script:
 - **Each config owns its alert title, and no two may match.** The title is the lookup key, so
   a shared one would let one workflow's recovery close another's live alert. A test pins their
   uniqueness. Renaming a title orphans whatever alert is open under the old one, which can then
-  never be found or self-closed, unless the config lists the old title in `retiredAlertTitles`.
+  never be found or self-closed, unless the config lists the old identity in `retiredAlerts`
+  (`defineAlert({ title })` with the old title, byte for byte).
   A run that closes the new alert closes an issue still open under a retired title too.
   `deploy-staging` lists the Deploy API and Deploy Vercel staging titles (#2803).
 - **`gateJob` may be null.** `deploy-staging.yml` and `deploy-production.yml` each have one deploy
@@ -1160,6 +745,7 @@ readiness probe (scheduled every 15 minutes) does not talk to the Management API
 | 08:00 | `production-release-pin.yml` | Render live commit, Vercel production SHAs, and a peeled `vX.Y.Z` tag agree. Matching `main` is not required. `/health` `commit` is corroboration only. Does not name `environment: production` |
 | 13:15 | `production-backup-freshness.yml` | Nightly `db-backup.yml` `backup-production` is recent and not failing. What it asserts: the Production backup freshness row in [§ CI/CD summary](#cicd-summary) |
 | 14:00 | `production-backup-storage-freshness.yml` | Nightly `db-backup.yml` `backup-production-storage` is recent and not failing. What it asserts: the Production backup storage freshness row in [§ CI/CD summary](#cicd-summary) |
+| 19:20 | `routine-heartbeat.yml` | Every scheduled routine's latest run left a `done` run record on the heartbeat issue. Reads only GitHub, so it is placed after the day's last routine rather than in the Management API stagger. What it asserts: the Routine heartbeat row in [§ CI/CD summary](#cicd-summary) |
 | every 15 min as scheduled; far less often in practice ([ADR-24](../../spec/architecture/adr/adr-24.md) has the measured gaps) | `production-uptime.yml` | Live `GET https://api.frapp.live/health/ready` — HTTP 200 with JSON `status: "ok"`. Does not name `environment: production` |
 | every 4 h at :23, and after every `Deploy staging` / `Deploy production` run | `migration-snapshot.yml` | Watches nothing and raises no alert: it publishes both projects' applied-migration history for the PR migration gates (§ GitHub environments and bootstrap secrets). It reads the Management API, and a late start can overlap the 06:30 dump. A failed publish after a deploy shows up as red required migration checks naming it, on the next PR that touches a migration, once the download action's wait runs out. `migration-drift` goes red on every PR, as `stale`, once a migration the snapshot lacks is past its 30-minute grace. A failed scheduled publish with no deploy since shows only when the snapshot passes the 24-hour limit ([#2588](https://github.com/pdcarlson/Frapp/issues/2588)) |
 
@@ -1365,8 +951,8 @@ Decision is recorded in [**ADR-12**](../../spec/architecture/adr/adr-12.md) (ext
 
 Two layers, both runnable from a sandbox with no Docker and no privileged tooling:
 
-1. **Hot-path code is testable in NestJS.** Per ADR-11, chat hot-path writes (`chat-send`, `chat-react`) live in the existing `apps/api` NestJS service alongside cold reads and the in-process push worker (ADR-09). Standard Jest + supertest covers integration; the `SupabaseAuthGuard` the push worker already uses is reused for auth. (It also said `SUPABASE_CLIENT` was reused "for Realtime emit" — as of #472 `ChatService` injects no Supabase client and emits nothing to Realtime, so the chat hot path needs no Realtime-capable substrate to test. The provider itself is unaffected and still injected at 59 sites — 37 repositories under `infrastructure/supabase/`, the rest spread across application services, interface guards, and the two realtime workers. What changed is only that the chat *send* path is no longer one of them.) Since #416 shipped, `supabase/functions/chat-*` is retired and chat-adjacent chunks no longer carry the "Runtime checks BLOCKED" disclaimer.
-2. **Migration validation + RLS smoke run on PGlite.** `scripts/check-pglite-migrations.mjs` applies every `supabase/migrations/*.sql` to a fresh in-process Postgres-in-WASM and asserts the schema landmarks reviewers care about, plus an **RLS smoke tier** (ADR-12): every `public` table enables RLS (Frapp's default-deny invariant, #360), the chat hot-path tables hold their posture (`chat_channels` default-deny with no policies; `chat_messages` and `chat_message_actions` carry only client-read policies that stay scoped to `auth.uid()` — "no policies" stopped being the invariant for `chat_messages` when `20260816140000_realtime_carrier_repair.sql` gave it one), and `chapter_audit_log` stays append-only. It also verifies policy **enforcement** (#423): a non-owner `rls_probe` role, with `auth.uid()`/`auth.role()` stubbed to a signed-in client, reads the tables for real — asserting exact visibility sets on `chat_messages` / `chat_message_actions`, and zero rows on `members` / `financial_invoices`, which carry no client-reachable policy and must stay default-deny. Posture alone cannot catch a policy whose shape is fine but whose predicate is wrong; the enforcement tier can — for those four tables only, so a permissive policy on any other table still slips past. The harness creates the **`authenticated` role before applying migrations**, which matters more than it sounds: ~18 migrations wrap their policy and grant statements in `if exists (select 1 from pg_roles where rolname = 'authenticated')`, and without the role every one of those blocks is skipped, so a permissive policy written in the repo's own dominant idiom left the whole job green. What remains out of reach: a **real JWT** (GoTrue-minted, so any claim beyond `sub`/`role`), and **`to anon` targeting** — there is no `anon` role here, though `auth.role()` is stubbed to `'anon'` for the unauthenticated scenarios so predicates that test it are exercised. Both stay with the NestJS Jest tier. Always-on, runs in CI as `pglite-migrations`, and runs identically from any cloud-agent sandbox. No real DB required.
+1. **Hot-path code is testable in NestJS.** Per ADR-11, chat hot-path writes (`chat-send`, `chat-react`) live in the existing `apps/api` NestJS service alongside cold reads and the in-process push worker (ADR-09). Standard Jest + supertest covers integration; the `SupabaseAuthGuard` the push worker already uses is reused for auth. (It also said `SUPABASE_CLIENT` was reused "for Realtime emit" — as of #472 `ChatService` injects no Supabase client and emits nothing to Realtime, so the chat hot path needs no Realtime-capable substrate to test. The provider itself is unaffected and still injected widely — the repositories under `infrastructure/supabase/`, application services, interface guards, and the two realtime workers. What changed is only that the chat *send* path is no longer one of them.) Since #416 shipped, `supabase/functions/chat-*` is retired and chat-adjacent chunks no longer carry the "Runtime checks BLOCKED" disclaimer.
+2. **Migration validation + RLS smoke run on PGlite.** `scripts/check-pglite-migrations.mjs` applies every `supabase/migrations/*.sql` to a fresh in-process Postgres-in-WASM and asserts the schema landmarks reviewers care about, plus an **RLS smoke tier** (ADR-12): every `public` table enables RLS (Frapp's default-deny invariant, #360), the chat hot-path tables hold their posture (`chat_channels` default-deny with no policies; `chat_messages` and `chat_message_actions` carry only client-read policies that stay scoped to `auth.uid()` — "no policies" stopped being the invariant for `chat_messages` when `20260816140000_realtime_carrier_repair.sql` gave it one), and `chapter_audit_log` stays append-only. It also verifies policy **enforcement** (#423): a non-owner `rls_probe` role, with `auth.uid()`/`auth.role()` stubbed to a signed-in client, reads the tables for real — asserting exact visibility sets on `chat_messages` / `chat_message_actions`, and zero rows on `members` / `financial_invoices`, which carry no client-reachable policy and must stay default-deny. Posture alone cannot catch a policy whose shape is fine but whose predicate is wrong; the enforcement tier can — for those four tables only, so a permissive policy on any other table still slips past. The harness creates the **`authenticated` role before applying migrations**, which matters more than it sounds: many migrations wrap their policy and grant statements in `if exists (select 1 from pg_roles where rolname = 'authenticated')`, and without the role every one of those blocks is skipped, so a permissive policy written in the repo's own dominant idiom left the whole job green. What remains out of reach: a **real JWT** (GoTrue-minted, so any claim beyond `sub`/`role`), and **`to anon` targeting** — there is no `anon` role here, though `auth.role()` is stubbed to `'anon'` for the unauthenticated scenarios so predicates that test it are exercised. Both stay with the NestJS Jest tier. Always-on, runs in CI as `pglite-migrations`, and runs identically from any cloud-agent sandbox. No real DB required.
 
 ### How to bring it up at session start
 
@@ -1414,7 +1000,7 @@ If a chunk crosses a boundary the sandbox still can't reach (push fanout; anythi
 ### Sandbox-blocked tooling — known list
 
 - **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Claude Code web** sandbox configured per [`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md) (SessionStart → `scripts/cloud-sandbox-up.sh`; Full/Custom network), that script brings up Docker + local Supabase and writes `apps/api/.env.local` plus `apps/web/.env.local`, so the full stack and `npm run start:dev -w apps/api` work with no Infisical, and `npm run build -w apps/web` prerenders instead of dying on the missing `NEXT_PUBLIC_SUPABASE_*` vars (#1156). Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
-- **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** not granted by `.claude/settings.json` (its allow rules cover only the Workflow tool and the claude-code-remote scheduling and PR-watch tools — no Supabase entries), so they prompt — and unattended sandboxes cannot approve the prompt. `list_projects` has been observed to go through. Do not assume any MCP tool works until you've tried it.
+- **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** not granted by `.claude/settings.json` (its allow rules cover only the Workflow tool and the GitHub MCP tools listed under "Applied permission allows" — no Supabase entries), so they prompt — and unattended sandboxes cannot approve the prompt. `list_projects` has been observed to go through. Do not assume any MCP tool works until you've tried it.
 - **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. Through the agent proxy the failure shape is `curl: (56) CONNECT tunnel failed, response 403`; `curl -sS "$HTTPS_PROXY/__agentproxy/status"` names the refused host under `recentRelayFailures`. Note `supabase start` pulls images from **AWS ECR Public** (`public.ecr.aws`) + **CloudFront** (`*.cloudfront.net`), which the **Trusted** policy does not reliably allow — add those hosts to a Custom allowlist. **Deployed staging** (`staging.frapp.live`, `*.staging.frapp.live`, `api-staging.frapp.live`, and the `frapp-staging` Supabase ref) is reachable *if and only if* the environment carries those lines. **Do not probe by hand and do not assume — read `.cloud-sandbox-capabilities.json`,** which `scripts/cloud-sandbox-egress-probe.sh` writes at the repo root within seconds of bringup starting, long before its `.done` sentinel. The SessionStart hook summarises it too, but only on a fire that finds it already written — never on a fresh container's first session, nor on any fire that starts a bringup — so read the file rather than waiting for the line. Check its `probe_ok` first: `false` means the probe could not run, and the empty `hosts`/`staging_reachable` arrays that come with it are **not** evidence that staging is blocked (nor that the production assertion passed). With `probe_ok: true`, its `warnings` array distinguishes *blocked* from *inconclusive*, which a hand-rolled `curl` will not. See [Live staging egress](../internal/environment/CLOUD_SANDBOX.md#live-staging-egress) and [`.claude/skills/live-verification/SKILL.md`](../../.claude/skills/live-verification/SKILL.md). **Production is never allowlisted** — the probe asserts that negatively, and a reachable prod host is reported as a SECURITY warning rather than as extra capability. Provider APIs (Render, Vercel, Sentry, PostHog, the Supabase Management API) stay blocked to direct `fetch` and are reached via **MCP**, which bypasses the allowlist entirely; **Infisical is the only sanctioned exception** — it has no secrets-capable MCP connector and is reached by direct `fetch` via `app.infisical.com` on the environment allowlist ([#1279](https://github.com/pdcarlson/Frapp/issues/1279); canonical statement: [CLOUD_SANDBOX.md § What this does not unlock](../internal/environment/CLOUD_SANDBOX.md#what-this-does-not-unlock)).
 - **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.
 

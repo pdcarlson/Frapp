@@ -61,6 +61,7 @@ import { dirname, join } from "node:path";
 
 import {
   ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
@@ -91,10 +92,10 @@ export function readWorkspaceId({ path = join(REPO_ROOT, ".infisical.json"), rea
 // ── Alert identity ──────────────────────────────────────────────────────────
 // Title is the primary key — looked up by exact match, so it must stay stable.
 // The lookup label comes from lib/alert-issue.mjs, which says what it does.
-export const ALERT_ISSUE_TITLE =
-  "Staging conformance is failing — frapp-staging has drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Staging conformance is failing — frapp-staging has drifted",
+  labels: ["area:ci", "P1"],
+});
 
 export const PASS = "pass";
 export const FAIL = "fail";
@@ -1161,7 +1162,7 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null, copy
     copy.issueDriftLine,
     "state the repository expects. It closes itself on the next clean scheduled run.",
     "",
-    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state, not a`,
+    `Do not claim this issue as backlog work — it carries \`${ALERT_LOOKUP_LABEL}\` and tracks live state, not a`,
     "unit of work. Fix the underlying drift and it resolves on its own.",
     "",
     "### Failing assertions",
@@ -1361,9 +1362,7 @@ export async function runStagingConformance({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       // previousBody is null on create and the existing body on refresh; the
       // builder merges its marker so an unresolved assertion is never dropped.
       buildIssueBody: (previousBody) =>
@@ -1406,8 +1405,7 @@ export async function runStagingConformance({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
   });
 
   // Falling through on a failed lookup would let a transient 5xx close an
@@ -1476,8 +1474,7 @@ export async function runStagingConformance({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
   });
   if (alert.action === "closed") {

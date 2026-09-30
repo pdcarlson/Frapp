@@ -86,11 +86,11 @@ in that recipe, so it has to clear the 3:1 non-text floor unaided. It is not a t
 `chat-admin-page`, `members-directory`, `roles-page` and `documents-page` all use it
 too, among others (`grep -rnw FOCUS_RING_OFFSET apps/web --include='*.tsx'` lists the current
 sites; a count written here went stale). (`chapter-wizard` is not one of them: it imports and applies `FOCUS_RING`, and
-names `FOCUS_RING_OFFSET` only inside a JSX comment. That comment cites
-[#1215](https://github.com/pdcarlson/Frapp/issues/1215) in the present tense, but #1215 closed
-completed on 2026-08-28 via [#1348](https://github.com/pdcarlson/Frapp/pull/1348), and lane 1 has
-since moved that ring again — accent-8 to accent-11. The comment is stale twice over; L-07 owns what
-is left of it.)
+named `FOCUS_RING_OFFSET` only inside a JSX comment that cited
+[#1215](https://github.com/pdcarlson/Frapp/issues/1215) in the present tense, after #1215 closed
+completed on 2026-08-28 via [#1348](https://github.com/pdcarlson/Frapp/pull/1348). *Corrected
+2026-09-30:* L-07's closing ([#2398](https://github.com/pdcarlson/Frapp/issues/2398)) deleted that
+sentence.)
 
 Do not delete the constant on the assumption that removing Switch and Tabs styling orphans it. Its
 margin was always thin (3.05:1 against a 3.0 floor on the tightest seed) and the lighter background
@@ -153,7 +153,9 @@ which only restated the spec. **L-05 is closed as of 2026-09-13** by lane 7
 ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), in the direction that leaves its tokens
 standing. **L-02 is closed as of 2026-09-23** by the stale-palette sweep
 ([#1165](https://github.com/pdcarlson/Frapp/issues/1165)), which takes its recompute option. L-03,
-L-04, L-06, L-07 and L-09 are open.
+L-04, L-06 and L-09 are open. **L-07 is closed as of 2026-09-30** by
+[#2398](https://github.com/pdcarlson/Frapp/issues/2398), which moved `FOCUS_RING`'s border to
+`accent-11`.
 
 L-06, L-07, L-08 and L-09 reached past this epic, so they carry issues —
 [#2399](https://github.com/pdcarlson/Frapp/issues/2399),
@@ -392,10 +394,34 @@ in a `--surface-1` region still has no perceptible elevation. What the board rem
 remedy, not the defect. Resolving this now means either a design decision the board did not make, or
 reopening it with Design.
 
-### L-07 — `FOCUS_RING` is unguarded and non-conforming on several seeds
+### L-07 — CLOSED 2026-09-30. `FOCUS_RING` is unguarded and non-conforming on several seeds
 
-**Tracked as [#2398](https://github.com/pdcarlson/Frapp/issues/2398)**, which carries the re-derived
-measurements, the full call-site list and the conflict with the committed board.
+**Closed 2026-09-30 by [#2398](https://github.com/pdcarlson/Frapp/issues/2398), on the owner's
+decision of 2026-09-18: the bordered recipe's border moves from `accent-9` to `accent-11`**
+(`--accent-text`), the step `FOCUS_RING_OFFSET` already draws in. `FOCUS_RING`, `FOCUS_RING_ALWAYS`
+and `FOCUS_RING_WITHIN` all swap to it. `focus-contrast.spec.ts` now measures all three: at least
+3:1 on every seed over every ladder step, with the worst pair at 6.81:1 (`#BF0A30` on `--popover`).
+[`components.md`](../design-system/components.md) §2 owns the recipe and its measurements.
+
+- **Why, once the engine had already fixed the floor.** By the time the decision shipped, `accent-9`
+  cleared 3:1 everywhere (the 2026-09-23 correction below), so the defect the entry names was gone for
+  engine-derived palettes. Two reasons still held. `accent-9` clears the floor with no headroom
+  (3.78:1 at the worst). And on a primary button, whose fill is `accent-9` over a reserved
+  transparent border, an `accent-9` border swap drew nothing, so the 25% ring was the whole
+  indicator.
+- **The token alone doesn't fix the primary button.** The fill paints under a transparent border by
+  default, so accent-9 → accent-11 there is a 1.09:1 change at the worst seed. The `default` Button
+  variant (and landing's primary buttons) now clip the fill to the padding box (`bg-clip-padding`),
+  so the border shows the surface at rest and accent-11 on focus.
+- **This diverges from the board**, which draws the focus state as "gold border + 3px 25% ring"
+  (`reference/web-framework.dc.html:387`, `:1157`). The decision post-dates the board and rests on
+  the non-text contrast floor, which a board can't lower. The board's
+  [README](reference/README.md) § What this board settles records it.
+- **Not closed by this:** a control with no border to swap still shows only the diluted ring, which
+  includes the shell chrome's `FOCUS_RING_SHELL`.
+  [#2965](https://github.com/pdcarlson/Frapp/issues/2965) tracks it.
+
+The original entry follows.
 
 The lane fixed `FOCUS_RING_OFFSET`. The **other** recipe, `FOCUS_RING` — which
 [`components.md`](../design-system/components.md) §2 applies to every focusable control — was not

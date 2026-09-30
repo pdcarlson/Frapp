@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 // Pins the fix for #1379, whose failure mode is invisible in a diff: a workflow
 // that keys `concurrency.group` on `github.ref` and cancels unconditionally puts
@@ -67,9 +68,7 @@ function concurrencyOf(text) {
   return { group: group?.[1] ?? null, cancel: cancel?.[1] ?? null };
 }
 
-const workflows = readdirSync(WORKFLOWS)
-  .filter((f) => f.endsWith(".yml"))
-  .sort()
+const workflows = workflowFiles()
   .map((name) => ({ name, text: readFileSync(join(WORKFLOWS, name), "utf8") }));
 
 const GUARD = "${{ github.ref != 'refs/heads/main' }}";

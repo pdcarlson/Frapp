@@ -42,8 +42,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // `bg-clip-padding` is the focus indicator's other half (#2398). With
+        // the default `border-box` clip the fill paints under the reserved
+        // transparent border, so focus would only move that 1px from accent-9
+        // to accent-11 (1.09:1 on the worst seed). Clipped, the border shows
+        // the surface at rest and accent-11 on focus: `focus-contrast.spec.ts`.
         default:
-          "bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-pressed",
+          "bg-primary bg-clip-padding font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-pressed",
         secondary:
           "border-input bg-card font-semibold text-foreground hover:bg-accent",
         tinted:

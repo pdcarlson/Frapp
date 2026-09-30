@@ -29,11 +29,11 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import { ALERT_CONFIGS } from "../deploy-alert.mjs";
-import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 // The dispatch: confirmation, validation, the call, the tag and the report.
@@ -911,9 +911,9 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.equal(config.gateJob, null, "validate failing costs nothing and must never alert");
     assert.deepEqual(config.deployJobs, ["deploy"]);
     assert.equal(callerJob("deploy").keys.get("uses"), "./.github/workflows/_deploy.yml");
-    assert.ok(config.alertLabels.includes("P1"));
+    assert.ok(config.alert.labels.includes("P1"));
     const routing = readFileSync(join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md"), "utf8");
-    assert.ok(routing.includes(`*${config.alertTitle}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
+    assert.ok(routing.includes(`*${config.alert.title}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
   });
 
   // A deploy job that never ran a step fails or cancels like one that broke.
@@ -972,7 +972,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
 describe("the shared job is the only thing that migrates or ships production", () => {
   it("no other workflow runs the migration, the Render deploy or a production upload", () => {
     const dir = join(REPO_ROOT, ".github", "workflows");
-    for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
+    for (const file of workflowFiles().filter((f) => f !== "_deploy.yml")) {
       const other = withoutComments(readFileSync(join(dir, file), "utf8"));
       assert.doesNotMatch(other, /node scripts\/run-migration\.mjs/, `${file} applies migrations`);
       assert.doesNotMatch(other, /deploy-render-production\.mjs/, `${file} deploys to Render`);
