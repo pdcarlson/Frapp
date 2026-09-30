@@ -31,3 +31,15 @@ export function isUniqueViolation(error: unknown): boolean {
     (error as { code?: unknown }).code === PG_UNIQUE_VIOLATION
   );
 }
+
+/**
+ * Whether an unknown throwable is a Postgres foreign-key violation. The same
+ * shape and the same guidance as {@link isUniqueViolation}.
+ */
+export function isForeignKeyViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === PG_FOREIGN_KEY_VIOLATION
+  );
+}

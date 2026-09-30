@@ -299,8 +299,11 @@ export interface IDiscordImportRepository {
   /**
    * Delete the channels this import created that now hold nothing: no message
    * of any kind, no attachment, no points-ledger link, and no `use_existing`
-   * mapping of any import (#2905). Runs only while the import is `purging`,
-   * after its messages are gone. Returns the ids of the channels it deleted.
+   * mapping of an import that isn't `purging` or `purged` (#2905, #2922).
+   * Also considers each channel a `purging` or `purged` import created that
+   * this one merged into, which that import's purge had to keep. Runs only
+   * while the import is `purging`, after its messages are gone. Returns the
+   * ids of the channels it deleted.
    */
   deleteEmptyCreatedChannels(
     importId: string,
