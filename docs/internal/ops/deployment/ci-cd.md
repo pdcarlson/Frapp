@@ -17,6 +17,7 @@
    7. Deploy the Supabase Edge Functions (`deploy-edge-functions.mjs`) unless the plan is `stale`, which would roll one back. They go before the API because the API calls them ([Supabase § Edge Functions](supabase.md#edge-functions)).
    8. Deploy the commit to Render when the plan says so, and verify the API serves the planned commit (`verify-served-commit.mjs`) whenever anything ships. [Deploy verification](#deploy-verification) has the detail.
    9. **Upload** web and landing (`DEPLOY_PHASE=upload`) when the plan says so, then alias `app.staging.frapp.live` and `staging.frapp.live` to the new deployments.
+   10. **Check the source maps** (`verify-sentry-sourcemaps.mjs`): ask Sentry whether each project this run built has its maps for the commit. It reports and never fails the job; see [§ Source maps](#source-maps).
 
    After a successful `deploy` job, a separate `prune-vercel-staging` job (`prune-vercel-staging.mjs`, checked out at `main`) deletes all but the newest `KEEP_PREVIEWS` preview deployments of each project, never a production deployment or one a staging hostname serves. Vercel counts every retained deployment against the Hobby team's Function Storage, which production shares (#2865). A failure there fails that job only, not the deploy, and raises no alert.
 
@@ -49,7 +50,8 @@ layers are that job's steps named `inputs.environment == 'production'`:
    on a dry run and under `migrations-only`).
 7. **Render deploy by `commitId`** → **served-commit check** (`verify-served-commit.mjs`: `/health/ready`
    answers 2xx and reports this commit) → **Vercel production uploads** (each stash restored and
-   shipped with `vercel deploy --prebuilt --prod`) → **tag**. A failure after the approval opens the
+   shipped with `vercel deploy --prebuilt --prod`) → **source-map check** ([§ Source maps](#source-maps);
+   reports, never fails) → **tag**. A failure after the approval opens the
    P1 *Deploy production failed* alert issue ([`ALERT_ROUTING.md`](../ALERT_ROUTING.md#automated-github-issue-alerts)).
 
 > **Corrected 2026-09-28 (#2805):** until #2805 production had its own copy of these steps in
@@ -229,6 +231,17 @@ Until 2026-09-25 staging was verified from the side: `verify-deployments.yml` ra
 - *History:* **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`) were jobs in that observer, ⚠️ **removed 2026-09-02 by #1579** — ADR-21's Git unlink means no push creates a Vercel deployment, so these jobs could only ever fail. What follows describes the semantics `verify-vercel-deploy.mjs` still implements; the script is kept and is now imported by `deploy-vercel.mjs` for its terminal-state vocabulary, though no workflow calls it directly. **#1578** (2026-09-04) did not re-wire it here: `deploy-vercel-staging.yml` (now `deploy-staging.yml`) creates the deployments and so verifies them **by id**, which is strictly better than searching for one by SHA, and it must stay CI-gated where that workflow was push-triggered. Historically they failed on `ERROR`. Treat `CANCELED` as neutral **only when a later deployment on the same branch overtook it** — the signature of Vercel auto-cancelling a build that a newer push superseded, where the branch is still verified by the build that overtook it (and that build has its own verify run, so the later deployment need not be `READY` yet). A cancel that nothing overtook is a failure: it was a manual stop, a build concurrency limit, or an Ignored Build Step that skipped it. Note the test looks **forward**, not backward. Asking whether an _earlier_ success exists was the right question while `turbo-ignore` ran — an earlier success was the baseline a skip diffed against — but on `main` one always exists, so as a supersession test it would call every cancel benign. "No deployment for this SHA within 3 minutes" is also a **failure**. It was neutral while `ignoreCommand` ran `turbo-ignore`, which legitimately suppressed a build for an unchanged app tree; both apps now pin `ignoreCommand: "exit 1"`, so with `git.deploymentEnabled.main = true` every push to `main` must produce a deployment row for both projects and a missing one means the Git integration did not fire. ⚠️ **2026-09-02:** that is now the permanent state — both projects are unlinked from Git (ADR-21), so a missing deployment row is expected rather than a red flag. Both jobs failed on every push (`verify-vercel-landing` since 2026-09-01, `verify-vercel-web` since 2026-09-02) until #1579 removed them; only the verify step ever failed, the alias step after it was skipped. See the dated note at the top of [Vercel Setup](vercel.md).
 
 The staging deploy is not a required check: it runs after the merge, on `workflow_run`, where a red run notifies nobody. So its `deploy-outcome` job raises an alert issue on failure and closes it when a later run deploys ([`ALERT_ROUTING.md`](../ALERT_ROUTING.md#automated-github-issue-alerts)). The failure message in the run log names the commit SHA and the last observed state; open the Render dashboard to read the full deploy log.
+
+#### Source maps
+
+Every surface uploads its source maps to Sentry during its build, best effort: a failed upload never fails the build ([#2431](https://github.com/pdcarlson/Frapp/issues/2431)). The API's Render build logs one `WARNING:` line, and web's and landing's Sentry plugin logs its error. With no `SENTRY_AUTH_TOKEN`, all three skip the upload in silence. So the deploy job's last step asks Sentry instead ([`verify-sentry-sourcemaps.mjs`](../../../../scripts/ci/verify-sentry-sourcemaps.mjs), [#2489](https://github.com/pdcarlson/Frapp/issues/2489)):
+
+- **What it checks:** each project this run built (staging's `frapp-api` when the plan deployed the API, `frapp-web` and `frapp-landing` when it uploaded them; all three on a real `full` production run) has an artifact bundle associated with the deployed commit as its release.
+- **How:** `GET /api/0/projects/frapp-live/<project>/files/artifact-bundles/?query=<sha>` with the job's `SENTRY_AUTH_TOKEN`, from the trusted copy. A `missing` answer is re-asked for a minute, because Sentry assembles an upload after it lands.
+- **What it writes:** one verdict per project (`present`, `missing`, `no-token`, `rejected`, `no-project` or `unverifiable`), as annotations, a step summary and the job output `sourcemaps`. The endpoint is undocumented, so an answer that isn't a list of bundles is `unverifiable`, never `missing`.
+- **Never red:** it exits 0 on every verdict and every error of its own. The deploy shipped either way.
+
+Each caller's `deploy-outcome` job turns the report into one P2 alert per project and environment ([`sentry-sourcemaps-alert.mjs`](../../../../scripts/ci/sentry-sourcemaps-alert.mjs); what raises and what closes one is its row in [`ALERT_ROUTING.md`](../ALERT_ROUTING.md#automated-github-issue-alerts)). The deploy job holds the Sentry token and no write scope; `deploy-outcome` holds `issues: write` and no token.
 
 Script implementations and unit tests live under [`scripts/ci/`](../../../../scripts/ci/).
 

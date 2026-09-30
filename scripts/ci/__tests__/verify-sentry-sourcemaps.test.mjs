@@ -155,12 +155,32 @@ describe("one project's verdict", () => {
     assert.match(result.detail, /asking 3 times over 20s/);
   });
 
-  it("is rejected on 401 and 403: the token that uploads can't read either", async () => {
-    for (const status of [401, 403]) {
-      const { result, calls } = await check([response(status, { detail: "no" })]);
-      assert.equal(result.verdict, "rejected", String(status));
-      assert.equal(calls.length, 1, "a refusal is not re-asked");
-    }
+  it("is rejected on 401: the token that uploads can't read either", async () => {
+    const { result, calls } = await check([response(401, { detail: "no" })]);
+    assert.equal(result.verdict, "rejected");
+    assert.equal(calls.length, 1, "a refusal is not re-asked");
+  });
+
+  it("asks the documented releases list after a 403, before calling the token dead", async () => {
+    // Both refuse: the token can read nothing, so it can't upload either.
+    const refused = await check([response(403, {}), response(403, {})]);
+    assert.equal(refused.result.verdict, "rejected");
+    assert.equal(refused.calls.length, 2);
+    assert.equal(
+      refused.calls[1].url,
+      `https://sentry.io/api/0/organizations/frapp-live/releases/?per_page=1&query=${SHA}`,
+    );
+    assert.equal(refused.calls[1].init.headers.Authorization, "Bearer t");
+    // The releases list answers: the undocumented endpoint wants a scope the
+    // upload may not, which is no verdict on the maps.
+    const scoped = await check([response(403, {}), response(200, [])]);
+    assert.equal(scoped.result.verdict, "unverifiable");
+    assert.match(scoped.result.detail, /wants a scope/);
+    // The probe itself fails: nothing to judge by.
+    const unknown = await check([response(403, {}), response(502, {})]);
+    assert.equal(unknown.result.verdict, "unverifiable");
+    const thrown = await check([response(403, {}), new Error("fetch failed")]);
+    assert.equal(thrown.result.verdict, "unverifiable");
   });
 
   it("is no-project on 404", async () => {

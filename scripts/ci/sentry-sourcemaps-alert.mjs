@@ -104,7 +104,8 @@ export function actionFor(project, verdict) {
 
 const FIX = {
   missing:
-    "Read the build that uploaded (or should have). The API's Render build logs `WARNING: … frapp-api source-map upload not confirmed` when `sentry-cli` failed; " +
+    "Read the build that uploaded (or should have). The API's Render build logs `WARNING: … frapp-api source-map upload not confirmed` when `sentry-cli` failed, " +
+    "and `SENTRY_AUTH_TOKEN unset; skipping` when Render's environment lacks the token (check the Infisical sync); " +
     "a failed upload is cached with its Docker layer, so clear Render's build cache before redeploying the same commit. " +
     "Web and landing log the Sentry plugin's error in the `Build the Vercel … bundles` step of the deploy run.",
   "no-token":

@@ -41,7 +41,10 @@
 //   no-token     — this job has no SENTRY_AUTH_TOKEN, so the build it ran, or
 //                  the Render build synced from the same Infisical environment,
 //                  uploaded nothing
-//   rejected     — 401/403: the token that uploads can't read either
+//   rejected     — 401, or 403 from both this endpoint and the documented
+//                  releases list: the token that uploads can't read either.
+//                  A 403 here with a readable releases list is `unverifiable`:
+//                  the undocumented endpoint wants a scope the upload may not
 //   no-project   — 404: no such Sentry project (renamed, deleted, or never
 //                  created: `frapp-landing` until #2071)
 //   unverifiable — no answer to judge: the network, a 5xx after retries, a
@@ -130,6 +133,18 @@ export function artifactBundlesUrl({ baseUrl = DEFAULT_SENTRY_URL, org = SENTRY_
 }
 
 /**
+ * The documented "List an Organization's Releases", which `org:ci` may read.
+ * Asked only after a 403 from the artifact-bundles endpoint, to tell a token
+ * that can read nothing (revoked, or lost its scope: the upload fails too)
+ * from one the undocumented endpoint wants another scope for (the upload may
+ * be fine, so that is no verdict on the maps).
+ */
+export function releasesProbeUrl({ baseUrl = DEFAULT_SENTRY_URL, org = SENTRY_ORG, release }) {
+  const base = baseUrl.replace(/\/+$/, "");
+  return `${base}/api/0/organizations/${encodeURIComponent(org)}/releases/?per_page=1&query=${encodeURIComponent(release)}`;
+}
+
+/**
  * `present` when a bundle with files is associated with `release`, `missing`
  * when the list holds none, `unverifiable` when the body is not a list of
  * bundles at all. A bundle's `associations` is its `[{ release, dist }]`.
@@ -171,7 +186,7 @@ export async function checkProject({
   const url = artifactBundlesUrl({ baseUrl, project, release });
   let result;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    result = await readOnce({ url, release, token, fetchImpl });
+    result = await readOnce({ url, baseUrl, release, token, fetchImpl });
     if (result.verdict !== "missing" || attempt === attempts) break;
     await clock.sleep(intervalMs);
   }
@@ -182,21 +197,45 @@ export async function checkProject({
   return result;
 }
 
-async function readOnce({ url, release, token, fetchImpl }) {
-  let response;
+const REFUSED =
+  "the upload uses the same token, so it can't have uploaded either";
+
+async function get(url, token, fetchImpl) {
   try {
-    response = await fetchImpl(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
+    return {
+      response: await fetchImpl(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      }),
+    };
   } catch (error) {
     // undici puts the real reason (ENOTFOUND, ECONNRESET) on `cause`.
     const reason = [error?.message ?? String(error), error?.cause?.message].filter(Boolean).join(": ");
-    return { verdict: "unverifiable", detail: `the request to Sentry failed: ${reason}` };
+    return { failure: { verdict: "unverifiable", detail: `the request to Sentry failed: ${reason}` } };
   }
-  if (response.status === 401 || response.status === 403) {
+}
+
+async function readOnce({ url, baseUrl, release, token, fetchImpl }) {
+  const { response, failure } = await get(url, token, fetchImpl);
+  if (failure) return failure;
+  if (response.status === 401) {
+    return { verdict: "rejected", detail: `Sentry refused the token (HTTP 401); ${REFUSED}` };
+  }
+  if (response.status === 403) {
+    // A 403 on an undocumented endpoint may be a scope it wants that the
+    // upload doesn't: ask a documented one before calling the token dead.
+    const probe = await get(releasesProbeUrl({ baseUrl, release }), token, fetchImpl);
+    if (probe.response?.ok) {
+      return {
+        verdict: "unverifiable",
+        detail: "Sentry refused the artifact-bundles read (HTTP 403) but let the same token list releases, so it wants a scope the upload may not; the maps are unjudged",
+      };
+    }
+    if (probe.response?.status === 401 || probe.response?.status === 403) {
+      return { verdict: "rejected", detail: `Sentry refused the token (HTTP 403, and ${probe.response.status} listing releases); ${REFUSED}` };
+    }
     return {
-      verdict: "rejected",
-      detail: `Sentry refused the token (HTTP ${response.status}); the upload uses the same token, so it can't have uploaded either`,
+      verdict: "unverifiable",
+      detail: `Sentry refused the artifact-bundles read (HTTP 403), and listing releases to tell why ${probe.failure ? "failed" : `answered HTTP ${probe.response.status}`}`,
     };
   }
   if (response.status === 404) {
