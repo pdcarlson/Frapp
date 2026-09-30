@@ -85,7 +85,7 @@ export function ProfilePhotoControl({
       toast({
         title: "Photo updated",
         description:
-          "Your chapter sees it in the web directory and in chat on the web.",
+          "Your chapter sees it in the directory and chat on the web.",
       });
     } catch (error) {
       toast({
