@@ -98,8 +98,19 @@ export const COSTLY_MARKDOWN_BODIES: readonly CostlyMarkdownBody[] = [
   {
     // Block structure: lines with no marker continue the quote's paragraph
     // lazily, and micromark re-checks the quote on each one.
-    label: "a quote continued lazily for 4,998 lines (0.45 s)",
+    label: "a quote continued lazily for 4,998 lines (0.45–1 s)",
     body: ">a\n" + "b\n".repeat(4998),
+  },
+  {
+    // A list item stays open across the blank line, so its second paragraph
+    // runs lazily with no marker line of its own.
+    label: "a list item's second paragraph continued lazily (0.45–1 s)",
+    body: "- x\n\n  b\n" + "c\n".repeat(4994),
+  },
+  {
+    // micromark drops the byte-order mark, so the quote still opens.
+    label: "a lazy quote behind a byte-order mark (0.6–0.9 s)",
+    body: "\uFEFF>a\n" + "b\n".repeat(4997),
   },
   {
     label: "a list of 2,500 items (0.13 s)",

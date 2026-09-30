@@ -94,8 +94,9 @@ function exceedsDepth(root: MdastNode, limit: number): boolean {
  * leading run of block-quote and list markers is already longer than the cap
  * skips the parse and renders as raw text straight away: each marker opens at
  * least one mdast level, so the tree would have been over the cap anyway and
- * the outcome is the one `remarkDepthCap` would have reached. It covers
- * container markers only; `exceedsParseBudget` covers the inline shapes.
+ * the outcome is the one `remarkDepthCap` would have reached. It covers one
+ * line's container markers; `exceedsParseBudget` covers the inline shapes and
+ * the body's container lines as a whole.
  *
  * It splits lines where CommonMark does, at `\n`, `\r` or both, and skips the
  * byte-order mark micromark drops from the start of a document. Missing either
@@ -158,12 +159,13 @@ export function opensTooManyContainers(content: string): boolean {
   return false;
 }
 
-function isDigit(char: string | undefined): boolean {
+/** Shared with `markdown-parse-budget.ts`, so the two scans read one grammar. */
+export function isDigit(char: string | undefined): boolean {
   return char !== undefined && char >= "0" && char <= "9";
 }
 
 /** A list marker needs a space, a tab or the end of the line after it. */
-function isMarkerBoundary(content: string, index: number): boolean {
+export function isMarkerBoundary(content: string, index: number): boolean {
   const next = content[index];
   return next === undefined || next === " " || next === "\t" || next === "\n" || next === "\r";
 }

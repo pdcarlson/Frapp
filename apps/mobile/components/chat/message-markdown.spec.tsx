@@ -384,7 +384,9 @@ describe("MessageMarkdown: bodies too costly to parse", () => {
       const parsed = parseMessageMarkdown(content);
       expect(performance.now() - started).toBeLessThan(500);
       expect(parsed.links).toEqual([]);
-      expect(drawn(content)).toBe(content);
+      // The raw-text path keeps every character but a line's leading
+      // indentation, which `remark-breaks` drops at each break.
+      expect(drawn(content)).toBe(content.replace(/\n[ \t]+/g, "\n"));
     },
   );
 

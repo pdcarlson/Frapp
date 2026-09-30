@@ -138,6 +138,14 @@ describe("exceedsParseBudget", () => {
     expect(exceedsParseBudget((pad + closers + "\n\t- ").repeat(12))).toBe(
       true,
     );
+    // An empty bullet or `1.` item can't interrupt a paragraph either.
+    expect(exceedsParseBudget((pad + closers + "\n+\n").repeat(12))).toBe(true);
+    expect(exceedsParseBudget((pad + closers + "\n1.\n").repeat(12))).toBe(
+      true,
+    );
+    expect(exceedsParseBudget((pad + closers + "\n-   \n").repeat(12))).toBe(
+      true,
+    );
     // The same lines as bullets are separate paragraphs.
     expect(exceedsParseBudget(("- " + pad + closers + "\n").repeat(12))).toBe(
       false,
@@ -157,21 +165,40 @@ describe("exceedsParseBudget", () => {
     ).toBe(false);
   });
 
-  it("caps a paragraph's run of lines after a container line", () => {
+  it("caps the lines after the body's first container line", () => {
     // Lazy continuation lines are quadratic: `">a\n" + "b\n".repeat(4998)`
-    // took 450 ms, with no delimiter anywhere.
+    // took 0.45–1 s, with no delimiter anywhere.
     const lazy = (lines: number) => ">a\n" + "b\n".repeat(lines - 1);
     expect(exceedsParseBudget(lazy(MAX_CONTAINER_RUN_LINES))).toBe(false);
     expect(exceedsParseBudget(lazy(MAX_CONTAINER_RUN_LINES + 1))).toBe(true);
     expect(exceedsParseBudget("- a\n" + "b\n".repeat(4998))).toBe(true);
-    // Long lists too: linear, but 2,500 items took 130 ms.
+    // Long lists too: linear, but 2,500 items took 115–130 ms.
     expect(exceedsParseBudget("- a\n".repeat(2500))).toBe(true);
     expect(exceedsParseBudget("-\n".repeat(5000))).toBe(true);
-    // Plain lines open no container, and a blank line ends the run.
+    // Each marker weighs one: 125 lines of eight nested markers is 1,000.
+    expect(exceedsParseBudget("- - - - - - - - a\n".repeat(125))).toBe(false);
+    expect(exceedsParseBudget("- - - - - - - - a\n".repeat(126))).toBe(true);
+    // Plain lines before any container don't count.
     expect(exceedsParseBudget("b\n".repeat(5000))).toBe(false);
+  });
+
+  it("keeps counting across blank lines, which don't close every container", () => {
+    // A list item stays open across a blank line, so its second paragraph
+    // runs lazily with no marker line of its own: about 1 s.
+    expect(exceedsParseBudget("- x\n\n  b\n" + "c\n".repeat(4994))).toBe(true);
+    // And runs split by blank lines add up: five runs of 1,000 took 220 ms.
     expect(
-      exceedsParseBudget((">a\n" + "b\n".repeat(600) + "\n").repeat(4)),
-    ).toBe(false);
+      exceedsParseBudget((">a\n" + "b\n".repeat(998) + "\n").repeat(5)),
+    ).toBe(true);
+    expect(exceedsParseBudget("- a\n\n".repeat(2000))).toBe(true);
+  });
+
+  it("reads past a leading byte-order mark, which the parser drops", () => {
+    // Otherwise it would hide the first line's markers.
+    expect(exceedsParseBudget("\uFEFF>a\n" + "b\n".repeat(4997))).toBe(true);
+    expect(exceedsParseBudget("\uFEFF" + "- **Alex**\n".repeat(20))).toBe(
+      false,
+    );
   });
 
   it("reads CRLF as one line ending, so it can't split a paragraph", () => {

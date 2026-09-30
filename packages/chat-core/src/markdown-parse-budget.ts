@@ -76,7 +76,7 @@
  * lists. Best of three runs in Node 24 on the machine that set them, the
  * slowest inline bodies took 60–85 ms, all of them bodies of 5,000 short lines
  * that take 45–90 ms with no delimiters at all, and the slowest block bodies
- * about 50 ms. The spread between runs is wide, so treat these as a scale,
+ * about 65 ms. The spread between runs is wide, so treat these as a scale,
  * not a bound. Ordinary chat sits inside: a
  * 10,000-character paragraph with 60 bold phrases, 30 links and 30 entities
  * estimates at about 90% of the event budget, and a message with several
@@ -85,6 +85,8 @@
  * chat allowlist and renders nothing anyway.
  * `markdown-parse-budget.spec.ts` pins the shapes that motivated this.
  */
+
+import { isDigit, isMarkerBoundary } from "./markdown-depth-cap";
 
 /**
  * The event estimate a paragraph may reach: its `*`, `_` and `]` characters
@@ -154,13 +156,20 @@ function isIntraword(content: string, index: number): boolean {
 }
 
 /**
- * How long a run may be, from a paragraph's first container line (a block
- * quote or list marker) to the next blank line: each line weighs its markers,
- * or one if it has none. micromark re-checks every open container on each
- * line, and a line with no marker of its own continues the paragraph lazily,
- * which is quadratic: `">a\n" + "b\n".repeat(4998)` took 450 ms. Past 1,000
+ * How many lines a body may run from its first container line (a block quote
+ * or list marker) to its end, each weighing its markers, or one if it has
+ * none. micromark re-checks every open container on each line, and a line
+ * with no marker of its own continues a paragraph inside them lazily, which
+ * is quadratic: `">a\n" + "b\n".repeat(4998)` took 0.45–1 s. Past 1,000
  * the body skips the parse. That also bounds long or deeply nested lists,
- * which are linear but slow per marker (2,500 items took 130 ms).
+ * which are linear but slow per marker (2,500 items took 115–130 ms).
+ *
+ * **Why to the end of the body, not the paragraph.** A list item stays open
+ * across a blank line, so a later paragraph inside it can run lazily with no
+ * marker line of its own (`"- x\n\n  b\n" + "c\n".repeat(4994)` took about
+ * 1 s). Telling when every container has closed is block parsing, and a
+ * wrong guess hides the run, so the count never stops. That also keeps runs
+ * split by blank lines from adding up past the cap unseen.
  */
 export const MAX_CONTAINER_RUN_LINES = 1_000;
 
@@ -174,10 +183,6 @@ interface LineStart {
    * other marker line may be a paragraph's lazy continuation, so it doesn't.
    */
   startsItem: boolean;
-}
-
-function isDigit(char: string | undefined): boolean {
-  return char !== undefined && char >= "0" && char <= "9";
 }
 
 function isSpace(char: string | undefined): boolean {
@@ -209,8 +214,7 @@ function readMarker(
       interrupts = digits === at + 1 && char === "1";
     }
   }
-  // A list marker needs a space, a tab or the end of the line after it.
-  if (after !== -1 && char !== ">" && after < end && !isSpace(content[after])) {
+  if (after !== -1 && char !== ">" && !isMarkerBoundary(content, after)) {
     after = -1;
   }
   return { after, interrupts };
@@ -257,8 +261,8 @@ export function exceedsParseBudget(content: string): boolean {
   let htmlOpeners = 0;
   let images = 0;
   let length = 0;
-  // Container markers and lines since the paragraph's first container line,
-  // or -1 before one.
+  // Container markers and lines since the body's first container line, or -1
+  // before one. Unlike the counts above, a blank line never resets it.
   let containerRun = -1;
 
   const resetInline = () => {
@@ -276,7 +280,9 @@ export function exceedsParseBudget(content: string): boolean {
     images * length > IMAGE_PARSE_BUDGET ||
     containerRun > MAX_CONTAINER_RUN_LINES;
 
-  let start = 0;
+  // micromark drops a byte-order mark at the start of a document. Read past
+  // it, or it would hide the first line's markers.
+  let start = content.startsWith("\uFEFF") ? 1 : 0;
   while (start <= content.length) {
     let end = start;
     while (
@@ -296,9 +302,10 @@ export function exceedsParseBudget(content: string): boolean {
     }
 
     if (blank) {
-      // A blank line ends the paragraph, and any lazy run with it.
+      // A blank line ends the paragraph. It may sit inside an open container.
       resetInline();
-      containerRun = -1;
+      // The empty "line" after a trailing line ending isn't one.
+      if (containerRun !== -1 && start < content.length) containerRun += 1;
     } else {
       const line = readLineStart(content, start, end);
       if (line.startsItem) resetInline();

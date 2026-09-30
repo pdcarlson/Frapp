@@ -372,7 +372,11 @@ describe("TextRenderer bodies too costly to parse", () => {
       expect(performance.now() - started).toBeLessThan(500);
 
       expect(container.querySelector("strong, em, a")).toBeNull();
-      expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
+      // The raw-text path keeps every character but a line's leading
+      // indentation, which `remark-breaks` drops at each break.
+      expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(
+        body.replace(/\n[ \t]+/g, "\n"),
+      );
     },
   );
 
