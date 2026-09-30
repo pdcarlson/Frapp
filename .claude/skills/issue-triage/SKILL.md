@@ -166,7 +166,10 @@ This runs unattended. Work through both passes without stopping to summarize or 
 and put any status note in the same message as your next tool call. End the run when the inbox
 and the Backlog batch are done, or when nothing more can move (the GitHub MCP is unavailable, or
 the marker-count guard failed and body writes are off). A run that only organizes and holds is
-still a success. The final message is this report, which the routine surfaces to the maintainer:
+still a success. Your last tracker write is the [run record](../../../docs/ci-cd/routines.md#run-record-all-routines),
+`routine=issue-triage`, with the outcome that section defines (a guard that turned body writes
+off makes it `stopped`). With the MCP unavailable there is no record to post, and none is posted
+any other way. The final message is this report, which the routine surfaces to the maintainer:
 
 - Marker-count guard result, and the probe result if you edited bodies (noting any leg you
   couldn't run).

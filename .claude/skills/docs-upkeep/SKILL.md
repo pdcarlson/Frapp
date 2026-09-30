@@ -153,7 +153,10 @@ Otherwise:
 Work the whole slice without stopping to summarize; put any status note in the same message as your
 next tool call. The run ends when the slice is swept and either the PR is open with your own CI
 failures fixed, or the slice was clean. End earlier only if a push fails, or the MCP is down after
-you've pushed the branch. Your final message is the run report.
+you've pushed the branch. Your last tracker write is the
+[run record](../../../docs/ci-cd/routines.md#run-record-all-routines), `routine=docs-upkeep`: `done` for a swept
+slice with or without a PR, `stopped` when a push failed. With the MCP down there is none to
+post, and the missing record is the signal. Your final message is the run report.
 
 ## Run report
 
