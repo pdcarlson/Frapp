@@ -117,6 +117,26 @@ export const chatReportCopy = {
   messageGone:
     "This message no longer exists, so there's nothing to remove. Mark actioned to close the report.",
   offlineWrite: "Reconnect to make changes.",
+  /**
+   * A report's attachments (#2481). The report keeps them while it is open,
+   * even after the sender deletes the message, and releases them once it is
+   * resolved; the officer loads them on request, never with the queue.
+   */
+  attachments: {
+    label: (count: number) =>
+      count === 1 ? "1 attachment" : `${count} attachments`,
+    show: "Show attachments",
+    loading: "Loading attachments...",
+    error: "Couldn't load the attachments.",
+    retry: "Retry",
+    partial: (missing: number) =>
+      missing === 1
+        ? "1 attachment couldn't be loaded."
+        : `${missing} attachments couldn't be loaded.`,
+    kept: "Kept while this report is open, even if the sender deletes the message.",
+    released: "Attachments are kept only while a report is open.",
+    unnamed: "Unnamed file",
+  },
   removeConfirm: {
     /** Names the author, so the dialog says which message it removes. */
     title: (author: string) => `Remove the message from ${author}?`,
@@ -289,6 +309,8 @@ export const chatReportActionLabel = {
   actioned: (subject: string, report: string) =>
     `Mark actioned: report on ${subject} (${report})`,
   remove: (subject: string, report: string) => `Remove ${subject} (${report})`,
+  showAttachments: (subject: string, report: string) =>
+    `Show attachments: ${subject} (${report})`,
 } as const;
 
 const SECOND = 1_000;

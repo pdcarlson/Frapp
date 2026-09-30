@@ -47,6 +47,8 @@ import type {
   DiscordImportFile,
   DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
+import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import type { IChatMessageReportRepository } from '#domain/repositories/chat-moderation.repository.interface';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
 import { ChannelCacheService } from '../chat-push-worker/channel-cache.service';
 import {
@@ -162,6 +164,10 @@ export class DiscordImportWorkerService {
     private readonly connectionRepo: IDiscordConnectionRepository,
     private readonly rbac: RbacService,
     private readonly channelCache: ChannelCacheService,
+    // An open chat report holds the attachments it snapshotted (#2481), and
+    // an imported message's attachments live under the import's prefix.
+    @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
+    private readonly reportRepo: IChatMessageReportRepository,
   ) {}
 
   /**
@@ -1095,14 +1101,25 @@ export class DiscordImportWorkerService {
 
     const prefix =
       job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);
+    // An open chat report on an imported message holds the objects it
+    // snapshotted (#2481), as it does against a member's own delete: deleting
+    // the import must not erase the evidence either. They stay until the
+    // report resolves, and its release deletes them then, since no message
+    // references them any more. Read once, before any delete. A failed read
+    // fails the slice like any other purge fault (the import is marked
+    // `failed`, and deleting it again resumes), rather than guess "nothing".
+    const held = new Set(
+      (await this.reportRepo.findHeldObjects(job.chapter_id))
+        .filter(({ bucket }) => bucket === CHAT_ARCHIVE_BUCKET)
+        .map(({ storage_path }) => storage_path),
+    );
     // `listFiles` does not recurse, so each level the layout uses is swept
     // explicitly. Deleting an already-gone key reports success, which is what
     // makes a resumed purge idempotent.
     for (const sub of ['export', 'media']) {
-      const paths = await this.storage.listFiles(
-        CHAT_ARCHIVE_BUCKET,
-        `${prefix}/${sub}`,
-      );
+      const paths = (
+        await this.storage.listFiles(CHAT_ARCHIVE_BUCKET, `${prefix}/${sub}`)
+      ).filter((path) => !held.has(path));
       if (paths.length > 0) {
         await this.storage.deleteFiles(CHAT_ARCHIVE_BUCKET, paths);
       }
