@@ -222,12 +222,20 @@ export interface IDiscordImportRepository {
     workerId: string,
   ): Promise<ClaimedDiscordImport | null>;
 
-  /** Extend a held lease. False means the lease was lost — stop working. */
+  /**
+   * Extend a held lease. False means the lease was lost — stop working.
+   *
+   * `progress` rides the same write: the purge records how many messages it
+   * has deleted each time it renews (#2944). Bound to the lock token like the
+   * renewal, so a worker that lost the lease cannot overwrite the new
+   * holder's count.
+   */
   renewLease(
     id: string,
     lockToken: string,
     now: Date,
     leaseMs: number,
+    progress?: Pick<DiscordImport, 'purged_messages'>,
   ): Promise<boolean>;
 
   /** Hand the job back for the next tick, keeping its status. */

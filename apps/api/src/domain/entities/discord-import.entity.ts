@@ -138,6 +138,14 @@ export interface DiscordImport {
   completed_at: string | null;
   purged_at: string | null;
   /**
+   * Imported messages the purge has deleted so far (#2944), out of
+   * `imported_messages`: the deletion's progress. Written by the worker with
+   * each lease renewal, so reading it costs no count. It accumulates across
+   * purge attempts, and is 0 on every import that has not started deleting,
+   * including those deleted before the column existed.
+   */
+  purged_messages: number;
+  /**
    * When the chapter took this import's record off its list. Only a purged
    * import is cleared, so nothing it brought in is left behind unlisted.
    */
