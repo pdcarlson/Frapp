@@ -132,6 +132,21 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   checks those, not labels. So a `human`-labelled issue with no prefix is held by its `triage`
   label alone, and promoting it exposes it to `/next`. Whether `human` should become a fourth
   recognised hold form is the owner's call, not a routine's.
+- **Parked:** `parked`, off the beta and v1 path on purpose. The 2026-09-23 board recomposition
+  put every open issue under the beta epic #2558 or the v1 epic #2523, parked it, or closed it.
+  #2523's index comment gives each parked issue's reason: after v1, waiting on a measured trigger,
+  hygiene with no release gate, or waiting on an owner decision.
+  - **Who sets it:** the owner adds and removes it, or a session acting on the owner's decision.
+    No routine does either, and no routine reads a missing or present `parked` as drift.
+  - **What it holds:** `/next` skips a parked issue in every mode, however high its priority, and
+    never reclaims one (§0.2 condition 1, §0.7). Issue-triage Pass B doesn't groom it (owner
+    decision 2026-09-23, #2565). The Issue Curator doesn't mark it `stale` for age, since it sits
+    idle on purpose. The way back onto the path is the owner removing the label.
+  - **What it isn't:** a board state, or `scope:production` (below), whose "parked by owner
+    decision" wording predates this label and whose rules are its own. `parked` sits on top of
+    whatever state the issue is in, so a parked issue can also carry `triage` and a priority.
+    Parked hygiene items stay reachable through the Hygiene Scan, which finds its work in the code
+    and may close the parked suggestion its fix covers.
 - **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
   `area:docs` · `area:product` · `area:ux` · `area:research`, plus the labels below, which were
   created in use rather than declared. They carry no label description and their scope is the

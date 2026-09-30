@@ -118,6 +118,11 @@ Groom about 25 Backlog issues per run, oldest-groomed first, so successive runs 
 Backlog. Much of the `suggestion` backlog lands unprioritized, and a correct priority is what
 keeps real work from being buried under suggestions in `/next`.
 
+Skip `parked` issues. They're off the beta and v1 path on purpose, and `/next` doesn't claim them,
+so grooming them only spends the run (owner decision 2026-09-23, #2565; see the roster in
+routines.md). Don't count them toward the 25, and don't add or remove the label: that's the
+owner's.
+
 - **Priority:** set one on any `suggestion`-owned issue missing it, and fix obviously wrong ones,
   with the same calibration as Pass A step 2.
 - **Agent briefs:** backfill and correct them on `suggestion`-owned issues, under the same rules
@@ -129,8 +134,8 @@ keeps real work from being buried under suggestions in `/next`.
 - **Estimate:** an optional `Estimate:` line when scope is clear.
 - **Stale and duplicates:** add `stale` to obviously aging suggestions the curator missed. Close
   or dedup only `suggestion`-owned issues, and only with proof. Never mark a `scope:production`
-  issue `stale` or raise its priority for age; those are parked by owner decision (see the roster
-  in routines.md).
+  issue `stale` or raise its priority for age; those are held by owner decision (the roster's
+  `scope:production` entry in routines.md). Unlike `parked` issues, they are still groomed.
 - **Ownership:** on human and planning issues in the Backlog, only fill an absent priority. Don't
   re-bucket, re-prioritize, close, or re-body them, and don't restructure epics.
 
