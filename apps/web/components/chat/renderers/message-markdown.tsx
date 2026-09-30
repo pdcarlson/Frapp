@@ -6,8 +6,8 @@ import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
 import {
   MESSAGE_MARKDOWN_ELEMENTS,
-  opensTooManyContainers,
   remarkDepthCap,
+  skipsMarkdownParse,
 } from "@repo/chat-core/markdown";
 import { remarkMentionChips } from "./remark-mention-chips";
 import { cn } from "@/lib/utils";
@@ -41,10 +41,10 @@ const ALLOWED_ELEMENTS = [...MESSAGE_MARKDOWN_ELEMENTS, "mark"];
  * adversarial bodies (#2209), so a message now costs its parse once per mount.
  */
 export const MessageMarkdown = memo(function MessageMarkdown({ content }: { content: string }) {
-  // Decided from the source, before remark sees it: a body that opens this
-  // many containers on one line is one remark would take seconds to parse,
-  // and it would render as raw text anyway. See `opensTooManyContainers`.
-  const flatten = opensTooManyContainers(content);
+  // Decided from the source, before remark sees it: a body remark would take
+  // seconds to parse renders as its raw text instead. See `skipsMarkdownParse`
+  // (#2209, #2664).
+  const flatten = skipsMarkdownParse(content);
   return (
     <ReactMarkdown
       // The depth cap goes first: every pass after it recurses once per

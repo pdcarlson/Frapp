@@ -6,7 +6,7 @@ import {
   type ReactTestRenderer,
 } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_MESSAGE_MARKDOWN_DEPTH } from "@repo/chat-core/markdown";
+import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/markdown";
 import { FrappThemeProvider, MONO_FONT_FAMILY } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 import {
@@ -353,6 +353,59 @@ describe("MessageMarkdown: the #2209 depth cap", () => {
   it("still formats a body nested within the cap", () => {
     const content = "> ".repeat(MAX_MESSAGE_MARKDOWN_DEPTH - 3) + "**bold**";
     expect(drawn(content)).toBe("bold");
+  });
+});
+
+/**
+ * #2664. Bodies within the length cap that remark took 0.2–1.8 s to parse in
+ * Node, and several times that on Hermes, which has no JIT: every member who
+ * opened the channel froze for it. `skipsMarkdownParse` now reads them off the
+ * source and they draw as their raw text. The time bound is loose so it can't
+ * flake on CI.
+ */
+describe("MessageMarkdown: bodies too costly to parse", () => {
+  const nestedOpeners = (() => {
+    let open = "";
+    let close = "";
+    for (let i = 0; i < 1600; i += 1) {
+      const marker = i % 2 ? "_" : "*";
+      open += `${marker}a `;
+      close = ` a${marker}` + close;
+    }
+    return open + "x" + close;
+  })();
+
+  it.each([
+    ["an underscore run", "_".repeat(4999) + "a" + "_".repeat(4999)],
+    ["a strong run", "**".repeat(2499) + "a" + "**".repeat(2499)],
+    ["open brackets closed by links", "[".repeat(3000) + "a" + "](u)".repeat(1000)],
+    ["alternating openers closed in reverse", nestedOpeners],
+    ["brackets", "[".repeat(4999) + "a" + "]".repeat(4999)],
+    ["star-a pairs", "*a".repeat(2400) + "x" + "a*".repeat(2400)],
+    ["nested images", "![".repeat(2499) + "a" + "](u)".repeat(1249)],
+  ])("draws %s as the raw text, without the slow parse", (_label, content) => {
+    expect(content.length).toBeLessThanOrEqual(10_000);
+    const started = performance.now();
+    const parsed = parseMessageMarkdown(content);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(parsed.links).toEqual([]);
+    expect(drawn(content)).toBe(content);
+  });
+
+  it("parses a body just inside the budget quickly", () => {
+    // Among the slowest shapes the budgets allow: openers closed in reverse,
+    // padded with entities, which multiply the events the emphasis resolver
+    // walks. It goes through the parse (the depth cap then flattens it).
+    const markers = Array.from({ length: 38 }, (_, i) => (i % 2 ? "_" : "*"));
+    const open = markers.map((marker) => `${marker}a `).join("");
+    const close = [...markers].reverse().map((marker) => ` a${marker}`).join("");
+    const pad = "&amp;x".repeat(Math.floor((9_000 - open.length - close.length) / 6));
+    const content = open + pad + close;
+    expect(skipsMarkdownParse(content)).toBe(false);
+
+    const started = performance.now();
+    parseMessageMarkdown(content);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });
 
