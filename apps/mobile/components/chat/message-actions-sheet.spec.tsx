@@ -152,6 +152,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** A local wall-clock time, so "Today" holds wherever the suite runs. */
+const SENT_AT = (() => {
+  const at = new Date();
+  at.setHours(17, 16, 0, 0);
+  return at.toISOString();
+})();
+
 describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
   const OWN = {
     messageId: "m9",
@@ -162,7 +169,20 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     blockUserId: null,
     senderName: "Vic",
     senderInDirectory: true,
+    senderLabel: "Blake",
+    sentAt: SENT_AT,
   };
+
+  it("says who sent the message and when, since a follow-on row shows neither", () => {
+    // components.md §11: a phone has no hover, so a grouped row draws no time
+    // and this header line is where a member finds it.
+    const tree = render({ ...OWN, senderLabel: "You" });
+    const time = new Date(SENT_AT).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    expect(text(tree)).toContain(`You · Today at ${time}`);
+  });
 
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
     const tree = render(OWN);
@@ -182,6 +202,8 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
     });
     expect(hasRow(tree, "Reply")).toBe(true);
     expect(hasRow(tree, "Edit message")).toBe(false);
@@ -243,6 +265,8 @@ describe("MessageActionsSheet — menu", () => {
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).toContain("Block Blake");
@@ -255,6 +279,8 @@ describe("MessageActionsSheet — menu", () => {
       blockUserId: null,
       senderName: "Frapp",
       senderInDirectory: false,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).not.toContain("Block Frapp");
@@ -268,6 +294,8 @@ describe("MessageActionsSheet — menu", () => {
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
     });
 
     pressByLabel(tree, "Block Blake");
@@ -291,6 +319,8 @@ describe("MessageActionsSheet — menu", () => {
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
     });
     expect(text(tree)).toContain(BLOCK_ROW_DESCRIPTION);
   });
@@ -308,6 +338,8 @@ describe("MessageActionsSheet — menu", () => {
         blockUserId: BLOCKED,
         senderName: null,
         senderInDirectory: false,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
       },
       onSenderDeparted,
     );
@@ -333,6 +365,8 @@ describe("MessageActionsSheet — report", () => {
     blockUserId: BLOCKED,
     senderName: "Blake",
     senderInDirectory: true,
+    senderLabel: "Blake",
+    sentAt: SENT_AT,
   };
 
   function sendButton(tree: ReactTestRenderer) {

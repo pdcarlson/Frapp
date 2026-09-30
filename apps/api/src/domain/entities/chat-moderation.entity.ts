@@ -79,7 +79,9 @@ export interface ChatMessageReport {
   message_id: string | null;
   reporter_user_id: string;
   /**
-   * The message's content **as it read when the report was filed**.
+   * What the member wrote on the message **as it read when the report was
+   * filed**: its content, and for a poll the card's question and option labels
+   * too (`reportedContentSnapshot`, #2724).
    *
    * Snapshotted because `ChatService.deleteMessage` lets a sender soft-delete
    * their own message, overwriting `content` with `[message deleted]` — without

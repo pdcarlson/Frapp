@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { AnnouncementCard } from "./announcement-card";
 import { ComingSoonCard } from "./coming-soon-card";
@@ -12,26 +13,6 @@ import { PollCard } from "./poll-card";
 import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 import { TextRenderer } from "./text-renderer";
-
-/**
- * Does this message render as a bubble (§11) rather than as a card?
- *
- * The row layout needs the answer before it renders the body: a bubble is
- * sided — self right, incoming left with an avatar — and a card is not. The
- * card-kind list lives in `@repo/chat-core/message-actions`, because which
- * kinds are cards also decides which messages offer Edit, on both clients
- * (#2775). The switch below is a second statement of the same list;
- * `registry.spec.tsx` fails if the two disagree.
- *
- * **Deletion does not enter into it**, which is the point. `MessageRenderer`
- * routes every deleted row to `TextRenderer` whatever its kind, but the *layout*
- * keys off the kind alone, so a row keeps the side and the chrome it already
- * had. An earlier cut returned `true` for anything deleted, which moved a
- * deleted poll of your own from the left column to the right the instant it was
- * deleted — reflowing the thread around the one row nobody should still be
- * looking at.
- */
-export { rendersAsBubble } from "@repo/chat-core/message-actions";
 
 export interface MessageRendererProps {
   message: ChatMessage;
@@ -56,8 +37,14 @@ export interface MessageRendererProps {
    * those would have compiled clean. Now it does not.
    */
   viewerId: string;
-  isSelf: boolean;
   isConfirmed: boolean;
+  /**
+   * The row's trailing markers, drawn after a plain message's last line. A card
+   * ignores it; `MessageItem` draws a card's markers under the card instead.
+   */
+  trailing?: ReactNode;
+  /** A plain message still sending, or failed: its text reads muted. */
+  muted?: boolean;
   onAct: (
     messageId: string,
     actionType: string,
@@ -78,16 +65,17 @@ export interface MessageRendererProps {
 export function MessageRenderer({
   message,
   viewerId,
-  isSelf,
   isConfirmed,
   onAct,
+  trailing,
+  muted,
 }: MessageRendererProps) {
   if (message.is_deleted) {
-    return <TextRenderer message={message} isSelf={isSelf} />;
+    return <TextRenderer message={message} trailing={trailing} muted={muted} />;
   }
   switch (message.kind) {
     case "text":
-      return <TextRenderer message={message} isSelf={isSelf} />;
+      return <TextRenderer message={message} trailing={trailing} muted={muted} />;
     case "poll":
       return (
         <PollCard
@@ -122,6 +110,6 @@ export function MessageRenderer({
     case "dues":
       return <ComingSoonCard message={message} />;
     default:
-      return <TextRenderer message={message} isSelf={isSelf} />;
+      return <TextRenderer message={message} trailing={trailing} muted={muted} />;
   }
 }

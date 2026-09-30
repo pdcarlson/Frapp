@@ -6,7 +6,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CHIP, CHIP_HIT_AREA } from "./chip";
+import {
+  ACTION_BAR_BUTTON,
+  ACTION_BAR_BUTTON_ON,
+  CHIP,
+  CHIP_HIT_AREA,
+} from "./chip";
 import { ReactionGlyph } from "./chat-glyphs";
 import { EmojiPicker } from "./emoji-picker";
 import { cn } from "@/lib/utils";
@@ -43,8 +48,8 @@ interface ReactionBarProps {
 }
 
 /**
- * Reaction chips attached to a bubble — `components.md` §11: 6px below it,
- * indented 4px, 6px apart, and the reacted chip is §5's Accent badge while the
+ * Reaction chips under a message — `components.md` §11: 6px below its body,
+ * 6px apart, and the reacted chip is §5's Accent badge while the
  * add chip is the same geometry in the elevated step. Both recipes and the
  * 44px hit area live in `./chip.ts`.
  *
@@ -63,8 +68,7 @@ export function ReactionChips({
   viewerId,
   onReact,
   onUnreact,
-  align = "start",
-}: ReactionBarProps & { align?: "start" | "end" }) {
+}: ReactionBarProps) {
   const entries = Object.entries(reactions)
     .map(([actionType, userIds]) => ({
       actionType,
@@ -77,12 +81,7 @@ export function ReactionChips({
     );
   if (entries.length === 0) return null;
   return (
-    <div
-      className={cn(
-        "mx-1 mt-1.5 flex flex-wrap gap-1.5",
-        align === "end" && "justify-end",
-      )}
-    >
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
       {entries.map((group) => {
         const mine = group.userIds.includes(viewerId);
         return (
@@ -115,12 +114,12 @@ export function ReactionChips({
 }
 
 /**
- * The hover row: four quick reactions plus the full picker.
+ * The action bar's reaction half: four quick reactions plus the full picker.
  *
- * These are chips, not buttons. §11 draws the add-reaction affordance as a chip
- * at the same 26px height as the reacted ones, and a row of six 44px-tall
- * buttons over a message would outweigh the message. The 44px *hit area* is
- * still met — see `CHIP_HIT_AREA`.
+ * Icon buttons, like the rest of the bar (`ACTION_BAR_BUTTON`), not the 26px
+ * reaction chips under the message: these are controls in a toolbar-like
+ * strip, and a reaction the viewer already made shows as on
+ * (`ACTION_BAR_BUTTON_ON`) so a second press reads as the undo it is.
  */
 export function ReactionQuickPick({
   reactions,
@@ -130,7 +129,7 @@ export function ReactionQuickPick({
 }: ReactionBarProps) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex items-center gap-1.5">
+    <>
       {QUICK_REACTIONS.map((emoji) => {
         const mine = (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(
           viewerId,
@@ -139,13 +138,10 @@ export function ReactionQuickPick({
           <button
             key={emoji}
             type="button"
-            className={cn(
-              CHIP.base,
-              CHIP_HIT_AREA,
-              mine ? CHIP.accent : CHIP.neutral,
-            )}
+            className={cn(ACTION_BAR_BUTTON, mine && ACTION_BAR_BUTTON_ON)}
             aria-pressed={mine}
             aria-label={`React with ${emoji}`}
+            title={`React with ${emoji}`}
             onClick={() => (mine ? onUnreact(emoji) : onReact(emoji))}
           >
             <span aria-hidden="true">{emoji}</span>
@@ -156,8 +152,9 @@ export function ReactionQuickPick({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+            className={ACTION_BAR_BUTTON}
             aria-label="Open emoji picker"
+            title="More reactions"
           >
             <ReactionGlyph className="h-4 w-4" />
           </button>
@@ -171,6 +168,6 @@ export function ReactionQuickPick({
           />
         </PopoverContent>
       </Popover>
-    </div>
+    </>
   );
 }

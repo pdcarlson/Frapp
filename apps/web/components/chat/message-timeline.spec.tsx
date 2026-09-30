@@ -211,7 +211,7 @@ describe("MessageTimeline reply quotes (#489)", () => {
     renderTimeline([PARENT, REPLY]);
 
     expect(screen.getByText("agreed")).toBeInTheDocument();
-    // Twice: the parent's own bubble, and the preview inside the reply's quote.
+    // Twice: the parent's own body, and the preview inside the reply's quote.
     expect(screen.getAllByText("the original")).toHaveLength(2);
     expect(screen.queryByText(UNAVAILABLE_QUOTE)).not.toBeInTheDocument();
   });
@@ -296,54 +296,47 @@ describe("MessageTimeline loading state (#2145)", () => {
     expect(container.querySelector(".rounded-xl")).toBeNull();
     expect(container.querySelector(".min-h-52")).toBeNull();
 
-    const rows = container.querySelectorAll(".px-5.pb-1");
+    const rows = container.querySelectorAll(".px-5.pb-0\\.5");
     expect(rows.length).toBeGreaterThan(0);
-    // The metrics `MessageItem` draws: 32px avatar gutter, 10px gap, and the
-    // header/grouped padding pair. A skeleton that drifts from these moves the
-    // first real row by the difference.
+    // The metrics `MessageItem` draws: 32px avatar gutter, 12px gap, and the
+    // run-start/follow-on padding pair. A skeleton that drifts from these
+    // moves the first real row by the difference.
     for (const row of rows) {
-      expect(row.className).toContain("gap-2.5");
-      expect(row.className).toMatch(/\bpt-4\b|\bpt-1\b/);
+      expect(row.className).toContain("gap-3");
+      expect(row.className).toMatch(/\bpt-4\b|\bpt-0\.5\b/);
       expect(row.querySelector(".w-8")).not.toBeNull();
     }
   });
 
-  it("reserves the message BUBBLE, not a bare line", () => {
+  it("reserves the body's 25px line box, not a bare bar", () => {
     /*
-      The assertion the first version of this suite was missing, and the reason
-      it shipped a skeleton that reserved about half the height it stood in for.
-
-      Every other test here checks the row *wrapper*, whose classes were correct
-      all along. The height lives in the body: `TextRenderer` draws
-      `mt-1 px-4 py-3 leading-[25px]` inside a bordered bubble — 55px for one
-      line — where the skeleton drew a 13px bar. jsdom computes no layout, so
-      nothing measurable goes red; the only durable check is that the placeholder
-      is built from the same box declarations as the thing it replaces.
+      The height lives in the body. A compact row's text is one 25px line box
+      (the `body` role), so each placeholder row reserves exactly that under
+      its bar, plus a 20px author line on a row that starts a run. jsdom
+      computes no layout, so nothing measurable goes red; the durable check is
+      that the placeholder is built from the same box declarations as the
+      thing it replaces. (Under the §11 bubble this was a 55px bordered box.)
     */
     const { container } = renderTimeline([], { isLoading: true });
+    const rows = [...container.querySelectorAll(".px-5.pb-0\\.5")];
 
-    const bubbles = container.querySelectorAll(".px-4.py-3");
-    expect(bubbles.length).toBe(
-      container.querySelectorAll(".px-5.pb-1").length,
-    );
-    for (const bubble of bubbles) {
-      // `TextRenderer`'s box, class for class.
-      expect(bubble.className).toContain("mt-1");
-      expect(bubble.className).toContain("border");
-      // The line box inside it, not a 13px text-line placeholder.
-      expect(bubble.querySelector(".h-\\[25px\\]")).not.toBeNull();
+    for (const row of rows) {
+      expect(row.querySelector(".h-\\[25px\\]")).not.toBeNull();
+      expect(row.querySelector(".border")).toBeNull();
+      const startsRun = row.className.includes("pt-4");
+      expect(row.querySelector(".h-5") !== null).toBe(startsRun);
     }
   });
 
-  it("draws both grouped and headed rows, as a real channel does", () => {
-    // A run of same-author messages is most of a channel, and a grouped row has
-    // no avatar and no name line. An all-headed skeleton would reserve more
+  it("draws both run-start and follow-on rows, as a real channel does", () => {
+    // A run of same-author messages is most of a channel, and a follow-on row
+    // has no avatar and no author line. An all-headed skeleton would reserve more
     // height than the rows that replace it.
     const { container } = renderTimeline([], { isLoading: true });
 
-    const rows = [...container.querySelectorAll(".px-5.pb-1")];
+    const rows = [...container.querySelectorAll(".px-5.pb-0\\.5")];
     expect(rows.some((r) => r.className.includes("pt-4"))).toBe(true);
-    expect(rows.some((r) => r.className.includes("pt-1"))).toBe(true);
+    expect(rows.some((r) => r.className.includes("pt-0.5"))).toBe(true);
   });
 
   it("is bottom-aligned, where the timeline actually opens", () => {
@@ -378,8 +371,8 @@ describe("MessageTimeline loading state (#2145)", () => {
 /**
  * The own-message mis-ID on load (#2243).
  *
- * `viewerId` decides which of the two shapes `components.md` §11 draws a bubble
- * in, and it arrives on its own clock — `GET /v1/users/me`, which the first
+ * `viewerId` decides whose message a row is (the "You" author line in the
+ * chapter accent, and Edit and Delete), and it arrives on its own clock — `GET /v1/users/me`, which the first
  * chunk's Dexie read (#2227) regularly beats. It used to arrive as `null` into a
  * row that treated `null` as "not mine", so on staging the signed-in member's
  * own messages painted as a stranger's: left, incoming chrome, and labelled with
@@ -388,12 +381,14 @@ describe("MessageTimeline loading state (#2145)", () => {
  *
  * These assert the *absence* of that paint rather than the presence of a
  * skeleton, because the skeleton is the current answer and not the requirement.
- * Anything that draws a row before identity lands has to guess which side it
- * goes on, and the bug is the guess.
+ * Anything that draws a row before identity lands has to guess whose it is,
+ * and the bug is the guess.
  */
 describe("MessageTimeline identity gate (#2243)", () => {
-  const bubbles = () =>
-    Array.from(document.querySelectorAll<HTMLElement>('[data-slot="bubble"]'));
+  const bodies = () =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="message-body"]'),
+    );
 
   it("paints no row at all while the viewer is unknown", () => {
     renderTimeline([message({ sender_id: VIEWER, content: "mine" })], {
@@ -403,7 +398,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
     // The whole of the fix: a row the member wrote is not drawn as somebody
     // else's, and the way it is not drawn as somebody else's is that it is not
     // drawn yet.
-    expect(bubbles()).toHaveLength(0);
+    expect(bodies()).toHaveLength(0);
     expect(screen.queryByText("mine")).not.toBeInTheDocument();
     // `Member 111111` and `11` are `memberFallbackLabel` and
     // `authorInitialsFallback` reading the *viewer's own* id back to them — the
@@ -427,18 +422,17 @@ describe("MessageTimeline identity gate (#2243)", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("still paints another member's row as incoming once identity settles", () => {
+  it("still paints another member's row as theirs once identity settles", () => {
     // The positive half, and not implied by the own-row case: a gate that opened
-    // into *every* row taking the self shape would pass every assertion above.
+    // into *every* row reading as the viewer's would pass every assertion above.
     renderTimeline([message({ sender_id: ALICE, content: "from alice" })], {
       viewerId: VIEWER,
     });
 
-    const [bubble] = bubbles();
-    expect(bubble?.className).toContain("bg-card");
-    expect(bubble?.className).toContain("border-border");
-    expect(bubble?.className).toContain("rounded-bl-[6px]");
-    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(bodies()).toHaveLength(1);
+    const name = screen.getByText("Alice Chen");
+    expect(name.className).not.toContain("text-accent-text");
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
   });
 
   it("withholds an incoming row too, not just the member's own", () => {
@@ -450,7 +444,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
       viewerId: null,
     });
 
-    expect(bubbles()).toHaveLength(0);
+    expect(bodies()).toHaveLength(0);
     expect(screen.queryByText("from alice")).not.toBeInTheDocument();
   });
 
@@ -481,7 +475,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
         onUnreact={vi.fn()}
       />,
     );
-    expect(bubbles()).toHaveLength(0);
+    expect(bodies()).toHaveLength(0);
 
     rerender(
       <MessageTimeline
@@ -498,13 +492,11 @@ describe("MessageTimeline identity gate (#2243)", () => {
       />,
     );
 
-    const [bubble] = bubbles();
-    expect(bubble).toBeDefined();
-    // §11's self pair and the right tail — never the incoming card fill, which
-    // is what the row resolved to before the gate existed.
-    expect(bubble?.className).toContain("bg-primary");
-    expect(bubble?.className).toContain("rounded-br-[6px]");
-    expect(bubble?.className).not.toContain("border-border");
+    expect(bodies()).toHaveLength(1);
+    // "You" in the chapter accent — never the viewer's own uuid read back to
+    // them as a stranger's name, which is what the row resolved to before the
+    // gate existed.
+    expect(screen.getByText("You").className).toContain("text-accent-text");
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
   });
 });
@@ -1225,6 +1217,28 @@ describe("MessageTimeline — member photos (#732)", () => {
     );
   });
 
+  it("draws the photo once per run, on its first row only", () => {
+    renderTimeline(
+      [
+        message({ id: "m-1", client_message_id: "m-1", sender_id: ALICE }),
+        message({
+          id: "m-2",
+          client_message_id: "m-2",
+          sender_id: ALICE,
+          content: "and again",
+          created_at: new Date(2026, 7, 16, 17, 10).toISOString(),
+        }),
+      ],
+      { avatarFor: () => "https://signed/alice" },
+    );
+
+    const photos = screen.getAllByTestId("avatar-photo");
+    expect(photos).toHaveLength(1);
+    expect(
+      photos[0]!.closest<HTMLElement>('[role="listitem"]')!.dataset.run,
+    ).toBe("start");
+  });
+
   it("keeps initials for a member with no photo", () => {
     renderTimeline([message({ id: "m-1", sender_id: BOB })], {
       avatarFor: (id: string) => (id === ALICE ? "https://signed/alice" : null),
@@ -1272,6 +1286,153 @@ describe("MessageTimeline — member photos (#732)", () => {
 
       expect(screen.queryByTestId("avatar-photo")).toBeNull();
     });
+  });
+});
+
+/**
+ * Runs and day dividers, drawn (`components.md` §11 § Grouping, #2873). The
+ * rules themselves are `@repo/chat-core/grouping`'s and are pinned there; this
+ * pins that the timeline draws what they decide.
+ */
+describe("MessageTimeline runs and day dividers (#2873)", () => {
+  const rowOf = (text: string) =>
+    screen.getByText(text).closest<HTMLElement>('[role="listitem"]')!;
+
+  it("draws one author line per run, and none on its follow-ons", () => {
+    renderTimeline([
+      message({ id: "a", client_message_id: "a", content: "one" }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        content: "two",
+        created_at: new Date(2026, 7, 16, 17, 10).toISOString(),
+      }),
+      message({
+        id: "c",
+        client_message_id: "c",
+        sender_id: BOB,
+        content: "three",
+        created_at: new Date(2026, 7, 16, 17, 11).toISOString(),
+      }),
+    ]);
+
+    expect(rowOf("one").dataset.run).toBe("start");
+    expect(rowOf("two").dataset.run).toBe("follow");
+    expect(rowOf("three").dataset.run).toBe("start");
+    expect(screen.getAllByText("Alice Chen")).toHaveLength(1);
+  });
+
+  it("starts a new run after the window, and on a reply", () => {
+    renderTimeline([
+      message({ id: "a", client_message_id: "a", content: "one" }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        content: "later",
+        created_at: new Date(2026, 7, 16, 17, 20).toISOString(),
+      }),
+      message({
+        id: "c",
+        client_message_id: "c",
+        content: "answer",
+        reply_to_id: "a",
+        created_at: new Date(2026, 7, 16, 17, 21).toISOString(),
+      }),
+    ]);
+
+    expect(rowOf("later").dataset.run).toBe("start");
+    expect(rowOf("answer").dataset.run).toBe("start");
+  });
+
+  it("draws a day divider where a day starts, and restarts the run under it", () => {
+    const { container } = renderTimeline([
+      message({
+        id: "a",
+        client_message_id: "a",
+        content: "late",
+        created_at: new Date(2026, 7, 16, 23, 59).toISOString(),
+      }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        content: "early",
+        created_at: new Date(2026, 7, 17, 0, 1).toISOString(),
+      }),
+    ]);
+
+    const dividers = container.querySelectorAll('[data-slot="day-divider"]');
+    expect(dividers).toHaveLength(2);
+    // The only date in the thread: no author line carries one.
+    for (const divider of dividers) {
+      expect(divider.textContent).toMatch(/16|17/);
+    }
+    expect(rowOf("early").dataset.run).toBe("start");
+  });
+
+  it("draws one divider for a day's messages, not one per message", () => {
+    const { container } = renderTimeline([
+      message({ id: "a", client_message_id: "a", content: "one" }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        sender_id: BOB,
+        content: "two",
+        created_at: new Date(2026, 7, 16, 17, 30).toISOString(),
+      }),
+      message({
+        id: "c",
+        client_message_id: "c",
+        content: "three",
+        created_at: new Date(2026, 7, 16, 21, 0).toISOString(),
+      }),
+    ]);
+    expect(container.querySelectorAll('[data-slot="day-divider"]')).toHaveLength(
+      1,
+    );
+  });
+
+  it("hands every follow-on the start of its run, not the row above", () => {
+    // Three rows: noon falls between the first and the second, so the third
+    // is only read correctly against the run's start (11:58 AM), not against
+    // the row above it (12:01 PM, same period as itself).
+    renderTimeline([
+      message({
+        id: "a",
+        client_message_id: "a",
+        content: "before noon",
+        created_at: new Date(2026, 7, 16, 11, 58).toISOString(),
+      }),
+      message({
+        id: "b",
+        client_message_id: "b",
+        content: "after noon",
+        created_at: new Date(2026, 7, 16, 12, 1).toISOString(),
+      }),
+      message({
+        id: "c",
+        client_message_id: "c",
+        content: "later still",
+        created_at: new Date(2026, 7, 16, 12, 4).toISOString(),
+      }),
+    ]);
+    for (const [text, minute] of [
+      ["after noon", 1],
+      ["later still", 4],
+    ] as const) {
+      const gutter = rowOf(text).querySelector('[data-slot="gutter-time"]');
+      expect(gutter?.textContent, text).toBe(
+        new Date(2026, 7, 16, 12, minute).toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+      );
+    }
+  });
+
+  it("puts no date on any author line", () => {
+    const { container } = renderTimeline([message()]);
+    const line = container.querySelector('[data-slot="author-line"]');
+    expect(line?.textContent).not.toMatch(/Aug|16,/);
   });
 });
 

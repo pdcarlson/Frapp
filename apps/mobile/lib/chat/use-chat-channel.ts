@@ -358,7 +358,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     // unconditionally never hits React's `Object.is` bail-out — and the manager
     // pings status listeners on its 1.5s typing-expiry sweep. Left as-is, the
     // whole thread re-rendered every 1.5s while anyone was typing, rebuilding
-    // every visible bubble's StyleSheet. Compare membership and keep the
+    // every visible row's StyleSheet. Compare membership and keep the
     // previous array when it has not changed.
     const refresh = () =>
       setTypingUsers((prev) => {

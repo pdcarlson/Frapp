@@ -3944,7 +3944,7 @@ export interface components {
              * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
              */
             message_id: string | null;
-            /** @description The message content as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. */
+            /** @description What the member wrote on the message, as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. Usually the message content; for a poll, the content followed by the card question (when it differs) and one `- label` line per option, newline-separated. */
             reported_content: string | null;
             /**
              * Format: uuid
@@ -3979,7 +3979,7 @@ export interface components {
              * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
              */
             message_id: string | null;
-            /** @description The message content as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. */
+            /** @description What the member wrote on the message, as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. Usually the message content; for a poll, the content followed by the card question (when it differs) and one `- label` line per option, newline-separated. */
             reported_content: string | null;
             /**
              * Format: uuid

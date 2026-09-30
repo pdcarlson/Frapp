@@ -8,7 +8,12 @@ doc, including the rest of this directory.
 
 **One artifact landed, 2026-09-11:** [`web-framework.dc.html`](web-framework.dc.html), the framework
 board. It is the rank-1 source for anything it covers, and it closes L-01 in
-[`../tokens.md`](../tokens.md) — see § What this board settles below.
+[`../tokens.md`](../tokens.md) — see § What this board settles below. *(Corrected 2026-09-30: its
+chat thread's bubbles, including the pending self bubble, the skeleton's "r18 bubbles" and the token
+sheet's "Bubbles r18 · tail 6", are superseded by the compact chat layout, an owner decision of
+2026-09-29 ([#2873](https://github.com/pdcarlson/Frapp/issues/2873),
+[`components.md`](../../design-system/components.md) §11). The board stays truth for the rest of
+chat.)*
 
 The numbered Design to Code packs, the backlog and the originating brief are still **not here**. A
 lane that needs one of those is in the position the whole directory used to be in, and should ask for

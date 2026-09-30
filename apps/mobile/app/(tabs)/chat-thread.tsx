@@ -26,6 +26,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
+  resolveAuthorLabel,
   resolveAuthorName,
   useActiveChapterId,
   useChannel,
@@ -59,6 +60,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
@@ -169,9 +171,9 @@ export default function ChatThreadScreen() {
   } = useChatChannel(channelId);
 
   // `viewerId` is `null` both while `/v1/users/me` is in flight and after it
-  // failed, and a row can't be drawn in either case (#2250): self and incoming
-  // are the only two bubble shapes, and a null viewer reads every message as
-  // incoming. The query's own status tells the two apart, as on tasks.tsx.
+  // failed, and a row can't be drawn in either case (#2250): a row says whose
+  // it is ("You" in the accent), and a null viewer reads every message as
+  // someone else's. The query's own status tells the two apart, as on tasks.tsx.
   const viewerQuery = useCurrentUser();
 
   // One cached roster fetch per chapter names every author in the thread.
@@ -397,6 +399,9 @@ export default function ChatThreadScreen() {
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
+  // Where each run and each day starts (components.md §11 § Grouping), worked
+  // out oldest first; `threadLayout` says why.
+  const layout = useMemo(() => threadLayout(thread.rows), [thread.rows]);
 
   // Older history (#2772). The list is inverted, so its end is the top: reaching
   // it loads the next page, which is appended past the rows on screen and so
@@ -528,6 +533,8 @@ export default function ChatThreadScreen() {
         canReport: actions.canReport,
         blockUserId: actions.canBlock ? message.sender_id : null,
         senderName: resolveAuthorName(message, nameFor),
+        senderLabel: resolveAuthorLabel(message, nameFor, viewerId),
+        sentAt: message.created_at,
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
       });
@@ -552,9 +559,12 @@ export default function ChatThreadScreen() {
       const replyParent = item.message.reply_to_id
         ? (byId.get(item.message.reply_to_id) ?? null)
         : undefined;
+      const placement = layout.get(item.message.client_message_id);
       return (
         <ThreadMessageRow
           row={item}
+          startsRun={placement?.startsRun ?? true}
+          startsDay={placement?.startsDay ?? false}
           viewerId={viewerId}
           nameFor={nameFor}
           replyParent={replyParent}
@@ -586,6 +596,7 @@ export default function ChatThreadScreen() {
       unreact,
       act,
       byId,
+      layout,
       blockState,
       openActions,
       jumpToMessage,
@@ -843,7 +854,7 @@ export default function ChatThreadScreen() {
             </View>
           ) : (
             // The rows reach the image viewer through this, not through a
-            // prop threaded down the row and the bubble.
+            // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
               <FlatList
                 ref={listRef}
@@ -875,7 +886,7 @@ export default function ChatThreadScreen() {
 
           {/*
           react/unreact and inline card actions (poll votes, #528) have no
-          failed-bubble equivalent to render inline — chat-core's rollback of
+          failed-row equivalent to render inline — chat-core's rollback of
           the optimistic state is silent — so this banner is the only report
           of a rejected reaction or vote (#999). `reactionError` takes
           priority since the two can't fire from the same tap; dismissible
@@ -917,7 +928,7 @@ export default function ChatThreadScreen() {
             canSend={canSend && channelCanPost && !staging.isSavingEdit}
             context={staging.context}
             placeholder="Message"
-            // A send that never reached the outbox has no failed bubble to show
+            // A send that never reached the outbox has no failed row to show
             // (nothing was queued), so this line is the only report of it.
             //
             // The offline label is #501's "blocked **or clearly labeled**" half:
@@ -1017,9 +1028,11 @@ function createStyles(tokens: SignetTokens) {
     flex: {
       flex: 1,
     },
+    // No gap and no side padding: each row carries its own (16pt sides, 16
+    // above a run and 2 above a follow-on), because the compact layout's
+    // spacing is what tells one run from the next (components.md §11).
     listContent: {
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
     },
     header: {
       flexDirection: "row",

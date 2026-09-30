@@ -603,7 +603,7 @@ describe("status subscription", () => {
     // status listeners on its 1.5s typing-expiry sweep. Returning that array
     // unconditionally never hits React's `Object.is` bail-out, so the whole
     // thread re-rendered every 1.5s while anyone was typing — rebuilding every
-    // visible bubble's StyleSheet.
+    // visible row's StyleSheet.
     mocks.getTypingUsers.mockImplementation(() => ["user-7"]);
 
     const { result } = renderChannel();
