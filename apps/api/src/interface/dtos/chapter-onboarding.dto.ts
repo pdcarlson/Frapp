@@ -1,14 +1,13 @@
 import {
   Equals,
-  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RawValue } from './raw-value.transform';
 import { Type } from 'class-transformer';
 import { BrandingDto } from './chapter-config.dto';
 
@@ -57,8 +56,7 @@ export class ChapterOnboardingDto {
       'acceptance timestamp and policy version are recorded server-side from ' +
       'the session — never from this payload.',
   })
-  @RawValue()
-  @IsBoolean()
+  @IsStrictBoolean()
   @Equals(true, {
     message: 'Terms of Service and Privacy Policy must be accepted',
   })
