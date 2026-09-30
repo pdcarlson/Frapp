@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import {
+  payIntentErrorCopy,
   useAwaitInvoicePaid,
   useCurrentUser,
   useInvoices,
@@ -28,7 +29,6 @@ import {
   selectNextDueInvoice,
   selectOpenInvoices,
 } from "@/lib/dues/invoices";
-import { payIntentErrorCopy } from "@/lib/dues/pay-errors";
 import {
   isStripeAvailable,
   presentPaymentSheet,
