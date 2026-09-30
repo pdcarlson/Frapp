@@ -38,11 +38,20 @@ export interface MessageAuthorKey {
  * name. The namespace prefixes matter too: without them a Frapp uuid and a
  * Discord snowflake could in principle collide, and the two are not the same
  * person.
+ *
+ * A linked imported row carries both a `sender_id` and its Discord id (#2878);
+ * `sender_id` wins, so it groups with the member's own messages. An unlinked
+ * one is keyed by its source id **and** its name: a Discord webhook or bridge
+ * (PluralKit, Matrix, Slack) posts every persona under the webhook's one id
+ * with a different name on each message, and those are different people. A
+ * real member renaming only splits a run at the rename.
  */
 export function authorGroupingKey(author: MessageAuthorKey): string {
   if (author.sender_id) return `user:${author.sender_id}`;
-  if (author.author_external_id) return `external:${author.author_external_id}`;
   const name = author.author_name?.trim();
+  if (author.author_external_id) {
+    return `external:${author.author_external_id}:${name ?? ""}`;
+  }
   return name ? `name:${name}` : "unknown";
 }
 

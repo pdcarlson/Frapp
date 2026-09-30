@@ -23,7 +23,12 @@ import {
   deliveryChrome,
   type DeliveryChrome,
 } from "@/lib/chat/delivery-status";
-import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import {
+  avatarRadius,
+  fontFamilyFor,
+  typeRole,
+  useFrappTheme,
+} from "@/lib/theme";
 import {
   authorInitialsFallback,
   resolveAuthorLabel,
@@ -739,8 +744,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // Initials at caption / 700 (§11 Row anatomy), as web's avatar draws them.
+    // Weight comes from the Figtree family, never `fontWeight` (see `typeRole`).
     avatarText: {
       ...typeRole(tokens.typography.role.caption),
+      fontFamily: fontFamilyFor(700),
       color: tokens.color.text.mutedForeground,
     },
     // Held open on every row of a run, so a follow-on's text lines up under

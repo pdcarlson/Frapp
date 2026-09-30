@@ -535,7 +535,7 @@ The vault ([`behavior/vault.md`](../behavior/vault.md)) stores high-sensitivity 
 
 ## 15. Theming Model
 
-Chapter theming runs deeper than an accent chip — it themes the chrome, message accents, mention pills, links and reaction highlights. A chapter supplies **one colour**: an accent seed at `branding.colors.accent`, mirrored to `chapters.accent_color`. #795 settled which is authoritative — `branding.colors.accent` is, and the column follows it on every write path. New code MUST NOT add a third read path.
+Chapter theming runs deeper than an accent chip — it themes the chrome, the viewer's own name in chat, links and reaction highlights (the `@mention` chip is fixed, never accent-derived). A chapter supplies **one colour**: an accent seed at `branding.colors.accent`, mirrored to `chapters.accent_color`. #795 settled which is authoritative — `branding.colors.accent` is, and the column follows it on every write path. New code MUST NOT add a third read path.
 
 **The derivation is canonical in [`ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md), not here.** This section owns where the palette lives and who writes it; the pipeline, role map, default seed and contrast gate live in that one place, because the two used to disagree.
 

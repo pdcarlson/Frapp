@@ -183,6 +183,52 @@ function renderItem(
   return tree;
 }
 
+// An imported row names its Discord author from `author_name`, having no roster
+// entry; once its author links the account (#2878) it carries their
+// `sender_id` and is simply theirs.
+describe("an imported author's row", () => {
+  const texts = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+
+  it("names an unlinked Discord author, with their initials", () => {
+    const tree = renderItem(
+      message({
+        kind: "imported",
+        sender_id: null,
+        author_name: "Discord Dan",
+        author_external_id: "99",
+      }),
+    );
+    expect(texts(tree)).toContain("Discord Dan");
+    expect(texts(tree)).toContain("DD");
+  });
+
+  it("reads a row the viewer linked as their own", () => {
+    const tree = renderItem(
+      message({
+        kind: "imported",
+        sender_id: VIEWER,
+        author_name: "Discord Dan",
+        author_external_id: "99",
+      }),
+    );
+    expect(texts(tree)).toContain("You");
+    expect(texts(tree)).not.toContain("Discord Dan");
+  });
+
+  it("draws avatar initials bold, as web does (§11 Row anatomy)", () => {
+    const tree = renderItem(
+      message({ sender_id: null, author_name: "Discord Dan" }),
+    );
+    const initials = tree.root.find(
+      (node) => (node.type as unknown) === "Text" && node.props.children === "DD",
+    );
+    expect(JSON.stringify(initials.props.style)).toContain("Figtree_700Bold");
+  });
+});
+
 describe("attachment rendering is gated on the message", () => {
   beforeEach(() => {
     attachmentHook.calls = [];
@@ -215,8 +261,8 @@ describe("attachment rendering is gated on the message", () => {
   });
 });
 
-// components.md §11 (#2873): the viewer's own name is now the one place a
-// message row takes the chapter accent, via the mocked `useChapterBranding()`.
+// components.md §11 (#2873): the viewer's own name takes the chapter accent,
+// via the mocked `useChapterBranding()`, which is how a member spots their run.
 describe("the viewer's own name takes the chapter accent", () => {
   it("colours 'You' with the accent text, and paints no accent fill", () => {
     const tree = renderItem(message({ sender_id: VIEWER, content: "hello" }));

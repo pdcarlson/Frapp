@@ -64,23 +64,32 @@ export function formatClock(value: unknown): string {
 }
 
 /**
- * Built once: constructing an `Intl.DateTimeFormat` is the expensive part, and
- * the chat timeline formats a time for every row on every render. Created on
- * first use rather than at import, so a test that sets a locale or time zone
- * before its first call is honoured.
+ * Cached: constructing an `Intl.DateTimeFormat` is the expensive part, and the
+ * chat timeline formats a time for every row on every render. Created on first
+ * use rather than at import, so a test that sets a locale or time zone before
+ * its first call is honoured. {@link formatTimeOfDay} and
+ * {@link formatTimeOfDayShort} both read it, so a run's author line and its
+ * gutter times always agree.
  *
- * {@link formatTimeOfDay} and {@link formatTimeOfDayShort} both read it, and
- * that is the point: a formatter keeps the zone it was built in, so if the
- * device's zone changes mid-session both a run's author line and its gutter
- * times stay in the same (old) zone until a reload, instead of disagreeing.
+ * A formatter keeps the zone it was built in, but the day dividers beside
+ * these times read `Date`'s getters, which follow the device's current zone.
+ * So the cache is rebuilt whenever the current UTC offset changes (a laptop
+ * tab or a backgrounded phone that crossed zones); otherwise a message under
+ * "Today" could print its time in the zone the session started in.
  */
-let clockFormat: Intl.DateTimeFormat | null = null;
+let clockFormat: { offset: number; format: Intl.DateTimeFormat } | null = null;
 function clock(): Intl.DateTimeFormat {
-  clockFormat ??= new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return clockFormat;
+  const offset = new Date().getTimezoneOffset();
+  if (clockFormat?.offset !== offset) {
+    clockFormat = {
+      offset,
+      format: new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+  }
+  return clockFormat.format;
 }
 function clockParts(at: Date): Intl.DateTimeFormatPart[] {
   return clock().formatToParts(at);
@@ -103,7 +112,9 @@ export function formatTimeOfDay(value: unknown): string {
   // V8. Kept plain, so the text members see does not change.
   // `format`, not `formatToParts`: this is the author line on mobile too, and
   // `format` is the part of `Intl.DateTimeFormat` every engine ships.
-  return clock().format(parsed).replace(/\u202f/g, " ");
+  return clock()
+    .format(parsed)
+    .replace(/\u202f/g, " ");
 }
 
 function dayPeriodOf(at: Date): string | undefined {

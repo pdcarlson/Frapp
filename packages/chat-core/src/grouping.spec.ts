@@ -173,6 +173,17 @@ describe("decorateThread — runs", () => {
     ).toEqual([true, true]);
   });
 
+  it("runs a linked member's imported and native messages together (#2878)", () => {
+    expect(
+      runs([
+        visible(
+          msg({ sender_id: "u1", author_external_id: "1", author_name: "Ada" }),
+        ),
+        visible(msg({ sender_id: "u1", created_at: at(28, 17, 16) })),
+      ]),
+    ).toEqual([true, false]);
+  });
+
   it("does not merge two different imported authors", () => {
     expect(
       runs([
@@ -245,6 +256,38 @@ describe("authorGroupingKey", () => {
         sender_id: null,
         author_name: "Chris",
         author_external_id: "2",
+      }),
+    );
+  });
+
+  it("keys a linked imported row as its member, not its Discord id (#2878)", () => {
+    // Linking sets `sender_id` on the author's imported rows and leaves the
+    // Discord id in place, so a linked row carries both.
+    const linked = {
+      sender_id: "u1",
+      author_name: "Ada",
+      author_external_id: "1",
+    };
+    expect(authorGroupingKey(linked)).toBe(authorGroupingKey({ sender_id: "u1" }));
+    expect(authorGroupingKey(linked)).not.toBe(
+      authorGroupingKey({ ...linked, sender_id: null }),
+    );
+  });
+
+  it("keeps webhook personas apart when they share the webhook's id", () => {
+    // A bridge or PluralKit posts everyone under one webhook id, named per
+    // message.
+    expect(
+      authorGroupingKey({
+        sender_id: null,
+        author_name: "Alice (bridge)",
+        author_external_id: "hook",
+      }),
+    ).not.toBe(
+      authorGroupingKey({
+        sender_id: null,
+        author_name: "Bob (bridge)",
+        author_external_id: "hook",
       }),
     );
   });

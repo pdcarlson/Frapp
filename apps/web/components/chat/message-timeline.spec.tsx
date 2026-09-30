@@ -77,13 +77,32 @@ vi.mock("react-virtuoso", async () => {
   };
 });
 
+// Signed Discord avatar URLs, by storage path; empty unless a case sets it.
+const signedAvatars = vi.hoisted(() => ({
+  current: {} as Record<string, string>,
+}));
+
+// The avatar each row was handed. Radix draws an `<img>` only once it loads,
+// which jsdom never does, so the prop is where the choice is visible.
+const rowAvatars = vi.hoisted(() => new Map<string, string | undefined>());
+vi.mock("./message-item", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./message-item")>();
+  return {
+    ...actual,
+    MessageItem: (props: Parameters<typeof actual.MessageItem>[0]) => {
+      rowAvatars.set(props.message.id, props.avatarUrl);
+      return <actual.MessageItem {...props} />;
+    },
+  };
+});
+
 // `useAuthorAvatars` reaches for `FrappClientProvider`, which a bare `render()`
 // does not mount.
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    useAuthorAvatars: () => ({ data: {} }),
+    useAuthorAvatars: () => ({ data: signedAvatars.current }),
     // Only a message with `attachment_count > 0` mounts the list that reads
     // this; the image viewer cases below are the ones that do.
     useMessageAttachments: () => ({
@@ -1194,6 +1213,37 @@ describe("importedAvatarUrl (#2878)", () => {
         signed,
       ),
     ).toBeUndefined();
+  });
+
+  it("hands the Discord avatar to an unlinked row only, in the timeline", () => {
+    const path = "chapters/c/chat-archive/a.png";
+    signedAvatars.current = { [path]: "https://signed/a.png" };
+    rowAvatars.clear();
+    try {
+      renderTimeline([
+        message({
+          id: "unlinked",
+          client_message_id: "unlinked",
+          kind: "imported",
+          sender_id: null,
+          author_name: "Discord Dan",
+          author_avatar_path: path,
+        }),
+        message({
+          id: "linked",
+          client_message_id: "linked",
+          kind: "imported",
+          sender_id: BOB,
+          author_name: "Discord Dan",
+          author_avatar_path: path,
+          created_at: new Date(2026, 7, 16, 18, 0).toISOString(),
+        }),
+      ]);
+      expect(rowAvatars.get("unlinked")).toBe("https://signed/a.png");
+      expect(rowAvatars.get("linked")).toBeUndefined();
+    } finally {
+      signedAvatars.current = {};
+    }
   });
 
   it("draws nothing without a path or before the URLs are signed", () => {

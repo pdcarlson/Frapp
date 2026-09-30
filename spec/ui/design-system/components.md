@@ -303,7 +303,7 @@ A row **starts a run** (and draws the avatar and author line) when any of these 
 
 | Condition | Why |
 | --- | --- |
-| It is the first row, or the row above has a different author | Authors compare by `authorGroupingKey`, which namespaces a Frapp user id apart from an imported source id and name, so twenty Discord authors with no Frapp account never merge into one run. |
+| It is the first row, or the row above has a different author | Authors compare by `authorGroupingKey`, which namespaces a Frapp user id apart from an imported source id and name, so twenty Discord authors with no Frapp account never merge into one run. A linked imported row groups as its member (#2878); an unlinked one by its source id and name together, since a Discord webhook or bridge posts every persona under one id. |
 | Five minutes or more since the row above | A pause reads as a new thought. Five minutes is the window web shipped before this decision. |
 | The row above is on another local calendar day | The day divider sits between them, and a run must not inherit the previous day's author line. |
 | The row is a reply | The quote needs the author line under it to say who is answering. |

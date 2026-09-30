@@ -707,6 +707,20 @@ describe("MessageItem edited marker", () => {
     expect(markers.parentElement).toHaveClass("[&>span]:ml-0");
   });
 
+  it("names an imported Discord author on the author line", () => {
+    const { container } = renderItem(
+      message({
+        kind: "imported",
+        sender_id: null,
+        author_name: "archive-bot",
+        author_external_id: "99",
+      }),
+    );
+    expect(
+      container.querySelector('[data-slot="author-line"]'),
+    ).toHaveTextContent("archive-bot");
+  });
+
   it("marks no pin on a deleted message", () => {
     renderItem(message({ is_pinned: true, is_deleted: true }));
     expect(screen.queryByText("Pinned")).not.toBeInTheDocument();

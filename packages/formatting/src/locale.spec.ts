@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   formatClock,
   formatLocaleDate,
@@ -77,6 +77,26 @@ describe("formatTimeOfDay", () => {
     expect(formatTimeOfDay(value)).not.toMatch(/Aug|16/);
   });
 
+  it("follows the device into a new time zone mid-session", () => {
+    // A tab or a backgrounded phone that crosses zones: the day dividers read
+    // `Date`'s getters, which move with the device, so the time must too.
+    const value = "2026-09-30T08:30:00Z";
+    const live = () =>
+      new Date(value)
+        .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+        .replace(/\u202f/g, " ");
+    try {
+      vi.stubEnv("TZ", "America/New_York");
+      const east = formatTimeOfDay(value);
+      expect(east).toBe(live());
+      vi.stubEnv("TZ", "America/Los_Angeles");
+      expect(formatTimeOfDay(value)).toBe(live());
+      expect(formatTimeOfDay(value)).not.toBe(east);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("drops the day period for the gutter, and nothing else", () => {
     const value = new Date(2026, 7, 16, 17, 9).toISOString();
     const short = formatTimeOfDayShort(value);
@@ -89,9 +109,12 @@ describe("formatTimeOfDay", () => {
     const afternoon = new Date(2026, 7, 16, 12, 20).toISOString();
     const later = new Date(2026, 7, 16, 11, 55).toISOString();
     // Same period as the run's author line: the short form.
-    expect(formatTimeOfDayShort(later, morning)).toBe(formatTimeOfDayShort(later));
+    expect(formatTimeOfDayShort(later, morning)).toBe(
+      formatTimeOfDayShort(later),
+    );
     // Across noon, only where the locale has a day period to lose.
-    const hasPeriod = formatTimeOfDay(afternoon) !== formatTimeOfDayShort(afternoon);
+    const hasPeriod =
+      formatTimeOfDay(afternoon) !== formatTimeOfDayShort(afternoon);
     expect(formatTimeOfDayShort(afternoon, morning)).toBe(
       hasPeriod ? formatTimeOfDay(afternoon) : formatTimeOfDayShort(afternoon),
     );
