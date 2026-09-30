@@ -588,7 +588,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**:
   - **Order:** either way round works; ship it with the API.
     - An API without it still answers 500 to deleting a merged-into channel.
-    - The migration without the new API lets the delete through. An import whose merge channel is then deleted fails with an older message instead of the new sentence: "Channel mapping for #… has no target." when the channel went between slices, and a raw foreign-key error or "…points at a channel outside this chapter." when it went mid-write. `start` doesn't refuse it first.
+    - The migration without the new API lets the delete through. An import whose merge channel is then deleted fails with an older message instead of the new sentence: "Channel mapping for #… has no target." when the channel went between slices, and a raw foreign-key error, or "…points at a channel outside this chapter." at the next part or channel it resolves, when it went mid-write. `start` doesn't refuse it first.
   - **Nothing runs at apply time.** The new CHECK is weaker than the old one, so every existing row passes it (staging has no `create_new` row without a name, read 2026-09-30). Channels go only as imports are purged afterwards.
   - **What it unblocks on staging** (read 2026-09-30): 879 `use_existing` rows pin 17 channels that no officer can delete today. Every staging import is `purged` (4) or `purging` (1, `0e4c41e5`, still deleting its messages), so after this migration none of those merges keeps a channel from a purge either.
   - **Idempotent:** `drop constraint if exists` before each add, `create or replace function`, and the grants.

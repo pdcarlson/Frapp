@@ -1290,7 +1290,7 @@ export class DiscordImportService {
         ).discord_channel_name
       }`;
       // Picking another channel is the answer only before the import has
-      // run. After, it has not: a remap forgets the channels the import
+      // started. Once it has, a remap forgets the channels the import
       // created, so the restart makes each again, and an upload resumes past
       // the parts it already did (#2947). The worker's stop says the same.
       throw new BadRequestException(

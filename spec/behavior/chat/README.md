@@ -675,8 +675,9 @@ channel that reports a different one fails the import rather than being skipped.
     deleted, so the import stopped."; a bot import also marks that channel
     failed in Watch. It never writes into a missing channel (the foreign key
     refuses the insert). A channel the import is done with (a bot import's
-    channel finished, or skipped because Discord stopped showing it) goes
-    like any other, and the import carries on. Start refuses to resume an
+    channel finished, or skipped because Discord stopped showing it; an
+    upload's whose parts have all been read) goes like any other, and the
+    import carries on. Start refuses to resume an
     import that still has history for a lost merge; an upload can't tell
     which of its parts are left for a channel without reading them, so it
     counts every lost merge. Deleting the channel took the history already
