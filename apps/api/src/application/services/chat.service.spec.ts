@@ -146,6 +146,8 @@ describe('ChatService', () => {
       leaveGroupDm: jest.fn(),
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
+      findRoleGates: jest.fn(),
+      removeUserFromPrivateChannels: jest.fn(),
     };
 
     mockCategoryRepo = {

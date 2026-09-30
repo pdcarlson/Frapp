@@ -121,6 +121,9 @@ describe('ChapterService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockUserRepo = {
@@ -678,9 +681,9 @@ describe('ChapterService', () => {
   // with no repair path, which is #1008 verbatim. Assert the invariant that
   // makes the omission safe rather than the seed itself.
   it('should not seed a PRIVATE default channel, which the seeder cannot make readable', () => {
-    expect(
-      DEFAULT_CHANNELS.filter((channelDef) => channelDef.type === 'PRIVATE'),
-    ).toEqual([]);
+    expect(DEFAULT_CHANNELS.map((channelDef) => channelDef.type)).not.toContain(
+      'PRIVATE',
+    );
   });
 
   // FRA-321: the seeder used to drop `required_permissions` entirely, leaving
@@ -813,8 +816,8 @@ describe('ChapterService', () => {
     // or a systematic sweep of the hue/saturation/lightness space fails it, so
     // this exercises the disclosure plumbing via a stubbed generator result
     // rather than hunting for a real seed that may not exist.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
     const loggerWarnSpy = jest
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
@@ -865,8 +868,8 @@ describe('ChapterService', () => {
     // The engine lifts the fill until it clears 3:1, so a failure means the
     // lift broke (a generator resync, say). Nothing the officer chose caused
     // it, so it is logged, not returned as `failedContrastChecks`.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
     const loggerWarnSpy = jest
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
@@ -915,8 +918,8 @@ describe('ChapterService', () => {
         greek_letters: 'ΦΓΔ',
         colors: { dark: '#4B2E2E', accent: '#8B0000' },
       },
-    });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    } as Partial<Chapter> as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { accent_color: '#1E293B' }, 'user-1');
 
@@ -933,8 +936,11 @@ describe('ChapterService', () => {
   });
 
   it('does not touch branding when the update carries no accent', async () => {
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1', name: 'Alpha' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      name: 'Alpha',
+    } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { name: 'Renamed' }, 'user-1');
 
@@ -972,7 +978,7 @@ describe('ChapterService', () => {
 
     it('writes one member-visible audit row carrying only the changed fields', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update(
         'ch-1',
@@ -996,7 +1002,7 @@ describe('ChapterService', () => {
 
     it('audits an accent change, which posts to this route rather than the config PATCH', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-9');
 
@@ -1015,7 +1021,7 @@ describe('ChapterService', () => {
 
     it('treats a hex-case-only accent re-pick as no change', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       // Chapters seeded from the directory store uppercase; `<input type="color">`
       // always reports lowercase. A strict compare made re-picking the same
@@ -1035,7 +1041,7 @@ describe('ChapterService', () => {
         ...stored,
         branding: {},
       });
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update('ch-1', { accent_color: '#8B0000' }, 'user-9');
 
@@ -1055,7 +1061,7 @@ describe('ChapterService', () => {
         ...stored,
         branding: { colors: { accent: '#003087' } },
       });
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update('ch-1', { accent_color: '#8B0000' }, 'user-9');
 
@@ -1085,7 +1091,7 @@ describe('ChapterService', () => {
 
     it('writes no row when the form re-sends unchanged values', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       // The Settings form re-sends every stored value on save, so this is the
       // common case, not an edge one. Writing here would mirror a "chapter
@@ -1114,7 +1120,7 @@ describe('ChapterService', () => {
 
     it('fails the request when the audit write fails, rather than silently not auditing', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
       mockAuditLog.record.mockRejectedValue(new Error('audit down'));
 
       await expect(
@@ -1132,8 +1138,8 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       branding: { colors: { accent: '#8B0000' } },
-    });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    } as Partial<Chapter> as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-1');
 
@@ -1158,8 +1164,8 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       branding: { colors: { accent: '#8B0000' } },
-    });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    } as Partial<Chapter> as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-1');
 
@@ -1186,11 +1192,11 @@ describe('ChapterService', () => {
     // save anything in Settings (the form resends the stored value). Legibility
     // is not gated here; why, and what is and isn't guaranteed instead:
     // `spec/behavior/branding.md` § Accent Color.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     // #C9A56F is 2.16:1 on bone and is the most common accent in the seed.
-    await service.update('ch-1', { accent_color: '#C9A56F' });
+    await service.update('ch-1', { accent_color: '#C9A56F' }, 'user-1');
 
     expect(mockChapterRepo.update).toHaveBeenCalledWith(
       'ch-1',
@@ -1289,7 +1295,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       logo_path: 'chapters/ch-1/branding/logo.png',
-    });
+    } as Chapter);
 
     await expect(
       service.confirmLogoUpload(
@@ -1312,7 +1318,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       logo_path: null,
-    });
+    } as Chapter);
 
     await expect(
       service.confirmLogoUpload(
@@ -1336,8 +1342,8 @@ describe('ChapterService', () => {
     function rowReads(before: string | null, after: string | null) {
       mockChapterRepo.findById
         .mockReset()
-        .mockResolvedValueOnce({ id: 'ch-1', logo_path: before })
-        .mockResolvedValue({ id: 'ch-1', logo_path: after });
+        .mockResolvedValueOnce({ id: 'ch-1', logo_path: before } as Chapter)
+        .mockResolvedValue({ id: 'ch-1', logo_path: after } as Chapter);
     }
 
     beforeEach(() => {
@@ -1345,7 +1351,7 @@ describe('ChapterService', () => {
       mockChapterRepo.update.mockResolvedValue({
         id: 'ch-1',
         logo_path: next,
-      });
+      } as Chapter);
       mockStorageProvider.listObjects.mockResolvedValue([
         { path: current, createdAt: ago(3 * DAY) },
         { path: next, createdAt: ago(60_000) },
@@ -1430,7 +1436,7 @@ describe('ChapterService', () => {
         .mockImplementation(() => undefined);
       mockChapterRepo.findById
         .mockReset()
-        .mockResolvedValueOnce({ id: 'ch-1', logo_path: current })
+        .mockResolvedValueOnce({ id: 'ch-1', logo_path: current } as Chapter)
         .mockRejectedValue(new Error('db blip'));
 
       await expect(
@@ -1761,8 +1767,7 @@ describe('ChapterService', () => {
     it('persists the selection for a member', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-1',
-        dismissed_ops_nudges: [],
-      });
+      } as Member);
 
       await service.setActiveChapter('user-1', 'ch-1');
 

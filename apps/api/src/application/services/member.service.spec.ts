@@ -24,6 +24,8 @@ import {
   type AuditLogServiceMock,
 } from '#test/helpers/audit-log.mock';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { Member } from '#domain/entities/member.entity';
+import type { User } from '#domain/entities/user.entity';
 
 describe('MemberService', () => {
   let service: MemberService;
@@ -58,6 +60,10 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockUserRepo = {
@@ -79,6 +85,7 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      createMany: jest.fn(),
     };
 
     mockCustomFieldService = {
@@ -1056,9 +1063,7 @@ describe('MemberService', () => {
         mockUserRepo.findById.mockResolvedValue({
           id: 'user-1',
           avatar_url: 'chapters/chapter-1/profiles/user-1/photo.jpg',
-          active_chapter_id: null,
-          deleted_at: null,
-        });
+        } as User);
 
         await service.remove('member-1', 'chapter-1', 'actor-1');
 
@@ -1074,9 +1079,7 @@ describe('MemberService', () => {
         mockUserRepo.findById.mockResolvedValue({
           id: 'user-1',
           avatar_url: 'chapters/chapter-other/profiles/user-1/photo.jpg',
-          active_chapter_id: null,
-          deleted_at: null,
-        });
+        } as User);
 
         await service.remove('member-1', 'chapter-1', 'actor-1');
 
@@ -1090,9 +1093,7 @@ describe('MemberService', () => {
         mockUserRepo.findById.mockResolvedValue({
           id: 'user-1',
           avatar_url: null,
-          active_chapter_id: null,
-          deleted_at: null,
-        });
+        } as User);
 
         await service.remove('member-1', 'chapter-1', 'actor-1');
 
@@ -1172,9 +1173,7 @@ describe('MemberService', () => {
         email: 'a@b.c',
         display_name: 'A',
         avatar_url: path,
-        active_chapter_id: null,
-        deleted_at: null,
-      });
+      } as User);
 
       const result = await service.findProfileById(
         'member-1',
@@ -1963,7 +1962,7 @@ describe('MemberService', () => {
         ...member,
         dismissed_ops_nudges: ['dues'],
       });
-      mockRepo.update.mockResolvedValue({ dismissed_ops_nudges: [] });
+      mockRepo.update.mockResolvedValue({} as Member);
 
       await service.dismissOpsNudge('member-1', 'events');
 
@@ -1994,9 +1993,9 @@ describe('MemberService', () => {
     it('tolerates a row predating the column', async () => {
       mockRepo.findById.mockResolvedValue({
         ...member,
-        dismissed_ops_nudges: undefined,
+        dismissed_ops_nudges: undefined as unknown as string[],
       });
-      mockRepo.update.mockResolvedValue({ dismissed_ops_nudges: [] });
+      mockRepo.update.mockResolvedValue({} as Member);
 
       await service.dismissOpsNudge('member-1', 'points');
 

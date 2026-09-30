@@ -47,6 +47,7 @@ describe('RbacService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      createMany: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -58,6 +59,8 @@ describe('RbacService', () => {
       delete: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
     };
 
     mockChapterRepo = {
@@ -699,6 +702,7 @@ describe('RbacService', () => {
       role_ids: [],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
       ...overrides,
@@ -1013,6 +1017,7 @@ describe('RbacService', () => {
       role_ids: [],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
       ...overrides,
@@ -1867,7 +1872,7 @@ describe('RbacService', () => {
 
     it('refuses to set system_key when creating a custom role', async () => {
       mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
-      mockRoleRepo.create.mockResolvedValue({ system_key: null });
+      mockRoleRepo.create.mockResolvedValue({} as Role);
 
       await service.create('ch-1', ACTOR, {
         name: 'Impostor',

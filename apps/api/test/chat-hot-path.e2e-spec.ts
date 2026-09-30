@@ -142,6 +142,10 @@ describe('Chat hot path (e2e)', () => {
     update: jest.fn(),
     delete: jest.fn(),
     leaveGroupDm: jest.fn(),
+    findRoleGates: jest.fn(),
+    addPrivateChannelMember: jest.fn(),
+    removePrivateChannelMember: jest.fn(),
+    removeUserFromPrivateChannels: jest.fn(),
   };
   const categoryRepoMock: jest.Mocked<IChatCategoryRepository> = {
     findByChapter: jest.fn(),
@@ -169,6 +173,7 @@ describe('Chat hot path (e2e)', () => {
   const attachmentRepoMock: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn(),
     findByMessage: jest.fn(),
+    findSharedObjects: jest.fn(),
   };
   const reactionRepoMock: jest.Mocked<IMessageReactionRepository> = {
     findByMessage: jest.fn(),

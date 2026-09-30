@@ -74,6 +74,10 @@ describe('NotificationService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
     mockPushProvider = {
       sendToUser: jest.fn().mockResolvedValue({ invalidTokens: [] }),

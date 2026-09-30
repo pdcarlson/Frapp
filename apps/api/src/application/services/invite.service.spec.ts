@@ -89,6 +89,10 @@ describe('InviteService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -100,6 +104,7 @@ describe('InviteService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      createMany: jest.fn(),
     };
 
     mockNotificationService = {
@@ -210,7 +215,7 @@ describe('InviteService', () => {
     const createCall = mockInviteRepo.create.mock.calls[0][0];
     expect(typeof createCall.token).toBe('string');
     expect(createCall.token!.length).toBeGreaterThan(0);
-    const expiresAt = new Date(createCall.expires_at);
+    const expiresAt = new Date(createCall.expires_at!);
     const now = new Date();
     expect(expiresAt.getTime()).toBeGreaterThan(now.getTime());
     expect(expiresAt.getTime() - now.getTime()).toBeLessThanOrEqual(
@@ -804,8 +809,7 @@ describe('InviteService', () => {
     it('answers an existing member with 409, not a request for the checkbox', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-existing',
-        dismissed_ops_nudges: [],
-      });
+      } as Member);
 
       await expect(
         service.redeem('terms-token', 'user-2'),
@@ -819,7 +823,7 @@ describe('InviteService', () => {
         default_invite_role_id: null,
         subscription_status: 'canceled',
         past_due_since: null,
-      });
+      } as Chapter);
 
       await expect(
         service.redeem('terms-token', 'user-2'),

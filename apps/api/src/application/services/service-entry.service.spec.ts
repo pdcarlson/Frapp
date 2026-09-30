@@ -9,6 +9,7 @@ import { ServiceEntryService } from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
+import type { User } from '#domain/entities/user.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -492,9 +493,7 @@ describe('ServiceEntryService', () => {
         {
           id: 'user-1',
           display_name: 'Alice Member',
-          active_chapter_id: null,
-          deleted_at: null,
-        },
+        } as User,
       ]);
 
       await service.create({
@@ -577,9 +576,7 @@ describe('ServiceEntryService', () => {
           {
             id: 'user-1',
             display_name: 'Alice Member',
-            active_chapter_id: null,
-            deleted_at: null,
-          },
+          } as User,
         ]);
 
         const result = await service.create(chatInput);

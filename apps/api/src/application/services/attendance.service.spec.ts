@@ -74,6 +74,9 @@ describe('AttendanceService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findChildren: jest.fn(),
+      updateMany: jest.fn(),
+      deleteMany: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -83,6 +86,10 @@ describe('AttendanceService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     // Default to an active (non-alumni) member so existing cases are unaffected.

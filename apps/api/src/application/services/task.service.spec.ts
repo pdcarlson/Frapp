@@ -13,6 +13,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { Task, TaskStatus } from '#domain/entities/task.entity';
 import type { Member } from '#domain/entities/member.entity';
+import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 
@@ -79,6 +80,10 @@ describe('TaskService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockUserRepo = {
@@ -193,15 +198,11 @@ describe('TaskService', () => {
         {
           id: 'admin-1',
           display_name: 'Admin Alice',
-          active_chapter_id: null,
-          deleted_at: null,
-        },
+        } as User,
         {
           id: 'user-1',
           display_name: 'Member Bob',
-          active_chapter_id: null,
-          deleted_at: null,
-        },
+        } as User,
       ]);
 
       await service.create({
@@ -292,15 +293,11 @@ describe('TaskService', () => {
           {
             id: 'admin-1',
             display_name: 'Admin Alice',
-            active_chapter_id: null,
-            deleted_at: null,
-          },
+          } as User,
           {
             id: 'user-1',
             display_name: 'Member Bob',
-            active_chapter_id: null,
-            deleted_at: null,
-          },
+          } as User,
         ]);
 
         const result = await service.create(chatInput);

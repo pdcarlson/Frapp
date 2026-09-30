@@ -267,6 +267,8 @@ describe('BillingService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockRoleRepo = {

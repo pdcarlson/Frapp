@@ -50,6 +50,9 @@ function makeMemberRepo(): jest.Mocked<IMemberRepository> {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    findChapterMemberIdentities: jest.fn(),
+    transferPresidencyAtomic: jest.fn(),
+    claimPresidencyAtomic: jest.fn(),
   };
 }
 

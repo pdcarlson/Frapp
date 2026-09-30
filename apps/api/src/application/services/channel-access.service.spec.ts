@@ -82,9 +82,21 @@ describe('ChannelAccessService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       leaveGroupDm: jest.fn(),
+      findRoleGates: jest.fn(),
+      addPrivateChannelMember: jest.fn(),
+      removePrivateChannelMember: jest.fn(),
+      removeUserFromPrivateChannels: jest.fn(),
     };
     mockMessageRepo = {
       findById: jest.fn(),
+      findByChannel: jest.fn(),
+      findPinnedByChannel: jest.fn(),
+      countPinnedByChannel: jest.fn(),
+      findPollsByChapter: jest.fn(),
+      findByClientMessageId: jest.fn(),
+      findAuthorAvatarPaths: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     };
     mockMemberRepo = {
       findById: jest.fn(),
@@ -94,6 +106,9 @@ describe('ChannelAccessService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
     mockRbac = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
