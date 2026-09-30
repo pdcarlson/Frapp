@@ -64,7 +64,7 @@ export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface
   }
 
   defaultMessage(): string {
-    return 'quiet_hours_tz must be a time zone the server can resolve (e.g. America/New_York)';
+    return 'quiet_hours_tz must be a named time zone the server can resolve (e.g. America/New_York), not a UTC offset such as -05:00';
   }
 }
 
@@ -158,7 +158,7 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description:
-      'Time zone for quiet hours — must be a named zone this server can resolve (e.g. America/New_York). A fixed offset such as -05:00 is not portable and is rejected on the deployment runtime. Pass null or an empty string to clear.',
+      'Time zone for quiet hours — must be a named zone this server can resolve (e.g. America/New_York). A fixed UTC offset such as -05:00 is always rejected, because it observes no daylight saving time. Pass null or an empty string to clear.',
     nullable: true,
     type: String,
   })
