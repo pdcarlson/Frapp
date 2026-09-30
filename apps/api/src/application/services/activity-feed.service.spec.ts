@@ -11,7 +11,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import type { Event } from '#domain/entities/event.entity';
 import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
-import type { ChatChannel } from '#domain/entities/chat.entity';
+import type { ChatChannelView } from '#domain/entities/chat.entity';
 import type { MaskedChatMessage } from './chat-block-mask';
 
 describe('ActivityFeedService', () => {
@@ -32,7 +32,7 @@ describe('ActivityFeedService', () => {
   const CHAPTER_ID = 'chapter-1';
   const USER_ID = 'user-1';
 
-  const announcementsChannel: ChatChannel = {
+  const announcementsChannel: ChatChannelView = {
     id: 'chan-announcements',
     chapter_id: CHAPTER_ID,
     name: 'announcements',
@@ -45,6 +45,8 @@ describe('ActivityFeedService', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
     default_notification_level: null,
+    // Read-only, and this member is not an officer.
+    can_post: false,
   };
 
   beforeEach(async () => {
@@ -440,7 +442,8 @@ describe('ActivityFeedService', () => {
         ),
         messageFixture({ id: 'msg-clear', created_at: at(29) }),
       ]);
-      const firstPage = mockChatService.getMessages.getMockImplementation();
+      // Installed by `channelOf` above.
+      const firstPage = mockChatService.getMessages.getMockImplementation()!;
       mockChatService.getMessages
         .mockImplementationOnce(firstPage)
         .mockRejectedValueOnce(new Error('connection reset'));

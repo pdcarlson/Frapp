@@ -89,6 +89,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     purged_at: null,
     purged_messages: 0,
     cleared_at: null,
+    messages_after: null,
     ...overrides,
   };
 }
@@ -113,6 +114,12 @@ function channel(
     cursor_before_snowflake: null,
     parent_discord_channel_id: null,
     position: 0,
+    readable: true,
+    private_in_discord: false,
+    new_channel_type: 'PUBLIC',
+    new_channel_required_permissions: null,
+    discord_reader_role_ids: null,
+    new_channel_same_as_discord: false,
     ...overrides,
   };
 }
@@ -519,7 +526,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
     );
     // Already in the phase-2 intermediate shape, so `toImportedMessage` needs
     // no knowledge that a bot fetched it.
-    const batch = args.importBatch.mock.calls[0][0] as {
+    const batch = jest.mocked(args.importBatch).mock.calls[0][0] as {
       messages: { id?: string | null; timestamp?: string | null }[];
     };
     expect(batch.messages[0].timestamp).toBe('2019-03-04T18:22:11.000+00:00');
@@ -542,7 +549,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
     const args = runArgs(harness);
     await harness.worker.runSlice(args);
 
-    const batch = args.importBatch.mock.calls[0][0] as {
+    const batch = jest.mocked(args.importBatch).mock.calls[0][0] as {
       messages: DiscordExportMessage[];
       mentionContext: ImportMentionContext;
     };
@@ -684,7 +691,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
         resolveTargetChannel.mock.invocationCallOrder[
           asked.indexOf('mapping-2')
         ],
-      ).toBeLessThan(args.importBatch.mock.invocationCallOrder[0]);
+      ).toBeLessThan(jest.mocked(args.importBatch).mock.invocationCallOrder[0]);
     });
 
     const blank = (id: string) => ({
@@ -738,7 +745,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
         ];
       // Only the walk reached it, after the first page was written.
       expect(firstAsk).toBeGreaterThan(
-        args.importBatch.mock.invocationCallOrder[0],
+        jest.mocked(args.importBatch).mock.invocationCallOrder[0],
       );
     });
 
@@ -763,7 +770,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
         resolveTargetChannel.mock.invocationCallOrder[
           asked.indexOf('mapping-2')
         ],
-      ).toBeLessThan(args.importBatch.mock.invocationCallOrder[0]);
+      ).toBeLessThan(jest.mocked(args.importBatch).mock.invocationCallOrder[0]);
     });
 
     it('marks only the row it could not create failed, with the reason', async () => {
@@ -860,7 +867,9 @@ describe('DiscordExportWorkerService — the date cutoff (#2858)', () => {
 
     // Offsets 60..1 are newer, 0 is AT the cutoff and kept too.
     expect(args.importBatch).toHaveBeenCalledTimes(1);
-    expect(args.importBatch.mock.calls[0][0].messages).toHaveLength(61);
+    expect(
+      jest.mocked(args.importBatch).mock.calls[0][0].messages,
+    ).toHaveLength(61);
     // A full page would normally ask for the next; the cutoff ends it.
     expect(harness.bot.fetchMessagePage).toHaveBeenCalledTimes(1);
     expect(harness.repo.updateChannel).toHaveBeenCalledWith(
@@ -923,7 +932,9 @@ describe('DiscordExportWorkerService — the date cutoff (#2858)', () => {
     const harness = await build({ pages: [[around(-1), around(-2)]] });
     const args = runArgs(harness, { job: job({ messages_after: null }) });
     await harness.worker.runSlice(args);
-    expect(args.importBatch.mock.calls[0][0].messages).toHaveLength(2);
+    expect(
+      jest.mocked(args.importBatch).mock.calls[0][0].messages,
+    ).toHaveLength(2);
   });
 });
 
@@ -999,7 +1010,7 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
     await harness.worker.runSlice(args);
 
     expect(args.importBatch).toHaveBeenCalledTimes(1);
-    expect(args.importBatch.mock.calls[0][0]).toMatchObject({
+    expect(jest.mocked(args.importBatch).mock.calls[0][0]).toMatchObject({
       channelName: parent.discord_channel_name,
     });
   });
@@ -1211,7 +1222,8 @@ describe('DiscordExportWorkerService — attachments', () => {
     const result = await harness.worker.runSlice(args);
 
     expect(result.finished).toBe(true);
-    const warnings = args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
+    const warnings =
+      jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('no longer available from Discord');
     expect(harness.repo.markFilesUploaded).not.toHaveBeenCalled();
     // The message itself still imported — it still has its text.
@@ -1248,13 +1260,13 @@ describe('DiscordExportWorkerService — attachments', () => {
         ?.storage_path,
     );
     // The resolver the batch writer reads holds only the stored two.
-    const [batch] = args.importBatch.mock.calls[0];
+    const [batch] = jest.mocked(args.importBatch).mock.calls[0];
     expect([...batch.mediaByRelativePath.keys()].sort()).toEqual([
       'att-0/p0.png',
       'att-2/p2.png',
     ]);
     const warnings: string[] =
-      args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
+      jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings).toContain(
       'Could not import attachment "p1.png": CDN answered 503.',
     );
@@ -1303,7 +1315,7 @@ describe('DiscordExportWorkerService — attachments', () => {
     );
     expect(sent).toHaveLength(2);
     expect(sent[1]).toEqual(sent[0].slice(1));
-    const [batch] = args.importBatch.mock.calls[0];
+    const [batch] = jest.mocked(args.importBatch).mock.calls[0];
     expect(batch.mediaByRelativePath.size).toBe(3);
   });
 
@@ -1324,7 +1336,7 @@ describe('DiscordExportWorkerService — attachments', () => {
       await harness.worker.runSlice(args);
 
       const calls = harness.copier.copy.mock.invocationCallOrder;
-      const renewals = args.checkpoint.mock.invocationCallOrder;
+      const renewals = jest.mocked(args.checkpoint).mock.invocationCallOrder;
       expect(calls).toHaveLength(2);
       // The first call goes straight after the page fetch; the second only
       // once the lease is renewed, and the page's own checkpoint follows.
@@ -1332,7 +1344,7 @@ describe('DiscordExportWorkerService — attachments', () => {
       expect(
         renewals.filter((order) => order > calls[0] && order < calls[1]),
       ).toHaveLength(1);
-      const [batch] = args.importBatch.mock.calls[0];
+      const [batch] = jest.mocked(args.importBatch).mock.calls[0];
       expect(batch.mediaByRelativePath.size).toBe(3);
       expect(harness.repo.updateChannel).toHaveBeenCalledWith(
         'mapping-1',
@@ -1400,7 +1412,7 @@ describe('DiscordExportWorkerService — attachments', () => {
       items.map((item) => item.path),
     );
     expect(sent[1]).toEqual(sent[0].slice(1));
-    const [batch] = second.importBatch.mock.calls[0];
+    const [batch] = jest.mocked(second.importBatch).mock.calls[0];
     expect(batch.mediaByRelativePath.size).toBe(3);
   });
 
@@ -1474,7 +1486,8 @@ describe('DiscordExportWorkerService — attachments', () => {
     await harness.worker.runSlice(args);
 
     expect(harness.copier.copy).not.toHaveBeenCalled();
-    const warnings = args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
+    const warnings =
+      jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('setup.exe');
   });
 
@@ -1502,7 +1515,8 @@ describe('DiscordExportWorkerService — attachments', () => {
 
     expect(harness.copier.copy).not.toHaveBeenCalled();
     expect(result.finished).toBe(true);
-    const warnings = args.checkpoint.mock.calls.at(-1)?.[0].warnings ?? [];
+    const warnings =
+      jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('movie.mp4');
   });
 });

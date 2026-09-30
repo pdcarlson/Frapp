@@ -8,6 +8,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { Member } from '#domain/entities/member.entity';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { AUTH_ADMIN_PROVIDER } from '#domain/adapters/auth-admin.interface';
@@ -42,11 +43,16 @@ const tombstone = {
   deleted_at: '2026-08-03T00:00:00Z',
 };
 
-const membership = (chapterId: string, roleIds: string[] = []) => ({
+const membership = (chapterId: string, roleIds: string[] = []): Member => ({
   id: `m-${chapterId}`,
   user_id: 'user-1',
   chapter_id: chapterId,
   role_ids: roleIds,
+  custom_role_ids: [],
+  has_completed_onboarding: true,
+  dismissed_ops_nudges: [],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
 });
 
 describe('AccountDeletionService', () => {
@@ -68,13 +74,13 @@ describe('AccountDeletionService', () => {
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
-      anonymize: jest.fn(async () => {
+      anonymize: jest.fn(async (_id: string, _rescanCards?: boolean) => {
         callOrder.push('anonymize');
         return tombstone;
       }),
     };
     mockMemberRepo = {
-      findByUser: jest.fn(async () => [membership('chapter-a')]),
+      findByUser: jest.fn(async (_userId: string) => [membership('chapter-a')]),
     };
     mockStorage = {
       getSignedUploadUrl: jest.fn(),
@@ -83,7 +89,7 @@ describe('AccountDeletionService', () => {
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
-      deleteFiles: jest.fn(async () => {
+      deleteFiles: jest.fn(async (_bucket: string, _paths: string[]) => {
         callOrder.push('deleteFiles');
       }),
       // Avatars list by path (age is irrelevant); reports list with metadata.
@@ -95,10 +101,12 @@ describe('AccountDeletionService', () => {
         callOrder.push('listReports');
         return [{ path: `${prefix}/roster.pdf`, createdAt: new Date() }];
       }),
-      listFolders: jest.fn(async () => []),
+      listFolders: jest.fn(
+        async (_bucket: string, _prefix: string): Promise<string[]> => [],
+      ),
     };
     mockAuthAdmin = {
-      deleteAuthUser: jest.fn(async () => {
+      deleteAuthUser: jest.fn(async (_supabaseAuthId: string) => {
         callOrder.push('deleteAuthUser');
       }),
     };

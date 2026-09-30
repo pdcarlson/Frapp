@@ -228,8 +228,9 @@ describe('ChatPushWorkerService', () => {
           {
             user_id: 'blocker',
             chapter_id: 'chap-1',
-            channel_id: CHANNEL.id,
-            message_kind: null,
+            scope: 'channel',
+            scope_id: CHANNEL.id,
+            scope_kind: null,
             level: 'off',
           },
         ],
@@ -305,6 +306,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'hello',
       kind: 'text',
+      mentions: [],
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(0); // mentions tier + no mention
@@ -319,6 +321,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'Big news',
       kind: 'announcement',
+      mentions: [],
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(2);
@@ -349,6 +352,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'Reminder about Saturday',
       kind: 'text',
+      mentions: [],
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledWith(
@@ -404,6 +408,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'Big news',
       kind: 'announcement',
+      mentions: [],
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(1);
@@ -428,6 +433,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'Big news',
       kind: 'announcement',
+      mentions: [],
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(0);
@@ -454,6 +460,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'hello',
       kind: 'text',
+      mentions: [],
       created_at: '',
     });
 
@@ -524,6 +531,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'config changed',
       kind: 'system_audit',
+      mentions: [],
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(0);
@@ -539,6 +547,7 @@ describe('ChatPushWorkerService', () => {
         sender_id: 'sender',
         content: `msg ${i}`,
         kind: 'announcement',
+        mentions: [],
         created_at: '',
       });
     }
@@ -562,6 +571,7 @@ describe('ChatPushWorkerService', () => {
       id: 'dm-1',
       chapter_id: 'chap-1',
       name: 'alice-bob',
+      default_notification_level: null,
       is_read_only: false,
       type: 'DM',
       member_ids: ['alice', 'bob'],
@@ -589,6 +599,7 @@ describe('ChatPushWorkerService', () => {
       id: 'dm-1',
       chapter_id: 'chap-1',
       name: 'alice-bob',
+      default_notification_level: null,
       is_read_only: false,
       type: 'DM',
       member_ids: ['alice', 'bob'],
@@ -614,6 +625,7 @@ describe('ChatPushWorkerService', () => {
       id: 'ch-exec',
       chapter_id: 'chap-1',
       name: 'exec',
+      default_notification_level: null,
       is_read_only: false,
       type: 'ROLE_GATED',
       member_ids: null,
@@ -653,6 +665,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: null,
       content: 'a message from 2019',
       kind: 'imported',
+      mentions: [],
       created_at: '2019-03-04T00:00:00.000Z',
     });
 
@@ -686,6 +699,7 @@ describe('ChatPushWorkerService', () => {
       sender_id: 'sender',
       content: 'chapter meeting moved to 8',
       kind: 'text',
+      mentions: [],
       created_at: '',
     };
 
@@ -843,6 +857,7 @@ describe('ChatPushWorkerService', () => {
         sender_id: 'sender',
         content: 'hello',
         kind: 'text',
+        mentions: [],
         created_at: '',
         ...over,
       });
@@ -1298,6 +1313,7 @@ describe('ChatPushWorkerService', () => {
         sender_id: 'sender',
         content: 'hi',
         kind: 'text',
+        mentions: [],
         created_at: '',
       });
 

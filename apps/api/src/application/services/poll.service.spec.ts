@@ -21,6 +21,7 @@ import type { IPollVoteRepository } from '#domain/repositories/poll-vote.reposit
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import type { ChatChannel } from '#domain/entities/chat.entity';
 import type { PollVote } from '#domain/entities/poll-vote.entity';
+import type { Member } from '#domain/entities/member.entity';
 
 describe('PollService', () => {
   let service: PollService;
@@ -90,6 +91,8 @@ describe('PollService', () => {
       findPollsByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      findByClientMessageId: jest.fn(),
+      findAuthorAvatarPaths: jest.fn(),
     };
 
     mockChannelRepo = {
@@ -102,6 +105,10 @@ describe('PollService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       leaveGroupDm: jest.fn(),
+      findRoleGates: jest.fn(),
+      addPrivateChannelMember: jest.fn(),
+      removePrivateChannelMember: jest.fn(),
+      removeUserFromPrivateChannels: jest.fn(),
     };
 
     mockVoteRepo = {
@@ -121,6 +128,9 @@ describe('PollService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockRbac = {
@@ -138,7 +148,7 @@ describe('PollService', () => {
     // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
     mockMemberRepo.findByUserAndChapter.mockResolvedValue({
       id: 'm-1',
-    });
+    } as Member);
     mockRbac.getEffectivePermissions.mockResolvedValue([]);
     mockChannelRepo.findByIds.mockResolvedValue([
       { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
@@ -766,7 +776,6 @@ describe('PollService', () => {
 
     const activePoll: ChatMessage = {
       id: 'poll-active',
-      chapter_id: 'ch-1',
       channel_id: 'channel-1',
       sender_id: 'user-1',
       content: 'Meeting night?',
@@ -1338,7 +1347,7 @@ describe('PollService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'm-1',
         role_ids: ['role-alumni'],
-      });
+      } as Member);
       mockRbac.hasAlumniRole.mockResolvedValue(true);
     });
 

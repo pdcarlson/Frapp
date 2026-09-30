@@ -152,6 +152,7 @@ describe('PointsService', () => {
       findLatestByChapter: jest.fn().mockResolvedValue(null),
       findById: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
+      createWithPromotion: jest.fn(),
     };
 
     mockNotificationService = {

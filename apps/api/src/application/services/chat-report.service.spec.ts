@@ -742,7 +742,8 @@ describe('ChatReportService', () => {
         channel_id: 'chan-1',
       });
 
-      const order = (mock: jest.Mock) => mock.mock.invocationCallOrder[0];
+      const order = (mock: { mock: { invocationCallOrder: number[] } }) =>
+        mock.mock.invocationCallOrder[0];
       expect(order(reportRepo.resolve)).toBeLessThan(
         order(chatService.deleteReportedMessage),
       );

@@ -11,7 +11,9 @@ import {
 
 describe('CustomFieldController', () => {
   let controller: CustomFieldController;
-  let service: jest.Mocked<CustomFieldService>;
+  let service: jest.Mocked<
+    Pick<CustomFieldService, 'findByChapter' | 'create' | 'update' | 'remove'>
+  >;
 
   beforeEach(async () => {
     service = {

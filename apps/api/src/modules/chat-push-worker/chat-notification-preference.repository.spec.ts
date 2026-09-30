@@ -50,7 +50,8 @@ const CHANNEL_OTHER = '0c000000-0000-4000-8000-000000000211';
  * back rather than chapter A's.
  *
  * The cast is that coupling, stated once and named, rather than four silent
- * `r.id` accesses that type-error the moment specs enter a typechecked project.
+ * `r.id` accesses, which `check-types` would reject: specs are type-checked
+ * (#2821) and the row type has no `id`.
  */
 const idsOf = (rows: readonly object[] | undefined): unknown[] =>
   (rows ?? []).map((row) => (row as { id: unknown }).id);

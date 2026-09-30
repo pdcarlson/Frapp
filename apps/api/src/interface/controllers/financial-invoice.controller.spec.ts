@@ -15,7 +15,20 @@ import { SUBSCRIPTION_EXEMPT_KEY } from '../decorators/subscription.decorator';
 
 describe('FinancialInvoiceController', () => {
   let controller: FinancialInvoiceController;
-  let service: jest.Mocked<Partial<FinancialInvoiceService>>;
+  let service: jest.Mocked<
+    Pick<
+      FinancialInvoiceService,
+      | 'findByUser'
+      | 'findByChapter'
+      | 'findOverdue'
+      | 'findById'
+      | 'create'
+      | 'update'
+      | 'transitionStatus'
+      | 'createPaymentIntent'
+      | 'getInvoiceTransactions'
+    >
+  >;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
 
   beforeEach(async () => {
