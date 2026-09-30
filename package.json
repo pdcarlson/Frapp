@@ -36,6 +36,7 @@
     "check:brand-assets": "node scripts/check-brand-assets.mjs && node --test scripts/lib/__tests__/*.test.mjs",
     "check:staging-conformance": "node scripts/ci/staging-conformance.mjs",
     "check:chapter-directory-seed": "node scripts/check-chapter-directory-seed.mjs",
+    "check:expo-sdk-line": "node scripts/check-expo-sdk-line.mjs",
     "check:edge-functions": "bash scripts/check-edge-functions.sh",
     "load:chapter-directory": "node scripts/load-chapter-directory.mjs",
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs",
