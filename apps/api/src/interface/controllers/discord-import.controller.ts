@@ -287,7 +287,7 @@ export class DiscordImportController {
       userId,
       [SystemPermissions.ROLES_MANAGE],
     );
-    return this.importService.start(id, chapterId, canManageRoles, {
+    return this.importService.start(id, chapterId, userId, canManageRoles, {
       messagesAfter: body?.messages_after,
     });
   }
