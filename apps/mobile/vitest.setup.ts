@@ -338,8 +338,10 @@ vi.mock("expo-font", () => ({
 vi.mock("@expo-google-fonts/figtree", () => ({
   useFonts: vi.fn(() => [true, null]),
   Figtree_400Regular: "Figtree_400Regular",
+  Figtree_400Regular_Italic: "Figtree_400Regular_Italic",
   Figtree_600SemiBold: "Figtree_600SemiBold",
   Figtree_700Bold: "Figtree_700Bold",
+  Figtree_700Bold_Italic: "Figtree_700Bold_Italic",
 }));
 
 vi.mock("expo-splash-screen", () => ({

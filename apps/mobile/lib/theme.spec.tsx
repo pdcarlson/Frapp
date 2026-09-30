@@ -8,6 +8,7 @@ import {
   avatarRadius,
   fontFamilyFor,
   FrappThemeProvider,
+  italicFontFamilyFor,
   MONO_FONT_FAMILY,
   tint,
   typeRole,
@@ -81,6 +82,11 @@ describe("token helpers", () => {
     expect(fontFamilyFor(400)).toBe("Figtree_400Regular");
     expect(fontFamilyFor(600)).toBe("Figtree_600SemiBold");
     expect(fontFamilyFor(700)).toBe("Figtree_700Bold");
+  });
+
+  it("italicFontFamilyFor maps to the italic faces the root layout loads", () => {
+    expect(italicFontFamilyFor(400)).toBe("Figtree_400Regular_Italic");
+    expect(italicFontFamilyFor(700)).toBe("Figtree_700Bold_Italic");
   });
 
   it("mono resolves to a native system stack, never a bundled font", () => {

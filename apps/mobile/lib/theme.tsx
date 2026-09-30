@@ -36,6 +36,26 @@ export function fontFamilyFor(weight: 400 | 600 | 700): string {
 }
 
 /**
+ * Figtree's italic faces, registered beside the uprights for chat's markdown
+ * (#2861): body text is 400, and `**bold**` is 700.
+ *
+ * An italic is a face of its own, never `fontStyle: "italic"` on an upright
+ * family, for the reason `typeRole` gives about `fontWeight`. iOS picks a face
+ * only when its italic trait matches the requested one (`RCTFont.mm`), so an
+ * upright-only family stays upright. Android looks up an italic variant the
+ * upright family never registered, then falls back to the system sans in
+ * italic (`ReactFontManager`).
+ */
+export const FIGTREE_ITALIC_FAMILY: Record<400 | 700, string> = {
+  400: "Figtree_400Regular_Italic",
+  700: "Figtree_700Bold_Italic",
+};
+
+export function italicFontFamilyFor(weight: 400 | 700): string {
+  return FIGTREE_ITALIC_FAMILY[weight];
+}
+
+/**
  * Signet's mono role is a system stack, never a bundled webfont
  * (foundations.md §7). The token string is a CSS variable and invalid in
  * React Native, so the native stack is resolved here instead.
