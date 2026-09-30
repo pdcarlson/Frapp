@@ -5,20 +5,31 @@
  * only thing s05 touches: it hides the normalized cache, the realtime manager,
  * the outbox, and the drafts behind arrays and callbacks.
  *
- * Four deliberate differences from the web hook:
+ * The two are not one hook, on purpose (#1004), and this header is where the
+ * relationship is written down; the web hook's points here. What they share is
+ * logic, and the logic lives in `@repo/chat-core`, which stays framework-free:
+ * the history pager and page fetcher, `olderHistoryView`, the realtime manager
+ * (the typing list's identity, and following the viewer: attaching a channel
+ * subscribed before `configure`, tracking a viewer who resolves after the
+ * join, rejoining on a switch), and the chat-client actions. Each hook holds
+ * only its client's React wiring around those, so a fix to shared behaviour
+ * belongs in chat-core, where both clients get it. What differs, and why:
  *
- * 1. **`ctx` comes from `useChatRuntime()`**, not from a provider — `app/_layout.tsx`
+ * 1. **`ctx` comes from `useChatRuntime()`**, not from a provider. `app/_layout.tsx`
  *    is a frozen hotspot file, so the runtime is a hook the chat screens call
  *    (`spec/ui/mobile/patterns.md` § Chat). That also means `ctx` is `null` until
- *    the viewer's `users.id` resolves, so every callback here guards on it.
+ *    the viewer's `users.id` resolves, so every callback here guards on it. Web
+ *    builds its `ctx` in the hook, on the cached viewer id (#2249).
  * 2. **No `toast`.** `ChatActionContext.toast` is optional and mobile supplies
  *    none, so chat-core's failure toasts are silent no-ops. A terminal 4xx on
  *    `send` surfaces as `_status: "failed"` + `_error` in the cache, which the
- *    thread renders inline; `react`/`unreact` have no such cache row (the
- *    rollback is silent), so this hook wires `ChatActionContext.onError` per
- *    call into `reactionError` instead (#999) — the platform-neutral sink
- *    `chat-core` fires alongside (never instead of) `toast`.
- * 3. **No `getOutboxRow`.** That is a web-only extra on the Dexie store; the
+ *    thread renders inline. An outbox that refused the row rejects `send`'s
+ *    `sendMessage`, and `send` catches that into `sendError`. The rest reports
+ *    through `ChatActionContext.onError`, the platform-neutral sink `chat-core`
+ *    fires alongside (never instead of) `toast`, wired per call: into
+ *    `reactionError` (#999) and `actionError`, which the screen draws, and into
+ *    the message `edit` and `remove` reject with.
+ * 3. **No outbox `get`.** That is a web-only extra on the Dexie store; the
  *    port itself only offers `listForChannel`, so retry/discard look the row up
  *    through it.
  * 4. **No slash dispatch.** `@repo/chat-core/dispatch` pulls in
@@ -26,7 +37,17 @@
  *    unbuilt `dist/` (#989), and slash commands are not a mobile surface.
  *    `unconfirmed`/`recorded` rows therefore have no replay path; the thread
  *    presents them read-only (#1910) until one exists. Do not invent a slash
- *    dispatch from here.
+ *    dispatch from here. Web's `dispatchSlash`, `retryUnconfirmed` and the
+ *    persisted-notice merge in its channel query all hang off it.
+ * 5. **The draft and the staged attachments live here.** Web's draft has its
+ *    own hook (`useChannelDraft`, #2176) and its composer owns the attachments
+ *    it passes to `send`. Here `send` claims whatever is staged, and both reset
+ *    on a channel switch.
+ * 6. **The realtime attach waits on `bootChatAdapters()`** and on the viewer;
+ *    the comment on that effect has the ordering it protects.
+ * 7. **Surface-only members.** Mobile has `reload`, `canSend` and `viewerId`
+ *    for s05; web has `loadNewer` for jump-to-message and keeps the channel's
+ *    tail on disk for its first paint.
  *
  * Imports stay subpath-only for the same reason the runtime's do.
  */
@@ -58,11 +79,12 @@ import { emptyCache, selectMessages } from "@repo/chat-core/cache";
 import {
   createHistoryPageFetcher,
   createHistoryPager,
-  hasOlderHistory,
+  olderHistoryView,
   type LoadOlderResult,
 } from "@repo/chat-core/history";
 import {
   chatRealtime,
+  NO_TYPING_USERS,
   type ConnectionStatus,
 } from "@repo/chat-core/realtime-manager";
 import {
@@ -202,7 +224,8 @@ export interface UseChatChannelResult {
   actionError: string | null;
   /** Dismisses `actionError` — call on the next successful action or navigation away. */
   clearActionError: () => void;
-  typingUsers: string[];
+  /** The manager's list: the same array until someone starts or stops typing. */
+  typingUsers: readonly string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
   retry: (clientMessageId: string) => Promise<void>;
@@ -278,9 +301,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   // boot-time configure. A channel attached that way never calls `channel.track`,
   // so the viewer has no presence entry — and the push worker reads presence on
   // `chat:channel:<id>` to skip members currently in the channel (ADR-10), so
-  // they would be pushed notifications for the thread they are reading. Because
-  // this screen is a `Tabs.Screen` it stays mounted and the effect never re-runs,
-  // so it would persist for the channel's lifetime. Both callbacks hang off one
+  // they would be pushed notifications for the thread they are reading. Since
+  // #3002 the runtime's `configure({viewerId})` would also repair that, by
+  // tracking the viewer on the joined channel; this ordering still has the
+  // channel join under the viewer from the start. Both callbacks hang off one
   // already-resolved promise and run in registration order, and the runtime's
   // effect is declared first (it is called at the top of this hook), so its
   // `configure` is guaranteed to land before this `subscribe`.
@@ -350,28 +374,22 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   useEffect(() => chatRealtime.subscribeStatus(setConnection), []);
 
   // The manager pings status listeners on typing-membership changes too, so one
-  // subscription drives both the connection pill and the typing line.
-  const [typingUsersState, setTypingUsers] = useState<string[]>([]);
+  // subscription drives both the connection pill and the typing line. Most
+  // pings carry no change for this channel, and `getTypingUsers` then hands
+  // back the array it returned last, so this set bails out instead of
+  // re-rendering the thread and rebuilding every visible row's StyleSheet. That
+  // identity used to be compared here; it is the manager's job now, so web gets
+  // it too (#1004).
+  const [typingUsersState, setTypingUsers] =
+    useState<readonly string[]>(NO_TYPING_USERS);
   useEffect(() => {
     if (!channelId) return;
-    // `getTypingUsers` builds a fresh array every call, so assigning it
-    // unconditionally never hits React's `Object.is` bail-out — and the manager
-    // pings status listeners on its 1.5s typing-expiry sweep. Left as-is, the
-    // whole thread re-rendered every 1.5s while anyone was typing, rebuilding
-    // every visible row's StyleSheet. Compare membership and keep the
-    // previous array when it has not changed.
     const refresh = () =>
-      setTypingUsers((prev) => {
-        const next = chatRealtime.getTypingUsers(channelId);
-        const same =
-          prev.length === next.length &&
-          prev.every((id, index) => id === next[index]);
-        return same ? prev : next;
-      });
+      setTypingUsers(chatRealtime.getTypingUsers(channelId));
     refresh();
     return chatRealtime.subscribeStatus(refresh);
   }, [channelId]);
-  const typingUsers = channelId ? typingUsersState : [];
+  const typingUsers = channelId ? typingUsersState : NO_TYPING_USERS;
 
   // Draft: load once per channel, debounce writes.
   const [draftState, setDraftState] = useState("");
@@ -586,13 +604,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         queued = true;
         await drafts.clear(channelId);
       } catch (error) {
-        // `sendMessage` awaits `outbox.enqueue` *outside* its own try/catch, so
-        // a full or unavailable AsyncStorage rejects out of it having already
-        // drawn the optimistic bubble but queued nothing. There is no toast on
-        // this platform, so restoring the text and naming the failure is the
-        // only way the member learns their message did not go anywhere —
-        // but only onto the channel this send was actually for; see the
-        // generation/channel guard above.
+        // `sendMessage` rethrows when `outbox.enqueue` fails, after taking its
+        // optimistic bubble back out (#1718), so a full or unavailable
+        // AsyncStorage lands here with nothing queued and nothing on screen.
+        // There is no toast on this platform, so restoring the text and naming
+        // the failure is the only way the member learns their message did not
+        // go anywhere — but only onto the channel this send was actually for;
+        // see the generation/channel guard above.
         if (
           currentChannelIdRef.current === forChannelId &&
           sendGenerationRef.current === generation
@@ -726,22 +744,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const messages = useMemo(() => selectMessages(query.data), [query.data]);
 
-  const hasOlder =
-    !!channelId &&
-    hasOlderHistory(query.data, pagerState.starts.get(channelId));
-  const olderForChannel = channelId
-    ? (pagerState.older.get(channelId) ?? null)
-    : null;
-
   return {
     messages,
     isLoading: query.isPending,
     loadError: query.error ?? null,
     reload,
     isReloading: query.isFetching,
-    hasOlder,
-    isLoadingOlder: olderForChannel === "loading",
-    olderError: olderForChannel === "error",
+    ...olderHistoryView(pagerState, channelId, query.data),
     loadOlder,
     viewerId,
     canSend: !!ctx && !!channelId,
