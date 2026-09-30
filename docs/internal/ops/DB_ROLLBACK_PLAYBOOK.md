@@ -2470,3 +2470,17 @@ It replaces the `discord_import_channels_target_present` CHECK with `discord_imp
 To restore only the #2905 purge rule (a merge by any import keeps its channel, and nothing is re-reaped), re-create both functions in a new forward migration. Copy their bodies verbatim from `20260930030000_discord_import_purge_channels.sql`, sections 2a and 2, and re-state that file's grants. Don't edit them in by hand, which would leave the ledger out of step.
 
 A channel a purge or an officer already deleted can't be recovered by rollback. A purge deletes only a channel that held no message of any kind, no attachment, no points-ledger link, and no merge by an import that isn't deleted; a re-import recreates it.
+
+## Rollback Discord import purge progress (20260930150000)
+
+* **Migration**: `20260930150000_discord_import_purged_messages.sql`
+
+One column on `discord_imports`, `purged_messages integer not null default 0` (#2944). No data is rewritten, and the count it holds is progress only: nothing reads it to decide what to delete.
+
+**Revert the API and web code forward, and keep the migration file.** The worker that ships with this migration writes `purged_messages` with every lease renewal during a purge. Revert the #2944 code on `main` and ship that, but keep `supabase/migrations/20260930150000_discord_import_purged_messages.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker doesn't write the column and the reverted web doesn't read it, so leaving it in place is safe.
+
+To remove it, drop it in a new forward migration once the reverted API is live, not by hand. A newer worker still running fails every purge slice after its first round until the revert deploys, and the import is marked `failed`; deleting it again finishes it.
+
+```sql
+alter table public.discord_imports drop column if exists purged_messages;
+```

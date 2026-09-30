@@ -64,8 +64,11 @@ export const discordImportKeys = {
  * A purge runs in the background, and Clear is offered only once a row reads
  * `purged`, so a list that never asked again would leave a deleted row at
  * `purging` with nothing to click. The detail poll can't carry it: it follows
- * the one import the admin is watching, often a running one. A purge is short,
- * so the list goes back to not polling once it lands.
+ * the one import the admin is watching, often a running one. The same poll
+ * carries a deleting row's `purged_messages` countdown (#2944): a purge is not
+ * short on a large import (staging's 145,574-message one still had about
+ * 139,700 left several minutes in), and the list goes back to not polling
+ * once it lands.
  */
 export function discordImportListPollMs(
   rows: ReadonlyArray<{ status?: string }> | undefined,
