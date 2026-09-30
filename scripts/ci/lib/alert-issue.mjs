@@ -338,8 +338,8 @@ export async function raiseAlert({
  *   clean read closes them. "unread" is kept apart from "failed" because the
  *   callers' policies differ. Every daily watchdog goes red on it (the
  *   conformance pair, check-migration-drift, production-guardrails,
- *   production-backup-env, both backup-freshness watchdogs and
- *   production-release-pin): one failed read is usually transient, but a
+ *   production-backup-env, both backup-freshness watchdogs,
+ *   production-release-pin and routine-heartbeat): one failed read is usually transient, but a
  *   lasting one means the job's token lost issues access, and then the next
  *   real failure could not raise its alert either. production-uptime passes
  *   with a warning, because at a 15-minute cadence a blip would be constant
