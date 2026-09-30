@@ -1,7 +1,9 @@
 import {
   createContext,
   useContext,
+  useLayoutEffect,
   useMemo,
+  useRef,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -62,8 +64,17 @@ export interface ParsedMessageMarkdown {
   body: ReactElement;
   /** Every link `body` draws, in the order it draws them. */
   links: MessageLink[];
-  /** The body ends in a code block, so the trailing markers take a line of their own. */
-  endsInCodeBlock: boolean;
+  /**
+   * The body draws no text at all: `---`, a lone `*` or `#`, an image. The
+   * row then draws no text line, as for an attachment-only message.
+   */
+  empty: boolean;
+  /**
+   * The body's last block is not a paragraph (a list, a quote, a heading, a
+   * code block), so the trailing markers take a line of their own under it
+   * (`components.md` §11 § What rides the row).
+   */
+  trailingOnOwnLine: boolean;
 }
 
 /**
@@ -87,9 +98,10 @@ const BLOCKS = new Set(["p", "pre"]);
 /** Breaks between two blocks: web's `pre-wrap` shows a paragraph gap, one blank line. */
 const MAX_BREAKS = 2;
 
-/** The characters a node reads as. */
+/** The characters a node draws, a line break included. */
 function textOf(node: HastNode): string {
   if (node.type === "text") return node.value ?? "";
+  if (isElement(node, "br")) return "\n";
   return (node.children ?? []).map(textOf).join("");
 }
 
@@ -169,34 +181,43 @@ function layOut(nodes: HastNode[]): HastNode[] {
   return out;
 }
 
-/** The body's links in reading order, each as its `a` component will judge it. */
+/**
+ * An `a` element as the link it draws, or `null` when it draws none: its
+ * target is not openable (`isOpenableHref`, after react-markdown's own
+ * `urlTransform`), or it has no text to tap (`[![logo](x)](url)`, whose image
+ * the allowlist drops). The `a` component and `collectLinks` both decide
+ * through this, so a screen reader is offered exactly the links drawn.
+ */
+function drawnLink(node: HastNode): MessageLink | null {
+  const href = defaultUrlTransform(String(node.properties?.href ?? ""));
+  // The action's label reads a line break inside a link as a space.
+  const text = textOf(node).replace(/\s+/g, " ").trim();
+  return text && isOpenableHref(href) ? { text, href } : null;
+}
+
+/** The body's links in reading order. */
 function collectLinks(root: HastNode): MessageLink[] {
   const links: MessageLink[] = [];
   const visit = (node: HastNode) => {
-    if (isElement(node, "a")) {
-      const href = defaultUrlTransform(String(node.properties?.href ?? ""));
-      if (isOpenableHref(href)) links.push({ text: textOf(node) || href, href });
-    }
+    const link = isElement(node, "a") ? drawnLink(node) : null;
+    if (link) links.push(link);
     for (const child of node.children ?? []) visit(child);
   };
   visit(root);
   return links;
 }
 
-interface TextFlowResult {
-  links: MessageLink[];
-  endsInCodeBlock: boolean;
-}
+type TextFlowResult = Omit<ParsedMessageMarkdown, "body">;
 
 /** The rehype pass that shapes the tree for one `Text`. It must run last. */
 function rehypeTextFlow(result: TextFlowResult) {
   return (root: HastNode): void => {
+    // Read before the allowlist unwraps the blocks it is asking about.
+    const last = (root.children ?? []).filter((node) => !isSeparator(node)).pop();
+    result.trailingOnOwnLine = last !== undefined && !isElement(last, "p");
     root.children = layOut(applyAllowlist(root.children ?? []));
     result.links = collectLinks(root);
-    result.endsInCodeBlock = isElement(
-      root.children[root.children.length - 1],
-      "pre",
-    );
+    result.empty = textOf(root).trim() === "";
   };
 }
 
@@ -212,14 +233,20 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
   // Decided from the source, before remark sees it: see
   // `opensTooManyContainers` (#2209).
   const flatten = opensTooManyContainers(content);
-  const result: TextFlowResult = { links: [], endsInCodeBlock: false };
+  const result: TextFlowResult = {
+    links: [],
+    empty: false,
+    trailingOnOwnLine: false,
+  };
   const body = Markdown({
     children: flatten ? "" : content,
-    // The depth cap goes first: every pass after it recurses once per level.
     remarkPlugins: [
+      // The depth cap goes first: every pass after it recurses once per level.
       [remarkDepthCap, { content, flatten }],
+      // Before `remark-breaks`, which leaves the text nodes it splits without
+      // the source positions a bare URL is measured by.
+      [remarkBareUrls, { content }],
       remarkBreaks,
-      remarkBareUrls,
     ],
     rehypePlugins: [[rehypeTextFlow, result]],
     allowedElements: MESSAGE_MARKDOWN_ELEMENTS,
@@ -264,11 +291,14 @@ function Emphasis({
   children?: ReactNode;
 }) {
   const context = useMarkdownContext();
-  const value = {
-    ...context,
-    bold: context.bold || !!bold,
-    italic: context.italic || !!italic,
-  };
+  const value = useMemo(
+    () => ({
+      ...context,
+      bold: context.bold || !!bold,
+      italic: context.italic || !!italic,
+    }),
+    [context, bold, italic],
+  );
   return (
     <MarkdownContext.Provider value={value}>
       <Text style={{ fontFamily: faceFor(value.bold, value.italic) }}>
@@ -310,15 +340,16 @@ const COMPONENTS: Components = {
     <Code>{textOf((node ?? { type: "root" }) as HastNode).replace(/\n$/, "")}</Code>
   ),
   br: () => "\n",
-  a: function Link({ href, children }) {
+  a: function Link({ node, children }) {
     const { styles, onLongPress } = useMarkdownContext();
-    // `collectLinks` applies the same test to the same href, so the row's
-    // accessibility actions name exactly the links drawn here.
-    if (!href || !isOpenableHref(href)) return <>{children}</>;
+    // The same decision `collectLinks` makes, so the row's accessibility
+    // actions name exactly the links drawn here.
+    const link = node ? drawnLink(node as HastNode) : null;
+    if (!link) return <>{children}</>;
     return (
       <Text
         accessibilityRole="link"
-        onPress={() => void openMessageLink(href)}
+        onPress={() => void openMessageLink(link.href)}
         // A nested `Text` with `onPress` claims the touch, so it forwards the
         // row's long-press.
         onLongPress={onLongPress}
@@ -345,23 +376,37 @@ export function MessageMarkdown({
   parsed: ParsedMessageMarkdown;
   style: StyleProp<TextStyle>;
   /**
-   * `(edited)` and Pinned, nested after the body so they sit on its last line
-   * (`components.md` §11 § What rides the row), or under a closing code block.
+   * `(edited)` and Pinned, nested after the body so they sit on its last line,
+   * or on a line of their own after a last block that isn't a paragraph
+   * (`components.md` §11 § What rides the row).
    */
   trailing?: ReactNode;
   onLongPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const context = useMemo(
-    () => ({ styles, onLongPress, bold: false, italic: false }),
-    [styles, onLongPress],
+  // The row's long-press is a new closure on every render of the thread. Read
+  // through a ref, it leaves the context as it was, so React can skip the
+  // memoized body instead of re-rendering every run in it.
+  const longPress = useRef(onLongPress);
+  useLayoutEffect(() => {
+    longPress.current = onLongPress;
+  });
+  const hasLongPress = onLongPress !== undefined;
+  const context = useMemo<MarkdownContextValue>(
+    () => ({
+      styles,
+      onLongPress: hasLongPress ? () => longPress.current?.() : undefined,
+      bold: false,
+      italic: false,
+    }),
+    [styles, hasLongPress],
   );
   return (
     <MarkdownContext.Provider value={context}>
       <Text style={style}>
         {parsed.body}
-        {trailing && parsed.endsInCodeBlock ? "\n" : null}
+        {trailing && parsed.trailingOnOwnLine ? "\n" : null}
         {trailing}
       </Text>
     </MarkdownContext.Provider>

@@ -267,8 +267,9 @@ either half-deletion (#2727).
 `react-markdown` and `remark-breaks`, at web's ranges, so chat renders markdown with web's
 parser and plugins rather than a second parser that would disagree with web on edge cases.
 Both were already hoisted for `apps/web`, so the lockfile changed only in `apps/mobile`'s
-entry. The renderer that imports them lands in the next PR. That lag is not the #1045
-hazard above: neither package carries native code, a config plugin or a permission.
+entry. The renderer that imports them followed as #2861's second PR; the one-PR lag was
+not the #1045 hazard above, since neither package carries native code, a config plugin or
+a permission.
 `app/_layout.tsx` now loads `FIGTREE_FACES` from `lib/theme.tsx`, which adds Figtree's
 400 and 700 italic faces (`italicFontFamilyFor`); the three chat styles that set
 `fontStyle: "italic"` moved to the face. Why an italic has to be a face of its own:

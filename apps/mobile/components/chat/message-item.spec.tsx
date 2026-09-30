@@ -553,10 +553,9 @@ describe("reply quote (#1727)", () => {
   });
 
   it("flattens markdown in the parent using the shared preview rules", () => {
-    // Mobile rows still print `content` raw (no markdown renderer on this
-    // surface). The quote uses the web preview rules on purpose (#1727), so
-    // `_really_ urgent` becomes `really urgent` in the strip even though the
-    // parent row would still show the underscores.
+    // The quote flattens the parent with the shared preview rules (#1727), so
+    // `_really_ urgent` reads `really urgent` in the strip, as the parent's own
+    // row now draws it too (#2861).
     const flat = JSON.stringify(
       renderItem(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
@@ -725,6 +724,22 @@ describe("links in a message are tappable (#2775)", () => {
         ),
     );
     expect(container.props.accessible).toBe(true);
+  });
+});
+
+describe("a body whose markdown draws nothing (#2861)", () => {
+  it("draws no text line, and puts the markers on a line of their own", () => {
+    const tree = renderItem(
+      message({ content: "---", edited_at: "2026-09-29T18:00:00Z" }),
+    );
+    const drawn = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map(drawnText);
+    // `OwnLineMarkers` draws the marker bare; one trailing a text line leads
+    // with a space.
+    expect(drawn).toContain(EDITED_MARKER);
+    expect(drawn).not.toContain(` ${EDITED_MARKER}`);
+    expect(drawn.some((text) => text.includes("---"))).toBe(false);
   });
 });
 

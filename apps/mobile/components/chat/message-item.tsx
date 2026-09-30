@@ -450,17 +450,19 @@ export function MessageItem({
       />
     ) : null;
 
-  // An attachment-only message has no text, and draws no text row at all: the
-  // bubble it replaced painted an empty box above the photo.
-  const hasText = !message.is_deleted && message.content.trim().length > 0;
   // Parsed once per content, for the body and for its links' accessibility
   // actions, so the actions name exactly the links drawn.
+  const hasContent = !message.is_deleted && message.content.trim().length > 0;
   const parsed = useMemo(
-    () => (hasText ? parseMessageMarkdown(message.content) : null),
-    [hasText, message.content],
+    () => (hasContent ? parseMessageMarkdown(message.content) : null),
+    [hasContent, message.content],
   );
+  // A message that draws no text draws no text row at all: an attachment-only
+  // one (the bubble it replaced painted an empty box above the photo), and one
+  // whose markdown renders nothing, such as `---` or a lone image.
+  const hasText = parsed !== null && !parsed.empty;
   const bodyA11y = messageActionsA11yProps(onOpenActions, {
-    links: parsed?.links ?? [],
+    links: hasText ? parsed.links : [],
     onJumpToParent: quoteJump(message, onJumpToParent),
   });
 
@@ -492,7 +494,7 @@ export function MessageItem({
 
   const text = message.is_deleted ? (
     <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
-  ) : parsed ? (
+  ) : hasText ? (
     <MessageMarkdown
       parsed={parsed}
       style={[styles.body, muted ? styles.bodyMuted : null]}

@@ -88,9 +88,10 @@ function urlPrefixAt(content: string, index: number): boolean {
  * the URL does not open one (`(see https://x.test/a)` keeps its paren out,
  * `https://en.wikipedia.org/wiki/Frapp_(drink)` keeps it in). The bracket
  * counts are taken once and adjusted as characters drop, so a URL ending in a
- * long run of brackets is still one pass.
+ * long run of brackets is still one pass. `remarkBareUrls` also measures a URL
+ * with it on the raw body, where the parser split it.
  */
-function bareUrlEnd(content: string, start: number): number {
+export function bareUrlEnd(content: string, start: number): number {
   let end = start;
   while (end < content.length && !/[\s<]/.test(content[end]!)) end += 1;
   let openParens = 0;

@@ -10,7 +10,14 @@ interface Node {
 }
 
 const text = (value: string): Node => ({ type: "text", value });
-const run = (tree: Node) => remarkBareUrls()(tree as never);
+const run = (tree: Node, content = "") =>
+  remarkBareUrls({ content })(tree as never);
+
+/** A node the parser would have produced for `content.slice(start, end)`. */
+const at = (node: Node, start: number, end: number): Node => ({
+  ...node,
+  position: { start: { offset: start }, end: { offset: end } },
+});
 
 describe("MESSAGE_MARKDOWN_ELEMENTS", () => {
   it("is the spec's formatting set and nothing wider", () => {
@@ -65,6 +72,70 @@ describe("remarkBareUrls", () => {
     const paragraph: Node = { type: "paragraph", children: [plain] };
     run({ type: "root", children: [paragraph] });
     expect(paragraph.children![0]).toBe(plain);
+  });
+
+  // What the parser hands over for a URL holding a delimiter pair: the URL's
+  // text stops at the emphasis, and the raw body says where it really ends.
+  it("links a URL the parser split at emphasis whole, as typed", () => {
+    const content = "see https://x.test/pkg/__init__.py now";
+    const open = content.indexOf("__");
+    const close = content.indexOf("__", open + 2) + 2;
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text(content.slice(0, open)), 0, open),
+        at({ type: "strong", children: [at(text("init"), open + 2, close - 2)] }, open, close),
+        at(text(content.slice(close)), close, content.length),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    const url = "https://x.test/pkg/__init__.py";
+    const withoutPositions = paragraph.children!.map((node) => ({
+      ...node,
+      position: undefined,
+    }));
+    expect(withoutPositions).toEqual([
+      text("see "),
+      { type: "link", url, children: [text(url)] },
+      text(" now"),
+    ]);
+  });
+
+  it("still links a URL in the text left after one it measured", () => {
+    const content = "https://x.test/*a*b and https://y.test";
+    const open = content.indexOf("*");
+    const close = open + 3;
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text(content.slice(0, open)), 0, open),
+        at({ type: "emphasis", children: [at(text("a"), open + 1, close - 1)] }, open, close),
+        at(text(content.slice(close)), close, content.length),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(
+      paragraph.children!.filter((node) => node.type === "link").map((node) => node.url),
+    ).toEqual(["https://x.test/*a*b", "https://y.test"]);
+  });
+
+  it("keeps the parse's split when the text is not its source verbatim", () => {
+    // An entity: the value no longer matches the body, so the URL is linked
+    // by the value it has.
+    const content = "https://x.test/&amp;__a__";
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text("https://x.test/&"), 0, 20),
+        at({ type: "strong", children: [at(text("a"), 22, 23)] }, 20, 25),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children![0]).toEqual({
+      type: "link",
+      url: "https://x.test/&",
+      children: [text("https://x.test/&")],
+    });
   });
 
   it("walks a tree far deeper than the depth cap without recursing", () => {

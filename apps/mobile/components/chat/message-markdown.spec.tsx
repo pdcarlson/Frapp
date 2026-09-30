@@ -187,6 +187,45 @@ describe("MessageMarkdown: links", () => {
     expect(links(render(content))).toHaveLength(1);
   });
 
+  it.each([
+    ["an `__x__` pair", "see https://x.test/pkg/__init__.py now", "https://x.test/pkg/__init__.py"],
+    ["a `*x*` pair", "https://x.test/search?q=a*b*c.", "https://x.test/search?q=a*b*c"],
+    ["an `_x_` pair after a slash", "https://x.test/_next/_x_/y", "https://x.test/_next/_x_/y"],
+  ])("links a bare URL holding %s whole, as typed", (_label, content, url) => {
+    expect(parseMessageMarkdown(content).links).toEqual([{ text: url, href: url }]);
+    expect(links(render(content)).map(drawnText)).toEqual([url]);
+  });
+
+  it("links the URL after one it had to measure on the raw body", () => {
+    expect(
+      parseMessageMarkdown("https://x.test/__a__.py and https://y.test").links.map(
+        (link) => link.href,
+      ),
+    ).toEqual(["https://x.test/__a__.py", "https://y.test"]);
+  });
+
+  it("keeps the parse's link when the raw URL would end inside emphasis", () => {
+    // `bareUrlEnd` gives trailing `_` back (for `__https://x.test__`), so the
+    // raw URL stops inside the bold; there is no whole URL to link instead.
+    expect(parseMessageMarkdown("https://x.test/__a__").links).toEqual([
+      { text: "https://x.test/", href: "https://x.test/" },
+    ]);
+  });
+
+  it("names a link across a line break with a space, as a reader hears it", () => {
+    const content = "[click\nhere](https://x.test)";
+    expect(parseMessageMarkdown(content).links).toEqual([
+      { text: "click here", href: "https://x.test" },
+    ]);
+    expect(drawnText(links(render(content))[0]!)).toBe("click\nhere");
+  });
+
+  it("neither draws nor offers a link with nothing to tap", () => {
+    const content = "[![logo](https://x.test/l.png)](https://y.test)";
+    expect(parseMessageMarkdown(content).links).toEqual([]);
+    expect(links(render(content))).toHaveLength(0);
+  });
+
   it("links inside bold, and the link keeps the bold face", () => {
     const tree = render("**https://x.test**");
     const [link] = links(tree);
@@ -200,6 +239,32 @@ describe("MessageMarkdown: links", () => {
     const [link] = links(render("https://x.test", { onLongPress }));
     act(() => link!.props.onLongPress());
     expect(onLongPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the row's current long-press after the row re-renders", () => {
+    // The thread hands every render a new closure; the body reads it through
+    // a ref rather than rebuilding its context.
+    const first = vi.fn();
+    const second = vi.fn();
+    const parsed = parseMessageMarkdown("**see** https://x.test");
+    const draw = (onLongPress: () => void) => (
+      <FrappThemeProvider>
+        <MessageMarkdown parsed={parsed} style={null} onLongPress={onLongPress} />
+      </FrappThemeProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(draw(first));
+    });
+    act(() => tree.update(draw(second)));
+    act(() => links(tree)[0]!.props.onLongPress());
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a link no long-press when the row has none", () => {
+    const [link] = links(render("https://x.test"));
+    expect(link!.props.onLongPress).toBeUndefined();
   });
 
   it("offers each link as a named accessibility action that opens it", async () => {
@@ -222,6 +287,19 @@ describe("MessageMarkdown: links", () => {
 describe("MessageMarkdown: the #2209 depth cap", () => {
   it("draws a line of too many containers as the raw text, without parsing", () => {
     const content = "> ".repeat(MAX_MESSAGE_MARKDOWN_DEPTH + 1) + "**hi**";
+    expect(drawn(content)).toBe(content);
+  });
+
+  it("skips the parse for a list-marker line at the length cap", () => {
+    // remark's parse is quadratic in one line's list markers: this body took
+    // 6.8 s in Node when it reached the parser (`markdown-depth-cap.ts`). The
+    // cap after the parse would draw the same text, so only the time shows
+    // whether `opensTooManyContainers` skipped it.
+    const content = "- ".repeat(4_999) + "hi";
+    const started = performance.now();
+    const parsed = parseMessageMarkdown(content);
+    expect(performance.now() - started).toBeLessThan(1_500);
+    expect(parsed.links).toEqual([]);
     expect(drawn(content)).toBe(content);
   });
 
@@ -250,8 +328,36 @@ describe("MessageMarkdown: trailing markers", () => {
     expect(drawnText(texts(tree)[0]!)).toBe("hi (edited)");
   });
 
-  it("take a line of their own after a closing code block, as on web", () => {
-    const tree = render("```\ncode\n```", { trailing: "(edited)" });
-    expect(drawnText(texts(tree)[0]!)).toBe("code\n(edited)");
+  it.each([
+    ["a code block", "```\ncode\n```", "code"],
+    ["a list", "- a\n- b", "a\nb"],
+    ["a quote", "> quoted", "quoted"],
+    ["a heading", "text\n# Big", "text\n\nBig"],
+  ])("take a line of their own after %s, as §11 says", (_label, content, body) => {
+    const tree = render(content, { trailing: "(edited)" });
+    expect(drawnText(texts(tree)[0]!)).toBe(`${body}\n(edited)`);
+  });
+
+  it("stay on the line after a paragraph that follows a list", () => {
+    const tree = render("- a\n\nend", { trailing: " (edited)" });
+    expect(drawnText(texts(tree)[0]!)).toBe("a\n\nend (edited)");
+  });
+});
+
+describe("parseMessageMarkdown: a body that draws nothing", () => {
+  it.each([
+    ["a divider", "---"],
+    ["a starred divider", "***"],
+    ["a lone list marker", "*"],
+    ["an empty heading", "#"],
+    ["an image", "![shot](https://x.test/a.png)"],
+  ])("marks %s empty, so the row draws no text line", (_label, content) => {
+    expect(parseMessageMarkdown(content).empty).toBe(true);
+  });
+
+  it("does not mark text, code or a lone link empty", () => {
+    for (const content of ["hi", "`x`", "```\nx\n```", "https://x.test"]) {
+      expect(parseMessageMarkdown(content).empty).toBe(false);
+    }
   });
 });
