@@ -47,7 +47,9 @@ describe('PosthogRuntime', () => {
     const transport = new RecordingPosthogTransport(FIXTURES);
     const original = transport.fetch;
     let fetchStarted = 0;
-    transport.fetch = async (url, options) => {
+    // `fetch` is readonly on the transport; this test swaps it for a hung one.
+    const patchable: { fetch: typeof original } = transport;
+    patchable.fetch = async (url, options) => {
       fetchStarted += 1;
       const recorded = await original(url, options);
       await hung;

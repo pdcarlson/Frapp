@@ -24,6 +24,8 @@ import {
   type AuditLogServiceMock,
 } from '#test/helpers/audit-log.mock';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { Member } from '#domain/entities/member.entity';
+import type { User } from '#domain/entities/user.entity';
 
 describe('MemberService', () => {
   let service: MemberService;
@@ -58,6 +60,10 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockUserRepo = {
@@ -79,6 +85,7 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      createMany: jest.fn(),
     };
 
     mockCustomFieldService = {
@@ -146,6 +153,7 @@ describe('MemberService', () => {
         role_ids: ['role-1'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       },
@@ -161,6 +169,8 @@ describe('MemberService', () => {
         graduation_year: null,
         current_city: null,
         current_company: null,
+        active_chapter_id: null,
+        deleted_at: null,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       },
@@ -191,6 +201,7 @@ describe('MemberService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -227,6 +238,7 @@ describe('MemberService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -366,6 +378,7 @@ describe('MemberService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: createdAt,
       updated_at: createdAt,
     });
@@ -438,6 +451,7 @@ describe('MemberService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -445,6 +459,7 @@ describe('MemberService', () => {
       id: 'role-president',
       chapter_id: 'chapter-1',
       name: 'President',
+      system_key: null,
       permissions: ['*'],
       is_system: true,
       display_order: 1,
@@ -455,6 +470,7 @@ describe('MemberService', () => {
       id: 'role-1',
       chapter_id: 'chapter-1',
       name: 'Member',
+      system_key: null,
       permissions: ['members:view'],
       is_system: true,
       display_order: 5,
@@ -465,6 +481,7 @@ describe('MemberService', () => {
       id: 'role-2',
       chapter_id: 'chapter-1',
       name: 'Social Chair',
+      system_key: null,
       permissions: ['events:create'],
       is_system: false,
       display_order: 8,
@@ -695,6 +712,7 @@ describe('MemberService', () => {
         id: 'role-legacy-star',
         chapter_id: 'chapter-1',
         name: 'Legacy Star',
+        system_key: null,
         permissions: ['*'],
         is_system: false,
         display_order: 9,
@@ -752,6 +770,7 @@ describe('MemberService', () => {
         id: 'role-legacy-star',
         chapter_id: 'chapter-1',
         name: 'Legacy Star',
+        system_key: null,
         permissions: ['*'],
         is_system: false,
         display_order: 9,
@@ -813,6 +832,7 @@ describe('MemberService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-02',
     };
@@ -834,6 +854,7 @@ describe('MemberService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -1042,7 +1063,7 @@ describe('MemberService', () => {
         mockUserRepo.findById.mockResolvedValue({
           id: 'user-1',
           avatar_url: 'chapters/chapter-1/profiles/user-1/photo.jpg',
-        });
+        } as User);
 
         await service.remove('member-1', 'chapter-1', 'actor-1');
 
@@ -1058,7 +1079,7 @@ describe('MemberService', () => {
         mockUserRepo.findById.mockResolvedValue({
           id: 'user-1',
           avatar_url: 'chapters/chapter-other/profiles/user-1/photo.jpg',
-        });
+        } as User);
 
         await service.remove('member-1', 'chapter-1', 'actor-1');
 
@@ -1072,7 +1093,7 @@ describe('MemberService', () => {
         mockUserRepo.findById.mockResolvedValue({
           id: 'user-1',
           avatar_url: null,
-        });
+        } as User);
 
         await service.remove('member-1', 'chapter-1', 'actor-1');
 
@@ -1090,6 +1111,7 @@ describe('MemberService', () => {
         role_ids: ['role-1'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       };
@@ -1103,6 +1125,8 @@ describe('MemberService', () => {
         graduation_year: 2024,
         current_city: 'NYC',
         current_company: 'Acme',
+        active_chapter_id: null,
+        deleted_at: null,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       };
@@ -1140,6 +1164,7 @@ describe('MemberService', () => {
         role_ids: [],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -1148,7 +1173,7 @@ describe('MemberService', () => {
         email: 'a@b.c',
         display_name: 'A',
         avatar_url: path,
-      });
+      } as User);
 
       const result = await service.findProfileById(
         'member-1',
@@ -1167,6 +1192,7 @@ describe('MemberService', () => {
         role_ids: ['role-1'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       };
@@ -1181,6 +1207,8 @@ describe('MemberService', () => {
         graduation_year: null,
         current_city: null,
         current_company: null,
+        active_chapter_id: null,
+        deleted_at: null,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -1239,6 +1267,7 @@ describe('MemberService', () => {
         role_ids: [],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -1262,6 +1291,7 @@ describe('MemberService', () => {
           role_ids: [],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1277,6 +1307,8 @@ describe('MemberService', () => {
           graduation_year: null,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1317,6 +1349,7 @@ describe('MemberService', () => {
           role_ids: [],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1332,6 +1365,8 @@ describe('MemberService', () => {
           graduation_year: null,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1358,6 +1393,7 @@ describe('MemberService', () => {
           role_ids: [],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1373,6 +1409,8 @@ describe('MemberService', () => {
           graduation_year: null,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1415,6 +1453,7 @@ describe('MemberService', () => {
           role_ids: [],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1430,6 +1469,8 @@ describe('MemberService', () => {
           graduation_year: null,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1462,6 +1503,7 @@ describe('MemberService', () => {
           role_ids: [],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1472,6 +1514,7 @@ describe('MemberService', () => {
           role_ids: [],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1487,6 +1530,8 @@ describe('MemberService', () => {
           graduation_year: null,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1500,6 +1545,8 @@ describe('MemberService', () => {
           graduation_year: null,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1550,6 +1597,7 @@ describe('MemberService', () => {
       role_ids: ['role-alumni'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -1563,6 +1611,8 @@ describe('MemberService', () => {
       graduation_year: 2020,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -1577,6 +1627,7 @@ describe('MemberService', () => {
         id: 'role-alumni',
         chapter_id: 'chapter-1',
         name: 'Alumni',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 5,
@@ -1615,6 +1666,7 @@ describe('MemberService', () => {
         id: 'role-alumni',
         chapter_id: 'chapter-1',
         name: 'Alumni',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 5,
@@ -1629,6 +1681,7 @@ describe('MemberService', () => {
           role_ids: ['role-alumni'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1644,6 +1697,8 @@ describe('MemberService', () => {
           graduation_year: 2022,
           current_city: 'Boston',
           current_company: 'Tech Corp',
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1672,6 +1727,7 @@ describe('MemberService', () => {
         id: 'role-alumni',
         chapter_id: 'chapter-1',
         name: 'Alumni',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 5,
@@ -1686,6 +1742,7 @@ describe('MemberService', () => {
           role_ids: ['role-alumni'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1696,6 +1753,7 @@ describe('MemberService', () => {
           role_ids: ['role-alumni'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1711,6 +1769,8 @@ describe('MemberService', () => {
           graduation_year: 2022,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1724,6 +1784,8 @@ describe('MemberService', () => {
           graduation_year: 2023,
           current_city: null,
           current_company: null,
+          active_chapter_id: null,
+          deleted_at: null,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -1771,6 +1833,7 @@ describe('MemberService', () => {
       role_ids: roleIds,
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -1784,6 +1847,8 @@ describe('MemberService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -1897,7 +1962,7 @@ describe('MemberService', () => {
         ...member,
         dismissed_ops_nudges: ['dues'],
       });
-      mockRepo.update.mockResolvedValue({});
+      mockRepo.update.mockResolvedValue({} as Member);
 
       await service.dismissOpsNudge('member-1', 'events');
 
@@ -1928,9 +1993,9 @@ describe('MemberService', () => {
     it('tolerates a row predating the column', async () => {
       mockRepo.findById.mockResolvedValue({
         ...member,
-        dismissed_ops_nudges: undefined,
+        dismissed_ops_nudges: undefined as unknown as string[],
       });
-      mockRepo.update.mockResolvedValue({});
+      mockRepo.update.mockResolvedValue({} as Member);
 
       await service.dismissOpsNudge('member-1', 'points');
 

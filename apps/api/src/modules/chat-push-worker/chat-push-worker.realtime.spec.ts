@@ -55,14 +55,14 @@ import { ChannelCacheService } from './channel-cache.service';
  * and this file stops compiling.
  *
  * **Two honest limits on that, since overstating a guard is worse than not
- * having one.** It is enforced by ts-jest when this suite runs — `npm run test
- * -w apps/api`, which CI does run — and *not* by `npm run check-types`, whose
- * `tsconfig.build.json` excludes `**\/*spec.ts`. And `ChatMessage` is a
- * hand-authored interface that `database.types.ts` maps the table to, not a
- * `supabase gen types` artefact, so this catches a TypeScript-side divergence
- * and cannot by itself catch a migration that renames the column without
- * touching the entity. Closing that second gap needs schema-derived types,
- * which the repo does not have today.
+ * having one.** It is enforced by `npm run check-types`, which type-checks the
+ * specs and which CI runs, and *not* by ts-jest, which only transpiles, so
+ * `npm run test -w apps/api` alone would pass a renamed field. And
+ * `ChatMessage` is a hand-authored interface that `database.types.ts` maps the
+ * table to, not a `supabase gen types` artefact, so this catches a
+ * TypeScript-side divergence and cannot by itself catch a migration that
+ * renames the column without touching the entity. Closing that second gap
+ * needs schema-derived types, which the repo does not have today.
  */
 type WorkerReadsFromChatMessages = Pick<
   ChatMessage,

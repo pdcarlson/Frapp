@@ -39,7 +39,10 @@ describe('LegalAcceptanceService (#2302)', () => {
         Promise.resolve(baseUser({ id, ...data })),
       ),
     };
-    service = new LegalAcceptanceService(userRepo);
+    // The service reads and writes users through these two methods only.
+    service = new LegalAcceptanceService(
+      userRepo as unknown as IUserRepository,
+    );
   });
 
   describe('status', () => {

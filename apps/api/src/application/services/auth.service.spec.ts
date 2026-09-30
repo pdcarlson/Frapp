@@ -45,6 +45,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -69,6 +71,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -97,6 +101,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -121,6 +127,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -169,6 +177,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -194,6 +204,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -219,6 +231,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -246,6 +260,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -269,6 +285,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -290,6 +308,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -303,6 +323,8 @@ describe('AuthService', () => {
       graduation_year: null,
       current_city: null,
       current_company: null,
+      active_chapter_id: null,
+      deleted_at: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });

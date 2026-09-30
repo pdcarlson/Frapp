@@ -418,6 +418,20 @@ suite in `apps/api/package.json`, plus `apps/api/test/jest-e2e.json`,
 not set `moduleResolution: "node"`; it still carries `ignoreDeprecations` so the four configs
 share the same two keys if a later overlay adds a 6.0-deprecated option.
 
+None of those ts-jest projects type-checks anything: each inherits `isolatedModules: true` from
+`apps/api/tsconfig.json` and only transpiles, so a spec that no longer matches the code it tests
+still runs. `apps/api`'s `check-types` is what catches it, by type-checking two programs:
+`tsconfig.build.json`, the program `nest build` emits (`types: ["node"]`, so production code
+cannot reach jest's globals), and `tsconfig.json`, which adds every spec and `test/` (`types:
+["node", "jest"]`). Both name `types` because TypeScript 6 and 7 default it to `[]`: without
+`jest` there, every `describe` and `jest.fn` in a spec is an unresolved name (#2821). Both runs
+pass `--incremental false`. `tsconfig.json` sets `incremental: true`, and native `tsc` 7.0.2's
+cache does not invalidate when `types` changes, whether on the command line or in the tsconfig,
+in either direction: a cache written without jest's types went on reporting 17,668 errors after
+they were added, and one written with them went on passing after they were removed. `tsc6`
+invalidates correctly. Measured on 2026-09-30, the two runs took about five seconds together, so
+the cache bought nothing.
+
 **Do not flatten this back to `typescript@7`.** That is what Dependabot's first 5.9.2 → 7.0.2
 bump did (#1031), and it failed `packages-build` / `clean-checkout-typecheck` / `api-docker-build`
 on `packages/validation` (`TS5011` missing `rootDir`) before Nest, ESLint, and Jest could even

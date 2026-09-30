@@ -1,6 +1,7 @@
 import type {
   BookmarkedMessage,
   ChatMessage,
+  StoredBookmarkedMessage,
 } from '#domain/entities/chat.entity';
 import type {
   MaskedPollMetadata,
@@ -154,7 +155,7 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
  * the panel needs to render the row at all.
  */
 export function maskBlockedBookmarkMessage(
-  message: BookmarkedMessage,
+  message: StoredBookmarkedMessage,
   blockedUserIds: ReadonlySet<string>,
 ): BookmarkedMessage {
   if (!isFromBlockedSender(message.sender_id, blockedUserIds)) {

@@ -226,7 +226,7 @@ describe('ChapterOnboardingService', () => {
       // through the same pipeline, not as an absent palette — so the map is
       // written for every chapter, with no conditional half.
       const { colors: _dropped, ...brandingWithoutColors } =
-        directoryDto.branding;
+        directoryDto.branding!;
       await service.onboard('user-1', {
         ...directoryDto,
         branding: brandingWithoutColors,
@@ -239,9 +239,9 @@ describe('ChapterOnboardingService', () => {
     });
 
     it('seeds the engine from the branding accent, not a third read path', async () => {
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockClear();
 
       await service.onboard('user-1', directoryDto);
@@ -254,9 +254,9 @@ describe('ChapterOnboardingService', () => {
     it('logs a failed fill floor like the other two writers (#2541)', async () => {
       // Onboarding used to log only a substituted seed, so a broken lift wrote
       // a sub-3:1 fill for every new chapter and nothing recorded it.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockReturnValueOnce({
         palette: { '--signet-accent-primary': '#8B0000' },
         resolvedSeed: '#8B0000',
@@ -285,9 +285,9 @@ describe('ChapterOnboardingService', () => {
     it('logs a substituted seed with the accent it was given (#840)', async () => {
       // Nothing else records it: the chapter is onboarded in plausible house
       // gold, so without this line the wrong brand colour goes unnoticed.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockReturnValueOnce({
         palette: { '--signet-accent-primary': '#DDB844' },
         resolvedSeed: '#DDB844',

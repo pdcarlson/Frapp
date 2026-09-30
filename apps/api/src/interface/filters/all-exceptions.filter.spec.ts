@@ -67,11 +67,12 @@ describe('AllExceptionsFilter', () => {
   beforeEach(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
     jest.clearAllMocks();
-    jest
-      .mocked(Sentry.withScope)
-      .mockImplementation((callback: (scope: never) => unknown) =>
-        callback(mockScope as never),
-      );
+    jest.mocked(Sentry.withScope).mockImplementation((...args: unknown[]) => {
+      // The callback is the last argument under either overload; the filter
+      // uses the callback-only one.
+      const callback = args[args.length - 1] as (scope: never) => unknown;
+      return callback(mockScope as never);
+    });
     captured = {
       warn: [],
       error: [],
@@ -244,16 +245,15 @@ describe('AllExceptionsFilter', () => {
   it('reports 5xx to Sentry with a pseudonymous user, never the raw id', () => {
     const setUser = jest.fn();
     const setTag = jest.fn();
-    jest
-      .mocked(Sentry.withScope)
-      .mockImplementation((callback: (scope: never) => unknown) =>
-        callback({
-          setLevel: jest.fn(),
-          setTag,
-          setUser,
-          setFingerprint: jest.fn(),
-        } as never),
-      );
+    jest.mocked(Sentry.withScope).mockImplementation((...args: unknown[]) => {
+      const callback = args[args.length - 1] as (scope: never) => unknown;
+      return callback({
+        setLevel: jest.fn(),
+        setTag,
+        setUser,
+        setFingerprint: jest.fn(),
+      } as never);
+    });
 
     new AllExceptionsFilter().catch(
       new Error('database exploded'),
@@ -654,7 +654,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(captureSentryErrorCorrelated).toHaveBeenCalledTimes(1);
       const [distinctId, properties] = jest.mocked(captureSentryErrorCorrelated)
-        .mock.calls[0] as [string, Record<string, unknown>];
+        .mock.calls[0];
       expect(distinctId).toMatch(/^[0-9a-f]{64}$/);
       expect(distinctId).not.toBe(USER_ID);
       expect(properties).toEqual({
@@ -687,7 +687,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(captureSentryErrorCorrelated).toHaveBeenCalledTimes(1);
       const [, properties] = jest.mocked(captureSentryErrorCorrelated).mock
-        .calls[0] as [string, Record<string, unknown>];
+        .calls[0];
       expect(properties.status_class).toBeUndefined();
 
       expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
