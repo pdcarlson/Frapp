@@ -916,9 +916,26 @@ describe('BillingService', () => {
   });
 
   describe('handleWebhookEvent', () => {
-    it('should fall back to unpaid if unknown status is received', async () => {
+    it('maps a status outside the map to null, so the event changes nothing', async () => {
       const result = service['mapStripeStatus']('some_weird_status');
       expect(result).toBeNull();
+    });
+
+    // The whole map `spec/behavior/billing.md` documents (#1021). `trialing`
+    // and `paused` had no test before this: deleting either entry left the
+    // suite green while a trialing chapter's update was dropped, or a paused
+    // one never started the grace clock.
+    it.each([
+      ['active', 'active'],
+      ['trialing', 'active'],
+      ['past_due', 'past_due'],
+      ['unpaid', 'past_due'],
+      ['paused', 'past_due'],
+      ['canceled', 'canceled'],
+      ['incomplete_expired', 'canceled'],
+      ['incomplete', 'incomplete'],
+    ])('maps Stripe `%s` to `%s`', (stripeStatus, chapterStatus) => {
+      expect(service['mapStripeStatus'](stripeStatus)).toBe(chapterStatus);
     });
 
     it('should fall back to unpaid if incomplete status is received', async () => {

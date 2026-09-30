@@ -29,8 +29,8 @@
 //
 // ── Why `--meta githubCommitSha` is not decoration ─────────────────────────
 // A `--prebuilt` deployment has no git metadata at all: nothing about the
-// upload tells Vercel which commit produced it. Three things in this repo read
-// that metadata back and would silently degrade without it:
+// upload tells Vercel which commit produced it. Two things in this repo read
+// the SHA back and would silently degrade without it:
 //
 //   * ADR-19 / #1340's guarantee that production is only ever deployed from a
 //     NAMED commit — the SHA has to be visible on the deployment for that claim
@@ -39,13 +39,12 @@
 //     via `findVercelDeploymentBySha` — i.e. by `meta.githubCommitSha`. Without
 //     the meta flag it would find nothing and skip, leaving the staging
 //     hostname on the previous build.
-//   * `wasSupersededByLaterDeployment` in `verify-vercel-deploy.mjs`, which
-//     scopes supersession per branch via `meta.githubCommitRef`.
 //
 // `githubCommitRef` is set to the branch (default `main`) for the same reason
-// the old `gitSource.ref` was a branch and not the SHA: every branch-scoped
-// lookup downstream matches on it, and a commit id in that field matches
-// nothing.
+// the old `gitSource.ref` was a branch and not the SHA: a branch-scoped lookup
+// matches on it, and a commit id in that field matches nothing. Nothing in this
+// repo reads it since the observer that scoped supersession by it was retired
+// (`verify-vercel-deploy.mjs`, #1778).
 //
 // ── Why build and upload are separable ─────────────────────────────────────
 // `vercel build` is the step that can fail for reasons unrelated to the commit
