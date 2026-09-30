@@ -430,7 +430,7 @@ The owner's reason: Frapp is chat for fraternities and sororities, and swearing 
 
 ## Slash Commands and Integrations
 
-Slash commands turn chat into the dispatcher for every ops module. The full command catalog, slash-command dispatch path (simple vs heavy commands), announcement gating, vote-change semantics, the rich-message renderer registry, and the audit bridge are specified in [integrations.md](./integrations.md). Push-notification behavior for chat lives in [../notifications.md](../notifications.md).
+Slash commands turn chat into the dispatcher for the ops modules that have a message-shaped action. The full command catalog, slash-command dispatch path (simple vs heavy commands), announcement gating, vote-change semantics, the rich-message renderer registry, and the audit bridge are specified in [integrations.md](./integrations.md). Push-notification behavior for chat lives in [../notifications.md](../notifications.md).
 
 ## Message Persistence
 
