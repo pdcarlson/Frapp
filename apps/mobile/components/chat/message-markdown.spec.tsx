@@ -6,7 +6,11 @@ import {
   type ReactTestRenderer,
 } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_MESSAGE_MARKDOWN_DEPTH } from "@repo/chat-core/markdown";
+import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/markdown";
+import {
+  COSTLY_MARKDOWN_BODIES,
+  NEAR_BUDGET_MARKDOWN_BODY,
+} from "@repo/chat-core/test/markdown-parse-budget.fixtures";
 import { FrappThemeProvider, MONO_FONT_FAMILY } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 import {
@@ -353,6 +357,53 @@ describe("MessageMarkdown: the #2209 depth cap", () => {
   it("still formats a body nested within the cap", () => {
     const content = "> ".repeat(MAX_MESSAGE_MARKDOWN_DEPTH - 3) + "**bold**";
     expect(drawn(content)).toBe("bold");
+  });
+});
+
+/**
+ * #2664. Bodies within the length cap that remark was slow to parse in Node,
+ * most of them for hundreds of milliseconds to seconds. Hermes has no JIT, so
+ * on a phone it would likely be several times that (derived, not measured on
+ * a device), and every member who opened the channel froze for it.
+ * `skipsMarkdownParse` now reads them off the source and they draw as their
+ * raw text. The bodies are shared with chat-core's and web's specs.
+ *
+ * Where the parse would draw something else (emphasis, a link, a decoded
+ * entity, an unwrapped quote or list), drawing the body exactly as typed
+ * proves the parse was skipped. Where it would draw the same text (a run the
+ * depth cap flattens, raw HTML shown as typed), the loose time bound is what
+ * tells.
+ */
+describe("MessageMarkdown: bodies too costly to parse", () => {
+  it.each(COSTLY_MARKDOWN_BODIES.map((c) => [c.label, c.body]))(
+    "draws %s as the raw text, without the slow parse",
+    (_label, content) => {
+      expect(content.length).toBeLessThanOrEqual(10_000);
+      expect(skipsMarkdownParse(content)).toBe(true);
+      const started = performance.now();
+      const parsed = parseMessageMarkdown(content);
+      // Timed only on one line. A body of thousands of lines costs a break
+      // per line even as raw text, and each of those carries quote or list
+      // markers a parse would strip, so the raw-text assertion below is the
+      // proof for them.
+      if (!content.includes("\n")) {
+        expect(performance.now() - started).toBeLessThan(500);
+      }
+      expect(parsed.links).toEqual([]);
+      // The raw-text path keeps every character but a line's leading
+      // indentation, which `remark-breaks` drops at each break.
+      expect(drawn(content)).toBe(content.replace(/\n[ \t]+/g, "\n"));
+    },
+  );
+
+  it("parses a body just inside the budget quickly", () => {
+    // It goes through the parse (the depth cap then flattens it).
+    const content = NEAR_BUDGET_MARKDOWN_BODY;
+    expect(skipsMarkdownParse(content)).toBe(false);
+
+    const started = performance.now();
+    parseMessageMarkdown(content);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });
 

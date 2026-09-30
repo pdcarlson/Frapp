@@ -32,10 +32,11 @@
  * notified.
  *
  * **Parse time is a separate exposure.** remark's parse is super-linear on some
- * bodies. `opensTooManyContainers` below skips the parse for the worst of them,
- * lines of container markers. Emphasis runs and nested brackets or images still
- * take over a second at the length cap, once per mount, on either client; that
- * is #2664.
+ * bodies. `opensTooManyContainers` below skips the parse for lines of container
+ * markers, and `exceedsParseBudget` (`markdown-parse-budget.ts`, #2664) for
+ * emphasis, labels, images, raw HTML and container runs that would make the
+ * parse quadratic.
+ * `skipsMarkdownParse` in `markdown.ts` asks both.
  *
  * **Why the render path, not only send-time validation.** Messages already
  * stored have whatever depth they have, so a send-time rule alone would leave
@@ -93,8 +94,9 @@ function exceedsDepth(root: MdastNode, limit: number): boolean {
  * leading run of block-quote and list markers is already longer than the cap
  * skips the parse and renders as raw text straight away: each marker opens at
  * least one mdast level, so the tree would have been over the cap anyway and
- * the outcome is the one `remarkDepthCap` would have reached. It covers
- * container markers only; see the header for what it leaves to #2664.
+ * the outcome is the one `remarkDepthCap` would have reached. It covers one
+ * line's container markers; `exceedsParseBudget` covers the inline shapes and
+ * the body's container lines as a whole.
  *
  * It splits lines where CommonMark does, at `\n`, `\r` or both, and skips the
  * byte-order mark micromark drops from the start of a document. Missing either
@@ -157,12 +159,13 @@ export function opensTooManyContainers(content: string): boolean {
   return false;
 }
 
-function isDigit(char: string | undefined): boolean {
+/** Shared with `markdown-parse-budget.ts`, so the two scans read one grammar. */
+export function isDigit(char: string | undefined): boolean {
   return char !== undefined && char >= "0" && char <= "9";
 }
 
 /** A list marker needs a space, a tab or the end of the line after it. */
-function isMarkerBoundary(content: string, index: number): boolean {
+export function isMarkerBoundary(content: string, index: number): boolean {
   const next = content[index];
   return next === undefined || next === " " || next === "\t" || next === "\n" || next === "\r";
 }
@@ -172,8 +175,8 @@ export interface DepthCapOptions {
   content: string;
   /**
    * Render `content` as raw text without looking at the tree. Set when
-   * `opensTooManyContainers` has already decided, and the renderer handed
-   * remark an empty string rather than pay for the parse.
+   * `skipsMarkdownParse` has already decided, and the renderer handed remark
+   * an empty string rather than pay for the parse.
    */
   flatten?: boolean;
 }
