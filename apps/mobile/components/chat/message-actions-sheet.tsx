@@ -26,6 +26,8 @@ import {
   type ChatReportReason,
 } from "@repo/hooks";
 import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
+import { dayDividerLabel } from "@repo/chat-core/grouping";
+import { formatTimeOfDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection } from "@/components/list-section";
 import {
@@ -55,7 +57,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The actions on one message: reply to it, edit or delete it (#2775), and the
  * member-safety pair, report it or block its sender (#2257, App Store
- * Guideline 1.2). Opened by long-pressing a bubble or poll card in s05, or by
+ * Guideline 1.2). Opened by long-pressing a message or poll card in s05, or by
  * the "Message actions" accessibility action on either.
  *
  * **Reply, Edit and Delete hand off to the thread.** Reply and Edit stage in
@@ -102,6 +104,14 @@ export interface MessageActionsTarget {
   blockUserId: string | null;
   /** Resolved display name, or `null` when the roster cannot name them. */
   senderName: string | null;
+  /**
+   * The row's author label ("You" on the viewer's own), for the header line
+   * that says who sent it and when. A follow-on row in a run draws neither on
+   * screen (components.md §11), so this is where a phone shows them.
+   */
+  senderLabel: string;
+  /** `created_at`, for the same line. */
+  sentAt: string;
   /**
    * Whether the loaded roster lists the sender, which is what makes the block
    * confirmation's "they stay in the directory" true. `false` whenever it does
@@ -287,6 +297,11 @@ export const MessageActionsSheet = forwardRef<
             title="Message"
             onCancel={() => menuRef.current?.dismiss()}
           />
+          {target ? (
+            <Text style={styles.sentLine} numberOfLines={1}>
+              {`${target.senderLabel} · ${sentAtLabel(target.sentAt)}`}
+            </Text>
+          ) : null}
           {target?.canReply || target?.canEdit || target?.canDelete ? (
             <ListSection>
               {target.canReply ? (
@@ -442,9 +457,24 @@ export const MessageActionsSheet = forwardRef<
   );
 });
 
+/**
+ * "Today at 5:16 PM", "Sunday, Sep 28 at 9:41 PM": the day as the thread's
+ * divider names it, then the time. The only place a phone shows a follow-on
+ * row's time.
+ */
+export function sentAtLabel(sentAt: string): string {
+  const day = dayDividerLabel(sentAt);
+  const time = formatTimeOfDay(sentAt);
+  return day && time ? `${day} at ${time}` : time;
+}
+
 function createStyles(tokens: SignetTokens) {
   const RADIO_SIZE = 20;
   return StyleSheet.create({
+    sentLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
     body: {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,

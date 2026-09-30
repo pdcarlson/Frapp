@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
  * The thread withholds its rows until the viewer is known (#2250, the mobile
  * half of #2243).
  *
- * A row decides between the two bubble shapes by comparing `sender_id` with
- * the viewer. Messages can paint from React Query's cache while
+ * A row decides whose it is (the "You" author line, and which actions it
+ * offers) by comparing `sender_id` with the viewer. Messages can paint from React Query's cache while
  * `/v1/users/me` is still in flight, and a null viewer used to read every
  * message as incoming, so the member's own messages painted as someone
  * else's and their own reaction chips read as not theirs. The rows now take a
@@ -31,8 +31,8 @@ const QUOTE = readFileSync(
   join(MOBILE_ROOT, "components/chat/reply-quote.tsx"),
   "utf8",
 );
-const BUBBLE = readFileSync(
-  join(MOBILE_ROOT, "components/chat/message-bubble.tsx"),
+const ITEM = readFileSync(
+  join(MOBILE_ROOT, "components/chat/message-item.tsx"),
   "utf8",
 );
 
@@ -87,7 +87,8 @@ describe("chat thread identity gate (#2250)", () => {
       /export interface ThreadMessageRowProps \{[^}]*viewerId: string \| null/s,
     );
     expect(QUOTE).not.toMatch(/viewerId: string \| null/);
-    expect(BUBBLE).not.toMatch(/!!viewerId &&/);
-    expect(BUBBLE).toMatch(/const isMine = message\.sender_id === viewerId;/);
+    expect(ITEM).not.toMatch(/!!viewerId &&/);
+    // Null-safe on the sender too: an imported row has no `sender_id`.
+    expect(ITEM).toMatch(/const isMine = isOwnMessage\(message, viewerId\);/);
   });
 });

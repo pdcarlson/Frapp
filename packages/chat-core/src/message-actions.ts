@@ -17,13 +17,13 @@ import type { ChatMessage } from "./types";
  */
 
 /**
- * Kinds whose renderer is a card in the flow rather than a message bubble.
+ * Kinds whose renderer is a card in the flow rather than a plain message.
  *
- * Web's `rendersAsBubble` is this list, re-exported. Web's renderer switch
+ * `isCardMessage` reads this list. Web's renderer switch
  * (`apps/web/components/chat/renderers/index.tsx`) is a second statement of it,
  * and `registry.spec.tsx` there fails if the two disagree, which is what keeps
  * a kind from being a card on screen and editable here. Mobile draws
- * only `poll` as a card today and every other kind as a bubble, but a card's
+ * only `poll` as a card today and every other kind as text, but a card's
  * body lives in `payload`, so its `content` is not the member's words to edit
  * whichever way a client happens to draw it.
  */
@@ -41,13 +41,13 @@ export const CARD_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Does this message render as a bubble rather than as a card?
+ * Does this message render as a card in the flow rather than as plain text?
  *
- * Deletion does not enter into it: a deleted row keeps the side and chrome
- * its kind gave it, rather than reflowing the thread around a tombstone.
+ * Deletion does not enter into it: the kind alone decides, so a deleted card
+ * keeps the chrome its kind gave it rather than reflowing the thread.
  */
-export function rendersAsBubble(message: { kind?: string | null }): boolean {
-  return !CARD_KINDS.has(message.kind ?? "text");
+export function isCardMessage(message: { kind?: string | null }): boolean {
+  return CARD_KINDS.has(message.kind ?? "text");
 }
 
 /**
@@ -79,7 +79,7 @@ export function canActOnMessage(
 
 /**
  * Edit: your own message only, with no `channels:manage` override (unlike
- * delete), and only a plain-text bubble. A card has nothing to edit, and an
+ * delete), and only a plain-text message. A card has nothing to edit, and an
  * imported row is the archive's record of what someone said on Discord.
  *
  * Status is left to `canActOnMessage`, so web's inline editor can keep
@@ -95,7 +95,7 @@ export function canEditMessage(
   return (
     isOwnMessage(message, viewerId) &&
     message.kind !== "imported" &&
-    rendersAsBubble(message)
+    !isCardMessage(message)
   );
 }
 
@@ -156,7 +156,7 @@ export function channelAllowsReplies(channel: {
   return channel.can_post !== false && !channel.is_read_only;
 }
 
-/** The meta line's marker for a message edited since it was sent. */
+/** The marker trailing a message edited since it was sent (§11 § What rides the row). */
 export const EDITED_MARKER = "(edited)";
 
 /**

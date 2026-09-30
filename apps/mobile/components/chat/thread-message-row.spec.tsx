@@ -49,7 +49,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import {
   JUMP_TO_PARENT_A11Y_LABEL,
   MESSAGE_ACTIONS_A11Y_LABEL,
-} from "./message-bubble";
+} from "./message-item";
 import { ThreadMessageRow } from "./thread-message-row";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -109,6 +109,8 @@ function renderRow(
     onUnblock?: (userId: string) => void;
     maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
     onReload?: (userId: string) => void;
+    startsRun?: boolean;
+    startsDay?: boolean;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -117,6 +119,8 @@ function renderRow(
       <FrappThemeProvider>
         <ThreadMessageRow
           row={row}
+          startsRun={overrides.startsRun ?? true}
+          startsDay={overrides.startsDay ?? false}
           viewerId={VIEWER}
           nameFor={(id) => (id === BLOCKED ? "Blake" : "Casey")}
           replyParent={overrides.replyParent}
@@ -709,5 +713,149 @@ describe("ThreadMessageRow — message actions", () => {
     expect(row).toBeDefined();
     act(() => row!.props.onLongPress());
     expect(onOpenActions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
+  const visible = (m: ChatMessage): ThreadRow => ({
+    message: m,
+    visibility: "visible",
+  });
+  const drawnText = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => JSON.stringify(node.props.children))
+      .join(" ");
+
+  it("draws a day divider above the first row of a day, and only there", () => {
+    const today = new Date();
+    today.setHours(9, 30, 0, 0);
+    const row = visible(
+      message({ sender_id: FRIEND, created_at: today.toISOString() }),
+    );
+
+    const first = renderRow(row, { startsDay: true });
+    expect(
+      first.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityRole === "header",
+      ),
+    ).toHaveLength(1);
+    expect(drawnText(first)).toContain("Today");
+
+    const later = renderRow(row, { startsDay: false });
+    expect(drawnText(later)).not.toContain("Today");
+  });
+
+  it("draws the author line only on a row that starts a run", () => {
+    const row = visible(message({ sender_id: FRIEND, content: "second" }));
+    expect(drawnText(renderRow(row, { startsRun: true }))).toContain("Casey");
+    expect(drawnText(renderRow(row, { startsRun: false }))).not.toContain(
+      "Casey",
+    );
+  });
+
+  it("gives a poll card the same author line as any other row", () => {
+    const poll = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "poll",
+        content: "Formal theme?",
+        payload: {
+          question: "Formal theme?",
+          options: [
+            { id: "a", label: "Casino" },
+            { id: "b", label: "Masquerade" },
+          ],
+        },
+      }),
+    );
+    const text = drawnText(renderRow(poll, { startsRun: true }));
+    expect(text).toContain("Casey");
+    expect(text).toContain("Formal theme?");
+  });
+
+  it("trails Pinned under a pinned poll card, as web does", () => {
+    const poll = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "poll",
+        is_pinned: true,
+        payload: {
+          question: "Formal theme?",
+          options: [
+            { id: "a", label: "Casino" },
+            { id: "b", label: "Masquerade" },
+          ],
+        },
+      }),
+    );
+    expect(flat(renderRow(poll))).toContain("Pinned");
+    expect(
+      flat(renderRow({ ...poll, message: { ...poll.message, is_pinned: false } })),
+    ).not.toContain("Pinned");
+  });
+
+  it("draws a deleted poll as the placeholder, with no votes or reactions", () => {
+    const deleted = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "poll",
+        is_deleted: true,
+        content: "",
+        reactions: { [reactionActionType("🔥")]: [VIEWER] },
+        payload: {
+          question: "Formal theme?",
+          options: [
+            { id: "a", label: "Casino" },
+            { id: "b", label: "Masquerade" },
+          ],
+        },
+      }),
+    );
+    const out = flat(renderRow(deleted));
+    expect(out).toContain("[message deleted]");
+    expect(out).not.toContain("Formal theme?");
+    expect(out).not.toContain("Casino");
+    expect(out).not.toContain("🔥");
+    expect(out).not.toContain("👍 +");
+  });
+
+  it("offers a poll reply's jump to a screen reader, as a text reply does", () => {
+    const parent = message({ id: "parent-1", sender_id: FRIEND, content: "which theme?" });
+    const onJumpToMessage = vi.fn();
+    const tree = renderRow(
+      visible(
+        message({
+          id: "poll-reply",
+          sender_id: FRIEND,
+          kind: "poll",
+          reply_to_id: "parent-1",
+          payload: {
+            question: "Formal theme?",
+            options: [
+              { id: "a", label: "Casino" },
+              { id: "b", label: "Masquerade" },
+            ],
+          },
+        }),
+      ),
+      { replyParent: parent, onJumpToMessage },
+    );
+    const host = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.accessibilityActions) &&
+        node.props.accessibilityActions.some(
+          (action: { name?: string }) => action.name === "jumpToParent",
+        ),
+    );
+    act(() =>
+      host.props.onAccessibilityAction({
+        nativeEvent: { actionName: "jumpToParent" },
+      }),
+    );
+    expect(onJumpToMessage).toHaveBeenCalledWith("parent-1");
   });
 });

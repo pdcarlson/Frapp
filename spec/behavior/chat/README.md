@@ -846,7 +846,7 @@ What follows is the behaviour the archive has once it is in.
   not, and cannot be.** Both `message_reactions.user_id` and
   `chat_message_actions.user_id` are NOT NULL foreign keys to `users`, and
   minting a `users` row per Discord handle was rejected for the reasons above. No
-  count is lost and no identity is invented. The web bubble draws that summary
+  count is lost and no identity is invented. The web message row draws that summary
   as read-only chips (same geometry as live reactions, not buttons). Custom
   emoji render as `:name:` — v1 does not resolve `--media` images. Mobile is a
   separate surface.

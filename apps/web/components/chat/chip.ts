@@ -45,13 +45,12 @@ export const CHIP = {
 } as const;
 
 /**
- * The in-body mention chip — `@Name` inside a message bubble.
+ * The in-body mention chip — `@Name` inside a message.
  *
  * `components.md` §11 carried this as a TODO-DESIGN ("an in-bubble mention
  * highlight is not drawn"). It is settled here as a soft amber chip on the
- * handle alone: the surrounding bubble is never retinted, because a message
- * that mentions you is still the sender's message, and repainting it would
- * take the one thing the bubble's fill already says — whose message this is.
+ * handle alone: the surrounding message is never retinted, because a message
+ * that mentions you is still the sender's message.
  *
  * **Not the mention red.** `--mention` is a badge fill carrying white text, and
  * foundations §5 is explicit that rendering that hue *as text* needs a lifted
@@ -75,7 +74,7 @@ export const MENTION_CHIP = [
  * §2 requires ≥44px **on touch surfaces**, and the drawn chip is 26. Mobile
  * closes that with `hitSlop`; the web equivalent people reach for first is an
  * `::after` overlay overhanging the chip — and it is wrong here. Chips sit 6px
- * apart and 6px under the bubble, so a 9px overhang covers ~3px of the *visible*
+ * apart and 6px under the message, so a 9px overhang covers ~3px of the *visible*
  * chip above it and, being later in the DOM with no z-index, wins the hit test:
  * aiming at the bottom edge of an existing 😂 toggles the 👍 below it. Trading a
  * missed tap for a wrong reaction is not a fix.
@@ -113,8 +112,37 @@ export { EYEBROW } from "@/components/ui/typography";
  * Composed with `<Card>` rather than instead of it: `card.tsx` owns the fill,
  * the hairline and the shadow ban, and a message card that hand-rolls them is a
  * card that silently stops following §8 the next time §8 moves.
+ *
+ * `w-fit max-w-full`: a card sizes to its content inside the body column, as
+ * it did in the bubble layout's column, rather than stretching across the
+ * whole thread.
  */
-export const MESSAGE_CARD = "mt-1 rounded-lg p-4";
+export const MESSAGE_CARD = "mt-1 w-fit max-w-full rounded-lg p-4";
+
+/**
+ * One icon in the per-message action bar (`components.md` §11 § Per-message
+ * actions): quick reactions, the emoji picker, Reply, Save, Edit, Delete.
+ *
+ * Icon-only since the compact layout (#2873, closing #2247's action-bar item):
+ * the labelled chips it replaced were wider than a compact row is tall. So
+ * every button using this carries an `aria-label` and a native `title`, which
+ * is the tooltip; an icon with neither is a control nobody can name.
+ *
+ * 28px on a fine pointer and 44px on a coarse one, the `CHAT_CONTROL_CLASS`
+ * move below: the bar sits over text, so it is kept small where a mouse can
+ * aim, and meets §2's touch floor where a finger cannot.
+ */
+export const ACTION_BAR_BUTTON = [
+  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
+  "text-[14px] text-muted-foreground transition-colors",
+  "enabled:hover:bg-popover enabled:hover:text-foreground",
+  "pointer-coarse:h-11 pointer-coarse:w-11",
+  FOCUS_RING,
+].join(" ");
+
+/** An action-bar toggle that is on: your reaction, a saved message. */
+export const ACTION_BAR_BUTTON_ON =
+  "bg-accent-subtle text-accent-text enabled:hover:bg-accent-subtle enabled:hover:text-accent-text";
 
 /**
  * A dense chat chrome control: 32px to a pointer, 44px to a finger.
