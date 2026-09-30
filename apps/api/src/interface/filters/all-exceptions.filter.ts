@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
-import { isPseudonymHex } from '@repo/observability';
+import { httpStatusClass, isPseudonymHex } from '@repo/observability';
 import type { ApiErrorResponseDto } from '../dtos/api-error.dto';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from '../utils/path-only';
@@ -29,7 +29,6 @@ import { AuthFailureSpikeDetector } from '../../infrastructure/observability/aut
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
-import { httpStatusClass } from '../../infrastructure/analytics/http-status-class';
 import {
   captureSentryErrorCorrelated,
   enqueueSanitizedLog,
@@ -389,6 +388,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
+    const statusClass = httpStatusClass(status);
     enqueueSanitizedLog({
       body: 'error',
       severity: 'ERROR',
@@ -397,7 +397,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         method: request.method ?? 'UNKNOWN',
         path: pathOnly(request.url) ?? '/',
         status_code: status,
-        status_class: httpStatusClass(status),
+        ...(statusClass ? { status_class: statusClass } : {}),
         ...(userHash ? { user_hash: userHash } : {}),
         ...(chapterHash ? { chapter_hash: chapterHash } : {}),
       },
@@ -413,6 +413,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
+    const statusClass = httpStatusClass(status);
     enqueueSanitizedLog({
       body: 'security_event',
       severity: 'WARN',
@@ -422,7 +423,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         method: request.method ?? 'UNKNOWN',
         path: pathOnly(request.url) ?? '/',
         status_code: status,
-        status_class: httpStatusClass(status),
+        ...(statusClass ? { status_class: statusClass } : {}),
         ...(originHash ? { origin_hash: originHash } : {}),
         ...(userHash ? { user_hash: userHash } : {}),
         ...(chapterHash ? { chapter_hash: chapterHash } : {}),
