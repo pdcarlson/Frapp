@@ -36,7 +36,12 @@ export interface SystemAuditPayload {
   action: string;
   /** The audit row's `actor_user_id`. May be null for system-originated rows. */
   actor_user_id: string | null;
-  /** Compact diff: keys with `from`/`to` pairs. Free-form jsonb. */
+  /**
+   * Compact diff: one key per changed field, usually a `from`/`to` pair.
+   * Free-form jsonb, so a reader must not assume the pair: `role_updated`
+   * records `permissions` as `{ added, removed }` (#2599), and a few writers
+   * record flat values instead (`member_removed`, `presidency_claimed`).
+   */
   diff: Record<string, unknown>;
 }
 

@@ -29,7 +29,7 @@ name: Production Auth conformance
 
 on:
   schedule:
-    # 07:45 UTC daily — 15 minutes past staging-conformance.yml (07:30), last
+    # 07:45 UTC daily — 15 minutes past staging-conformance.yml (07:30). One
     # of the daily staggered Management-API watchdogs. `production-uptime.yml`
     # probes live `/health/ready` on its own cadence and does not share this
     # stagger (it also fires at :45). Full schedule:

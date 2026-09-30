@@ -78,9 +78,13 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
       CHAPTER,
       USER,
     );
-    expect(importService.start).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, true, {
-      messagesAfter: '2024-06-01T00:00:00.000Z',
-    });
+    expect(importService.start).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      USER,
+      true,
+      { messagesAfter: '2024-06-01T00:00:00.000Z' },
+    );
   });
 
   it.each([true, false])(
@@ -98,6 +102,7 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
       expect(importService.start).toHaveBeenCalledWith(
         IMPORT_ID,
         CHAPTER,
+        USER,
         holds,
         { messagesAfter: undefined },
       );

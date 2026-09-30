@@ -55,6 +55,9 @@ Instead, the organization gets a warning and a grace period, and after that the 
 as on Free apply to both projects. Turning the cap off (organization **Billing → Cost Control**)
 bills the overage at the rates in the table instead. The cap does not cover add-ons such as
 point-in-time recovery. The organization's **Usage** page shows how close each quota is.
+`supabase-quota.yml` checks two of them daily and pages well before either runs out: each project's disk, and the
+organization's Storage size ([its alert](../ALERT_ROUTING.md#automated-github-issue-alerts)). Egress and
+Realtime peak connections have no API, so only the Usage page shows them.
 
 **Set up after the upgrade (2026-09-28):**
 
@@ -134,13 +137,12 @@ answered …"* on the job.
 
 ### Collect Keys
 
-From each project's dashboard → Settings → API, note:
-
-| Key                         | Where it goes                                                  |
-| --------------------------- | -------------------------------------------------------------- |
-| **Project URL**             | `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL`                    |
-| **anon public key**         | `SUPABASE_ANON_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`          |
-| **service_role secret key** | `SUPABASE_SERVICE_ROLE_KEY` (API only, never expose to client) |
+For each project, note its URL, `https://<project-ref>.supabase.co` (`SUPABASE_URL` /
+`NEXT_PUBLIC_SUPABASE_URL`), and from the dashboard → Settings → API Keys, the client key
+(`SUPABASE_ANON_KEY`) and the service key (`SUPABASE_SERVICE_ROLE_KEY`, API only, never exposed to
+a client). Which key each name takes, and
+which key generation, is in
+[`ENV_REFERENCE.md` § Core App Secrets](../../environment/ENV_REFERENCE.md#core-app-secrets).
 
 ### Auth settings (hosted, dashboard or Management API)
 

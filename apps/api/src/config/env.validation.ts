@@ -3,6 +3,7 @@ import {
   isProductionSupabaseUrl,
 } from '@repo/validation';
 import { validateClientPolicyEnv } from '../application/services/client-policy.service';
+import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
   'SUPABASE_URL',
@@ -102,6 +103,11 @@ export function validateEnv(config: Record<string, unknown>) {
     );
   }
 
+  const serviceKeyProblem = serviceKeyAuthorityProblem(
+    config.SUPABASE_SERVICE_ROLE_KEY as string,
+  );
+  if (serviceKeyProblem) throw new Error(serviceKeyProblem);
+
   const clientPolicyProblems = validateClientPolicyEnv(config);
   if (clientPolicyProblems.length > 0) {
     throw new Error(clientPolicyProblems.join(' '));
@@ -125,4 +131,43 @@ export function validateEnv(config: Record<string, unknown>) {
   }
 
   return config;
+}
+
+/**
+ * Refuses a `SUPABASE_SERVICE_ROLE_KEY` that is recognisably a CLIENT key.
+ *
+ * The API's one Supabase client runs as service_role, and its tenant
+ * isolation is application-layer because RLS has no permissive policies. Built
+ * on a client key instead, it still boots, and every table read then returns
+ * an empty result rather than an error, so the chapter just looks empty.
+ * The likeliest way to get there is the #2532 key swap, where the publishable
+ * and secret keys sit one row apart on Supabase's API Keys page.
+ *
+ * Either service key passes: the legacy `service_role` JWT or a `sb_secret_…`
+ * key. So does anything this cannot classify, which is what test and CI
+ * stand-ins are; the check refuses only what it can positively identify. The
+ * value is never echoed, because a boot log reaches further than the secret
+ * store.
+ */
+function serviceKeyAuthorityProblem(raw: string): string | null {
+  if (raw.includes('${')) {
+    return (
+      'SUPABASE_SERVICE_ROLE_KEY is an unresolved variable reference, not a ' +
+      'key. Infisical expands `${…}` at sync time; a store that keeps it ' +
+      'verbatim leaves the API unable to reach Supabase.'
+    );
+  }
+  switch (classifySupabaseKey(raw)) {
+    case 'publishable':
+    case 'client_jwt':
+      return (
+        'SUPABASE_SERVICE_ROLE_KEY holds a client key (the publishable key, or ' +
+        'a legacy JWT whose role is not service_role), not a service key. The ' +
+        'API would boot and then read nothing, because RLS hides every row ' +
+        'from a client key. Use the secret key (`sb_secret_…`) or the legacy ' +
+        '`service_role` JWT.'
+      );
+    default:
+      return null;
+  }
 }
