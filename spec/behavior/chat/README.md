@@ -667,19 +667,25 @@ channel that reports a different one fails the import rather than being skipped.
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping
-    row, with no target. A merge names its channel when it is mapped, so the
-    mapping step and Start both refuse a merge whose channel is gone, and the
-    admin picks another. An import that is queued or running when the channel
-    it merges into is deleted **stops**, as `failed`, with the reason "The
-    Frapp channel #… was importing into was deleted, so the import stopped.";
-    a bot import also marks that channel failed in Watch. It never writes into
-    a missing channel (the foreign key refuses the insert). Deleting the
-    channel took the history already imported into it, as deleting any
-    channel does, so the way to bring that channel in is to delete the import
-    and import again, which is what the reason says. Remapping and restarting
-    is not a way back (#2947): an upload resumes past the parts it already
-    did, and a remap forgets the channels the import created, so the restart
-    makes each of them again. *2026-09-30 (#2922): stopping rather than
+    row, with no target. A merge names its channel when it is mapped, so
+    before an import starts, the mapping step and Start refuse a merge whose
+    channel is gone, and the admin picks another. An import that still has
+    history to write into the channel when it is deleted **stops**, as
+    `failed`, with the reason "The Frapp channel #… was importing into was
+    deleted, so the import stopped."; a bot import also marks that channel
+    failed in Watch. It never writes into a missing channel (the foreign key
+    refuses the insert). A channel the import is done with (a bot import's
+    channel finished, or skipped because Discord stopped showing it) goes
+    like any other, and the import carries on. Start refuses to resume an
+    import that still has history for a lost merge; an upload can't tell
+    which of its parts are left for a channel without reading them, so it
+    counts every lost merge. Deleting the channel took the history already
+    imported into it, as deleting any channel does, so the way to bring that
+    channel in is to delete the import and import again, which is what the
+    stop and Start both say. Remapping and restarting is not a way back
+    (#2947): an upload resumes past the parts it already did, and a remap
+    forgets the channels the import created, so the restart makes each of
+    them again. *2026-09-30 (#2922): stopping rather than
     skipping the channel means its history never goes missing without anyone
     choosing that, and it is how the import already stops when a channel it
     writes into turns out to be a direct message, or has lost the readers its

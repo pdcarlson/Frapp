@@ -644,7 +644,7 @@ describe('DiscordImportService — starting', () => {
     expect(repo.update).not.toHaveBeenCalled();
   });
 
-  it('restarts a bot import past a finished merge whose channel was deleted, which the worker never walks again (#2922)', async () => {
+  it('restarts a bot import past a finished or skipped merge whose channel was deleted, which the worker never walks again (#2922)', async () => {
     await build(job({ source: 'bot', status: 'failed', guild_id: GUILD }));
     repo.findChannels.mockResolvedValue([
       {
@@ -654,6 +654,16 @@ describe('DiscordImportService — starting', () => {
         mapping_action: 'use_existing',
         target_channel_id: null,
         status: 'completed',
+        parent_discord_channel_id: null,
+      },
+      // Skipped when Discord stopped showing it, whatever its mapping.
+      {
+        id: 'map-3',
+        discord_channel_id: 'd-announcements',
+        discord_channel_name: 'announcements',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'skipped',
         parent_discord_channel_id: null,
       },
       {
@@ -700,7 +710,7 @@ describe('DiscordImportService — starting', () => {
     ]);
 
     await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
-      'The Frapp channel chosen for #general was deleted. Pick another channel for it, or choose to create a new one.',
+      "The Frapp channel chosen for #general was deleted, so this import can't carry on. To bring #general in, delete this import and import again.",
     );
     expect(repo.update).not.toHaveBeenCalled();
   });
