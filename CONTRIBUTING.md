@@ -35,7 +35,7 @@ auto-deploy on commit, so a push to `production` deployed *without waiting for C
 workflow's green-CI gate governed only its own deploy hook, and what shipped was whatever
 happened to be at a branch tip. The dispatch takes a SHA, so the deployed artifact is an
 input rather than a race. See
-[`docs/internal/ops/deployment/`](docs/internal/ops/deployment/).
+[`docs/ops/deployment/`](docs/ops/deployment/).
 
 ---
 
@@ -56,7 +56,7 @@ Every PR must pass the required status checks before merging. Branch protection 
 
 **The roster lives in one place and is not restated here.** Every check name, what it validates,
 which jobs are advisory rather than merge-blocking, and why `migration-drift` was demoted are in
-[`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+[`docs/ops/github-branch-protection-runbook.md`](docs/ops/github-branch-protection-runbook.md)
 **§ Required Status Checks**. Its source of truth is the `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` arrays in
 [`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs), which are the arrays
@@ -102,7 +102,7 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 
 ## PR Workflow
 
-For infrastructure-heavy work (CI/CD, branch protection, release automation), split the change into small, single-concern PRs, so each has one failure domain, and say in each PR's description how to revert it. A PR that renames a required check follows [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Updating Check Names](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#updating-check-names).
+For infrastructure-heavy work (CI/CD, branch protection, release automation), split the change into small, single-concern PRs, so each has one failure domain, and say in each PR's description how to revert it. A PR that renames a required check follows [`github-branch-protection-runbook.md` § Updating Check Names](docs/ops/github-branch-protection-runbook.md#updating-check-names).
 
 ### 1. Create a feature branch
 
@@ -179,7 +179,7 @@ When you change the database schema:
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npx supabase db push --local`
 4. Test locally.
-5. Add its rollback recipe and its promotion-log entry, each in the entry shape its ledger states: [`DB_ROLLBACK_PLAYBOOK.md` § Every migration owes a recipe here](docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#every-migration-owes-a-recipe-here) and [`DB_PROMOTION_RUNBOOK.md` § Promotion log](docs/internal/ops/DB_PROMOTION_RUNBOOK.md#promotion-log).
+5. Add its rollback recipe and its promotion-log entry, each in the entry shape its ledger states: [`db-rollback-playbook.md` § Every migration owes a recipe here](docs/ops/db-rollback-playbook.md#every-migration-owes-a-recipe-here) and [`db-promotion-runbook.md` § Promotion log](docs/ops/db-promotion-runbook.md#promotion-log).
 6. Commit the migration file and both entries together.
 
 CI validates migration filenames, and `check:migration-safety` fails a new migration missing either entry. Migrations are applied automatically in the deploy pipeline.

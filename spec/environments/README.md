@@ -145,7 +145,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
 
-> **Full setup walkthrough:** See [`docs/internal/ops/deployment/`](../../docs/internal/ops/deployment/) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
+> **Full setup walkthrough:** See [`docs/ops/deployment/`](../../docs/ops/deployment/) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
 
 ---
 
@@ -157,7 +157,7 @@ CI runs as domain-specific parallel jobs on every PR to `main`. Each job is an i
 
 The roster is not restated here. Every check name, what it validates, and whether it blocks a merge
 or only reports are in
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+[`github-branch-protection-runbook.md`](../../docs/ops/github-branch-protection-runbook.md)
 **§ Required Status Checks** — the single hand-kept copy of the `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` arrays in
 [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs). **Nothing asserts
@@ -175,7 +175,7 @@ they stand. (`branch-policy` was the exception this paragraph used to name. It w
 `production` branch in #1340.)
 Live branch protection is whatever an admin last applied and can lag the script, so no doc claims
 per-check whether a gate is live today; read live state per
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+[`github-branch-protection-runbook.md`](../../docs/ops/github-branch-protection-runbook.md).
 
 `pglite-migrations` is also path-gated, and required since #2538. `duplicate-detection` is advisory, for the reason in [`quality-gates.md` § The gates, and why each has the posture it does](../../docs/ci-cd/quality-gates.md#the-gates-and-why-each-has-the-posture-it-does).
 
@@ -186,7 +186,7 @@ There was a second advisory job, `web-visual-regression`, and it has been **dele
 Each environment's Supabase project ref is recorded in
 [`.github/environments.json`](../../.github/environments.json), read through
 `scripts/ci/lib/environments.mjs`. Refs are **not secrets** — they are already published in
-[`DB_ROLLBACK_PLAYBOOK.md`](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md) and
+[`db-rollback-playbook.md`](../../docs/ops/db-rollback-playbook.md) and
 [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md), and one grants nothing without
 `SUPABASE_ACCESS_TOKEN`. Committing them is what makes an assertion possible: `scripts/run-migration.mjs`
 compares the ref Infisical injected against the one this file records for `--env`, and **fails closed on a
@@ -203,7 +203,7 @@ workflow reads them through `scripts/ci/provider-ids.mjs`, and a test fails on a
 Three consequences worth holding together:
 
 - **Rotating a project touches every file that names its ref**, not only `.github/environments.json` — see
-  [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#backup-reality).
+  [`db-rollback-playbook.md` § Backup reality](../../docs/ops/db-rollback-playbook.md#backup-reality).
   Missing the file blocks every production migration and fails `migration-order` on every
   migration-bearing PR.
 - **Recreating a Render service or a Vercel project means changing its id in this file.** The deploy,
@@ -219,7 +219,7 @@ The docs workflows (`docs.yml`, `links.yml`) and what each of their jobs checks:
 [`docs-ci.md` § What runs](../../docs/ci-cd/docs-ci.md#what-runs). The migration checks —
 which workflow runs them, which are required, what each validates, and why `migration-drift` was
 demoted out of `DRIFT_CHECKS` — are in
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks).
+[`github-branch-protection-runbook.md` § Required Status Checks](../../docs/ops/github-branch-protection-runbook.md#required-status-checks).
 
 Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
 all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
@@ -261,13 +261,13 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
 ### Deploy Pipeline (on merge)
 
 Staging deploys on every merge whose CI passes; production deploys a SHA a human dispatches and
 approves. Both run the same job, `_deploy.yml`, in the order
-[`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated)
+[`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated)
 gives. **Corrected 2026-09-30 (#2489):** this section used to restate that order as a diagram. It
 had drifted twice (it left out the Supabase Edge Functions deploy and, when #2489 added it, the
 source-map check), so the order now lives only in `ci-cd.md`.
@@ -335,12 +335,12 @@ secrets.
 - **OTA updates: the client is installed, and nothing publishes to it yet** (#2526, ADR-24 decision 8). Every build carries `expo-updates` with `runtimeVersion: { policy: "appVersion" }`, a `channel` named after its build profile (`apps/mobile/eas.json`), and `checkAutomatically: "ON_LOAD"` with no wait, so with nothing published an app runs the bundle it was built with. An update published for runtime `0.9.0` reaches every build of `0.9.0`, so every build whose native code changes needs a new `expo.version` (see **Native changes** below). Two builds of one version with different native code would both take an update built against the newer one, and the older would crash on a missing module; if that has already happened, raise `MOBILE_MIN_VERSION_*` past the older build before publishing. The `fingerprint` policy was considered and rejected (2026-09-24): it hashes the resolved config, which carries per-build values (`extra.gitSha` from `EAS_BUILD_GIT_COMMIT_HASH`, and the contents of `google-services.json` on Android), so an update published anywhere but the build worker would silently never match a shipped binary. A `fingerprint.config.js` could drop both (`SourceSkips.ExpoConfigExtraSection` for `extra`, an `ignorePaths` entry for the Android file), but that is a hand-kept list of every config input that varies by environment: miss one later and the match breaks, with nothing to show it until an update fails to reach a binary that can't be changed. A version bump is a rule a pipeline can check (#2511). There is no `eas update` pipeline and no `EXPO_TOKEN` in CI. Don't run `eas update` by hand before one exists: it ignores `eas.json`'s build `env`, so the published bundle would fall back to `http://localhost:3001` and tag Sentry `development` (#2504 digest 06, which lists the other traps). It also evaluates `apps/mobile/app.config.js` with no `EAS_BUILD_PROFILE`, so every fence there that keys on a profile (production URLs and keys, the Android google-services check, the client-key allowlist, Ask) is skipped and only the secret-key check runs. The pipeline (#2511) has to set a profile, and then supply what those fences expect: a `production` profile counts as Android unless `EAS_BUILD_PLATFORM` is `ios`, so an Android or platform-less run also needs the google-services file, or config evaluation stops.
 - **Minimum version:** every native build sends `X-Client-Version` and asks `GET /v1/client-policy` at launch and on return to the foreground; a build below the API's `MOBILE_MIN_VERSION_*` sees a blocking update screen. That, not OTA, is how an old binary is retired. Setting a minimum: [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings; behaviour: [`spec/ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Minimum version.
 - **Native changes:** bump `expo.version` in `apps/mobile/app.json` first (the OTA runtime is keyed to it), then a full build + App Store / Google Play submission via `eas submit` (**Store submission** below).
-- **Store submission is by hand.** A maintainer runs `eas submit` from a terminal, and no CI job submits to either store. iOS is interactive-only as configured: the `production` submit profile in `apps/mobile/eas.json` has no `ios` block, so with no `ascAppId` only the Apple sign-in can find the App Store Connect app. Scripting either store is a pipeline of its own: `EXPO_TOKEN` in CI, the store credentials stored in EAS, and for iOS an `ascAppId` in the profile. Procedure, and what a non-interactive run needs: [`mobile.md` § 6.6](../../docs/internal/ops/deployment/mobile.md#66-store-submission).
+- **Store submission is by hand.** A maintainer runs `eas submit` from a terminal, and no CI job submits to either store. iOS is interactive-only as configured: the `production` submit profile in `apps/mobile/eas.json` has no `ios` block, so with no `ascAppId` only the Apple sign-in can find the App Store Connect app. Scripting either store is a pipeline of its own: `EXPO_TOKEN` in CI, the store credentials stored in EAS, and for iOS an `ascAppId` in the profile. Procedure, and what a non-interactive run needs: [`mobile.md` § 6.6](../../docs/ops/deployment/mobile.md#66-store-submission).
 - **The EAS project is permanent from the first store build.** Every binary carries its id (`extra.eas.projectId` in `apps/mobile/app.json`) in `updates.url`, and asks the Expo push service for tokens under it (`apps/mobile/lib/notifications/push.ts`). A new project (another `eas init`) would cut every shipped install off from OTA updates and push until its owner updates from the store. [`mobile-permanent-identifiers.test.mjs`](../../scripts/ci/__tests__/mobile-permanent-identifiers.test.mjs) pins the id.
 
 ### Deploy Ordering
 
-**Default:** the frontends ship after the API. On staging, one job (`_deploy.yml`, called by `deploy-staging.yml`) runs the migrations, deploys and verifies the Render API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
+**Default:** the frontends ship after the API. On staging, one job (`_deploy.yml`, called by `deploy-staging.yml`) runs the migrations, deploys and verifies the Render API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
 
 > **Corrected 2026-09-28 (#2803):** this default used to read "Vercel (frontends) and Render (API)
 > deployments run in parallel after merge", as two workflows both gated on CI success
@@ -473,8 +473,8 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Migrations are version-controlled and applied in order.
 - Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
-- Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
-- See `docs/internal/ops/deployment/` for the full migration deployment workflow.
+- Every migration should have a documented rollback strategy in `docs/ops/db-rollback-playbook.md`.
+- See `docs/ops/deployment/` for the full migration deployment workflow.
 
 ## Claude Code web
 

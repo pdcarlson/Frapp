@@ -70,7 +70,7 @@ describe('validateEnv', () => {
 
   // An empty or whitespace value is rejected exactly as an absent key is —
   // a name present in Infisical with a blank value still fails at boot.
-  // DB_PROMOTION_RUNBOOK.md's pre-promotion checklist depends on this.
+  // db-promotion-runbook.md's pre-promotion checklist depends on this.
   it.each([
     ['an empty string', ''],
     ['whitespace only', '   '],

@@ -106,7 +106,7 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
-export const RUNBOOK = "docs/internal/ops/DB_PROMOTION_RUNBOOK.md";
+export const RUNBOOK = "docs/ops/db-promotion-runbook.md";
 
 // ── Pure semantics ──────────────────────────────────────────────────────────
 

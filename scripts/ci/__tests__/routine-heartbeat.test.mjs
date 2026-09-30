@@ -33,13 +33,7 @@ const REPO_ROOT = join(
 );
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", WORKFLOW_FILE);
 const ROUTINES_DOC = join(REPO_ROOT, "docs", "ci-cd", "routines.md");
-const ALERT_ROUTING = join(
-  REPO_ROOT,
-  "docs",
-  "internal",
-  "ops",
-  "ALERT_ROUTING.md",
-);
+const ALERT_ROUTING = join(REPO_ROOT, "docs", "ops", "alert-routing.md");
 const AGENT_INFRA = join(REPO_ROOT, "docs", "ci-cd", "agent-infra.md");
 
 const HOUR = 60 * 60 * 1000;
@@ -798,7 +792,7 @@ describe("wiring", () => {
     );
     assert.ok(
       readFileSync(ALERT_ROUTING, "utf8").includes(ALERT.title),
-      "ALERT_ROUTING.md row",
+      "alert-routing.md row",
     );
     assert.match(
       readFileSync(AGENT_INFRA, "utf8"),

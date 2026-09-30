@@ -38,7 +38,7 @@ const ROLLBACK = MIGRATION_DOCS[1];
 
 // Two tests below mutate the REAL worktree — the gate resolves its roots from
 // its own location, so there is no temp tree to point it at. One renames
-// DB_ROLLBACK_PLAYBOOK.md away; the other writes a probe migration. Left behind,
+// db-rollback-playbook.md away; the other writes a probe migration. Left behind,
 // either makes every later `check:migration-safety` in the checkout fail on
 // state no author created, so each is undone in a `finally`.
 //
@@ -110,7 +110,7 @@ test("no declared doc is satisfied by a path prefix, only by exact match", () =>
   // A nested file under the same directory must NOT count: the gate asks for
   // the ledger itself, not for anything filed near it.
   assert.equal(
-    satisfiesPromotionDocs(["docs/internal/ops/incident-response.md"]),
+    satisfiesPromotionDocs(["docs/ops/incident-response.md"]),
     false,
   );
 });
@@ -504,8 +504,8 @@ test("the shipped gate exits 1 when a migration has no ledger entry", () => {
     assert.equal(status, 1, out);
     assert.match(out, /29990101000000_ledger_probe\.sql needs an entry/);
     // Both ledgers, not just one — the whole point of the change.
-    assert.match(out, /DB_PROMOTION_RUNBOOK\.md/);
-    assert.match(out, /DB_ROLLBACK_PLAYBOOK\.md/);
+    assert.match(out, /db-promotion-runbook\.md/);
+    assert.match(out, /db-rollback-playbook\.md/);
   } finally {
     removeProbe();
     exitCleanups.delete(removeProbe);

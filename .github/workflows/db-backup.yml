@@ -57,7 +57,7 @@ name: Nightly Backup
 # nothing else changes. Provisioning that is a dashboard step for the owner
 # (ENV_REFERENCE.md § Offsite Backup Secrets).
 #
-# Restoring what this produces: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.
+# Restoring what this produces: docs/ops/db-rollback-playbook.md.
 
 on:
   schedule:
@@ -98,7 +98,7 @@ on:
       storage_allow_mass_delete:
         description: >-
           One Storage job: the deletion is genuine. Let that run tombstone what
-          the deletion guard refuses (DB_ROLLBACK_PLAYBOOK.md § If the backup
+          the deletion guard refuses (db-rollback-playbook.md § If the backup
           job fails). Tombstoned bytes stay offsite until retention prunes
           them. Names the environment for the same reason as above.
         type: choice

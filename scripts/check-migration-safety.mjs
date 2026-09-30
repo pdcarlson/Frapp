@@ -127,6 +127,14 @@ function validateMigrationFiles(migrationFiles) {
 }
 
 /**
+ * The two migration ledgers, named once. Everything below that means "the
+ * promotion log" or "the rollback playbook" reads these, so moving either doc
+ * is a one-line edit here (#1598 stage 7 collapsed seven copies of the paths).
+ */
+export const PROMOTION_LOG = "docs/ops/db-promotion-runbook.md";
+export const ROLLBACK_PLAYBOOK = "docs/ops/db-rollback-playbook.md";
+
+/**
  * The docs a migration change must update. Declared once, and checked for
  * staleness on every run before the gate judges any PR (see
  * `validateDocManifest`).
@@ -157,10 +165,7 @@ function validateMigrationFiles(migrationFiles) {
  * proves the ledger complete. Do not restore an "either doc is enough" reading
  * from this comment alone.
  */
-export const MIGRATION_DOCS = [
-  "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
-  "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
-];
+export const MIGRATION_DOCS = [PROMOTION_LOG, ROLLBACK_PLAYBOOK];
 
 /** Does this change set update one of the docs a migration owes? */
 export function satisfiesPromotionDocs(changedFiles) {
@@ -194,14 +199,14 @@ export function satisfiesPromotionDocs(changedFiles) {
  */
 export const LEDGER_ENTRY_PATTERNS = new Map([
   [
-    "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
+    PROMOTION_LOG,
     [
       /^### (\d{14}_[a-z0-9_]+\.sql)[ \t]*$/gm,
       /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
     ],
   ],
   [
-    "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
+    ROLLBACK_PLAYBOOK,
     [
       /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
       // Recipe headings name their subject three ways: by filename, by bare
@@ -280,7 +285,7 @@ export const RATCHET_VERSION_CEILING = "20260905010000";
  */
 export const UNLEDGERED = new Map([
   [
-    "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
+    PROMOTION_LOG,
     [
       "00000000000000_initial_schema.sql",
       "20260531120000_member_custom_field_values.sql",
@@ -320,7 +325,7 @@ export const UNLEDGERED = new Map([
     ],
   ],
   [
-    "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
+    ROLLBACK_PLAYBOOK,
     [
       "00000000000000_initial_schema.sql",
       "20250226120000_add_get_points_report_rpc.sql",
@@ -359,7 +364,7 @@ export function ledgerEntries(doc, text) {
  * to protect. The rollback playbook is the opposite: a recipe for a migration
  * that no longer exists is dead weight, and worth reporting.
  */
-const HISTORICAL_LEDGERS = new Set(["docs/internal/ops/DB_PROMOTION_RUNBOOK.md"]);
+const HISTORICAL_LEDGERS = new Set([PROMOTION_LOG]);
 
 /**
  * The whole-tree ledger contract, as a pure function so the tests can drive it
@@ -618,10 +623,10 @@ function validateLedgerCoverage(migrations) {
   console.error(
     "\nEvery migration owes BOTH a promotion-log entry and a rollback recipe.\n" +
       "Write one of these lines, exactly (the marker may be * or -):\n" +
-      "  DB_PROMOTION_RUNBOOK.md   ### <migration>.sql\n" +
+      "  db-promotion-runbook.md   ### <migration>.sql\n" +
       "                            (or, under a `## <date>: <what>` heading)\n" +
       "                            * **Migration**: `<migration>.sql`\n" +
-      "  DB_ROLLBACK_PLAYBOOK.md   * **Migration**: `<migration>.sql`\n" +
+      "  db-rollback-playbook.md   * **Migration**: `<migration>.sql`\n" +
       "                            (under a `## Rollback <what>` heading)\n" +
       "A filename mentioned in prose does not count — the shape is what is read.",
   );

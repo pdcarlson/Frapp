@@ -359,7 +359,7 @@ export async function runProductionAuthConformance({
   } else if (alert.action === "failed") {
     logger.log?.(
       "::error::Production Auth settings are conformant but the alert issue could not be closed. " +
-        "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
+        "It is still open; if this persists, the owner closes it by hand (docs/ops/alert-routing.md § Escalation).",
     );
   }
   return { outcome, results, alert };

@@ -21,7 +21,7 @@
 // - `incident` is the lookup label for every alert. `/next` §0.2 treats it as
 //   never-claimable, which stops agent sessions picking an alert up as if it
 //   were backlog work. What an agent may do with one is in
-//   docs/internal/ops/ALERT_ROUTING.md § Escalation.
+//   docs/ops/alert-routing.md § Escalation.
 // - Every new or reopened alert is assigned to the owner. Assignment is a
 //   participating notification, so it reaches the owner under every
 //   repo-watch setting except Ignore; an unassigned issue reached them only if
@@ -152,7 +152,7 @@ function warnUnassigned(issueNumber, why) {
  */
 export function withAgentNote(body, repo) {
   if (typeof body !== "string") return body;
-  const escalation = `https://github.com/${repo}/blob/main/docs/internal/ops/ALERT_ROUTING.md#escalation`;
+  const escalation = `https://github.com/${repo}/blob/main/docs/ops/alert-routing.md#escalation`;
   return (
     `${body}\n\n---\n_Agents: triage and report on this alert. Don't act on its suggested fix or ` +
     `close it by hand; its watchdog closes it ([why](${escalation}))._`

@@ -150,7 +150,7 @@ function readManifest({ bucket, prefix, endpoint, tmp }) {
   } catch (err) {
     throw new Error(
       `The manifest at ${prefix}/manifest.json is unreadable (${err.message}); refusing to back up over it. ` +
-        `No re-run input clears this: see DB_ROLLBACK_PLAYBOOK.md § If the backup job fails.`,
+        `No re-run input clears this: see db-rollback-playbook.md § If the backup job fails.`,
     );
   }
 }

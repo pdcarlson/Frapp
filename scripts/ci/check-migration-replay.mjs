@@ -206,7 +206,7 @@ export function decideOutcome({ partition, replay }) {
         `${foreign.length} migration(s) are applied on production but exist in no repo file. ` +
         `Production's state cannot be faithfully reconstructed, so this gate cannot certify ` +
         `anything — and \`supabase db push\` will refuse to run in this state anyway. ` +
-        `Reconcile first: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.`,
+        `Reconcile first: docs/ops/db-rollback-playbook.md.`,
     };
   }
 
@@ -238,7 +238,7 @@ export function decideOutcome({ partition, replay }) {
         `both and can tell you.\n\n` +
         `If it is unapplied everywhere — the ordinary case for a migration still in review — ` +
         `rename it to a version after \`${newestApplied}\`, keeping its name. Otherwise read ` +
-        `docs/internal/ops/DB_PROMOTION_RUNBOOK.md § \`--include-all\` first.`,
+        `docs/ops/db-promotion-runbook.md § \`--include-all\` first.`,
     };
   }
 

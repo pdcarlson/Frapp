@@ -1,9 +1,9 @@
 ## 4. Vercel Setup
 
 Two projects: `frapp-web` (`apps/web`) and `frapp-landing` (`apps/landing`), in one team; their ids
-are the `vercel` block of [`.github/environments.json`](../../../../.github/environments.json), which
-every workflow reads through `scripts/ci/provider-ids.mjs` ([why there](../../../../spec/environments/README.md#environment-identity), #2806). Both are
-**disconnected from Git** ([ADR-21](../../../../spec/architecture/adr/adr-21.md)). Do not re-import
+are the `vercel` block of [`.github/environments.json`](../../../.github/environments.json), which
+every workflow reads through `scripts/ci/provider-ids.mjs` ([why there](../../../spec/environments/README.md#environment-identity), #2806). Both are
+**disconnected from Git** ([ADR-21](../../../spec/architecture/adr/adr-21.md)). Do not re-import
 the repo or set a Production Branch — a present Git link is a guardrail violation
 (`assertVercelNoGitLink` in `scripts/ci/production-guardrails.mjs`). The decision, dates, freeze
 points, and what broke on unlink live on ADR-21; this section is the operator console.
@@ -27,7 +27,7 @@ parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fai
 partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
 paid plan, which is the owner's call, not a workflow's.
 
-Both run [`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.mjs) twice:
+Both run [`scripts/ci/deploy-vercel.mjs`](../../../scripts/ci/deploy-vercel.mjs) twice:
 `DEPLOY_PHASE=build` before the migrations, and `DEPLOY_PHASE=upload` once the API passes its
 post-deploy check. There is no single-phase run. So a failed build ships nothing, and new
 frontends never go live ahead of the migration and API they call. The full order of each pipeline
@@ -41,7 +41,7 @@ give each app's build exactly the keys it reads, and keep only Vercel's system v
 env `vercel pull` writes. The pull still supplies the project settings and `VERCEL_ENV` (`preview`
 or `production`).
 Production rebuilds a named commit rather than promoting a preview
-([`SECRETS_MANAGEMENT.md` § Staging web and landing](../../environment/SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced),
+([`SECRETS_MANAGEMENT.md` § Staging web and landing](../../internal/environment/SECRETS_MANAGEMENT.md#staging-web-and-landing-injected-at-build-not-synced),
 which covers both).
 
 **These values are not typed into the Vercel dashboard.** Infisical is the canonical store, and
@@ -50,15 +50,15 @@ the deploy jobs read it directly. An ordinary project row doesn't reach a build
 like one of Vercel's system variables would, and none should be. The build's log names each row it
 kept and each it removed, never a value. Which names count as system variables, and where a
 `[SENSITIVE]` placeholder is refused rather than just removed, is the header of
-[`scripts/ci/lib/vercel-build-env.mjs`](../../../../scripts/ci/lib/vercel-build-env.mjs). Both
+[`scripts/ci/lib/vercel-build-env.mjs`](../../../scripts/ci/lib/vercel-build-env.mjs). Both
 projects' Preview env is empty and their Preview **Branch Tracking** is off (2026-09-28):
 the staging syncs, their `Preview · main` rows and the unscoped Preview rows are deleted
 ([#834](https://github.com/pdcarlson/Frapp/issues/834)). The two production `vercel-*` syncs and their
 Production rows were deleted the same day, so neither project holds an env variable in any
 environment. The authoritative sync map and
 the setup procedure live in
-[`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md), and the complete
-variable list in [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The tables
+[`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md), and the complete
+variable list in [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md). The tables
 below record what each project must end up with, and are what to check a live value against — to
 change one, change it in Infisical.
 
@@ -167,7 +167,7 @@ While unlinked, `git.deploymentEnabled` and `ignoreCommand: "exit 1"` in `apps/w
 `apps/landing/vercel.json` govern nothing — `--prebuilt` has already built. **Do not delete either
 key.** They are the versioned form of dashboard-only settings: re-link Git and branch filtering plus
 the Ignored Build Step fall back to unversioned dashboard state. See
-[ADR-21](../../../../spec/architecture/adr/adr-21.md).
+[ADR-21](../../../spec/architecture/adr/adr-21.md).
 
 Confirm the unlink (not a setup step): a present `link` is the guardrail going red.
 

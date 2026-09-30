@@ -34,7 +34,7 @@ const SIGNET_MIGRATION = "supabase/migrations/20260909120000_rename_system_user_
 const MIGRATION = "supabase/migrations/20260924190000_rename_system_actor_to_frapp.sql";
 const SEED = "supabase/migrations/20260524120000_chapter_directory_requests.sql";
 const LANDMARK = "scripts/check-pglite-migrations.mjs";
-const ROLLBACK = "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md";
+const ROLLBACK = "docs/ops/db-rollback-playbook.md";
 const VALIDATION = "packages/validation/src/index.ts";
 const CHAT = "apps/api/src/domain/constants/chat.ts";
 

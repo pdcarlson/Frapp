@@ -26,12 +26,12 @@ eas login
 eas project:info
 ```
 
-The committed [`apps/mobile/app.json`](../../../../apps/mobile/app.json) links
+The committed [`apps/mobile/app.json`](../../../apps/mobile/app.json) links
 the app to EAS through `extra.eas.projectId` and `owner: pdcarlson`. Keep these
 real project identifiers committed; do not replace them with placeholders or
 run `eas init` to create a new project, ever: the project is permanent from the
 first store build
-([`spec/environments/README.md` § Mobile (EAS)](../../../../spec/environments/README.md#mobile-eas)).
+([`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)).
 
 This linkage satisfies the project-id check in `isPushAvailable()`; an installed
 build must also load the native notifications module. It does not prove push
@@ -120,12 +120,12 @@ done
 
 Optional: `EXPO_PUBLIC_POSTHOG_HOST` (defaults to `https://us.i.posthog.com` in `lib/posthog/config.ts`). Neither PostHog name is Infisical-synced — EAS dashboard only, like the DSN.
 
-The refs are in [`.github/environments.json`](../../../../.github/environments.json); the publishable
+The refs are in [`.github/environments.json`](../../../.github/environments.json); the publishable
 keys come from each project's dashboard → Project Settings → API Keys (or `GET /v1/projects/<ref>/api-keys`).
-Why production refuses the legacy anon key: [`ENV_REFERENCE.md` § apps/mobile (Expo — EAS)](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas).
+Why production refuses the legacy anon key: [`ENV_REFERENCE.md` § apps/mobile (Expo — EAS)](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas).
 `development` needs nothing here — a development build talks to the local stack through
 `apps/mobile/.env.local`, and `getSupabaseClient()` returns `null` with a visible sign-in notice
-when the pair is missing rather than crashing ([`ENV_REFERENCE.md` § apps/mobile (Expo — EAS)](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas)).
+when the pair is missing rather than crashing ([`ENV_REFERENCE.md` § apps/mobile (Expo — EAS)](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas)).
 
 **`SENTRY_AUTH_TOKEN` is the one variable here that is not `EXPO_PUBLIC_*`, and the one whose
 absence fails the build rather than degrading.** Everything above is inlined into the bundle and
@@ -135,7 +135,7 @@ native debug files from the build itself, and **a Release build with no token fa
 the Xcode phases, on Android in the Gradle upload task. Mechanism, failure signatures and the
 `SENTRY_DISABLE_AUTO_UPLOAD` / `SENTRY_ALLOW_FAILURE` escape hatches (and why neither is the
 remedy) are in
-[`ENV_REFERENCE.md` § apps/mobile](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas) — that
+[`ENV_REFERENCE.md` § apps/mobile](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas) — that
 row is the canonical account; this section only creates the variable.
 
 ```bash
@@ -176,10 +176,10 @@ scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no i
 be recorded here, so replace this paragraph's source with the console's wording once uploaded.
 
 The set is seven screens, chosen to match what the listing's Description claims
-([`apps/mobile/store/README.md`](../../../../apps/mobile/store/README.md) § Description): Chat
+([`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md) § Description): Chat
 home, a chat thread, Events, Host check-in (the rotating QR), Tasks (assigned tasks, points and
 house rank), Study hours and the Directory. The list is `STORE_SCREENS` in
-[`scripts/demo/capture-mobile.mjs`](../../../../scripts/demo/capture-mobile.mjs). **No Ask shot:**
+[`scripts/demo/capture-mobile.mjs`](../../../scripts/demo/capture-mobile.mjs). **No Ask shot:**
 the store binary has no Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
 Guideline 2.3.3 wants the screenshots to show the app as it ships. **No Dues shot:** a populated
 ledger shows "Payments run through your chapter's Stripe account.", and the reviewer's own Dues tab
@@ -191,7 +191,7 @@ in-app payment copy.
 Supabase):
 
 1. Write `apps/mobile/.env.local` per
-   [`docs/guides/demo-data.md` § Mobile setup](../../../guides/demo-data.md#mobile-setup), **without**
+   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), **without**
    `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the preset stops
    rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
    in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
@@ -229,7 +229,7 @@ prefers 9:16 with at least 1080 px on each side, which this size also meets. **N
 page itself:** support.google.com is blocked from the cloud sandbox, so these rules come from search
 snippets of that page (2026-09-27). Replace this paragraph's source with the console's wording once
 the set is uploaded ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)). The limits are held
-in [`scripts/demo/store-screenshots.mjs`](../../../../scripts/demo/store-screenshots.mjs) and
+in [`scripts/demo/store-screenshots.mjs`](../../../scripts/demo/store-screenshots.mjs) and
 tested against the preset, so change them there too.
 
 **Procedure:** § 6.4's steps 1 to 3 unchanged, then from the repo root
@@ -252,7 +252,7 @@ profile has no submit profile of the same name.
 **Google Play:** `eas submit -p android --latest` uploads to the `internal` track, the one the
 profile sets. It authenticates with the Play service-account key held in EAS credentials, or a
 local file named by `serviceAccountKeyPath` in the profile. No key exists yet (#2556, #938); where
-it lives: [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md#appsmobile-expo--eas), the
+it lives: [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas), the
 `eas submit` note.
 
 **App Store:** `eas submit -p ios --latest`, run interactively. The profile has no `ios` block, so
@@ -260,7 +260,7 @@ eas-cli uses its default iOS profile:
 
 - **App.** With no `ascAppId`, the run signs in to the Apple account and finds the App Store
   Connect app by bundle ID (it would create one if none existed). The record exists: its Apple ID
-  is in [`apps/mobile/store/README.md`](../../../../apps/mobile/store/README.md) § As submitted.
+  is in [`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md) § As submitted.
 - **Credentials.** The upload uses the App Store Connect API key stored in EAS credentials for
   submissions; with none stored, the interactive run offers to create one. If
   `EXPO_APPLE_APP_SPECIFIC_PASSWORD` is set, it is used **instead of** the key, and it needs an

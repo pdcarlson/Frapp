@@ -20,7 +20,7 @@ import { makeFetchMock } from "./helpers.mjs";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-uptime.yml");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "production-uptime.mjs");
-const ALERT_ROUTING = join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md");
+const ALERT_ROUTING = join(REPO_ROOT, "docs", "ops", "alert-routing.md");
 const REQUIRED_CHECKS = join(REPO_ROOT, "scripts", "ci", "lib", "required-checks.mjs");
 
 const TEST_URL = "https://example.test/health/ready";
@@ -359,10 +359,10 @@ describe("workflow wiring", () => {
     assert.doesNotMatch(roster, /production-uptime/);
   });
 
-  it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
+  it("alert-routing.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
       routing.includes(ALERT.title),
-      "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
+      "alert-routing.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });
 

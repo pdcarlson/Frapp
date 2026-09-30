@@ -8,7 +8,7 @@
 // in the organization, production included. The first real Discord import on
 // staging went over Free's storage quota that way, which is why the
 // organization moved to Pro. A project whose disk fills goes read-only on its
-// own, with no grace period. docs/internal/ops/deployment/supabase.md
+// own, with no grace period. docs/ops/deployment/supabase.md
 // § Plan and quotas owns the quotas, and DISK_QUOTA_BYTES and
 // STORAGE_QUOTA_BYTES below copy them. Supabase's own email arrives only once a
 // quota is already exceeded. This watch pages at 70%, while there is room to
@@ -326,7 +326,7 @@ export function buildAlertIssueBody({ rows, threshold, runUrl }) {
       "neither quota is billed past its limit. Past the Storage quota, Supabase emails the billing " +
       "address, then restricts **every** project after a grace period, production included. A project " +
       "whose disk fills goes read-only on its own, with no grace period. The quotas, and the plan's cost " +
-      "control: `docs/internal/ops/deployment/supabase.md` § Plan and quotas. An over-quota figure is " +
+      "control: `docs/ops/deployment/supabase.md` § Plan and quotas. An over-quota figure is " +
       "also one of ADR-24's triggers to revisit (`spec/architecture/adr/adr-24.md`).",
     "",
     "**Over.** Find what grew in the organization's **Usage** page (per project from its dropdown), then " +

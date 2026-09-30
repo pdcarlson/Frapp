@@ -65,8 +65,8 @@ describe("the alert identities", () => {
     assert.throws(() => alertFor("preview", "frapp-web"));
   });
 
-  it("are all listed in ALERT_ROUTING.md", () => {
-    const routing = readFileSync(join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md"), "utf8");
+  it("are all listed in alert-routing.md", () => {
+    const routing = readFileSync(join(REPO_ROOT, "docs", "ops", "alert-routing.md"), "utf8");
     // One row stands for all of them: the title pattern, and one literal title
     // (the lookup key a search for the issue would use).
     assert.ok(routing.includes("Sentry has no source maps for &lt;project&gt; on &lt;environment&gt; — its stack traces are minified"));

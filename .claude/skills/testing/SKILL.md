@@ -174,8 +174,8 @@ npm run generate -w packages/api-sdk
 
 This check validates migration filenames (`{14-digit-timestamp}_{snake_case}.sql`) and unique
 version prefixes. It also checks that every migration has an entry, in the documented shape, in
-both [`DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) and
-[`DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md), across the whole
+both [`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md) and
+[`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), across the whole
 tree on every run. With `--base`/`--head` it also requires a migration change to touch one of
 those docs. Without a range it skips that half and says so, which is why the checklist passes one.
 Migrations older than the gate are grandfathered in `UNLEDGERED` in

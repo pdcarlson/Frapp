@@ -462,7 +462,7 @@ export async function checkAuthRedirects({
       FAIL,
       `uri_allow_list is missing ${missing.map((m) => `"${m}"`).join(" and ")} — a bare origin ` +
         "matches only itself, so GoTrue is dropping the web emailRedirectTo paths (and any invite " +
-        "token in them) onto the Site URL. See docs/internal/ops/deployment/supabase.md § Auth settings.",
+        "token in them) onto the Site URL. See docs/ops/deployment/supabase.md § Auth settings.",
     );
   }
   return result("auth-redirects", label, PASS, `site_url=${siteUrl}; ${required.join(", ")} present`);
@@ -714,7 +714,7 @@ export async function checkAuthMagicLink({
       "auth-magic-link",
       label,
       FAIL,
-      "mailer_templates_magic_link_content still says Signet (a heading, link text, an image's alt or title, a comment or an Outlook-only block; paste the Magic Link body documented in docs/internal/ops/deployment/supabase.md § Auth settings, which keeps the token_hash href)",
+      "mailer_templates_magic_link_content still says Signet (a heading, link text, an image's alt or title, a comment or an Outlook-only block; paste the Magic Link body documented in docs/ops/deployment/supabase.md § Auth settings, which keeps the token_hash href)",
     );
   }
   return result("auth-magic-link", label, PASS, `subject=${subject}; token_hash href`);
@@ -896,7 +896,7 @@ export async function checkInfisicalSyncs({
  * configuration. It covers the whole chain at once — migration applied, grants
  * present, RLS policies intact, hook enabled and resolving.
  *
- * The trap, recorded in #838 and DB_PROMOTION_RUNBOOK.md:154 — a correctly
+ * The trap, recorded in #838 and db-promotion-runbook.md:154 — a correctly
  * working hook returns a token with NO claim when the user resolves to no
  * chapter. So a claimless token is reported as a FAIL naming that cause, never
  * as a pass, and the seeded user must have exactly one membership.
@@ -1487,7 +1487,7 @@ export async function runStagingConformance({
     // while the run reports conformant.
     logger.log?.(
       "::error::Staging is conformant but the alert issue could not be closed. " +
-        "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
+        "It is still open; if this persists, the owner closes it by hand (docs/ops/alert-routing.md § Escalation).",
     );
   }
   return { outcome, results, alert };
@@ -1503,7 +1503,7 @@ const STAGING_ALERT_UNREAD =
  * So does a conformant run whose alert could not be read or closed: exiting 0
  * there would hide a P1 left open on a healthy environment, every day (#2627).
  * An unproven recovery and an inconclusive run leave the alert open on purpose
- * and exit 0 (docs/internal/ops/ALERT_ROUTING.md).
+ * and exit 0 (docs/ops/alert-routing.md).
  */
 export function conformanceExitCode({ outcome, alert }) {
   if (outcome === "failed") return 1;

@@ -957,8 +957,8 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.deepEqual(config.deployJobs, ["deploy"]);
     assert.equal(callerJob("deploy").keys.get("uses"), "./.github/workflows/_deploy.yml");
     assert.ok(config.alert.labels.includes("P1"));
-    const routing = readFileSync(join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md"), "utf8");
-    assert.ok(routing.includes(`*${config.alert.title}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
+    const routing = readFileSync(join(REPO_ROOT, "docs", "ops", "alert-routing.md"), "utf8");
+    assert.ok(routing.includes(`*${config.alert.title}*`), "alert-routing.md's roster must list the alert by its title");
   });
 
   // A deploy job that never ran a step fails or cancels like one that broke.
@@ -988,7 +988,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
       });
       return { code: result.status, out: result.stdout };
     };
-    const ROLLBACK = /DB_ROLLBACK_PLAYBOOK/;
+    const ROLLBACK = /db-rollback-playbook/;
     try {
       const notStarted = run({ ALERT_OUTCOME: "not-started" });
       assert.equal(notStarted.code, 1);

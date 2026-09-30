@@ -192,7 +192,7 @@ Rules for credentials:
   - API: read the `commit` field of `GET https://api-staging.frapp.live/health`.
   - Web and landing: read the aliased deployment through the Vercel MCP or REST. The custom
     domains return the Vercel Authentication page, not the bundle.
-  - For alias lag, see [`vercel.md`](../../../docs/internal/ops/deployment/vercel.md).
+  - For alias lag, see [`vercel.md`](../../../docs/ops/deployment/vercel.md).
     Per-deployment `*.vercel.app` URLs aren't allowlisted.
 
 ### Playwright against the deployed UI
@@ -235,7 +235,7 @@ confusing failure. If cleanup fails, say so and name what was left behind.
 
 Never run a destructive or schema-changing operation against hosted staging. Migrations are
 validated on PGlite and the local stack. Schema changes reach staging only through
-[`DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md), never from an agent
+[`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md), never from an agent
 session.
 
 ## What this does not cover

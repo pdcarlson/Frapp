@@ -373,7 +373,7 @@ export function buildGateSummary({
       "",
       "Fix: re-run the `Deploy staging` workflow against the latest commit on main —",
       "its `deploy` job's migration steps apply whatever is pending. See",
-      "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.",
+      "`docs/ops/db-promotion-runbook.md`.",
       "",
     );
   }
@@ -399,7 +399,7 @@ export function buildGateSummary({
       "This blocks `supabase db push` outright — no further migration can be",
       "applied to staging until it is reconciled. Do NOT run",
       "`migration repair` without first reading what the row did; see",
-      "`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.",
+      "`docs/ops/db-rollback-playbook.md`.",
       "",
     );
   }

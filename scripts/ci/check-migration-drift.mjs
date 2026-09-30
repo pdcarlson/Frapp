@@ -446,7 +446,7 @@ const FOREIGN_GUIDANCE =
   "existed in git (`git log --all --oneline -- 'supabase/migrations/<version>_*'`). If it shipped " +
   "and `main` renamed it since, the SQL already ran: mark the old version reverted and the new one " +
   "applied, and delete nothing. If git never held it, read the row's recorded `statements` before " +
-  "removing it — `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § reconciling a foreign migration row. " +
+  "removing it — `docs/ops/db-promotion-runbook.md` § reconciling a foreign migration row. " +
   "The CLI suggests `migration repair --status reverted`; **do not run it blind**.";
 
 function migrationList(migrations, limit = 10) {
