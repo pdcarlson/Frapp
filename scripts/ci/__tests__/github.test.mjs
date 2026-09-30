@@ -224,6 +224,13 @@ describe("ghGetWithFallback", () => {
     assert.deepEqual(calls.map(tokenOf), ["tok", "tok", "tok"]);
   });
 
+  it("never re-sends a 5xx that outlasts its retries with the fallback token", async () => {
+    const { calls, fetchImpl } = recorder(() => status(502));
+    const result = await read(fetchImpl);
+    assert.equal(result.status, 502);
+    assert.deepEqual(calls.map(tokenOf), ["tok", "tok", "tok"]);
+  });
+
   it("falls back on a 401 or 403 only when the fallback token differs", async () => {
     for (const refused of [401, 403]) {
       const { calls, fetchImpl } = recorder((n) => (n === 1 ? status(refused) : ok({})));

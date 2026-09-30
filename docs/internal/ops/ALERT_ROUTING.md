@@ -102,7 +102,9 @@
 > that lands creates the monitor (each check-in upserts it), so nothing is set up by hand. **Until one
 > lands, the monitor doesn't exist**, and nothing in Sentry notices a failed or missing run. Confirm
 > it after the first nightly run that follows the merge: the Sentry MCP's `find_monitors` (org
-> `frapp-live`) lists `production-db-backup`.
+> `frapp-live`) lists `production-db-backup`. *(Confirmed 2026-09-30: the first nightly run after
+> the merge checked in at 12:49Z, and the monitor reads `active`, its `production` environment `ok`
+> ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)).)*
 >
 > Once it exists, it raises an issue when a run reports `error` (the job's 30-minute
 > `timeout-minutes` included: the finish step then reports `error`), when no check-in arrives within

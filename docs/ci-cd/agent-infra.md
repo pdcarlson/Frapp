@@ -810,12 +810,10 @@ its run died in `Checkout` or `Setup Node` before the script ran, or because its
   [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s Team slice.
 - **Accept and document**: the state of every watchdog until that slice ships.
 
-Which jobs have a monitor, and what each one proves, is owned by
-[`ALERT_ROUTING.md` § Primary channels](../internal/ops/ALERT_ROUTING.md#primary-channels). On the
-free plan the one cron monitor is the nightly dump's own, so a dump that fails or stops raises a
-Sentry issue even when both freshness watches have gone silent. Whether that issue pages the owner
-is not yet proven. Until the Team slice ships and a test firing proves the page, the absence of an
-alert is not evidence of health for any scheduled job.
+Which jobs have a monitor, what each one raises and whether that reaches the owner are owned by
+[`ALERT_ROUTING.md` § Primary channels](../internal/ops/ALERT_ROUTING.md#primary-channels); on the
+free plan the only one is the nightly dump's own. Until the Team slice ships and a test firing
+proves the page, the absence of an alert is not evidence of health for any scheduled job.
 
 Two assertions ship degraded on purpose, each saying so in the step summary:
 
