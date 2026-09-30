@@ -105,9 +105,11 @@ export interface IChatMessageReportRepository {
   /**
    * The officer queue for one chapter as `reviewerUserId` may see it, newest
    * first, filtered to one status. Reports whose `reported_sender_id` is the
-   * reviewer are left out, for the reason {@link findById} gives; a report on
-   * an imported archive message (`reported_sender_id` NULL) names no Frapp
-   * member and is always included.
+   * reviewer are left out, for the reason {@link findById} gives. A report on
+   * an imported archive message whose author has not linked their Discord
+   * account (`reported_sender_id` NULL) names no Frapp member and is always
+   * included; linking sets it to the member (#2878), so a linked author's
+   * reports are left out of their own queue like any other.
    *
    * Status is required rather than optional so the read always matches
    * `idx_chat_message_reports_chapter_status` — `(chapter_id, status,

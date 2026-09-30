@@ -6,7 +6,8 @@ export const SUBSCRIPTION_GRACE_BLOCKED_KEY = 'subscription_grace_blocked';
 
 /**
  * Marks a controller or route as free-tier (the chat / members / invites
- * wedge, though ten controllers carry this today). Reads are unaffected.
+ * wedge; `subscription.decorator.spec.ts` holds the roster). Reads are
+ * unaffected.
  *
  * Under `active` every write passes before this marker is even read, so it
  * only matters once a chapter lapses. And "free-tier" does NOT mean "always

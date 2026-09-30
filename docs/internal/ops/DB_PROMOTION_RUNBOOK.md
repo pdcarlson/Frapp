@@ -572,6 +572,21 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-29: Members link their Discord history to themselves (#2878)
+
+### 20260929230000_discord_author_links.sql
+
+- **Purpose**: Adds `public.discord_author_links` (one row per member who linked their Discord account in a chapter; unique on `(chapter_id, discord_user_id)` and `(chapter_id, user_id)`, RLS on with no policies). Adds `purpose text not null default 'connect'` to `discord_oauth_states` with `discord_oauth_states_purpose_check` (`connect`, `author_link`), so the link handshake shares the one registered callback URL. Adds `link_discord_author`, `unlink_discord_author` and their shared `discord_author_detach` (service role only), which set or clear `chat_messages.sender_id` on that author's imported rows in the chapter (linking also sets `chat_message_reports.reported_sender_id` on reports about those rows that named nobody), and the `trg_chat_messages_attach_linked_author` BEFORE INSERT trigger (`when (new.kind = 'imported')`), which attaches imported rows to an existing link as they are written. Redefines `anonymize_user` (on top of the `20260929213000` body, keeping its #2877 sidebar purge) to clear the Discord name, avatar path and id on a deleted member's linked rows, and the Discord name on reports about them, and to delete their links. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select relrowsecurity from pg_class where relname = 'discord_author_links';` returns `t`;
+  `select count(*) from pg_policies where tablename = 'discord_author_links';` returns `0`;
+  `select tgname from pg_trigger where tgname = 'trg_chat_messages_attach_linked_author';` returns one row;
+  `select has_function_privilege('authenticated', 'public.link_discord_author(uuid, uuid, text, text)', 'execute');` returns `f`; and
+  `select count(*) from discord_oauth_states where purpose <> 'connect';` returns `0` on a database that has not run a link yet.
+- **Promoter notes**: Ship it before, or with, the API that reads it. The newer API writes `purpose` on every handshake and filters on it at every confirm, so against an unmigrated database both the bot connect flow and the link flow fail at their first step. An older API ignores the column (its default keeps its handshakes `connect`) and never calls the functions; the trigger only acts when a link row exists, and none can exist without the newer API. No existing row is rewritten: `sender_id` changes only when a member links. `create table`, the column, the trigger and the functions are idempotent; the `add constraint` is guarded. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-author-links-20260929230000) § Rollback Discord author links.
+
 ## 2026-09-29: Each member's chat sidebar arrangement (#2877)
 
 ### 20260929213000_chat_sidebar_preferences.sql

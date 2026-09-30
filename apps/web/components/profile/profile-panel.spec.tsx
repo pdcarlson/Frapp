@@ -82,6 +82,11 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/components/profile/blocked-members-card", () => ({
   BlockedMembersCard: () => null,
 }));
+// Likewise the Discord history card (#2878), which has its own spec
+// (`discord-history-card.spec.tsx`) and reads hooks this file does not mock.
+vi.mock("@/components/profile/discord-history-card", () => ({
+  DiscordHistoryCard: () => null,
+}));
 
 vi.mock("@repo/hooks", () => ({
   useCurrentUser: () => mocks.userQuery,

@@ -159,6 +159,30 @@ describe('maskBlockedMessages', () => {
     expect(row.author_name).toBe('someone#1234');
   });
 
+  it('masks an imported row whose Discord author linked, and is now a blocked member (#2878)', () => {
+    // Linking makes the member the sender of their Discord history, so a
+    // block covers it exactly as it covers their live messages. A rule keyed
+    // on `kind` ("imported rows are never masked") would leak it.
+    const [row] = maskBlockedMessages(
+      [
+        message({
+          kind: 'imported',
+          sender_id: BLOCKED,
+          author_name: 'jkslayer',
+          author_external_id: '900000000000000001',
+          author_avatar_path: 'chapters/c/chat-archive/imports/i/media/a.png',
+        }),
+      ],
+      [BLOCKED],
+    );
+
+    expect(row.sender_blocked).toBe(true);
+    expect(row.content).not.toContain('Discord');
+    expect(row.author_name).toBeNull();
+    expect(row.author_external_id).toBeNull();
+    expect(row.author_avatar_path).toBeNull();
+  });
+
   it('gives a masked row exactly the keys a clear row has', () => {
     // The uniformity argument this module rests on, as an assertion. A masked
     // row carrying a key clear rows lack is itself a signal — one a client

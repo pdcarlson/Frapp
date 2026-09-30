@@ -11,6 +11,7 @@ jest.mock('@sentry/nestjs', () => ({
 const captureException = Sentry.captureException as jest.Mock;
 const captureMessage = Sentry.captureMessage as jest.Mock;
 import {
+  AUTHOR_LINK_RETURN_PATH,
   DEFAULT_RETURN_PATH,
   DiscordOAuthService,
   apiBaseUrl,
@@ -63,6 +64,7 @@ function stateRow(
   return {
     id: STATE,
     chapter_id: CHAPTER,
+    purpose: 'connect',
     created_by: USER,
     return_path: DEFAULT_RETURN_PATH,
     expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
@@ -109,6 +111,11 @@ async function build(config: Record<string, string | undefined> = {}) {
         pending_scopes: 'bot identify guilds',
       }),
     ),
+    attachPendingAuthorLink: jest.fn(async () =>
+      stateRow({ purpose: 'author_link', return_path: '/profile' }),
+    ),
+    consumeAuthorLinkConfirmToken: jest.fn(async () => null),
+    findStateReturnPath: jest.fn(async () => null),
     deleteExpiredStates: jest.fn(async () => 0),
   };
   oauth = {
@@ -197,7 +204,11 @@ describe('DiscordOAuthService — beginConnect', () => {
     const result = await service.beginConnect(CHAPTER, USER, null);
 
     expect(repo.createState).toHaveBeenCalledWith(
-      expect.objectContaining({ chapter_id: CHAPTER, created_by: USER }),
+      expect.objectContaining({
+        chapter_id: CHAPTER,
+        created_by: USER,
+        purpose: 'connect',
+      }),
     );
     expect(result.authorize_url).toContain(`state=${STATE}`);
     // The redirect URI is derived from API_URL plus the fixed path, because
@@ -1289,5 +1300,158 @@ describe('safeReturnPath', () => {
   it('falls back for null and undefined', () => {
     expect(safeReturnPath(null)).toBe(DEFAULT_RETURN_PATH);
     expect(safeReturnPath(undefined)).toBe(DEFAULT_RETURN_PATH);
+  });
+});
+
+describe('DiscordOAuthService — a member linking their Discord account (#2878)', () => {
+  const MEMBER_DISCORD_ID = '3000000000000000003';
+
+  function linkState(overrides: Partial<DiscordOAuthState> = {}) {
+    return stateRow({
+      purpose: 'author_link',
+      return_path: AUTHOR_LINK_RETURN_PATH,
+      ...overrides,
+    });
+  }
+
+  it('mints an author_link handshake returning to /profile and asks for identify only', async () => {
+    const service = await build();
+    await service.beginAuthorLink(CHAPTER, USER);
+
+    expect(repo.createState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chapter_id: CHAPTER,
+        created_by: USER,
+        purpose: 'author_link',
+        return_path: '/profile',
+      }),
+    );
+    expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ grant: 'identify', state: STATE }),
+    );
+  });
+
+  it('refuses to begin a link it cannot finish, in words for a member', async () => {
+    const service = await build({ APP_URL: undefined });
+    const error = await service
+      .beginAuthorLink(CHAPTER, USER)
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ status: 503 });
+    // Not the officer's bot-import sentence about the upload flow.
+    expect((error as Error).message).toBe(
+      "Linking a Discord account isn't available right now. Try again later.",
+    );
+    expect(repo.createState).not.toHaveBeenCalled();
+  });
+
+  it('sends an expired link attempt back to /profile, where it started', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(null);
+    repo.findStateReturnPath.mockResolvedValue(AUTHOR_LINK_RETURN_PATH);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('expired');
+    const url = new URL(outcome.returnUrl);
+    expect(url.pathname).toBe('/profile');
+    expect(url.searchParams.get('discord')).toBe('expired');
+  });
+
+  it('falls back to the default page when the expired state cannot be read', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(null);
+    repo.findStateReturnPath.mockRejectedValue(new Error('down'));
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(new URL(outcome.returnUrl).pathname).toBe(DEFAULT_RETURN_PATH);
+  });
+
+  it('sends a link attempt the store failed to consume back to /profile', async () => {
+    const service = await build();
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+    repo.findStateReturnPath.mockResolvedValue(AUTHOR_LINK_RETURN_PATH);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('failed');
+    const url = new URL(outcome.returnUrl);
+    expect(url.pathname).toBe('/profile');
+    expect(url.searchParams.get('discord')).toBe('failed');
+  });
+
+  it('parks the approving account and binds nothing on the callback', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(linkState());
+    oauth.exchangeCode.mockResolvedValue({
+      accessToken: 'member-token',
+      scope: 'identify',
+      guild: null,
+    });
+    oauth.fetchAuthorizingUser.mockResolvedValue({
+      id: MEMBER_DISCORD_ID,
+      username: 'jkslayer',
+    });
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('pending');
+    const url = new URL(outcome.returnUrl);
+    expect(url.origin + url.pathname).toBe('https://app.example.test/profile');
+    expect(url.searchParams.get('discord')).toBe('pending');
+    expect(url.searchParams.get('handshake')).toMatch(/^[0-9a-f-]{36}$/);
+
+    expect(repo.attachPendingAuthorLink).toHaveBeenCalledWith(
+      STATE,
+      expect.objectContaining({
+        discord_user_id: MEMBER_DISCORD_ID,
+        discord_username: 'jkslayer',
+        scopes: 'identify',
+        confirm_token: url.searchParams.get('handshake'),
+      }),
+    );
+    // A link needs no guild and no guild list, and never parks a guild.
+    expect(oauth.fetchUserGuilds).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).not.toHaveBeenCalled();
+    expect(repo.upsert).not.toHaveBeenCalled();
+    expect(oauth.revokeToken).toHaveBeenCalledWith('member-token');
+  });
+
+  it('answers expired when the handshake already carries a parked account', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(linkState());
+    oauth.exchangeCode.mockResolvedValue({
+      accessToken: 'member-token',
+      scope: 'identify',
+      guild: null,
+    });
+    repo.attachPendingAuthorLink.mockResolvedValue(null);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('expired');
+    expect(new URL(outcome.returnUrl).pathname).toBe('/profile');
+    expect(oauth.revokeToken).toHaveBeenCalledWith('member-token');
+  });
+
+  it('sends a declined link back to /profile, not the import wizard', async () => {
+    const service = await build();
+    repo.consumeState.mockResolvedValue(linkState());
+
+    const outcome = await service.handleCallback({
+      state: STATE,
+      error: 'access_denied',
+    });
+
+    expect(outcome.code).toBe('declined');
+    expect(new URL(outcome.returnUrl).pathname).toBe('/profile');
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('never parks an account on a connect handshake', async () => {
+    const service = await build();
+    await service.handleCallback({ code: 'c', state: STATE });
+    expect(repo.attachPendingAuthorLink).not.toHaveBeenCalled();
+    expect(repo.attachPendingConnection).toHaveBeenCalled();
   });
 });

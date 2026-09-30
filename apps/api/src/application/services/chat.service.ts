@@ -1166,6 +1166,16 @@ export class ChatService {
       throw new ForbiddenException('You can only edit your own messages');
     }
 
+    // An imported Discord message is a record of what was said then. Its
+    // sender can be a member (they linked their Discord account, #2878), who
+    // may delete it like any message of theirs but not rewrite it. The clients
+    // already hide Edit on imported rows (`canEditMessage` in
+    // `@repo/chat-core`); this is the rule, since a client is not a control.
+    // After the ownership check, so a non-owner learns nothing about the row.
+    if (message.kind === 'imported') {
+      throw new ForbiddenException('Imported messages cannot be edited');
+    }
+
     if (message.is_deleted) {
       throw new BadRequestException('Cannot edit a deleted message');
     }
@@ -1207,7 +1217,7 @@ export class ChatService {
       );
     }
 
-    return this.softDeleteMessage(messageId, chapterId);
+    return this.softDeleteMessage(message, chapterId);
   }
 
   /**
@@ -1263,7 +1273,7 @@ export class ChatService {
       return { alreadyDeleted: true, channelId: message.channel_id };
     }
 
-    await this.softDeleteMessage(message.id, chapterId);
+    await this.softDeleteMessage(message, chapterId);
     return { alreadyDeleted: false, channelId: message.channel_id };
   }
 
@@ -1320,13 +1330,14 @@ export class ChatService {
    * Callers authorize first; this does not.
    */
   private async softDeleteMessage(
-    messageId: string,
+    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata'>,
     chapterId: string,
   ): Promise<ChatMessage> {
+    const messageId = message.id;
     const deleted = await this.messageRepo.update(messageId, {
       content: '[message deleted]',
       is_deleted: true,
-      metadata: {},
+      metadata: tombstoneMetadata(message),
     });
 
     // Purge after the flag lands, not before. Soft delete leaves the attachment
@@ -2265,9 +2276,10 @@ export class ChatService {
   /**
    * Signs `chat-archive` avatar paths for imported authors, batched into as
    * few provider calls as `getSignedDownloadUrls` allows (#1231).
-   * `ChatMessage.author_avatar_path` is stored but never served today —
-   * `resolveAuthorLabel` on the client falls back to initials for every
-   * archived message.
+   * The web timeline draws these for imported rows with no `sender_id`; a
+   * row whose author linked their Discord account (#2878) is the member's
+   * message and draws the member instead. Mobile does not call this yet
+   * (#2886).
    *
    * Channel-scoped, like `listMessageAttachments` — and deliberately never a
    * function of a caller-supplied path at all. `author_avatar_path` and an
@@ -2332,4 +2344,22 @@ export class ChatService {
       return {};
     }
   }
+}
+
+/**
+ * What a soft-deleted message keeps of its `metadata`.
+ *
+ * Nothing, except an imported row's `discord_import_id`: it is the only key the
+ * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
+ * so wiping it would leave the tombstone behind when its import is deleted,
+ * still carrying the Discord author and an avatar path into purged storage. A
+ * linked member can delete their own imported messages (#2878), so this is
+ * reachable by any member, not only a moderator.
+ */
+export function tombstoneMetadata(
+  message: Pick<ChatMessage, 'kind' | 'metadata'>,
+): Record<string, unknown> {
+  if (message.kind !== 'imported') return {};
+  const importId: unknown = message.metadata?.discord_import_id;
+  return typeof importId === 'string' ? { discord_import_id: importId } : {};
 }

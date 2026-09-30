@@ -334,6 +334,12 @@ export function MessageRowFrame({
  * called where the accent is drawn: the hook reaches for `FrappClientProvider`
  * (#1007), which a row by anyone else needs only when it is pinned
  * (`PinnedMarker`).
+ *
+ * Keep the hook in here, never behind `isMine` in `MessageRowFrame`: an
+ * imported row's `sender_id` changes when its author links or unlinks their
+ * Discord account (#2878), so the same row can flip between mine and not. As
+ * its own component it just mounts or unmounts; a hook behind the branch in
+ * the parent would change that component's hook order and crash it.
  */
 function SelfName({
   label,

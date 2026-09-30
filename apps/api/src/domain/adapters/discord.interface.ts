@@ -43,6 +43,15 @@ export const DISCORD_BOT_PERMISSIONS = '66560';
 /** The OAuth scopes the install asks for. */
 export const DISCORD_OAUTH_SCOPES = ['bot', 'identify', 'guilds'] as const;
 
+/**
+ * What an authorize URL asks Discord for: the bot install, or only the
+ * account's identity (a member linking their imported history, #2878).
+ */
+export type DiscordAuthorizeGrant = 'install' | 'identify';
+
+/** The only scope a member's link asks for. */
+export const DISCORD_IDENTIFY_SCOPES = ['identify'] as const;
+
 /** Discord's own cap on one `GET /channels/{id}/messages` page. */
 export const DISCORD_MESSAGE_PAGE_LIMIT = 100;
 
@@ -280,8 +289,20 @@ export interface IDiscordOAuthClient {
   /** `DISCORD_CLIENT_ID`, the application the authorize URL names; null when unset. */
   clientId(): string | null;
 
-  /** The `https://discord.com/oauth2/authorize?...` URL to send the admin to. */
-  buildAuthorizeUrl(args: { state: string; redirectUri: string }): string;
+  /**
+   * The `https://discord.com/oauth2/authorize?...` URL to send the human to.
+   *
+   * `install` (the default) is the officer's "Add to Server": the bot, with
+   * `identify` and `guilds` to prove the officer runs the server. `identify`
+   * is a member proving which Discord account is theirs (#2878): that scope
+   * alone, so the grant can read the account's id and name and nothing else,
+   * and installs no bot anywhere.
+   */
+  buildAuthorizeUrl(args: {
+    state: string;
+    redirectUri: string;
+    grant?: DiscordAuthorizeGrant;
+  }): string;
 
   /** Trade the one-time code for a user access token and the installed guild. */
   exchangeCode(args: {

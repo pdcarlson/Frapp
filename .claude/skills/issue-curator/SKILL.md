@@ -12,7 +12,7 @@ description: >
 Keep the `suggestion` backlog healthy and high-signal rather than just growing. Each run first
 maintains the open `suggestion` issues (one action each), then discovers a few high-value new
 issues and files them into the `triage` inbox, within the net-growth budget. The
-[`issue-triage`](../issue-triage/SKILL.md) routine runs about an hour later and prioritizes and
+[`issue-triage`](../issue-triage/SKILL.md) routine runs about an hour later (it runs daily) and prioritizes and
 promotes what lands there, so propose a priority but leave inbox grooming, re-bucketing, and
 Backlog promotion to it.
 

@@ -287,7 +287,8 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
  * The PostgREST `.or()` filter that leaves out reports about `userId`.
  *
  * Spelled as `is null OR <> userId`, not a bare `.neq()`, because
- * `reported_sender_id` is NULL for an imported archive message and
+ * `reported_sender_id` is NULL for an imported archive message whose author
+ * has not linked their Discord account (#2878; linking sets it), and
  * `NULL <> x` is not true — a bare `.neq()` would silently drop every report
  * on an imported message from the queue. `userId` is the authenticated
  * caller's `users.id`, never client input; it is quoted anyway, as every

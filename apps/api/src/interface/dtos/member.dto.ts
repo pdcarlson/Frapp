@@ -1,11 +1,5 @@
-import {
-  IsArray,
-  IsBoolean,
-  IsIn,
-  IsOptional,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OPS_NUDGE_MODULES } from '@repo/validation';
 
@@ -31,7 +25,7 @@ export class UpdateMemberRolesDto {
 
 export class UpdateOnboardingDto {
   @ApiProperty()
-  @IsBoolean()
+  @IsStrictBoolean()
   has_completed_onboarding: boolean;
 }
 

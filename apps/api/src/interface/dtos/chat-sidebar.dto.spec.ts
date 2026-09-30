@@ -5,7 +5,7 @@ import { UpdateChatSidebarDto } from './chat-sidebar.dto';
 
 /**
  * Through the production pipe, whose `enableImplicitConversion` would turn
- * `"false"` into `true` without `RawValue`.
+ * `"false"` into `true` without `@IsStrictBoolean()`.
  */
 describe('PATCH /v1/chat-sidebar takes only real booleans (#2877)', () => {
   const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);

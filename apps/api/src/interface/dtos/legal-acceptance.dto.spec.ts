@@ -64,8 +64,9 @@ describe('RedeemInviteDto — the join checkbox (#2302)', () => {
 /**
  * Through the production pipe, not bare `plainToInstance`. The global pipe
  * sets `enableImplicitConversion`, which turns a `boolean` field's `"false"`
- * into `true`; without `RawValue` these would all be recorded as consent.
- * Verified by removing `@RawValue()`: every string case below then resolves.
+ * into `true`; without `@IsStrictBoolean()` these would all be recorded as
+ * consent. Verified by swapping it for a bare `@IsBoolean()`: every string case
+ * below then resolves.
  */
 describe('the Terms checkbox takes only a real boolean (#2302)', () => {
   const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);

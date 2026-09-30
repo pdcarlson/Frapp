@@ -245,6 +245,34 @@ describe("useAuthorAvatars", () => {
     expect(result.current.data).toEqual({ "path/a": "https://signed/a" });
   });
 
+  it("never signs a linked row's Discord avatar, but still signs that path for an unlinked row (#2878)", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { "path/a": "https://signed/a" },
+      error: null,
+    });
+    const mockClient = { POST: mockPost };
+    const messages = [
+      { id: "msg-1", sender_id: "user-jake", author_avatar_path: "path/a" },
+      { id: "msg-2", sender_id: "user-jake", author_avatar_path: "path/b" },
+      { id: "msg-3", sender_id: null, author_avatar_path: "path/a" },
+    ];
+
+    const { result } = renderHook(() => useAuthorAvatars("chan-1", messages), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith(
+      "/v1/channels/{id}/messages/avatars",
+      {
+        params: { path: { id: "chan-1" } },
+        body: { message_ids: ["msg-3"] },
+      },
+    );
+  });
+
   it("is disabled — never calls POST — when no message carries an avatar path", async () => {
     const mockPost = vi.fn();
     const mockClient = { POST: mockPost };
