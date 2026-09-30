@@ -280,6 +280,17 @@ export interface DiscordImportChannelProgress {
 export type DiscordImportFileKind = 'export' | 'media';
 
 /**
+ * A channel the worker created for an import (#2905). The purge deletes the
+ * ones left holding nothing. Kept apart from the mapping rows, because
+ * remapping a failed import rewrites those without their targets.
+ */
+export interface DiscordImportCreatedChannel {
+  import_id: string;
+  channel_id: string;
+  created_at: string;
+}
+
+/**
  * One uploaded file, and the only bridge from the export's own asset URLs back
  * to storage.
  *
