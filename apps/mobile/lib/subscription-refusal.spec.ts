@@ -5,10 +5,11 @@ import {
 } from "./subscription-refusal";
 
 /**
- * Fixtures are the shape `AllExceptionsFilter` really emits — exactly
- * `{statusCode, error, message, requestId}`, with **no `code`**. Building them
- * any other way is how #2297's first attempt "passed": a fixture carrying
- * `code` proves a branch that can never fire in production.
+ * Fixtures are `{statusCode, error, message, requestId}` with **no `code`**:
+ * what `AllExceptionsFilter` emitted until #1020, and what the message path
+ * must still handle for installed builds. #2297's first attempt "passed" on a
+ * fixture carrying `code` while production sent none; the detector is keyed
+ * on the message until #2995 adds the code first.
  */
 function wireError(statusCode: number, message: string) {
   return {

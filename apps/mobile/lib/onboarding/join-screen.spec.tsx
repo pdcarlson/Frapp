@@ -355,7 +355,7 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("shows the checkbox when the server refuses a join for want of it", async () => {
     legalRequired = false;
-    // As served: `AllExceptionsFilter` sends no `code` (#1020).
+    // No `code`, as an API older than #1020 sends it: the message fallback.
     redeemMutateAsync.mockRejectedValueOnce({
       statusCode: 403,
       error: "FORBIDDEN",

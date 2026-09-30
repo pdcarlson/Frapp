@@ -76,7 +76,7 @@ describe("joinErrorCopy", () => {
 
 describe("the Terms refusal (#2302)", () => {
   it("asks for the checkbox when the server refused for want of it", () => {
-    // As served: `AllExceptionsFilter` sends no `code` (#1020).
+    // No `code`, as an API older than #1020 sends it: the message fallback.
     const refusal = {
       statusCode: 403,
       error: "FORBIDDEN",

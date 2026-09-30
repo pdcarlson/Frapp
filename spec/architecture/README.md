@@ -371,6 +371,22 @@ Health-check response bodies remain owned by
 
 **Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Which seeded roles carry those permissions: the seeded role matrix in [`behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle). Full query parameters, pagination, and invariants: [`behavior/points.md`](../behavior/points.md) and [`behavior/polls.md`](../behavior/polls.md).
 
+### Error responses
+
+Every error response has one body, written only by `AllExceptionsFilter` (`apps/api/src/interface/filters/all-exceptions.filter.ts`) and documented in `openapi.json` as each operation's `default` response, `ApiErrorResponseDto`. The generated SDK types it as the `error` of every call, exported from `@repo/api-sdk` as `ApiErrorBody`.
+
+| Key | Present | Value |
+| --- | --- | --- |
+| `statusCode` | always | The HTTP status. |
+| `error` | always | The status's `HttpStatus` name, such as `FORBIDDEN`. |
+| `message` | always | For people. A string, or one string per failed field when the validation pipe rejects a request. |
+| `requestId` | always | The request's `x-request-id`, as logged ([`observability.md` § Request Tracing](../behavior/observability.md#request-tracing)). |
+| `code` | when the refusal has one | A stable, machine-readable reason, such as `chapter.module.disabled`. |
+
+- **When `code` is present.** A throw opts in by giving the `HttpException` an object that carries a non-empty string `code`: `new ForbiddenException({ code, message })`. Otherwise the key is absent, not `null`, and the body is exactly the four other keys. A raw error that becomes a 500 never exposes a code of its own (a PostgREST SQLSTATE, a Node errno): that names an implementation detail, not a refusal (#1020).
+- **A code is public and permanent.** Once shipped it is never renamed, reused, or given a new meaning, because an installed mobile build keeps the codes it was built against. Codes are dotted and lowercase, and begin with the area that refuses: `chapter.subscription.write_locked`, `legal.acceptance_required`. `/health/ready`'s 503 carries `DEGRADED`, the one exception; no client reads it.
+- **Clients branch on `code`** where a refusal has one, read with `codeOf` from `@repo/api-sdk`, and on `statusCode` otherwise. `message` is copy, not a key. Some clients still match exact message text instead, which is [#2995](https://github.com/pdcarlson/Frapp/issues/2995); a message an installed build matches can't be reworded ([`product/modules.md`](../product/modules.md#module-disabling-behavior)).
+
 ---
 
 ## 11. Quality Standards

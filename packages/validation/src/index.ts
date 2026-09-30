@@ -40,10 +40,9 @@ export const LEGAL_ACCEPTANCE_LABEL =
  * Terms tries to join or create a chapter without the checkbox (#2302). It
  * throws both; `isTermsRequiredError` in `@repo/hooks` recognises either.
  *
- * The message matters as much as the code. `AllExceptionsFilter` sends no
- * `code` to clients (#1020), so until that contract changes the message is the
- * only thing a client can match, and it is shared from here so the server and
- * both apps can't drift apart on it.
+ * The message matters as much as the code. Clients read the code first, but
+ * an API older than #1020 sent none, so the message is the fallback, and it
+ * is shared from here so the server and both apps can't drift apart on it.
  */
 export const LEGAL_ACCEPTANCE_REQUIRED_CODE = "legal.acceptance_required";
 export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
@@ -464,14 +463,14 @@ export function moduleDisabledMessage(key: string): string {
  * Recognise the module gate's refusal from the server's `message`, returning
  * the module it names, or `null` for any other message.
  *
- * **Why the message and not `codeOf`.** The guard also throws
- * `code: 'chapter.module.disabled'`, but `AllExceptionsFilter` serialises only
- * `{statusCode, error, message, requestId}`, so `codeOf` is `null` on every
- * real response (#1020). A branch keyed on the code typechecks, passes any
- * test that hand-builds a body with `code`, and never fires in production:
- * that was mobile study's module branch until #2393. Nor is a bare 403 a
- * substitute, because the same routes 403 for permission denials that must
- * keep their own copy.
+ * **Why the message.** The guard also throws `code: 'chapter.module.disabled'`,
+ * but until #1020 `AllExceptionsFilter` dropped it, so a branch keyed on the
+ * code typechecked, passed any test that hand-built a body with `code`, and
+ * never fired in production: that was mobile study's module branch until
+ * #2393. The code reaches clients now, but only this message names the
+ * module, and installed builds match it; checking the code first is #2995.
+ * Nor is a bare 403 a substitute, because the same routes 403 for permission
+ * denials that must keep their own copy.
  *
  * The match is exact apart from the key: the whole fixed prefix and suffix
  * must be present, and the key between them must be non-empty and unquoted.

@@ -165,18 +165,18 @@ const SUBSCRIPTION_REFUSALS: readonly SubscriptionRefusal[] = [
 /**
  * Recognise a subscription refusal from the server's `message` string.
  *
- * **Why prose and not `codeOf`.** The guard throws
- * `ForbiddenException({ code, message })`, but `AllExceptionsFilter` serialises
- * exactly `{statusCode, error, message, requestId}` — `code` is dropped on
- * every response, so `codeOf` is always `null` in production (#1020, open; its
- * option 2 is to accept message mapping as the contract, which is what this
- * is). A bare `statusOf(error) === 403` is not a substitute either: these same
- * write routes 403 for `PermissionsGuard` denials and the `chapter.context.*`
- * family, which are transient and must keep their retry. The message is the
- * only discriminator that actually reaches a client.
+ * **Why prose.** The guard throws `ForbiddenException({ code, message })`,
+ * but until #1020 `AllExceptionsFilter` dropped `code`, so `codeOf` was `null`
+ * for every real response and the message was the only discriminator that
+ * reached a client. A bare `statusOf(error) === 403` is not a substitute
+ * either: these same write routes 403 for `PermissionsGuard` denials and the
+ * `chapter.context.*` family, which are transient and must keep their retry.
  *
- * **Do not "improve" this back to `codeOf`.** It will typecheck, return `null`
- * for every real response, and silently restore the bug this closes.
+ * **Never replace this with `codeOf` alone.** The code reaches clients since
+ * #1020, and reading it first is #2995, but a build can still meet an API
+ * that predates it and sends no code; a code-only branch would read that
+ * refusal as an ordinary failure and restore the bug this closes. Keep the
+ * message match as the fallback.
  *
  * Matching is exact against the four `reason` strings already defined above —
  * never a prefix. `BillingService` throws a 400 that also opens with

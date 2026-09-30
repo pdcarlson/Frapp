@@ -172,9 +172,10 @@ export class BillingService {
     // to orphan, and the customer reuse below keeps a returning chapter on one
     // continuous customer instead of forking a second billing history.
     //
-    // These refusals ride in `message` rather than a structured `code`, because
-    // AllExceptionsFilter drops `code` from every response today (#1020). Both
-    // strings are stable and distinct so a client can map them to the portal.
+    // These refusals ride in `message` alone: they were written while the
+    // filter dropped `code` (#1020), and giving them codes is weighed in #2995.
+    // Both strings are stable and distinct so a client can map them to the
+    // portal.
     if (chapter.subscription_status === 'active') {
       throw new BadRequestException(
         'Chapter already has an active subscription. Manage it from the billing portal.',

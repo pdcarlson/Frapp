@@ -110,10 +110,9 @@ export function useAcceptLegalTerms() {
  * True when the server refused a join or a chapter creation because the caller
  * hasn't accepted the current Terms (#2302).
  *
- * The API throws `code: legal.acceptance_required`, but `AllExceptionsFilter`
- * sends clients only `statusCode`, `error`, `message` and `requestId` (#1020),
- * so the code never arrives today. The shared message is what identifies it; the
- * code is checked first so this keeps working once #1020 exposes codes.
+ * The code `legal.acceptance_required` is checked first; it reaches clients
+ * since #1020. The shared message is the fallback, for an API that predates
+ * that and sends no code.
  */
 export function isTermsRequiredError(error: unknown): boolean {
   if (codeOf(error) === LEGAL_ACCEPTANCE_REQUIRED_CODE) return true;
