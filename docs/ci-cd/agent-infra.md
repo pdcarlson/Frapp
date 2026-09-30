@@ -339,26 +339,41 @@ they take the default `release:patch` bump.
 
 ### Dependabot resolves with the root `packageManager` npm
 
-Dependabot brings no npm of its own. Its job runs `corepack npm@<pin> install <pkg>@<version>
---workspace=<ws> --force --ignore-scripts --package-lock-only`, with `<pin>` taken from the root
-`package.json`'s `packageManager` field. The Dependabot Updates run that opened #2930 logs `corepack
+With the root `package.json`'s `packageManager` field set, Dependabot re-resolves the lockfile with
+that npm. Its job runs `corepack npm@<pin> install <pkg>@<version> --workspace=<ws> --force
+--ignore-scripts --package-lock-only`: the Dependabot Updates run that opened #2930 logs `corepack
 npm@11.6.2 install ws@8.22.0 --workspace=apps/api …` (2026-09-30). So the pin decides whether
-Dependabot's lockfiles install. No CI job or Dockerfile reads it: `npm ci` in CI uses whatever npm
-`setup-node`'s Node 24 bundles.
+Dependabot's lockfiles install. Nothing in CI or the Dockerfiles runs the pinned npm: `npm ci` uses
+whatever npm `setup-node`'s Node 24 bundles. Turbo does read the field, but only to detect npm. CI's
+package build fails if the field is missing or malformed, and turbo ignores the version.
 
-At `npm@11.6.2` it broke #2930. The re-resolve dropped `node_modules/@emnapi/core` and
+At `npm@11.6.2` the pin broke #2930. The re-resolve dropped `node_modules/@emnapi/core` and
 `@emnapi/runtime`, which the optional `@img/sharp-wasm32` and `@unrs/resolver-binding-wasm32-wasi`
 need. It also stripped every `libc` field and nested `@types/node` under four workspaces, so `npm ci`
 failed with `Missing: @emnapi/runtime@1.11.3 from lock file`. Replaying Dependabot's three commands
 from the same base commit under 11.6.2 reproduces its lockfile byte for byte. Under 11.19.0 the diff
-is the three bumps alone (2026-09-30). `@dependabot recreate` can't repair such a lockfile, because
-it re-runs the same npm.
+is the three bumps alone (2026-09-30). `@dependabot recreate` and `@dependabot rebase` re-resolve
+with the pin on `main`, so neither could repair that lockfile while `main` pinned 11.6.2. Once the
+pin moves, either one regenerates an older Dependabot PR's lockfile with the new npm.
 
-**Keep the pin at the npm that CI's Node bundles**, so Dependabot, CI and a sandbox re-resolve with
-one npm. With Node 24.21.0 that's 11.19.0, as `setup-node`'s "Environment details" group prints.
+**Keep the pin at the npm that CI's Node bundles**, so Dependabot resolves with the npm CI installs
+with. On 2026-09-30 that was npm 11.19.0 with Node 24.21.0 (the "Environment details" group of
+`setup-node` in CI run 36733233631). The pin is fixed and CI's Node floats, so the two drift apart
+whenever the runner's Node 24 moves to a newer npm, and nothing flags it.
+`scripts/ci/__tests__/package-manager-pin.test.mjs` fails only a pin that isn't an exact `npm@x.y.z`
+or is below 11.19.0.
+
 Before moving the pin, replay a bump from `main` with `npx npm@<candidate> install <pkg>@<version>
 --workspace=<ws> --force --ignore-scripts --package-lock-only`. The lockfile diff must be that bump
-alone: every `@emnapi/*` entry and `libc` field still present, and no new nested copy (#2723).
+alone: every `@emnapi/*` entry and `libc` field still present, and no new nested copy (#2723). The
+replay checks the lockfile's integrity, not that it matches Dependabot's output. From npm 11.10,
+Dependabot probably also passes `--min-release-age` for its cooldown: #2930's run logged that 11.6.2
+couldn't take the flag, and it filtered out recently published versions under a cooldown
+`.github/dependabot.yml` doesn't set (2026-09-30).
+
+The pin reaches Dependabot only. A hand repair runs whatever npm the local Node bundles, which is why
+the Prevention list under [`security-fixes.md` § npm audit triage](../security/security-fixes.md#npm-audit-triage-issue-245)
+says to re-resolve with `npx npm@<pin>`.
 
 ### A grouped bump of a peer-depended package can land a second copy, not an upgrade
 
