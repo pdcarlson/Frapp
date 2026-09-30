@@ -639,14 +639,48 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
 
     // The photo: HOLDING and ABOUT_REVIEWER are open. The clip: PENDING and
     // LATE are resolved and not yet released, so they still hold it (a
-    // removal's claim in flight looks exactly like them). RELEASED holds
-    // nothing any more, EMPTY never did, and B's twins are another chapter's.
+    // removal's claim in flight looks exactly like them), since the later of
+    // the two resolved. RELEASED holds nothing any more, EMPTY never did, and
+    // B's twins are another chapter's.
     expect(held).toEqual([
-      { bucket: 'chat', storage_path: photo.storage_path, heldOpen: true },
+      {
+        bucket: 'chat',
+        storage_path: photo.storage_path,
+        heldOpen: true,
+        pendingSince: null,
+      },
       {
         bucket: 'chat-archive',
         storage_path: clip.storage_path,
         heldOpen: false,
+        pendingSince: '2026-02-02T05:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('findHeldObjects says an object an open report holds is held open, whatever resolved report also holds it', async () => {
+    const both = createTenantHarness({
+      tables: {
+        chat_message_reports: [
+          [HOLDING, { reported_attachments: [clip] }],
+          [PENDING, resolved('2026-02-02T01:00:00.000Z')],
+        ].flatMap(([id, overrides]) => [
+          inA(row({ id, ...(overrides as object) })),
+          inB(row({ id: twin(id as string), ...(overrides as object) })),
+        ]),
+      },
+    });
+
+    await expect(
+      new SupabaseChatMessageReportRepository(both.client).findHeldObjects(
+        CHAPTER_A,
+      ),
+    ).resolves.toEqual([
+      {
+        bucket: 'chat-archive',
+        storage_path: clip.storage_path,
+        heldOpen: true,
+        pendingSince: '2026-02-02T01:00:00.000Z',
       },
     ]);
   });
@@ -659,7 +693,12 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
     ]);
 
     expect(held).toEqual([
-      { bucket: 'chat', storage_path: photo.storage_path, heldOpen: true },
+      {
+        bucket: 'chat',
+        storage_path: photo.storage_path,
+        heldOpen: true,
+        pendingSince: null,
+      },
     ]);
   });
 
@@ -699,22 +738,29 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
     await expect(repo.findPendingRelease(CHAPTER_A, [])).resolves.toEqual([]);
   });
 
-  it('listPendingRelease reads every chapter, oldest first, up to the cutoff and the limit', async () => {
+  it('listPendingRelease reads every chapter in id order, after the cursor, up to the cutoff and the limit', async () => {
     // Cross-chapter by design: the hourly sweep serves the whole database.
     const beforeLate = await repo.listPendingRelease(
       '2026-02-02T04:00:00.000Z',
       10,
     );
-    expect(beforeLate.map(({ id }) => id).sort()).toEqual(
-      [PENDING, PENDING_B].sort(),
-    );
+    expect(beforeLate.map(({ id }) => id)).toEqual([PENDING, PENDING_B]);
 
-    const oldestOne = await repo.listPendingRelease(
+    const firstPage = await repo.listPendingRelease(
       '2026-02-03T00:00:00.000Z',
       1,
     );
-    expect(oldestOne).toHaveLength(1);
-    expect(oldestOne[0].reported_attachments).toEqual([clip]);
+    expect(firstPage.map(({ id }) => id)).toEqual([PENDING]);
+    expect(firstPage[0].reported_attachments).toEqual([clip]);
+
+    // The next page starts after the last id read, not at an offset, so a
+    // report the sweep stamped on the way does not shift one past it.
+    const nextPage = await repo.listPendingRelease(
+      '2026-02-03T00:00:00.000Z',
+      10,
+      PENDING,
+    );
+    expect(nextPage.map(({ id }) => id)).toEqual([LATE, PENDING_B, twin(LATE)]);
   });
 
   it('markEvidenceReleased stamps a resolved report in the chapter, and never an open one', async () => {
@@ -748,45 +794,93 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
 /**
  * The hold read across more than one page (#2481). Every holding report is on
  * the far side of `HELD_OBJECTS_PAGE_SIZE` but one, so a read that stopped
- * after its first page, or on the first page that came back short, would miss
- * the last holder and a purge would delete what it holds.
+ * after its first page would miss the last holder, and a purge would delete
+ * what it holds. With PostgREST's `db-max-rows` below the page size every page
+ * comes back short, so a read that stopped on a short page fails too; and a
+ * report whose release lands between two page reads must not shift a holder
+ * out of the next page, as an offset would.
  */
 describe('SupabaseChatMessageReportRepository — findHeldObjects across pages (#2481)', () => {
-  it('reads every page, so the holder past the first page still holds', async () => {
-    const count = HELD_OBJECTS_PAGE_SIZE + 1;
-    const id = (prefix: string, n: number) =>
-      `${prefix}000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-    const holding = (n: number) => ({
-      ...openRow(),
-      reported_attachments: [
-        {
-          bucket: 'chat',
-          storage_path: `chapters/a/chat/c/u/${n}.png`,
-          filename: `${n}.png`,
-          content_type: 'image/png',
-          byte_size: 1,
-        },
-      ],
-      evidence_released_at: null,
-    });
-    const harness = createTenantHarness({
+  const count = HELD_OBJECTS_PAGE_SIZE + 1;
+  const id = (prefix: string, n: number) =>
+    `${prefix}000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const holding = (n: number) => ({
+    ...openRow(),
+    reported_attachments: [
+      {
+        bucket: 'chat',
+        storage_path: `chapters/a/chat/c/u/${n}.png`,
+        filename: `${n}.png`,
+        content_type: 'image/png',
+        byte_size: 1,
+      },
+    ],
+    evidence_released_at: null,
+  });
+  const seed = (maxRows?: number) =>
+    createTenantHarness({
       tables: {
         chat_message_reports: Array.from({ length: count }, (_, n) => [
           inA({ id: id('0a', n), ...holding(n) }),
           inB({ id: id('0b', n), ...holding(n) }),
         ]).flat(),
       },
+      maxRows,
+    });
+
+  it.each([
+    ['a full first page', undefined],
+    ['pages capped short by db-max-rows', 200],
+  ])(
+    'reads every page, so the holder past the first page still holds (%s)',
+    async (_case, maxRows) => {
+      const harness = seed(maxRows);
+      const repo = new SupabaseChatMessageReportRepository(harness.client);
+
+      const held = await repo.findHeldObjects(CHAPTER_A);
+
+      expect(held).toHaveLength(count);
+      expect(held.at(-1)).toEqual({
+        bucket: 'chat',
+        storage_path: `chapters/a/chat/c/u/${count - 1}.png`,
+        heldOpen: true,
+        pendingSince: null,
+      });
+    },
+  );
+
+  it('misses no holder when a report on an earlier page is released between page reads', async () => {
+    const harness = seed(200);
+    const from = harness.client.from as unknown as jest.Mock;
+    const build = from.getMockImplementation()!;
+    let reads = 0;
+    // The second page's read starts after the first page's returned: stamp a
+    // report the first page already read, as a concurrent release would.
+    from.mockImplementation((table: string) => {
+      reads += 1;
+      if (reads === 2) {
+        // The harness applies a write when it is awaited, synchronously.
+        void build('chat_message_reports')
+          .update({ evidence_released_at: '2026-02-02T00:00:00.000Z' })
+          .eq('chapter_id', CHAPTER_A)
+          .eq('id', id('0a', 0))
+          .then(() => undefined);
+      }
+      return build(table);
     });
     const repo = new SupabaseChatMessageReportRepository(harness.client);
 
     const held = await repo.findHeldObjects(CHAPTER_A);
 
-    expect(held).toHaveLength(count);
-    expect(held.at(-1)).toEqual({
-      bucket: 'chat',
-      storage_path: `chapters/a/chat/c/u/${count - 1}.png`,
-      heldOpen: true,
-    });
+    expect(
+      harness.rows('chat_message_reports').find((r) => r.id === id('0a', 0))
+        ?.evidence_released_at,
+    ).not.toBeNull();
+    // The first page read report 0 before its release; every other report
+    // still holds, including the one an offset would have stepped over.
+    expect(held.map(({ storage_path }) => storage_path)).toEqual(
+      Array.from({ length: count }, (_, n) => `chapters/a/chat/c/u/${n}.png`),
+    );
   });
 });
 

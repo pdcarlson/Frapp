@@ -163,7 +163,7 @@ export class ChatReportDto {
   @ApiProperty({
     type: [ChatReportAttachmentSummaryDto],
     description:
-      "The message's attachments when the report was filed. Until the report is resolved no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept.",
+      "The message's attachments when the report was filed. Until the report is resolved and its files released, no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept.",
   })
   reported_attachments: ChatReportAttachmentSummaryDto[];
 }

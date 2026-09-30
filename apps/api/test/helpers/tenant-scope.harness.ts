@@ -181,6 +181,13 @@ export interface TenantHarnessOptions {
    * column; without it the row has no such column and no filter matches it.
    */
   columnDefaults?: Record<string, Row>;
+  /**
+   * PostgREST's `db-max-rows`: a read returns at most this many rows, whatever
+   * `.limit()` asked for. For a spec that pages a read: with it set below the
+   * page size, every page comes back short, so a loop that stops on the first
+   * short page instead of the first empty one misses rows and fails.
+   */
+  maxRows?: number;
   /** Canned RPC responses keyed by function name. */
   rpc?: Record<string, { data?: unknown; error?: unknown }>;
   /**
@@ -627,6 +634,9 @@ export function createTenantHarness(
         );
       } else {
         matched = matching();
+        if (options.maxRows !== undefined) {
+          matched = matched.slice(0, options.maxRows);
+        }
       }
 
       ops.push({

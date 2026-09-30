@@ -2506,7 +2506,9 @@ The newer API still running in the minutes before the revert deploys keeps worki
 **Clean up the files first, because the scrub loses the list.** The reverted API purges on delete without asking about reports, and never releases, so an object a report still held when the revert shipped would stay in its bucket, reachable by no route. Before merging the revert, list what unreleased reports still hold for a message that is gone and that no undeleted message still shows (a claimed path or a deduplicated import file can be shared, and deleting it would break the live message):
 
 ```sql
-select distinct r.status, a->>'bucket' as bucket, a->>'storage_path' as storage_path
+select a->>'bucket' as bucket,
+       a->>'storage_path' as storage_path,
+       bool_or(r.status = 'open') as held_by_open_report
 from public.chat_message_reports r
 cross join lateral jsonb_array_elements(r.reported_attachments) a
 left join public.chat_messages m on m.id = r.message_id
@@ -2520,10 +2522,11 @@ where r.evidence_released_at is null
     where ca.bucket = a->>'bucket'
       and ca.storage_path = a->>'storage_path'
       and not cm.is_deleted
-  );
+  )
+group by 1, 2;
 ```
 
-Delete the rows of resolved reports. A row whose report is still `open` is evidence an officer hasn't reviewed, and the reverted queue can't show it: resolve those reports first, or keep the files and accept that they stay until someone deletes them by hand.
+One row per object. Delete the objects whose `held_by_open_report` is false. An object an `open` report holds is evidence an officer hasn't reviewed, and the reverted queue can't show it, even when a resolved report holds it too: resolve those reports first and run the query again, or keep the files and accept that they stay until someone deletes them by hand.
 
 To remove the columns, drop them in a later forward migration once the reverted API is live, not by hand. The indexes go with their columns.
 

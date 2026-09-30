@@ -2777,19 +2777,33 @@ describe('ChatService', () => {
     });
 
     describe('releaseReportEvidence', () => {
-      it('deletes what no undeleted message and no other report still holds', async () => {
-        const released = await service.releaseReportEvidence(
+      const WINDOW_START = new Date('2026-09-30T11:45:00.000Z');
+      const RECENT = '2026-09-30T11:55:00.000Z';
+      const STALE = '2026-09-30T09:00:00.000Z';
+      const report = (id: string, ...objects: (typeof held)[]) => ({
+        id,
+        reported_attachments: objects,
+      });
+      const holder = (
+        object: typeof held,
+        heldOpen: boolean,
+        pendingSince: string | null,
+      ) => ({
+        bucket: object.bucket,
+        storage_path: object.storage_path,
+        heldOpen,
+        pendingSince,
+      });
+
+      it('deletes what no undeleted message and no other report still holds, and finishes every report', async () => {
+        const finished = await service.releaseReportEvidence(
           'ch-1',
-          [
-            held,
-            archived,
-            // The same object twice is released once.
-            held,
-          ],
-          ['report-1'],
+          // The same object named by two reports is weighed and deleted once.
+          [report('report-1', held, archived), report('report-2', held)],
+          WINDOW_START,
         );
 
-        expect(released).toBe(true);
+        expect(finished).toEqual(new Set(['report-1', 'report-2']));
         // No message is excluded: the reported message itself counts while
         // it is live.
         expect(mockAttachmentRepo.findSharedObjects).toHaveBeenCalledWith(
@@ -2799,9 +2813,10 @@ describe('ChatService', () => {
           ],
           null,
         );
-        // The reports being released do not hold against themselves.
+        // The reports being released don't hold against each other.
         expect(mockReportRepo.findHeldObjects).toHaveBeenCalledWith('ch-1', [
           'report-1',
+          'report-2',
         ]);
         expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
           held.storage_path,
@@ -2812,25 +2827,33 @@ describe('ChatService', () => {
         );
       });
 
-      it('deletes nothing a live message still shows (a report dismissed over a live message)', async () => {
+      it('deletes nothing a live message still shows (a report dismissed over a live message), and finishes', async () => {
         mockAttachmentRepo.findSharedObjects.mockResolvedValue([
           { bucket: 'chat', storage_path: held.storage_path },
         ]);
 
         await expect(
-          service.releaseReportEvidence('ch-1', [held], ['report-1']),
-        ).resolves.toBe(true);
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set(['report-1']));
         expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
       });
 
-      it('keeps what an open report still holds, and still finishes: that report releases it', async () => {
+      it('keeps what an open report holds, and finishes: that report releases it', async () => {
         mockReportRepo.findHeldObjects.mockResolvedValue([
-          { bucket: 'chat', storage_path: held.storage_path, heldOpen: true },
+          holder(held, true, null),
         ]);
 
         await expect(
-          service.releaseReportEvidence('ch-1', [held, archived], ['report-1']),
-        ).resolves.toBe(true);
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held, archived)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set(['report-1']));
         expect(mockStorageProvider.deleteFiles).toHaveBeenCalledTimes(1);
         expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
           'chat-archive',
@@ -2838,22 +2861,43 @@ describe('ChatService', () => {
         );
       });
 
-      it('keeps what only a resolved, unreleased report holds, and does not finish', async () => {
-        // A removal's claim in flight, or a release that failed. That report
-        // may still reopen, or may be waiting on this one, so this report
-        // stays unstamped and the sweep takes both up together.
+      it('waits on a report that resolved inside the claim window, and only the reports that share it wait', async () => {
+        // That may be a removal's claim still in flight, which can reopen.
         mockReportRepo.findHeldObjects.mockResolvedValue([
-          { bucket: 'chat', storage_path: held.storage_path, heldOpen: false },
+          holder(held, false, RECENT),
         ]);
 
-        await expect(
-          service.releaseReportEvidence('ch-1', [held, archived], ['report-1']),
-        ).resolves.toBe(false);
+        const finished = await service.releaseReportEvidence(
+          'ch-1',
+          [report('report-1', held), report('report-2', archived)],
+          WINDOW_START,
+        );
+
+        expect(finished).toEqual(new Set(['report-2']));
         expect(mockStorageProvider.deleteFiles).toHaveBeenCalledTimes(1);
         expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
           'chat-archive',
           [archived.storage_path],
         );
+      });
+
+      it('does not wait on a report that resolved before the window: it will never reopen', async () => {
+        // A release that failed long ago. Waiting on it could stall the
+        // sweep for good; it holds nothing back.
+        mockReportRepo.findHeldObjects.mockResolvedValue([
+          holder(held, false, STALE),
+        ]);
+
+        await expect(
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set(['report-1']));
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          held.storage_path,
+        ]);
       });
 
       it('finishes when a live message is what keeps an object, whoever else holds it', async () => {
@@ -2861,46 +2905,62 @@ describe('ChatService', () => {
           { bucket: 'chat', storage_path: held.storage_path },
         ]);
         mockReportRepo.findHeldObjects.mockResolvedValue([
-          { bucket: 'chat', storage_path: held.storage_path, heldOpen: false },
+          holder(held, false, RECENT),
         ]);
 
         await expect(
-          service.releaseReportEvidence('ch-1', [held], ['report-1']),
-        ).resolves.toBe(true);
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set(['report-1']));
         expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
       });
 
-      it('deletes nothing and reports unfinished when a check cannot be read', async () => {
+      it('deletes nothing and finishes nothing when a check cannot be read', async () => {
         mockReportRepo.findHeldObjects.mockRejectedValue(
           new Error('postgrest down'),
         );
 
         await expect(
-          service.releaseReportEvidence('ch-1', [held], ['report-1']),
-        ).resolves.toBe(false);
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set());
         expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
       });
 
-      it('reports unfinished when a bucket delete fails, after trying the others', async () => {
+      it('leaves only the reports with an object in a failed bucket unfinished', async () => {
         mockStorageProvider.deleteFiles.mockImplementation(
           async (bucket: string) => {
             if (bucket === 'chat') throw new Error('chat bucket down');
           },
         );
 
-        await expect(
-          service.releaseReportEvidence('ch-1', [held, archived], ['report-1']),
-        ).resolves.toBe(false);
+        const finished = await service.releaseReportEvidence(
+          'ch-1',
+          [report('report-1', held), report('report-2', archived)],
+          WINDOW_START,
+        );
+
+        expect(finished).toEqual(new Set(['report-2']));
         expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith(
           'chat-archive',
           [archived.storage_path],
         );
       });
 
-      it('touches nothing for a report that held nothing', async () => {
+      it('finishes a report that held nothing without touching anything', async () => {
         await expect(
-          service.releaseReportEvidence('ch-1', [], ['report-1']),
-        ).resolves.toBe(true);
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1')],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set(['report-1']));
         expect(mockAttachmentRepo.findSharedObjects).not.toHaveBeenCalled();
         expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
       });
@@ -3214,12 +3274,18 @@ describe('ChatService', () => {
         };
         mockAttachmentRepo.findByMessage.mockResolvedValue([uploaded, photo]);
         mockReportRepo.findHeldObjects.mockResolvedValue([
-          { bucket: 'chat', storage_path: photo.storage_path, heldOpen: true },
+          {
+            bucket: 'chat',
+            storage_path: photo.storage_path,
+            heldOpen: true,
+            pendingSince: null,
+          },
           // A path the message never had: ignored.
           {
             bucket: 'chat',
             storage_path: 'chapters/ch-1/chat/other.png',
             heldOpen: true,
+            pendingSince: null,
           },
         ]);
 
@@ -3243,6 +3309,7 @@ describe('ChatService', () => {
             bucket: 'chat',
             storage_path: uploaded.storage_path,
             heldOpen: false,
+            pendingSince: '2026-09-30T11:59:00.000Z',
           },
         ]);
 

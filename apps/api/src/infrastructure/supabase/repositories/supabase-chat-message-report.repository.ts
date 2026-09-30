@@ -326,7 +326,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     for (;;) {
       let page = this.supabase
         .from('chat_message_reports')
-        .select('id, status, reported_attachments')
+        .select('id, status, resolved_at, reported_attachments')
         .eq('chapter_id', chapterId)
         .is('evidence_released_at', null)
         .filter('reported_attachments', 'neq', HOLDS_NOTHING);
@@ -340,13 +340,23 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       for (const row of rows) {
         if (excluded.has(row.id)) continue;
         const open = row.status === 'open';
+        const pendingSince = open ? null : row.resolved_at;
         for (const { bucket, storage_path } of readAttachments(
           row.reported_attachments,
         )) {
           const key = `${bucket} ${storage_path}`;
           const known = held.get(key);
-          if (known) known.heldOpen ||= open;
-          else held.set(key, { bucket, storage_path, heldOpen: open });
+          if (!known) {
+            held.set(key, {
+              bucket,
+              storage_path,
+              heldOpen: open,
+              pendingSince,
+            });
+            continue;
+          }
+          known.heldOpen ||= open;
+          known.pendingSince = latest(known.pendingSince, pendingSince);
         }
       }
       after = rows[rows.length - 1].id;
@@ -387,21 +397,25 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
   }
 
   /**
-   * Matches `idx_chat_message_reports_evidence_unreleased`'s predicate, so the
-   * read is as small as the backlog of releases that have not finished.
+   * Matches `idx_chat_message_reports_evidence_unreleased`, keyed and filtered
+   * the same way, so a page is as small as the backlog of releases that have
+   * not finished.
    */
   async listPendingRelease(
     resolvedBefore: string,
     limit: number,
+    afterId?: string,
   ): Promise<ReportEvidence[]> {
-    const { data, error } = await this.supabase
+    let page = this.supabase
       .from('chat_message_reports')
       .select(EVIDENCE_COLUMNS)
       .neq('status', 'open')
       .is('evidence_released_at', null)
       .filter('reported_attachments', 'neq', HOLDS_NOTHING)
-      .lt('resolved_at', resolvedBefore)
-      .order('resolved_at', { ascending: true })
+      .lt('resolved_at', resolvedBefore);
+    if (afterId !== undefined) page = page.gt('id', afterId);
+    const { data, error } = await page
+      .order('id', { ascending: true })
       .limit(limit);
     if (error) throw error;
     return (data ?? []).map(toEvidence);
@@ -448,6 +462,13 @@ function readAttachments(value: unknown): ReportedAttachment[] {
     });
   }
   return attachments;
+}
+
+/** The later of two timestamps, either of which may be missing. */
+function latest(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Date.parse(b) > Date.parse(a) ? b : a;
 }
 
 function toEvidence(

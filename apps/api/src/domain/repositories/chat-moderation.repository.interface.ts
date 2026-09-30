@@ -34,14 +34,17 @@ export interface StoredObjectRef {
   storage_path: string;
 }
 
-/** An object a report still holds, and whether an open report holds it. */
+/** An object reports still hold, and which kind of report holds it. */
 export interface HeldObject extends StoredObjectRef {
-  /**
-   * True when an `open` report is among its holders. False when only resolved
-   * reports whose release has not finished hold it, which a release treats
-   * as "not yet": it keeps the object and leaves its own report for the sweep.
-   */
+  /** True when an `open` report is among its holders. */
   heldOpen: boolean;
+  /**
+   * The latest `resolved_at` among its holders that are resolved but not yet
+   * released, or `null` when none is. A release uses it to tell a claim that
+   * may still be withdrawn back to `open` (resolved moments ago) from a
+   * release that failed long since, which will never reopen.
+   */
+  pendingSince: string | null;
 }
 
 /**
@@ -250,7 +253,8 @@ export interface IChatMessageReportRepository {
    * claim would let a delete landing in that window purge the evidence of a
    * report that then reopens. A resolved report whose release failed holds
    * too, until the sweep finishes it. Each object says whether an open report
-   * is among its holders (`heldOpen`).
+   * is among its holders (`heldOpen`), and when its latest resolved holder
+   * resolved (`pendingSince`).
    *
    * `excludingReportIds` are the reports a release is releasing: they must not
    * hold against themselves.
@@ -300,8 +304,11 @@ export interface IChatMessageReportRepository {
 
   /**
    * The sweep's read, across every chapter: up to `limit` reports resolved
-   * before `resolvedBefore` whose evidence is still to release, oldest first.
+   * before `resolvedBefore` whose evidence is still to release, in `id` order
+   * after `afterId` (a page cursor; omit it for the first page).
    *
+   * Paged by key rather than taking the oldest few, so a report whose release
+   * keeps failing cannot hold a window every tick and starve the rest.
    * `resolvedBefore` keeps the sweep off a removal still in flight, whose
    * claim may yet be withdrawn back to `open`
    * ({@link IChatMessageReportRepository.releaseClaim}).
@@ -309,6 +316,7 @@ export interface IChatMessageReportRepository {
   listPendingRelease(
     resolvedBefore: string,
     limit: number,
+    afterId?: string,
   ): Promise<ReportEvidence[]>;
 
   /**

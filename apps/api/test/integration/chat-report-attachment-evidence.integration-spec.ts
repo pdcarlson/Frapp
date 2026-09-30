@@ -205,7 +205,12 @@ describeIntegration('Reported attachments against live storage', () => {
       { filename: 'photo.png', content_type: 'image/png', byte_size: 8 },
     ]);
     expect(await reports.findHeldObjects(chapterId)).toEqual([
-      { bucket: BUCKET, storage_path: reportedPath, heldOpen: true },
+      {
+        bucket: BUCKET,
+        storage_path: reportedPath,
+        heldOpen: true,
+        pendingSince: null,
+      },
     ]);
 
     // The sender deletes it. The open report holds the object.
@@ -239,16 +244,26 @@ describeIntegration('Reported attachments against live storage', () => {
       officerId,
       resolvedAt,
     );
-    expect(await reports.findHeldObjects(chapterId)).toEqual([
-      { bucket: BUCKET, storage_path: reportedPath, heldOpen: false },
+    const held = await reports.findHeldObjects(chapterId);
+    expect(held).toEqual([
+      {
+        bucket: BUCKET,
+        storage_path: reportedPath,
+        heldOpen: false,
+        pendingSince: expect.any(String),
+      },
     ]);
+    // Postgres answers in its own timestamp format; the instant is the same.
+    expect(Date.parse(held[0].pendingSince ?? '')).toBe(Date.parse(resolvedAt));
     const [pending] = await reports.findPendingRelease(chapterId, [report.id]);
     expect(pending?.reported_attachments).toEqual(snapshot);
     await expect(
-      chat.releaseReportEvidence(chapterId, pending.reported_attachments, [
-        report.id,
-      ]),
-    ).resolves.toBe(true);
+      chat.releaseReportEvidence(
+        chapterId,
+        [pending],
+        new Date(Date.now() - 15 * 60 * 1000),
+      ),
+    ).resolves.toEqual(new Set([report.id]));
     await reports.markEvidenceReleased(report.id, chapterId, resolvedAt);
 
     expect(await storage.downloadFile(BUCKET, reportedPath)).toBeNull();

@@ -46,6 +46,7 @@ import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-modera
 import type {
   HeldObject,
   IChatMessageReportRepository,
+  ReportEvidence,
   StoredObjectRef,
 } from '#domain/repositories/chat-moderation.repository.interface';
 import type {
@@ -1481,14 +1482,14 @@ export class ChatService {
   }
 
   /**
-   * Delete chat objects, grouped per bucket, and say whether every bucket's
-   * delete succeeded. Failures are logged, never thrown: both callers are
+   * Delete chat objects, grouped per bucket, and answer the buckets whose
+   * delete failed. Failures are logged, never thrown: both callers are
    * best-effort, and a `chat` outage must not skip the `chat-archive` deletes.
    */
   private async deleteChatObjects(
     objects: readonly StoredObjectRef[],
     context: Record<string, unknown>,
-  ): Promise<boolean> {
+  ): Promise<Set<string>> {
     const byBucket = new Map<string, string[]>();
     for (const { bucket, storage_path } of objects) {
       const paths = byBucket.get(bucket) ?? [];
@@ -1496,14 +1497,14 @@ export class ChatService {
       byBucket.set(bucket, paths);
     }
 
-    let complete = true;
+    const failed = new Set<string>();
     for (const [bucket, paths] of byBucket) {
       try {
         await this.storageProvider.deleteFiles(bucket, paths);
       } catch (error) {
         // Per bucket, and naming the paths: an operator reconciling orphans by
         // hand needs to know which objects survived.
-        complete = false;
+        failed.add(bucket);
         this.logger.warn('Failed to purge chat attachment objects', {
           ...context,
           bucket,
@@ -1512,7 +1513,7 @@ export class ChatService {
         });
       }
     }
-    return complete;
+    return failed;
   }
 
   // ── Report evidence (#2481) ──────────────────────────────────────────
@@ -1548,71 +1549,99 @@ export class ChatService {
   }
 
   /**
-   * Release resolved reports' evidence (`releasingReportIds`, all in
-   * `chapterId`): delete each object they held unless
+   * Release resolved reports' evidence, all in `chapterId`, and answer which
+   * of them finished. Each object they held is
    *
-   * - an **undeleted message still references it** — the reported message
-   *   itself counts, so a report dismissed over a live message deletes nothing
-   *   (the message's own delete purges later) — or
-   * - **another report still holds it** (`findHeldObjects`, which leaves out
-   *   the reports being released).
+   * - **kept, and done with**, while an undeleted message still references it
+   *   (the reported message itself counts, so a report dismissed over a live
+   *   message deletes nothing; the message's own delete purges later) or an
+   *   **open** report holds it (that report releases it in its turn);
+   * - **kept, and waited on**, while a report that resolved after
+   *   `claimWindowStart` holds it: that may be a removal's claim still in
+   *   flight, which can be withdrawn back to `open`, so its evidence must not
+   *   go yet;
+   * - **deleted** otherwise, including when the only other holders resolved
+   *   before the window: a release that failed long ago will never reopen.
    *
-   * Answers whether the release finished, which is what lets the caller stamp
-   * the reports released. Not finished when a read or a delete failed, or when
-   * an object is held only by other reports that have resolved but not
-   * released yet (a removal's claim in flight, a release that failed): those
-   * may still reopen, or may be waiting on this one, so the object stays and
-   * so does this report's hold, for the hourly sweep to take up with theirs.
-   * An object an **open** report holds is that report's to release, so it
-   * does not keep this one from finishing.
+   * The reports being released never hold against each other. A report
+   * finished when each of its objects was kept-and-done-with or deleted from
+   * a bucket whose delete succeeded; one that waits or hit a failed bucket is
+   * left for the hourly sweep, and the others are not held back by it.
    *
-   * The reads fail closed, like the purge's: nothing is deleted on an answer
-   * that could not be had. Deleting an object that is already gone succeeds,
-   * so a release that runs twice is harmless.
+   * The reads fail closed, like the purge's: nothing is deleted, and nothing
+   * finishes, on an answer that could not be had. Deleting an object that is
+   * already gone succeeds, so a release that runs twice is harmless.
    */
   async releaseReportEvidence(
     chapterId: string,
-    attachments: readonly StoredObjectRef[],
-    releasingReportIds: readonly string[],
-  ): Promise<boolean> {
-    const objects = uniqueObjects(attachments);
-    if (objects.length === 0) return true;
+    reports: readonly Pick<ReportEvidence, 'id' | 'reported_attachments'>[],
+    claimWindowStart: Date,
+  ): Promise<Set<string>> {
+    const finished = new Set<string>();
+    const objects = uniqueObjects(
+      reports.flatMap(({ reported_attachments }) => reported_attachments),
+    );
 
-    let live: Set<string>;
-    let held: HeldObject[];
-    try {
-      live = objectKeys(
-        await this.attachmentRepo.findSharedObjects(objects, null),
-      );
-      held = await this.reportRepo.findHeldObjects(
-        chapterId,
-        releasingReportIds,
-      );
-    } catch (error) {
-      this.logger.warn('Could not check report evidence before releasing it', {
-        chapterId,
-        attachmentCount: objects.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
+    let live = new Set<string>();
+    let heldBy = new Map<string, HeldObject>();
+    if (objects.length > 0) {
+      try {
+        live = objectKeys(
+          await this.attachmentRepo.findSharedObjects(objects, null),
+        );
+        const held = await this.reportRepo.findHeldObjects(
+          chapterId,
+          reports.map(({ id }) => id),
+        );
+        heldBy = new Map(held.map((object) => [objectKey(object), object]));
+      } catch (error) {
+        this.logger.warn(
+          'Could not check report evidence before releasing it',
+          {
+            chapterId,
+            attachmentCount: objects.length,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        return finished;
+      }
     }
 
-    const heldBy = new Map(held.map((object) => [objectKey(object), object]));
-    const doomed = objects.filter((object) => {
-      const key = objectKey(object);
-      return !live.has(key) && !heldBy.has(key);
-    });
-    const waiting = objects.some((object) => {
+    const outcome = new Map<string, 'kept' | 'waiting' | 'doomed'>();
+    for (const object of objects) {
       const key = objectKey(object);
       const holder = heldBy.get(key);
-      return !live.has(key) && holder !== undefined && !holder.heldOpen;
+      if (live.has(key) || holder?.heldOpen) {
+        outcome.set(key, 'kept');
+      } else if (
+        holder?.pendingSince != null &&
+        Date.parse(holder.pendingSince) > claimWindowStart.getTime()
+      ) {
+        outcome.set(key, 'waiting');
+      } else {
+        outcome.set(key, 'doomed');
+      }
+    }
+
+    const doomed = objects.filter(
+      (object) => outcome.get(objectKey(object)) === 'doomed',
+    );
+    const failedBuckets = await this.deleteChatObjects(doomed, {
+      chapterId,
+      releasingReportIds: reports.map(({ id }) => id),
     });
 
-    const deleted = await this.deleteChatObjects(doomed, {
-      chapterId,
-      releasingReportIds,
-    });
-    return deleted && !waiting;
+    for (const report of reports) {
+      const done = report.reported_attachments.every((object) => {
+        const state = outcome.get(objectKey(object));
+        return (
+          state === 'kept' ||
+          (state === 'doomed' && !failedBuckets.has(object.bucket))
+        );
+      });
+      if (done) finished.add(report.id);
+    }
+    return finished;
   }
 
   /**

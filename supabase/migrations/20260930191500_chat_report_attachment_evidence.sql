@@ -1,4 +1,5 @@
--- A report keeps the reported message's attachments while it is open (#2481).
+-- A report keeps the reported message's attachments until it resolves and
+-- releases them (#2481).
 --
 -- A report snapshots what the member wrote (`reported_content`), so a sender
 -- who deletes their own message cannot blank the evidence. Attachments had no
@@ -20,11 +21,11 @@
 --                         message and no other report still holds. NULL on an
 --                         open report, and on a resolved one whose release has
 --                         not finished (a Storage outage, say), which is what
---                         the hourly sweep looks for. It is what ends a hold,
---                         not the status: a removal claims its report before
---                         deleting the message, and a claim withdrawn back to
---                         open (which clears the stamp) must not find its
---                         evidence purged in between.
+--                         the hourly sweep looks for. It is what ends a hold
+--                         against a purge, not the status: a removal claims
+--                         its report before deleting the message, and a claim
+--                         withdrawn back to open (which clears the stamp) must
+--                         not find its evidence purged in between.
 --
 -- A jsonb array on the report row rather than a child table, because the
 -- snapshot is written once, with the report, and read whole. Not null with a
@@ -36,7 +37,7 @@
 --   idx_chat_message_reports_evidence_held       the hold lookup ("which
 --     objects do this chapter's unreleased reports name"), paged by id.
 --   idx_chat_message_reports_evidence_unreleased the sweep's read: resolved,
---     unreleased reports, oldest resolution first.
+--     unreleased reports, paged by id.
 --
 -- No policy changes. The table keeps RLS on with zero policies
 -- (20260915210000): only the API's service-role client reads it.
@@ -53,7 +54,7 @@ create index if not exists idx_chat_message_reports_evidence_held
     and reported_attachments <> '[]'::jsonb;
 
 create index if not exists idx_chat_message_reports_evidence_unreleased
-  on public.chat_message_reports (resolved_at)
+  on public.chat_message_reports (id)
   where status <> 'open'
     and evidence_released_at is null
     and reported_attachments <> '[]'::jsonb;

@@ -61,22 +61,28 @@ export interface FileChatReportInput {
 export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
 
 /**
- * How long after a report resolves the sweep leaves its evidence alone
- * (#2481). A removal claims its report (`actioned`) before it deletes the
- * message, and withdraws the claim if the delete fails; a sweep landing in
- * that window would release a report that is about to be open again. The
- * resolution path releases the evidence itself, so the sweep only ever
- * handles a release that did not finish, and a quarter of an hour late costs
+ * How long a resolved report may still reopen (#2481). A removal claims its
+ * report (`actioned`) before it deletes the message, and withdraws the claim
+ * if the delete fails, all inside one request. So for this long after a
+ * report resolves, its evidence is treated as possibly still needed: the
+ * sweep leaves the report alone, and another report's release keeps what it
+ * holds and waits ({@link ChatService.releaseReportEvidence}). Past it, a
+ * resolved report can't reopen, and its unfinished release holds nothing
+ * back. The resolution path releases the evidence itself, so this only ever
+ * delays a release that did not finish, and a quarter of an hour late costs
  * nothing.
  */
-export const EVIDENCE_SWEEP_GRACE_MS = 15 * 60 * 1000;
+export const EVIDENCE_CLAIM_WINDOW_MS = 15 * 60 * 1000;
+
+/** Reports per page of the sweep's read. */
+export const EVIDENCE_SWEEP_BATCH = 100;
 
 /**
- * Reports one sweep tick releases at most. The backlog is releases that
- * failed (a Storage outage at resolve time), so it is normally empty; the cap
- * keeps one tick bounded after a long outage.
+ * Pages one sweep tick reads at most. The backlog is releases that failed (a
+ * Storage outage at resolve time), so it is normally empty; the cap keeps one
+ * tick bounded after a long outage, and the next tick carries on.
  */
-export const EVIDENCE_SWEEP_BATCH = 100;
+export const EVIDENCE_SWEEP_MAX_PAGES = 10;
 
 /**
  * What `POST /v1/chat/reports/{id}/remove-message` answers with: the report as
@@ -828,40 +834,51 @@ export class ChatReportService {
   /**
    * Release the reports whose evidence did not release when they resolved
    * (#2481): a Storage outage, a failed read, a process that died between the
-   * resolution and the release, or an object another resolved report was
-   * still holding. Hourly, from `ScheduledJobsService`.
+   * resolution and the release, or an object a report that had just resolved
+   * was still holding. Hourly, from `ScheduledJobsService`.
    *
-   * Takes reports resolved more than {@link EVIDENCE_SWEEP_GRACE_MS} ago, at
-   * most {@link EVIDENCE_SWEEP_BATCH} a tick, oldest first, and releases them
-   * a chapter at a time ({@link releaseBatch}), so reports that were waiting
-   * on each other release together. Safe on every replica at once: a release
-   * deletes only objects nothing holds, deleting a gone object succeeds, and
-   * the stamp is idempotent. One chapter's failure is logged and does not
-   * stop the rest. Answers how many reports it released.
+   * Takes reports resolved more than {@link EVIDENCE_CLAIM_WINDOW_MS} ago, a
+   * page at a time in `id` order, up to {@link EVIDENCE_SWEEP_MAX_PAGES}
+   * pages a tick, and releases each page a chapter at a time
+   * ({@link releaseBatch}). By key rather than oldest first, so a report
+   * whose release keeps failing can't take up the window every tick and starve
+   * the rest. Safe on every replica at once: a release deletes only objects
+   * nothing holds, deleting a gone object succeeds, and the stamp is
+   * idempotent. One chapter's failure is logged and does not stop the rest.
+   * Answers how many reports it released.
    */
   async sweepPendingEvidenceReleases(now: Date): Promise<number> {
-    const pending = await this.reportRepo.listPendingRelease(
-      new Date(now.getTime() - EVIDENCE_SWEEP_GRACE_MS).toISOString(),
-      EVIDENCE_SWEEP_BATCH,
-    );
-    const byChapter = new Map<string, ReportEvidence[]>();
-    for (const report of pending) {
-      const reports = byChapter.get(report.chapter_id) ?? [];
-      reports.push(report);
-      byChapter.set(report.chapter_id, reports);
-    }
-
+    const resolvedBefore = new Date(
+      now.getTime() - EVIDENCE_CLAIM_WINDOW_MS,
+    ).toISOString();
     let released = 0;
-    for (const [chapterId, reports] of byChapter) {
-      try {
-        released += await this.releaseBatch(chapterId, reports);
-      } catch (error) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `Could not release the evidence of chat reports ${reports.map(({ id }) => id).join(', ')}; the next sweep retries`,
-          error,
-        );
+    let after: string | undefined;
+    for (let page = 0; page < EVIDENCE_SWEEP_MAX_PAGES; page++) {
+      const pending = await this.reportRepo.listPendingRelease(
+        resolvedBefore,
+        EVIDENCE_SWEEP_BATCH,
+        after,
+      );
+      if (pending.length === 0) break;
+      after = pending[pending.length - 1].id;
+
+      const byChapter = new Map<string, ReportEvidence[]>();
+      for (const report of pending) {
+        const reports = byChapter.get(report.chapter_id) ?? [];
+        reports.push(report);
+        byChapter.set(report.chapter_id, reports);
+      }
+      for (const [chapterId, reports] of byChapter) {
+        try {
+          released += await this.releaseBatch(chapterId, reports, now);
+        } catch (error) {
+          logThrowable(
+            this.logger,
+            'warn',
+            `Could not release the evidence of chat reports ${reports.map(({ id }) => id).join(', ')}; the next sweep retries`,
+            error,
+          );
+        }
       }
     }
     return released;
@@ -883,7 +900,9 @@ export class ChatReportService {
         chapterId,
         reportIds,
       );
-      if (pending.length > 0) await this.releaseBatch(chapterId, pending);
+      if (pending.length > 0) {
+        await this.releaseBatch(chapterId, pending, new Date());
+      }
     } catch (error) {
       logThrowable(
         this.logger,
@@ -896,30 +915,34 @@ export class ChatReportService {
 
   /**
    * Delete what one chapter's resolved reports held and nothing still needs,
-   * in one pass: the holds are read once, and an object several of them name
-   * (the sibling reports a removal closes) is weighed and deleted once. None of
-   * them holds against the others. Stamped only when the release finished,
-   * so an unfinished one is the sweep's to retry. Answers how many it stamped.
+   * in one pass: the holds are read once, an object several of them name (the
+   * sibling reports a removal closes) is weighed and deleted once, and none of
+   * them holds against the others. Each report is stamped on its own outcome,
+   * so one that must wait, or whose bucket failed, leaves the others released.
+   * Answers how many it stamped.
    */
   private async releaseBatch(
     chapterId: string,
     reports: readonly ReportEvidence[],
+    now: Date,
   ): Promise<number> {
     const finished = await this.chatService.releaseReportEvidence(
       chapterId,
-      reports.flatMap(({ reported_attachments }) => reported_attachments),
-      reports.map(({ id }) => id),
+      reports,
+      new Date(now.getTime() - EVIDENCE_CLAIM_WINDOW_MS),
     );
-    if (!finished) return 0;
     const releasedAt = new Date().toISOString();
+    let stamped = 0;
     for (const report of reports) {
+      if (!finished.has(report.id)) continue;
       await this.reportRepo.markEvidenceReleased(
         report.id,
         chapterId,
         releasedAt,
       );
+      stamped += 1;
     }
-    return reports.length;
+    return stamped;
   }
 
   /**

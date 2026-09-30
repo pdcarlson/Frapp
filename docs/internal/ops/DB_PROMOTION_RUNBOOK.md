@@ -578,7 +578,7 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
-## 2026-09-30: A chat report keeps the reported message's attachments while it is open (#2481)
+## 2026-09-30: A chat report keeps the reported message's attachments until it resolves and releases them (#2481)
 
 ### 20260930191500_chat_report_attachment_evidence.sql
 
@@ -586,7 +586,7 @@ date — is welcome; inventing a date to turn the gate green is not.
   - `reported_attachments jsonb not null default '[]'`, with a CHECK that it is an array: one `{bucket, storage_path, filename, content_type, byte_size}` per attachment on the message when the report was filed. Until the report's release finishes, the API's message-delete purge and the Discord import purge keep the objects it names; while it is open, the officer queue signs them.
   - `evidence_released_at timestamptz`: when the API finished deleting what a resolved report held. Setting it is what ends the report's hold.
   - `idx_chat_message_reports_evidence_held` on `(chapter_id, id)` where the report is unreleased and holds something: the hold lookup every purge makes.
-  - `idx_chat_message_reports_evidence_unreleased` on `(resolved_at)` where the report is resolved, unreleased and holds something: the hourly sweep's read.
+  - `idx_chat_message_reports_evidence_unreleased` on `(id)` where the report is resolved, unreleased and holds something: the hourly sweep's read, which pages by id.
 
   Every existing report takes `'[]'`, so reports filed before this hold nothing. No data is rewritten, and no policy changes: the table keeps RLS on with zero policies.
 - **Checks**: After `db push`,
