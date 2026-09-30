@@ -149,6 +149,7 @@ describe('ChatService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findDm: jest.fn(),
+      createDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -931,7 +932,7 @@ describe('ChatService', () => {
       });
 
       expect(result).toEqual(dmChannel);
-      expect(mockChannelRepo.create).not.toHaveBeenCalled();
+      expect(mockChannelRepo.createDm).not.toHaveBeenCalled();
     });
 
     it('should create a new DM if not found', async () => {
@@ -941,16 +942,18 @@ describe('ChatService', () => {
         member_ids: ['user-1', 'user-2'],
       };
       mockChannelRepo.findDm.mockResolvedValue(null);
-      mockChannelRepo.create.mockResolvedValue(dmChannel);
+      mockChannelRepo.createDm.mockResolvedValue(dmChannel);
 
       const result = await service.getOrCreateDm({
         chapter_id: 'ch-1',
         member_ids: ['user-1', 'user-2'],
       });
 
-      expect(mockChannelRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'DM' }),
-      );
+      expect(mockChannelRepo.createDm).toHaveBeenCalledWith('ch-1', [
+        'user-1',
+        'user-2',
+      ]);
+      expect(mockChannelRepo.create).not.toHaveBeenCalled();
       expect(result.type).toBe('DM');
     });
 
@@ -1011,7 +1014,7 @@ describe('ChatService', () => {
 
     it('has nothing to unhide on a DM it just created', async () => {
       mockChannelRepo.findDm.mockResolvedValue(null);
-      mockChannelRepo.create.mockResolvedValue({
+      mockChannelRepo.createDm.mockResolvedValue({
         ...baseChannel,
         type: 'DM' as const,
         member_ids: ['user-1', 'user-2'],
