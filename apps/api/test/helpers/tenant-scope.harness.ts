@@ -173,6 +173,21 @@ export interface TenantHarnessOptions {
    * `id` and the tenant column are always exempt.
    */
   collisionExempt?: Record<string, string[]>;
+  /**
+   * Column defaults an insert fills in when the payload leaves the column
+   * out, as Postgres does from the table's `default` clauses, e.g.
+   * `{ chat_message_reports: { status: 'open' } }`. For a spec that runs a
+   * write and then reads the row back through a filter on the defaulted
+   * column; without it the row has no such column and no filter matches it.
+   */
+  columnDefaults?: Record<string, Row>;
+  /**
+   * PostgREST's `db-max-rows`: a read returns at most this many rows, whatever
+   * `.limit()` asked for. For a spec that pages a read: with it set below the
+   * page size, every page comes back short, so a loop that stops on the first
+   * short page instead of the first empty one misses rows and fails.
+   */
+  maxRows?: number;
   /** Canned RPC responses keyed by function name. */
   rpc?: Record<string, { data?: unknown; error?: unknown }>;
   /**
@@ -287,10 +302,12 @@ function applyFilter(row: Row, filter: Filter): boolean {
 
   switch (filter.op) {
     case 'eq':
-      return actual === expected;
+      return sameValue(actual, expected);
     case 'neq':
       // `col <> x` is NULL, not true, when col is NULL.
-      return actual !== null && actual !== undefined && actual !== expected;
+      return (
+        actual !== null && actual !== undefined && !sameValue(actual, expected)
+      );
     case 'is':
       return actual === expected || (expected === null && actual === undefined);
     case 'in':
@@ -323,6 +340,27 @@ function applyFilter(row: Row, filter: Filter): boolean {
           `assertion pass without proving anything.`,
       );
   }
+}
+
+/**
+ * Equality as Postgres sees it for the one non-scalar case repositories use: a
+ * `jsonb` column compared with its JSON text (`.filter(col, 'neq', '[]')`).
+ * The seed holds the parsed value and the filter the text, so the text is
+ * parsed and both are compared as JSON. Everything else is plain `===`.
+ */
+function sameValue(actual: unknown, expected: unknown): boolean {
+  if (
+    actual !== null &&
+    typeof actual === 'object' &&
+    typeof expected === 'string'
+  ) {
+    try {
+      return JSON.stringify(actual) === JSON.stringify(JSON.parse(expected));
+    } catch {
+      return false;
+    }
+  }
+  return actual === expected;
 }
 
 /** PostgREST spells literals inside a filter string; `.eq()` passes them typed. */
@@ -578,7 +616,10 @@ export function createTenantHarness(
             Object.assign(existing, row);
             matched.push(existing);
           } else {
-            const inserted = clone(row);
+            const inserted = {
+              ...clone(options.columnDefaults?.[table] ?? {}),
+              ...clone(row),
+            };
             stored.push(inserted);
             matched.push(inserted);
           }
@@ -593,6 +634,9 @@ export function createTenantHarness(
         );
       } else {
         matched = matching();
+        if (options.maxRows !== undefined) {
+          matched = matched.slice(0, options.maxRows);
+        }
       }
 
       ops.push({

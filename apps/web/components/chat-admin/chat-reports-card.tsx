@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import {
   memberFallbackLabel,
   removalOutcomeUnknown,
   resolveAuthorLabel,
+  useChatReportAttachments,
   useChatReports,
   useMemberDisplayNames,
   useNow,
@@ -14,7 +15,8 @@ import {
 } from "@repo/hooks";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
-import { formatLocaleDateTime } from "@repo/formatting";
+import { isViewableImage } from "@repo/chat-core/attachments";
+import { formatBytes, formatLocaleDateTime } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +42,9 @@ import {
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
+import { AttachGlyph } from "@/components/chat/chat-glyphs";
+import { FOCUS_RING } from "@/components/ui/focus";
+import { cn } from "@/lib/utils";
 import { reportedMessageTimeline } from "@/lib/chat/reported-message-reads";
 import {
   CHAT_REPORT_REASON_LABEL,
@@ -462,6 +467,15 @@ function ReportRow({
         )}
       </blockquote>
 
+      {report.reported_attachments.length > 0 ? (
+        <ReportAttachments
+          report={report}
+          isOpen={isOpen}
+          subject={subject}
+          details={details}
+        />
+      ) : null}
+
       {note ? (
         <p className="break-words text-xs text-muted-foreground">
           <span className="font-semibold text-foreground">
@@ -535,6 +549,155 @@ function ReportRow({
         </div>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * What the reported message carried besides its text (#2481).
+ *
+ * The report keeps these files while it is open, so a photo stays reviewable
+ * after its sender deletes the message (`spec/behavior/chat/README.md`
+ * § Report). The row names them from the report itself; the files load only
+ * when the officer asks, because every load mints fresh signed URLs and a
+ * queue of reported photos should not open one nobody chose to look at. A
+ * resolved report's files are released, so it lists the names and says so.
+ *
+ * An image previews inline and links to its URL; any other file is a row that
+ * downloads. Both URLs force a download server-side (the chat trust boundary),
+ * which an `<img>` ignores.
+ */
+function ReportAttachments({
+  report,
+  isOpen,
+  subject,
+  details,
+}: {
+  report: ChatReport;
+  isOpen: boolean;
+  /** The message the row acts on, for the button's accessible name. */
+  subject: string;
+  /** What tells this report from the others on the same message. */
+  details: string;
+}) {
+  const [shown, setShown] = useState(false);
+  const query = useChatReportAttachments(report.id, isOpen && shown);
+  const files = report.reported_attachments;
+
+  const rowClass = cn(
+    "flex max-w-full items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
+    "text-xs hover:bg-accent-subtle hover:text-accent-text",
+    FOCUS_RING,
+  );
+
+  let body: ReactNode;
+  if (!isOpen || !shown) {
+    body = (
+      <ul className="space-y-1">
+        {files.map((file, index) => (
+          <li
+            // The snapshot has no ids, and two files can share a name.
+            key={index}
+            className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"
+          >
+            <AttachGlyph className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">
+              {file.filename || copy.attachments.unnamed}
+            </span>
+            {file.byte_size != null ? (
+              <span className="shrink-0">{formatBytes(file.byte_size)}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    );
+  } else if (query.isPending) {
+    body = (
+      <p className="text-xs text-muted-foreground">
+        {copy.attachments.loading}
+      </p>
+    );
+  } else if (query.isError || !query.data) {
+    body = (
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-destructive">{copy.attachments.error}</p>
+        <Button variant="secondary" size="sm" onClick={() => query.refetch()}>
+          {copy.attachments.retry}
+        </Button>
+      </div>
+    );
+  } else {
+    const missing = files.length - query.data.length;
+    body = (
+      <>
+        <ul className="flex flex-col items-start gap-1.5">
+          {query.data.map((file, index) => (
+            <li key={index} className="max-w-full">
+              <a
+                href={file.download_url}
+                target="_blank"
+                rel="noreferrer"
+                download={file.filename}
+                className={rowClass}
+              >
+                {isViewableImage(file.content_type) ? (
+                  /* A plain <img>, as in the chat timeline: the src is a
+                     per-request signed Storage URL that /_next/image would
+                     strip the signature from. */
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={file.download_url}
+                    alt={file.filename}
+                    className="max-h-48 max-w-full rounded"
+                  />
+                ) : (
+                  <>
+                    <AttachGlyph
+                      className="h-4 w-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">
+                      {file.filename || copy.attachments.unnamed}
+                    </span>
+                    {file.byte_size != null ? (
+                      <span className="shrink-0 text-muted-foreground">
+                        {formatBytes(file.byte_size)}
+                      </span>
+                    ) : null}
+                  </>
+                )}
+              </a>
+            </li>
+          ))}
+        </ul>
+        {missing > 0 ? (
+          <p className="text-xs text-destructive">
+            {copy.attachments.partial(missing)}
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        <span className="font-semibold text-foreground">
+          {copy.attachments.label(files.length)}
+        </span>{" "}
+        {isOpen ? copy.attachments.kept : copy.attachments.released}
+      </p>
+      {body}
+      {isOpen && !shown ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label={chatReportActionLabel.showAttachments(subject, details)}
+          onClick={() => setShown(true)}
+        >
+          {copy.attachments.show}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

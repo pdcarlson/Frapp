@@ -27,6 +27,7 @@ describe('ChatReportController', () => {
     removeReportedMessage: jest.Mock;
     listReports: jest.Mock;
     resolveReport: jest.Mock;
+    listReportEvidence: jest.Mock;
   };
 
   beforeEach(() => {
@@ -34,6 +35,7 @@ describe('ChatReportController', () => {
       removeReportedMessage: jest.fn().mockResolvedValue({ id: 'report-1' }),
       listReports: jest.fn().mockResolvedValue([]),
       resolveReport: jest.fn().mockResolvedValue({ id: 'report-1' }),
+      listReportEvidence: jest.fn().mockResolvedValue([]),
     };
     controller = new ChatReportController(
       reportService as unknown as ChatReportService,
@@ -101,6 +103,22 @@ describe('ChatReportController', () => {
       );
     });
 
+    it('GET :id/attachments passes the report id, the chapter and the caller', async () => {
+      // The report is the whole input: no message or channel id is accepted,
+      // and the caller is who the evidence read leaves reports about out for.
+      await controller.listReportAttachments(
+        'report-1',
+        'chapter-1',
+        'user-officer',
+      );
+
+      expect(reportService.listReportEvidence).toHaveBeenCalledWith(
+        'report-1',
+        'chapter-1',
+        'user-officer',
+      );
+    });
+
     it('PATCH :id passes the caller as the resolver', async () => {
       await controller.resolveReport('report-1', 'chapter-1', 'user-officer', {
         status: 'reviewed',
@@ -118,6 +136,7 @@ describe('ChatReportController', () => {
   it.each([
     ['GET /', 'listReports'],
     ['PATCH :id', 'resolveReport'],
+    ['GET :id/attachments', 'listReportAttachments'],
     ['POST :id/remove-message', 'removeReportedMessage'],
   ] as const)(
     '%s requires exactly the shared queue permissions, class floor included',

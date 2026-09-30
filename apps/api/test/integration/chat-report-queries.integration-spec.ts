@@ -129,6 +129,7 @@ describeIntegration('Chat report evidence against live PostgREST', () => {
       reported_content: reportedContentSnapshot(poll!),
       reported_sender_id: poll!.sender_id,
       reported_author_name: poll!.author_name ?? null,
+      reported_attachments: [],
       reason: 'harassment',
       details: null,
     });

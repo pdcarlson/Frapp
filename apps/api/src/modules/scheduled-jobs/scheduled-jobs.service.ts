@@ -9,6 +9,7 @@ import {
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
 import { PollService } from '../../application/services/poll.service';
+import { ChatReportService } from '../../application/services/chat-report.service';
 import {
   ReportRetentionService,
   type ReportSweepResult,
@@ -151,6 +152,7 @@ export class ScheduledJobsService {
     private readonly pollService: PollService,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    private readonly chatReports: ChatReportService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -199,7 +201,8 @@ export class ScheduledJobsService {
   }
 
   /**
-   * The only handler here that needs its own catch.
+   * One of two handlers here that need their own catch; the chat report
+   * evidence sweep below is the other.
    *
    * Every other handler here reaches the database through `fetchAllPages`,
    * which absorbs a query error and returns `[]`, so none of them can reject —
@@ -221,6 +224,39 @@ export class ScheduledJobsService {
       this.logger.error(
         'report retention sweep: could not enumerate the reports bucket; skipping this tick',
         error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Hourly: release what resolved chat reports held when the release at
+   * resolve time did not finish (#2481). Nothing is time-critical here — the
+   * objects are orphans until then, not exposures, since only an open report's
+   * evidence is ever signed.
+   *
+   * Needs its own catch, by the test in the report-retention handler's
+   * docblock: the candidate read throws on a query error rather than going
+   * through `fetchAllPages`. Each report's own
+   * release is caught inside the service. Safe on every replica: a release
+   * deletes only what nothing holds, and deleting a gone object succeeds.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleChatReportEvidenceSweep(): Promise<void> {
+    try {
+      const released = await this.chatReports.sweepPendingEvidenceReleases(
+        new Date(),
+      );
+      if (released > 0) {
+        this.logger.log(
+          `chat report evidence sweep: released ${released} resolved reports' attachments`,
+        );
+      }
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'error',
+        'chat report evidence sweep: could not read the pending releases; skipping this tick',
+        error,
       );
     }
   }
