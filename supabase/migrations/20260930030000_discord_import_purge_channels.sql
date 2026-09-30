@@ -44,15 +44,16 @@
 --        remapped rows merged into (reachable only through the API: the web
 --        wizard never remaps a failed import).
 --
---    Each candidate's row is locked before it is checked. A message being
---    sent into it holds a key-share lock on the channel until that insert
---    commits, so the `for update` waits for it, and the check that follows,
+--    Each candidate is checked once without a lock, so a channel it keeps is
+--    never locked, then locked and checked again before the delete. A message
+--    being sent into it holds a key-share lock on the channel until that
+--    insert commits, so the `for update` waits for it, and the second check,
 --    a new statement in read committed, sees the message and keeps the
 --    channel. A send that starts after the lock waits instead, then fails its
 --    foreign key once the channel is gone, like a send into any channel an
 --    officer deletes. The PGlite check runs on one connection and can't
 --    exercise this; it was proved with two sessions against the local stack
---    when this shipped (PR for #2905).
+--    when this shipped (PR #2926), and #2928 tracks an automated check.
 --
 --    Deleting the channel cascades what hangs off it as
 --    `DELETE /v1/channels/:id` does: its read receipts, its sidebar pins and
@@ -65,6 +66,12 @@
 --    cache. Does nothing unless the import is being purged, so a running
 --    import can never lose a channel it has just created and not yet written
 --    to.
+--
+-- 3. Two partial indexes the checks and the delete's `on delete set null`
+--    actions lean on, which nothing covered: `point_transactions
+--    (channel_id)` and `discord_import_channels (target_channel_id)`. Both
+--    tables are small today; without them one purge scans each once per
+--    channel, and so does an officer's `DELETE /v1/channels/:id`.
 --
 -- Service role only, like the other Discord import functions. The table has
 -- RLS on and no policies.
@@ -84,6 +91,45 @@ create index if not exists idx_discord_import_created_channels_channel
   on public.discord_import_created_channels (channel_id);
 
 alter table public.discord_import_created_channels enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- 3. Indexes the checks and the `on delete set null` actions lean on.
+create index if not exists idx_point_transactions_channel
+  on public.point_transactions (channel_id)
+  where channel_id is not null;
+
+create index if not exists idx_discord_import_channels_target
+  on public.discord_import_channels (target_channel_id)
+  where target_channel_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- 2a. Whether a channel holds anything the purge must keep. One definition
+--     for the check before the lock and the check under it.
+create or replace function public.discord_import_channel_holds_anything(
+  p_channel_id uuid,
+  p_chapter_id uuid
+)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select exists (select 1 from chat_messages where channel_id = p_channel_id)
+      or exists (select 1 from chat_message_attachments where channel_id = p_channel_id)
+      or exists (
+        select 1
+          from point_transactions
+         where chapter_id = p_chapter_id
+           and channel_id = p_channel_id
+      )
+      or exists (
+        select 1
+          from discord_import_channels
+         where target_channel_id = p_channel_id
+           and mapping_action = 'use_existing'
+      );
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 2. The purge's channel step.
@@ -133,6 +179,11 @@ begin
        )
      order by c.id
   loop
+    -- Unlocked first, so a channel that is kept is never locked.
+    if public.discord_import_channel_holds_anything(v_channel, p_chapter_id) then
+      continue;
+    end if;
+
     perform 1
        from chat_channels
       where id = v_channel
@@ -142,21 +193,8 @@ begin
       continue;
     end if;
 
-    if exists (select 1 from chat_messages where channel_id = v_channel)
-       or exists (select 1 from chat_message_attachments where channel_id = v_channel)
-       or exists (
-         select 1
-           from point_transactions
-          where chapter_id = p_chapter_id
-            and channel_id = v_channel
-       )
-       or exists (
-         select 1
-           from discord_import_channels
-          where target_channel_id = v_channel
-            and mapping_action = 'use_existing'
-       )
-    then
+    -- Again under the lock: a send that committed meanwhile is seen here.
+    if public.discord_import_channel_holds_anything(v_channel, p_chapter_id) then
       continue;
     end if;
 
@@ -167,17 +205,21 @@ end;
 $$;
 
 revoke execute on function public.delete_empty_discord_import_channels(uuid, uuid) from public;
+revoke execute on function public.discord_import_channel_holds_anything(uuid, uuid) from public;
 
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke execute on function public.delete_empty_discord_import_channels(uuid, uuid) from anon;
+    revoke execute on function public.discord_import_channel_holds_anything(uuid, uuid) from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke execute on function public.delete_empty_discord_import_channels(uuid, uuid) from authenticated;
+    revoke execute on function public.discord_import_channel_holds_anything(uuid, uuid) from authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     grant execute on function public.delete_empty_discord_import_channels(uuid, uuid) to service_role;
+    grant execute on function public.discord_import_channel_holds_anything(uuid, uuid) to service_role;
   end if;
 end
 $$;

@@ -4328,11 +4328,14 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     // PUBLIC is what keeps both out.
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as authed,
-             (select relrowsecurity from pg_class where oid = 'public.discord_import_created_channels'::regclass) as rls
+             has_function_privilege('authenticated', 'public.discord_import_channel_holds_anything(uuid, uuid)', 'execute') as authed_check,
+             (select relrowsecurity from pg_class where oid = 'public.discord_import_created_channels'::regclass) as rls,
+             (select count(*)::int from pg_indexes
+               where indexname in ('idx_point_transactions_channel', 'idx_discord_import_channels_target')) as indexes
     `);
     check(
-      "a signed-in client may not call it, and the created-channel table has RLS on",
-      guard[0]?.authed === false && guard[0]?.rls === true,
+      "a signed-in client may call neither function, the created-channel table has RLS on, and both indexes exist",
+      guard[0]?.authed === false && guard[0]?.authed_check === false && guard[0]?.rls === true && guard[0]?.indexes === 2,
       guard[0],
     );
   } catch (e) {
