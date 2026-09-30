@@ -20,6 +20,7 @@
  * on #2555; the console refuses a wrong size at upload, so a wrong rule here
  * fails loudly rather than silently.
  */
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -58,7 +59,7 @@ export const FEATURE_HEIGHT = 500;
 export const FEATURE_MARGIN = 96;
 /**
  * How a committed feature graphic may differ from a fresh render. Renders are
- * hermetic (see `prepareFonts`) and byte-identical on one platform, so these
+ * hermetic (see `renderTexts`) and byte-identical on one platform, so these
  * only absorb rounding between sharp builds on different CPUs, which touches
  * a few antialiased edge pixels by a level or two.
  *
@@ -124,12 +125,15 @@ export async function vectorMask(input, size) {
 //     this binary has no Ask screen (#2259), and a listing graphic that
 //     promises one describes an app the store is not shipping.
 //
-// Colours are literals for the reason `apps/landing/app/opengraph-image.tsx`
-// gives: there is no stylesheet to resolve a token against. Each is annotated
-// with the token it mirrors in `packages/theme/src/signet.css`.
+// Colours are the theme's own: `--foreground` and `--muted-foreground`, read
+// from `packages/theme/src/signet.css` at render time, so a token change moves
+// the banner with it (and `check:brand-assets` fails until it is re-rendered).
 
-const FOREGROUND = "#EDEAE3"; // --foreground
-const MUTED_FOREGROUND = "#A9A399"; // --muted-foreground
+const SIGNET_CSS = repo("packages/theme/src/signet.css");
+const TEXT_WORKER = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "store-graphics-text.mjs",
+);
 
 const TAGLINE = "Your chapter, in one place";
 
@@ -140,6 +144,21 @@ const SCALE = 6.5;
 const TAGLINE_RATIO = 34 / 88;
 /** Space between the lockup's lowest ink and the line's cap height, in word px. */
 const TAGLINE_GAP = 0.42;
+
+/** A `#RRGGBB` custom property's value in `css`; exactly one definition. */
+export function cssColour(css, property) {
+  const matches = [
+    ...css.matchAll(
+      new RegExp(`^\\s*${property}:\\s*(#[0-9A-Fa-f]{6})\\s*;`, "gm"),
+    ),
+  ];
+  if (matches.length !== 1) {
+    throw new Error(
+      `${property}: expected one #RRGGBB definition in packages/theme/src/signet.css, found ${matches.length}`,
+    );
+  }
+  return matches[0][1].toUpperCase();
+}
 
 /**
  * The family and weight a TrueType file declares: `name` ID 1 (Windows
@@ -184,110 +203,98 @@ export function fontFace(buffer, label) {
   }
 }
 
-const FACES = [
+export const FACES = [
   { file: FIGTREE_REGULAR, font: "Figtree", weight: 400 },
   { file: FIGTREE_BOLD, font: "Figtree Bold", weight: 700 },
 ];
 
-async function textRaw(string, fontfile, font) {
-  return sharp({ text: { text: string, font, fontfile, rgba: true, dpi: 72 } })
-    .raw()
-    .toBuffer();
+/**
+ * Each face file exists and is the face it is named for. A broken or swapped
+ * file fails here, not as a synthesized or substituted face in the banner.
+ */
+export function checkFaces(faces) {
+  for (const { file, weight } of faces) {
+    if (!existsSync(file)) {
+      throw new Error(
+        `missing ${file}: the feature graphic is set in the vendored Figtree`,
+      );
+    }
+    const face = fontFace(readFileSync(file), file);
+    if (face.family !== "Figtree" || face.weight !== weight) {
+      throw new Error(
+        `${file}: declares ${face.family} ${face.weight}, not Figtree ${weight}`,
+      );
+    }
+  }
+}
+
+/** The two faces must set the same string differently, or one never loaded. */
+export function assertFacesDiffer(regular, bold) {
+  if (regular.width === bold.width && regular.png.equals(bold.png)) {
+    throw new Error(
+      "Figtree Regular and Figtree Bold set text identically: one face did not load",
+    );
+  }
 }
 
 /**
- * Make every text render in this process hermetic, or throw. Once per process.
+ * A fontconfig config that knows no system font, written once per process.
  *
  * Text rasterizes differently under different fontconfig settings: this
  * machine's `/etc/fonts` (hintslight) sets "Frapp" a pixel wider than an empty
  * config does, so a render that depends on the host's config cannot be
- * compared with a committed file. So fontconfig is pointed at a config that
- * knows no system font, and the only faces it sees are the two vendored
- * Figtree files, which also removes any system font to fall back to.
- *
- * Each step closes a way the text could come out in the wrong face silently:
- *
- *   1. Each file must be the face it is named for (`fontFace`): a broken or
- *      swapped file fails here, not as a synthesized or substituted face.
- *   2. Both files are registered before anything is compared. `sharp`
- *      registers a `fontfile` on the render that names it, so a comparison
- *      made before the second face is registered compares against nothing.
- *   3. A family that does not exist must come out exactly as Figtree Regular.
- *      That holds only under the empty config, where Figtree is all there is;
- *      under the host's config it comes out in DejaVu. fontconfig reads
- *      `FONTCONFIG_FILE` once, at its first use in the process, so an earlier
- *      text render anywhere would leave the host's config in force, and this
- *      is what notices.
- *   4. The two faces must set the same string differently.
- *
- * Node writes `process.env` through to the C environment on Linux and macOS;
- * native Windows is not a supported host for this pipeline (WSL is).
+ * compared with a committed file. Under this config the only faces are the two
+ * vendored Figtree files, so there is also no system font to fall back to.
  */
-let fontsReady;
-export function prepareFonts() {
-  fontsReady ??= (async () => {
-    for (const { file, weight } of FACES) {
-      if (!existsSync(file)) {
-        throw new Error(
-          `missing ${file}: the feature graphic is set in the vendored Figtree`,
-        );
-      }
-      const face = fontFace(readFileSync(file), file);
-      if (face.family !== "Figtree" || face.weight !== weight) {
-        throw new Error(
-          `${file}: declares ${face.family} ${face.weight}, not Figtree ${weight}`,
-        );
-      }
-    }
+let hermeticConfig;
+function fontConfig() {
+  if (!hermeticConfig) {
     const dir = mkdtempSync(join(tmpdir(), "frapp-fonts-"));
+    hermeticConfig = join(dir, "fonts.conf");
     writeFileSync(
-      join(dir, "fonts.conf"),
+      hermeticConfig,
       `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><cachedir>${dir}</cachedir></fontconfig>\n`,
     );
-    process.env.FONTCONFIG_FILE = join(dir, "fonts.conf");
-
-    const renders = [];
-    for (const { file, font } of FACES)
-      renders.push(await textRaw(TAGLINE, file, `${font} 60`));
-    const unknown = await textRaw(TAGLINE, FIGTREE_REGULAR, "NoSuchFamily 60");
-    const again = await textRaw(TAGLINE, FIGTREE_REGULAR, "Figtree 60");
-    if (!unknown.equals(again)) {
-      throw new Error(
-        "fontconfig is not using the hermetic config: an unknown family did not resolve to Figtree, so something rendered text in this process before prepareFonts() and fontconfig kept the host's fonts",
-      );
-    }
-    if (renders[0].equals(renders[1])) {
-      throw new Error(
-        "Figtree Regular and Figtree Bold set text identically: one face did not load",
-      );
-    }
-  })();
-  return fontsReady;
+  }
+  return hermeticConfig;
 }
 
 /**
- * Text as an RGBA image cropped to its INK, not its line box: sharp returns
- * Pango's ink rectangle. The layout therefore places ink, which is what the
- * eye aligns, rather than line boxes a browser would.
+ * Renders text as RGBA images cropped to their INK, not their line boxes
+ * (sharp returns Pango's ink rectangle), so the layout places ink, which is
+ * what the eye aligns.
+ *
+ * In a child process started with the hermetic config: fontconfig reads
+ * `FONTCONFIG_FILE` once per process, so setting it here would be ignored
+ * whenever anything in this process had already rendered text, silently
+ * restoring the host's fonts. A fresh process cannot inherit that state.
  */
-async function text(string, fontfile, family, px, color) {
-  await prepareFonts();
-  const { data: png, info } = await sharp({
-    text: {
-      text: `<span foreground="${color}">${string}</span>`,
-      font: `${family} ${px}`,
-      fontfile,
-      rgba: true,
-      dpi: 72, // 1pt = 1px, so `px` is a pixel size
-    },
-  })
-    .png()
-    .toBuffer({ resolveWithObject: true });
-  return { png, width: info.width, height: info.height };
+export function renderTexts(texts) {
+  checkFaces(FACES);
+  const env = { ...process.env, FONTCONFIG_FILE: fontConfig() };
+  delete env.FONTCONFIG_PATH;
+  const run = spawnSync(process.execPath, [TEXT_WORKER], {
+    input: JSON.stringify({ faces: FACES.map(({ file }) => file), texts }),
+    env,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (run.status !== 0) {
+    throw new Error(`the text renderer failed: ${run.stderr || run.error}`);
+  }
+  return JSON.parse(run.stdout).map(({ png, width, height }) => ({
+    png: Buffer.from(png, "base64"),
+    width,
+    height,
+  }));
 }
 
 /** Renders the feature graphic: 1024 x 500, opaque RGB PNG. */
 export async function renderFeatureGraphic() {
+  const css = readFileSync(SIGNET_CSS, "utf8");
+  const foreground = cssColour(css, "--foreground");
+  const mutedForeground = cssColour(css, "--muted-foreground");
+
   const crestBox = Math.round(HEADER.crest * SCALE);
   const gap = Math.round(HEADER.gap * SCALE);
   const wordPx = Math.round(HEADER.word * SCALE);
@@ -308,25 +315,30 @@ export async function renderFeatureGraphic() {
     height: crest.info.height,
   };
 
-  const word = await text(
-    "Frapp",
-    FIGTREE_BOLD,
-    "Figtree Bold",
-    wordPx,
-    FOREGROUND,
-  );
+  const bold = (text, px, color) => ({
+    text,
+    font: `Figtree Bold ${px}`,
+    fontfile: FIGTREE_BOLD,
+    color,
+  });
+  const regular = (text, px, color) => ({
+    text,
+    font: `Figtree ${px}`,
+    fontfile: FIGTREE_REGULAR,
+    color,
+  });
   // "F" alone measures the cap height, which places the baseline inside the
   // word's ink: "Frapp" descends below it, so its ink box is not its cap box.
-  const capHeight = (
-    await text("F", FIGTREE_BOLD, "Figtree Bold", wordPx, FOREGROUND)
-  ).height;
-  const line = await text(
-    TAGLINE,
-    FIGTREE_REGULAR,
-    "Figtree",
-    taglinePx,
-    MUTED_FOREGROUND,
-  );
+  // The last two are the face probe for `assertFacesDiffer`.
+  const [word, cap, line, probeRegular, probeBold] = renderTexts([
+    bold("Frapp", wordPx, foreground),
+    bold("F", wordPx, foreground),
+    regular(TAGLINE, taglinePx, mutedForeground),
+    regular(TAGLINE, 60, foreground),
+    bold(TAGLINE, 60, foreground),
+  ]);
+  assertFacesDiffer(probeRegular, probeBold);
+  const capHeight = cap.height;
 
   // Horizontal: crest box, the header's gap, then the word, centred as a unit
   // on its ink. The crest box keeps its transparent margins, so the gap is the

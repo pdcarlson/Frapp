@@ -11,27 +11,32 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 import {
+  FACES,
+  FEATURE_RENDER_DRIFT_MAX,
+  FEATURE_RENDER_ROUNDING,
   PLAY_FEATURE_GRAPHIC,
   PLAY_ICON,
+  assertFacesDiffer,
   assertFeatureGraphicCurrent,
   auditFeatureGraphic,
   auditPlayIcon,
+  checkFaces,
+  cssColour,
   fontFace,
 } from "../store-graphics.mjs";
 
-const LIB = join(
+const REPO_ROOT = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
-  "store-graphics.mjs",
+  "..",
+  "..",
 );
-const REPO_ROOT = join(dirname(LIB), "..", "..");
 const repo = (rel) => join(REPO_ROOT, rel);
 
 const master = readFileSync(
@@ -44,14 +49,62 @@ const patch = (colour, width, height) => ({
   input: { create: { width, height, channels: 3, background: colour } },
 });
 
+/** The banner with the first `count` painted pixels under the lockup shifted by `levels`. */
+async function drift(levels, count = Infinity) {
+  const { data, info } = await sharp(banner)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const out = Buffer.from(data);
+  let moved = 0;
+  for (let p = 300 * info.width * 3; p < out.length && moved < count; p += 3) {
+    if (out[p] === 0x1a && out[p + 1] === 0x1a && out[p + 2] === 0x1a) continue;
+    for (let c = 0; c < 3; c += 1)
+      out[p + c] = Math.min(255, out[p + c] + levels);
+    moved += 1;
+  }
+  return png(sharp(out, { raw: info }));
+}
+
+/** A minimal sfnt: a header and table records, each pointing at `tables[tag]`. */
+function sfnt(tables) {
+  const tags = Object.keys(tables);
+  const header = Buffer.alloc(12 + tags.length * 16);
+  header.writeUInt32BE(0x00010000, 0);
+  header.writeUInt16BE(tags.length, 4);
+  let offset = header.length;
+  const bodies = [];
+  tags.forEach((tag, i) => {
+    header.write(tag, 12 + i * 16, "latin1");
+    header.writeUInt32BE(offset, 12 + i * 16 + 8);
+    bodies.push(tables[tag]);
+    offset += tables[tag].length;
+  });
+  return Buffer.concat([header, ...bodies]);
+}
+
 test("the committed graphics pass every audit", async () => {
   await auditPlayIcon(icon, "icon", master);
   await auditFeatureGraphic(banner, "banner");
   await assertFeatureGraphicCurrent(banner, "banner");
 });
 
+test("text renders stay hermetic after this process rendered text with the host's fonts", async () => {
+  // fontconfig keeps the config it first initialized with for the life of a
+  // process. Rendering here first pins this process to the host's fonts, which
+  // must not reach the banner: its text is set in a process of its own.
+  await sharp({ text: { text: "host fonts", font: "sans 24" } })
+    .png()
+    .toBuffer();
+  await assertFeatureGraphicCurrent(banner, "banner");
+});
+
 test("the Play icon audit refuses each shape Play would not take", async () => {
   const cases = [
+    [
+      Buffer.concat([icon, Buffer.alloc(1024 * 1024)]),
+      /over Play's 1024 KB limit/,
+    ],
+    [await sharp(icon).jpeg().toBuffer(), /Play wants a PNG/],
     [
       readFileSync(
         repo("packages/brand-assets/assets/signet-emblem-B-1024.png"),
@@ -76,8 +129,9 @@ test("the Play icon audit refuses each shape Play would not take", async () => {
   }
 });
 
-test("the feature graphic audit refuses alpha, a wrong size, edge paint and a bare field", async () => {
+test("the feature graphic audit refuses another format, alpha, a wrong size, edge paint and a bare field", async () => {
   const cases = [
+    [await sharp(banner).jpeg().toBuffer(), /this pipeline writes a PNG/],
     [await png(sharp(banner).ensureAlpha()), /alpha channel/],
     [
       await png(sharp(banner).resize(1024, 512, { fit: "fill" })),
@@ -110,24 +164,9 @@ test("the feature graphic audit refuses alpha, a wrong size, edge paint and a ba
   }
 });
 
-test("a stale banner fails against a fresh render: a patch, a shift, a nicked crest, a colour drift", async () => {
-  const { data, info } = await sharp(banner)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  // The tagline recoloured by 15 levels, the size of a token realignment: every
-  // non-field pixel under the lockup moves a little and none moves far.
-  const drifted = Buffer.from(data);
-  for (let p = 300 * info.width * 3; p < drifted.length; p += 3) {
-    if (
-      drifted[p] === 0x1a &&
-      drifted[p + 1] === 0x1a &&
-      drifted[p + 2] === 0x1a
-    )
-      continue;
-    for (let c = 0; c < 3; c += 1)
-      drifted[p + c] = Math.min(255, drifted[p + c] + 15);
-  }
+test("a stale banner fails against a fresh render: another size, a patch, a shift, a nicked crest", async () => {
   const cases = [
+    [icon, /not the size a fresh render is/],
     [
       await png(
         sharp(banner).composite([
@@ -152,71 +191,113 @@ test("a stale banner fails against a fresh render: a patch, a shift, a nicked cr
       ),
       /levels at/,
     ],
-    [
-      await png(sharp(drifted, { raw: info })),
-      /pixels differ from a fresh render/,
-    ],
   ];
   for (const [input, message] of cases) {
     await assert.rejects(assertFeatureGraphicCurrent(input, "banner"), message);
   }
 });
 
-test("fontFace reads the vendored faces and refuses a file that is not a font", () => {
-  assert.deepEqual(
-    fontFace(readFileSync(repo("packages/theme/fonts/Figtree-Bold.ttf")), "b"),
-    {
-      family: "Figtree",
-      weight: 700,
-    },
+test("colour drift fails one level past rounding and one pixel past the drift limit, and not before", async () => {
+  // The requirement, in absolute levels: a token moved by 3 fails, a
+  // rounding-sized 1 does not. These hold whatever the constants are set to.
+  await assert.rejects(
+    assertFeatureGraphicCurrent(await drift(3), "banner"),
+    /pixels differ/,
   );
-  assert.deepEqual(
-    fontFace(
-      readFileSync(repo("packages/theme/fonts/Figtree-Regular.ttf")),
-      "r",
+  await assertFeatureGraphicCurrent(await drift(1), "banner");
+  const past = FEATURE_RENDER_ROUNDING + 1;
+  // Rounding: the whole line moved by the rounding allowance passes, and by one
+  // level more fails.
+  await assertFeatureGraphicCurrent(
+    await drift(FEATURE_RENDER_ROUNDING),
+    "banner",
+  );
+  await assert.rejects(
+    assertFeatureGraphicCurrent(await drift(past), "banner"),
+    /pixels differ/,
+  );
+  // Drift limit: exactly the limit's worth of pixels past rounding passes, one more fails.
+  await assertFeatureGraphicCurrent(
+    await drift(past, FEATURE_RENDER_DRIFT_MAX),
+    "banner",
+  );
+  await assert.rejects(
+    assertFeatureGraphicCurrent(
+      await drift(past, FEATURE_RENDER_DRIFT_MAX + 1),
+      "banner",
     ),
-    {
-      family: "Figtree",
-      weight: 400,
-    },
+    /pixels differ/,
   );
+});
+
+test("the banner's text colours are the theme's tokens, one definition each", () => {
+  const css = readFileSync(repo("packages/theme/src/signet.css"), "utf8");
+  assert.equal(cssColour(css, "--foreground"), "#EDEAE3");
+  assert.equal(cssColour(css, "--muted-foreground"), "#A9A399");
+  assert.throws(
+    () => cssColour(":root { --x: #000000; }", "--foreground"),
+    /found 0/,
+  );
+  assert.throws(
+    () =>
+      cssColour(
+        "  --foreground: #000000;\n  --foreground: #FFFFFF;\n",
+        "--foreground",
+      ),
+    /found 2/,
+  );
+});
+
+test("fontFace reads the vendored faces and refuses what is not a named TrueType face", () => {
+  assert.deepEqual(fontFace(readFileSync(FACES[0].file), "regular"), {
+    family: "Figtree",
+    weight: 400,
+  });
+  assert.deepEqual(fontFace(readFileSync(FACES[1].file), "bold"), {
+    family: "Figtree",
+    weight: 700,
+  });
   assert.throws(
     () =>
       fontFace(
         Buffer.from("version https://git-lfs.github.com/spec/v1\n"),
         "lfs",
       ),
-    /not a readable font/,
+    /not a TrueType file/,
+  );
+  assert.throws(() => fontFace(sfnt({}), "empty"), /no OS\/2 or name table/);
+  // A name table whose only record is a Mac one, so no Windows family name.
+  const name = Buffer.alloc(6 + 12);
+  name.writeUInt16BE(1, 2); // count
+  name.writeUInt16BE(18, 4); // string offset
+  name.writeUInt16BE(1, 6); // platform: Macintosh
+  name.writeUInt16BE(1, 12); // nameID 1
+  assert.throws(
+    () => fontFace(sfnt({ "OS/2": Buffer.alloc(8), name }), "mac-only"),
+    /no Windows family name/,
   );
 });
 
-test("prepareFonts refuses to run after text was rendered with the host's fonts", () => {
-  // fontconfig state is process-wide and read once, so this needs a process of
-  // its own: render any text first, then ask for the hermetic config.
-  const script = [
-    `import sharp from "sharp";`,
-    `await sharp({ text: { text: "x", font: "sans 12" } }).png().toBuffer();`,
-    `const { prepareFonts } = await import(${JSON.stringify(LIB)});`,
-    `await prepareFonts();`,
-  ].join("\n");
-  // Without this process's FONTCONFIG_FILE: the tests above already pointed it
-  // at the hermetic config, and a child that inherits it is hermetic from the
-  // start, which is the case this test must not be.
-  const env = { ...process.env };
-  delete env.FONTCONFIG_FILE;
-  const run = spawnSync(
-    process.execPath,
-    ["--input-type=module", "-e", script],
-    {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      env,
-    },
+test("checkFaces refuses a missing face or a file that is the other face", () => {
+  assert.doesNotThrow(() => checkFaces(FACES));
+  assert.throws(
+    () => checkFaces([{ file: "/nonexistent/Figtree-Bold.ttf", weight: 700 }]),
+    /missing/,
   );
-  assert.notEqual(
-    run.status,
-    0,
-    "prepareFonts accepted a process whose fontconfig was already initialized",
+  // Regular copied over the Bold path: the file is a real font, but not the Bold one.
+  assert.throws(
+    () => checkFaces([{ file: FACES[0].file, weight: 700 }]),
+    /declares Figtree 400, not Figtree 700/,
   );
-  assert.match(run.stderr, /not using the hermetic config/);
+});
+
+test("assertFacesDiffer refuses two faces that set text identically", () => {
+  const text = { png: Buffer.from([1, 2, 3]), width: 3 };
+  assert.throws(
+    () => assertFacesDiffer(text, { ...text }),
+    /one face did not load/,
+  );
+  assert.doesNotThrow(() =>
+    assertFacesDiffer(text, { png: Buffer.from([1, 2, 4]), width: 3 }),
+  );
 });
