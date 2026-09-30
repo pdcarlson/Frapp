@@ -161,7 +161,7 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
       `the ${n(145574)} messages and ${n(11612)} attachments it brought in`,
     );
     expect(description).toContain(
-      "each channel it created that is left holding nothing",
+      "the channels it created, and any it merged into that another deleted import created, once they hold nothing",
     );
     expect(description).toContain(
       "The roles and read permissions it created stay.",
@@ -250,7 +250,7 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
     render(<DiscordImportPage />);
     expect(
       rowOf("Tau Nu Discord").getByText(
-        "Messages deleted. Removing the channels it emptied and its archive files.",
+        "Messages deleted. Finishing with its channels and archive files.",
       ),
     ).toBeInTheDocument();
     expect(rowOf("Tau Nu Discord").queryByText(/%$/)).toBeNull();

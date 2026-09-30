@@ -48,7 +48,7 @@ export function deleteImportConfirmation(row: ImportRow): ConfirmRequest {
     title: row.guild_name
       ? `Delete the import from ${row.guild_name}?`
       : "Delete this Discord import?",
-    description: `${removes} It then deletes each channel it created that is left holding nothing. The roles and read permissions it created stay. This cannot be undone.`,
+    description: `${removes} It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.`,
     confirmLabel: "Delete import",
     tone: "destructive",
   };
@@ -71,7 +71,7 @@ export function purgeLine(row: ImportRow): string | null {
   const progress = purgeProgress(row);
   if (!progress) return null;
   if (progress.left === 0) {
-    return "Messages deleted. Removing the channels it emptied and its archive files.";
+    return "Messages deleted. Finishing with its channels and archive files.";
   }
   return `Deleting: ${progress.left.toLocaleString()} of ${countOf(progress.total, "message")} left`;
 }

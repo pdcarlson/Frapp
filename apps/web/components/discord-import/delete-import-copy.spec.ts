@@ -103,7 +103,7 @@ describe("purgeLine (#2944)", () => {
       ),
     ).toBe("Deleting: 1 of 2 messages left");
     expect(purgeLine(row({ status: "purging" }))).toBe(
-      "Messages deleted. Removing the channels it emptied and its archive files.",
+      "Messages deleted. Finishing with its channels and archive files.",
     );
   });
 });
