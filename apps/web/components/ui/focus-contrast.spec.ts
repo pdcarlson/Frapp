@@ -74,7 +74,9 @@ function ringRoleOf(recipe: string): string {
  */
 function borderRoleOf(recipe: string): string {
   const names = [
-    ...recipe.matchAll(/(?:focus-visible|focus-within|focus):border-([a-z-]+)/g),
+    ...recipe.matchAll(
+      /(?:focus-visible|focus-within|focus):border-([a-z-]+)/g,
+    ),
   ].map((m) => m[1]!);
 
   expect(names).toHaveLength(1);
