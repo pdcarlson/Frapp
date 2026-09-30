@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   checkAncestry,
@@ -241,9 +242,39 @@ describe("validateDeploySha", () => {
     const result = await validateDeploySha({
       sha: SHA, repo: "o/r", token: "t", required, git, logger: quiet,
       fetchImpl: async () => ({ ok: false, status: 500, text: async () => "" }),
+      retryOptions: { sleep: async () => {} },
     });
     assert.equal(result.ok, false);
     assert.match(result.reason, /Could not read CI status/);
+  });
+
+  // #2333: ghRequest bounds every call itself, so the gate retries through its
+  // `retry` option, each attempt on its own deadline. A resilientFetch
+  // fetchImpl nested inside it shared one deadline across all its attempts,
+  // and one stalled page refused a green commit.
+  it("retries a checks page that never answers, each attempt on its own deadline", async () => {
+    const { git } = makeGit();
+    let calls = 0;
+    const result = await validateDeploySha({
+      sha: SHA, repo: "o/r", token: "t", required, git, logger: quiet,
+      fetchImpl: async (_url, init) => {
+        calls += 1;
+        if (calls > 1) {
+          return okJson({ check_runs: [{ name: "ci-a", status: "completed", conclusion: "success" }] });
+        }
+        return new Promise((_, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        });
+      },
+      retryOptions: { timeoutMs: 20, sleep: async () => {} },
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.ok, true, result.reason);
+  });
+
+  it("never hands resilientFetch to ghRequest", () => {
+    const source = readFileSync(new URL("../validate-deploy-sha.mjs", import.meta.url), "utf8");
+    assert.doesNotMatch(source, /fetchImpl\s*=\s*resilientFetch/);
   });
 
   // A malformed 2xx body must not read as "zero check runs" — that would

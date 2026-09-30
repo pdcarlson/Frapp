@@ -21,10 +21,11 @@
 // Every call goes through `fetchWithRetry` from `./http.mjs`, so every call gets
 // its timeout (15s for a read, 120s for a write, the ceilings that module
 // explains), and the timeout also covers reading the body. Before #2333 a call
-// without `retry: true` was a bare `fetchImpl`, and no caller passed it. A
-// GitHub API that accepted the connection and never answered held the call
-// until undici's own ~300s header timeout, so two such calls used up a
-// watchdog's `timeout-minutes: 10`. The runner then cancelled the job
+// without `retry: true` was a bare `fetchImpl`, and only
+// `configure-branch-protection.mjs` passed it, so every watchdog call was
+// unbounded. A GitHub API that accepted the connection and never answered held
+// the call until undici's own ~300s header timeout, so two such calls used up
+// a watchdog's `timeout-minutes: 10`. The runner then cancelled the job
 // mid-`raiseAlert`, and a real failure wrote no alert at all.
 //
 // Retry stays opt-in. The watchdogs (`ci-wake`, `pr-base-sync`) treat
@@ -32,8 +33,9 @@
 // against 5xx fixtures — e.g. "exactly one API call: the freshness check".
 // Retrying by default would change those counts, so without `retry` a call
 // makes exactly one attempt, as it always did. Callers that want resilience opt
-// in with `retry: true`; the production deploy path uses `fetchWithRetry`
-// directly.
+// in with `retry: true`. Never pass `resilientFetch` as `fetchImpl`: this
+// client's own deadline would then cover all of its attempts, and a stall on
+// the first would end the lot (validate-deploy-sha did this until #2333).
 
 import { fetchWithRetry } from "./http.mjs";
 
@@ -133,4 +135,25 @@ export async function ghRequest({
     // tell exactly those apart.
     return { ok: false, status: 0, data: describeThrown(error) };
   }
+}
+
+/**
+ * A GET that retries on the same token, then is re-sent once with
+ * `fallbackToken` when GitHub refuses the first token (401/403) and the
+ * fallback is a different token.
+ *
+ * Both backup-freshness watchdogs read Actions this way, and an unreadable
+ * read there is FAIL, so one blip would file a P1 against a healthy backup.
+ * That is why both reads retry: a 429, a 5xx, a network error, and a response
+ * that doesn't arrive before its timeout. A body that stalls after its headers
+ * is not retried (`http.mjs`, #2601). The fallback is only for refusals: a
+ * transport failure is the same for any token.
+ */
+export async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path, retryOptions }) {
+  const first = await ghRequest({ token, fetchImpl, path, retry: true, retryOptions });
+  const refused = first.status === 401 || first.status === 403;
+  if (refused && typeof fallbackToken === "string" && fallbackToken && fallbackToken !== token) {
+    return ghRequest({ token: fallbackToken, fetchImpl, path, retry: true, retryOptions });
+  }
+  return first;
 }

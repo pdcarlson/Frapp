@@ -50,7 +50,7 @@ import {
   verdictLogLine,
 } from "./lib/backup-job-freshness.mjs";
 import { requireEnv } from "./lib/env.mjs";
-import { ghRequest } from "./lib/github.mjs";
+import { ghGetWithFallback } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const WORKFLOW_FILE = "db-backup.yml";
@@ -84,28 +84,6 @@ export function resolveActionsFallbackToken(env = process.env) {
   return "";
 }
 
-function isAuthish(status) {
-  return status === 401 || status === 403;
-}
-
-// Each read retries a 429, a 5xx, a network error or a timeout on the same
-// token (`lib/http.mjs`), because an unreadable Actions response is FAIL: one
-// blip would otherwise file a P1 against a healthy backup. Every attempt is
-// bounded, so a stalled API can't hold the job past its `timeout-minutes`
-// before the alert is written (#2333). The fallback token is a separate rule.
-async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path, retryOptions }) {
-  const first = await ghRequest({ token, fetchImpl, path, retry: true, retryOptions });
-  if (
-    isAuthish(first.status) &&
-    typeof fallbackToken === "string" &&
-    fallbackToken &&
-    fallbackToken !== token
-  ) {
-    return ghRequest({ token: fallbackToken, fetchImpl, path, retry: true, retryOptions });
-  }
-  return first;
-}
-
 function runsPath(repo) {
   return (
     `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs` +
@@ -124,7 +102,7 @@ function jobsPath(repo, runId) {
  * workflow_dispatch on `main` both count: a failed dump on `main` is a
  * failed dump. Retry with the fallback token only on 401/403, and only
  * when the fallback token is different. A transport failure is retried on
- * the same token first (`ghGetWithFallback`). Never PUT.
+ * the same token first (`ghGetWithFallback` in `lib/github.mjs`). Never PUT.
  */
 export async function readDumpFreshness({
   token,
@@ -132,7 +110,7 @@ export async function readDumpFreshness({
   fetchImpl,
   fallbackToken,
   now = Date.now(),
-  // Passed to `ghRequest` (backoff, sleep, timeout) so tests stay offline.
+  // Passed to `ghGetWithFallback` (backoff, sleep, timeout) so tests stay offline.
   retryOptions,
 }) {
   return readJobFreshness({

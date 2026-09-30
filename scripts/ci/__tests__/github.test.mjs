@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ghRequest, githubHeaders, GITHUB_API } from "../lib/github.mjs";
+import { ghGetWithFallback, ghRequest, githubHeaders, GITHUB_API } from "../lib/github.mjs";
 
 function recorder(responder) {
   const calls = [];
@@ -138,13 +138,16 @@ describe("ghRequest", () => {
     assert.ok(calls[1].init.signal instanceof AbortSignal);
   });
 
+  // Settles only when the request's own signal aborts. With no signal it never
+  // settles, so an unbounded call fails the test on its timeout instead of
+  // passing on a TypeError.
   function hangsUntilAborted(signal) {
     return new Promise((_, reject) => {
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
     });
   }
 
-  it("turns a call that never answers into ok:false status:0, once, within its timeout", async () => {
+  it("turns a call that never answers into ok:false status:0, once, within its timeout", { timeout: 2000 }, async () => {
     const { calls, fetchImpl } = recorder((_n, init) => hangsUntilAborted(init.signal));
     const result = await ghRequest({
       token: "t",
@@ -158,7 +161,7 @@ describe("ghRequest", () => {
     assert.match(result.data, /timeout|aborted/i);
   });
 
-  it("turns a body that stalls after the headers into ok:false status:0", async () => {
+  it("turns a body that stalls after the headers into ok:false status:0", { timeout: 2000 }, async () => {
     const { fetchImpl } = recorder((_n, init) => ({
       ok: true,
       status: 200,
@@ -172,6 +175,7 @@ describe("ghRequest", () => {
     });
     assert.equal(result.ok, false);
     assert.equal(result.status, 0);
+    assert.match(result.data, /timeout|aborted/i);
   });
 
   it("keeps a caller's `attempts` from turning retry on", async () => {
@@ -198,5 +202,43 @@ describe("ghRequest", () => {
     });
     assert.equal(calls.length, 3);
     assert.deepEqual(data, { done: true });
+  });
+});
+
+describe("ghGetWithFallback", () => {
+  const status = (code) => ({ ok: code < 300, status: code, text: async () => "{}" });
+  const tokenOf = (call) => call.init.headers.Authorization.replace("Bearer ", "");
+  const read = (fetchImpl, fallbackToken = "pat") =>
+    ghGetWithFallback({
+      token: "tok",
+      fallbackToken,
+      fetchImpl,
+      path: "/x",
+      retryOptions: { sleep: async () => {} },
+    });
+
+  it("retries a 5xx on the same token and never falls back for it", async () => {
+    const { calls, fetchImpl } = recorder((n) => (n < 3 ? status(502) : ok({})));
+    const result = await read(fetchImpl);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls.map(tokenOf), ["tok", "tok", "tok"]);
+  });
+
+  it("falls back on a 401 or 403 only when the fallback token differs", async () => {
+    for (const refused of [401, 403]) {
+      const { calls, fetchImpl } = recorder((n) => (n === 1 ? status(refused) : ok({})));
+      assert.equal((await read(fetchImpl)).ok, true);
+      assert.deepEqual(calls.map(tokenOf), ["tok", "pat"]);
+    }
+    const { calls, fetchImpl } = recorder(() => status(401));
+    assert.equal((await read(fetchImpl, "tok")).status, 401);
+    assert.equal(calls.length, 1);
+  });
+
+  it("retries the fallback read too", async () => {
+    const { calls, fetchImpl } = recorder((n) => (n === 1 ? status(403) : n === 2 ? status(500) : ok({})));
+    const result = await read(fetchImpl);
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls.map(tokenOf), ["tok", "pat", "pat"]);
   });
 });

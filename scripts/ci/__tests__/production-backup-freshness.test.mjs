@@ -326,6 +326,44 @@ describe("readDumpFreshness", () => {
     assert.equal(calls.length, 3);
   });
 
+  // The read that follows a refused token retries too (#2333), so a blip on
+  // it doesn't file a P1 either.
+  it("retries a 5xx on the fallback read after a 401", async () => {
+    const calls = [];
+    let runsGets = 0;
+    const fetchImpl = async (url, init = {}) => {
+      calls.push({ method: init.method ?? "GET", url, token: init.headers?.Authorization });
+      if (String(url).includes(`/actions/workflows/${WORKFLOW_FILE}/runs`)) {
+        runsGets += 1;
+        if (runsGets === 1) return { ok: false, status: 401, text: async () => "{}" };
+        if (runsGets === 2) return { ok: false, status: 502, text: async () => "{}" };
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify({ workflow_runs: [{ id: 99, status: "completed", created_at: hoursAgo(16) }] }),
+        };
+      }
+      if (String(url).includes("/actions/runs/99/jobs")) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ jobs: [successJob()] }) };
+      }
+      throw new Error(`unexpected ${init.method ?? "GET"} ${url}`);
+    };
+    const verdict = await readDumpFreshness({
+      token: "tok",
+      fallbackToken: "pat",
+      repo: "org/repo",
+      fetchImpl,
+      now: NOW,
+      retryOptions: { sleep: async () => {} },
+    });
+    assert.equal(verdict.ok, true, verdict.reason);
+    assert.deepEqual(
+      calls.slice(0, 3).map((c) => c.token),
+      ["Bearer tok", "Bearer pat", "Bearer pat"],
+    );
+  });
+
   // #2333: a blip on the Actions read is re-asked on the same token before
   // the verdict calls it unreadable. The fallback token is only for 401/403.
   it("retries a 500 on the same token, never with the fallback token", async () => {
