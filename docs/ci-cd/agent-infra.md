@@ -294,7 +294,7 @@ Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../.clau
 
 ## Dependency updates (Dependabot)
 
-Dependabot's schedule, grouping and ignore-list rule, and the write-ups behind several ignore entries, live in [`dependency-updates.md`](dependency-updates.md); every entry's own reason is inline in [`.github/dependabot.yml`](../../.github/dependabot.yml). Cite that file and a heading, never `§N`.
+Dependabot's schedule, grouping and ignore-list rule, and the write-ups behind several ignore entries, live in [`dependency-updates.md`](dependency-updates.md); the reason for every entry is commented inline in [`.github/dependabot.yml`](../../.github/dependabot.yml). Cite that file and a heading, never `§N`.
 
 ## eslint-plugin-react-hooks 7 compiler rules
 

@@ -1,6 +1,6 @@
 # Dependency updates (Dependabot)
 
-Facts for Dependabot's schedule and grouping, the rule behind its ignore list, the write-ups behind several ignore entries, and the dependency-tree traps they guard against. The full ignore list is [`.github/dependabot.yml`](../../.github/dependabot.yml), where each entry carries its own reason; an entry with no section here (the NestJS 12 hold, the `postcss` pin) is explained only there. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
+Facts for Dependabot's schedule and grouping, the rule behind its ignore list, the write-ups behind several ignore entries, and the dependency-tree traps they guard against. The full ignore list is [`.github/dependabot.yml`](../../.github/dependabot.yml), where every entry sits under a comment giving its reason; an entry with no section here (the NestJS 12 hold, the `postcss` pin) is explained only there. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
 
 Config: [`.github/dependabot.yml`](../../.github/dependabot.yml). This is the automated half of
 the supply-chain story; the blocking half is `npm run check:npm-audit` ([`agent-infra.md` → Lint, test, build](agent-infra.md#lint-test-build-repo-root)), which fails CI on any
