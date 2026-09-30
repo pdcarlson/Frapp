@@ -160,7 +160,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     the member's bearer token and the server derives the author from it, and the
     two paths that talk to Supabase directly are RLS-scoped to `auth.uid()`
     (`chat_message_actions`). What the id does is decide *local* attribution —
-    which chip lights up (`toggleReactionLocal`), whose optimistic bubble is
+    which chip lights up (`toggleReactionLocal`), whose optimistic row is
     drawn (`senderId`), which member's queued rows hydrate
     (`hydrateOutboxIntoCache`). That is the same question `viewerId` answers for
     the timeline, so it takes the same answer.
@@ -174,7 +174,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     leave the row on the server until a refetch or a realtime echo restores it.
     RLS still prevents it touching anyone else's row; the cost is a chip that
     disagrees with the server for one fetch, which is the same class of cost as
-    painting a bubble on the wrong side for one fetch, and strictly smaller than
+    painting a row as the wrong member's for one fetch, and strictly smaller than
     the alternative below.
 
     Keeping it on the live id was worse than inconsistent, it was broken. The

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   StyleSheet,
   Text,
@@ -17,19 +18,25 @@ import { openMessageLink } from "@/lib/chat/open-link";
  * work around, so `linkSegments` in `@repo/chat-core/links` finds them with
  * the same `isSafeHref` rule web's renderer applies.
  *
- * A link is a nested `Text`, so it inherits the bubble's color and type and
- * is set apart by its underline alone, which reads on both the neutral
- * incoming bubble and the chapter-accent self bubble. It forwards the row's
+ * A link is a nested `Text`, so it inherits the body's color and type and
+ * is set apart by its underline alone, which reads in the plain body and in a
+ * muted one still sending. It forwards the row's
  * long-press, since a nested `Text` with `onPress` claims the touch.
  */
 export function MessageText({
   segments,
   style,
+  trailing,
   onLongPress,
 }: {
   /** `linkSegments(message.content)`, computed once by the caller. */
   segments: LinkSegment[];
   style: StyleProp<TextStyle>;
+  /**
+   * `(edited)` and Pinned, nested after the last segment so they sit on the
+   * text's last line (`components.md` §11 § What rides the row).
+   */
+  trailing?: ReactNode;
   onLongPress?: () => void;
 }) {
   return (
@@ -49,6 +56,7 @@ export function MessageText({
           </Text>
         ),
       )}
+      {trailing}
     </Text>
   );
 }

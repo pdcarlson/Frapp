@@ -111,6 +111,13 @@ describe("the attachment list", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
+  it("sizes each row to its content rather than the thread's width", () => {
+    // The body column stretches its children; without this a file row became
+    // a bordered bar across the whole thread.
+    show(attachment());
+    expect(screen.getByRole("list")).toHaveClass("items-start");
+  });
+
   it("keeps any other file a download row", () => {
     show(attachment());
 

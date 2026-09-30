@@ -48,10 +48,10 @@ interface QuotedMessageProps {
  * mode a "quote preview" invites (the reply you are writing must look like the
  * reply you just sent).
  *
- * A left rule plus author and preview on one line. `text-[12.5px]` and
- * `text-muted-foreground` are the meta-line treatment `message-item.tsx` already
- * uses for the author/time caption, so a quote reads as chrome around the
- * message rather than as a second message.
+ * A left rule plus author and preview on one line, as a 12.5px caption: the
+ * author at 600 in `--foreground`, the preview in `--muted-foreground`
+ * (`components.md` §11 § What rides the row), so a quote reads as chrome around
+ * the message rather than as a second message.
  */
 export function QuotedMessage({
   author,
@@ -75,7 +75,7 @@ export function QuotedMessage({
       <span className="truncate">{placeholder}</span>
     ) : (
       <>
-        <span className="shrink-0 font-semibold">{author}</span>
+        <span className="shrink-0 font-semibold text-foreground">{author}</span>
         <span className="truncate">{preview}</span>
       </>
     );

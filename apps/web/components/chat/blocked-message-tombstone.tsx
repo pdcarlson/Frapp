@@ -26,7 +26,7 @@ export interface BlockedMessageTombstoneProps {
    */
   reload: MaskedRefreshState | null;
   onReload: () => void;
-  /** Top padding follows the timeline's grouping, like any other row. */
+  /** Top padding follows the timeline's runs, like any other row. */
   showHeader: boolean;
 }
 
@@ -66,11 +66,16 @@ export function BlockedMessageTombstone({
   return (
     <div
       role="listitem"
-      className={cn("flex gap-2.5 px-5 pb-1", showHeader ? "pt-4" : "pt-1")}
+      className={cn("flex gap-3 px-5 pb-0.5", showHeader ? "pt-4" : "pt-0.5")}
       data-blocked="true"
     >
       <div className="w-8 shrink-0" />
-      <div className="flex min-w-0 max-w-[86%] items-center gap-3 rounded-[18px] rounded-bl-[6px] border border-border px-4 py-2">
+      {/*
+        One muted line in the body column (§11 § What rides the row). It used
+        to sit in an incoming-bubble outline; the compact layout has no bubble
+        to borrow, and a line that names no author needs no frame.
+      */}
+      <div className="flex min-h-[25px] min-w-0 flex-1 items-center gap-3">
         <p className="min-w-0 text-[12.5px] italic text-muted-foreground">
           {canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT}
         </p>
