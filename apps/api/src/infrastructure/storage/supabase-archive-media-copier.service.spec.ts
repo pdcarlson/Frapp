@@ -47,8 +47,13 @@ describe('SupabaseArchiveMediaCopier', () => {
     }).compile();
     copier = moduleRef.get(SupabaseArchiveMediaCopier);
     // The real wait is seconds long; the retry ORDER is what is under test.
-    wait = jest.spyOn(copier, 'wait').mockResolvedValue(undefined);
-    now = jest.spyOn(copier, 'now').mockReturnValue(0);
+    // `wait` and `now` are the class's protected seams for exactly this.
+    const seams = copier as unknown as {
+      wait(ms: number): Promise<void>;
+      now(): number;
+    };
+    wait = jest.spyOn(seams, 'wait').mockResolvedValue(undefined);
+    now = jest.spyOn(seams, 'now').mockReturnValue(0);
   });
 
   it('calls the function with the batch, inside the platform timeout', async () => {

@@ -41,7 +41,7 @@ describe('defaultLevelFor', () => {
 
 describe('resolveLevel', () => {
   const prefs = (rows: Partial<ChatNotificationPreferenceRow>[]) =>
-    rows.map((r) => ({
+    rows.map((r): ChatNotificationPreferenceRow => ({
       user_id: 'u',
       chapter_id: 'c',
       scope: 'channel',

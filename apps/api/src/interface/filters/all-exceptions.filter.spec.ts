@@ -687,7 +687,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(captureSentryErrorCorrelated).toHaveBeenCalledTimes(1);
       const [distinctId, properties] = jest.mocked(captureSentryErrorCorrelated)
-        .mock.calls[0] as [string, Record<string, unknown>];
+        .mock.calls[0];
       expect(distinctId).toMatch(/^[0-9a-f]{64}$/);
       expect(distinctId).not.toBe(USER_ID);
       expect(properties).toEqual({
@@ -720,7 +720,7 @@ describe('AllExceptionsFilter', () => {
 
       expect(captureSentryErrorCorrelated).toHaveBeenCalledTimes(1);
       const [, properties] = jest.mocked(captureSentryErrorCorrelated).mock
-        .calls[0] as [string, Record<string, unknown>];
+        .calls[0];
       expect(properties.status_class).toBeUndefined();
 
       expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);

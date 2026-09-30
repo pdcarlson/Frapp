@@ -4,6 +4,7 @@ import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.r
 import type {
   ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
+  StoredChatMessageBookmark,
 } from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
@@ -40,7 +41,7 @@ export const BOOKMARK_REDACTED_CONTENT =
   '[unavailable — you no longer have access to this channel]';
 
 function redactBookmarkedMessage(
-  bookmark: ChatMessageBookmarkWithMessage,
+  bookmark: StoredChatMessageBookmark,
 ): ChatMessageBookmarkWithMessage {
   return {
     ...bookmark,

@@ -131,7 +131,8 @@ describe('Sentry SDK integration', () => {
    * Only `event`-type items carry the error payloads this file asserts on.
    */
   function eventsFromEnvelope(envelope: unknown): ErrorEvent[] {
-    return itemsFromEnvelope(envelope, 'event') as ErrorEvent[];
+    // Parsed JSON: the SDK's own serialised events.
+    return itemsFromEnvelope(envelope, 'event') as unknown as ErrorEvent[];
   }
 
   function itemsFromEnvelope(

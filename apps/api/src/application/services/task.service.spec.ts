@@ -13,6 +13,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { Task, TaskStatus } from '#domain/entities/task.entity';
 import type { Member } from '#domain/entities/member.entity';
+import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 
@@ -56,6 +57,7 @@ describe('TaskService', () => {
     role_ids: ['role-1'],
     custom_role_ids: [],
     has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
     created_at: '2026-02-01T00:00:00.000Z',
     updated_at: '2026-02-01T00:00:00.000Z',
   };
@@ -78,6 +80,10 @@ describe('TaskService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockUserRepo = {
@@ -189,8 +195,14 @@ describe('TaskService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockTaskRepo.create.mockResolvedValue(baseTask);
       mockUserRepo.findByIds.mockResolvedValue([
-        { id: 'admin-1', display_name: 'Admin Alice' },
-        { id: 'user-1', display_name: 'Member Bob' },
+        {
+          id: 'admin-1',
+          display_name: 'Admin Alice',
+        } as User,
+        {
+          id: 'user-1',
+          display_name: 'Member Bob',
+        } as User,
       ]);
 
       await service.create({
@@ -278,8 +290,14 @@ describe('TaskService', () => {
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
         mockTaskRepo.create.mockResolvedValue(baseTask);
         mockUserRepo.findByIds.mockResolvedValue([
-          { id: 'admin-1', display_name: 'Admin Alice' },
-          { id: 'user-1', display_name: 'Member Bob' },
+          {
+            id: 'admin-1',
+            display_name: 'Admin Alice',
+          } as User,
+          {
+            id: 'user-1',
+            display_name: 'Member Bob',
+          } as User,
         ]);
 
         const result = await service.create(chatInput);

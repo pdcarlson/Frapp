@@ -368,8 +368,10 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
           unsubscribe: jest.fn().mockResolvedValue('ok'),
           teardown: jest.fn(),
           presenceState: () => ({}),
+          // `subscribe` throws before it can hand the worker a callback.
+          status: jest.fn(),
         };
-        realtime.opened.push(broken as unknown as FakeChannel);
+        realtime.opened.push(broken);
         return broken;
       });
 
@@ -395,24 +397,18 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
     };
 
     let spans: Array<{
-      options: Record<string, unknown>;
+      options: Parameters<typeof Sentry.startSpan>[0];
       setAttributes: jest.Mock;
     }>;
 
     beforeEach(() => {
       spans = [];
-      jest
-        .mocked(Sentry.startSpan)
-        .mockImplementation(
-          (
-            options: Record<string, unknown>,
-            callback: (span: { setAttributes: jest.Mock }) => unknown,
-          ) => {
-            const span = { setAttributes: jest.fn() };
-            spans.push({ options, setAttributes: span.setAttributes });
-            return callback(span);
-          },
-        );
+      jest.mocked(Sentry.startSpan).mockImplementation((options, callback) => {
+        const span = { setAttributes: jest.fn() };
+        spans.push({ options, setAttributes: span.setAttributes });
+        // The worker only calls `setAttributes`; the rest of `Span` is unused.
+        return callback(span as unknown as Sentry.Span);
+      });
       claim.mockResolvedValue('claimed');
       worker.__setChannelForTest(CHANNEL);
       findByChapter.mockResolvedValue(

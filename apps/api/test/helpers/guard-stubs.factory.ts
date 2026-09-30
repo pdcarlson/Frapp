@@ -36,11 +36,10 @@ import type {
  *   that keeps the real `PermissionsGuard` for a custom-role-gated route must
  *   set it itself, or `permissions.guard.ts` resolves zero custom roles and the
  *   route 403s for a reason that has nothing to do with the assertion.
- * - **This is documentation strength, not gate strength.** `apps/api/test` sits
- *   outside the only typecheck the repo gates on — `tsconfig.build.json`
- *   excludes `test` and every spec file — and ts-jest transpiles without type
- *   checking, so nothing here fails CI on a type error. Tracked as a standing
- *   finding; do not read these annotations as a gate.
+ * - **These annotations are a gate, within the limits above.** `npm run
+ *   check-types` type-checks `apps/api/test` and every spec (#2821), so a stub
+ *   that stops matching these types fails CI. What no type check can catch is a
+ *   stub that writes less than the real guard does, as the bullets above say.
  */
 interface GuardPopulatedRequest {
   /** Set by `SupabaseAuthGuard` from the verified JWT (narrowed — see above). */

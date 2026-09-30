@@ -4,7 +4,7 @@ import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.repository.interface';
 import type {
   ChatMessageBookmarkRef,
-  ChatMessageBookmarkWithMessage,
+  StoredChatMessageBookmark,
 } from '#domain/entities/chat.entity';
 /**
  * The message columns this endpoint serves — deliberately NOT
@@ -136,7 +136,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
   async findByUserAndChapter(
     userId: string,
     chapterId: string,
-  ): Promise<ChatMessageBookmarkWithMessage[]> {
+  ): Promise<StoredChatMessageBookmark[]> {
     const { data, error } = await this.supabase
       .from('chat_message_bookmarks')
       .select(BOOKMARK_WITH_MESSAGE_SELECT)
@@ -149,9 +149,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
     // the raw row shape, not to the entity, so `stripBookmarkRow` still has to
     // do the narrowing.
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    return rows.map((row) =>
-      stripBookmarkRow<ChatMessageBookmarkWithMessage>(row),
-    );
+    return rows.map((row) => stripBookmarkRow<StoredChatMessageBookmark>(row));
   }
 }
 

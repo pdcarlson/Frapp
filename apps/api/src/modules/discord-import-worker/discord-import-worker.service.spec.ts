@@ -20,6 +20,7 @@ import type {
   DiscordImportChannel,
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
+import type { ImportedMessageRow } from '#domain/utils/discord-export';
 
 const FIXTURES = join(__dirname, '../../../test/fixtures/discord');
 const CHAPTER = 'chapter-1';
@@ -55,6 +56,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     chapter_id: CHAPTER,
     created_by: 'user-1',
     status: 'ready',
+    source: 'upload',
     guild_id: null,
     guild_name: 'Tau Nu',
     consent_acknowledged_at: NOW.toISOString(),
@@ -141,6 +143,14 @@ function channelMapping(
     imported_count: 0,
     status: 'pending',
     error: null,
+    cursor_before_snowflake: null,
+    parent_discord_channel_id: null,
+    position: 0,
+    // Always null on the upload path (see the entity).
+    readable: null,
+    private_in_discord: null,
+    discord_reader_role_ids: null,
+    new_channel_same_as_discord: false,
     ...overrides,
   };
 }
@@ -167,14 +177,22 @@ function makeRepo(initial: DiscordImport) {
       job: current,
       lockToken: 'token-1',
     })),
-    renewLease: jest.fn(async function (this: { leaseHeld: boolean }) {
+    renewLease: jest.fn(async function (this: {
+      leaseHeld: boolean;
+    }): Promise<boolean> {
       return repoRef.leaseHeld;
     }),
     releaseLease: jest.fn(async () => undefined),
-    findFiles: jest.fn(async () => repoRef.files),
-    findChannels: jest.fn(async () => repoRef.channels),
+    findFiles: jest.fn(async (): Promise<DiscordImportFile[]> => repoRef.files),
+    findChannels: jest.fn(
+      async (): Promise<DiscordImportChannel[]> => repoRef.channels,
+    ),
     update: jest.fn(
-      async (_id: string, _chapter: string, patch: Record<string, unknown>) => {
+      async (
+        _id: string,
+        _chapter: string,
+        patch: Record<string, unknown>,
+      ): Promise<DiscordImport> => {
         repoRef.updates.push(patch);
         current = { ...current, ...(patch as Partial<DiscordImport>) };
         return current;
@@ -186,7 +204,7 @@ function makeRepo(initial: DiscordImport) {
         _chapter: string,
         expected: string[],
         patch: Record<string, unknown>,
-      ) => {
+      ): Promise<DiscordImport | null> => {
         // The real guard: the UPDATE matches no row unless the import is still
         // in one of the expected statuses, which is how the worker learns an
         // admin cancelled it mid-slice.
@@ -201,7 +219,7 @@ function makeRepo(initial: DiscordImport) {
         _id: string,
         _importId: string,
         patch: Record<string, unknown>,
-      ) => {
+      ): Promise<void> => {
         repoRef.channelUpdates.push(patch);
       },
     ),
@@ -212,7 +230,7 @@ function makeRepo(initial: DiscordImport) {
       },
     ),
     insertMessages: jest.fn(
-      async (rows: { channel_id: string; external_message_id: string }[]) => {
+      async (rows: ImportedMessageRow[]): Promise<Map<string, string>> => {
         const out = new Map<string, string>();
         for (const row of rows) {
           const seen =
@@ -231,23 +249,25 @@ function makeRepo(initial: DiscordImport) {
     ),
     replyPairs: [] as { id: string; reply_to_id: string }[],
     setReplyTargets: jest.fn(
-      async (pairs: { id: string; reply_to_id: string }[]) => {
+      async (pairs: { id: string; reply_to_id: string }[]): Promise<number> => {
         repoRef.replyPairs.push(...pairs);
         return pairs.length;
       },
     ),
-    insertAttachments: jest.fn(async (rows: Record<string, unknown>[]) => {
-      repoRef.attachments.push(...rows);
-      return rows.length;
-    }),
-    deleteImportedMessages: jest.fn(async () => {
+    insertAttachments: jest.fn(
+      async (rows: Record<string, unknown>[]): Promise<number> => {
+        repoRef.attachments.push(...rows);
+        return rows.length;
+      },
+    ),
+    deleteImportedMessages: jest.fn(async (): Promise<number> => {
       const round = repoRef.deletedRounds.shift() ?? 0;
       return round;
     }),
     deletedChannels: [] as string[],
     createdChannels: [] as string[],
     recordCreatedChannel: jest.fn(
-      async (_importId: string, channelId: string) => {
+      async (_importId: string, channelId: string): Promise<void> => {
         repoRef.createdChannels.push(channelId);
       },
     ),
@@ -283,7 +303,11 @@ async function buildWorker(
       chapterId === CHAPTER
         ? ids
             .filter((id) => id === SIGNET_CHANNEL)
-            .map((id) => ({ id, chapter_id: chapterId, type: 'PUBLIC' }))
+            .map((id): { id: string; chapter_id: string; type: string } => ({
+              id,
+              chapter_id: chapterId,
+              type: 'PUBLIC',
+            }))
         : [],
     ),
     // Chapter-scoped: the worker re-verifies that the mapping's target channel
@@ -348,9 +372,16 @@ async function buildWorker(
 
 function makeStorage(partBytes: Uint8Array | null) {
   return {
-    downloadFile: jest.fn(async () => partBytes),
-    listFiles: jest.fn(async () => [] as string[]),
-    deleteFiles: jest.fn(async () => undefined),
+    downloadFile: jest.fn(
+      async (_bucket: string, _path: string): Promise<Uint8Array | null> =>
+        partBytes,
+    ),
+    listFiles: jest.fn(
+      async (_bucket: string, _prefix: string): Promise<string[]> => [],
+    ),
+    deleteFiles: jest.fn(
+      async (_bucket: string, _paths: string[]): Promise<void> => undefined,
+    ),
     getSignedUploadUrl: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
     uploadFile: jest.fn(),
@@ -397,7 +428,7 @@ describe('DiscordImportWorkerService — importing', () => {
     const afterFirst = repoRef.inserted().get(SIGNET_CHANNEL)!.size;
 
     // Reset the cursor exactly as a re-import would, and run again.
-    repoRef.update(IMPORT_ID, CHAPTER, {
+    await repoRef.update(IMPORT_ID, CHAPTER, {
       status: 'ready',
       cursor_part_index: 0,
       cursor_message_index: 0,
@@ -457,10 +488,7 @@ describe('DiscordImportWorkerService — importing', () => {
 
     await worker.sweepImports(NOW);
 
-    const rows = repoRef.insertMessages.mock.calls[0][0] as {
-      external_message_id: string;
-      metadata: { attachment_count: number };
-    }[];
+    const rows = repoRef.insertMessages.mock.calls[0][0];
     const doubled = rows.find(
       (r) => r.external_message_id === '900000000000000003',
     );
@@ -657,7 +685,7 @@ describe('DiscordImportWorkerService — importing', () => {
     const { worker } = await buildWorker(repoRef, makeStorage(part000()));
     repoRef.insertMessages.mockImplementationOnce(async () => {
       // The admin cancels while the first batch is in flight.
-      repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
+      await repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
       return new Map();
     });
 
@@ -668,8 +696,8 @@ describe('DiscordImportWorkerService — importing', () => {
 
   it('does not mark a cancelled job failed either', async () => {
     const storage = makeStorage(part000());
-    storage.downloadFile = jest.fn(async () => {
-      repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
+    storage.downloadFile.mockImplementation(async () => {
+      await repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
       throw new Error('storage exploded');
     });
     const { worker } = await buildWorker(repoRef, storage);
@@ -909,8 +937,9 @@ describe('DiscordImportWorkerService — importing', () => {
       ];
       const storage = makeStorage(part000());
       const other = otherChannelPart();
-      storage.downloadFile = jest.fn(async (_bucket: string, path: string) =>
-        path.endsWith('0001-p1.json') ? other : part000(),
+      storage.downloadFile.mockImplementation(
+        async (_bucket: string, path: string) =>
+          path.endsWith('0001-p1.json') ? other : part000(),
       );
       return storage;
     };
@@ -1132,7 +1161,7 @@ describe('DiscordImportWorkerService — importing', () => {
 
   it('marks the job failed and releases the lease when a slice throws', async () => {
     const storage = makeStorage(part000());
-    storage.downloadFile = jest.fn(async () => {
+    storage.downloadFile.mockImplementation(async () => {
       throw new Error('storage exploded');
     });
     const { worker } = await buildWorker(repoRef, storage);
@@ -1151,7 +1180,7 @@ describe('DiscordImportWorkerService — importing', () => {
     // first real bot import failed with its cause reduced to "[object Object]"
     // on the page and in the log (#2825).
     const storage = makeStorage(part000());
-    storage.downloadFile = jest.fn().mockRejectedValue({
+    storage.downloadFile.mockImplementation().mockRejectedValue({
       code: 'PGRST000',
       message: 'request line too long',
     });
@@ -1291,18 +1320,22 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
       }),
     );
     const exportWorker = {
-      runSlice: jest.fn(async () => ({
-        messagesImported: 0,
-        finished: false,
-        totals: {
-          imported: 0,
-          skipped: 0,
-          attachmentsImported: 0,
-          attachmentsSkipped: 0,
-          totalMessages: 0,
-          warnings: [],
-        },
-      })),
+      runSlice: jest.fn(
+        async (
+          _args: Parameters<DiscordExportWorkerService['runSlice']>[0],
+        ) => ({
+          messagesImported: 0,
+          finished: false,
+          totals: {
+            imported: 0,
+            skipped: 0,
+            attachmentsImported: 0,
+            attachmentsSkipped: 0,
+            totalMessages: 0,
+            warnings: [],
+          },
+        }),
+      ),
     };
     const { worker } = await buildWorker(repoRef, makeStorage(null), {
       exportWorker,
@@ -1310,9 +1343,7 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
 
     await worker.sweepImports(NOW);
 
-    const { roleName } = exportWorker.runSlice.mock.calls[0][0] as {
-      roleName: (id: string) => string | null;
-    };
+    const { roleName } = exportWorker.runSlice.mock.calls[0][0];
     expect(roleName(brothers)).toBe('Brothers');
     expect(roleName(amongUs)).toBe('Among Us');
     expect(roleName('700000000000000001')).toBe('everyone');
@@ -1328,7 +1359,10 @@ describe('DiscordImportWorkerService — purging', () => {
   it('deletes rows first, then the archive objects, then marks it purged', async () => {
     repoRef.deletedRounds = [PURGE_BATCH_SIZE, 12];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async () => ['a/one.png', 'a/two.png']);
+    storage.listFiles.mockImplementation(async () => [
+      'a/one.png',
+      'a/two.png',
+    ]);
     const { worker } = await buildWorker(repoRef, storage);
 
     const result = await worker.sweepImports(NOW);
@@ -1380,7 +1414,7 @@ describe('DiscordImportWorkerService — purging', () => {
   it('does not stop purging on a short-but-non-empty round', async () => {
     repoRef.deletedRounds = [200, 200, 40, 0];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async () => ['a/one.png']);
+    storage.listFiles.mockImplementation(async () => ['a/one.png']);
     const { worker } = await buildWorker(repoRef, storage);
 
     const result = await worker.sweepImports(NOW);
@@ -1398,7 +1432,7 @@ describe('DiscordImportWorkerService — purging', () => {
     repoRef.deletedRounds = [12];
     repoRef.deletedChannels = ['created-a', 'created-b'];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async () => ['a/one.png']);
+    storage.listFiles.mockImplementation(async () => ['a/one.png']);
     const { worker, channelCache } = await buildWorker(repoRef, storage);
 
     const result = await worker.sweepImports(NOW);
@@ -1430,8 +1464,9 @@ describe('DiscordImportWorkerService — purging', () => {
   it('keeps the archive objects an open chat report holds, and deletes the rest', async () => {
     repoRef.deletedRounds = [0];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async (_bucket: string, prefix: string) =>
-      prefix.endsWith('/media') ? ['m/held.png', 'm/free.png'] : ['e/x.json'],
+    storage.listFiles.mockImplementation(
+      async (_bucket: string, prefix: string) =>
+        prefix.endsWith('/media') ? ['m/held.png', 'm/free.png'] : ['e/x.json'],
     );
     const reportRepo = {
       findHeldObjects: jest.fn(async () => [
@@ -1455,7 +1490,7 @@ describe('DiscordImportWorkerService — purging', () => {
   it('deletes no archive object and does not mark it purged when the report holds cannot be read', async () => {
     repoRef.deletedRounds = [0];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async () => ['m/one.png']);
+    storage.listFiles.mockImplementation(async () => ['m/one.png']);
     const reportRepo = {
       // A PostgREST error, which the repositories throw as a plain object.
       findHeldObjects: jest.fn(() =>
@@ -1479,7 +1514,7 @@ describe('DiscordImportWorkerService — purging', () => {
       message: 'boom',
     });
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async () => ['a/one.png']);
+    storage.listFiles.mockImplementation(async () => ['a/one.png']);
     const { worker, channelCache } = await buildWorker(repoRef, storage);
 
     await worker.sweepImports(NOW);

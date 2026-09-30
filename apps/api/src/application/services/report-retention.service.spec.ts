@@ -29,10 +29,19 @@ describe('ReportRetentionService', () => {
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
-      deleteFiles: jest.fn(async () => {}),
-      listFiles: jest.fn(async () => []),
-      listObjects: jest.fn(async () => []),
-      listFolders: jest.fn(async () => []),
+      deleteFiles: jest.fn(async (_bucket: string, _paths: string[]) => {}),
+      listFiles: jest.fn(
+        async (_bucket: string, _prefix: string): Promise<string[]> => [],
+      ),
+      listObjects: jest.fn(
+        async (
+          _bucket: string,
+          _prefix: string,
+        ): Promise<StorageObject[]> => [],
+      ),
+      listFolders: jest.fn(
+        async (_bucket: string, _prefix: string): Promise<string[]> => [],
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({

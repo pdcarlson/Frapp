@@ -128,6 +128,7 @@ describe('Chat hot path (e2e)', () => {
     chapter_id: 'chapter-1',
     role_ids: ['role-member'],
     has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   };
@@ -141,6 +142,10 @@ describe('Chat hot path (e2e)', () => {
     update: jest.fn(),
     delete: jest.fn(),
     leaveGroupDm: jest.fn(),
+    findRoleGates: jest.fn(),
+    addPrivateChannelMember: jest.fn(),
+    removePrivateChannelMember: jest.fn(),
+    removeUserFromPrivateChannels: jest.fn(),
   };
   const categoryRepoMock: jest.Mocked<IChatCategoryRepository> = {
     findByChapter: jest.fn(),
@@ -168,6 +173,7 @@ describe('Chat hot path (e2e)', () => {
   const attachmentRepoMock: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn(),
     findByMessage: jest.fn(),
+    findSharedObjects: jest.fn(),
   };
   const reactionRepoMock: jest.Mocked<IMessageReactionRepository> = {
     findByMessage: jest.fn(),

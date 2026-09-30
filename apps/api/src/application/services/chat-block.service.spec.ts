@@ -45,6 +45,7 @@ describe('ChatBlockService', () => {
       findBlockedUserIds: jest.fn().mockResolvedValue([THEM]),
       create: jest.fn().mockResolvedValue(blockRow),
       delete: jest.fn().mockResolvedValue(undefined),
+      findBlockersAmong: jest.fn(),
     };
     memberRepo = {
       findByUserAndChapter: jest
