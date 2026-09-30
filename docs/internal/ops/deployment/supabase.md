@@ -439,15 +439,15 @@ delivery log** rather than as an application error — look there first, not at 
 API or the invite token. Not yet observed either way: no mail has been sent to a
 relay address from either domain.
 
-**Observed sign-ins.** The provider rows above record configuration, not a
-sign-in, and this table is not evidence of one. What has been observed, per
-project and surface, as of 2026-09-30:
+**Observed sign-ins.** The provider rows in the Done / Not done table record
+configuration, not a sign-in. What has been observed, per project and surface,
+as of 2026-09-30:
 
 | | `frapp-staging` | `frapp-prod` |
 | --- | --- | --- |
 | **Apple, web** | **Observed.** The owner reported "live round-trip OK on `app.staging.frapp.live`" on 2026-09-13 at 16:59Z ([#2120](https://github.com/pdcarlson/Frapp/issues/2120#issuecomment-5654699636), closed 2026-09-30). The one `apple` identity was linked about five minutes earlier, at 16:53:45Z. | **Not observed**: no `apple` identity. [#808](https://github.com/pdcarlson/Frapp/issues/808) row 4 owns the first one, on `app.frapp.live`. |
 | **Apple, native iOS** | Not observed. | Not observed. [#2334](https://github.com/pdcarlson/Frapp/issues/2334) owns it, on the iOS build. |
-| **Google** | **Reported, not confirmed by the database.** The owner reported Google "OK in a normal window" in the same 2026-09-13 comment, naming no host. A private-window attempt that day hit a Supabase callback `Gateway Timeout`, treated at the time as a transient flake. Separately, the one `google` identity was linked on 2026-09-10 at 19:03Z, from an unrecorded surface, with no session recorded that day. At 16:26Z on 2026-09-13 the owner still wrote that no Google round-trip had happened. | **Observed, surface unrecorded.** The one `google` identity was linked on 2026-09-15 at 04:37Z to an existing user, created on 2026-09-07 with an `email` identity. That user holds a live session with the `oauth` method, created 2026-09-17 at 20:07Z; Google is its only OAuth identity, so that is a Google sign-in. Nobody reported it, and whether it came from the web app or a mobile build isn't recorded. |
+| **Google** | **Reported, not confirmed by the database.** The owner reported Google "OK in a normal window" in the same 2026-09-13 comment, naming no host. A private-window attempt that day hit a Supabase callback `Gateway Timeout`, treated at the time as a transient flake. Separately, the one `google` identity was linked on 2026-09-10 at 19:03Z, from an unrecorded surface, and no session from that day remains. At 16:26Z on 2026-09-13 the owner still wrote that no Google round-trip had happened. | **Observed, surface unrecorded.** The one `google` identity was linked on 2026-09-15 at 04:37Z to an existing user, created on 2026-09-07 with an `email` identity. That user holds a live session with the `oauth` method, created 2026-09-17 at 20:07Z; Google is its only OAuth identity, so that is a Google sign-in. Nobody reported it, and whether it came from the web app or a mobile build isn't recorded. |
 
 Neither project has a sign-in recorded as coming from a mobile build.
 
