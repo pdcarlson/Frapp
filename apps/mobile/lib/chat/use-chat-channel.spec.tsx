@@ -1069,7 +1069,7 @@ describe("act() failure surfacing (#528/#999)", () => {
       }),
     );
 
-    expect(result.current.actionError).toBe(MODULE_REFUSAL_COPY.pollVote);
+    expect(result.current.actionError).toBe(MODULE_REFUSAL_COPY.polls);
   });
 
   it("clears via clearActionError", async () => {

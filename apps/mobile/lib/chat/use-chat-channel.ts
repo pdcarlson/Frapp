@@ -503,7 +503,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
             const refusal = moduleRefusalFromServerMessage(input.description);
             setActionError(
               refusal?.moduleKey === "polls"
-                ? MODULE_REFUSAL_COPY.pollVote
+                ? MODULE_REFUSAL_COPY.polls
                 : (input.description ?? input.title),
             );
           },

@@ -2386,6 +2386,63 @@ describe('ChatService', () => {
         expect(mockMessageRepo.create).toHaveBeenCalledTimes(2);
       });
 
+      it('answers a replay of a poll that committed before Polls went off as a duplicate', async () => {
+        // The outbox replays a send whose response was lost. Refusing it would
+        // have the client mark a poll that exists on the server as failed.
+        const committed = { ...baseMessage, kind: 'poll' as const };
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(committed);
+
+        const result = await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Formal venue?',
+          kind: 'poll',
+          client_message_id: '11111111-1111-1111-1111-111111111111',
+          enabled_modules: { polls: false },
+        });
+
+        expect(result).toEqual({ message: committed, deduplicated: true });
+        expect(mockMessageRepo.findByClientMessageId).toHaveBeenCalledWith(
+          'ch-chan-1',
+          'user-1',
+          '11111111-1111-1111-1111-111111111111',
+        );
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still refuses a new poll whose client id matches nothing', async () => {
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(null);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Formal venue?',
+            kind: 'poll',
+            client_message_id: '22222222-2222-2222-2222-222222222222',
+            enabled_modules: { polls: false },
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a dues card while Dues is off', async () => {
+        // The dues exemption keeps paying reachable; a card pays nothing.
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Dues reminder',
+            kind: 'dues',
+            enabled_modules: { dues: false },
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
       it('leaves a text message alone while Polls is off', async () => {
         await service.sendMessage({
           chapter_id: 'ch-1',

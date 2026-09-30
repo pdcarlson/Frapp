@@ -1032,17 +1032,6 @@ export function Composer({
    */
   const slashRefusal = useCallback(
     (command: SlashCommand): { title: string; description: string } | null => {
-      // First: while the command can't run at all, fixing anything below
-      // would be wasted effort. The palette hides a disabled module's command,
-      // but a command typed out in full reaches `submit` without the palette,
-      // so this is the gate for that path (#2993). The server refuses the
-      // write too; this lets the member hear it before a round trip.
-      const moduleRefusal = slashModuleRefusal(
-        command,
-        slashCommandsStatus,
-        isModuleEnabled,
-      );
-      if (moduleRefusal) return moduleRefusal;
       // A slash command is NOT a queued write. `/points`, `/task` and `/event`
       // POST straight to their controllers from
       // `packages/chat-core/src/dispatch.ts` with no outbox behind them, so
@@ -1056,6 +1045,20 @@ export function Composer({
             "Slash commands aren't queued. Your text is still here. Send it when you're back online.",
         };
       }
+      // After the connection, which is the truer reason while offline: the
+      // module read can't answer then either, and "try again in a moment"
+      // would send the member round in circles. Before the staged context,
+      // because while the command can't run at all, clearing that would be
+      // wasted effort. The palette hides a disabled module's command, but a
+      // command typed out in full reaches `submit` without the palette, so
+      // this is the gate for that path (#2993). The server refuses the write
+      // too; this lets the member hear it before a round trip.
+      const moduleRefusal = slashModuleRefusal(
+        command,
+        slashCommandsStatus,
+        isModuleEnabled,
+      );
+      if (moduleRefusal) return moduleRefusal;
       // A slash command posts a card, which has nowhere to hang a file.
       if (pending.length > 0) {
         return {

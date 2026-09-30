@@ -13,6 +13,7 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isDirectChannel,
+  isModuleEnabled,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
   resolveMentions,
@@ -208,12 +209,14 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
  * send route is an always-on module's, so route metadata can't gate it.
  *
  * The server-only kinds need no entry: their only writers are the modules' own
- * services, reached through controllers that carry `@RequireModule`. Nor does
- * `dues`, deliberately: member-invoice writes stay ungated because paying dues
- * is how a locked chapter recovers (`spec/product/modules.md`).
+ * services, reached through controllers that carry `@RequireModule`. `dues` is
+ * here although member-invoice routes stay ungated: that exemption keeps
+ * *paying* reachable for a locked chapter (`spec/product/modules.md`), and
+ * posting a dues card pays nothing.
  */
 const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
   poll: 'polls',
+  dues: 'dues',
 };
 
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
@@ -939,13 +942,6 @@ export class ChatService {
       );
     }
 
-    // Before the channel lookup, like the kind check above: the refusal depends
-    // only on the chapter and the kind, so it costs no query.
-    const gatedModule = input.kind ? MODULE_GATED_KINDS[input.kind] : undefined;
-    if (gatedModule) {
-      assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
-    }
-
     const channel = await this.assertChannelAccess(
       input.channel_id,
       input.chapter_id,
@@ -973,6 +969,29 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
+
+    const gatedModule = MODULE_GATED_KINDS[kind];
+    if (
+      gatedModule &&
+      !isModuleEnabled(input.enabled_modules ?? null, gatedModule)
+    ) {
+      // A replay of a card that committed before the module was switched off
+      // is not a new write: answer it as the duplicate below would, or the
+      // client's outbox marks a card that exists on the server as failed.
+      // Nothing is written on this path, not even the attachment repair.
+      const existing = input.client_message_id
+        ? await this.messageRepo.findByClientMessageId(
+            input.channel_id,
+            input.sender_id,
+            input.client_message_id,
+          )
+        : null;
+      if (existing && existing.kind === kind) {
+        return { message: existing, deduplicated: true };
+      }
+      assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
+    }
+
     const mentions = await this.resolveMentionsForChapter(
       input.chapter_id,
       input.content,

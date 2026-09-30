@@ -193,6 +193,7 @@ const sidebarState = {
 const slashGateReads = {
   orgConfigError: false,
   enabledModules: null as Record<string, boolean> | null,
+  recruitment: undefined as string | undefined,
 };
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
@@ -276,7 +277,12 @@ vi.mock("@repo/hooks", async () => ({
   // The slash gate's source: the member view, through
   // `useChapterModuleGateState` (#2957, #2993).
   useCurrentChapter: () => ({
-    data: { enabled_modules: slashGateReads.enabledModules },
+    data: {
+      enabled_modules: slashGateReads.enabledModules,
+      vocabulary: slashGateReads.recruitment
+        ? { recruitment: slashGateReads.recruitment }
+        : undefined,
+    },
     isError: false,
     refetch: vi.fn(),
   }),
@@ -540,8 +546,10 @@ vi.mock("./composer", () => ({
     onRestoreReply,
     isModuleEnabled,
     slashCommandsStatus,
+    recruitmentVocab,
   }: {
     channelId: string;
+    recruitmentVocab?: string;
     isModuleEnabled?: (moduleKey: string) => boolean;
     slashCommandsStatus?: string;
     // The shell-to-editor handoff (#2176) is entirely carried by these two:
@@ -578,6 +586,7 @@ vi.mock("./composer", () => ({
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
+        data-recruitment={recruitmentVocab ?? ""}
       >
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
@@ -823,6 +832,7 @@ function chatChannelResult(
 beforeEach(() => {
   slashGateReads.orgConfigError = false;
   slashGateReads.enabledModules = null;
+  slashGateReads.recruitment = undefined;
   // Session-wide by design, so a row an earlier case showed against a ready
   // list would otherwise stay cleared into the next one.
   blockClearance.reset();
@@ -857,6 +867,17 @@ describe("ChatShell slash-command module gate (#2957, #2993)", () => {
     const composer = screen.getByTestId("composer");
     expect(composer).toHaveAttribute("data-slash-status", "ready");
     expect(composer).toHaveAttribute("data-polls-enabled", "true");
+  });
+
+  it("takes the recruitment word from the member view too, so a member sees /intake", () => {
+    slashGateReads.orgConfigError = true;
+    slashGateReads.recruitment = "intake";
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-recruitment",
+      "intake",
+    );
   });
 
   it("hands the composer the chapter's switched-off modules", () => {

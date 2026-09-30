@@ -21,7 +21,12 @@ import {
 } from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
 import { OLDER_PAGE_LIMIT } from "@repo/chat-core/history";
-import { useChatChannel } from "./use-chat-channel";
+import {
+  memberFacingDescription,
+  POLLS_OFF_COPY,
+  useChatChannel,
+} from "./use-chat-channel";
+import { moduleDisabledMessage } from "@repo/validation";
 
 /**
  * #1909 — an `unconfirmed` `/points` row, and the Retry that replays its
@@ -903,5 +908,27 @@ describe("useChatChannel — a send the outbox refuses rejects (#1728)", () => {
     expect(mocks.clearAfterSend).not.toHaveBeenCalled();
     // `sendMessage` took its optimistic card back out.
     expect(result.current.messages).toHaveLength(0);
+  });
+});
+
+/**
+ * #2993 — a poll card's vote, or a `/poll` sent past a stale client gate, is
+ * refused while Polls is off with the guard's sentence to an officer. Every
+ * chat-core toast goes through this, so a member gets their own row instead.
+ */
+describe("memberFacingDescription", () => {
+  it("replaces the Polls refusal with the member's row", () => {
+    expect(memberFacingDescription(moduleDisabledMessage("polls"))).toBe(
+      POLLS_OFF_COPY,
+    );
+  });
+
+  it("passes every other message through untouched", () => {
+    expect(memberFacingDescription("Poll has expired")).toBe("Poll has expired");
+    // Another module's refusal belongs to that module's own surface.
+    expect(memberFacingDescription(moduleDisabledMessage("events"))).toBe(
+      moduleDisabledMessage("events"),
+    );
+    expect(memberFacingDescription(undefined)).toBeUndefined();
   });
 });

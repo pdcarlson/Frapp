@@ -511,6 +511,21 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
     expect(onSlashDispatch).not.toHaveBeenCalled();
   });
 
+  it("says it needs a connection while offline, not that the modules are loading", async () => {
+    // Offline, the module read can't answer either; "try again in a moment"
+    // would be the wrong reason.
+    const { onSlashDispatch } = typeAndSend(POLL, {
+      isModuleEnabled: () => false,
+      slashCommandsStatus: "loading",
+      isOffline: true,
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "/poll needs a connection" }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
   it("never gates a command with no module (/announce)", async () => {
     // `/announce` belongs to an always-on module, so an unresolved gate has
     // nothing to say about it.

@@ -28,7 +28,7 @@ import {
   useChapterRoster,
   useMemberDisplayNames,
   useMyPermissions,
-  useOrgConfig,
+  useCurrentChapter,
   useBookmarks,
   useBookmarkedMessageIds,
   useBookmarkMessage,
@@ -260,7 +260,19 @@ export function ChatShell({
     whether the live window has landed.
   */
   const { userId: liveUserId } = useFrappUser();
-  const orgConfig = useOrgConfig();
+  // The member view (`GET /v1/chapters/current`), the same query and cache
+  // entry the slash gate reads below. Not `useOrgConfig()`: that read needs
+  // `chapter-config:view`, which no seeded role below President holds (#2957),
+  // so members got `/rush` in place of their chapter's recruitment word.
+  const currentChapter = useCurrentChapter({
+    chapterId: activeChapterId,
+    enabled: !!activeChapterId,
+  });
+  const recruitmentVocab = (
+    currentChapter.data as
+      | { vocabulary?: { recruitment?: string } | null }
+      | undefined
+  )?.vocabulary?.recruitment;
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
@@ -2114,7 +2126,7 @@ export function ChatShell({
             }
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
-            recruitmentVocab={orgConfig.data?.vocabulary?.recruitment}
+            recruitmentVocab={recruitmentVocab}
             slashCommandsStatus={slashCommandsStatus}
             onRetrySlashCommands={onRetrySlashCommands}
             // Never `disabled` while offline: the send path enqueues to the
