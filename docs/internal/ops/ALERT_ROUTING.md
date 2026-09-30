@@ -83,6 +83,26 @@
 >   rules. Creating a monitor stays an owner step (quota; the header of
 >   `scripts/ci/production-uptime.mjs`).
 > - `find_uptime_monitors` and `find_monitors` both returned `[]`: no uptime or cron monitors exist.
+
+> **Cron monitor `production-db-backup`** (`frapp-api`, [#2505](https://github.com/pdcarlson/Frapp/issues/2505)).
+> `db-backup.yml`'s `backup-production` job, the nightly production dump, checks in through
+> [`scripts/ci/sentry-cron-checkin.mjs`](../../../scripts/ci/sentry-cron-checkin.mjs): `in_progress`
+> before the dump and `ok` or `error` after it, with `environment: production`. The first check-in
+> creates the monitor (a check-in upserts it), so nothing is set up by hand. The script's `MONITORS`
+> entry holds its schedule and limits, and a test pins them to the workflow. The monitor raises an
+> issue when a run fails, runs past the job's 30-minute timeout, or hasn't started 3 hours after
+> 06:30 UTC; the margin is wide because GitHub starts scheduled runs late. The check-in never fails
+> the backup: if it can't be sent (no `SENTRY_DSN`, Sentry down), the step warns and the monitor
+> reports the run missed. Until the Discord pager lands, that issue reaches the owner the way every
+> `frapp-api` issue does, through rule `3133192`'s email. It is the single cron monitor #2505
+> budgets for Sentry's free plan; the Storage mirror and the other scheduled jobs get theirs in its
+> Team slice.
+>
+> **Staging is tagged `staging` on every surface.** Web and landing derive the tag from
+> `VERCEL_ENV`, and staging is Vercel's `preview` build, so they map `preview` to `staging`
+> ([`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md), `NEXT_PUBLIC_SENTRY_ENVIRONMENT`). The API
+> tags its `NODE_ENV` (`staging` on Render) and mobile its `eas.json` profile. An environment filter on
+> a Sentry rule or digest can therefore say `staging` once.
 >
 > **PostHog project settings** (org Signet, project `569878`), live-verified **2026-09-09
 > ~21:32Z** via PostHog MCP `project-get` (`updated_at` 2026-09-09T21:32:34Z):

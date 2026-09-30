@@ -199,10 +199,27 @@ jobs:
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
           preserve-nonempty: "BACKUP_S3_ENDPOINT,BACKUP_S3_BUCKET,BACKUP_S3_ACCESS_KEY_ID,BACKUP_S3_SECRET_ACCESS_KEY"
 
+      # Sentry cron monitor `production-db-backup` (#2505): a run that fails,
+      # overruns or never starts pages. SENTRY_DSN is frapp-api's, from the
+      # `prod` injection above. Neither step can fail the backup: the script
+      # warns and exits 0, and a check-in that never lands shows up as a missed
+      # run instead. Schedule and runtime live in the script's MONITORS entry,
+      # and a test pins them to this job's `cron:` and `timeout-minutes`.
+      - name: Check in to Sentry (started)
+        id: cron-start
+        run: node scripts/ci/sentry-cron-checkin.mjs --monitor production-db-backup --status in_progress
+
       - name: Dump, upload, verify and prune
         uses: ./.github/actions/db-offsite-backup
         with:
           environment: production
+
+      - name: Check in to Sentry (finished)
+        if: always()
+        run: >-
+          node scripts/ci/sentry-cron-checkin.mjs --monitor production-db-backup
+          --status "${{ job.status == 'success' && 'ok' || 'error' }}"
+          --check-in-id "${{ steps.cron-start.outputs.check_in_id }}"
 
   backup-production-storage:
     runs-on: ubuntu-latest
