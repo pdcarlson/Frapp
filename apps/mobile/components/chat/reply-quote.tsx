@@ -6,7 +6,7 @@ import {
 } from "@repo/chat-core/reply-preview";
 import { SignetTokens } from "@repo/theme/signet";
 import { resolveAuthorLabel } from "@repo/hooks";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { italicFontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Quote chrome for a reply on s05. Re-implements the web rule against
@@ -113,7 +113,7 @@ function createStyles(tokens: SignetTokens) {
       flexShrink: 1,
     },
     unavailable: {
-      fontStyle: "italic",
+      fontFamily: italicFontFamilyFor(400),
     },
     pressed: {
       opacity: 0.7,
