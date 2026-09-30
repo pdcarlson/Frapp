@@ -1,6 +1,11 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type InvalidateQueryFilters,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
@@ -59,22 +64,26 @@ export function useUpdateUser() {
 }
 
 /**
- * Every query key whose rows carry the viewer's signed photo: their own
- * profile, every `["members", …]` read (roster, directory, detail, search),
- * the alumni directory, and the activity feed's actors. The server deletes the
- * replaced object, so a key left out here keeps rendering a URL to nothing.
+ * Every query whose rows carry the viewer's signed photo: their own profile,
+ * every `["members", …]` read (roster, directory, detail, search), the alumni
+ * directory, and the activity feed's actors. The server deletes the replaced
+ * object, so a query left out here keeps rendering a URL to nothing.
+ *
+ * `["user", "me"]` is matched exactly: as a prefix it would also refetch
+ * `["user", "me", "permissions", …]`, which a photo can't change, and the
+ * photo mutations wait for every refetch they start.
  */
-export const PHOTO_QUERY_KEYS = [
-  ["user", "me"],
-  ["members"],
-  ["alumni"],
-  ["activity-feed"],
-] as const;
+export const PHOTO_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
+  { queryKey: ["user", "me"], exact: true },
+  { queryKey: ["members"] },
+  { queryKey: ["alumni"] },
+  { queryKey: ["activity-feed"] },
+];
 
 function invalidatePhotoReads(queryClient: ReturnType<typeof useQueryClient>) {
   return Promise.all(
-    PHOTO_QUERY_KEYS.map((queryKey) =>
-      queryClient.invalidateQueries({ queryKey }),
+    PHOTO_QUERY_FILTERS.map((filters) =>
+      queryClient.invalidateQueries(filters),
     ),
   );
 }

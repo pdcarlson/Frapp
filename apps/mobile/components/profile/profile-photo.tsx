@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -13,6 +13,7 @@ import {
   useRemoveAvatar,
   useRequestAvatarUploadUrl,
 } from "@repo/hooks";
+import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { pickAndSetProfilePhoto } from "@/lib/more/profile-photo";
@@ -33,10 +34,13 @@ const AVATAR_SIZE = 84;
  */
 export function ProfilePhoto({
   photoUrl,
+  fetchedAt = 0,
   initials,
 }: {
   /** Signed URL from `GET /v1/users/me`, or `null` for initials. */
   photoUrl: string | null;
+  /** When that read last completed (`dataUpdatedAt`); a refetch retries a failed load. */
+  fetchedAt?: number;
   initials: string;
 }) {
   const { tokens } = useFrappTheme();
@@ -49,9 +53,23 @@ export function ProfilePhoto({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   // An image that fails to load (an expired URL, no network) falls back to
-  // initials rather than an empty circle.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const showPhoto = !!photoUrl && photoUrl !== failedUrl;
+  // initials rather than an empty circle. The failure is remembered per read,
+  // not per URL: the API hands out the same signed URL for half an hour, so
+  // a URL-keyed failure would hide the photo long after the network came
+  // back. A refetch of the profile, or the device coming back online, tries
+  // the image again.
+  const [failed, setFailed] = useState<{ url: string; at: number } | null>(
+    null,
+  );
+  const showPhoto =
+    !!photoUrl && !(failed?.url === photoUrl && failed.at === fetchedAt);
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (online) setFailed(null);
+      }),
+    [],
+  );
 
   async function change() {
     setBusy(true);
@@ -86,7 +104,7 @@ export function ProfilePhoto({
             source={{ uri: photoUrl }}
             style={styles.photo}
             accessibilityLabel="Your profile photo"
-            onError={() => setFailedUrl(photoUrl)}
+            onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
           />
         ) : (
           <Text style={[styles.initials, { color: accent }]}>{initials}</Text>

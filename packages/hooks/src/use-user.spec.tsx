@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import {
-  PHOTO_QUERY_KEYS,
+  PHOTO_QUERY_FILTERS,
   useConfirmAvatar,
   useMyPermissions,
   useRemoveAvatar,
@@ -107,16 +107,26 @@ describe("profile photo mutations (#732)", () => {
       wrapper: createWrapper(queryClient, mockClient),
     });
 
-    const body = { filename: "me.png", content_type: "image/png", size_bytes: 9 };
+    const body = {
+      filename: "me.png",
+      content_type: "image/png",
+      size_bytes: 9,
+    };
     await expect(result.current.mutateAsync(body)).resolves.toEqual(ticket);
     expect(mockClient.POST).toHaveBeenCalledWith("/v1/users/me/avatar-url", {
       body,
     });
   });
 
-  // Named literally rather than read back from `PHOTO_QUERY_KEYS`, so dropping
-  // a key from that list fails here instead of passing with it.
-  const EXPECTED_KEYS = [["user", "me"], ["members"], ["alumni"], ["activity-feed"]];
+  // Named literally rather than read back from `PHOTO_QUERY_FILTERS`, so
+  // dropping one from that list fails here instead of passing with it.
+  // `["user", "me"]` is exact so the permissions query under it isn't refetched.
+  const EXPECTED_FILTERS = [
+    { queryKey: ["user", "me"], exact: true },
+    { queryKey: ["members"] },
+    { queryKey: ["alumni"] },
+    { queryKey: ["activity-feed"] },
+  ];
 
   function photoMutationHarness() {
     const mockClient = {
@@ -132,11 +142,10 @@ describe("profile photo mutations (#732)", () => {
     const invalidate = vi
       .spyOn(queryClient, "invalidateQueries")
       .mockImplementation(() => gate);
-    const invalidatedKeys = () =>
-      invalidate.mock.calls.map(([filters]) => filters?.queryKey);
+    const invalidated = () => invalidate.mock.calls.map(([filters]) => filters);
     return {
       wrapper: createWrapper(queryClient, mockClient),
-      invalidatedKeys,
+      invalidated,
       release: () => release(),
     };
   }
@@ -150,7 +159,7 @@ describe("profile photo mutations (#732)", () => {
       settled = true;
     });
     await waitFor(() =>
-      expect(harness.invalidatedKeys()).toHaveLength(EXPECTED_KEYS.length),
+      expect(harness.invalidated()).toHaveLength(EXPECTED_FILTERS.length),
     );
     // Every refetch has started and none has finished: not resolved yet.
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -158,13 +167,13 @@ describe("profile photo mutations (#732)", () => {
     harness.release();
     await pending;
     expect(settled).toBe(true);
-    for (const key of EXPECTED_KEYS) {
-      expect(harness.invalidatedKeys()).toContainEqual(key);
+    for (const filters of EXPECTED_FILTERS) {
+      expect(harness.invalidated()).toContainEqual(filters);
     }
   }
 
-  it("the key list covers every read that serves the photo", () => {
-    expect([...PHOTO_QUERY_KEYS]).toEqual(EXPECTED_KEYS);
+  it("the filter list covers every read that serves the photo", () => {
+    expect([...PHOTO_QUERY_FILTERS]).toEqual(EXPECTED_FILTERS);
   });
 
   it("confirm resolves only after every read that shows the photo refetched", async () => {
@@ -189,7 +198,9 @@ describe("profile photo mutations (#732)", () => {
   });
 
   it("confirm sends the path and surfaces an API refusal", async () => {
-    const refusal = { message: "storage_path must be a photo in your own profile folder" };
+    const refusal = {
+      message: "storage_path must be a photo in your own profile folder",
+    };
     const mockClient = {
       POST: vi.fn().mockResolvedValue({ data: undefined, error: refusal }),
     };

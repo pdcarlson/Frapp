@@ -75,7 +75,8 @@ export default function ProfileScreen() {
   // `null` until the entries land, so the card shows an em dash rather than a
   // confident "0 service hrs" beside a correct name and points balance.
   const serviceMinutes = sumApprovedServiceMinutes(serviceQuery.data);
-  const serviceHours = serviceMinutes === null ? null : formatHours(serviceMinutes);
+  const serviceHours =
+    serviceMinutes === null ? null : formatHours(serviceMinutes);
 
   // The session's email is the one value available before `/v1/users/me`
   // resolves, and it is the same address — so the row never sits blank while
@@ -84,7 +85,10 @@ export default function ProfileScreen() {
 
   if (userQuery.isPending) {
     return (
-      <ScreenShell title="Profile" subtitle="Your membership and chapter record.">
+      <ScreenShell
+        title="Profile"
+        subtitle="Your membership and chapter record."
+      >
         <SkeletonLines lines={4} showTile />
       </ScreenShell>
     );
@@ -92,7 +96,10 @@ export default function ProfileScreen() {
 
   if (userQuery.isError) {
     return (
-      <ScreenShell title="Profile" subtitle="Your membership and chapter record.">
+      <ScreenShell
+        title="Profile"
+        subtitle="Your membership and chapter record."
+      >
         <ErrorState
           title="Couldn't load your profile"
           body="You're signed in, but we couldn't reach the server."
@@ -108,12 +115,18 @@ export default function ProfileScreen() {
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}
+          fetchedAt={userQuery.dataUpdatedAt}
           initials={profile?.initials ?? "?"}
         />
-        <Text style={styles.name}>{profile?.displayName ?? "Your profile"}</Text>
+        <Text style={styles.name}>
+          {profile?.displayName ?? "Your profile"}
+        </Text>
         {profile?.graduationYear || profile?.currentCompany ? (
           <Text style={styles.identityMeta}>
-            {[profile.currentCompany, formatGraduationYear(profile.graduationYear)]
+            {[
+              profile.currentCompany,
+              formatGraduationYear(profile.graduationYear),
+            ]
               .filter(Boolean)
               .join(" · ")}
           </Text>
@@ -156,7 +169,9 @@ export default function ProfileScreen() {
         <ListRow label="Email" value={email ?? "Not set"} />
         <ListRow
           label="Graduation"
-          value={profile?.graduationYear ? String(profile.graduationYear) : "Not set"}
+          value={
+            profile?.graduationYear ? String(profile.graduationYear) : "Not set"
+          }
         />
         <ListRow label="City" value={profile?.currentCity ?? "Not set"} />
         <ListRow label="Company" value={profile?.currentCompany ?? "Not set"} />

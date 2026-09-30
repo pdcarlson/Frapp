@@ -84,7 +84,8 @@ export function ProfilePhotoControl({
       await confirm.mutateAsync(storagePath);
       toast({
         title: "Photo updated",
-        description: "Your chapter sees it in the directory and in chat.",
+        description:
+          "Your chapter sees it in the web directory and in chat on the web.",
       });
     } catch (error) {
       toast({

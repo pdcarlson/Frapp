@@ -2,6 +2,7 @@
 import React, { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Image, Text } from "react-native";
+import { onlineManager } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
@@ -32,14 +33,18 @@ vi.mock("@/lib/more/profile-photo", () => ({
 
 import { ProfilePhoto } from "./profile-photo";
 
-function render(photoUrl: string | null): ReactTestRenderer {
+function photo(photoUrl: string | null, fetchedAt = 1) {
+  return (
+    <FrappThemeProvider>
+      <ProfilePhoto photoUrl={photoUrl} fetchedAt={fetchedAt} initials="PC" />
+    </FrappThemeProvider>
+  );
+}
+
+function render(photoUrl: string | null, fetchedAt = 1): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <ProfilePhoto photoUrl={photoUrl} initials="PC" />
-      </FrappThemeProvider>,
-    );
+    tree = create(photo(photoUrl, fetchedAt));
   });
   return tree;
 }
@@ -95,6 +100,38 @@ describe("ProfilePhoto", () => {
 
     expect(tree.root.findAllByType(Image)).toHaveLength(0);
     expect(texts(tree)).toContain("PC");
+  });
+
+  // The API reuses a signed URL for half an hour, so the same URL comes back
+  // after a failure; remembering the failure by URL alone hid the photo for
+  // that long.
+  it("tries the same URL again once the profile is refetched", () => {
+    const tree = render("https://signed/same", 1);
+    act(() => {
+      tree.root.findByType(Image).props.onError();
+    });
+    expect(tree.root.findAllByType(Image)).toHaveLength(0);
+
+    act(() => {
+      tree.update(photo("https://signed/same", 2));
+    });
+
+    expect(tree.root.findAllByType(Image)).toHaveLength(1);
+  });
+
+  it("tries the same URL again when the device comes back online", () => {
+    const tree = render("https://signed/same");
+    act(() => {
+      onlineManager.setOnline(false);
+      tree.root.findByType(Image).props.onError();
+    });
+    expect(tree.root.findAllByType(Image)).toHaveLength(0);
+
+    act(() => {
+      onlineManager.setOnline(true);
+    });
+
+    expect(tree.root.findAllByType(Image)).toHaveLength(1);
   });
 
   it("runs the picker and says the outcome", async () => {

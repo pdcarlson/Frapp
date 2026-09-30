@@ -1,7 +1,7 @@
 import { StrictMode, createRef } from "react";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   HELD_QUOTE_TEXT,
   TOMBSTONE_STALE_TEXT,
@@ -77,13 +77,19 @@ vi.mock("react-virtuoso", async () => {
   };
 });
 
+// Imported authors' signed Discord avatars, by stored path. Empty unless a
+// case sets it.
+const authorAvatars = vi.hoisted(() => ({
+  data: {} as Record<string, string>,
+}));
+
 // `useAuthorAvatars` reaches for `FrappClientProvider`, which a bare `render()`
 // does not mount.
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    useAuthorAvatars: () => ({ data: {} }),
+    useAuthorAvatars: () => ({ data: authorAvatars.data }),
     // Only a message with `attachment_count > 0` mounts the list that reads
     // this; the image viewer cases below are the ones that do.
     useMessageAttachments: () => ({
@@ -1225,6 +1231,47 @@ describe("MessageTimeline — member photos (#732)", () => {
     });
 
     expect(screen.queryByTestId("avatar-photo")).toBeNull();
+  });
+
+  describe("beside imported Discord messages", () => {
+    beforeEach(() => {
+      authorAvatars.data = { "archive/p.png": "https://signed/discord" };
+    });
+    afterEach(() => {
+      authorAvatars.data = {};
+    });
+
+    it("draws an unlinked author's Discord avatar (#1231)", () => {
+      renderTimeline([
+        message({
+          id: "m-1",
+          sender_id: null,
+          author_name: "old-handle",
+          author_avatar_path: "archive/p.png",
+        }),
+      ]);
+
+      expect(screen.getByTestId("avatar-photo").getAttribute("data-src")).toBe(
+        "https://signed/discord",
+      );
+    });
+
+    it("never draws it on a linked row, even when the member has no photo (#2878)", () => {
+      // The signed batch can hold the path because an unlinked row in the
+      // same window shares it.
+      renderTimeline(
+        [
+          message({
+            id: "m-1",
+            sender_id: BOB,
+            author_avatar_path: "archive/p.png",
+          }),
+        ],
+        { avatarFor: () => null },
+      );
+
+      expect(screen.queryByTestId("avatar-photo")).toBeNull();
+    });
   });
 });
 
