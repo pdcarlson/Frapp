@@ -215,12 +215,11 @@ subject and `token_hash` href daily (`auth-magic-link`) so a dashboard reset to
 `{{ .ConfirmationURL }}` cannot sit green, and fails any `mailer_subjects_*` or a Magic
 Link body that still says Signet.
 
-Because production SMTP is now on, the 07:45 `production-auth-conformance.yml`
-watchdog no longer skip-asserts an empty host. Empty SMTP is still SKIPPED *if* the
-host is empty; with SMTP on, the same check requires
-`Frapp <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
-Link is the same: ConfirmationURL is SKIPPED only while SMTP is unset; with SMTP on,
-the href must carry `token_hash` + `type=magiclink` or the 07:45 job fails. The
+Production SMTP is on, so the 07:45 `production-auth-conformance.yml` watchdog
+fails an empty host, as staging does. It requires `Frapp <no-reply@mail.frapp.live>`
+at ≥300/hour and fails a burned apex From. The Magic Link href must carry
+`token_hash` + `type=magiclink`, whatever the SMTP state, or the 07:45 job fails.
+Both used to be skipped while the host was empty (#2349). The
 Magic Link body is now on prod; confirm and invite were intentionally left uncopied.
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
