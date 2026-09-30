@@ -44,7 +44,7 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 - **`@swc/cli` 0.7 → 0.8 in `apps/api`**: #290
 - ~~**Outstanding `next` moderate advisories (web + landing)**: #291~~ — **closed.** See "Next.js advisory cleanup" below.
 - **`geist` (apps/web)**: #292
-- **`brace-expansion` 5.x in minimatch 10.x tree**: not separately tracked — moderate only, and the override that would close it (`^2.0.3`) breaks minimatch 10.x at runtime (different exported API). Re-evaluate when an audit-clean cross-major version exists.
+- ~~**`brace-expansion` 5.x in minimatch 10.x tree**~~ — **closed 2026-09-30.** Its advisories (GHSA-q2hr-2g5m-vwhr, and the high GHSA-qhr7-859c-m2p7 and GHSA-6j4f-fj2g-mc7p published that day, which turned the audit gate red on every PR) cover 4.0.0–5.0.11, and 5.0.12 fixes all three inside the 5.x line `minimatch` asks for. So `npm update brace-expansion` (a lockfile-only move of the one hoisted copy) closed it, with no override. The cross-major override (`^2.0.3`) that this line used to rule out, because it breaks minimatch 10.x at runtime, is still the wrong fix.
 
 ### Prevention
 
