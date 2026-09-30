@@ -125,9 +125,10 @@ digest 07).
 - **Moving hosts later means re-measuring proxy hops.** `TRUST_PROXY_HOPS = 3` in
   `apps/api/src/bootstrap.ts` was measured for Render's proxy chain, so any new ingress (Cloud Run, a
   Cloudflare proxy) must re-measure it. *(2026-09-30: it was measured on staging only, and
-  production's Render chain turned out one hop shorter. The count is now per deployment, 2 in
-  production and 3 on staging, and a deployed process reports a chain shorter than its count
-  (#2972). A plan change on the same host can move it too.)* The in-memory throttler and auth-failure counters divide by
+  production's Render chain turned out one hop shorter. The code now sets it per deployment, 2 for
+  production and 3 for staging, and a deployed process reports a chain shorter than its count
+  (#2972). Production runs it from the first Deploy production that carries that change. A plan
+  change on the same host can move the count too.)* The in-memory throttler and auth-failure counters divide by
   the number of instances.
 - **The lockstep release pin goes** (#2506). The ledger and a compatibility matrix replace
   `production-release-pin.yml`, so mixed SHAs across surfaces become normal.

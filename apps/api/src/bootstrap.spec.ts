@@ -135,7 +135,7 @@ describe('configureApp', () => {
 
   describe('trust proxy per deployment (#2972)', () => {
     const apps: INestApplication[] = [];
-    const appFor = async (environment: DeploymentEnvironment) => {
+    const appFor = async (environment?: DeploymentEnvironment) => {
       const configured = await createConfiguredEchoApp(environment);
       apps.push(configured);
       return configured;
@@ -178,6 +178,41 @@ describe('configureApp', () => {
         expect(createProxyChainTripwire).toHaveBeenCalledWith(hops);
       },
     );
+
+    // `main.ts` calls `configureApp(app)` with no environment, so the process's
+    // own NODE_ENV has to reach the hop count, the tripwire and CORS. Every
+    // other case here passes one explicitly and would stay green if it didn't.
+    it('takes the deployment from the process when none is passed, as main.ts does', async () => {
+      const savedNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      const configured = await appFor().finally(() => {
+        process.env.NODE_ENV = savedNodeEnv;
+      });
+
+      const instance = configured
+        .getHttpAdapter()
+        .getInstance<{ get: (setting: string) => unknown }>();
+      expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.production);
+      expect(createProxyChainTripwire).toHaveBeenCalledWith(
+        TRUST_PROXY_HOPS.production,
+      );
+      const preflight = (origin: string) =>
+        request(configured.getHttpServer())
+          .options('/v1/echo')
+          .set('Origin', origin)
+          .set('Access-Control-Request-Method', 'GET')
+          .expect(204);
+      expect(
+        (await preflight('https://app.frapp.live')).headers[
+          'access-control-allow-origin'
+        ],
+      ).toBe('https://app.frapp.live');
+      expect(
+        (await preflight('http://localhost:3000')).headers[
+          'access-control-allow-origin'
+        ],
+      ).toBeUndefined();
+    });
 
     it('does not arm it locally, where every chain is shorter than the count', async () => {
       await appFor('local');

@@ -107,7 +107,20 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
       providers: [
         ChatPushWorkerService,
         ChannelCacheService,
-        { provide: SUPABASE_CLIENT, useValue: { channel: realtime.channel } },
+        {
+          provide: SUPABASE_CLIENT,
+          useValue: {
+            channel: realtime.channel,
+            // Like realtime-js: the leave's acknowledgement fires the
+            // channel's `CLOSED` before `removeChannel` resolves.
+            removeChannel: jest.fn(async (ch: FakeChannel) => {
+              await ch.unsubscribe();
+              ch.status('CLOSED');
+              ch.teardown();
+              return 'ok';
+            }),
+          },
+        },
         {
           provide: USER_REPOSITORY,
           useValue: {
@@ -214,6 +227,40 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
 
       expect(realtime.topicsOpened().at(-1)).toBe('chat:channel:ch-0');
       expect(realtime.topicsOpened()).toHaveLength(MAX_PRESENCE_CHANNELS + 2);
+    });
+  });
+
+  describe('the join', () => {
+    // #2974: realtime-js asks the server for a roster only when the channel
+    // has a presence listener or sets `enabled`. Without the flag the worker
+    // joined with presence off, read `{}` for every channel, and spared nobody
+    // who was reading. The clients' `{ key: '' }` stays as it is: they only
+    // `track()`, which needs no flag.
+    it('asks for the roster on the clients’ private topic', async () => {
+      await receive('ch-a');
+
+      expect(realtime.channel).toHaveBeenCalledWith('chat:channel:ch-a', {
+        config: {
+          private: true,
+          broadcast: { self: false },
+          presence: { key: '', enabled: true },
+        },
+      });
+    });
+  });
+
+  describe('shutdown', () => {
+    it('removes every presence channel once, without reading its own leaves as server closes', async () => {
+      await receive('ch-a');
+      await receive('ch-b');
+
+      await worker.onApplicationShutdown();
+      await flush();
+
+      for (const ch of realtime.opened) {
+        expect(ch.unsubscribe).toHaveBeenCalledTimes(1);
+      }
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 

@@ -247,7 +247,12 @@ export class ChatPushWorkerService
       }
       this.messagesChannel = null;
     }
-    for (const ch of this.presenceChannels.values()) {
+    // Let go of every presence channel before removing any, so each leave's
+    // `CLOSED` echo reads as this worker's own (see `onPresenceStatus`), not a
+    // server close to log and release a second time.
+    const presence = [...this.presenceChannels.values()];
+    this.presenceChannels.clear();
+    for (const ch of presence) {
       try {
         await this.supabase.removeChannel(ch);
       } catch (err) {
@@ -259,7 +264,6 @@ export class ChatPushWorkerService
         );
       }
     }
-    this.presenceChannels.clear();
   }
 
   /**
@@ -653,16 +657,26 @@ export class ChatPushWorkerService
 
     let ch: RealtimeChannel | undefined;
     try {
-      // Same config as chat-core's realtime-manager, `private: true` included
+      // chat-core's realtime-manager config, `private: true` included
       // (#1552): the service-role client bypasses realtime.messages RLS so the
       // join always succeeds, but private and public are separate rooms — a
       // worker on the public room sees an empty roster while every client is
       // private, and suppresses nothing.
+      //
+      // Plus `presence.enabled`, which only this side needs (#2974).
+      // realtime-js asks the server for the roster only when the channel has
+      // a presence listener or sets `enabled: true`. The clients have neither
+      // and don't need to: `track()` publishes their own presence regardless.
+      // The worker is the one reader, and without the flag it joined with
+      // presence off, `presenceState()` stayed `{}`, and nobody reading a
+      // channel was spared a push. Checked against local Realtime on
+      // 2026-09-30 (realtime-js 2.117): `{}` without the flag, the tracked
+      // member with it.
       const opened = this.supabase.channel(`chat:channel:${channelId}`, {
         config: {
           private: true,
           broadcast: { self: false },
-          presence: { key: '' },
+          presence: { key: '', enabled: true },
         },
       });
       ch = opened;

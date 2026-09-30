@@ -39,7 +39,12 @@ export const CORS_EXPOSED_HEADERS = [
 /** The staging dashboard, the one browser origin that calls the staging API. */
 export const STAGING_APP_ORIGIN = 'https://app.staging.frapp.live';
 
-/** `npm run dev:web` and `npm run dev:landing` (`LOCAL_DEV.md` § Ports). */
+/**
+ * The dashboard's dev server (`npm run dev:web`), and Expo web on 3002, the
+ * port `docs/guides/demo-data.md` and the store-screenshot runbook
+ * (`mobile.md`) start it on because it is listed here. The landing's dev
+ * server also runs on 3002 but never calls the API.
+ */
 const LOCAL_DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:3002'];
 
 /**
@@ -49,7 +54,7 @@ const LOCAL_DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:3002'];
  * in every environment, so production admitted the staging dashboard and any
  * other `*.frapp.live` host, including one left dangling after its service is
  * gone (`vercel.md` still carries a `docs.frapp.live` clean-up item). Every
- * origin listed here is one a deployed client really calls from: the
+ * deployed origin listed here is one a deployed client really calls from: the
  * `frapp-web` Vercel project serves exactly `app.frapp.live` and
  * `app.staging.frapp.live`, the landing never calls the API from the browser,
  * and the native apps send no `Origin` at all, which CORS lets through.
