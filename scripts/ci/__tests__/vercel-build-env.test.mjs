@@ -249,6 +249,64 @@ describe("APP_CONFIG_KEYS shape", () => {
   });
 });
 
+// ── The instructions a human follows to fill the store ──────────────────────
+
+const ENV_REFERENCE = "docs/internal/environment/ENV_REFERENCE.md";
+
+/**
+ * ENV_REFERENCE.md § References as `{ name, required }` rows: what someone
+ * adds to Infisical for the web and landing builds. It drifted once already
+ * (#1283): it told people to add five `EXPO_PUBLIC_*` names that no build
+ * reads from Infisical, and it didn't say which names a deploy can't build without.
+ */
+function referencesTable() {
+  const text = readFileSync(join(REPO, ENV_REFERENCE), "utf8");
+  const section = text.split("\n## References — Framework-Specific Names\n")[1]?.split("\n## ")[0];
+  assert.ok(section, `${ENV_REFERENCE} has no "## References — Framework-Specific Names" section`);
+  const rows = [];
+  for (const line of section.split("\n")) {
+    const name = line.match(/^\|\s*`([A-Z][A-Z0-9_]*)`\s*\|/)?.[1];
+    if (!name) continue;
+    const cells = line.split("|").map((cell) => cell.trim());
+    const flag = cells[cells.length - 2];
+    rows.push({ name, required: flag === "✅" ? true : flag === "❌" ? false : flag });
+  }
+  return rows;
+}
+
+describe(`${ENV_REFERENCE} § References matches APP_CONFIG_KEYS`, () => {
+  const rows = referencesTable();
+  const required = new Set(Object.values(APP_CONFIG_KEYS).flatMap((entry) => entry.required));
+  const fromStore = new Set(Object.keys(APP_CONFIG_KEYS).flatMap((label) => appConfigKeysFor(label)));
+
+  it("finds the table, so the checks below are not vacuous", () => {
+    assert.ok(rows.length >= required.size, `found only ${rows.length} rows in § References`);
+  });
+
+  it("names only keys a Vercel build takes from the store", () => {
+    const unread = rows.map((row) => row.name).filter((name) => !fromStore.has(name));
+    assert.deepEqual(
+      unread,
+      [],
+      `§ References tells people to add ${unread.join(", ")} to Infisical, but no build reads it ` +
+        `from there. Mobile's EXPO_PUBLIC_* names are set in EAS (§ apps/mobile), not Infisical.`,
+    );
+  });
+
+  it("lists every required key, and marks each row the way APP_CONFIG_KEYS does", () => {
+    const missing = [...required].filter((name) => !rows.some((row) => row.name === name));
+    assert.deepEqual(missing, [], `§ References leaves out ${missing.join(", ")}, which a deploy can't build without`);
+    for (const row of rows) {
+      assert.equal(
+        row.required,
+        required.has(row.name),
+        `§ References marks ${row.name} ${row.required === true ? "✅" : row.required === false ? "❌" : `"${row.required}"`}, ` +
+          `but APP_CONFIG_KEYS has it ${required.has(row.name) ? "required" : "optional"}`,
+      );
+    }
+  });
+});
+
 // ── The baseline ────────────────────────────────────────────────────────────
 
 describe("env baseline", () => {

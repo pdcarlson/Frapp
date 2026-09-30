@@ -13,7 +13,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 1. **Canonical values stored once.** Each secret (e.g., `SUPABASE_URL`) is stored once per Infisical environment. The value changes per environment (`dev`/`staging`/`prod`), but the name stays the same.
 
-2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
+2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_API_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
 
 3. **No environment suffixes.** There's no `API_HEALTHCHECK_URL_STAGING` — just `API_HEALTHCHECK_URL` with different values per environment. Infisical's environment scoping does the routing: each `infisical-secrets` call picks its environment with a literal `env-slug` ([§ GitHub Actions is not a sync](#github-actions-is-not-a-sync)). A job's GitHub `environment:` plays no part in it.
 
@@ -80,16 +80,16 @@ value. Start with `staging`, then repeat for `prod` and `dev`.
 
 ### 4. Add References
 
-In **every environment**, add the reference rows from
-[`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names)
-— the value string you type is identical in every environment; only the canonical value it resolves to
-changes. That table also flags the one `NEXT_PUBLIC_*` name that is a **literal**, not a `${…}` reference
-(`NEXT_PUBLIC_SENTRY_DSN`), and this list never carried it.
+Add the reference rows from
+[`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names):
+the required ones in every environment, the optional ones in each environment where the feature
+should be on. The value string you type is identical in every environment; only the canonical value
+it resolves to changes. Two rows there are **literals**, not `${…}` references: the web and landing
+Sentry DSNs.
 
-`EXPO_PUBLIC_LANDING_URL` and `EXPO_PUBLIC_ASK_ENABLED` are **not** Infisical references — they are
-direct-set client flags/URLs (see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § apps/mobile). There is
-**no Infisical → EAS sync**; any `EXPO_PUBLIC_*` a device build needs must also be set in the EAS
-dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` `build.<profile>.env`
+No `EXPO_PUBLIC_*` name is an Infisical entry; that same section says why, including why a `dev`
+copy would do harm. There is **no Infisical → EAS sync**; every `EXPO_PUBLIC_*` a device build needs
+is set in the EAS dashboard (`development` / `preview` / `production`) or a non-secret `eas.json` `build.<profile>.env`
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
