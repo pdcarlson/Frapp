@@ -27,18 +27,23 @@
 //    `expo-modules-core`, the other side of the #2218 break, is one. The
 //    lockfile rather than node_modules, because it is what `npm ci` installs
 //    and it lists nested copies. An `expo-*` / `@expo/*` package apps/mobile
-//    declares (in any dependency section) must also be in the map and installed.
+//    declares (in any dependency section) must also be in the map and installed,
+//    and its declared range's floor must be on the line, so an edit to
+//    package.json alone gets this diagnosis rather than only npm ci's.
 //    An installed Expo package the map doesn't list (`expo-modules-jsi`,
 //    `expo-modules-autolinking`, the `@expo/*` tooling, which has its own version
 //    lines) isn't checked: the map is the only SDK statement there is to check
 //    against, and `expo`'s own dependency ranges pin those.
-// 2. The roster. Every `expo-*` package apps/mobile declares has an exact
-//    `dependency-name` entry in the npm ignore list of .github/dependabot.yml,
-//    `expo` and the `@expo/*` glob are there, and every `expo-*` entry there
-//    names a package apps/mobile declares or an installed one the map lists
-//    (so `expo-server-sdk`, installed for apps/api, can't be listed). Exact names only: the list
-//    must not collapse into an `expo-*` glob, which would also freeze
-//    `expo-server-sdk`, an apps/api dependency with no tie to the mobile SDK.
+// 2. The roster, in the npm "/" ignore list of .github/dependabot.yml:
+//    - every `expo-*` package apps/mobile declares has an exact entry, and so
+//      do `expo` and the `@expo/*` glob;
+//    - each of those entries blocks major bumps (no `update-types`, or one that
+//      includes `version-update:semver-major`), since a major is the next SDK;
+//    - no glob matches `expo-server-sdk`, apps/api's push client, which has no
+//      tie to the mobile SDK and would be frozen silently;
+//    - every exact `expo-*` entry names a package apps/mobile declares or an
+//      installed one the map lists (so `expo-server-sdk` can't be listed, and
+//      a stale entry fails).
 //
 // Out of scope, on purpose: `@sentry/react-native` and `@stripe/stripe-react-
 // native` are in the bundled map too and are held AHEAD of it deliberately.
@@ -175,6 +180,16 @@ export function sdkLineViolations({ declared, bundled, copies }) {
       }
     } else if (!installed.has(name)) {
       violations.push(`${name}: declared in ${MOBILE_DIR}/package.json but not in package-lock.json (run npm install)`);
+    } else {
+      // The declared range's floor, so an edit to package.json alone gets this
+      // diagnosis too, not only npm ci's lockfile-mismatch error. A range this
+      // can't read (a URL, `*`) is left to the installed-version check below.
+      const floor = /^[~^]?(\d+\.\d+\.\d+)$/.exec(String(declared[name]).trim())?.[1];
+      if (floor && !satisfies(floor, bundled[name])) {
+        violations.push(
+          `${name}: declared as ${declared[name]} in ${MOBILE_DIR}/package.json, outside this SDK's line: expected ${bundled[name]}`,
+        );
+      }
     }
   }
   const offLine = copies
@@ -198,6 +213,15 @@ export function sdkLineViolations({ declared, bundled, copies }) {
  * fails the gate loudly instead of reading as an empty roster.
  */
 export function dependabotIgnoreNames(text) {
+  return dependabotIgnoreEntries(text).map((e) => e.name);
+}
+
+/**
+ * The npm "/" ignore list as `{ name, updateTypes }`, where `updateTypes` is
+ * the entry's `update-types` list, or null when it has none (every update is
+ * ignored). Same reader and the same loud failures as {@link dependabotIgnoreNames}.
+ */
+export function dependabotIgnoreEntries(text) {
   const lines = text.split(/\r?\n/);
   const indentOf = (line) => line.length - line.trimStart().length;
   const isContent = (line) => line.trim() !== "" && !line.trim().startsWith("#");
@@ -225,17 +249,48 @@ export function dependabotIgnoreNames(text) {
   );
   if (ignoreAt === -1) throw new Error(`${DEPENDABOT_CONFIG}: the npm entry has no ignore list`);
 
-  const names = [];
+  const ignored = [];
   const listIndent = indentOf(lines[ignoreAt]);
+  let current = null;
+  let inUpdateTypes = false;
   for (let i = ignoreAt + 1; i < entry.end; i++) {
     const line = lines[i];
     if (!isContent(line)) continue;
     if (indentOf(line) <= listIndent) break;
     const match = /^\s*-\s+dependency-name:\s*(.+?)\s*(#.*)?$/.exec(line);
-    if (match) names.push(unquote(match[1]));
+    if (match) {
+      current = { name: unquote(match[1]), updateTypes: null, indent: indentOf(line) };
+      ignored.push(current);
+      inUpdateTypes = false;
+      continue;
+    }
+    if (!current || indentOf(line) <= current.indent) {
+      current = null;
+      continue;
+    }
+    const key = /^\s*update-types:\s*(.*?)\s*(#.*)?$/.exec(line);
+    if (key) {
+      current.updateTypes = [];
+      const inline = /^\[(.*)\]$/.exec(key[1]);
+      if (inline) {
+        current.updateTypes = inline[1].split(",").map(unquote).filter(Boolean);
+        inUpdateTypes = false;
+      } else {
+        inUpdateTypes = true;
+      }
+      continue;
+    }
+    const item = /^\s*-\s+(.+?)\s*(#.*)?$/.exec(line);
+    if (inUpdateTypes && item) current.updateTypes.push(unquote(item[1]));
+    else inUpdateTypes = false;
   }
-  if (names.length === 0) throw new Error(`${DEPENDABOT_CONFIG}: the npm ignore list names nothing`);
-  return names;
+  if (ignored.length === 0) throw new Error(`${DEPENDABOT_CONFIG}: the npm ignore list names nothing`);
+  return ignored.map(({ name, updateTypes }) => ({ name, updateTypes }));
+}
+
+/** Whether an ignore entry keeps Dependabot from proposing a major bump. */
+export function blocksMajor({ updateTypes }) {
+  return updateTypes === null || updateTypes.includes("version-update:semver-major");
 }
 
 /**
@@ -250,7 +305,7 @@ export function dependabotIgnoreNames(text) {
  * Dependabot off every `@expo/*` package, declared or transitive, so dropping it
  * is the same gap as dropping an `expo-*` entry.
  */
-export function rosterViolations({ declared, installedSdkNames, ignoreNames }) {
+export function rosterViolations({ declared, installedSdkNames, ignoreNames, majorsLetThrough = new Set() }) {
   const listed = new Set(ignoreNames);
   const required = Object.keys(declared)
     .filter((n) => n === "expo" || n.startsWith("expo-"))
@@ -264,20 +319,39 @@ export function rosterViolations({ declared, installedSdkNames, ignoreNames }) {
       violations.push(
         `${name}: not in ${DEPENDABOT_CONFIG}'s ignore list, so Dependabot can move it off the SDK line`,
       );
+    } else if (majorsLetThrough.has(name)) {
+      violations.push(
+        `${name}: its ${DEPENDABOT_CONFIG} ignore entry's update-types leave out version-update:semver-major, so Dependabot can still move it to the next SDK`,
+      );
     }
   }
-  for (const name of [...listed].filter((n) => n.startsWith("expo-")).sort()) {
-    if (name.includes("*")) {
+  for (const name of [...listed].filter((n) => n.includes("*")).sort()) {
+    if (globMatches(name, "expo-server-sdk")) {
       violations.push(
-        `${name}: a glob in ${DEPENDABOT_CONFIG}'s ignore list; list Expo client packages by exact name (a glob also freezes expo-server-sdk)`,
+        `${name}: a glob in ${DEPENDABOT_CONFIG}'s ignore list that also freezes apps/api's expo-server-sdk; list Expo client packages by exact name`,
       );
-    } else if (!(name in declared) && !installedSdkNames.has(name)) {
+    }
+  }
+  for (const name of [...listed].filter((n) => n.startsWith("expo-") && !n.includes("*")).sort()) {
+    if (!(name in declared) && !installedSdkNames.has(name)) {
       violations.push(
         `${name}: listed in ${DEPENDABOT_CONFIG}'s ignore list but neither declared by ${MOBILE_DIR} nor an installed Expo SDK package; remove the entry`,
       );
     }
   }
   return violations;
+}
+
+/**
+ * Whether a Dependabot `dependency-name` pattern matches `name`: `*` matches
+ * any run of characters, everything else is literal.
+ */
+export function globMatches(pattern, name) {
+  const source = pattern
+    .split("*")
+    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${source}$`).test(name);
 }
 
 /**
@@ -312,7 +386,9 @@ export function main(root = process.cwd()) {
   }
   const expoVersion = readJson(join(expoDir, "package.json")).version;
   const bundled = readJson(bundledPath);
-  const ignoreNames = dependabotIgnoreNames(readFileSync(join(root, DEPENDABOT_CONFIG), "utf8"));
+  const ignoreEntries = dependabotIgnoreEntries(readFileSync(join(root, DEPENDABOT_CONFIG), "utf8"));
+  const ignoreNames = ignoreEntries.map((e) => e.name);
+  const majorsLetThrough = new Set(ignoreEntries.filter((e) => !blocksMajor(e)).map((e) => e.name));
 
   return {
     expoVersion,
@@ -323,6 +399,7 @@ export function main(root = process.cwd()) {
         declared,
         installedSdkNames: new Set(copies.map((c) => c.name).filter((n) => bundled[n] !== undefined)),
         ignoreNames,
+        majorsLetThrough,
       }),
     ],
   };

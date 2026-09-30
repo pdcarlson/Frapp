@@ -208,12 +208,8 @@ updates:
       # mechanical and what the break looks like: docs/ci-cd/agent-infra.md
       # § The ignore list is a runtime constraint, not a preference.
       # `npm run check:expo-sdk-line` (the mobile-validate CI job) enforces this
-      # roster (#2330): an `expo-*` package apps/mobile declares that is missing
-      # here, a missing `expo` or `@expo/*` entry, or an `expo-*` entry for a
-      # package apps/mobile doesn't declare and the SDK's bundled module map
-      # doesn't list (expo-server-sdk included), fails it. It also fails any
-      # installed package that map lists when its version is off the SDK line,
-      # whatever this list says.
+      # roster and the installed Expo packages' SDK line (#2330); exactly what
+      # it checks is in that same agent-infra.md section.
       #
       # These move only as a version-locked set via a planned SDK upgrade
       # (#2329), like the React family above.

@@ -10,8 +10,11 @@ import { join, resolve } from "node:path";
 // glob runs it — hence the ../../ reach up.
 import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 import {
+  blocksMajor,
   declaredPackages,
+  dependabotIgnoreEntries,
   dependabotIgnoreNames,
+  globMatches,
   lockfileCopies,
   main,
   parseVersion,
@@ -130,6 +133,7 @@ test("flags a package off the line, and only that one", () => {
     }),
   });
   assert.deepEqual(violations, [
+    "expo-apple-authentication: declared as 58.0.0 in apps/mobile/package.json, outside this SDK's line: expected ~57.0.1",
     "expo-apple-authentication@58.0.0 is outside this SDK's line: expected ~57.0.1",
   ]);
 });
@@ -372,6 +376,7 @@ test("main is green on a coherent tree and red on a #2218-shaped one", () => {
     assert.equal(green.expoVersion, "57.0.13");
     assert.equal(green.checked, 1);
     assert.deepEqual(main(bumped).violations, [
+      "expo-camera: declared as 58.0.0 in apps/mobile/package.json, outside this SDK's line: expected ~57.0.3",
       "expo-camera@58.0.0 is outside this SDK's line: expected ~57.0.3",
     ]);
   } finally {
@@ -417,7 +422,10 @@ test("main reads the map from the copy of expo apps/mobile resolves first", () =
     );
     const { expoVersion, violations } = main(root);
     assert.equal(expoVersion, "58.0.1");
-    assert.deepEqual(violations, ["expo-camera@57.0.4 is outside this SDK's line: expected ~58.0.0"]);
+    assert.deepEqual(violations, [
+      "expo-camera: declared as ~57.0.4 in apps/mobile/package.json, outside this SDK's line: expected ~58.0.0",
+      "expo-camera@57.0.4 is outside this SDK's line: expected ~58.0.0",
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -522,4 +530,103 @@ test("mobile-validate runs the gate right after npm ci, before expo export, unco
   assert.equal(gate, install + 1, "the gate runs right after npm ci");
   assert.ok(gate < bundle, "the gate runs before expo export, so its diagnosis prints when the bundle breaks too");
   assert.doesNotMatch(steps[gate].body, /^\s*(if|continue-on-error):/m, "the gate must be able to fail the job");
+});
+
+// ── findings from the post-merge review ─────────────────────────────────────
+
+test("a package.json edit off the line fails here too, before the lockfile catches up", () => {
+  const violations = sdkLineViolations({
+    declared: { "expo-apple-authentication": "58.0.0" },
+    bundled: { "expo-apple-authentication": "~57.0.1" },
+    copies: copiesOf({ "expo-apple-authentication": "57.0.2" }),
+  });
+  assert.deepEqual(violations, [
+    "expo-apple-authentication: declared as 58.0.0 in apps/mobile/package.json, outside this SDK's line: expected ~57.0.1",
+  ]);
+});
+
+test("any glob that would match expo-server-sdk is refused, however it is spelled", () => {
+  for (const glob of ["expo-*", "expo*", "*expo*", "*"]) {
+    const violations = rosterViolations({
+      declared: { expo: "~57.0.13" },
+      installedSdkNames: new Set(),
+      ignoreNames: [...FULL_ROSTER, glob],
+    });
+    assert.equal(violations.length, 1, glob);
+    assert.match(violations[0], /freezes apps\/api's expo-server-sdk/, glob);
+  }
+  assert.equal(globMatches("@expo/*", "expo-server-sdk"), false);
+  assert.equal(globMatches("react-native-*", "react-native-svg"), true);
+  assert.equal(globMatches("a.b*", "axb"), false, "a dot is literal");
+});
+
+test("reads each entry's update-types, inline or as a block list", () => {
+  const text = `updates:
+  - package-ecosystem: npm
+    directory: "/"
+    ignore:
+      - dependency-name: "expo"
+      - dependency-name: "expo-camera"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-crypto"
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
+      - dependency-name: "@expo/*"
+`;
+  const entries = dependabotIgnoreEntries(text);
+  assert.deepEqual(entries, [
+    { name: "expo", updateTypes: null },
+    { name: "expo-camera", updateTypes: ["version-update:semver-major"] },
+    { name: "expo-crypto", updateTypes: ["version-update:semver-patch", "version-update:semver-minor"] },
+    { name: "@expo/*", updateTypes: null },
+  ]);
+  assert.deepEqual(
+    entries.map(blocksMajor),
+    [true, true, false, true],
+  );
+});
+
+test("an entry scoped so majors still come through doesn't count as cover", () => {
+  const violations = rosterViolations({
+    declared: { expo: "~57.0.13", "expo-crypto": "~57.0.1" },
+    installedSdkNames: new Set(),
+    ignoreNames: [...FULL_ROSTER, "expo-crypto"],
+    majorsLetThrough: new Set(["expo-crypto"]),
+  });
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /^expo-crypto: its .* update-types leave out version-update:semver-major/);
+});
+
+test("reads the npm entry for directory \"/\", not another npm entry listed first", () => {
+  const text = `updates:
+  - package-ecosystem: npm
+    directory: "/apps/web"
+    ignore:
+      - dependency-name: "from-the-wrong-directory"
+  - package-ecosystem: npm
+    directory: "/"
+    ignore:
+      - dependency-name: "expo"
+`;
+  assert.deepEqual(dependabotIgnoreNames(text), ["expo"]);
+});
+
+test("main refuses an ignore entry scoped so the next SDK major gets through", () => {
+  const root = fixtureTree({
+    dependencies: { expo: "~57.0.13", "expo-camera": "~57.0.4" },
+    installed: { expo: "57.0.13", "expo-camera": "57.0.4" },
+    bundled: { "expo-camera": "~57.0.3" },
+    dependabot: TREE_DEPENDABOT.replace(
+      '      - dependency-name: "expo-camera"\n',
+      '      - dependency-name: "expo-camera"\n        update-types: ["version-update:semver-patch"]\n',
+    ),
+  });
+  try {
+    const { violations } = main(root);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /^expo-camera: its .* update-types leave out/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

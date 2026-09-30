@@ -423,19 +423,21 @@ judgement and the gap reopens the next time a client package is added. `npm run
 check:expo-sdk-line` checks it mechanically in the required `mobile-validate` job (#2330):
 
 - **The roster.** It fails on an `expo-*` package `apps/mobile` declares (in any dependency
-  section) that the list doesn't name exactly, on a missing `expo` or `@expo/*` entry, and on an
-  `expo-*` entry for a package `apps/mobile` doesn't declare and the SDK's map doesn't list (which
-  keeps `apps/api`'s `expo-server-sdk` out).
+  section) that the list doesn't name exactly, on a missing `expo` or `@expo/*` entry, on one of
+  those entries whose `update-types` leave out `version-update:semver-major` (a major is the next
+  SDK), on any glob that matches `apps/api`'s `expo-server-sdk`, and on an exact `expo-*` entry for a
+  package `apps/mobile` doesn't declare that isn't an installed package the SDK's map lists.
 - **The SDK line.** It fails on any copy `package-lock.json` installs, transitive ones such as
   `expo-modules-core` included, of a package the installed `expo`'s `bundledNativeModules.json`
-  lists under `expo-*` or `@expo/*`, when its version is outside the range the map gives it.
+  lists under `expo-*` or `@expo/*`, when its version is outside the range the map gives it, and on
+  a declared range in `apps/mobile/package.json` whose floor is off that range.
   Installed Expo packages the map doesn't list (`expo-modules-jsi`, `expo-modules-autolinking`, the
   `@expo/*` tooling on its own version lines) aren't checked; `expo`'s own dependency ranges pin
   them.
 
 It asserts SDK-line coherence only: a package inside its range can still fail to compile.
 `@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check
-on purpose, pending #2336 below.
+on purpose, pending #2336 above, and so is the `react-native-*` family, which moves with React.
 
 That gap cost a production build. Dependabot moved `expo-apple-authentication` (#2218) and
 `expo-localization` (#2217) to `58.0.0` as ordinary semver majors, and the first iOS production EAS
