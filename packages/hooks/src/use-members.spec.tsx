@@ -272,6 +272,34 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
+  it("resolves ids to the signed photo from the same roster read (#732)", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [
+        {
+          user_id: "user-1",
+          display_name: "Marcus Reid",
+          avatar_url: "https://signed/photo",
+        },
+        { user_id: "user-2", display_name: "Dana Lowe", avatar_url: null },
+      ],
+      error: null,
+    });
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() =>
+      expect(result.current.avatarFor("user-1")).toBe("https://signed/photo"),
+    );
+    expect(result.current.avatarFor("user-2")).toBeNull();
+    expect(result.current.avatarFor("unknown")).toBeNull();
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
   it("re-runs the roster read through refetch", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
     mockUseFrappClient.mockReturnValue({

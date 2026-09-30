@@ -43,10 +43,11 @@ import { cn, initials } from "@/lib/utils";
 export interface MessageItemProps {
   message: ChatMessage;
   /**
-   * Signed URL for `message.author_avatar_path`, or `undefined` when there is
-   * none, it hasn't resolved yet, or resolving it failed (#1231) — every case
-   * degrades to the initials fallback identically, so callers don't need to
-   * distinguish "loading" from "no avatar".
+   * Signed URL for the author's photo: the member's own (#732) or an imported
+   * author's `author_avatar_path` (#1231). `undefined` when there is none, it
+   * hasn't resolved yet, or resolving it failed — every case degrades to the
+   * initials fallback identically, so callers don't need to distinguish
+   * "loading" from "no avatar".
    */
   avatarUrl?: string;
   /**

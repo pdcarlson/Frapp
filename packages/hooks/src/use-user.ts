@@ -1,6 +1,11 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type InvalidateQueryFilters,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
@@ -44,7 +49,6 @@ export function useUpdateUser() {
     mutationFn: async (body: {
       display_name?: string;
       bio?: string;
-      avatar_url?: string;
       graduation_year?: number | null;
       current_city?: string;
       current_company?: string;
@@ -56,6 +60,95 @@ export function useUpdateUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
     },
+  });
+}
+
+/**
+ * Every query whose rows carry the viewer's signed photo: their own profile,
+ * every `["members", …]` read (roster, directory, detail, search), the alumni
+ * directory, and the activity feed's actors. The server deletes the replaced
+ * object, so a query left out here keeps rendering a URL to nothing.
+ *
+ * `["user", "me"]` is matched exactly: as a prefix it would also refetch
+ * `["user", "me", "permissions", …]`, which a photo can't change, and the
+ * photo mutations wait for every refetch they start.
+ */
+export const PHOTO_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
+  { queryKey: ["user", "me"], exact: true },
+  { queryKey: ["members"] },
+  { queryKey: ["alumni"] },
+  { queryKey: ["activity-feed"] },
+];
+
+function invalidatePhotoReads(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all(
+    PHOTO_QUERY_FILTERS.map((filters) =>
+      queryClient.invalidateQueries(filters),
+    ),
+  );
+}
+
+/**
+ * Step 1 of 3 of a profile-photo change: `POST /v1/users/me/avatar-url`.
+ *
+ * Read the ticket with `readSignedUpload` from `@repo/validation`, PUT the
+ * bytes to it, then confirm with {@link useConfirmAvatar}. The PUT is left to
+ * the caller because the two clients hold different things: web a DOM `File`
+ * (`putSignedUpload`), mobile a `file://` URI (`FileSystem.uploadAsync`).
+ *
+ * Chapter-scoped: the photo lands in the caller's folder for the active
+ * chapter, which the confirm checks.
+ */
+export function useRequestAvatarUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (body: {
+      filename: string;
+      content_type: string;
+      size_bytes?: number;
+    }) => {
+      const { data, error } = await client.POST("/v1/users/me/avatar-url", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * Step 3 of 3: `POST /v1/users/me/avatar` makes the uploaded object the
+ * viewer's photo, and the server deletes the one it replaced.
+ *
+ * `mutateAsync` resolves once the reads that show the photo have refetched, so
+ * a caller that clears its busy state on resolve never shows the old photo.
+ */
+export function useConfirmAvatar() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (storagePath: string) => {
+      const { data, error } = await client.POST("/v1/users/me/avatar", {
+        body: { storage_path: storagePath },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidatePhotoReads(queryClient),
+  });
+}
+
+/** `DELETE /v1/users/me/avatar`: back to initials everywhere. */
+export function useRemoveAvatar() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.DELETE("/v1/users/me/avatar");
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => invalidatePhotoReads(queryClient),
   });
 }
 

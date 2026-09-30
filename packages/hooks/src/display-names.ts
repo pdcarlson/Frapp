@@ -261,6 +261,30 @@ export function resolveAuthorName(
   return authored ? authored : null;
 }
 
+/** Resolves a `users.id` to the member's signed photo URL, or `null`. */
+export type AvatarResolver = (userId: string) => string | null;
+
+/**
+ * The photo to draw beside a message, or `null` for initials.
+ *
+ * A row with a `sender_id` is the member's message, imported rows a member
+ * has linked included (#2878), so it draws the member's photo *now*, from the
+ * roster, or initials when they have none. It never falls back to the
+ * row's Discord snapshot: a linked row keeps that only so an unlink can
+ * restore it. Only an imported author nobody has linked draws
+ * `author_avatar_path`, looked up in `importedAvatars`, the signed batch the
+ * caller fetched for it (#1231); an unsigned one is simply absent.
+ */
+export function resolveAuthorAvatar(
+  author: MessageAuthor & { author_avatar_path?: string | null },
+  avatarFor: AvatarResolver,
+  importedAvatars: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (author.sender_id) return avatarFor(author.sender_id);
+  const path = author.author_avatar_path;
+  return (path && importedAvatars?.[path]) || null;
+}
+
 /**
  * Two characters to draw in an avatar when no name resolved at all.
  *

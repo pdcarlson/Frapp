@@ -13,8 +13,10 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 
 - Each member has a profile card showing: display name, profile photo, role(s), point balance, join date, and optional bio.
 - Core profile fields shown on the detail view: name, email, role, joined date.
-- Profile photos are stored in Supabase Storage under `chapters/{chapter_id}/profiles/{user_id}`.
-- Authenticated members may edit **their own** display name, bio, and profile photo — no additional permission required.
+- Profile photos are stored in the private `profiles` bucket under `chapters/{chapter_id}/profiles/{user_id}/`, in the folder for the chapter the member uploaded from. The member's `users.avatar_url` holds that object's path.
+- Authenticated members may edit **their own** display name, bio, and profile photo — no additional permission required. Web (`/profile`) and mobile (s15) both upload, replace and remove the photo.
+- **Setting the photo is three steps** (#732): `POST /v1/users/me/avatar-url` mints a signed upload URL for a server-minted, unique key; the client PUTs the bytes; `POST /v1/users/me/avatar` confirms it. The confirm accepts only an existing object directly in the caller's own folder for the active chapter, then deletes the photo it replaced and any unconfirmed upload in that folder older than a day. A younger one is left alone, since it may be another device's upload about to be confirmed. `DELETE /v1/users/me/avatar` clears it. `PATCH /v1/users/me` does not accept `avatar_url` (#2519): a free-text value let a member point their photo at any path.
+- **Every read serves the photo as a signed URL** (one hour), because the bucket is private and a bare path renders nothing. That covers `GET /v1/users/me`, the member list, detail, search, the alumni directory, `GET /v1/members/roster` (which chat reads), and the actors on `GET /v1/activity-feed` (built server-side from the same roster read, `MemberService.findRosterWithJoinDates`). Only a path in the row owner's own folder is signed. Anything else serves as `null`, so the client draws initials; that includes a URL, which only the old free-text `PATCH` could have stored: sign-in syncs only the email and name, and no migration or seed sets the column.
 - Viewing other members' full profiles requires the `members:view` permission.
 
 ## Custom Fields

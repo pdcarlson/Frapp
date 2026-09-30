@@ -1,7 +1,7 @@
 import { StrictMode, createRef } from "react";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   HELD_QUOTE_TEXT,
   TOMBSTONE_STALE_TEXT,
@@ -77,24 +77,11 @@ vi.mock("react-virtuoso", async () => {
   };
 });
 
-// Signed Discord avatar URLs, by storage path; empty unless a case sets it.
-const signedAvatars = vi.hoisted(() => ({
-  current: {} as Record<string, string>,
+// Imported authors' signed Discord avatars, by stored path. Empty unless a
+// case sets it.
+const authorAvatars = vi.hoisted(() => ({
+  data: {} as Record<string, string>,
 }));
-
-// The avatar each row was handed. Radix draws an `<img>` only once it loads,
-// which jsdom never does, so the prop is where the choice is visible.
-const rowAvatars = vi.hoisted(() => new Map<string, string | undefined>());
-vi.mock("./message-item", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./message-item")>();
-  return {
-    ...actual,
-    MessageItem: (props: Parameters<typeof actual.MessageItem>[0]) => {
-      rowAvatars.set(props.message.id, props.avatarUrl);
-      return <actual.MessageItem {...props} />;
-    },
-  };
-});
 
 // `useAuthorAvatars` reaches for `FrappClientProvider`, which a bare `render()`
 // does not mount.
@@ -102,7 +89,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    useAuthorAvatars: () => ({ data: signedAvatars.current }),
+    useAuthorAvatars: () => ({ data: authorAvatars.data }),
     // Only a message with `attachment_count > 0` mounts the list that reads
     // this; the image viewer cases below are the ones that do.
     useMessageAttachments: () => ({
@@ -124,8 +111,20 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   };
 });
 
-const { MessageTimeline, importedAvatarUrl } =
-  await import("./message-timeline");
+// Radix's `AvatarImage` mounts its `<img>` only after the browser loads it,
+// which jsdom never does, so the photo a row was handed would be invisible.
+// Stood in by a marker carrying the `src`, beside the real fallback.
+vi.mock("@/components/ui/avatar", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    AvatarImage: ({ src }: { src?: string }) => (
+      <span data-testid="avatar-photo" data-src={src} />
+    ),
+  };
+});
+
+const { MessageTimeline } = await import("./message-timeline");
 type MessageTimelineHandle = import("./message-timeline").MessageTimelineHandle;
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -134,6 +133,7 @@ const BOB = "33333333-3333-4333-8333-333333333333";
 
 const nameFor = (id: string) =>
   id === ALICE ? "Alice Chen" : id === BOB ? "Bob Ruiz" : null;
+const avatarFor = (): string | null => null;
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -171,6 +171,7 @@ function renderTimeline(
       messages={messages}
       viewerId={VIEWER}
       nameFor={nameFor}
+      avatarFor={avatarFor}
       isLoading={false}
       loadError={null}
       onReact={vi.fn()}
@@ -467,6 +468,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
         viewerId={null}
         {...timelineBlockProps(rows, null)}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -482,6 +484,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
         viewerId={VIEWER}
         {...timelineBlockProps(rows, VIEWER)}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -741,6 +744,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={prepended}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -757,6 +761,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={appended}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -783,6 +788,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -815,6 +821,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={history(1, 5)}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -844,6 +851,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={history(1, 5)}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -872,6 +880,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={history(1, 5)}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -906,6 +915,7 @@ describe("MessageTimeline older history (#1571)", () => {
           messages={history(1, 5)}
           viewerId={VIEWER}
           nameFor={nameFor}
+          avatarFor={avatarFor}
           isLoading={false}
           loadError={null}
           onReact={vi.fn()}
@@ -933,6 +943,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -959,6 +970,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={history(1, 5)}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -986,6 +998,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={history(1, 5)}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1012,6 +1025,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1052,6 +1066,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1096,6 +1111,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1123,6 +1139,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1144,6 +1161,7 @@ describe("MessageTimeline older history (#1571)", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1188,77 +1206,64 @@ describe("MessageTimeline older history (#1571)", () => {
   });
 });
 
-describe("importedAvatarUrl (#2878)", () => {
-  const signed = { "chapters/c/chat-archive/a.png": "https://signed/a.png" };
+describe("MessageTimeline — member photos (#732)", () => {
+  it("draws a member's photo from the roster beside their message", () => {
+    renderTimeline([message({ id: "m-1", sender_id: ALICE })], {
+      avatarFor: (id: string) => (id === ALICE ? "https://signed/alice" : null),
+    });
 
-  it("draws the Discord avatar for an author nobody has linked", () => {
-    expect(
-      importedAvatarUrl(
-        {
-          sender_id: null,
-          author_avatar_path: "chapters/c/chat-archive/a.png",
-        },
-        signed,
-      ),
-    ).toBe("https://signed/a.png");
+    expect(screen.getByTestId("avatar-photo").getAttribute("data-src")).toBe(
+      "https://signed/alice",
+    );
   });
 
-  it("never draws it on a linked row, which is the member's message", () => {
-    expect(
-      importedAvatarUrl(
-        {
-          sender_id: "user-jake",
-          author_avatar_path: "chapters/c/chat-archive/a.png",
-        },
-        signed,
-      ),
-    ).toBeUndefined();
+  it("keeps initials for a member with no photo", () => {
+    renderTimeline([message({ id: "m-1", sender_id: BOB })], {
+      avatarFor: (id: string) => (id === ALICE ? "https://signed/alice" : null),
+    });
+
+    expect(screen.queryByTestId("avatar-photo")).toBeNull();
   });
 
-  it("hands the Discord avatar to an unlinked row only, in the timeline", () => {
-    const path = "chapters/c/chat-archive/a.png";
-    signedAvatars.current = { [path]: "https://signed/a.png" };
-    rowAvatars.clear();
-    try {
+  describe("beside imported Discord messages", () => {
+    beforeEach(() => {
+      authorAvatars.data = { "archive/p.png": "https://signed/discord" };
+    });
+    afterEach(() => {
+      authorAvatars.data = {};
+    });
+
+    it("draws an unlinked author's Discord avatar (#1231)", () => {
       renderTimeline([
         message({
-          id: "unlinked",
-          client_message_id: "unlinked",
-          kind: "imported",
+          id: "m-1",
           sender_id: null,
-          author_name: "Discord Dan",
-          author_avatar_path: path,
-        }),
-        message({
-          id: "linked",
-          client_message_id: "linked",
-          kind: "imported",
-          sender_id: BOB,
-          author_name: "Discord Dan",
-          author_avatar_path: path,
-          created_at: new Date(2026, 7, 16, 18, 0).toISOString(),
+          author_name: "old-handle",
+          author_avatar_path: "archive/p.png",
         }),
       ]);
-      expect(rowAvatars.get("unlinked")).toBe("https://signed/a.png");
-      expect(rowAvatars.get("linked")).toBeUndefined();
-    } finally {
-      signedAvatars.current = {};
-    }
-  });
 
-  it("draws nothing without a path or before the URLs are signed", () => {
-    expect(
-      importedAvatarUrl({ sender_id: null, author_avatar_path: null }, signed),
-    ).toBeUndefined();
-    expect(
-      importedAvatarUrl(
-        {
-          sender_id: null,
-          author_avatar_path: "chapters/c/chat-archive/a.png",
-        },
-        undefined,
-      ),
-    ).toBeUndefined();
+      expect(screen.getByTestId("avatar-photo").getAttribute("data-src")).toBe(
+        "https://signed/discord",
+      );
+    });
+
+    it("never draws it on a linked row, even when the member has no photo (#2878)", () => {
+      // The signed batch can hold the path because an unlinked row in the
+      // same window shares it.
+      renderTimeline(
+        [
+          message({
+            id: "m-1",
+            sender_id: BOB,
+            author_avatar_path: "archive/p.png",
+          }),
+        ],
+        { avatarFor: () => null },
+      );
+
+      expect(screen.queryByTestId("avatar-photo")).toBeNull();
+    });
   });
 });
 
@@ -1441,6 +1446,7 @@ describe("the image viewer", () => {
         messages={deleted}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}
@@ -1463,6 +1469,7 @@ describe("the image viewer", () => {
         messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}

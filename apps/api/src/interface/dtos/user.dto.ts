@@ -78,9 +78,46 @@ export class RequestAvatarUploadUrlDto {
     description: 'MIME content type (e.g. image/jpeg, image/png)',
   })
   @IsString()
+  @MaxLength(255)
   content_type: string;
+
+  @ApiPropertyOptional({
+    description:
+      'File size in bytes, if known. Rejected server-side against the upload size ceiling when present.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  size_bytes?: number;
 }
 
+export class AvatarUploadUrlResponseDto {
+  @ApiProperty({
+    description: 'Short-lived signed URL; PUT the bytes to it.',
+  })
+  upload_url: string;
+
+  @ApiProperty({
+    description:
+      'Storage path to send back on `POST /v1/users/me/avatar` once the PUT succeeds.',
+  })
+  storage_path: string;
+}
+
+export class ConfirmAvatarDto {
+  @ApiProperty({
+    description: 'Storage path returned from `POST /v1/users/me/avatar-url`',
+  })
+  @IsString()
+  @MaxLength(1024)
+  storage_path: string;
+}
+
+/**
+ * `avatar_url` is deliberately absent (#2519): the photo is set only by
+ * confirming an upload (`POST /v1/users/me/avatar`), which checks the path is
+ * the caller's own object, and cleared by `DELETE /v1/users/me/avatar`.
+ */
 export class UpdateUserDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -91,11 +128,6 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   bio?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  avatar_url?: string;
 
   @ApiPropertyOptional({ type: Number, nullable: true })
   @IsOptional()

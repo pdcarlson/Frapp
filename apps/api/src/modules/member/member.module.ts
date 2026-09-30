@@ -11,6 +11,7 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
+import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
     RbacModule,
     // `MemberService.remove` evicts the channels it prunes (#1302).
     ChannelCacheModule,
+    ProfilePhotoModule,
   ],
   controllers: [MemberController, AlumniController],
   providers: [

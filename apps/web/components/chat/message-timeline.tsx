@@ -32,7 +32,7 @@ import {
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
-import { useAuthorAvatars } from "@repo/hooks";
+import { resolveAuthorAvatar, useAuthorAvatars } from "@repo/hooks";
 import { dayDividerLabel, decorateThread } from "@repo/chat-core/grouping";
 
 /**
@@ -56,21 +56,6 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
   [false, "w-[66%]"],
   [true, "w-[48%]"],
 ] as const;
-
-/**
- * The signed Discord avatar a row draws, if any.
- *
- * Only for an imported author nobody has linked. A linked row is the member's
- * message (#2878): it draws the member, and keeps its Discord snapshot solely
- * so an unlink can restore it.
- */
-export function importedAvatarUrl(
-  message: Pick<ChatMessage, "sender_id" | "author_avatar_path">,
-  signed: Record<string, string> | undefined,
-): string | undefined {
-  if (message.sender_id || !message.author_avatar_path) return undefined;
-  return signed?.[message.author_avatar_path];
-}
 
 /**
  * The cold-load and channel-switch placeholder for the timeline.
@@ -343,6 +328,11 @@ export interface MessageTimelineProps {
   viewerId: string | null;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;
+  /**
+   * Resolves `users.id` → the member's signed photo URL; `null` for initials.
+   * From the same roster read as `nameFor` (#732).
+   */
+  avatarFor: (userId: string) => string | null;
   isLoading: boolean;
   loadError: Error | null;
   onRetryLoad?: () => void;
@@ -413,6 +403,7 @@ export const MessageTimeline = forwardRef<
     maskedRefresh,
     viewerId,
     nameFor,
+    avatarFor,
     isLoading,
     loadError,
     onRetryLoad,
@@ -891,7 +882,13 @@ export const MessageTimeline = forwardRef<
                   nameFor={nameFor}
                   message={entry.message}
                   blockState={blockState}
-                  avatarUrl={importedAvatarUrl(entry.message, avatars.data)}
+                  avatarUrl={
+                    resolveAuthorAvatar(
+                      entry.message,
+                      avatarFor,
+                      avatars.data,
+                    ) ?? undefined
+                  }
                   viewerId={viewerId}
                   showHeader={entry.showHeader}
                   runStartedAt={entry.runStartedAt}

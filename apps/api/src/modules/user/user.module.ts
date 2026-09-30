@@ -14,6 +14,7 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { AUTH_ADMIN_PROVIDER } from '#domain/adapters/auth-admin.interface';
 import { SupabaseAuthAdminService } from '../../infrastructure/supabase/supabase-auth-admin.service';
+import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SupabaseAuthAdminService } from '../../infrastructure/supabase/supabase
     // Account deletion sweeps the departing member's chapters' report exports
     // alongside their profile photos (spec/behavior/data-retention.md).
     ReportRetentionModule,
+    ProfilePhotoModule,
   ],
   controllers: [UserController],
   providers: [

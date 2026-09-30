@@ -87,6 +87,11 @@ export interface MemberDisplayNames {
   /** Single-id resolver; `null` when unresolved so the caller picks its copy. */
   nameFor: (userId: string) => string | null;
   /**
+   * The member's photo as a renderable (signed) URL, or `null` for initials.
+   * Same roster read as `nameFor`, so a chat row needs no second request.
+   */
+  avatarFor: (userId: string) => string | null;
+  /**
    * True until the first roster read settles — and, because the read is
    * `enabled: !!chapterId`, true forever while there is no active chapter. A
    * surface that blocks rendering on this never renders for a chapterless
@@ -125,6 +130,18 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [byId],
   );
 
+  const avatarById = useMemo(
+    () =>
+      new Map(
+        (query.data ?? []).map((row) => [row.user_id, row.avatar_url ?? null]),
+      ),
+    [query.data],
+  );
+  const avatarFor = useCallback(
+    (userId: string) => avatarById.get(userId) ?? null,
+    [avatarById],
+  );
+
   // Keyed on `query.refetch`, which TanStack keeps stable, rather than on
   // `query` — the observer hands back a fresh result object every render, so
   // depending on it would make this callback a new identity each time and defeat
@@ -137,6 +154,7 @@ export function useMemberDisplayNames(): MemberDisplayNames {
   return {
     byId,
     nameFor,
+    avatarFor,
     isPending: query.isPending,
     isError: query.isError,
     refetch,
