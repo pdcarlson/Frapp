@@ -429,7 +429,9 @@ test("the mobile detector requires both the 403 and an exact message", () => {
   );
   // Reading `codeOf` first is fine since #1020 (#2995), but a detector keyed on
   // it alone meets an API that predates #1020, returns null, and reopens #2297.
-  // The message match asserted above is what keeps the fallback in place.
+  // The regex above only proves the message match is still present; the
+  // code-less fixtures in apps/mobile/lib/subscription-refusal.spec.ts prove it
+  // still runs when there is no code.
 });
 
 test("the study refusal branch sits above the arms that relay the server string", () => {

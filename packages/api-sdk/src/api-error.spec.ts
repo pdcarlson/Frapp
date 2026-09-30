@@ -48,8 +48,10 @@ describe("codeOf", () => {
   });
 
   it("reads the code off a body shaped like the API's error schema", () => {
-    // Typed by the generated `ApiErrorResponseDto`, so a schema that loses
-    // `code` or its other keys fails to compile here, not just at runtime.
+    // One real body with a code and one without. The annotations are for the
+    // reader: this file is outside the package's `tsc` program (its tsconfig
+    // excludes specs), so the compile-time tie to the schema is `ApiErrorShape`
+    // in `api-error.ts`, not these literals.
     const refused: ApiErrorBody = {
       statusCode: 403,
       error: "FORBIDDEN",

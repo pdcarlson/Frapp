@@ -67,11 +67,10 @@ export class HealthController {
   // Strict readiness: the deploy smoke checks (deploy-staging.yml, deploy-production.yml)
   // hit this path instead of /health so a degraded dependency actually fails the gate.
   //
-  // The global AllExceptionsFilter sends {statusCode, error, message,
-  // requestId} plus a string `code`, and drops any other key (#1020) — so the
-  // degraded detail must travel in `message`, a plain string, beside the
-  // `code` that names the failure, the same `{ code, message }` convention the
-  // rest of this API throws.
+  // The global AllExceptionsFilter sends only its documented error body
+  // (spec/architecture/README.md § Error responses) and drops any other key,
+  // so the degraded detail travels in `message`, a plain string, while
+  // `code: 'DEGRADED'` names the failure.
   @Get('health/ready')
   @ApiOperation({
     summary: 'Readiness check (503 when a dependency is degraded)',

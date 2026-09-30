@@ -191,11 +191,20 @@ function seedDualChapterNotifications(): SeededTables {
  * passed only because no e2e spec installed `AllExceptionsFilter`, so the
  * suite ran under Nest's default filter. Every spec now boots through
  * `configureApp`, so this is the body `main.ts` sends: the four envelope keys
- * plus `code`, exactly. The message is checked only for being present; its
- * wording is for people, and pinning it here is what a client would have to
- * do if the code were missing.
+ * plus `code`, exactly. The message's wording is for people, so by default it
+ * is checked only for being present.
+ *
+ * One code has two sources: `ChapterGuard` refuses a header that disagrees
+ * with the token, and the chapter-config handlers refuse a URL that disagrees
+ * with the resolved chapter, both as `chapter.context.mismatch`. The #866
+ * cases pass the handler's message as `layerMessage`, because it is the only
+ * thing that shows the handler's own check refused rather than the guard.
  */
-function expectDeniedBody(body: Record<string, unknown>, code: string): void {
+function expectDeniedBody(
+  body: Record<string, unknown>,
+  code: string,
+  layerMessage?: string,
+): void {
   expect(Object.keys(body).sort()).toEqual([
     'code',
     'error',
@@ -206,7 +215,11 @@ function expectDeniedBody(body: Record<string, unknown>, code: string): void {
   expect(body.code).toBe(code);
   expect(body.statusCode).toBe(403);
   expect(body.error).toBe('FORBIDDEN');
-  expect(typeof body.message).toBe('string');
+  if (layerMessage === undefined) {
+    expect(typeof body.message).toBe('string');
+  } else {
+    expect(body.message).toBe(layerMessage);
+  }
   // A real id, not the 'unknown' placeholder a missing requestIdMiddleware
   // leaves behind on a guard denial — see request-id.middleware.ts.
   expect(body.requestId).toMatch(/^req_/);
@@ -365,6 +378,10 @@ describe('Cross-tenant isolation (e2e)', () => {
     });
   });
 
+  /** The chapter-config handlers' own refusal, distinct from the guard's. */
+  const URL_MISMATCH_MESSAGE =
+    'The chapter id in the URL disagrees with your active chapter context.';
+
   describe('chapter config: URL id vs active chapter (#866)', () => {
     // `chapters/:id/config` never reads `:id` for data — it's the
     // guard-resolved `chapterId` that's queried either way, so this is a
@@ -378,7 +395,11 @@ describe('Cross-tenant isolation (e2e)', () => {
       );
 
       expect(res.status).toBe(403);
-      expectDeniedBody(res.body, 'chapter.context.mismatch');
+      expectDeniedBody(
+        res.body,
+        'chapter.context.mismatch',
+        URL_MISMATCH_MESSAGE,
+      );
     });
 
     it('allows a URL chapter id that matches the active chapter (positive control)', async () => {
@@ -404,7 +425,11 @@ describe('Cross-tenant isolation (e2e)', () => {
       );
 
       expect(res.status).toBe(403);
-      expectDeniedBody(res.body, 'chapter.context.mismatch');
+      expectDeniedBody(
+        res.body,
+        'chapter.context.mismatch',
+        URL_MISMATCH_MESSAGE,
+      );
     });
 
     it('rejects a mismatched URL chapter id on POST theme-palette', async () => {
@@ -417,7 +442,11 @@ describe('Cross-tenant isolation (e2e)', () => {
       );
 
       expect(res.status).toBe(403);
-      expectDeniedBody(res.body, 'chapter.context.mismatch');
+      expectDeniedBody(
+        res.body,
+        'chapter.context.mismatch',
+        URL_MISMATCH_MESSAGE,
+      );
     });
   });
 
