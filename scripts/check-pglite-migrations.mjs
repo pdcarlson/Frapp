@@ -4161,9 +4161,13 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
 //     more, as after remapping a failed import, is deleted too;
 //   - a created channel is kept while it holds a live message, a deleted
 //     one, another import's messages, or a points-ledger link;
-//   - a created channel another import merged into is kept (deleting it
-//     would fail `discord_import_channels_target_present`; #2922), and a
-//     channel this import merged into is never a candidate;
+//   - a created channel another import merged into is kept while that
+//     import isn't deleted, a finished one included; a merge by a `purging`
+//     or `purged` import, this one included, pins nothing (#2922);
+//   - a channel this import merged into is a candidate only when a
+//     `purging` or `purged` import recorded creating it, which re-reaps what
+//     that import's purge had to keep (#2922; `purging` too, since a purge
+//     writes `purged` only after its channel step, and two can run at once);
 //   - a `create_new` row naming a channel older than the import, or one
 //     without the worker's "Imported from Discord #…" description (an upload
 //     mapped before #2859), doesn't make it a candidate;
@@ -4187,6 +4191,8 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
   const PURGING = "a2905000-0000-4000-8000-0000000000d1";
   const OTHER = "a2905000-0000-4000-8000-0000000000d2";
   const RUNNING = "a2905000-0000-4000-8000-0000000000d3";
+  const PURGED = "a2905000-0000-4000-8000-0000000000d4";
+  const OTHER_PURGING = "a2905000-0000-4000-8000-0000000000d5";
   const CH = {
     EMPTY: "a2905000-0000-4000-8000-0000000000c1", // recorded and mapped: deleted
     THREADED: "a2905000-0000-4000-8000-0000000000c2", // mapped only, two rows: deleted once
@@ -4201,8 +4207,25 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     LEGACY_NEWER: "a2905000-0000-4000-8000-0000000000cc",
     RUNNING_CH: "a2905000-0000-4000-8000-0000000000cb",
     IN_B: "b2905000-0000-4000-8000-0000000000c1",
+    // #2922: merges by deleted imports, and the re-reap.
+    SELF_MERGED: "a2905000-0000-4000-8000-0000000000e1", // created here, merged into by this import: deleted
+    MERGED_BY_PURGED: "a2905000-0000-4000-8000-0000000000e2", // created here, merged into by a purged import: deleted
+    MERGED_BY_PURGING: "a2905000-0000-4000-8000-0000000000e3", // created here, merged into by another purging import: deleted
+    REREAP: "a2905000-0000-4000-8000-0000000000e4", // a purged import created it, this one merged into it: deleted
+    REREAP_PINNED: "a2905000-0000-4000-8000-0000000000e5", // as REREAP, but a running import merges into it too: kept
+    REREAP_PURGING: "a2905000-0000-4000-8000-0000000000e7", // an import still purging created it, this one merged into it: deleted
+    OTHERS_CREATED: "a2905000-0000-4000-8000-0000000000e6", // a completed import created it, this one merged into it: kept
   };
-  const DELETABLE = [CH.EMPTY, CH.THREADED, CH.ORPHAN].sort();
+  const DELETABLE = [
+    CH.EMPTY,
+    CH.THREADED,
+    CH.ORPHAN,
+    CH.SELF_MERGED,
+    CH.MERGED_BY_PURGED,
+    CH.MERGED_BY_PURGING,
+    CH.REREAP,
+    CH.REREAP_PURGING,
+  ].sort();
 
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
@@ -4219,7 +4242,9 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
       insert into discord_imports (id, chapter_id, status, consent_acknowledged_at) values
         ('${PURGING}', '${A}', 'purging', now()),
         ('${OTHER}', '${A}', 'completed', now()),
-        ('${RUNNING}', '${A}', 'running', now());
+        ('${RUNNING}', '${A}', 'running', now()),
+        ('${PURGED}', '${A}', 'purged', now()),
+        ('${OTHER_PURGING}', '${A}', 'purging', now());
       insert into chat_channels (id, chapter_id, name, type) values
         ('${CH.EMPTY}', '${A}', 'rush', 'PUBLIC'),
         ('${CH.ORPHAN}', '${A}', 'exec', 'PUBLIC'),
@@ -4230,7 +4255,14 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${CH.MERGED_INTO}', '${A}', 'social', 'PUBLIC'),
         ('${CH.EXISTING}', '${A}', 'announcements', 'PUBLIC'),
         ('${CH.RUNNING_CH}', '${A}', 'sports', 'PUBLIC'),
-        ('${CH.IN_B}', '${B}', 'rush', 'PUBLIC');
+        ('${CH.IN_B}', '${B}', 'rush', 'PUBLIC'),
+        ('${CH.SELF_MERGED}', '${A}', 'pledges', 'PUBLIC'),
+        ('${CH.MERGED_BY_PURGED}', '${A}', 'alumni', 'PUBLIC'),
+        ('${CH.MERGED_BY_PURGING}', '${A}', 'treasury', 'PUBLIC'),
+        ('${CH.REREAP}', '${A}', 'philanthropy', 'PUBLIC'),
+        ('${CH.REREAP_PINNED}', '${A}', 'brotherhood', 'PUBLIC'),
+        ('${CH.OTHERS_CREATED}', '${A}', 'chapter', 'PUBLIC'),
+        ('${CH.REREAP_PURGING}', '${A}', 'recruitment', 'PUBLIC');
       -- Named only by mapping rows, as for an import from before the created-
       -- channel record: the worker's description is what marks it as made.
       insert into chat_channels (id, chapter_id, name, type, description) values
@@ -4244,7 +4276,10 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
       insert into discord_import_created_channels (import_id, channel_id) values
         ('${PURGING}', '${CH.EMPTY}'), ('${PURGING}', '${CH.ORPHAN}'), ('${PURGING}', '${CH.LIVE}'),
         ('${PURGING}', '${CH.DELETED_MSG}'), ('${PURGING}', '${CH.OTHER_MSGS}'), ('${PURGING}', '${CH.POINTS}'),
-        ('${PURGING}', '${CH.MERGED_INTO}'), ('${PURGING}', '${CH.IN_B}'), ('${RUNNING}', '${CH.RUNNING_CH}');
+        ('${PURGING}', '${CH.MERGED_INTO}'), ('${PURGING}', '${CH.IN_B}'), ('${RUNNING}', '${CH.RUNNING_CH}'),
+        ('${PURGING}', '${CH.SELF_MERGED}'), ('${PURGING}', '${CH.MERGED_BY_PURGED}'), ('${PURGING}', '${CH.MERGED_BY_PURGING}'),
+        ('${PURGED}', '${CH.REREAP}'), ('${PURGED}', '${CH.REREAP_PINNED}'), ('${OTHER}', '${CH.OTHERS_CREATED}'),
+        ('${OTHER_PURGING}', '${CH.REREAP_PURGING}');
       insert into discord_import_channels
         (import_id, discord_channel_id, discord_channel_name, mapping_action, new_channel_name, target_channel_id) values
         ('${PURGING}', 'd1', 'rush', 'create_new', 'rush', '${CH.EMPTY}'),
@@ -4258,7 +4293,18 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         -- A leftover create_new row of another import on a channel this one
         -- made: it holds nothing there, so it pins nothing.
         ('${OTHER}', 'e1', 'rush', 'create_new', 'rush', '${CH.EMPTY}'),
-        ('${RUNNING}', 'f1', 'sports', 'create_new', 'sports', '${CH.RUNNING_CH}');
+        ('${RUNNING}', 'f1', 'sports', 'create_new', 'sports', '${CH.RUNNING_CH}'),
+        -- #2922: a failed import remapped through the API can merge into a
+        -- channel its own first run created.
+        ('${PURGING}', 'd10', 'pledges', 'use_existing', null, '${CH.SELF_MERGED}'),
+        ('${PURGED}', 'g1', 'alumni', 'use_existing', null, '${CH.MERGED_BY_PURGED}'),
+        ('${OTHER_PURGING}', 'h1', 'treasury', 'use_existing', null, '${CH.MERGED_BY_PURGING}'),
+        -- Merges into channels other imports created.
+        ('${PURGING}', 'd11', 'philanthropy', 'use_existing', null, '${CH.REREAP}'),
+        ('${PURGING}', 'd13', 'brotherhood', 'use_existing', null, '${CH.REREAP_PINNED}'),
+        ('${RUNNING}', 'f2', 'brotherhood', 'use_existing', null, '${CH.REREAP_PINNED}'),
+        ('${PURGING}', 'd12', 'chapter', 'use_existing', null, '${CH.OTHERS_CREATED}'),
+        ('${PURGING}', 'd14', 'recruitment', 'use_existing', null, '${CH.REREAP_PURGING}');
       -- What the purge leaves behind: a member's live message, a deleted one,
       -- another import's history, and a chat points adjustment whose card
       -- never posted.
@@ -4296,9 +4342,19 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     );
     check("keeps a created channel a points-ledger row points at", left.includes(CH.POINTS), { left });
     check(
-      "keeps a created channel another import merged into, and a channel it merged into",
-      left.includes(CH.MERGED_INTO) && left.includes(CH.EXISTING),
+      "keeps a created channel an import that isn't deleted merged into, a finished one included, and a channel it merged into that no deleted import created",
+      left.includes(CH.MERGED_INTO) && left.includes(CH.EXISTING) && left.includes(CH.OTHERS_CREATED),
       { left },
+    );
+    check(
+      "a merge by a purging or purged import, this one included, pins nothing (#2922)",
+      [CH.SELF_MERGED, CH.MERGED_BY_PURGED, CH.MERGED_BY_PURGING].every((id) => deleted.includes(id)),
+      { deleted },
+    );
+    check(
+      "re-reaps a channel a purged, or still purging, import created that this one merged into, unless a live import's merge still pins it (#2922)",
+      deleted.includes(CH.REREAP) && deleted.includes(CH.REREAP_PURGING) && left.includes(CH.REREAP_PINNED),
+      { deleted, left },
     );
     check(
       "keeps a channel a create_new row names that is older than the import, or lacks the worker's description (an upload mapped before #2859)",
@@ -4311,14 +4367,18 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
       { left },
     );
     const targets = await q(
-      `select discord_channel_id, target_channel_id from discord_import_channels where import_id = '${PURGING}' and discord_channel_id in ('d1', 'd2', 'd2-thread') order by 1`,
+      `select discord_channel_id, target_channel_id from discord_import_channels
+        where (import_id = '${PURGING}' and discord_channel_id in ('d1', 'd2', 'd2-thread', 'd10', 'd11'))
+           or (import_id = '${PURGED}' and discord_channel_id = 'g1')
+           or (import_id = '${OTHER_PURGING}' and discord_channel_id = 'h1')
+        order by 1`,
     );
     const records = await q(
       `select count(*)::int as n from discord_import_created_channels where channel_id in (${DELETABLE.map((id) => `'${id}'`).join(", ")})`,
     );
     check(
       "the mapping rows keep their record with the target cleared, and the created-channel records go",
-      targets.length === 3 && targets.every((r) => r.target_channel_id === null) && records[0]?.n === 0,
+      targets.length === 7 && targets.every((r) => r.target_channel_id === null) && records[0]?.n === 0,
       { targets, records },
     );
     const again = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}')`);
@@ -4340,6 +4400,112 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     );
   } catch (e) {
     check("emptied import channels scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+  } finally {
+    await db.exec("rollback;").catch(() => {});
+  }
+
+  for (const r of results) {
+    if (r.ok) {
+      console.log(`OK    ${r.name}`);
+    } else {
+      missing += 1;
+      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+    }
+  }
+}
+
+// ─── Functional: a channel an import merged into can be deleted (#2922) ─────
+//
+// `discord_import_channels.target_channel_id` is `on delete set null`, but
+// `discord_import_channels_target_present` required a target on every
+// `use_existing` row, so deleting any channel an import had merged into failed
+// the CHECK and rolled back (`DELETE /v1/channels/:id` answered 500). Proved
+// against the real schema:
+//
+//   - an officer's delete of a channel two imports merged into (one finished,
+//     one still running) succeeds, and both mapping rows keep their record
+//     with the target cleared;
+//   - `discord_import_channels_new_name_present` still refuses a `create_new`
+//     row with no name, and the old constraint is gone;
+//   - the database accepts a `use_existing` row with no target: the mapping
+//     routes and `start` refuse one, and the worker stops on one.
+//
+// Everything runs inside one transaction and is rolled back.
+console.log("\n=== Functional: a channel an import merged into can be deleted (#2922) ===");
+{
+  const A = "a2922000-0000-4000-8000-00000000000a";
+  const GENERAL = "a2922000-0000-4000-8000-0000000000c1";
+  const DONE = "a2922000-0000-4000-8000-0000000000d1";
+  const LIVE = "a2922000-0000-4000-8000-0000000000d2";
+
+  const results = [];
+  const check = (name, ok, detail) => results.push({ name, ok, detail });
+  const q = async (sql) => (await db.query(sql)).rows;
+  // Postgres aborts the transaction on an error, so each refusal runs under
+  // its own savepoint and is rolled back to it.
+  const refused = async (sql) => {
+    await db.exec("savepoint p2922;");
+    try {
+      await db.exec(sql);
+      return null;
+    } catch (e) {
+      return String(e?.message ?? e);
+    } finally {
+      await db.exec("rollback to savepoint p2922;");
+    }
+  };
+
+  try {
+    await db.exec(`
+      begin;
+      insert into chapters (id, name, university) values ('${A}', 'A', 'U');
+      insert into chat_channels (id, chapter_id, name, type) values ('${GENERAL}', '${A}', 'general', 'PUBLIC');
+      insert into discord_imports (id, chapter_id, status, consent_acknowledged_at) values
+        ('${DONE}', '${A}', 'completed', now()),
+        ('${LIVE}', '${A}', 'running', now());
+      insert into discord_import_channels
+        (import_id, discord_channel_id, discord_channel_name, mapping_action, target_channel_id) values
+        ('${DONE}', 'x1', 'general', 'use_existing', '${GENERAL}'),
+        ('${LIVE}', 'y1', 'general', 'use_existing', '${GENERAL}');
+    `);
+
+    const deleteError = await refused(`delete from chat_channels where id = '${GENERAL}';`);
+    check("an officer's delete of a channel two imports merged into succeeds", deleteError === null, { deleteError });
+
+    await db.exec(`delete from chat_channels where id = '${GENERAL}';`);
+    const rows = await q(
+      `select import_id, mapping_action, target_channel_id from discord_import_channels
+        where import_id in ('${DONE}', '${LIVE}') order by import_id`,
+    );
+    check(
+      "both mapping rows keep their record, still merges, with the target cleared",
+      rows.length === 2 && rows.every((r) => r.mapping_action === "use_existing" && r.target_channel_id === null),
+      { rows },
+    );
+
+    const unnamed = await refused(`
+      insert into discord_import_channels (import_id, discord_channel_id, discord_channel_name, mapping_action)
+      values ('${DONE}', 'x2', 'rush', 'create_new');
+    `);
+    const untargeted = await refused(`
+      insert into discord_import_channels (import_id, discord_channel_id, discord_channel_name, mapping_action)
+      values ('${DONE}', 'x3', 'rush', 'use_existing');
+    `);
+    const constraints = await q(`
+      select conname from pg_constraint
+       where conrelid = 'public.discord_import_channels'::regclass
+         and conname in ('discord_import_channels_target_present', 'discord_import_channels_new_name_present')
+    `);
+    check(
+      "a create_new row still needs its name, a use_existing row may have no target, and the old CHECK is gone",
+      /discord_import_channels_new_name_present/.test(unnamed ?? "") &&
+        untargeted === null &&
+        constraints.length === 1 &&
+        constraints[0].conname === "discord_import_channels_new_name_present",
+      { unnamed, untargeted, constraints },
+    );
+  } catch (e) {
+    check("merged-into channel delete scenario ran", false, String(e?.message ?? e).split("\n")[0]);
   } finally {
     await db.exec("rollback;").catch(() => {});
   }
