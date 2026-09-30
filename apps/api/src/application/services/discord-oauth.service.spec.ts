@@ -870,6 +870,29 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(options.tags.swallowed_as).toBe('failed');
   });
 
+  it('still redirects when Sentry itself throws while reporting it (#1739)', async () => {
+    // This report used to be the one unguarded copy, so a Sentry fault escaped
+    // the very path whose purpose is to swallow: the admin got an unhandled
+    // error in place of the redirect.
+    const service = await build();
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    captureException.mockImplementationOnce(() => {
+      throw new Error('Sentry transport down');
+    });
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('failed');
+    expect(new URL(outcome.returnUrl).origin).toBe('https://app.example.test');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Sentry transport down'),
+    );
+    warn.mockRestore();
+  });
+
   it('fingerprints what it swallows by code, so two faults are two issues (#2131)', async () => {
     // Every NonErrorThrowable the normalizer builds here has the same stack,
     // so the fingerprint is what keeps a missing table and a timeout apart.
