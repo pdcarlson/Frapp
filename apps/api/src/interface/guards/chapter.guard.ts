@@ -20,8 +20,11 @@ import {
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
-import { isModuleEnabled, moduleDisabledMessage } from '@repo/validation';
 import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
+import {
+  assertModuleEnabled,
+  type EnabledModules,
+} from '../../application/services/module-gate';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
 
@@ -89,6 +92,7 @@ export class ChapterGuard implements CanActivate {
     request.member = member;
     request.chapterId = chapterId;
     request.subscriptionStatus = chapter.subscription_status;
+    request.enabledModules = chapter.enabled_modules;
 
     this.enforceSubscription(
       context,
@@ -279,11 +283,16 @@ export class ChapterGuard implements CanActivate {
    * - **Enabled unless explicitly `false`**, via the shared `isModuleEnabled`
    *   predicate in `@repo/validation` — the same one the web surfaces use, so
    *   the client's idea of "off" cannot drift from the server's.
+   *
+   * Route metadata can't see a request body, so a module write that shares a
+   * route with an always-on module (a `kind: "poll"` chat message, a vote on a
+   * poll card) is gated in its service instead, from the `enabledModules` this
+   * guard leaves on the request (#2993).
    */
   private enforceModule(
     context: ExecutionContext,
     method: string,
-    enabledModules: Record<string, boolean> | null,
+    enabledModules: EnabledModules,
   ): void {
     if (READ_METHODS.has(method.toUpperCase())) return;
 
@@ -293,15 +302,6 @@ export class ChapterGuard implements CanActivate {
     );
     if (!moduleKey) return;
 
-    if (!isModuleEnabled(enabledModules, moduleKey)) {
-      throw new ForbiddenException({
-        code: 'chapter.module.disabled',
-        // Built by `@repo/validation` because the clients recognise this
-        // refusal by its message (#2995 moves them to the code first), and
-        // only the message names the module. Installed builds match it
-        // exactly, so it can't be reworded.
-        message: moduleDisabledMessage(moduleKey),
-      });
-    }
+    assertModuleEnabled(enabledModules, moduleKey);
   }
 }

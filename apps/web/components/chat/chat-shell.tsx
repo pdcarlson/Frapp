@@ -28,7 +28,6 @@ import {
   useChapterRoster,
   useMemberDisplayNames,
   useMyPermissions,
-  useOrgConfig,
   useBookmarks,
   useBookmarkedMessageIds,
   useBookmarkMessage,
@@ -57,6 +56,9 @@ import {
 } from "@/lib/chat/use-thread-block-list";
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/hooks/use-toast";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
+import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
+import { vocab } from "@/lib/vocabulary";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -191,6 +193,8 @@ function ChannelHeaderMark({
   );
 }
 
+
+
 /**
  * The chat surface: channels column, then thread and composer.
  *
@@ -259,7 +263,14 @@ export function ChatShell({
     whether the live window has landed.
   */
   const { userId: liveUserId } = useFrappUser();
-  const orgConfig = useOrgConfig();
+  // From the member view, like the slash gate below: `useOrgConfig()` needs
+  // `chapter-config:view`, which no seeded role below President holds (#2957),
+  // so members got `/rush` in place of their chapter's recruitment word.
+  // `undefined` until the read answers, which the palette shows as `/rush`.
+  const chapterVocabulary = useChapterVocabulary();
+  const recruitmentVocab = chapterVocabulary
+    ? vocab("recruitment", chapterVocabulary)
+    : undefined;
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
@@ -878,29 +889,17 @@ export function ChatShell({
     [unreadQuery.data, unreadQuery.isError],
   );
 
-  // Fail closed while the chapter config is loading or errored. Slash
-  // dispatch (`/poll`, `/announce`) flows through the NestJS chat send
-  // endpoint, which trusts the client-side enabled_modules gate —
-  // returning true here would let a user fire a disabled command before
-  // the query resolves (issue #310).
-  const isModuleEnabled = useMemo(() => {
-    return (key: string) => {
-      const data = orgConfig.data as
-        { isModuleEnabled?: (k: string) => boolean } | undefined;
-      if (!data?.isModuleEnabled) return false;
-      return data.isModuleEnabled(key);
-    };
-  }, [orgConfig.data]);
-
-  const slashCommandsStatus: "loading" | "error" | "ready" = orgConfig.isError
-    ? "error"
-    : orgConfig.data
-      ? "ready"
-      : "loading";
-  const onRetrySlashCommands = useMemo(
-    () => () => void orgConfig.refetch(),
-    [orgConfig],
-  );
+  // The slash gate reads `enabled_modules` from the member view, not the
+  // officer-only config, which errors for every member below President and so
+  // hid their module commands for good (#2957). It fails closed while that read
+  // is loading or errored (#310): the palette shows its loading and error
+  // states, and the composer refuses a typed module command until it resolves.
+  // The server refuses a disabled module's write either way (#2993); this gate
+  // is what lets the member hear it before a round trip.
+  const moduleGate = useChapterModuleGateState();
+  const isModuleEnabled = moduleGate.isModuleEnabled;
+  const slashCommandsStatus = moduleGate.status;
+  const onRetrySlashCommands = moduleGate.retry;
 
   /**
    * The message the composer's next send replies to (#489).
@@ -2125,7 +2124,7 @@ export function ChatShell({
             }
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
-            recruitmentVocab={orgConfig.data?.vocabulary?.recruitment}
+            recruitmentVocab={recruitmentVocab}
             slashCommandsStatus={slashCommandsStatus}
             onRetrySlashCommands={onRetrySlashCommands}
             // Never `disabled` while offline: the send path enqueues to the

@@ -36,6 +36,11 @@ export interface RequestContext extends Request {
   member?: MemberContext;
   chapterId?: string;
   subscriptionStatus?: SubscriptionStatus;
+  /**
+   * `chapters.enabled_modules` as `ChapterGuard` read it. `null` is a chapter
+   * with no toggles stored, which is every module on.
+   */
+  enabledModules?: Record<string, boolean> | null;
   rawBody?: Buffer;
 }
 
