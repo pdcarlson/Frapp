@@ -154,8 +154,9 @@ export interface DiscordChannelDiscovery {
  * The Discord application the bot token belongs to, as `GET /applications/@me`
  * reports it.
  *
- * Read only to check this environment's setup against Discord's own record of
- * it; see `DiscordOAuthService`'s application check.
+ * Read to check this environment's setup against Discord's own record of it
+ * (`DiscordOAuthService`'s application check), and by the importer before it
+ * writes anything (`DiscordExportWorkerService`, #2317).
  */
 export interface DiscordApplicationInfo {
   id: string;
@@ -165,6 +166,16 @@ export interface DiscordApplicationInfo {
    * "absent" must not be read as "empty".
    */
   redirectUris: string[] | null;
+  /**
+   * Whether the Developer Portal's Bot → Privileged Gateway Intents → Message
+   * Content Intent is on, read from the application's `flags`: either
+   * `GatewayMessageContent` (a verified bot's approved intent) or
+   * `GatewayMessageContentLimited` (the self-serve toggle below 100 servers)
+   * counts as on. Without it Discord answers every message read with empty
+   * content, attachments and embeds, and no error. Null when Discord's answer
+   * carried no `flags`, which is not read as "off".
+   */
+  messageContentIntent: 'enabled' | 'disabled' | null;
 }
 
 /**

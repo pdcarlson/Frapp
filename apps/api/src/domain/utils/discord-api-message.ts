@@ -269,9 +269,12 @@ export function toExportShapeMessage(
  * entire history as empty bubbles, which is worse than failing, because it
  * looks like it worked.
  *
- * So the export counts, and refuses to keep going once it has seen enough
- * authored messages with nothing in any of them to be sure. See
- * {@link isLikelyMissingMessageContentIntent}.
+ * The export first asks Discord whether the intent is on, before it writes
+ * anything (`GET /applications/@me`'s flags; see
+ * {@link messageContentIntentOffError}). This tally is the backstop for
+ * when that answer is missing or unreadable: it counts, and refuses to keep
+ * going once it has seen enough authored messages with nothing in any of them
+ * to be sure. See {@link isLikelyMissingMessageContentIntent}.
  */
 export interface MessageContentTally {
   /** Messages of an authored type (see {@link AUTHORED_MESSAGE_TYPES}). */
@@ -316,6 +319,15 @@ export function tallyMessageContent(
  * Deliberately requires *zero* substance across the whole sample rather than a
  * ratio: a single message with content proves the bot can read content, and
  * from there a quiet archive is just a quiet archive.
+ *
+ * Its limits, which is why it is only the backstop (#2317). Without the intent
+ * Discord still returns content for the bot's own messages and for messages
+ * that mention it, so one of those disarms it for the rest of the slice; a job
+ * with fewer than {@link MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK} authored
+ * messages in a slice never trips it; and it trips on the page in hand, after
+ * earlier pages were written. A ratio would close the first gap and open
+ * false positives on real archives, so the application-flags read decides the
+ * common case instead.
  */
 export function isLikelyMissingMessageContentIntent(
   tally: MessageContentTally,
@@ -326,11 +338,77 @@ export function isLikelyMissingMessageContentIntent(
   );
 }
 
-/** The error an admin sees when the tally trips. Names the exact fix. */
-export const MISSING_MESSAGE_CONTENT_INTENT_ERROR =
-  'Discord returned every message with no content, no attachments and no embeds. ' +
-  'That means the Frapp bot does not have the Message Content Intent enabled, ' +
-  'so it can read that messages exist but not what they say. Nothing was imported ' +
-  'as empty. Enable "Message Content Intent" for the Frapp application in the ' +
-  'Discord Developer Portal (Bot → Privileged Gateway Intents), then start the ' +
-  'import again.';
+/** Where the toggle is, shared by both errors below. */
+const INTENT_TOGGLE =
+  '"Message Content Intent" for the Frapp application in the Discord ' +
+  'Developer Portal (Bot → Privileged Gateway Intents)';
+
+/**
+ * The error an admin sees when Discord says the intent is off, which the
+ * export asks before writing anything in every slice. Names the exact fix.
+ *
+ * This slice has written nothing at that point, but earlier slices of the same
+ * import may have (the toggle switched off mid-import, a restart of a failed
+ * import, or an earlier slice whose read settled nothing), so the count of
+ * what the import already holds is reported rather than claimed to be zero.
+ *
+ * @param alreadyImported messages this import had written before this slice.
+ */
+export function messageContentIntentOffError(alreadyImported: number): string {
+  const cause =
+    'Discord reports that the Frapp bot does not have the Message Content Intent ' +
+    'enabled, so it could read that messages exist but not what they say. ';
+  if (alreadyImported <= 0) {
+    return (
+      cause +
+      `No messages were imported. Enable ${INTENT_TOGGLE}, then start the import again.`
+    );
+  }
+  return (
+    cause +
+    `Nothing more was imported. This import already holds ${countOf(alreadyImported)} from earlier runs: ` +
+    'if the intent was off then too, they are empty, and deleting this import removes everything it brought in. ' +
+    `Enable ${INTENT_TOGGLE}, then start the import again.`
+  );
+}
+
+/**
+ * The error an admin sees when the tally trips. Names the exact fix and what
+ * it knows was written empty.
+ *
+ * The tally resets every slice and trips only on zero substance, so every
+ * authored message this slice wrote before the trip was blank. It never saw
+ * what earlier slices wrote, so those are counted but not called empty: a
+ * slice whose flags read failed after the toggle was switched off mid-import
+ * follows slices that imported real history (#2317 review).
+ *
+ * @param written.thisRun messages this slice wrote before the trip.
+ * @param written.earlierRuns messages earlier slices of this import wrote.
+ */
+export function missingMessageContentIntentError(written: {
+  thisRun: number;
+  earlierRuns: number;
+}): string {
+  const parts = [
+    'Discord returned every message with no content, no attachments and no embeds. ' +
+      'That means the Frapp bot does not have the Message Content Intent enabled, ' +
+      'so it can read that messages exist but not what they say.',
+    written.thisRun > 0
+      ? `This run had already written ${countOf(written.thisRun)} before the check could tell, and they are empty.`
+      : 'This run wrote no messages. A channel it created for them may already be in Frapp, empty.',
+  ];
+  if (written.earlierRuns > 0) {
+    parts.push(
+      `The import also holds ${countOf(written.earlierRuns)} from earlier runs, which this check did not see.`,
+    );
+  }
+  if (written.thisRun > 0 || written.earlierRuns > 0) {
+    parts.push('Deleting this import removes everything it brought in.');
+  }
+  parts.push(`Enable ${INTENT_TOGGLE}, then start the import again.`);
+  return parts.join(' ');
+}
+
+function countOf(n: number): string {
+  return `${n} ${n === 1 ? 'message' : 'messages'}`;
+}
