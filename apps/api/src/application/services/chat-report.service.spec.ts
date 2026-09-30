@@ -389,7 +389,7 @@ describe('ChatReportService', () => {
         );
       });
 
-      it('serves the option text from the report itself, never from the poll, so a later delete cannot change it', async () => {
+      it('serves the option text from the report row, never re-reading the poll (the delete itself: chat-report-queries.integration-spec.ts)', async () => {
         // The failure #2724 names: the author deletes the poll after it is
         // reported. The queue reads only the report row, so what the officer
         // sees is the snapshot written at file time, whatever happens to the
