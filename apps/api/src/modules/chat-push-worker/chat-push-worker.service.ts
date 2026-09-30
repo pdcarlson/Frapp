@@ -256,6 +256,15 @@ export class ChatPushWorkerService
     if (row.kind === 'imported') return;
 
     try {
+      // Join the channel's presence before the claim, on every instance.
+      // Presence is what suppresses a push to someone already reading the
+      // channel, and a subscription only knows the roster once it has synced.
+      // Opened only by the instance that wins, each instance's first win in a
+      // channel would read an empty roster and push people who are looking at
+      // it; opened here, every instance is warm from the channel's first
+      // message, as it was when every instance sent everything.
+      this.ensurePresenceChannel(row.channel_id);
+
       // Claimed before any read, so the instance that loses spends one insert
       // on the message rather than a roster load. Only `claimed` sends:
       // `taken` is another instance's, `gone` was deleted before its push, and
@@ -495,12 +504,15 @@ export class ChatPushWorkerService
     }
     const row: ChannelRow = data;
     this.channelCache.set(channelId, row, epoch);
-    // Open a presence subscription on the same `chat:channel:<id>` topic the
-    // web client uses (ADR-10) so we can read who's currently in the channel.
-    this.ensurePresenceChannel(row.id);
     return row;
   }
 
+  /**
+   * Open a presence subscription on the same `chat:channel:<id>` topic the web
+   * client uses (ADR-10), so `readPresence` can tell who is in the channel.
+   * Once per channel per instance; `handleMessage` calls it for every message,
+   * won or not (#2846).
+   */
   private ensurePresenceChannel(channelId: string): void {
     if (this.presenceChannels.has(channelId)) return;
     try {

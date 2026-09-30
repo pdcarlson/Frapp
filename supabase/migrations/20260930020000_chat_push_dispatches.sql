@@ -11,7 +11,9 @@
 -- message out. A duplicate-key violation means another instance owns it.
 --
 -- One claim per message, not per recipient: the winning instance does the whole
--- fan-out, which is the same guarantee for one insert instead of one per member.
+-- fan-out for one insert instead of one per member. The cost is at-most-once:
+-- a claim is never released, so a winner that dies mid-fan-out drops the
+-- recipients it had not reached, as a single instance always has.
 --
 -- A claim only has to outlive the Realtime redelivery window, which is seconds.
 -- The worker purges claims older than a day every hour, so the table stays

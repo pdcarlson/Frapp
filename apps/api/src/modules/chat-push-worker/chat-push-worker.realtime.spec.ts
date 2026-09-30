@@ -208,7 +208,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         return channelStub;
       },
       subscribe: subscribeSpy,
-      // `resolveChannel` opens a presence channel through the same `channel()`
+      // `handleMessage` opens a presence channel through the same `channel()`
       // factory, and `readPresence` then calls `presenceState()` on it. Without
       // this the call throws and is swallowed by `readPresence`'s own catch —
       // the tests would still pass, but via an error path rather than the empty

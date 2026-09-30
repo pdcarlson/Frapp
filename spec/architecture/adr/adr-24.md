@@ -103,19 +103,21 @@ digest 07).
     above, and uploads web and landing only after that, so the frontends are ordered too.)*
   - **Then (#2506).** Staging and production both switch to deploying the CI-built image by
     digest (decision 1). The commit-based path is the interim step.
-- **The API isn't replica-safe yet.** The push and audit-bridge Realtime subscribers double-send
-  with two instances, and deploys already overlap briefly. The `@Cron` sweeps are safe: each one
+- **The API isn't replica-safe yet.** The push and audit-bridge Realtime subscribers claim each
+  event in the database, so two instances (or a deploy's brief overlap) send each push and post
+  each mirror once. *(Corrected 2026-09-30 (#2846): until then they double-sent with two
+  instances.)* What still assumes one instance is listed in
+  `docs/internal/ops/deployment/render.md` §5.6. The `@Cron` sweeps are safe: each one
   either claims a dispatch row, is idempotent (report retention), or writes compare-and-set (the
   #1165 stale-palette sweep) (`docs/internal/ops/deployment/render.md` §5.6). *(Corrected
   2026-09-23: this used to credit the dispatch claim alone, which was already untrue of report
   retention.)* The
   cheap fixes land during the beta (#2507): push idempotency keys, a unique key on bridged audit
   messages, a cap on the push worker's presence channels (which today fail silently at about 98), and
-  a fan-out latency span that makes ADR-09's watermark measurable. *(Updated 2026-09-30 (#2846):
-  the Realtime subscribers no longer double-send. The push worker claims each message in
-  `chat_push_dispatches` and the bridge posts each mirror under a `client_message_id` unique per
-  audit row, so only one instance acts on each event. The presence cap and the fan-out span are
-  still open under #2507.)* The full stateless refactor, with
+  a fan-out latency span that makes ADR-09's watermark measurable. *(Updated 2026-09-30: the first
+  two shipped with #2846. The push worker claims each message in `chat_push_dispatches`, and the
+  bridge posts each mirror under a `client_message_id` unique per audit row. The presence cap and
+  the fan-out span are still open under #2507.)* The full stateless refactor, with
   scheduler-triggered sweeps, enqueued push and runtime web config, waits for #2524. It will amend
   ADR-08, ADR-09 and ADR-10 when it lands.
 - **Moving hosts later means re-measuring proxy hops.** `TRUST_PROXY_HOPS = 3` in

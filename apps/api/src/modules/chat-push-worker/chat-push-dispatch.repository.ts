@@ -4,11 +4,11 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
-import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import {
+  PG_FOREIGN_KEY_VIOLATION,
+  PG_UNIQUE_VIOLATION,
+} from '#domain/constants/postgres-error-codes';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
-
-/** Postgres `foreign_key_violation`: the message was deleted before its claim. */
-const PG_FOREIGN_KEY_VIOLATION = '23503';
 
 /**
  * How one claim attempt ended.

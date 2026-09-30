@@ -84,18 +84,27 @@ describe('ChatPushWorkerService', () => {
    * map), which is what the cross-instance claim cases need: two of these
    * behind one claim store are two API processes behind one database.
    */
-  async function compileWorker(dispatches: {
-    claim: (messageId: string) => Promise<string>;
-    purgeBefore?: jest.Mock;
-  }): Promise<ChatPushWorkerService> {
+  async function compileWorker(
+    dispatches: {
+      claim: (messageId: string) => Promise<string>;
+      purgeBefore?: jest.Mock;
+    },
+    openChannel: jest.Mock = jest.fn(() => ({
+      subscribe: jest.fn(),
+      presenceState: () => ({}),
+    })),
+  ): Promise<ChatPushWorkerService> {
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
         { provide: USER_REPOSITORY, useValue: { findDisplayIdentitiesByIds } },
         ChannelCacheService,
         {
+          // Only the presence subscription reaches the client directly; every
+          // test seeds its channel through `__setChannelForTest`. An empty
+          // roster by default: nobody is reading.
           provide: SUPABASE_CLIENT,
-          useValue: {},
+          useValue: { channel: openChannel },
         },
         {
           provide: MEMBER_REPOSITORY,
@@ -713,6 +722,41 @@ describe('ChatPushWorkerService', () => {
       expect(notifyUser.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b']);
       // The loser stopped at the claim: one roster load, not two.
       expect(findByChapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('the instance that loses the claim still joins the channel presence', async () => {
+      // Presence is what keeps a push off the screen of someone already
+      // reading the channel, and a subscription only knows the roster once it
+      // has synced. If only the winner joined, each instance's first win in a
+      // channel would read an empty roster.
+      const store = sharedClaimStore();
+      const openFirst = jest.fn(() => ({
+        subscribe: jest.fn(),
+        presenceState: () => ({}),
+      }));
+      const openSecond = jest.fn(() => ({
+        subscribe: jest.fn(),
+        presenceState: () => ({}),
+      }));
+      const first = await compileWorker({ claim: store }, openFirst);
+      const second = await compileWorker({ claim: store }, openSecond);
+      first.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      second.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a']);
+
+      await first.handleMessage(MESSAGE);
+      await second.handleMessage(MESSAGE);
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      for (const open of [openFirst, openSecond]) {
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(open).toHaveBeenCalledWith(
+          `chat:channel:${ANNOUNCEMENT_CHANNEL.id}`,
+          expect.objectContaining({
+            config: expect.objectContaining({ private: true }),
+          }),
+        );
+      }
     });
 
     it('a redelivery to the same instance is not sent again', async () => {
