@@ -419,8 +419,25 @@ them is built against `expo-modules-core@58` and freely calls native API that `e
 does not have — so "is this really a native module?" is the wrong question to ask of one, and
 answering it per package is what let ten of them sit outside the list until PR #2338. Read the rule
 this way and the list is mechanically checkable against the manifest; read it as a per-package
-judgement and the gap reopens the next time a client package is added. Nothing checks it
-mechanically today — adding that gate is #2330.
+judgement and the gap reopens the next time a client package is added. `npm run
+check:expo-sdk-line` checks it mechanically in the required `mobile-validate` job (#2330):
+
+- **The roster.** It fails on an `expo-*` package `apps/mobile` declares (in any dependency
+  section) that the list doesn't name exactly, on a missing `expo` or `@expo/*` entry, on one of
+  those entries whose `update-types` leave out `version-update:semver-major` (a major is the next
+  SDK), on any glob that matches `apps/api`'s `expo-server-sdk`, and on an exact `expo-*` entry for a
+  package `apps/mobile` doesn't declare that isn't an installed package the SDK's map lists.
+- **The SDK line.** It fails on any copy `package-lock.json` installs, transitive ones such as
+  `expo-modules-core` included, of a package the installed `expo`'s `bundledNativeModules.json`
+  lists under `expo-*` or `@expo/*`, when its version is outside the range the map gives it, and on
+  a declared range in `apps/mobile/package.json` whose floor is off that range.
+  Installed Expo packages the map doesn't list (`expo-modules-jsi`, `expo-modules-autolinking`, the
+  `@expo/*` tooling on its own version lines) aren't checked; `expo`'s own dependency ranges pin
+  them.
+
+It asserts SDK-line coherence only: a package inside its range can still fail to compile.
+`@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check
+on purpose, pending #2336 above, and so is the `react-native-*` family, which moves with React.
 
 That gap cost a production build. Dependabot moved `expo-apple-authentication` (#2218) and
 `expo-localization` (#2217) to `58.0.0` as ordinary semver majors, and the first iOS production EAS
@@ -428,10 +445,11 @@ build failed in the Xcode native compile with `type 'Utilities' has no member 'k
 `expo-apple-authentication@58.0.0`'s `ios/AppleAuthenticationRequest.swift` calls
 `Utilities.keyWindow()`, and `expo-modules-core@57.0.11` declares `Utilities` with only
 `urlFrom(string:)` and `currentViewController()` — in the 57 line that window lookup lives on a
-different type, `SceneGeometry.keyWindow(for:)`. **Nothing in CI catches this class of break:** the
-`expo prebuild` job runs with `--no-install`, which generates the native project without compiling
-it, so no Swift is built anywhere in CI and the failure first appears at `eas build -p ios`. The
-list is the only gate.
+different type, `SceneGeometry.keyWindow(for:)`. **Nothing in CI compiles this class of break:**
+the `expo prebuild` job runs with `--no-install`, which generates the native project without
+compiling it, so no Swift is built anywhere in CI and the failure first appears at `eas build -p
+ios`. At the time the list was the only gate; since #2330 the SDK-line check fails a bump off the
+line before merge, because it reads versions rather than compiling anything.
 
 Pinning back to the SDK line is the supported configuration, not a workaround — `~57.0.x` is what
 Expo ships for SDK 57 — but it is **not free, and the PR that did it did not verify the runtime
@@ -447,16 +465,18 @@ Two traps for whoever edits that list next:
 - **Do not collapse the Expo entries into `expo-*`.** That glob also matches `expo-server-sdk`, an
   `apps/api` dependency (the push-delivery client) with no relationship to the mobile SDK lock.
   Globbing it would freeze the API's push library silently and indefinitely. The client packages are
-  listed individually for exactly this reason; if an SDK upgrade adds a new one, append it.
+  listed individually for exactly this reason; if an SDK upgrade adds a new one, append it (the
+  SDK-line check fails until you do, and refuses an `expo-*` glob).
 - **Ignore conditions also suppress Dependabot _security_ updates.** A CVE in React, React Native or
   an Expo client package will **not** open a PR automatically. This is an accepted trade — an
   isolated security bump in that set breaks the runtime — but it is a real gap, so it is written down
   rather than left implicit. `check:npm-audit` still fails CI on such an advisory, so it surfaces
   loudly; carrying the fix means doing an SDK-aligned upgrade, not a one-package bump.
 
-  **That gap got wider when the Expo client list was completed to all 21 packages.** It now also
-  covers `expo-camera`, `expo-image-picker`, `expo-document-picker`, `expo-location` and
-  `expo-notifications` — the media, file, location and push surfaces, which had been receiving
+  **That gap got wider when the Expo client list was completed to every `expo-*` package
+  `apps/mobile` declares** (21 at the time, PR #2338). It now also
+  covers `expo-camera`, `expo-image-picker`, `expo-location` and `expo-notifications` — the media,
+  location and push surfaces, which had been receiving
   automatic patch and security PRs while they sat outside the list. None of the entries carry
   `update-types`, so in-SDK `57.0.x` patches are frozen alongside the SDK-line majors that actually
   caused the break; scoping them to `version-update:semver-major` (the shape `eslint` already uses
