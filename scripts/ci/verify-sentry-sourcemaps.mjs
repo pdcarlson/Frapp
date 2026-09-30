@@ -95,11 +95,13 @@
 // are best effort, so the check on them is too: a deploy that shipped must not
 // go red, and raise the deploy alert, because Sentry was slow. `_deploy.yml`
 // sets no `continue-on-error` (its tests forbid it), so this file's own
-// catch-all is what holds that line. The projects are asked concurrently, and
-// each asks for the last time `MISSING_WINDOW_MS` in. The shared poll loop
-// sleeps once more before it gives up, so the step takes that window, one
-// interval and one read (a read is at most ~51 s: `resilientFetch`'s three
-// 15 s attempts and their backoff), about two minutes at worst.
+// catch-all is what holds that line. The projects are asked concurrently.
+// Each re-asks until `MISSING_WINDOW_MS` plus one interval has passed (so with
+// quick reads the last ask is a minute in), and the shared poll loop sleeps
+// once more before it gives up. A read is at most ~51 s (`resilientFetch`'s
+// three 15 s attempts and their backoff), so the step takes about 75 s when
+// Sentry is quick and under three minutes at worst (a slow last read that
+// answers 403 adds the releases probe).
 //
 // Env inputs:
 //   DEPLOY_SHA         — required: the full commit SHA the run deployed
@@ -301,10 +303,11 @@ async function readOnce({ project, release, sinceMs, token, baseUrl, fetchImpl }
 
 /**
  * One project's verdict: read, and re-ask every `intervalMs` while the answer
- * is `missing`, the last time `windowMs` after the first. The loop is
- * `pollUntilTerminal`'s, whose deadline is checked before each read, so it is
- * set one interval past the window to let the read at `windowMs` happen. The
- * detail reports the asks actually made, from the clock.
+ * is `missing`. The loop is `pollUntilTerminal`'s, whose deadline is checked
+ * before each read, so it is set one interval past `windowMs`: with quick
+ * reads the last ask is `windowMs` after the first, and a slow read can push
+ * it later, never past the deadline. The detail reports the asks actually
+ * made, from the clock.
  */
 export async function checkProject({
   project,

@@ -143,7 +143,7 @@ jobs:
     environment: ${{ inputs.environment }}
     # The steps' own ceilings: the Render poll 20 minutes, the served-commit
     # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), the
-    # source-map check about 2 (a minute of re-asking, one interval and one
+    # source-map check under 3 (a minute of re-asking, two intervals and one
     # read), on top
     # of installs, two builds, production's rehearsal stack and the
     # migrations. 75 bounds the job past all of them.
