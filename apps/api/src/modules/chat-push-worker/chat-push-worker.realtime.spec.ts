@@ -9,6 +9,7 @@ import {
   ChatNotificationPreferenceRepository,
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
+import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
 import { RbacService } from '../../application/services/rbac.service';
 import { ChatBlockService } from '../../application/services/chat-block.service';
 import type { ChatMessage } from '#domain/entities';
@@ -230,6 +231,12 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         {
           provide: ChatNotificationPreferenceRepository,
           useValue: { findForUsers },
+        },
+        {
+          // A single instance that wins every claim: this file is about the
+          // payload path, and the claim is proven in the service spec.
+          provide: ChatPushDispatchRepository,
+          useValue: { claim: jest.fn().mockResolvedValue('claimed') },
         },
         { provide: RbacService, useValue: { getEffectivePermissions } },
         {

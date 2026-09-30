@@ -111,7 +111,11 @@ digest 07).
   retention.)* The
   cheap fixes land during the beta (#2507): push idempotency keys, a unique key on bridged audit
   messages, a cap on the push worker's presence channels (which today fail silently at about 98), and
-  a fan-out latency span that makes ADR-09's watermark measurable. The full stateless refactor, with
+  a fan-out latency span that makes ADR-09's watermark measurable. *(Updated 2026-09-30 (#2846):
+  the Realtime subscribers no longer double-send. The push worker claims each message in
+  `chat_push_dispatches` and the bridge posts each mirror under a `client_message_id` unique per
+  audit row, so only one instance acts on each event. The presence cap and the fan-out span are
+  still open under #2507.)* The full stateless refactor, with
   scheduler-triggered sweeps, enqueued push and runtime web config, waits for #2524. It will amend
   ADR-08, ADR-09 and ADR-10 when it lands.
 - **Moving hosts later means re-measuring proxy hops.** `TRUST_PROXY_HOPS = 3` in

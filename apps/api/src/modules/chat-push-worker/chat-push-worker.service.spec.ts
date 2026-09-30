@@ -8,6 +8,7 @@ import {
   ChatNotificationPreferenceRepository,
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
+import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
 import { RbacService } from '../../application/services/rbac.service';
 import { ChatBlockService } from '../../application/services/chat-block.service';
 import { ChannelCacheService } from './channel-cache.service';
@@ -21,6 +22,8 @@ describe('ChatPushWorkerService', () => {
   let getEffectivePermissions: jest.Mock;
   let filterOutBlockers: jest.Mock;
   let findDisplayIdentitiesByIds: jest.Mock;
+  let claim: jest.Mock;
+  let purgeBefore: jest.Mock;
 
   /** Display names the sender lookup answers with; anyone else has none. */
   const NAMES: Record<string, string> = {
@@ -54,6 +57,10 @@ describe('ChatPushWorkerService', () => {
         .map((id) => ({ id, display_name: NAMES[id], avatar_url: null })),
     );
     findByChapter = jest.fn();
+    // Default: this instance wins every claim, so the rule-chain cases below
+    // run as a single instance would. The claim cases override it.
+    claim = jest.fn().mockResolvedValue('claimed');
+    purgeBefore = jest.fn().mockResolvedValue(0);
     findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
     // Default: nobody has blocked the sender. Answered from the recipients
@@ -68,6 +75,19 @@ describe('ChatPushWorkerService', () => {
       ) => recipientIds,
     );
 
+    service = await compileWorker({ claim, purgeBefore });
+  });
+
+  /**
+   * One worker over this file's shared stubs, with its own claim store. Each
+   * call is a separate instance (its own channel cache, bundler and presence
+   * map), which is what the cross-instance claim cases need: two of these
+   * behind one claim store are two API processes behind one database.
+   */
+  async function compileWorker(dispatches: {
+    claim: jest.Mock | ((messageId: string) => Promise<string>);
+    purgeBefore?: jest.Mock;
+  }): Promise<ChatPushWorkerService> {
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
@@ -89,6 +109,7 @@ describe('ChatPushWorkerService', () => {
           provide: ChatNotificationPreferenceRepository,
           useValue: { findForUsers },
         },
+        { provide: ChatPushDispatchRepository, useValue: dispatches },
         {
           provide: RbacService,
           useValue: { getEffectivePermissions },
@@ -100,8 +121,8 @@ describe('ChatPushWorkerService', () => {
       ],
     }).compile();
 
-    service = mod.get(ChatPushWorkerService);
-  });
+    return mod.get(ChatPushWorkerService);
+  }
 
   function setMembers(userIds: string[]) {
     findByChapter.mockResolvedValue(userIds.map((id) => ({ user_id: id })));
@@ -649,6 +670,120 @@ describe('ChatPushWorkerService', () => {
     expect(notifyUser).not.toHaveBeenCalled();
   });
 
+  describe('one instance per message (#2846)', () => {
+    const MESSAGE = {
+      id: 'm-claim',
+      channel_id: ANNOUNCEMENT_CHANNEL.id,
+      sender_id: 'sender',
+      content: 'chapter meeting moved to 8',
+      kind: 'text',
+      created_at: '',
+    };
+
+    /**
+     * The database's half of the claim, in memory: a primary key on the
+     * message id. The check and the add run with no await between them, so two
+     * concurrent calls cannot both win, as two inserts cannot.
+     */
+    function sharedClaimStore() {
+      const claimed = new Set<string>();
+      return jest.fn(async (messageId: string) => {
+        if (claimed.has(messageId)) return 'taken';
+        claimed.add(messageId);
+        return 'claimed';
+      });
+    }
+
+    it('two instances receiving one INSERT notify each recipient exactly once', async () => {
+      // Realtime hands the same row to every subscribed process. Before the
+      // claim, each of them fanned it out.
+      const store = sharedClaimStore();
+      const first = await compileWorker({ claim: store });
+      const second = await compileWorker({ claim: store });
+      first.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      second.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a', 'b']);
+
+      await Promise.all([
+        first.handleMessage(MESSAGE),
+        second.handleMessage(MESSAGE),
+      ]);
+
+      expect(store).toHaveBeenCalledTimes(2);
+      expect(notifyUser.mock.calls.map((c) => c[0]).sort()).toEqual([
+        'a',
+        'b',
+      ]);
+      // The loser stopped at the claim: one roster load, not two.
+      expect(findByChapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('a redelivery to the same instance is not sent again', async () => {
+      // A reconnecting socket can hand one process the same INSERT twice.
+      const store = sharedClaimStore();
+      const worker = await compileWorker({ claim: store });
+      worker.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a']);
+
+      await worker.handleMessage(MESSAGE);
+      await worker.handleMessage(MESSAGE);
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['taken', 'gone', 'failed'])(
+      'sends nothing and reads nothing when the claim is %s',
+      async (outcome) => {
+        service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+        setMembers(['sender', 'a', 'b']);
+        claim.mockResolvedValue(outcome);
+
+        await service.handleMessage(MESSAGE);
+
+        expect(claim).toHaveBeenCalledWith('m-claim');
+        expect(findByChapter).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+      },
+    );
+
+    it('survives a claim that throws, sending nothing', async () => {
+      service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a']);
+      claim.mockRejectedValue(new Error('socket hang up'));
+
+      await expect(service.handleMessage(MESSAGE)).resolves.toBeUndefined();
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('takes no claim for an imported message', async () => {
+      // An import writes thousands of rows; none of them pushes, so none of
+      // them should cost a claim row either.
+      await service.handleMessage({ ...MESSAGE, kind: 'imported' });
+
+      expect(claim).not.toHaveBeenCalled();
+    });
+
+    it('purges claims older than a day', async () => {
+      const now = new Date('2026-09-30T12:00:00.000Z');
+      purgeBefore.mockResolvedValue(3);
+
+      await service.purgeDispatchClaims(now);
+
+      expect(purgeBefore).toHaveBeenCalledWith(
+        new Date('2026-09-29T12:00:00.000Z'),
+      );
+    });
+
+    it('a failed purge is logged, not thrown out of the cron', async () => {
+      purgeBefore.mockRejectedValue(new Error('pg down'));
+
+      await expect(
+        service.purgeDispatchClaims(new Date()),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe('one push path, sender-named titles, default levels (#2771)', () => {
     const DM = {
       ...CHANNEL,
@@ -1045,7 +1180,18 @@ describe('ChatPushWorkerService', () => {
       }>((resolve) => {
         resolveSelect = resolve;
       });
-      const maybeSingle = jest.fn().mockReturnValue(selectPromise);
+      // Signals the moment the SELECT is actually issued, so the invalidate
+      // below lands while the read is in flight rather than before it starts.
+      // `handleMessage` awaits its dispatch claim first, so the read no longer
+      // starts in the same tick the message arrives.
+      let selectStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        selectStarted = resolve;
+      });
+      const maybeSingle = jest.fn(() => {
+        selectStarted();
+        return selectPromise;
+      });
       const eq = jest.fn().mockReturnValue({ maybeSingle });
       const select = jest.fn().mockReturnValue({ eq });
       const from = jest.fn().mockReturnValue({ select });
@@ -1082,6 +1228,10 @@ describe('ChatPushWorkerService', () => {
             useValue: { findForUsers: jest.fn().mockResolvedValue(new Map()) },
           },
           {
+            provide: ChatPushDispatchRepository,
+            useValue: { claim: jest.fn().mockResolvedValue('claimed') },
+          },
+          {
             provide: RbacService,
             useValue: {
               getEffectivePermissions: jest.fn().mockResolvedValue([]),
@@ -1113,6 +1263,7 @@ describe('ChatPushWorkerService', () => {
       // While that read is in flight, simulate the concurrent
       // ChatService.updateChannel this issue is about: nothing is cached yet
       // (invalidate is a no-op on the map), but it bumps the epoch.
+      await started;
       channelCache.invalidate(CHANNEL.id);
 
       // Now the in-flight SELECT resolves with the pre-update row.
