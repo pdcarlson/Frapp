@@ -115,9 +115,10 @@ obligates the whole batch (§0.7).
   coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
   it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
   record-keeping claim above), and §0.2 condition 5 applies here too: a human naming a `[human]`
-  item doesn't make it agent-doable. Nor does naming a `routine-state` or `incident` issue
-  (condition 1's clause for them): say so, and for an `incident` offer to file the underlying fault
-  as its own issue. If you lose the race on a named issue, report who holds it and
+  item doesn't make it agent-doable. Nor does naming a `routine-state`, `incident` or `parked`
+  issue (condition 1's clause for them): say so, for an `incident` offer to file the underlying
+  fault as its own issue, and for a `parked` one say that it goes back on the path when the owner
+  removes the label. If you lose the race on a named issue, report who holds it and
   don't fall back to ranking; the human picked issues, not a category. Losing one member of a named
   batch doesn't abandon the rest: proceed with what you won (subject to §0.5's coherence escape)
   and report the loss.
@@ -153,12 +154,14 @@ requesting the `title`, `labels`, `updated_at`, and `body` fields and paging as 
 reads the title; if it's missing, that condition silently passes everything. An issue is a candidate
 when all hold:
 
-1. No state label (`triage`, `in-progress`, `in-review`), and no `routine-state` or `incident`
-   label. `triage` items need promotion and a priority first (who may promote them:
+1. No state label (`triage`, `in-progress`, `in-review`), and no `routine-state`, `incident` or
+   `parked` label. `triage` items need promotion and a priority first (who may promote them:
    [`github-pm.md` → Ownership boundary](../../docs/ci-cd/github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly));
    `in-review` means a PR is waiting on a human; `routine-state` issues are routine infrastructure,
    never work; `incident` issues are live watchdog alerts that close themselves once the fault is
-   fixed, so the work is the fault, filed as its own issue.
+   fixed, so the work is the fault, filed as its own issue; `parked` issues are off the beta and
+   v1 path on purpose (owner decision 2026-09-23, #2565;
+   [roster](../../docs/ci-cd/routines.md#label-roster)), however high their priority.
 2. No live claim comment (`issue_read get_comments`; skip the read for issues not updated within
    `LEASE`).
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.
@@ -282,8 +285,11 @@ for the next candidate of your lane walk.
 - Expired lease, no PR that §0.2 condition 4 disqualifies on, and no branch pushed within `LEASE`
   (`git ls-remote --heads origin`; a push counts as a heartbeat): reclaimable. It enters §0.3 at the
   top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a
-  `[human]` item past the hold. Take it with `AGENT-RECLAIM`, then wait a full read cycle and re-read
-  before mutating anything.
+  `[human]` item past the hold. Nor can it launder a `parked` one: an issue parked while its claim
+  was live isn't reclaimable, so change nothing on it and name it in your run report for the owner.
+  A dead `Batch:` claim that lists one is reported, not taken over, like one listing a
+  `routine-state` issue. Take a reclaimable one with `AGENT-RECLAIM`, then wait a full read cycle and re-read before
+  mutating anything.
 - No claim comment at all, no PR that §0.2 condition 4 disqualifies on, `updated_at` older than
   `ORPHAN_AGE`: post
   `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Don't pick it up this run.
