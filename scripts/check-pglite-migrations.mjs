@@ -1463,10 +1463,12 @@ try {
     ('${F.userEId}', '${F.chapA}', '{${F.roleSecretChapB}}'),
     ('${F.userFId}', '${F.chapA}', '{${F.roleSecret.toUpperCase()}}'),
     ('${F.userBId}', '${F.chapB}', '{}');
+  -- A DM holds exactly two members (chat_channels_dm_two_members, #2788). Its
+  -- other participant is userF, whom no scenario below reads the DM as.
   insert into chat_channels (id, chapter_id, name, type, member_ids, required_permissions) values
     ('${F.chPublic}',        '${F.chapA}', 'public',     'PUBLIC',     null,              null),
     ('${F.chPrivate}',       '${F.chapA}', 'private',    'PRIVATE',    '{${F.userAId}}',  null),
-    ('${F.chDM}',            '${F.chapA}', 'dm',         'DM',         '{${F.userAId}}',  null),
+    ('${F.chDM}',            '${F.chapA}', 'dm',         'DM',         '{${F.userAId},${F.userFId}}', null),
     ('${F.chRoleGated}',     '${F.chapA}', 'gated',      'ROLE_GATED', null,              '{chat:secret}'),
     ('${F.chRoleGatedOpen}', '${F.chapA}', 'gated-open', 'ROLE_GATED', null,              '{}'),
     ('${F.chGroupDM}',       '${F.chapA}', 'groupdm',    'GROUP_DM',   '{${F.userAId}}',  null),
