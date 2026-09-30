@@ -145,6 +145,7 @@ async function build(config: Record<string, string | undefined> = {}) {
     fetchApplication: jest.fn(async () => ({
       id: CLIENT_ID,
       redirectUris: [REDIRECT_URI],
+      messageContentIntent: 'enabled',
     })),
   };
 

@@ -31,10 +31,11 @@ import {
   isWithinArchiveUploadSizeLimit,
 } from '@repo/validation';
 import {
-  MISSING_MESSAGE_CONTENT_INTENT_ERROR,
+  messageContentIntentOffError,
   EMPTY_CONTENT_TALLY,
   discordAttachmentKey,
   isLikelyMissingMessageContentIntent,
+  missingMessageContentIntentError,
   tallyMessageContent,
   toExportShapeMessage,
   type DiscordApiAttachment,
@@ -260,6 +261,17 @@ export class DiscordExportWorkerService {
         `This import was created for Discord server ${job.guild_id}, but the chapter is now connected to ${guildId}. Start a new import for the current server.`,
       );
     }
+
+    // ── the Message Content Intent, before anything is written (#2317) ─────
+    //
+    // Without it Discord answers every message read with 200 and empty
+    // content, so an import would write a chapter's history as empty bubbles
+    // and look like it worked. Discord reports the toggle in the application's
+    // flags, so ask it here, ahead of every channel this slice would create
+    // and every row it would write. Every slice, so switching the toggle off
+    // mid-import stops the next one. A read that fails or carries no flags
+    // settles nothing, and the content tally below is the backstop for it.
+    await this.assertMessageContentIntent(job.imported_messages);
 
     const channels = await this.importRepo.findChannels(job.id, job.chapter_id);
     const byDiscordId = new Map(
@@ -614,12 +626,20 @@ export class DiscordExportWorkerService {
         limit: EXPORT_PAGE_SIZE,
       })) as DiscordApiMessage[];
 
-      // Fail loudly on a bot that can see messages but not their contents.
-      // Checked before anything is written, so an import that trips this has
-      // added no empty rows to correct afterwards.
+      // The backstop for when the flags read above settled nothing: fail
+      // loudly on a bot that can see messages but not their contents. It
+      // trips before this page is written, but earlier pages and channels of
+      // this slice may already be in, all of them blank (the tally only trips
+      // on zero substance), so the error counts them. Earlier slices' messages
+      // are counted apart: this slice's tally never saw them.
       totals.tally = tallyMessageContent(totals.tally, rawPage);
       if (isLikelyMissingMessageContentIntent(totals.tally)) {
-        throw new Error(MISSING_MESSAGE_CONTENT_INTENT_ERROR);
+        throw new Error(
+          missingMessageContentIntentError({
+            thisRun: totals.imported - job.imported_messages,
+            earlierRuns: job.imported_messages,
+          }),
+        );
       }
 
       if (rawPage.length === 0) {
@@ -732,6 +752,37 @@ export class DiscordExportWorkerService {
         await this.finishChannel(job, mapping, channelImported);
         return true;
       }
+    }
+  }
+
+  /**
+   * Throws {@link messageContentIntentOffError} when Discord's own record
+   * of the application says the Message Content Intent is off. Anything short
+   * of that answer (a timeout, a 5xx, a rate limit, a record with no `flags`)
+   * returns: a guard that cannot reach Discord must not fail an import on a
+   * setup that may be fine, and the content tally still stands behind it. A
+   * 401 is not special here either: the slice's own first read fails on it,
+   * with the reason attached.
+   */
+  private async assertMessageContentIntent(
+    alreadyImported: number,
+  ): Promise<void> {
+    let intent: 'enabled' | 'disabled' | null;
+    try {
+      intent = (await this.bot.fetchApplication()).messageContentIntent;
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the Discord application's Message Content Intent before this slice, so only the content tally guards it: ${toReportableError(error).message}`,
+      );
+      return;
+    }
+    if (intent === 'disabled') {
+      throw new Error(messageContentIntentOffError(alreadyImported));
+    }
+    if (intent === null) {
+      this.logger.warn(
+        "Discord's application record carried no flags, so the Message Content Intent was not checked before this slice; only the content tally guards it.",
+      );
     }
   }
 
