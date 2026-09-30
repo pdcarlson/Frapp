@@ -378,7 +378,8 @@ acting. Read the job's `::error::` line and match it:
 - **"were not offsite as written".** Objects the manifest listed were gone from
   R2, or were there at a different size than the job wrote, so something other
   than this job changed them (an R2 lifecycle rule, a hand deletion). The run
-  has already re-uploaded every one Storage still has, and marked the rest
+  has already re-uploaded every one Storage still has (unless it stopped early,
+  below), and marked the rest
   `lost_offsite_at`. Those are unrecoverable, and a restore skips them. The job
   fails once so the loss is seen, and the next run passes. Find and stop
   whatever changed them. In CI the error gives per-bucket counts only, because
@@ -389,18 +390,31 @@ acting. Read the job's `::error::` line and match it:
 - **"does not hold what its manifest lists"** after a write. The upload or the
   destination is broken in a way the run couldn't repair. Run `verify` (below)
   to see the list.
-- **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out".** More changed in Storage
-  than one run can copy: a Discord import can add thousands of objects to
-  `chat-archive` in one go. The run copies 8 objects at a time
-  (`TRANSFER_CONCURRENCY`). After 40 minutes it starts no new copy and writes a
-  manifest listing only what it actually wrote, so no progress is lost (#2916).
-  New objects it didn't reach are not in the backup yet. Changed ones keep their
-  previous copy, and prunes it didn't reach keep their tombstone. Re-run
-  **Nightly Backup** to continue now, or leave it for the next night. Each run
-  picks up where the last stopped, and the job passes once one run finishes
-  inside the budget. If every night runs out on the same work, don't raise the
-  budget toward the job's `timeout-minutes: 60`: a run cut off by the timeout
-  writes no manifest at all. Find out why the transfers are slow.
+- **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out"**, **"transfer(s)
+  failed"** or **"The run stopped early"**. The run didn't copy everything it
+  planned, but it kept what it did copy (#2916). It copies
+  `TRANSFER_CONCURRENCY` objects at a time. It starts no new copy once the
+  budget runs out (`DEFAULT_BUDGET_MINUTES`, counted from the start of the run)
+  or `MAX_TRANSFER_FAILURES` copies have failed. All three live in
+  `scripts/storage-backup.mjs`, and the error line prints the budget it used.
+  The run then writes a manifest listing only what it actually wrote. New
+  objects it didn't reach are not in the backup yet. Changed ones keep their
+  previous copy, and prunes it didn't reach keep their tombstone.
+  - **A budget overrun** means more changed in Storage than one run can copy.
+    A Discord import can add thousands of objects to `chat-archive` at once.
+    Re-run **Nightly Backup** to continue now, or leave it for the next night.
+    Each run picks up where the last one stopped. If every night runs out on the
+    same work, don't raise the budget toward the job's `timeout-minutes`, because
+    a run cut off by the timeout writes no manifest at all. Find out why the
+    copies are slow.
+  - **A failed download that says `HTTP 404`** is almost always an object
+    deleted between the listing and its download. The next run doesn't plan it,
+    so it passes. Anything else, or a run that reached `MAX_TRANSFER_FAILURES`,
+    points at Storage or R2 itself. Read the listed errors.
+  - If the same run also found objects R2 had lost, it re-uploads those first.
+    Any it didn't reach are listed as "not re-uploaded yet". The next run
+    re-uploads them and fails once more on the "were not offsite as written"
+    line above, which is the loss being reported. The run after that passes.
 
 ### Restore
 
