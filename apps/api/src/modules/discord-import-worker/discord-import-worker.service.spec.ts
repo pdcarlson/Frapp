@@ -9,6 +9,7 @@ import {
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
 import { ChannelCacheService } from '../chat-push-worker/channel-cache.service';
+import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { RbacService } from '../../application/services/rbac.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
@@ -266,7 +267,10 @@ let repoRef: ReturnType<typeof makeRepo>;
 async function buildWorker(
   repo: ReturnType<typeof makeRepo>,
   storage: unknown,
-  options: { exportWorker?: { runSlice: jest.Mock } } = {},
+  options: {
+    exportWorker?: { runSlice: jest.Mock };
+    reportRepo?: { findHeldObjects: jest.Mock };
+  } = {},
 ) {
   const channelRepo = {
     create: jest.fn(async (data: { name: string }) => ({
@@ -312,6 +316,10 @@ async function buildWorker(
     findByChapter: jest.fn(async () => [{ id: 'role-1', name: 'Brothers' }]),
   };
   const channelCache = { invalidate: jest.fn() };
+  // No open chat report holds anything unless a case says so (#2481).
+  const reportRepo = options.reportRepo ?? {
+    findHeldObjects: jest.fn(async () => []),
+  };
   const moduleRef = await Test.createTestingModule({
     providers: [
       DiscordImportWorkerService,
@@ -327,6 +335,8 @@ async function buildWorker(
       { provide: RbacService, useValue: rbac },
       // The purge evicts the channels it deletes (#2905).
       { provide: ChannelCacheService, useValue: channelCache },
+      // The purge keeps what an open chat report holds (#2481).
+      { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: reportRepo },
     ],
   }).compile();
   return {
@@ -1412,6 +1422,54 @@ describe('DiscordImportWorkerService — purging', () => {
       ['created-b'],
     ]);
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
+  });
+
+  // An open chat report on an imported message holds its attachments (#2481):
+  // deleting the import must not erase the evidence, any more than the
+  // sender's own delete may. The report's release deletes them later.
+  it('keeps the archive objects an open chat report holds, and deletes the rest', async () => {
+    repoRef.deletedRounds = [0];
+    const storage = makeStorage(null);
+    storage.listFiles = jest.fn(async (_bucket: string, prefix: string) =>
+      prefix.endsWith('/media') ? ['m/held.png', 'm/free.png'] : ['e/x.json'],
+    );
+    const reportRepo = {
+      findHeldObjects: jest.fn(async () => [
+        { bucket: 'chat-archive', storage_path: 'm/held.png' },
+        // Same path, another bucket: holds nothing here.
+        { bucket: 'chat', storage_path: 'e/x.json' },
+      ]),
+    };
+    const { worker } = await buildWorker(repoRef, storage, { reportRepo });
+
+    await worker.sweepImports(NOW);
+
+    expect(reportRepo.findHeldObjects).toHaveBeenCalledWith(CHAPTER);
+    const deleted = storage.deleteFiles.mock.calls.flatMap(
+      ([, paths]: [string, string[]]) => paths,
+    );
+    expect(deleted).toEqual(['e/x.json', 'm/free.png']);
+    expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
+  });
+
+  it('deletes no archive object and does not mark it purged when the report holds cannot be read', async () => {
+    repoRef.deletedRounds = [0];
+    const storage = makeStorage(null);
+    storage.listFiles = jest.fn(async () => ['m/one.png']);
+    const reportRepo = {
+      // A PostgREST error, which the repositories throw as a plain object.
+      findHeldObjects: jest.fn(() =>
+        Promise.reject({ code: 'XX000', message: 'boom' }),
+      ),
+    };
+    const { worker } = await buildWorker(repoRef, storage, { reportRepo });
+
+    await worker.sweepImports(NOW);
+
+    expect(storage.deleteFiles).not.toHaveBeenCalled();
+    expect(repoRef.updates).not.toContainEqual(
+      expect.objectContaining({ status: 'purged' }),
+    );
   });
 
   it('fails the slice, keeping the objects and not marking it purged, when the channels cannot be deleted', async () => {

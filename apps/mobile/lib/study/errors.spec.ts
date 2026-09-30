@@ -80,9 +80,9 @@ describe("sessionErrorCopy", () => {
 
 describe("the subscription gate, on both study paths", () => {
   /**
-   * The real wire shape: `AllExceptionsFilter` emits exactly these four keys
-   * and drops the guard's `code` (#1020), which is why this is keyed on the
-   * message instead.
+   * The four envelope keys without the guard's `code`, the shape the API sent
+   * until #1020. The detector is keyed on the message (#2995 adds the code),
+   * and this is the body that proves the message path works on its own.
    */
   const refusal = {
     statusCode: 403,
@@ -128,10 +128,11 @@ describe("the subscription gate, on both study paths", () => {
 
 describe("the module gate, on both study paths (#2393)", () => {
   /**
-   * The real wire shape, and the whole bug: `AllExceptionsFilter` emits
-   * exactly these four keys, with no `code`. The branch this replaced keyed on
-   * `code` and was tested with a hand-built body that carried it, so it was
-   * green in the suite and dead in every shipped build. Don't add `code` here.
+   * The shape the API sent until #1020, and the whole bug: four keys, no
+   * `code`. The branch this replaced keyed on `code` and was tested with a
+   * hand-built body that carried it, so it was green in the suite and dead in
+   * every shipped build. Don't add `code` here: this body proves the message
+   * path, which installed builds rely on, works without it.
    */
   const moduleOff = {
     statusCode: 403,

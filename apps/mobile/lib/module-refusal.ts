@@ -14,12 +14,12 @@
  * - **403.** Narrows the field, but is not the discriminator: these routes
  *   also 403 for permission denials and the `chapter.context.*` family, which
  *   keep their own copy and their retry.
- * - **The exact message.** `AllExceptionsFilter` drops the guard's
- *   `code: 'chapter.module.disabled'` (#1020), so `codeOf` is `null` on every
- *   real response. Study keyed on it until #2393, and the branch never fired.
- *   The guard builds its message with `moduleDisabledMessage` from
- *   `@repo/validation`, and the matcher lives beside it, so the two can't
- *   drift.
+ * - **The exact message.** Until #1020 `AllExceptionsFilter` dropped the
+ *   guard's `code: 'chapter.module.disabled'`, so study's branch keyed on it
+ *   never fired (#2393). The code arrives now, but only the message names the
+ *   module; checking the code first is #2995. The guard builds its message
+ *   with `moduleDisabledMessage` from `@repo/validation`, and the matcher lives
+ *   beside it, so the two can't drift.
  */
 
 import { serverMessageOf, statusOf } from "@repo/api-sdk";

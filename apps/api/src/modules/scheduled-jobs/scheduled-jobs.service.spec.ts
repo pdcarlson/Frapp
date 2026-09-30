@@ -5,6 +5,7 @@ import { NotificationService } from '../../application/services/notification.ser
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
 import { ReportRetentionService } from '../../application/services/report-retention.service';
 import { PollService } from '../../application/services/poll.service';
+import { ChatReportService } from '../../application/services/chat-report.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
@@ -38,6 +39,7 @@ describe('ScheduledJobsService', () => {
   let resolveRequiredMembers: jest.Mock;
   let findChaptersWithStalePalette: jest.Mock;
   let writeRecomputedPalette: jest.Mock;
+  let sweepPendingEvidenceReleases: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -82,6 +84,7 @@ describe('ScheduledJobsService', () => {
     findChaptersWithStalePalette = jest.fn().mockResolvedValue([]);
     // Default: the compare-and-set write lands.
     writeRecomputedPalette = jest.fn().mockResolvedValue(true);
+    sweepPendingEvidenceReleases = jest.fn().mockResolvedValue(0);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -109,6 +112,10 @@ describe('ScheduledJobsService', () => {
         { provide: ReportRetentionService, useValue: { sweepExpiredReports } },
         { provide: PollService, useValue: { announceExpiry } },
         { provide: MEMBER_REPOSITORY, useValue: { findByUserAndChapter } },
+        {
+          provide: ChatReportService,
+          useValue: { sweepPendingEvidenceReleases },
+        },
       ],
     }).compile();
 
@@ -847,6 +854,32 @@ describe('ScheduledJobsService', () => {
 
       await expect(
         service.handleReportRetentionSweep(),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  // Resolved chat reports whose evidence release did not finish (#2481).
+  describe('handleChatReportEvidenceSweep', () => {
+    it('passes the real clock to the chat report service', async () => {
+      sweepPendingEvidenceReleases.mockResolvedValue(2);
+
+      await service.handleChatReportEvidenceSweep();
+
+      expect(sweepPendingEvidenceReleases).toHaveBeenCalledWith(
+        expect.any(Date),
+      );
+    });
+
+    it('does not let a failed candidate read escape the cron handler', async () => {
+      // The candidate read throws on a query error; out of a @Cron handler
+      // that would take the API process down every hour.
+      sweepPendingEvidenceReleases.mockRejectedValue({
+        code: 'XX000',
+        message: 'boom',
+      });
+
+      await expect(
+        service.handleChatReportEvidenceSweep(),
       ).resolves.toBeUndefined();
     });
   });

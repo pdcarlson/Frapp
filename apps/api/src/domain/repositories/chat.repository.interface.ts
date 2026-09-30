@@ -370,7 +370,9 @@ export interface IChatMessageAttachmentRepository {
 
   /**
    * Which of `candidates` some message *other than* `excludingMessageId` still
-   * references.
+   * references — or, with `null`, any message at all. `null` is the release of
+   * a resolved report's evidence (#2481), where the reported message itself
+   * may still be live and must count.
    *
    * Exists so deleting a message can purge its Storage objects without
    * destroying another message's. The unique constraint on this table is
@@ -396,6 +398,6 @@ export interface IChatMessageAttachmentRepository {
    */
   findSharedObjects(
     candidates: readonly { bucket: string; storage_path: string }[],
-    excludingMessageId: string,
+    excludingMessageId: string | null,
   ): Promise<{ bucket: string; storage_path: string }[]>;
 }

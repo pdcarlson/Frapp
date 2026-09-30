@@ -7,26 +7,32 @@
  * `apps/mobile/lib/api-error.ts` (study errors, dues pay errors, and check-in)
  * before being promoted here so web can share it without a second copy.
  *
- * `codeOf` reads a field no real response carries yet. The API throws
- * structured codes (`chapter.module.disabled` from `ChapterGuard`,
- * `legal.acceptance_required` from `LegalAcceptanceService`),
- * but `AllExceptionsFilter` serialises only `{statusCode, error, message,
- * requestId}`, so `codeOf` is `null` in production until #1020 changes that
- * contract. A branch keyed on it alone typechecks, passes any test that
- * hand-builds a body with `code`, and never fires: mobile study's module-gate
- * copy was dead that way until #2393. To tell two 403s apart today, match the
- * server's exact message with a shared matcher from `@repo/validation`
- * (`subscriptionRefusalFromServerMessage`, `moduleRefusalFromServerMessage`).
+ * Every error the API sends is an {@link ApiErrorBody}: `statusCode`,
+ * `error`, `message` and `requestId`, plus `code` when the refusal has one
+ * (#1020; contract in `spec/architecture/README.md` § 10). `codeOf` reads that
+ * code, and a client should branch on it rather than on the message. Some
+ * surfaces still match the server's exact message with a shared matcher from
+ * `@repo/validation` (`subscriptionRefusalFromServerMessage`,
+ * `moduleRefusalFromServerMessage`); moving them to the code first is #2995.
+ * An API older than #1020 sends no code, so a message match stays the
+ * fallback.
  *
  * Hand-written. OpenAPI codegen overwrites only `src/types.ts`; this module
  * is re-exported from `src/index.ts` (the package `exports` map has no
  * subpath for it).
  */
-type ApiErrorShape = {
-  statusCode?: unknown;
+import type { components } from "./types";
+
+/** The body of every error response, as `openapi.json` documents it. */
+export type ApiErrorBody = components["schemas"]["ApiErrorResponseDto"];
+
+/**
+ * What the readers accept: any value, read defensively. Keyed on
+ * {@link ApiErrorBody} so a renamed field fails to compile here. `status` is
+ * not in the schema; some paths put the status there instead.
+ */
+type ApiErrorShape = { [K in keyof ApiErrorBody]?: unknown } & {
   status?: unknown;
-  message?: unknown;
-  code?: unknown;
 };
 
 /** The HTTP status, wherever the SDK put it. */
@@ -59,8 +65,8 @@ export function serverMessageOf(error: unknown): string | null {
 }
 
 /**
- * The API's structured error code (e.g. `chapter.module.disabled`), or `null`,
- * which is what every real response gives today (#1020; see the header).
+ * The API's structured error code (e.g. `chapter.module.disabled`), or `null`
+ * when the refusal has none (see the header).
  */
 export function codeOf(error: unknown): string | null {
   const candidate = (error ?? {}) as ApiErrorShape;

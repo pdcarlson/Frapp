@@ -99,7 +99,7 @@ Both hard locks are scoped to the **guarded surface**. Two sets of routes surviv
 Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@FreeTier()` (free wedge), `@GraceBlocked()` (free-tier route that must still be blocked during `past_due`, e.g. invite create), and `@SubscriptionExempt()` (bypass entirely). The exempt list has exactly two rationales, and only the first is about money:
 
 - **Billing recovery** — `BillingController`, and `POST /v1/invoices/:id/payment-intent` (dues collection *is* the recovery path for a locked chapter).
-- **Member safety** — `POST|GET|PATCH /v1/chat/reports`, `POST /v1/chat/reports/{id}/remove-message` (#2311) and `GET|POST|DELETE /v1/chat/blocks` (#2257). App Store Guideline 1.2 expects a UGC app to offer reporting and blocking, and has no billing exception: a member being harassed in a chapter whose card failed needs them exactly as much as one in a paying chapter. `@FreeTier()` would not hold — it lapses with the `past_due` grace window and never applies under `canceled`.
+- **Member safety** — `POST|GET|PATCH /v1/chat/reports`, `GET /v1/chat/reports/{id}/attachments` (#2481), `POST /v1/chat/reports/{id}/remove-message` (#2311) and `GET|POST|DELETE /v1/chat/blocks` (#2257). App Store Guideline 1.2 expects a UGC app to offer reporting and blocking, and has no billing exception: a member being harassed in a chapter whose card failed needs them exactly as much as one in a paying chapter. `@FreeTier()` would not hold — it lapses with the `past_due` grace window and never applies under `canceled`.
 
 `subscription.decorator.spec.ts` pins every class-level marker and every route-level one (`@FreeTier()` and `@SubscriptionExempt()` alike); keep it exhaustive against `grep -rnE '^\s*@(FreeTier|SubscriptionExempt)\(\)' src/interface/controllers`, run from `apps/api`: an unindented hit is a class marker, an indented one a route marker. The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
 
@@ -175,14 +175,11 @@ Example: adding a `polls` module.
 
 We use a global `AllExceptionsFilter` to normalize error responses:
 
-- Shape: `{ statusCode, error, message, requestId }` (`message` is a string, or a string array from the validation pipe)
+- Shape: `{ statusCode, error, message, requestId }`, plus `code` when the refusal has one. The
+  contract, including when `code` appears and how codes are named, is
+  [`spec/architecture/README.md` § Error responses](../../spec/architecture/README.md#error-responses).
 - All unhandled exceptions are logged with the request ID.
 - 5xx errors are reported to Sentry with full context.
-- **Those four keys are the whole body.** A structured `code` thrown alongside the message — as
-  `chapter.guard.ts` does for all eight of its `chapter.*` codes — is **not** serialised, so
-  `codeOf` from `@repo/api-sdk` returns `null` for every response the API currently emits. Do not
-  build client branching on it until **#1020** settles whether `code` joins the contract; branch on
-  `statusCode` plus `message`, or keep the decision server-side.
 
 Clients must not use `instanceof Error` to read this body. `openapi-fetch` throws the parsed JSON, which is a plain object, so `instanceof Error` always misses and the UI shows a generic fallback. Two helpers own that read:
 
@@ -192,6 +189,9 @@ Clients must not use `instanceof Error` to read this body. `openapi-fetch` throw
 When adding new modules:
 
 - Throw Nest's `HttpException` (e.g. `BadRequestException`, `ForbiddenException`) for expected errors.
+- When a client needs to tell this refusal apart from others with the same status, throw
+  `{ code, message }` (`new ForbiddenException({ code: 'chapter.module.disabled', message })`),
+  with a new code named per the contract above. A code, once shipped, is permanent.
 - Let unexpected errors bubble up to the exception filter so they're logged and reported.
 
 ## 5. Observability hooks
