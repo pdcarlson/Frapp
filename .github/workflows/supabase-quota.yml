@@ -10,8 +10,9 @@ name: Supabase quota watch
 # included, after a grace period, and its own email arrives only once the quota
 # is already exceeded. A project whose disk fills goes read-only on its own,
 # with no grace period. Quotas, spend cap and the reasons:
-# docs/internal/ops/deployment/supabase.md § Plan and quotas. Egress and Realtime peak connections have no API, so only
-# the organization's Usage page shows them.
+# docs/internal/ops/deployment/supabase.md § Plan and quotas. Egress and
+# Realtime peak connections have no API, so only the organization's Usage page
+# shows them.
 #
 # ── The test page ───────────────────────────────────────────────────────────
 # Dispatch with `threshold_percent: 0` to prove an alert reaches the owner: every
