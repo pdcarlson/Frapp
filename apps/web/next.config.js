@@ -1,5 +1,8 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
-import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
+import {
+  getAnonymousSentryBuildConfig,
+  sentryEnvironmentForVercelEnv,
+} from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env.js";
 
 // Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_* into the
@@ -93,13 +96,18 @@ const nextConfig = {
      * `NODE_ENV` is not usable here for the opposite reason: Vercel Preview and
      * Production are *both* `production` to Next, so it cannot tell them apart.
      *
+     * Staging is Vercel's `preview`, so the helper names it `staging`, the tag
+     * the API and mobile already use for the same environment (#2505).
+     *
      * Values listed under `env` are inlined into the bundle at build time
      * regardless of prefix (Next `env` config), so this reaches the browser
      * without an entry in any secret store. **Do not add
      * `NEXT_PUBLIC_SENTRY_ENVIRONMENT` to Infisical** — this replacement happens
      * at build time and would win over it silently.
      */
-    NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT: sentryEnvironmentForVercelEnv(
+      process.env.VERCEL_ENV,
+    ),
     /**
      * Sentry `release`, **derived** from Vercel's git SHA rather than configured.
      * Empty locally and in non-deploy CI when `VERCEL_GIT_COMMIT_SHA` is

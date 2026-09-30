@@ -377,10 +377,13 @@ acting. Read the job's `::error::` line and match it:
   itself.
 - **"were not offsite as written".** Objects the manifest listed were gone from
   R2, or were there at a different size than the job wrote, so something other
-  than this job changed them (an R2 lifecycle rule, a hand deletion). The run
-  has already re-uploaded every one Storage still has, and marked the rest
-  `lost_offsite_at`. Those are unrecoverable, and a restore skips them. The job
-  fails once so the loss is seen, and the next run passes. Find and stop
+  than this job changed them (an R2 lifecycle rule, a hand deletion). Each one
+  is listed with what the run did about it. **Re-uploaded from Storage** means
+  it is back. **Unrecoverable** means it is gone from Storage too, so the run
+  marked it `lost_offsite_at` and a restore skips it. The job fails once so the
+  loss is seen, and the next run passes. The exceptions are **not re-uploaded
+  yet** and **re-upload failed** (next entry): the next run re-uploads those and
+  reports the loss once more. Find and stop
   whatever changed them. In CI the error gives per-bucket counts only, because
   object paths carry chapter ids and member filenames and Actions logs here are
   public. The job withholds paths from its other per-object errors (a failed
@@ -388,7 +391,42 @@ acting. Read the job's `::error::` line and match it:
   were hit (`last_offsite_loss`), and a local `verify` prints them.
 - **"does not hold what its manifest lists"** after a write. The upload or the
   destination is broken in a way the run couldn't repair. Run `verify` (below)
-  to see the list.
+  to see the list. One case repairs itself. Suppose the same run also stopped
+  early (next entry), and an object it didn't reach had changed in Storage
+  after R2 lost its old copy. That object is listed here until a run uploads
+  its new version.
+- **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out"**, **"reached
+  MAX_TRANSFER_FAILURES"** or **"transfer(s) failed"**. The run didn't copy
+  everything it planned, but it kept what it did copy (#2916). It copies
+  `TRANSFER_CONCURRENCY` objects at a time. It starts no new copy once the
+  budget runs out (`DEFAULT_BUDGET_MINUTES`, counted from the start of the run)
+  or once `MAX_TRANSFER_FAILURES` copies or prunes have failed. All three are in
+  `scripts/storage-backup.mjs`, and the error line prints the budget it used.
+  The run then writes a manifest listing only what it actually wrote. New
+  objects it didn't reach are not in the backup yet. Changed ones keep their
+  previous copy, and prunes that didn't happen keep their tombstone. A failed
+  download is checked against a fresh listing of its folder. If the object is
+  gone, it was deleted after the listing: that's not a failure, the log counts
+  it, and the next listing records the deletion. If it is still listed, the
+  download really failed.
+  - **A budget overrun** means more changed in Storage than one run can copy.
+    A Discord import can add thousands of objects to `chat-archive` at once.
+    Re-run **Nightly Backup** to continue now, or leave it for the next night.
+    Each run picks up where the last one stopped. If every night runs out on the
+    same work, don't raise the budget toward the job's `timeout-minutes`: a run
+    cut off by the timeout writes no manifest at all. Find out why the copies
+    are slow.
+  - **Failed transfers** are listed in the error, with object paths withheld
+    in CI. The next run retries them. A handful that clear on the retry were
+    transient. A run that reaches `MAX_TRANSFER_FAILURES` points at Storage or
+    R2 itself, such as a credential or an outage. A failed prune is a real
+    failure too, since deleting a key that is already gone succeeds. It keeps
+    its tombstone until a prune works.
+  - If the same run also found objects R2 had lost, it re-uploads those first.
+    Each one it couldn't finish is listed as "not re-uploaded yet" or "re-upload
+    failed". The next run re-uploads it and fails once more on the "were not
+    offsite as written" line above, which is the loss being reported. The run
+    after that passes. `verify` prints the same states, before its own check.
 
 ### Restore
 

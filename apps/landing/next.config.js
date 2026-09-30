@@ -1,5 +1,8 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
-import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
+import {
+  getAnonymousSentryBuildConfig,
+  sentryEnvironmentForVercelEnv,
+} from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionLandingAppEnv } from "./lib/assert-production-app-env.js";
 
 // Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_APP_URL
@@ -91,9 +94,13 @@ const nextConfig = {
   env: {
     /**
      * Sentry environment tag, **derived** from Vercel's `VERCEL_ENV` rather
-     * than configured. Do not add `NEXT_PUBLIC_SENTRY_ENVIRONMENT` to Infisical.
+     * than configured (`preview` is staging, so it is tagged `staging`; see
+     * web's `next.config.js`). Do not add `NEXT_PUBLIC_SENTRY_ENVIRONMENT` to
+     * Infisical.
      */
-    NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT: sentryEnvironmentForVercelEnv(
+      process.env.VERCEL_ENV,
+    ),
     /**
      * Sentry `release`, **derived** from `VERCEL_GIT_COMMIT_SHA`. Empty
      * locally and in non-deploy CI. Staging/production `vercel build`

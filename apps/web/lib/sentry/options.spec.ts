@@ -62,6 +62,20 @@ describe("web-only runtime", () => {
     expect(nextConfig).not.toContain("errorHandler");
     expect(nextConfig).not.toContain("frapp-landing");
   });
+
+  it("tags staging `staging`: the environment goes through the shared VERCEL_ENV mapping", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const nextConfig = readFileSync(
+      join(process.cwd(), "next.config.js"),
+      "utf8",
+    );
+    // Vercel's `preview` is staging; passing VERCEL_ENV straight through tags
+    // it `preview` while the API and mobile say `staging` (#2505).
+    expect(nextConfig).toMatch(
+      /NEXT_PUBLIC_SENTRY_ENVIRONMENT: sentryEnvironmentForVercelEnv\(\s*process\.env\.VERCEL_ENV,?\s*\)/,
+    );
+  });
 });
 
 describe("no salt reaches the web bundle", () => {

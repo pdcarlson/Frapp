@@ -74,4 +74,16 @@ describe("no secrets or PII in landing observability sources", () => {
     expect(nextConfig).toContain("NEXT_PUBLIC_LANDING_SENTRY_DSN");
     expect(nextConfig).not.toContain('project: "frapp-web"');
   });
+
+  it("tags staging `staging`: the environment goes through the shared VERCEL_ENV mapping", () => {
+    const nextConfig = readFileSync(
+      join(process.cwd(), "next.config.js"),
+      "utf8",
+    );
+    // Vercel's `preview` is staging; passing VERCEL_ENV straight through tags
+    // it `preview` while the API and mobile say `staging` (#2505).
+    expect(nextConfig).toMatch(
+      /NEXT_PUBLIC_SENTRY_ENVIRONMENT: sentryEnvironmentForVercelEnv\(\s*process\.env\.VERCEL_ENV,?\s*\)/,
+    );
+  });
 });

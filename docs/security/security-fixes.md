@@ -44,7 +44,7 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 - **`@swc/cli` 0.7 → 0.8 in `apps/api`**: #290
 - ~~**Outstanding `next` moderate advisories (web + landing)**: #291~~ — **closed.** See "Next.js advisory cleanup" below.
 - **`geist` (apps/web)**: #292
-- **`brace-expansion` 5.x in minimatch 10.x tree**: not separately tracked — moderate only, and the override that would close it (`^2.0.3`) breaks minimatch 10.x at runtime (different exported API). Re-evaluate when an audit-clean cross-major version exists.
+- ~~**`brace-expansion` 5.x in minimatch 10.x tree**~~ — **closed 2026-09-30** in range, with no override; see its dated entry in the audit gate's Prevention log, under § The gate (`dependency-audit`, issue #618). The cross-major override (`^2.0.3`) this line used to rule out, because it breaks minimatch 10.x at runtime, is still the wrong fix.
 
 ### Prevention
 
@@ -131,6 +131,8 @@ Two gotchas worth not re-learning:
 ### Prevention
 
 When the gate goes red on a PR that did not touch dependencies, read the **exit code** before anything else. **Exit 2 means no report was obtained** — nothing has been established about the lockfile either way, and the gate's own message says whether re-running can help. **Only exit 1 is a finding.** (Before #1638 both were exit 1, so a registry outage read as an advisory report — twice, blocking two merges.) On exit 1, a new advisory was published upstream against the existing lockfile: fix it in-range if `npm audit fix`/`npm update <pkg>` can (see the #245/#684/#291 playbooks above), otherwise file or link the tracking issue and add a time-boxed allowlist entry in the same PR. Never widen an entry beyond the single GHSA id, and never land an entry without a tracking issue. The gate only fires on PR/push activity, so advisories against an untouched lockfile surface on the next PR — Dependabot (#848) is the tracked complement for proactive detection and bumps.
+
+> **2026-09-30.** Two new highs against an untouched lockfile: `brace-expansion` `GHSA-6j4f-fj2g-mc7p` (`>=4.0.0 <5.0.10`) and `GHSA-qhr7-859c-m2p7` (`>=4.0.0 <5.0.11`), beside the older moderate `GHSA-q2hr-2g5m-vwhr` (`>=4.0.0 <5.0.12`). The one hoisted copy was 5.0.9, required only by `minimatch`'s `^5.0.5`, so `npm update brace-expansion` moved it to 5.0.12 and nothing else. No override, no allowlist, no full lockfile rebuild.
 
 > **2026-09-29.** Two new highs against an untouched lockfile: `undici` `<7.29.1` (`GHSA-rfgv-xxqx-mfg5`, `GHSA-w293-vg96-wgc3`, plus eight moderate/low advisories with the same bound). Cleared by raising the root override floor to `>=7.29.1 <8.0.0` and `npm update undici --package-lock-only`, which resolved 7.30.0. Only `expo-server-sdk` admits 7.x on its own range; `@discordjs/rest` (`^6`), `@sentry/cli` (`^6`) and `jsdom` (`^8`) get it through the override, which is why the floor, not the lockfile, is what holds. The same update corrected a stale `^0.78.0` lockfile range for `apps/mobile`'s exact `@stripe/stripe-react-native` pin. No full lockfile rebuild.
 
