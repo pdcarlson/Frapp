@@ -309,9 +309,9 @@ export interface IChatMessageReportRepository {
    *
    * Paged by key, so the sweep can carry on each tick from where the last
    * one stopped rather than re-reading the same first page, which reports
-   * whose release keeps failing would otherwise fill. `resolvedBefore` keeps the sweep off a removal still in flight, whose
-   * claim may yet be withdrawn back to `open`
-   * ({@link IChatMessageReportRepository.releaseClaim}).
+   * whose release keeps failing would otherwise fill. `resolvedBefore` keeps
+   * the sweep off a removal still in flight, whose claim may yet be
+   * withdrawn back to `open` ({@link IChatMessageReportRepository.releaseClaim}).
    */
   listPendingRelease(
     resolvedBefore: string,
