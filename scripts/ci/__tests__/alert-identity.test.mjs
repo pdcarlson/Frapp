@@ -23,6 +23,7 @@ import * as productionReleasePin from "../production-release-pin.mjs";
 import * as productionUptime from "../production-uptime.mjs";
 import * as routineHeartbeat from "../routine-heartbeat.mjs";
 import * as stagingConformance from "../staging-conformance.mjs";
+import * as supabaseQuota from "../supabase-quota.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -63,6 +64,7 @@ const FLAT = {
   "production-uptime": productionUptime,
   "routine-heartbeat": routineHeartbeat,
   "staging-conformance": stagingConformance,
+  "supabase-quota": supabaseQuota,
 };
 const ALERTS = [
   ...Object.entries(FLAT).map(([script, mod]) => ({ name: script, script, alert: mod.ALERT })),

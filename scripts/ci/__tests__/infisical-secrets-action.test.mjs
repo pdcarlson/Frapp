@@ -325,6 +325,10 @@ describe("Infisical call sites", () => {
       ["migration-snapshot.yml", "publish", "prod"],
       ["staging-conformance.yml", "conformance", "staging"],
       ["production-auth-conformance.yml", "auth-conformance", "prod"],
+      // The quota watch reads both projects, in the `automation` environment,
+      // with each environment's own read-only token (#2531).
+      ["supabase-quota.yml", "quota", "staging"],
+      ["supabase-quota.yml", "quota", "prod"],
     ];
 
     const actual = [];
@@ -349,7 +353,7 @@ describe("Infisical call sites", () => {
       "the Infisical call-site roster changed. Each entry is file / job / slug; " +
         "update this list deliberately if a site legitimately moved.",
     );
-    assert.equal(actual.length, 14);
+    assert.equal(actual.length, 16);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {

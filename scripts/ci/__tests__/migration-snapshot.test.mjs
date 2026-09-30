@@ -397,6 +397,7 @@ test("each two-environment workflow clears staging's values before the prod inje
   const cases = [
     [".github/workflows/migration-snapshot.yml", ["SUPABASE_ACCESS_TOKEN"]],
     [".github/workflows/check-migration-drift.yml", ["SUPABASE_ACCESS_TOKEN", "SUPABASE_PROJECT_REF"]],
+    [".github/workflows/supabase-quota.yml", ["SUPABASE_ACCESS_TOKEN"]],
   ];
   for (const [path, names] of cases) {
     const text = readFileSync(path, "utf8");
