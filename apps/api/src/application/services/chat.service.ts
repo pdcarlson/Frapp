@@ -571,6 +571,11 @@ export class ChatService {
    *   member's list is theirs. Server-originated callers (the invite-accept
    *   system DM) pass nothing, because nobody opened anything; their message
    *   resurfaces a hidden thread the ordinary way, as a new message.
+   *
+   * Race-safe (#2788): two overlapping calls for one pair can both miss
+   * `findDm`, but the database holds one DM per pair, so `createDm` hands the
+   * slower one the row the faster one inserted. Both callers get the same
+   * channel.
    */
   async getOrCreateDm(
     input: CreateDmInput,
@@ -601,13 +606,7 @@ export class ChatService {
       return existing;
     }
 
-    const sorted = [...input.member_ids].sort();
-    return this.channelRepo.create({
-      chapter_id: input.chapter_id,
-      name: `dm-${sorted.join('-')}`,
-      type: 'DM',
-      member_ids: sorted,
-    });
+    return this.channelRepo.createDm(input.chapter_id, input.member_ids);
   }
 
   async createGroupDm(
