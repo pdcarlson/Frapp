@@ -27,6 +27,8 @@ import type { Role } from '#domain/entities/role.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { Chapter } from '#domain/entities/chapter.entity';
 
+const ACTOR = 'user-actor';
+
 describe('RbacService', () => {
   let service: RbacService;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
@@ -128,7 +130,7 @@ describe('RbacService', () => {
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.create.mockResolvedValue(role);
 
-    const result = await service.create('ch-1', {
+    const result = await service.create('ch-1', ACTOR, {
       name: 'Custom',
       permissions: ['members:view'],
       display_order: 10,
@@ -147,13 +149,164 @@ describe('RbacService', () => {
       system_key: null,
     });
     expect(result).toEqual(role);
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledTimes(1);
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
+      chapterId: 'ch-1',
+      actorUserId: ACTOR,
+      action: 'role_created',
+      targetType: 'role',
+      targetId: 'role-1',
+      diff: { role: { from: null, to: role } },
+    });
+  });
+
+  it('surfaces a failed audit write after the role is created (#1599)', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.create.mockResolvedValue(role);
+    mockChapterAuditLogService.record.mockRejectedValue(
+      new Error('audit insert failed'),
+    );
+
+    await expect(
+      service.create('ch-1', ACTOR, { name: 'Custom', permissions: [] }),
+    ).rejects.toThrow('audit insert failed');
+    expect(mockRoleRepo.create).toHaveBeenCalledTimes(1);
+  });
+
+  // A Discord import records the new role's id in `onCreated`, so the id is
+  // kept even when the audit write that follows fails.
+  it('runs onCreated after the insert and before the audit write', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const order: string[] = [];
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.create.mockImplementation(async () => {
+      order.push('insert');
+      return role;
+    });
+    mockChapterAuditLogService.record.mockImplementation(async () => {
+      order.push('audit');
+      throw new Error('audit insert failed');
+    });
+    // Settles before it records, so a `create` that stopped awaiting it
+    // would log the audit write first.
+    const onCreated = jest.fn(async () => {
+      await Promise.resolve();
+      order.push('onCreated');
+    });
+
+    await expect(
+      service.create(
+        'ch-1',
+        ACTOR,
+        { name: 'Custom', permissions: [] },
+        onCreated,
+      ),
+    ).rejects.toThrow('audit insert failed');
+    expect(onCreated).toHaveBeenCalledWith(role);
+    expect(order).toEqual(['insert', 'onCreated', 'audit']);
+  });
+
+  it('still writes role_created when onCreated fails, and surfaces its error', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.create.mockResolvedValue(role);
+
+    await expect(
+      service.create(
+        'ch-1',
+        ACTOR,
+        { name: 'Custom', permissions: [] },
+        async () => {
+          throw new Error('mapping write failed');
+        },
+      ),
+    ).rejects.toThrow('mapping write failed');
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'role_created', targetId: 'role-1' }),
+    );
+  });
+
+  it('surfaces a failed audit write after the role is updated or deleted (#1599)', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: ['members:view'],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findById.mockResolvedValue(role);
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.update.mockResolvedValue({ ...role, name: 'Renamed' });
+    mockRoleRepo.delete.mockResolvedValue(undefined);
+    mockChapterAuditLogService.record.mockRejectedValue(
+      new Error('audit insert failed'),
+    );
+
+    await expect(
+      service.update('role-1', 'ch-1', ACTOR, { name: 'Renamed' }),
+    ).rejects.toThrow('audit insert failed');
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
+      'audit insert failed',
+    );
+    expect(mockRoleRepo.update).toHaveBeenCalledTimes(1);
+    expect(mockRoleRepo.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes no role_deleted row when the delete itself fails', async () => {
+    mockRoleRepo.findById.mockResolvedValue({
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    });
+    mockRoleRepo.delete.mockRejectedValue(new Error('db boom'));
+
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
+      'db boom',
+    );
+    expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
   });
 
   // Only the seeded President role may carry `*`; minting a new wildcard role
   // would bypass the presidency-transfer safeguard (spec/behavior/rbac.md).
   it('rejects creating a role with the wildcard permission', async () => {
     await expect(
-      service.create('ch-1', {
+      service.create('ch-1', ACTOR, {
         name: 'Shadow President',
         permissions: ['*', 'members:view'],
       }),
@@ -175,7 +328,7 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(plainRole);
 
     await expect(
-      service.update('role-plain', 'ch-1', { permissions: ['*'] }),
+      service.update('role-plain', 'ch-1', ACTOR, { permissions: ['*'] }),
     ).rejects.toThrow(BadRequestException);
     expect(mockRoleRepo.update).not.toHaveBeenCalled();
 
@@ -191,7 +344,7 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(presidentRole);
     mockRoleRepo.update.mockResolvedValue(presidentRole);
 
-    await service.update('role-president', 'ch-1', {
+    await service.update('role-president', 'ch-1', ACTOR, {
       permissions: ['*'],
     });
     expect(mockRoleRepo.update).toHaveBeenCalledWith('role-president', {
@@ -215,7 +368,7 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(presidentRole);
 
     await expect(
-      service.update('role-president', 'ch-1', {
+      service.update('role-president', 'ch-1', ACTOR, {
         permissions: ['events:create'],
       }),
     ).rejects.toThrow(BadRequestException);
@@ -235,7 +388,7 @@ describe('RbacService', () => {
       permissions: ['members:view'],
     });
 
-    await service.update('role-legacy', 'ch-1', {
+    await service.update('role-legacy', 'ch-1', ACTOR, {
       permissions: ['members:view'],
     });
     expect(mockRoleRepo.update).toHaveBeenCalledWith('role-legacy', {
@@ -257,10 +410,10 @@ describe('RbacService', () => {
     mockRoleRepo.findByChapterAndName.mockResolvedValue(existing);
 
     await expect(
-      service.create('ch-1', { name: 'Custom', permissions: [] }),
+      service.create('ch-1', ACTOR, { name: 'Custom', permissions: [] }),
     ).rejects.toThrow(ConflictException);
     await expect(
-      service.create('ch-1', { name: 'Custom', permissions: [] }),
+      service.create('ch-1', ACTOR, { name: 'Custom', permissions: [] }),
     ).rejects.toThrow('Role name already exists in this chapter');
   });
 
@@ -284,7 +437,7 @@ describe('RbacService', () => {
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.update.mockResolvedValue(updated);
 
-    const result = await service.update('role-1', 'ch-1', {
+    const result = await service.update('role-1', 'ch-1', ACTOR, {
       name: 'Custom Updated',
       permissions: ['members:view', 'members:invite'],
     });
@@ -294,6 +447,91 @@ describe('RbacService', () => {
       permissions: ['members:view', 'members:invite'],
     });
     expect(result).toEqual(updated);
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledTimes(1);
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
+      chapterId: 'ch-1',
+      actorUserId: ACTOR,
+      action: 'role_updated',
+      targetType: 'role',
+      targetId: 'role-1',
+      diff: {
+        name: { from: 'Custom', to: 'Custom Updated' },
+        permissions: { added: ['members:invite'], removed: [] },
+      },
+    });
+  });
+
+  describe('update audit diff (#2599)', () => {
+    const before: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Treasurer',
+      permissions: ['billing:view', 'members:view', 'events:create'],
+      is_system: false,
+      display_order: 4,
+      color: '#112233',
+      created_at: '2024-01-01',
+    };
+
+    it('records recolouring, reordering and a removed permission, not the whole array', async () => {
+      const after: Role = {
+        ...before,
+        permissions: ['billing:view', 'members:view'],
+        display_order: 2,
+        color: '#445566',
+      };
+      mockRoleRepo.findById.mockResolvedValue(before);
+      mockRoleRepo.update.mockResolvedValue(after);
+
+      await service.update('role-1', 'ch-1', ACTOR, {
+        permissions: after.permissions,
+        display_order: 2,
+        color: '#445566',
+      });
+
+      expect(mockChapterAuditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'role_updated',
+          diff: {
+            color: { from: '#112233', to: '#445566' },
+            display_order: { from: 4, to: 2 },
+            permissions: { added: [], removed: ['events:create'] },
+          },
+        }),
+      );
+    });
+
+    // Decision: an update that changes nothing writes no row, like the
+    // core-profile PATCH. Permissions compare as sets, so re-sending them in
+    // another order is also nothing.
+    it('writes no row when the saved role matches the old one', async () => {
+      const after: Role = {
+        ...before,
+        permissions: ['events:create', 'billing:view', 'members:view'],
+      };
+      mockRoleRepo.findById.mockResolvedValue(before);
+      mockRoleRepo.update.mockResolvedValue(after);
+
+      const result = await service.update('role-1', 'ch-1', ACTOR, {
+        name: 'Treasurer',
+        permissions: after.permissions,
+      });
+
+      expect(result).toEqual(after);
+      expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('writes no row when the update is refused', async () => {
+      mockRoleRepo.findById.mockResolvedValue(before);
+
+      await expect(
+        service.update('role-1', 'ch-1', ACTOR, {
+          permissions: ['*'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRoleRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+    });
   });
 
   it('should reject updating a role from another chapter', async () => {
@@ -310,10 +548,10 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
 
     await expect(
-      service.update('role-1', 'ch-1', { name: 'Hijacked' }),
+      service.update('role-1', 'ch-1', ACTOR, { name: 'Hijacked' }),
     ).rejects.toThrow(ForbiddenException);
     await expect(
-      service.update('role-1', 'ch-1', { name: 'Hijacked' }),
+      service.update('role-1', 'ch-1', ACTOR, { name: 'Hijacked' }),
     ).rejects.toThrow('Role not in current chapter');
     expect(mockRoleRepo.update).not.toHaveBeenCalled();
   });
@@ -343,10 +581,10 @@ describe('RbacService', () => {
     mockRoleRepo.findByChapterAndName.mockResolvedValue(existingOther);
 
     await expect(
-      service.update('role-1', 'ch-1', { name: 'Other' }),
+      service.update('role-1', 'ch-1', ACTOR, { name: 'Other' }),
     ).rejects.toThrow(ConflictException);
     await expect(
-      service.update('role-1', 'ch-1', { name: 'Other' }),
+      service.update('role-1', 'ch-1', ACTOR, { name: 'Other' }),
     ).rejects.toThrow('Role name already exists in this chapter');
   });
 
@@ -364,9 +602,18 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue(undefined);
 
-    await service.delete('role-1', 'ch-1');
+    await service.delete('role-1', 'ch-1', ACTOR);
 
     expect(mockRoleRepo.delete).toHaveBeenCalledWith('role-1');
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledTimes(1);
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
+      chapterId: 'ch-1',
+      actorUserId: ACTOR,
+      action: 'role_deleted',
+      targetType: 'role',
+      targetId: 'role-1',
+      diff: { role: { from: role, to: null } },
+    });
   });
 
   it('should reject deleting a role from another chapter', async () => {
@@ -382,10 +629,10 @@ describe('RbacService', () => {
     };
     mockRoleRepo.findById.mockResolvedValue(role);
 
-    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
       ForbiddenException,
     );
-    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
       'Role not in current chapter',
     );
     expect(mockRoleRepo.delete).not.toHaveBeenCalled();
@@ -404,13 +651,14 @@ describe('RbacService', () => {
     };
     mockRoleRepo.findById.mockResolvedValue(role);
 
-    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
       ForbiddenException,
     );
-    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
       'Cannot delete system roles',
     );
     expect(mockRoleRepo.delete).not.toHaveBeenCalled();
+    expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
   });
 
   describe('transferPresidency', () => {
@@ -465,6 +713,34 @@ describe('RbacService', () => {
         presidentRole.id,
       );
       expect(mockMemberRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('audit-logs the outgoing and incoming member as the outgoing President (#2599)', async () => {
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(
+          makeMember({
+            id: 'member-1',
+            user_id: 'user-1',
+            role_ids: [presidentRole.id],
+          }),
+        )
+        .mockResolvedValueOnce(
+          makeMember({ id: 'member-2', user_id: 'user-2' }),
+        );
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      mockMemberRepo.transferPresidencyAtomic.mockResolvedValue(true);
+
+      await service.transferPresidency('ch-1', 'member-1', 'member-2');
+
+      expect(mockChapterAuditLogService.record).toHaveBeenCalledTimes(1);
+      expect(mockChapterAuditLogService.record).toHaveBeenCalledWith({
+        chapterId: 'ch-1',
+        actorUserId: 'user-1',
+        action: 'presidency_transferred',
+        targetType: 'chapter',
+        targetId: 'ch-1',
+        diff: { president_member_id: { from: 'member-1', to: 'member-2' } },
+      });
     });
 
     it('rejects a self-transfer (current === target) as a bad request', async () => {
@@ -607,6 +883,7 @@ describe('RbacService', () => {
       await expect(
         service.transferPresidency('ch-1', 'member-1', 'member-2'),
       ).rejects.toThrow('Only the current President can transfer presidency');
+      expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
     });
 
     it('propagates a repository/transaction failure (rollback handled in the DB)', async () => {
@@ -631,6 +908,31 @@ describe('RbacService', () => {
       await expect(
         service.transferPresidency('ch-1', 'member-1', 'member-2'),
       ).rejects.toThrow('db boom');
+      expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a failed audit write after the transfer commits (#1599)', async () => {
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(
+          makeMember({
+            id: 'member-1',
+            user_id: 'user-1',
+            role_ids: [presidentRole.id],
+          }),
+        )
+        .mockResolvedValueOnce(
+          makeMember({ id: 'member-2', user_id: 'user-2' }),
+        );
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      mockMemberRepo.transferPresidencyAtomic.mockResolvedValue(true);
+      mockChapterAuditLogService.record.mockRejectedValue(
+        new Error('audit insert failed'),
+      );
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('audit insert failed');
+      expect(mockMemberRepo.transferPresidencyAtomic).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1540,7 +1842,7 @@ describe('RbacService', () => {
       mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
       mockRoleRepo.create.mockResolvedValue({});
 
-      await service.create('ch-1', {
+      await service.create('ch-1', ACTOR, {
         name: 'Impostor',
         permissions: ['members:view'],
         // A caller trying to mint a role that impersonates the seeded Alumni.
@@ -1558,7 +1860,7 @@ describe('RbacService', () => {
       mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
       mockRoleRepo.update.mockResolvedValue(role);
 
-      await service.update('role-alumni', 'ch-1', {
+      await service.update('role-alumni', 'ch-1', ACTOR, {
         name: 'Graduated',
         // Attempting to detach the key — the rename hole by another route.
         system_key: null,
