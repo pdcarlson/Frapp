@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   ALERT_ASSIGNEE,
   ALERT_LOOKUP_LABEL,
+  isDefinedAlert,
   raiseAlert,
   resolveAlert,
 } from "../lib/alert-issue.mjs";
@@ -32,6 +33,11 @@ import { makeFetchMock } from "./helpers.mjs";
 // own open alert, files a duplicate on the next failure, and never closes the
 // original on recovery. Each watchdog's own suite tests its flow; this one tests
 // that they agree.
+//
+// Since #1731 every identity is made by the lib's `defineAlert`, and the lib's
+// functions take nothing else and accept no lookup label, so a watchdog can't
+// look up or file under a label of its own. What this file still checks is
+// that each watchdog uses that path: one exported identity, no second shape.
 
 const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -57,19 +63,11 @@ const FLAT = {
   "staging-conformance": stagingConformance,
 };
 const ALERTS = [
-  ...Object.entries(FLAT).map(([script, mod]) => ({
-    name: script,
-    script,
-    title: mod.ALERT_ISSUE_TITLE,
-    labels: mod.ALERT_ISSUE_LABELS,
-    lookupLabel: mod.ALERT_ISSUE_LOOKUP_LABEL,
-  })),
+  ...Object.entries(FLAT).map(([script, mod]) => ({ name: script, script, alert: mod.ALERT })),
   ...Object.values(deployAlert.ALERT_CONFIGS).map((config) => ({
     name: `deploy-alert:${config.name}`,
     script: "deploy-alert",
-    title: config.alertTitle,
-    labels: config.alertLabels,
-    lookupLabel: deployAlert.ALERT_ISSUE_LOOKUP_LABEL,
+    alert: config.alert,
   })),
 ];
 
@@ -91,44 +89,33 @@ test("every script that raises an alert is covered here", () => {
   assert.deepEqual(raisers, [...new Set(ALERTS.map((alert) => alert.script))].sort());
 });
 
-test("every watchdog looks its alert up by the lib's label, and files under it", () => {
-  for (const alert of ALERTS) {
-    assert.equal(alert.lookupLabel, ALERT_LOOKUP_LABEL, `${alert.name} lookup label`);
-    assert.ok(alert.labels.includes(ALERT_LOOKUP_LABEL), `${alert.name} created labels`);
+test("every alert is an identity defineAlert made, filed under the lib's label", () => {
+  for (const { name, alert } of ALERTS) {
+    assert.ok(isDefinedAlert(alert), `${name} is not a defineAlert identity`);
+    assert.equal(alert.labels[0], ALERT_LOOKUP_LABEL, `${name} created labels`);
   }
 });
 
-test("every call site passes the lib-derived label, and nothing else", () => {
-  // The exported alias is checked above, but a call site could still pass a
-  // literal or a local variable of its own, and the label-strict tests below
-  // use the export, so they would never see it. Each script declares the alias
-  // once, from the lib, and every `lookupLabel` it writes in code is exactly
-  // `lookupLabel: ALERT_ISSUE_LOOKUP_LABEL`: a shorthand `{ lookupLabel }`, a
-  // local `lookupLabel = …` or any other value fails.
+test("no watchdog declares an identity outside defineAlert", () => {
+  // The lib refuses a hand-built identity at runtime, but only on the path a
+  // test drives. These are the shapes that came before #1731; any of them in
+  // code means a second way to say what an alert is has come back.
+  const retired = [
+    /\bALERT_ISSUE_(TITLE|LABELS|LOOKUP_LABEL)\b/,
+    /\blookupLabel\b/,
+    /\b(alertTitle|alertLabels|retiredAlertTitles)\b/,
+  ];
   for (const script of new Set(ALERTS.map((alert) => alert.script))) {
     const code = codeLines(readFileSync(join(SCRIPTS_DIR, `${script}.mjs`), "utf8"));
-    const declarations = code.match(/\bALERT_ISSUE_LOOKUP_LABEL\s*=[^=].*$/gm) ?? [];
-    assert.deepEqual(
-      declarations,
-      ["ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;"],
-      `${script} declares its lookup label once, from the lib`,
-    );
-    // Every occurrence, not the first on each line, so two calls on one line
-    // are both checked.
-    const uses = [...code.matchAll(/\blookupLabel\b/g)].map((m) =>
-      code.slice(m.index).split("\n")[0],
-    );
-    assert.ok(uses.length > 0, `${script} passes its lookup label`);
-    for (const use of uses) {
-      assert.match(use, /^lookupLabel: ALERT_ISSUE_LOOKUP_LABEL\b/, `${script}: ${use}`);
-    }
+    for (const shape of retired) assert.doesNotMatch(code, shape, script);
+    assert.ok(/\bdefineAlert\(/.test(code), `${script} declares its alert with defineAlert`);
   }
 });
 
 test("no two alerts share an identity", () => {
   // With one shared label, the title alone tells alerts apart. Two watchdogs on
   // one title would comment on, and close, each other's incident.
-  const titles = ALERTS.map((alert) => alert.title);
+  const titles = ALERTS.map(({ alert }) => alert.title);
   assert.equal(new Set(titles).size, titles.length);
 });
 
@@ -172,18 +159,13 @@ const builders = {
   buildRecoveryBody: () => "recovered",
 };
 
-for (const alert of ALERTS) {
-  test(`${alert.name}: an open incident alert is commented, never duplicated, and recovery closes it`, async () => {
+for (const { name, alert } of ALERTS) {
+  test(`${name}: an open incident alert is commented, never duplicated, and recovery closes it`, async () => {
     const issues = [{ number: 42, state: "open", title: alert.title }];
-    const identity = { token: "t", repo: "o/r", title: alert.title, lookupLabel: alert.lookupLabel };
+    const identity = { token: "t", repo: "o/r", alert };
 
     const raise = labelStrictGitHub({ label: ALERT_LOOKUP_LABEL, issues });
-    const raised = await raiseAlert({
-      ...identity,
-      fetchImpl: raise.fetchImpl,
-      labels: alert.labels,
-      ...builders,
-    });
+    const raised = await raiseAlert({ ...identity, fetchImpl: raise.fetchImpl, ...builders });
     assert.deepEqual(raised, { action: "commented", issueNumber: 42 });
     assert.equal(
       raise.calls.some((c) => c.method === "POST" && c.url.endsWith("/issues")),
@@ -201,20 +183,12 @@ test("the old label is no longer read: an alert left only on it is not found", a
   // Negative control for the mock above, and the reason the open alerts are
   // relabelled when this ships: an alert still carrying only `routine-state`
   // is invisible to every watchdog, so the next failure files a fresh issue.
-  const [alert] = ALERTS;
+  const [{ alert }] = ALERTS;
   const { fetchImpl, calls } = labelStrictGitHub({
     label: "routine-state",
     issues: [{ number: 42, state: "open", title: alert.title }],
   });
-  const raised = await raiseAlert({
-    token: "t",
-    repo: "o/r",
-    fetchImpl,
-    title: alert.title,
-    labels: alert.labels,
-    lookupLabel: alert.lookupLabel,
-    ...builders,
-  });
+  const raised = await raiseAlert({ token: "t", repo: "o/r", fetchImpl, alert, ...builders });
   assert.equal(raised.action, "created");
   const created = JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/issues")).body);
   assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);

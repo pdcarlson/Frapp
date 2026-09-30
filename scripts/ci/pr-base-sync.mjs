@@ -50,7 +50,7 @@
 import { ghRequest } from "./lib/github.mjs";
 import { clearMarkedComments, upsertWakeComment } from "./ci-wake.mjs";
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
@@ -71,9 +71,10 @@ export const BASE_SYNC_MARKER = "<!-- frapp-base-sync -->";
 // P2, not P1: the sweep degrades rather than breaks. PRs still merge; they just
 // need a human or an agent to press Update branch, which is where this repo was
 // before the sweep existed.
-export const ALERT_ISSUE_TITLE = "PR base sync cannot auto-update PR branches";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
+export const ALERT = defineAlert({
+  title: "PR base sync cannot auto-update PR branches",
+  labels: ["area:ci", "P2"],
+});
 
 const SETUP_STEPS = [
   "The token is minted in `.github/workflows/pr-base-sync.yml` by",
@@ -106,9 +107,7 @@ export async function raiseAutoUpdateAlert({ token, repo, detail, fetchImpl }) {
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    labels: ALERT_ISSUE_LABELS,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildIssueBody: () => alertBody(detail),
     buildCommentBody: ({ reopened }) =>
       [
@@ -139,8 +138,7 @@ export async function resolveAutoUpdateAlert({ token, repo, proven, fetchImpl })
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       [
         "**Base-branch auto-update recovered.** Closing.",
@@ -442,8 +440,7 @@ async function reconcileTokenAlert({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
     });
     // A failed lookup falls through to raise, matching alert-issue.mjs's own
     // trade-off: a duplicate alert self-heals (resolveAlert closes every match),

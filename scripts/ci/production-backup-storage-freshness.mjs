@@ -40,7 +40,7 @@
 // `scripts/ci/__tests__/production-backup-storage-freshness.test.mjs` for this watch.
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -63,10 +63,10 @@ export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
 // cancelled dispatch. The test suite checks it against the workflow.
 export const JOB_TIMEOUT_MS = 60 * 60 * 1000;
 
-export const ALERT_ISSUE_TITLE =
-  "Nightly production Storage mirror is stale or failed — recoverability is unproven";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Nightly production Storage mirror is stale or failed — recoverability is unproven",
+  labels: ["area:ci", "P1"],
+});
 
 /** Prefer the job token: Actions reads work with GITHUB_TOKEN. */
 export function resolveActionsReadToken(env = process.env) {
@@ -170,9 +170,7 @@ export async function runWatchdog({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ verdict, runUrl }),
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still stale or failed: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
@@ -189,8 +187,7 @@ export async function runWatchdog({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       `Nightly production Storage mirror is fresh again: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });

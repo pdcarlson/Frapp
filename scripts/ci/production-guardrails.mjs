@@ -72,7 +72,7 @@
 // `scripts/ci/__tests__/production-guardrails.test.mjs`.
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -94,10 +94,10 @@ export { EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath };
 // The cost of the stale half-sentence is a slightly wide title; the cost of
 // renaming is an immortal P1 issue. Rename only in a change that also closes
 // every open alert carrying the old title.
-export const ALERT_ISSUE_TITLE =
-  "Production deploy guardrails have drifted — auto-deploy or production branch is wrong";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Production deploy guardrails have drifted — auto-deploy or production branch is wrong",
+  labels: ["area:ci", "P1"],
+});
 
 // Provider identifiers are NOT defaulted here, deliberately. Every sibling
 // script requires them from the environment, and the workflows that call this
@@ -331,9 +331,7 @@ export async function syncGuardrailsAlert({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ findings, runUrl }),
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still drifted:\n\n${findings.map((f) => `- ${f}`).join("\n")}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
@@ -349,8 +347,7 @@ export async function syncGuardrailsAlert({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () => `Guardrails hold again.\n\n${summary}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });
   if (alert.action === "unread") {

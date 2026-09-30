@@ -42,8 +42,9 @@
 // plain value continued on deeper lines reads as its first line. Only `if:`
 // reads those two forms (`conditionAt`), since it is what the fence guards match.
 
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Whole-line comments and blank lines dropped; indentation preserved. Split on
@@ -512,6 +513,38 @@ function stepEnvAt(lines, stepStart, stepEnd, keyIndent) {
   }
   const index = findEnvHeader(lines, stepStart + 1, stepEnd, keyIndent);
   return index === -1 ? new Map() : envMapAt(lines, index);
+}
+
+/** The repo's `.github/workflows`. */
+export const WORKFLOW_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", ".github", "workflows");
+
+/**
+ * Every workflow file's name in `dir`, sorted. `.yaml` as well as `.yml`:
+ * Actions runs both, and a guard that scans only one never reads a workflow
+ * written as the other, so whatever it asserts passes for that file unseen.
+ */
+export function workflowFiles(dir = WORKFLOW_DIR) {
+  return readdirSync(dir)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .sort();
+}
+
+/**
+ * Every step, across every workflow in `dir`, that runs `script` (a repo path
+ * such as `scripts/ci/deploy-alert.mjs`), for the per-call-site env guards.
+ *
+ * Matched on the script's FILE NAME as a whole token, not its repo path: a step
+ * with `working-directory: scripts/ci` runs `node deploy-alert.mjs`, and a
+ * path match would never see it, so its guard would pass over the one caller
+ * it was written for. Comment lines never reach a step's body, so prose that
+ * names the script isn't a call site.
+ */
+export function stepsRunning(script, dir = WORKFLOW_DIR) {
+  const name = basename(script).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const token = new RegExp(String.raw`(?<![\w.-])${name}(?![\w.-])`);
+  return workflowFiles(dir)
+    .flatMap((file) => workflowSteps(join(dir, file)))
+    .filter((step) => token.test(step.body));
 }
 
 /**

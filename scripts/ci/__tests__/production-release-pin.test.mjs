@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   DEFAULT_HEALTH_URL,
   HEALTH_FETCH_TIMEOUT_MS,
   SHA_PATTERN,
@@ -26,6 +26,7 @@ import {
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
+import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-release-pin.yml");
@@ -549,7 +550,7 @@ describe("runWatchdog", () => {
     assert.equal(created.outcome, "fail");
     assert.equal(created.alert.action, "created");
     const createdBody = JSON.parse(calls.find((c) => c.method === "POST").body);
-    assert.equal(createdBody.title, ALERT_ISSUE_TITLE);
+    assert.equal(createdBody.title, ALERT.title);
     assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
     assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
     assert.ok(createdBody.labels.includes("P1"));
@@ -559,7 +560,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -580,7 +581,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -621,7 +622,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/comments", body: {} },
       { method: "PATCH", path: "/issues/42", status: 502, body: {} },
@@ -661,7 +662,7 @@ describe("workflow wiring", () => {
   });
 
   it("no other daily schedule shares 08:00", () => {
-    for (const file of readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f))) {
+    for (const file of workflowFiles()) {
       if (file === "production-release-pin.yml") continue;
       const text = uncommented(readFileSync(join(WORKFLOWS_DIR, file), "utf8"));
       assert.doesNotMatch(
@@ -690,7 +691,7 @@ describe("workflow wiring", () => {
 
   it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
-      routing.includes(ALERT_ISSUE_TITLE),
+      routing.includes(ALERT.title),
       "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });
