@@ -24,6 +24,22 @@ Google Play can't take that size, so `--google-play` writes the same seven scree
 1242 × 2208 to `screenshots/google-play/`
 ([`mobile.md` § 6.5](../../../docs/internal/ops/deployment/mobile.md#65-google-play-screenshots)).
 
+**Graphics: rendered by a script, committed, uploaded by the owner.** Google Play's listing
+needs a 512 × 512 icon and a 1024 × 500 feature graphic, and Play Console won't publish the
+listing without the feature graphic. `npm run render:store-graphics` renders both from the
+emblem B vector into [`graphics/`](graphics/): `play-icon-512.png` and
+`play-feature-graphic-1024x500.png`. Unlike the screenshots they are committed, because they
+render without the app or its data, and `check:brand-assets` fails CI when they stop
+matching the mark or the shape Play takes. What the feature graphic shows, and why, is in
+the header of [`render-store-graphics.mjs`](../../../scripts/render-store-graphics.mjs).
+Upload them in Play Console under **Grow users → Store presence → Main store listing →
+Graphics** *(path from Play Console Help search snippets; support.google.com is blocked from
+the sandbox)*. Whether they have been uploaded is recorded on
+[#2122](https://github.com/pdcarlson/Frapp/issues/2122), not here. App Store Connect has no
+icon field: the iOS icon, dark and tinted variants included, ships in the binary from
+`apps/mobile/app.json` and changes only with a new build
+([App Store Connect Help, "Add an app icon"](https://developer.apple.com/help/app-store-connect/manage-app-information/add-an-app-icon)).
+
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
 owner claimed it in App Store Connect on 2026-09-23, replacing `Signet: Chapter

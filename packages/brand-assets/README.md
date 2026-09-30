@@ -65,9 +65,10 @@ All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 un
 1. Edit `assets/signet-emblem-B.svg` (and `signet-emblem-B-glyph.svg`, keeping the path identical).
 2. `npm run rasterize:brand-assets`
 3. `npm run sync:brand-assets`
-4. `npm run check:brand-assets`
+4. `npm run render:store-graphics` (the Google Play icon and feature graphic)
+5. `npm run check:brand-assets`
 
-Steps 2 and 4 both refuse a mark that is not drawn in the locked pair, and refuse an empty or solid Android monochrome layer.
+Steps 2 and 5 both refuse a mark that is not drawn in the locked pair, and refuse an empty or solid Android monochrome layer.
 
 ## Monorepo tasks
 
