@@ -862,12 +862,16 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(captureException).toHaveBeenCalledTimes(1);
     const [reported, options] = captureException.mock.calls[0] as [
       Error,
-      { tags: Record<string, string> },
+      { level?: string; tags: Record<string, string> },
     ];
     // `new Error(String(plainObject))` would report "[object Object]" — the
     // cause has to survive into the message.
     expect(reported.message).toContain('PGRST205');
-    expect(options.tags.swallowed_as).toBe('failed');
+    expect(options.level).toBe('error');
+    expect(options.tags).toEqual({
+      route: 'discord/connect/callback',
+      swallowed_as: 'failed',
+    });
   });
 
   it('still redirects when Sentry itself throws while reporting it (#1739)', async () => {

@@ -251,7 +251,10 @@ describe('AllExceptionsFilter', () => {
       host({ appUser: { id: USER_ID }, chapterId: CHAPTER_ID }),
     );
 
-    const { user, tags = {} } = reportedContext();
+    const { level, user, tags = {} } = reportedContext();
+    // The level decides which Sentry alert rules can match a 500, so it is
+    // contract, not a default to leave implicit.
+    expect(level).toBe('error');
     expect(user).toEqual({
       id: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
@@ -261,6 +264,8 @@ describe('AllExceptionsFilter', () => {
     expect(tags.chapter).not.toBe(CHAPTER_ID);
     expect(tags.route).toBe('/v1/chapters/join');
     expect(tags.request_id).toBe('req-abc');
+    expect(tags.status_code).toBe('500');
+    expect(tags.http_method).toBe('POST');
     expect(captured.status).toBe(500);
   });
 
