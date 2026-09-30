@@ -40,15 +40,16 @@
  *   own continues a paragraph inside them lazily, which is quadratic in the
  *   lines. See `MAX_CONTAINER_RUN_LINES`.
  *
- * **The estimate.** Per paragraph, three products and a count, each with a
- * budget:
+ * **The estimate.** Three products per paragraph, and one count over the
+ * body, each with a budget:
  *
  * - the `*`, `_` and `]` count, plus each `<!` or `<?` weighted four times,
  *   times the characters that can start a construct (an upper bound on the
  *   events);
  * - the `]`, `<!` and `<?` count times the length;
  * - the `![` count times the length;
- * - the container markers and lines from its first container line on.
+ * - over the whole body, the container markers and lines from its first
+ *   container line to its end.
  *
  * Any one over its budget, and the body skips the parse. An `_` between two
  * ASCII letters or digits is left out of the first count: it can neither open
