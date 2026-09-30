@@ -9,13 +9,6 @@ import { StripePriceAccountMismatchError } from '../../infrastructure/billing/st
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
   captureMessage: jest.fn(),
-  withScope: jest.fn((callback: (scope: unknown) => void) =>
-    callback({
-      setLevel: jest.fn(),
-      setTag: jest.fn(),
-      setUser: jest.fn(),
-    }),
-  ),
 }));
 
 describe('HealthController', () => {

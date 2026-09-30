@@ -74,6 +74,9 @@ describe('AttendanceService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findChildren: jest.fn(),
+      updateMany: jest.fn(),
+      deleteMany: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -83,6 +86,10 @@ describe('AttendanceService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findByUser: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     // Default to an active (non-alumni) member so existing cases are unaffected.
@@ -146,6 +153,7 @@ describe('AttendanceService', () => {
         role_ids: ['role-alumni'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
       };
@@ -179,6 +187,7 @@ describe('AttendanceService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
       };
@@ -198,7 +207,7 @@ describe('AttendanceService', () => {
       mockAttendanceRepo.findByEvent.mockResolvedValue([]);
       mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
       mockAttendanceRepo.createMany.mockImplementation(
-        async (rows: unknown[]) => rows,
+        async (rows: Partial<EventAttendance>[]) => rows as EventAttendance[],
       );
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
@@ -225,6 +234,7 @@ describe('AttendanceService', () => {
       role_ids: ['role-member'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2026-02-01T00:00:00.000Z',
       updated_at: '2026-02-01T00:00:00.000Z',
     };
@@ -388,6 +398,7 @@ describe('AttendanceService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
       };
@@ -612,6 +623,7 @@ describe('AttendanceService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
       },
@@ -622,6 +634,7 @@ describe('AttendanceService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
       },
@@ -632,6 +645,7 @@ describe('AttendanceService', () => {
         role_ids: ['role-exec'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
       },

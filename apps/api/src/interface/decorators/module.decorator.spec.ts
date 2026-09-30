@@ -23,7 +23,7 @@ import { AlumniController } from '../controllers/alumni.controller';
 
 describe('RequireModule', () => {
   const reflector = new Reflector();
-  const moduleOf = (target: object) =>
+  const moduleOf = (target: Parameters<Reflector['get']>[1]) =>
     reflector.get<string | undefined>(REQUIRED_MODULE_KEY, target);
 
   it('attaches the module key as route metadata', () => {
