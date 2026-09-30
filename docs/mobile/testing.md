@@ -117,9 +117,10 @@ device run, check:
 ## Unit tests
 
 The `apps/mobile` workspace is configured with Vitest. `vitest.setup.ts` mocks
-the native modules most specs reach, plus the `react-native` platform globals
-(including `StyleSheet` and string component stand-ins for Signet token-factory
-tests). Read the file for which ones: it doesn't cover them all. A spec that
+the native modules most specs reach, plus `react-native` with the stand-ins in
+`test/react-native-stub.ts` (the platform globals, `StyleSheet`, and string
+component stand-ins for Signet token-factory tests). Read the files for which
+ones: they don't cover them all. A spec that
 loads a native module it leaves out, such as `expo-secure-store` or
 `expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
 otherwise the import fails under Vitest.
@@ -131,6 +132,13 @@ must clear when the member comes back is tested with `__refocus()`, inside
 `act`, which re-runs every mounted `useFocusEffect`. It is an export of the
 mocked `expo-router` module, not a method on the router, so the specs reach it
 through `import * as expoRouter from "expo-router"`.
+
+The suite's `FlatList` is a string stand-in that never calls `renderItem`, so a
+spec that asserts on one row renders that row's component directly. A spec
+that needs the rows inside the screen's own tree swaps in `RenderingFlatList`
+from `test/react-native-stub.ts`. `lib/chat/chat-thread-screen.spec.tsx` does
+this, because its rows reach the image viewer through a provider the screen
+wraps the list in.
 
 Two suites are static rather than render-based, and deliberately so:
 `lib/routes.spec.ts` walks the real route tree — it checks every route literal,
