@@ -153,7 +153,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > meeting Discord's error page, **but only when Discord's answer lists the registered redirects**.
 > Whether it does has not been confirmed from a deployment; where it does not, the check is skipped
 > and the error page is still possible. (2) The **Message Content Intent** under Bot → Privileged Gateway
-> Intents: `available: true` says nothing about it; the import checks it before it writes anything.
+> Intents: `available: true` says nothing about it, and the import's own check of it has limits.
 > What each check covers, how each failure presents, and what evidence it leaves server-side is in
 > [`integrations.md`](../ops/deployment/integrations.md) § 7A. Discord Application Setup, which owns
 > that mechanism. Do not restate it here; provider behavior falsifies these facts, and a second copy

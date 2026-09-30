@@ -580,9 +580,10 @@ channel that reports a different one fails the import rather than being skipped.
   message. Before it writes anything, the import asks Discord whether the intent
   is on and stops with an error naming the fix if it isn't, rather than writing a
   chapter's whole history as empty bubbles, which would look like success. When
-  Discord can't answer that, the import counts authored messages with nothing in
-  them and stops the same way, and the error then says how many messages it had
-  already written, and that deleting the import removes them.
+  Discord can't answer that, a count of blank messages is the only guard: it
+  stops an archive that comes back blank at scale, not a small one, and its error
+  says how many messages it had already written. What each check covers is in
+  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md) § 7A.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.

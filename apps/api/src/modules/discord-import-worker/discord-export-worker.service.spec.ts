@@ -21,7 +21,7 @@ import {
   type ArchiveMediaCopyResult,
 } from '#domain/adapters/archive-media-copier.interface';
 import {
-  MESSAGE_CONTENT_INTENT_OFF_ERROR,
+  messageContentIntentOffError,
   missingMessageContentIntentError,
 } from '#domain/utils/discord-api-message';
 import type {
@@ -712,7 +712,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       const args = runArgs(harness, { resolveTargetChannel });
 
       await expect(harness.worker.runSlice(args)).rejects.toThrow(
-        missingMessageContentIntentError(0),
+        missingMessageContentIntentError({ thisRun: 0, earlierRuns: 0 }),
       );
       // The channel being walked is made when the walk reaches it, as it
       // always was; nothing else is.
@@ -1539,7 +1539,7 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
 
     const args = runArgs(harness);
     await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      missingMessageContentIntentError(0),
+      missingMessageContentIntentError({ thisRun: 0, earlierRuns: 0 }),
     );
 
     // Checked BEFORE this page is written, and it is the first page.
@@ -1582,12 +1582,15 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
     harness.bot.fetchApplication.mockRejectedValue(new Error('timeout'));
 
     const args = runArgs(harness);
-    await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      missingMessageContentIntentError(20),
-    );
+    const error = missingMessageContentIntentError({
+      thisRun: 20,
+      earlierRuns: 0,
+    });
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(error);
     expect(args.importBatch).toHaveBeenCalledTimes(1);
-    expect(missingMessageContentIntentError(20)).toMatch(
-      /already written 20 messages .* Delete this import to remove them/,
+    expect(error).toMatch(/already written 20 messages .* they are empty\./);
+    expect(error).toMatch(
+      /Deleting this import removes everything it brought in/,
     );
   });
 
@@ -1605,9 +1608,18 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
     const harness = await build({ pages: [blanks] });
     const args = runArgs(harness, { job: { ...job(), imported_messages: 7 } });
 
-    await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      missingMessageContentIntentError(7),
+    // Earlier slices are counted, but not called empty: this slice's tally
+    // never saw them, and they may be real history written while the intent
+    // was on (a later slice's flags read can fail after it is switched off).
+    const error = missingMessageContentIntentError({
+      thisRun: 0,
+      earlierRuns: 7,
+    });
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(error);
+    expect(error).toMatch(
+      /7 messages from earlier runs, which this check did not see/,
     );
+    expect(error).not.toMatch(/7 messages[^.]*empty/);
   });
 
   it('does not trip on a channel that legitimately has system messages', async () => {
@@ -1640,7 +1652,7 @@ describe('DiscordExportWorkerService — the Message Content Intent pre-flight (
     const args = runArgs(harness);
 
     await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      MESSAGE_CONTENT_INTENT_OFF_ERROR,
+      messageContentIntentOffError(0),
     );
     // Nothing read, made or written: the small-archive case the tally could
     // never see is refused here, with every message still unimported.
@@ -1649,7 +1661,32 @@ describe('DiscordExportWorkerService — the Message Content Intent pre-flight (
     expect(args.resolveTargetChannel).not.toHaveBeenCalled();
     expect(args.importBatch).not.toHaveBeenCalled();
     expect(harness.repo.updateChannel).not.toHaveBeenCalled();
-    expect(MESSAGE_CONTENT_INTENT_OFF_ERROR).toMatch(/Nothing was imported\./);
+    expect(messageContentIntentOffError(0)).toMatch(
+      /No messages were imported\./,
+    );
+  });
+
+  it('asks again on a later slice, and says what earlier slices already wrote', async () => {
+    // The toggle switched off mid-import, or a failed import restarted with it
+    // off: this slice stops before writing, but the import already holds rows.
+    const harness = await build();
+    harness.bot.fetchApplication.mockResolvedValue({
+      id: '1541430523090698250',
+      redirectUris: null,
+      messageContentIntent: 'disabled',
+    });
+    const args = runArgs(harness, {
+      job: { ...job(), imported_messages: 300 },
+    });
+
+    const error = messageContentIntentOffError(300);
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(error);
+    expect(harness.bot.fetchMessagePage).not.toHaveBeenCalled();
+    expect(args.importBatch).not.toHaveBeenCalled();
+    expect(error).toMatch(
+      /Nothing more was imported\. This import already holds 300 messages/,
+    );
+    expect(error).not.toMatch(/No messages were imported/);
   });
 
   it('asks only after the tenant check, so a job for another server still fails as that', async () => {

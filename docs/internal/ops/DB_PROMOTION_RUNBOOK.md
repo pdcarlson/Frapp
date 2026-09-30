@@ -1264,12 +1264,11 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
     worker deletes them. Both are in
     [`integrations.md`](deployment/integrations.md) § 7A.
   - The Message Content Intent must be ON for the app. Without it Discord answers
-    `200` with `content: ""` on every message. The importer reads the toggle
-    from Discord's application record before it writes anything, and fails with
-    an error naming it, so a scratch-server import with the intent off writes
-    nothing. When that read fails, only the content tally stands behind it
-    (it needs 25 blank messages), so read [`integrations.md`](deployment/integrations.md)
-    § 7A's step-5 caveat before calling a green import proof.
+    `200` with `content: ""` on every message. The importer checks the toggle
+    before it writes; what that check proves, and when a green import is not
+    proof, is in [`integrations.md`](deployment/integrations.md) § 7A (setup
+    step 5, and the caveat under that section's failure table). Confirm the
+    toggle in the portal too, as that caveat says.
 
 ## 2026-08-24: Discord archive importer — one migration
 

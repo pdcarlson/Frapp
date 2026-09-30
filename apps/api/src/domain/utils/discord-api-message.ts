@@ -271,7 +271,7 @@ export function toExportShapeMessage(
  *
  * The export first asks Discord whether the intent is on, before it writes
  * anything (`GET /applications/@me`'s flags; see
- * {@link MESSAGE_CONTENT_INTENT_OFF_ERROR}). This tally is the backstop for
+ * {@link messageContentIntentOffError}). This tally is the backstop for
  * when that answer is missing or unreadable: it counts, and refuses to keep
  * going once it has seen enough authored messages with nothing in any of them
  * to be sure. See {@link isLikelyMissingMessageContentIntent}.
@@ -345,37 +345,70 @@ const INTENT_TOGGLE =
 
 /**
  * The error an admin sees when Discord says the intent is off, which the
- * export asks before writing anything. Names the exact fix.
- */
-export const MESSAGE_CONTENT_INTENT_OFF_ERROR =
-  'Discord reports that the Frapp bot does not have the Message Content Intent ' +
-  'enabled, so it could read that messages exist but not what they say. ' +
-  `Nothing was imported. Enable ${INTENT_TOGGLE}, then start the import again.`;
-
-/**
- * The error an admin sees when the tally trips. Names the exact fix, and what
- * this import already wrote: the tally trips on the page in hand, so earlier
- * pages, earlier channels and earlier slices may already be in Frapp, empty.
+ * export asks before writing anything in every slice. Names the exact fix.
  *
- * @param alreadyImported messages this import had written before the trip.
+ * This slice has written nothing at that point, but earlier slices of the same
+ * import may have (the toggle switched off mid-import, a restart of a failed
+ * import, or an earlier slice whose read settled nothing), so the count of
+ * what the import already holds is reported rather than claimed to be zero.
+ *
+ * @param alreadyImported messages this import had written before this slice.
  */
-export function missingMessageContentIntentError(
-  alreadyImported: number,
-): string {
+export function messageContentIntentOffError(alreadyImported: number): string {
   const cause =
-    'Discord returned every message with no content, no attachments and no embeds. ' +
-    'That means the Frapp bot does not have the Message Content Intent enabled, ' +
-    'so it can read that messages exist but not what they say. ';
+    'Discord reports that the Frapp bot does not have the Message Content Intent ' +
+    'enabled, so it could read that messages exist but not what they say. ';
   if (alreadyImported <= 0) {
     return (
       cause +
-      `Nothing was imported as empty. Enable ${INTENT_TOGGLE}, then start the import again.`
+      `No messages were imported. Enable ${INTENT_TOGGLE}, then start the import again.`
     );
   }
-  const messages = alreadyImported === 1 ? 'message' : 'messages';
   return (
     cause +
-    `This import had already written ${alreadyImported} ${messages} before the check could tell, and they are probably empty. ` +
-    `Delete this import to remove them, enable ${INTENT_TOGGLE}, then start a new import.`
+    `Nothing more was imported. This import already holds ${countOf(alreadyImported)} from earlier runs: ` +
+    'if the intent was off then too, they are empty, and deleting this import removes everything it brought in. ' +
+    `Enable ${INTENT_TOGGLE}, then start the import again.`
   );
+}
+
+/**
+ * The error an admin sees when the tally trips. Names the exact fix and what
+ * it knows was written empty.
+ *
+ * The tally resets every slice and trips only on zero substance, so every
+ * authored message this slice wrote before the trip was blank. It never saw
+ * what earlier slices wrote, so those are counted but not called empty: a
+ * slice whose flags read failed after the toggle was switched off mid-import
+ * follows slices that imported real history (#2317 review).
+ *
+ * @param written.thisRun messages this slice wrote before the trip.
+ * @param written.earlierRuns messages earlier slices of this import wrote.
+ */
+export function missingMessageContentIntentError(written: {
+  thisRun: number;
+  earlierRuns: number;
+}): string {
+  const parts = [
+    'Discord returned every message with no content, no attachments and no embeds. ' +
+      'That means the Frapp bot does not have the Message Content Intent enabled, ' +
+      'so it can read that messages exist but not what they say.',
+    written.thisRun > 0
+      ? `This run had already written ${countOf(written.thisRun)} before the check could tell, and they are empty.`
+      : 'This run wrote no messages. A channel it created for them may already be in Frapp, empty.',
+  ];
+  if (written.earlierRuns > 0) {
+    parts.push(
+      `The import also holds ${countOf(written.earlierRuns)} from earlier runs, which this check did not see.`,
+    );
+  }
+  if (written.thisRun > 0 || written.earlierRuns > 0) {
+    parts.push('Deleting this import removes everything it brought in.');
+  }
+  parts.push(`Enable ${INTENT_TOGGLE}, then start the import again.`);
+  return parts.join(' ');
+}
+
+function countOf(n: number): string {
+  return `${n} ${n === 1 ? 'message' : 'messages'}`;
 }

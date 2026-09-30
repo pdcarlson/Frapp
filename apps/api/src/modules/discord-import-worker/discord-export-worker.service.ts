@@ -31,7 +31,7 @@ import {
   isWithinArchiveUploadSizeLimit,
 } from '@repo/validation';
 import {
-  MESSAGE_CONTENT_INTENT_OFF_ERROR,
+  messageContentIntentOffError,
   EMPTY_CONTENT_TALLY,
   discordAttachmentKey,
   isLikelyMissingMessageContentIntent,
@@ -271,7 +271,7 @@ export class DiscordExportWorkerService {
     // and every row it would write. Every slice, so switching the toggle off
     // mid-import stops the next one. A read that fails or carries no flags
     // settles nothing, and the content tally below is the backstop for it.
-    await this.assertMessageContentIntent();
+    await this.assertMessageContentIntent(job.imported_messages);
 
     const channels = await this.importRepo.findChannels(job.id, job.chapter_id);
     const byDiscordId = new Map(
@@ -628,11 +628,18 @@ export class DiscordExportWorkerService {
 
       // The backstop for when the flags read above settled nothing: fail
       // loudly on a bot that can see messages but not their contents. It
-      // trips before this page is written, but earlier pages, channels and
-      // slices of this import may already be in, so the error says how many.
+      // trips before this page is written, but earlier pages and channels of
+      // this slice may already be in, all of them blank (the tally only trips
+      // on zero substance), so the error counts them. Earlier slices' messages
+      // are counted apart: this slice's tally never saw them.
       totals.tally = tallyMessageContent(totals.tally, rawPage);
       if (isLikelyMissingMessageContentIntent(totals.tally)) {
-        throw new Error(missingMessageContentIntentError(totals.imported));
+        throw new Error(
+          missingMessageContentIntentError({
+            thisRun: totals.imported - job.imported_messages,
+            earlierRuns: job.imported_messages,
+          }),
+        );
       }
 
       if (rawPage.length === 0) {
@@ -749,7 +756,7 @@ export class DiscordExportWorkerService {
   }
 
   /**
-   * Throws {@link MESSAGE_CONTENT_INTENT_OFF_ERROR} when Discord's own record
+   * Throws {@link messageContentIntentOffError} when Discord's own record
    * of the application says the Message Content Intent is off. Anything short
    * of that answer (a timeout, a 5xx, a rate limit, a record with no `flags`)
    * returns: a guard that cannot reach Discord must not fail an import on a
@@ -757,7 +764,9 @@ export class DiscordExportWorkerService {
    * 401 is not special here either: the slice's own first read fails on it,
    * with the reason attached.
    */
-  private async assertMessageContentIntent(): Promise<void> {
+  private async assertMessageContentIntent(
+    alreadyImported: number,
+  ): Promise<void> {
     let intent: 'enabled' | 'disabled' | null;
     try {
       intent = (await this.bot.fetchApplication()).messageContentIntent;
@@ -768,7 +777,7 @@ export class DiscordExportWorkerService {
       return;
     }
     if (intent === 'disabled') {
-      throw new Error(MESSAGE_CONTENT_INTENT_OFF_ERROR);
+      throw new Error(messageContentIntentOffError(alreadyImported));
     }
     if (intent === null) {
       this.logger.warn(
