@@ -194,7 +194,10 @@ describe("Check-in on a subscription refusal (#2297)", () => {
 });
 
 describe("Check-in on a module-off refusal (#2393)", () => {
-  /** What `ChapterGuard` sends with `events` off: no `code` (#1020). */
+  /**
+   * `ChapterGuard`'s refusal with `events` off, without its `code`: the
+   * message path, which installed builds and an API older than #1020 rely on.
+   */
   const MODULE_OFF = {
     statusCode: 403,
     error: "Forbidden",

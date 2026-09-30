@@ -297,7 +297,9 @@ export class ChapterGuard implements CanActivate {
       throw new ForbiddenException({
         code: 'chapter.module.disabled',
         // Built by `@repo/validation` because the clients recognise this
-        // refusal by its message: `code` never reaches them (#1020).
+        // refusal by its message (#2995 moves them to the code first), and
+        // only the message names the module. Installed builds match it
+        // exactly, so it can't be reworded.
         message: moduleDisabledMessage(moduleKey),
       });
     }

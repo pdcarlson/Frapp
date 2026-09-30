@@ -648,9 +648,10 @@ describe('ChapterGuard', () => {
       });
     });
 
-    // The clients can't see `code` (#1020), so the message is what mobile
-    // matches to show a member their own copy instead of this officer
-    // instruction (#2393). It has to survive the trip through the matcher.
+    // Mobile still recognises this refusal by its message (#2393; moving to
+    // the code first is #2995), and only the message names the module, to
+    // show a member their own copy instead of this officer instruction. It has
+    // to survive the trip through the matcher.
     it('refuses with the message the clients recognise, naming the module', async () => {
       withModules({ hours: false });
       requiresModule('hours');

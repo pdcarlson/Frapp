@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { isPseudonymHex } from '@repo/observability';
+import type { ApiErrorResponseDto } from '../dtos/api-error.dto';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from '../utils/path-only';
 import {
@@ -34,6 +35,61 @@ import {
   enqueueSanitizedLog,
 } from '../../infrastructure/analytics/posthog-runtime';
 import { readDeployedCommit } from '../../infrastructure/observability/deployed-commit';
+
+/**
+ * The message a client should see, preserving whatever Nest actually built.
+ *
+ * `HttpException.message` is a *string* by construction: `initMessage()` uses
+ * the response's `message` only when it is itself a string, and otherwise falls
+ * back to the humanized class name. `ValidationPipe` builds its response with
+ * `message` as an **array** of per-field failures, so every validation error
+ * reaching this filter used to be flattened to the literal string
+ * "Bad Request Exception" (fixed in #1312): the field detail was assembled,
+ * attached to the exception, and then dropped one line before serialisation.
+ * Reading the response object first keeps the array intact.
+ *
+ * Structured throws are unaffected: `ForbiddenException({ code, message })`
+ * carries a string `message`. Its `code` travels separately, through
+ * {@link extractCode}.
+ */
+function extractMessage(exception: HttpException): string | string[] {
+  const response = exception.getResponse();
+
+  if (typeof response === 'string') return response;
+
+  if (response && typeof response === 'object' && 'message' in response) {
+    const { message } = response as { message?: unknown };
+    if (typeof message === 'string') return message;
+    if (
+      Array.isArray(message) &&
+      message.every((entry) => typeof entry === 'string')
+    ) {
+      return message;
+    }
+  }
+
+  return exception.message;
+}
+
+/**
+ * The structured `code` a client can branch on, or `undefined` (#1020).
+ *
+ * A throw opts in by passing an object that carries one:
+ * `new ForbiddenException({ code: 'chapter.module.disabled', message })`.
+ * Only a non-empty string counts, so a numeric or blank `code` leaves the key
+ * off the body rather than sending a value no client could match.
+ *
+ * Only an `HttpException` is read. A raw error that reaches this filter as a
+ * 500 can carry a `code` of its own (PostgREST's `{ code: '23505', … }`,
+ * Node's `ECONNRESET`), and that one names an implementation detail, not a
+ * refusal, so it stays in the server log.
+ */
+function extractCode(exception: HttpException): string | undefined {
+  const response = exception.getResponse();
+  if (!response || typeof response !== 'object') return undefined;
+  const { code } = response as { code?: unknown };
+  return typeof code === 'string' && code.length > 0 ? code : undefined;
+}
 
 /**
  * The single seam for error-shaped observability (issues #846, #481).
@@ -64,46 +120,9 @@ import { readDeployedCommit } from '../../infrastructure/observability/deployed-
  *    401 / 403 / 429 already have `security_event` and are not double-logged
  *    as `request` here. Matched 4xx keep the interceptor as the request-log
  *    seam so a controller `NotFoundException` is not emitted twice.
+ *  - **Every status** → the response body, one `ApiErrorResponseDto`. Its
+ *    contract, `code` included, is `spec/architecture/README.md` § 10.
  */
-/**
- * The message a client should see, preserving whatever Nest actually built.
- *
- * `HttpException.message` is a *string* by construction: `initMessage()` uses
- * the response's `message` only when it is itself a string, and otherwise falls
- * back to the humanized class name. `ValidationPipe` builds its response with
- * `message` as an **array** of per-field failures, so every validation error
- * reaching this filter used to be flattened to the literal string
- * "Bad Request Exception" — the field detail was assembled, attached to the
- * exception, and then dropped one line before serialisation.
- *
- * That is why `apps/web/lib/utils.ts`'s `getErrorMessage`, which reads
- * `message`, can only ever show a user "Bad Request Exception" for a rejected
- * form. Reading the response object first keeps the array intact.
- *
- * Structured throws are unaffected: `ForbiddenException({ code, message })`
- * carries a string `message`, so it serialises exactly as before. Whether the
- * sibling `code` key should also be exposed is a separate contract decision —
- * see #1020 — and is deliberately not settled here.
- */
-function extractMessage(exception: HttpException): string | string[] {
-  const response = exception.getResponse();
-
-  if (typeof response === 'string') return response;
-
-  if (response && typeof response === 'object' && 'message' in response) {
-    const { message } = response as { message?: unknown };
-    if (typeof message === 'string') return message;
-    if (
-      Array.isArray(message) &&
-      message.every((entry) => typeof entry === 'string')
-    ) {
-      return message;
-    }
-  }
-
-  return exception.message;
-}
-
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
@@ -134,6 +153,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? extractMessage(exception)
         : 'Internal server error';
 
+    const code =
+      exception instanceof HttpException ? extractCode(exception) : undefined;
+
     const requestId = request.requestId ?? getRequestId() ?? 'unknown';
 
     if (status >= 500) {
@@ -156,12 +178,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.enqueueUnmatchedClientErrorLog(request, status);
     }
 
-    response.status(status).json({
+    const body: ApiErrorResponseDto = {
       statusCode: status,
       error: HttpStatus[status] || 'Error',
       message,
       requestId,
-    });
+      // Absent rather than `null` when there is none, so a code-less error
+      // serialises exactly as it did before `code` joined the contract.
+      ...(code ? { code } : {}),
+    };
+    response.status(status).json(body);
   }
 
   /**

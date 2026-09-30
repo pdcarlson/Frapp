@@ -550,10 +550,7 @@ describe('AllExceptionsFilter', () => {
   });
 
   describe('response body contract (#1020)', () => {
-    it('serialises exactly four keys, and `code` is not one of them', () => {
-      // The guard vocabulary in chapter.guard.ts throws `{ code, message }`.
-      // Only the message survives today. This pins that, so exposing `code`
-      // becomes a deliberate edit here rather than a silent contract change.
+    it('passes a structured `code` through beside the four envelope keys', () => {
       new AllExceptionsFilter().catch(
         new ForbiddenException({
           code: 'chapter.context.mismatch',
@@ -562,17 +559,83 @@ describe('AllExceptionsFilter', () => {
         host(),
       );
 
-      const body = captured.json as Record<string, unknown>;
-      expect(Object.keys(body).sort()).toEqual([
-        'error',
-        'message',
-        'requestId',
-        'statusCode',
-      ]);
-      expect(body.code).toBeUndefined();
-      expect(body.message).toBe(
-        'The x-chapter-id header disagrees with your token.',
+      expect(captured.json).toEqual({
+        statusCode: 403,
+        error: 'FORBIDDEN',
+        message: 'The x-chapter-id header disagrees with your token.',
+        requestId: 'req-abc',
+        code: 'chapter.context.mismatch',
+      });
+    });
+
+    it('serialises a code-less exception byte-for-byte as before `code` existed', () => {
+      // Compared as a string so key order counts too: a client that snapshots
+      // or hashes the body must see no change for an error without a code.
+      new AllExceptionsFilter().catch(
+        new ForbiddenException('Chapter not found'),
+        host(),
       );
+
+      expect(JSON.stringify(captured.json)).toBe(
+        '{"statusCode":403,"error":"FORBIDDEN","message":"Chapter not found","requestId":"req-abc"}',
+      );
+    });
+
+    it.each([
+      ['a number', 403],
+      ['an empty string', ''],
+      ['null', null],
+    ])('leaves `code` off when the thrown one is %s', (_label, code) => {
+      new AllExceptionsFilter().catch(
+        new ForbiddenException({ code, message: 'Nope' }),
+        host(),
+      );
+
+      expect(captured.json).not.toHaveProperty('code');
+      expect((captured.json as { message: string }).message).toBe('Nope');
+    });
+
+    it('passes a code through on a 5xx as well', () => {
+      // `/health/ready` refuses with `{ code: 'DEGRADED', message }`.
+      new AllExceptionsFilter().catch(
+        new ServiceUnavailableException({
+          code: 'DEGRADED',
+          message: 'database: error, storage: connected',
+        }),
+        host(),
+      );
+
+      expect(captured.status).toBe(503);
+      expect(captured.json).toMatchObject({
+        code: 'DEGRADED',
+        message: 'database: error, storage: connected',
+      });
+    });
+
+    it.each([
+      [
+        'an Error carrying a Node code',
+        Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+      ],
+      [
+        'a raw PostgREST error object',
+        {
+          code: '23505',
+          message: 'duplicate key value violates unique constraint',
+          details: 'Key (email)=(a@b.c) already exists.',
+          hint: null,
+        },
+      ],
+    ])("keeps %s's own code off the body", (_label, thrown) => {
+      new AllExceptionsFilter().catch(thrown, host());
+
+      expect(captured.status).toBe(500);
+      expect(captured.json).toEqual({
+        statusCode: 500,
+        error: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal server error',
+        requestId: 'req-abc',
+      });
     });
 
     it('preserves a ValidationPipe message array instead of flattening it', () => {

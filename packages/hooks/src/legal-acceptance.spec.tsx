@@ -167,10 +167,10 @@ describe("Terms acceptance hooks (#2302)", () => {
 });
 
 /**
- * What a refused join looks like on the wire today: `AllExceptionsFilter`
- * sends no `code` (#1020), so this is the shape the detection has to handle.
+ * A refused join without its `code`, as the API sent it until #1020. Installed
+ * builds and a not-yet-deployed API still depend on the message fallback.
  */
-const refusalAsServed = {
+const refusalWithoutCode = {
   statusCode: 403,
   error: "FORBIDDEN",
   message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
@@ -178,11 +178,11 @@ const refusalAsServed = {
 };
 
 describe("isTermsRequiredError (#2302)", () => {
-  it("recognises the refusal as the API serves it, without a code", () => {
-    expect(isTermsRequiredError(refusalAsServed)).toBe(true);
+  it("recognises a code-less refusal by its message", () => {
+    expect(isTermsRequiredError(refusalWithoutCode)).toBe(true);
   });
 
-  it("still recognises it once codes reach clients (#1020)", () => {
+  it("recognises the refusal by its code, as the API serves it since #1020", () => {
     expect(isTermsRequiredError({ code: "legal.acceptance_required" })).toBe(
       true,
     );
@@ -272,7 +272,7 @@ describe("useJoinTermsCheckbox (#2302)", () => {
     const { result } = render(false);
     await waitFor(() => expect(result.current.needed).toBe(false));
 
-    act(() => result.current.onJoinError(refusalAsServed));
+    act(() => result.current.onJoinError(refusalWithoutCode));
 
     expect(result.current.needed).toBe(true);
     expect(result.current.accepted).toBe(false);
