@@ -21,6 +21,7 @@
     "./grouping": "./src/grouping.ts",
     "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
+    "./markdown-parse-budget.fixtures": "./src/markdown-parse-budget.fixtures.ts",
     "./attachments": "./src/attachments.ts"
   },
   "scripts": {

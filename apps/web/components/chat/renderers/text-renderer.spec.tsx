@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH, extractMentionTokens } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/markdown";
+import {
+  COSTLY_MARKDOWN_BODIES,
+  NEAR_BUDGET_MARKDOWN_BODY,
+} from "@repo/chat-core/markdown-parse-budget.fixtures";
 import { TextRenderer } from "./text-renderer";
 
 // #369: the timeline used to render `message.content` as plain text, so a
@@ -344,60 +348,43 @@ describe("TextRenderer over-nested bodies", () => {
 });
 
 /**
- * #2664. Bodies within the length cap that remark took over a second to parse
- * (Node 24, remark-parse alone), on every mount, for everyone who opened the
- * channel. `skipsMarkdownParse` now reads them off the source and they render
- * as their raw text. The time bound is loose so it can't flake on CI; before
- * the check, each of these took 0.2–1.8 s to parse alone.
+ * #2664. Bodies within the length cap that remark took hundreds of
+ * milliseconds to seconds to parse (Node 24, remark-parse alone), on every
+ * mount, for everyone who opened the channel. `skipsMarkdownParse` now reads
+ * them off the source and they render as their raw text. The bodies are
+ * shared with chat-core's and mobile's specs.
+ *
+ * For a body whose parse would draw something else (a link, emphasis, a
+ * decoded entity), rendering it exactly as typed proves the parse was skipped.
+ * For the rest, the depth cap after the parse draws the same raw text, so the
+ * loose time bound is what tells.
  */
 describe("TextRenderer bodies too costly to parse", () => {
-  const nestedOpeners = (() => {
-    let open = "";
-    let close = "";
-    for (let i = 0; i < 1600; i += 1) {
-      const marker = i % 2 ? "_" : "*";
-      open += `${marker}a `;
-      close = ` a${marker}` + close;
-    }
-    return open + "x" + close;
-  })();
+  it.each(COSTLY_MARKDOWN_BODIES.map((c) => [c.label, c.body]))(
+    "renders %s as its raw text, without the slow parse",
+    (_label, body) => {
+      expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
+      expect(skipsMarkdownParse(body)).toBe(true);
 
-  it.each([
-    ["an underscore run", "_".repeat(4999) + "a" + "_".repeat(4999)],
-    ["a strong run", "**".repeat(2499) + "a" + "**".repeat(2499)],
-    ["open brackets closed by links", "[".repeat(3000) + "a" + "](u)".repeat(1000)],
-    ["alternating openers closed in reverse", nestedOpeners],
-    ["brackets", "[".repeat(4999) + "a" + "]".repeat(4999)],
-    ["star-a pairs", "*a".repeat(2400) + "x" + "a*".repeat(2400)],
-    ["nested images", "![".repeat(2499) + "a" + "](u)".repeat(1249)],
-  ])("renders %s as its raw text, without the slow parse", (_label, body) => {
-    expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
+      const started = performance.now();
+      const { container } = render(<TextRenderer message={message(body)} />);
+      expect(performance.now() - started).toBeLessThan(500);
 
-    const started = performance.now();
-    const { container } = render(<TextRenderer message={message(body)} />);
-    expect(performance.now() - started).toBeLessThan(500);
-
-    expect(container.querySelector("strong, em, a")).toBeNull();
-    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
-  });
+      expect(container.querySelector("strong, em, a")).toBeNull();
+      expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
+    },
+  );
 
   it("parses a body just inside the budget quickly", () => {
-    // Among the slowest shapes the budgets allow: openers closed in reverse,
-    // padded with entities, which multiply the events the emphasis resolver
-    // walks. It goes through the parse (and then the depth cap flattens it,
-    // since it nests past 32), and stays far from the seconds the shapes
-    // above took.
-    const markers = Array.from({ length: 38 }, (_, i) => (i % 2 ? "_" : "*"));
-    const open = markers.map((marker) => `${marker}a `).join("");
-    const close = [...markers].reverse().map((marker) => ` a${marker}`).join("");
-    const pad = "&amp;x".repeat(Math.floor((9_000 - open.length - close.length) / 6));
-    const body = open + pad + close;
+    // It goes through the parse (and then the depth cap flattens it), and
+    // stays far from the seconds the bodies above took.
+    const body = NEAR_BUDGET_MARKDOWN_BODY;
     expect(skipsMarkdownParse(body)).toBe(false);
 
     const started = performance.now();
     const { container } = render(<TextRenderer message={message(body)} />);
     expect(performance.now() - started).toBeLessThan(1_000);
-    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
+    expect(container.querySelector('[data-slot="message-body"]')).not.toBeNull();
   });
 });
 

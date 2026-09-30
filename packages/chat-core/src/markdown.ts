@@ -14,18 +14,13 @@ import { bareUrlEnd, bareUrls, isOpenableHref } from "./links";
 import { opensTooManyContainers } from "./markdown-depth-cap";
 import { exceedsParseBudget } from "./markdown-parse-budget";
 
+// Only the combined check is exported, not its two halves: a renderer that
+// asked one of them would pay the other's parse.
 export {
   MAX_MESSAGE_MARKDOWN_DEPTH,
-  opensTooManyContainers,
   remarkDepthCap,
   type DepthCapOptions,
 } from "./markdown-depth-cap";
-export {
-  EVENT_PARSE_BUDGET,
-  exceedsParseBudget,
-  IMAGE_PARSE_BUDGET,
-  LABEL_PARSE_BUDGET,
-} from "./markdown-parse-budget";
 
 /**
  * Whether a body should skip remark's parse and render as its raw text,
@@ -33,8 +28,8 @@ export {
  * pass the answer to `remarkDepthCap` as `flatten`, handing remark an empty
  * string instead of the body. It covers the two ways a body within the length
  * cap is too costly to parse: a line that opens too many containers (#2209,
- * `opensTooManyContainers`), and a paragraph whose emphasis, labels or images
- * would make micromark's inline resolvers quadratic (#2664,
+ * `opensTooManyContainers`), and a paragraph whose emphasis, labels, images or
+ * raw HTML would make micromark's inline parse quadratic (#2664,
  * `exceedsParseBudget`). Either one's body would take seconds on the main
  * thread, for every member who opens the channel.
  */

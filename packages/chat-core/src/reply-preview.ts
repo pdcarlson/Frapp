@@ -80,10 +80,11 @@ const ESCAPED_CHAR = new RegExp(
  * dropped.
  *
  * The match is approximate in two known places: a leading `> ` or list marker
- * stays in the quote though the row unwraps it, and a message nested past
- * the renderers' depth cap (`markdown-depth-cap.ts`, #2209) shows as raw source
- * in the row but is still flattened here. Both need pathological or
- * block-level bodies, and a one-line quote reads better flattened.
+ * stays in the quote though the row unwraps it, and a message the renderers
+ * draw as raw source is still flattened here. The renderers do that for a
+ * body nested past the depth cap (`markdown-depth-cap.ts`, #2209) and for one
+ * too costly to parse (`markdown-parse-budget.ts`, #2664), which includes a
+ * long formatted list or code block. A one-line quote reads better flattened.
  *
  * **Over-stripping is the failure mode that matters, not under-stripping.**
  * The chain was diffed against `mdast-util-from-markdown` over 28 inputs
