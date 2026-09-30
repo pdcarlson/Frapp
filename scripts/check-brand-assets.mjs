@@ -2,44 +2,47 @@
 /**
  * The CI gate over the committed Signet brand assets.
  *
- * Six independent properties, because before #2153 this script checked only
- * the first one and it proved nothing about the mark:
+ * Seven independent properties, numbered as the sections below are, because
+ * before #2153 this script checked only parity and it proved nothing about
+ * the mark:
  *
- *   1. PARITY — synced Next app icons are byte-identical to their canonical
- *      source. Catches a hand-edited copy or a forgotten `sync:brand-assets`.
- *
- *   2. VECTORS — every shipped SVG paints the locked pair and nothing else,
+ *   1. VECTORS — every shipped SVG paints the locked pair and nothing else,
  *      in the shared coordinate frame. Not just the two the rasters render
  *      from: `signet-emblem-B-rounded.svg` and `frapp-lockup.svg` are
  *      `@repo/brand-assets` exports that reach consumers directly, and no
  *      raster check can see them.
  *
- *   3. PIXELS — the committed rasters are drawn in the locked pair, carry the
- *      channel shape their consumer requires, every glyph layer is non-empty,
- *      and the rasters are still a render of the committed vector.
+ *   2. PARITY — synced Next app icons are byte-identical to their canonical
+ *      source. Catches a hand-edited copy or a forgotten `sync:brand-assets`.
  *
- *   4. CONTAINMENT — `favicon.ico` is a container, and every payload in it is
+ *   3. PIXELS — the committed rasters are drawn in the locked pair, carry the
+ *      channel shape their consumer requires, and every glyph layer is
+ *      non-empty.
+ *
+ *   4. STALENESS — the rasters are still a render of the committed vector.
+ *
+ *   5. CONTAINMENT — `favicon.ico` is a container, and every payload in it is
  *      the canonical raster of its size plus an opaque alpha channel: same
  *      paint, same artwork, in the RGBA shape Turbopack's ICO decoder requires.
  *      Nothing above can see inside an `.ico`, which is how
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
- *   5. IOS ICON — the Icon Composer bundle `expo.ios.icon` names is exactly
+ *   6. IOS ICON — the Icon Composer bundle `expo.ios.icon` names is exactly
  *      what `scripts/lib/ios-icon.mjs` writes: its `icon.json`, and a crest
- *      whose path is the glyph vector's, byte for byte, in the locked gold.
- *      Nothing else can check it: no raster exists until Xcode compiles it.
+ *      whose path is the glyph vector's in the locked gold. No raster exists
+ *      until Xcode compiles it, so there are no pixels to check instead.
  *
- *   6. STORE GRAPHICS — the Google Play icon and feature graphic under
+ *   7. STORE GRAPHICS — the Google Play icon and feature graphic under
  *      `apps/mobile/store/graphics/` are the shape Play takes, the icon is
  *      still a render of the vector, and the feature graphic is what the
  *      renderer draws today. The audits live in `scripts/lib/store-graphics.mjs`,
  *      shared with `rasterize-brand-assets.mjs`.
  *
- * Hash parity is blind to 2, 3 and 4: every file could agree perfectly with
- * every other file and still be the wrong colour, which is exactly the state
- * #2153 found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
- * ZERO pixels while this script reported success.
+ * Hash parity (2) is blind to every other property: every file could agree
+ * perfectly with every other file and still be the wrong colour, which is
+ * exactly the state #2153 found — a full pixel census of the pre-#2153 masters
+ * returned `#DDB844` in ZERO pixels while this script reported success.
  *
  * This reads pixels rather than trusting a re-run of `rasterize:brand-assets`,
  * because the gate has to hold for whatever is committed — including a file
@@ -338,8 +341,11 @@ if (
 // looser shape check: the document has no pixels to measure, and a hand edit
 // to it (or to the crest's copy of the path) is exactly the drift this gate
 // exists for. Stray files in `Assets/` fail too: Xcode compiles what it finds.
+// Line endings are compared as LF, so a Windows checkout with `core.autocrlf`
+// does not read as drift; `glyphPath` refuses a glyph `crest.svg` cannot copy.
+const lf = (text) => text.replace(/\r\n/g, "\n");
 if (present(IOS_ICON_JSON, "run npm run rasterize:brand-assets")) {
-  if (readFileSync(repo(IOS_ICON_JSON), "utf8") !== iconJson()) {
+  if (lf(readFileSync(repo(IOS_ICON_JSON), "utf8")) !== iconJson()) {
     fail(
       `drift: ${IOS_ICON_JSON} is not what scripts/lib/ios-icon.mjs writes\n  run: npm run rasterize:brand-assets`,
     );
@@ -347,7 +353,7 @@ if (present(IOS_ICON_JSON, "run npm run rasterize:brand-assets")) {
 }
 if (present(IOS_ICON_CREST, "run npm run rasterize:brand-assets")) {
   try {
-    const committed = readFileSync(repo(IOS_ICON_CREST), "utf8");
+    const committed = lf(readFileSync(repo(IOS_ICON_CREST), "utf8"));
     assertSvgLocked(committed, IOS_ICON_CREST, { requireField: false });
     const glyph = readFileSync(
       repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg"),
@@ -358,7 +364,11 @@ if (present(IOS_ICON_CREST, "run npm run rasterize:brand-assets")) {
         `stale: ${IOS_ICON_CREST} does not draw signet-emblem-B-glyph.svg's path\n  run: npm run rasterize:brand-assets`,
       );
     }
-    const assets = readdirSync(repo(`${IOS_ICON_DIR}/Assets`));
+    // Dotfiles are skipped: a Finder `.DS_Store` is gitignored and never
+    // reaches CI or Xcode, and re-running the rasterizer cannot remove it.
+    const assets = readdirSync(repo(`${IOS_ICON_DIR}/Assets`)).filter(
+      (name) => !name.startsWith("."),
+    );
     if (assets.length !== 1 || assets[0] !== "crest.svg") {
       fail(`${IOS_ICON_DIR}/Assets: holds ${assets.join(", ")}; it holds crest.svg only`);
     }

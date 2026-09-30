@@ -20,7 +20,7 @@
  * This file imports nothing that needs `npm ci`: `ios-icon.test.mjs` imports
  * it, and the `ci-scripts-tests` job runs without `npm ci`.
  */
-import { FIELD, GOLD_HEX } from "./brand-pixels.mjs";
+import { FIELD, GOLD_HEX, svgPath } from "./brand-pixels.mjs";
 
 export const IOS_ICON_DIR = "apps/mobile/assets/frapp.icon";
 export const IOS_ICON_JSON = `${IOS_ICON_DIR}/icon.json`;
@@ -76,19 +76,34 @@ export function iconJson() {
 }
 
 /**
- * The one path's `d` in a brand SVG, verbatim. The four package SVGs share
- * the crest's path (`brand-pixels.test.mjs` compares them with whitespace
- * normalised); the bundle's copy is held tighter, to the glyph's exact string,
- * by `check-brand-assets.mjs` and `ios-icon.test.mjs`.
+ * The glyph's one path, verbatim (`svgPath` in `brand-pixels.mjs`), refusing
+ * any glyph `crestSvg` could not copy whole. `crest.svg` carries one path's
+ * `d` and nothing else, so a glyph that gains another shape, or a path
+ * attribute beyond `fill` and `d` (`fill-rule`, `transform`), would ship on
+ * Android and Play and silently not on iOS. This throws instead, in the
+ * rasterizer and in the gate, until `crestSvg` learns to carry it.
  */
 export function glyphPath(svg, label) {
-  const paths = [...svg.matchAll(/<path\b[^>]*?\bd="([^"]+)"/g)];
-  if (paths.length !== 1) {
+  const d = svgPath(svg, label);
+  const shapes = svg.match(
+    /<(circle|ellipse|g|image|line|polygon|polyline|rect|text|use)\b/g,
+  );
+  if (shapes) {
     throw new Error(
-      `${label}: has ${paths.length} paths; the crest is exactly one`,
+      `${label}: draws ${[...new Set(shapes)].join(", ")}> besides its path; crest.svg copies one path only, so extend crestSvg in scripts/lib/ios-icon.mjs first`,
     );
   }
-  return paths[0][1];
+  const attributes = [
+    ...svg.match(/<path\b([^>]*)>/)[1].matchAll(/([\w:-]+)=/g),
+  ]
+    .map((m) => m[1])
+    .filter((name) => name !== "fill" && name !== "d");
+  if (attributes.length > 0) {
+    throw new Error(
+      `${label}: its path carries ${attributes.join(", ")}, which crest.svg would drop; extend crestSvg in scripts/lib/ios-icon.mjs first`,
+    );
+  }
+  return d;
 }
 
 /**

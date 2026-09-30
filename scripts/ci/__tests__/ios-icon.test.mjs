@@ -8,7 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,9 +20,7 @@ import {
 import {
   FIELD_COLOUR,
   ICON_DOCUMENT,
-  IOS_ICON_CREST,
   IOS_ICON_DIR,
-  IOS_ICON_JSON,
   crestSvg,
   glyphPath,
   iconJson,
@@ -106,27 +104,46 @@ test("crest.svg is the glyph's own path in the locked gold, in the plainest SVG"
   assert.equal(glyphPath(svg, "crest.svg"), glyphPath(GLYPH, "glyph"));
 });
 
-test("glyphPath refuses anything but exactly one path", () => {
-  assert.throws(() => glyphPath("<svg></svg>", "empty"), /has 0 paths/);
+test("glyphPath refuses a glyph crest.svg cannot copy whole", () => {
+  // One path, via svgPath (brand-pixels.test.mjs covers its cases).
   assert.throws(
-    () => glyphPath('<svg><path d="M0 0"/><path d="M1 1"/></svg>', "two"),
-    /has 2 paths/,
+    () => glyphPath("<svg></svg>", "empty"),
+    /has 0 <path> elements/,
+  );
+  // Another shape, or a path attribute crestSvg would drop, would ship on
+  // Android and Play and silently not on iOS.
+  assert.throws(
+    () =>
+      glyphPath(
+        GLYPH.replace("</svg>", '<circle cx="1" cy="1" r="1"/></svg>'),
+        "circle",
+      ),
+    /draws <circle> besides its path/,
+  );
+  assert.throws(
+    () =>
+      glyphPath(
+        GLYPH.replace("<path", '<path fill-rule="evenodd"'),
+        "fill-rule",
+      ),
+    /carries fill-rule, which crest.svg would drop/,
+  );
+  // A Windows checkout reads the same path.
+  assert.equal(
+    glyphPath(GLYPH.replace(/\n/g, "\r\n"), "crlf"),
+    glyphPath(GLYPH, "glyph"),
   );
 });
 
-test("the committed bundle is exactly what the generator writes", () => {
-  assert.equal(readFileSync(repo(IOS_ICON_JSON), "utf8"), iconJson());
-  assert.equal(
-    readFileSync(repo(IOS_ICON_CREST), "utf8"),
-    crestSvg(glyphPath(GLYPH, "glyph")),
-  );
-  assert.deepEqual(readdirSync(repo(`${IOS_ICON_DIR}/Assets`)), ["crest.svg"]);
-  const appJson = JSON.parse(
-    readFileSync(repo("apps/mobile/app.json"), "utf8"),
-  );
+test("app.json names the bundle as a plain string on ios.icon", () => {
+  // Whether the committed bundle is what the generator writes is
+  // check:brand-assets' job (section 6); this holds the one fact it can't see.
   // A `.icon` must be a plain string on `ios.icon`. Expo 57 warns about one
   // anywhere else: as the top-level `icon` it still uses it, and inside the
   // light/dark/tinted object it treats the directory as an image.
+  const appJson = JSON.parse(
+    readFileSync(repo("apps/mobile/app.json"), "utf8"),
+  );
   assert.equal(
     appJson.expo.ios.icon,
     `./${IOS_ICON_DIR.replace("apps/mobile/", "")}`,

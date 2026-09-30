@@ -255,6 +255,25 @@ export const SHIPPED_VECTORS = [
 ];
 
 /**
+ * The `d` of an SVG's one `<path>`, verbatim except for line endings. Every
+ * brand SVG draws the crest as exactly one path in the shared frame, so a
+ * second `<path>` is refused here rather than silently skipped by whoever
+ * compares the first one. CRLF becomes LF, so a Windows checkout with
+ * `core.autocrlf` reads the same path as everyone else.
+ */
+export function svgPath(svg, label) {
+  const paths = [...svg.matchAll(/<path\b([^>]*)>/g)];
+  if (paths.length !== 1) {
+    throw new Error(`${label}: has ${paths.length} <path> elements; the crest is exactly one`);
+  }
+  const d = paths[0][1].match(/\bd="([^"]+)"/);
+  if (!d) {
+    throw new Error(`${label}: its <path> has no d attribute`);
+  }
+  return d[1].replace(/\r\n/g, "\n");
+}
+
+/**
  * The locked pair, asserted against the SVG source rather than the pixels.
  *
  * Every shipped SVG goes through this, not just the two the rasters render
