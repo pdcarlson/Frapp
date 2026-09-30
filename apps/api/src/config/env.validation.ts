@@ -161,10 +161,11 @@ function serviceKeyAuthorityProblem(raw: string): string | null {
     case 'publishable':
     case 'client_jwt':
       return (
-        'SUPABASE_SERVICE_ROLE_KEY holds a client key (the publishable key or ' +
-        'the legacy anon JWT), not a service key. The API would boot and then ' +
-        'read nothing, because RLS hides every row from a client key. Use the ' +
-        'secret key (`sb_secret_…`) or the legacy `service_role` JWT.'
+        'SUPABASE_SERVICE_ROLE_KEY holds a client key (the publishable key, or ' +
+        'a legacy JWT whose role is not service_role), not a service key. The ' +
+        'API would boot and then read nothing, because RLS hides every row ' +
+        'from a client key. Use the secret key (`sb_secret_…`) or the legacy ' +
+        '`service_role` JWT.'
       );
     default:
       return null;
