@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
 // Report one scheduled job's run to a Sentry cron monitor, so a nightly job
-// that fails, overruns or never starts pages someone (#2505).
+// that fails, overruns or never starts raises a Sentry issue (#2505).
 //
 // ── What this adds to the watch that already exists ─────────────────────────
 // `production-backup-freshness.yml` already raises an owner-assigned P1
 // `incident` when `backup-production` failed, hung, or has no success within
 // 36 hours, checked once a day at 13:15 UTC. That watch stays; this does not
-// replace it. The monitor adds a same-morning signal in Sentry, where the
-// ADR-24 pager (Discord, #2505) is wired: `error` lands the moment the job
+// replace it. The monitor adds a same-morning signal in Sentry, which is
+// where ADR-24's pager (Discord, being built in #2505) will read from; until
+// then an issue reaches the owner only through Sentry's email rule, and
+// ALERT_ROUTING.md says what is proven of that. `error` lands the moment the job
 // ends, a run that never starts is reported missed once `checkin_margin`
 // passes, and a run whose closing check-in never arrives (a lost runner) is
 // reported timed out after `max_runtime`. One failed night therefore raises
