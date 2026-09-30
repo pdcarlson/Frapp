@@ -57,12 +57,19 @@ export const FEATURE_HEIGHT = 500;
  */
 export const FEATURE_MARGIN = 96;
 /**
- * How far, per channel, a committed feature graphic may sit from a fresh
- * render. Renders are hermetic (see `hermeticFonts`), so this only absorbs
- * rounding between sharp builds on different CPUs. A stale crest or a changed
- * word moves edge pixels between the field and the ink, 100+ levels apart.
+ * How a committed feature graphic may differ from a fresh render. Renders are
+ * hermetic (see `prepareFonts`) and byte-identical on one platform, so these
+ * only absorb rounding between sharp builds on different CPUs, which touches
+ * a few antialiased edge pixels by a level or two.
+ *
+ * Two limits, for the two ways a graphic goes stale. A moved or nicked crest,
+ * or a changed word, moves a few pixels far: past `FEATURE_RENDER_WORST`. A
+ * changed colour token moves every pixel of a word a little: past
+ * `FEATURE_RENDER_ROUNDING` on more than `FEATURE_RENDER_DRIFT_MAX` pixels.
  */
-export const FEATURE_RENDER_TOLERANCE = 16;
+export const FEATURE_RENDER_WORST = 16;
+export const FEATURE_RENDER_ROUNDING = 2;
+export const FEATURE_RENDER_DRIFT_MAX = 256;
 
 const GLYPH_SVG = repo(
   "packages/brand-assets/assets/signet-emblem-B-glyph.svg",
@@ -135,38 +142,127 @@ const TAGLINE_RATIO = 34 / 88;
 const TAGLINE_GAP = 0.42;
 
 /**
- * Point fontconfig at a config that knows no system font, once per process.
+ * The family and weight a TrueType file declares: `name` ID 1 (Windows
+ * platform) and `OS/2` `usWeightClass`. Throws on anything that is not an
+ * sfnt, so a truncated file or an un-pulled LFS pointer fails here rather than
+ * leaving Pango to set the text in whatever face it can find.
+ */
+export function fontFace(buffer, label) {
+  const tables = {};
+  try {
+    const version = buffer.readUInt32BE(0);
+    if (version !== 0x00010000 && buffer.toString("latin1", 0, 4) !== "true") {
+      throw new Error("not a TrueType file");
+    }
+    for (let i = 0; i < buffer.readUInt16BE(4); i += 1) {
+      const record = 12 + i * 16;
+      tables[buffer.toString("latin1", record, record + 4)] =
+        buffer.readUInt32BE(record + 8);
+    }
+    if (tables["OS/2"] === undefined || tables.name === undefined) {
+      throw new Error("no OS/2 or name table");
+    }
+    const weight = buffer.readUInt16BE(tables["OS/2"] + 4);
+    const name = tables.name;
+    const strings = name + buffer.readUInt16BE(name + 4);
+    for (let i = 0; i < buffer.readUInt16BE(name + 2); i += 1) {
+      const record = name + 6 + i * 12;
+      if (
+        buffer.readUInt16BE(record) !== 3 ||
+        buffer.readUInt16BE(record + 6) !== 1
+      )
+        continue;
+      const start = strings + buffer.readUInt16BE(record + 10);
+      const utf16be = Buffer.from(
+        buffer.subarray(start, start + buffer.readUInt16BE(record + 8)),
+      );
+      return { family: utf16be.swap16().toString("utf16le"), weight };
+    }
+    throw new Error("no Windows family name");
+  } catch (error) {
+    throw new Error(`${label}: is not a readable font (${error.message})`);
+  }
+}
+
+const FACES = [
+  { file: FIGTREE_REGULAR, font: "Figtree", weight: 400 },
+  { file: FIGTREE_BOLD, font: "Figtree Bold", weight: 700 },
+];
+
+async function textRaw(string, fontfile, font) {
+  return sharp({ text: { text: string, font, fontfile, rgba: true, dpi: 72 } })
+    .raw()
+    .toBuffer();
+}
+
+/**
+ * Make every text render in this process hermetic, or throw. Once per process.
  *
  * Text rasterizes differently under different fontconfig settings: this
  * machine's `/etc/fonts` (hintslight) sets "Frapp" a pixel wider than an empty
- * config does. A render that depends on the host's font config cannot be
- * compared with a committed file, so every render here sees only the two
- * vendored Figtree files that `sharp`'s `fontfile` registers. It also closes the
- * silent fallback: with no system font to fall back to, a family that fails to
- * resolve cannot quietly come out in DejaVu.
+ * config does, so a render that depends on the host's config cannot be
+ * compared with a committed file. So fontconfig is pointed at a config that
+ * knows no system font, and the only faces it sees are the two vendored
+ * Figtree files, which also removes any system font to fall back to.
  *
- * fontconfig reads `FONTCONFIG_FILE` when it first initializes, which is the
- * first text render, so setting it here, before one, is enough. Node writes
- * `process.env` through to the C environment on Linux and macOS; native Windows
- * is not a supported host for this pipeline (WSL is).
+ * Each step closes a way the text could come out in the wrong face silently:
+ *
+ *   1. Each file must be the face it is named for (`fontFace`): a broken or
+ *      swapped file fails here, not as a synthesized or substituted face.
+ *   2. Both files are registered before anything is compared. `sharp`
+ *      registers a `fontfile` on the render that names it, so a comparison
+ *      made before the second face is registered compares against nothing.
+ *   3. A family that does not exist must come out exactly as Figtree Regular.
+ *      That holds only under the empty config, where Figtree is all there is;
+ *      under the host's config it comes out in DejaVu. fontconfig reads
+ *      `FONTCONFIG_FILE` once, at its first use in the process, so an earlier
+ *      text render anywhere would leave the host's config in force, and this
+ *      is what notices.
+ *   4. The two faces must set the same string differently.
+ *
+ * Node writes `process.env` through to the C environment on Linux and macOS;
+ * native Windows is not a supported host for this pipeline (WSL is).
  */
-let fontsReady = false;
-function hermeticFonts() {
-  if (fontsReady) return;
-  for (const file of [FIGTREE_BOLD, FIGTREE_REGULAR]) {
-    if (!existsSync(file)) {
+let fontsReady;
+export function prepareFonts() {
+  fontsReady ??= (async () => {
+    for (const { file, weight } of FACES) {
+      if (!existsSync(file)) {
+        throw new Error(
+          `missing ${file}: the feature graphic is set in the vendored Figtree`,
+        );
+      }
+      const face = fontFace(readFileSync(file), file);
+      if (face.family !== "Figtree" || face.weight !== weight) {
+        throw new Error(
+          `${file}: declares ${face.family} ${face.weight}, not Figtree ${weight}`,
+        );
+      }
+    }
+    const dir = mkdtempSync(join(tmpdir(), "frapp-fonts-"));
+    writeFileSync(
+      join(dir, "fonts.conf"),
+      `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><cachedir>${dir}</cachedir></fontconfig>\n`,
+    );
+    process.env.FONTCONFIG_FILE = join(dir, "fonts.conf");
+
+    const renders = [];
+    for (const { file, font } of FACES)
+      renders.push(await textRaw(TAGLINE, file, `${font} 60`));
+    const unknown = await textRaw(TAGLINE, FIGTREE_REGULAR, "NoSuchFamily 60");
+    const again = await textRaw(TAGLINE, FIGTREE_REGULAR, "Figtree 60");
+    if (!unknown.equals(again)) {
       throw new Error(
-        `missing ${file}: the feature graphic is set in the vendored Figtree`,
+        "fontconfig is not using the hermetic config: an unknown family did not resolve to Figtree, so something rendered text in this process before prepareFonts() and fontconfig kept the host's fonts",
       );
     }
-  }
-  const dir = mkdtempSync(join(tmpdir(), "frapp-fonts-"));
-  writeFileSync(
-    join(dir, "fonts.conf"),
-    `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig><cachedir>${dir}</cachedir></fontconfig>\n`,
-  );
-  process.env.FONTCONFIG_FILE = join(dir, "fonts.conf");
-  fontsReady = true;
+    if (renders[0].equals(renders[1])) {
+      throw new Error(
+        "Figtree Regular and Figtree Bold set text identically: one face did not load",
+      );
+    }
+  })();
+  return fontsReady;
 }
 
 /**
@@ -175,7 +271,7 @@ function hermeticFonts() {
  * eye aligns, rather than line boxes a browser would.
  */
 async function text(string, fontfile, family, px, color) {
-  hermeticFonts();
+  await prepareFonts();
   const { data: png, info } = await sharp({
     text: {
       text: `<span foreground="${color}">${string}</span>`,
@@ -190,38 +286,8 @@ async function text(string, fontfile, family, px, color) {
   return { png, width: info.width, height: info.height };
 }
 
-/**
- * With only Figtree visible, the remaining way to get the wrong face is a
- * missing or mis-registered Regular: "Figtree" would then resolve to the Bold
- * file, the only face left. So the two faces must set the same string
- * differently.
- */
-async function assertBothFacesLoaded() {
-  const bold = await text(
-    TAGLINE,
-    FIGTREE_BOLD,
-    "Figtree Bold",
-    100,
-    FOREGROUND,
-  );
-  const regular = await text(
-    TAGLINE,
-    FIGTREE_REGULAR,
-    "Figtree",
-    100,
-    FOREGROUND,
-  );
-  if (bold.width === regular.width && bold.png.equals(regular.png)) {
-    throw new Error(
-      "Figtree Regular did not load: text set in it is identical to Figtree Bold, so the tagline would ship in the wrong face",
-    );
-  }
-}
-
 /** Renders the feature graphic: 1024 x 500, opaque RGB PNG. */
 export async function renderFeatureGraphic() {
-  await assertBothFacesLoaded();
-
   const crestBox = Math.round(HEADER.crest * SCALE);
   const gap = Math.round(HEADER.gap * SCALE);
   const wordPx = Math.round(HEADER.word * SCALE);
@@ -431,9 +497,11 @@ export async function auditFeatureGraphic(buffer, label) {
 /**
  * The committed feature graphic is what `renderFeatureGraphic` draws today.
  *
- * The one check that sees what the banner SAYS and which crest it carries:
- * a stale crest after a vector edit, a changed word or line, or a file dropped
- * in by hand all move edge pixels far past `FEATURE_RENDER_TOLERANCE`.
+ * The one check that sees what the banner SAYS, in which colours, and which
+ * crest it carries: a stale crest after a vector edit, a changed word, line or
+ * colour token, or a file dropped in by hand. The limits are
+ * `FEATURE_RENDER_WORST`, `FEATURE_RENDER_ROUNDING` and
+ * `FEATURE_RENDER_DRIFT_MAX`.
  */
 export async function assertFeatureGraphicCurrent(buffer, label) {
   const fresh = await sharp(await renderFeatureGraphic())
@@ -445,18 +513,30 @@ export async function assertFeatureGraphicCurrent(buffer, label) {
   }
   let worst = 0;
   let at = 0;
-  for (let i = 0; i < fresh.length; i += 1) {
-    const d = Math.abs(fresh[i] - committed[i]);
-    if (d > worst) {
-      worst = d;
-      at = i;
+  let drifted = 0;
+  for (let p = 0; p < fresh.length; p += 3) {
+    let pixel = 0;
+    for (let c = 0; c < 3; c += 1) {
+      pixel = Math.max(pixel, Math.abs(fresh[p + c] - committed[p + c]));
+    }
+    if (pixel > FEATURE_RENDER_ROUNDING) drifted += 1;
+    if (pixel > worst) {
+      worst = pixel;
+      at = p / 3;
     }
   }
-  if (worst > FEATURE_RENDER_TOLERANCE) {
-    const pixel = Math.floor(at / 3);
+  const rerender =
+    "The crest, the copy or a colour changed without re-rendering: run npm run rasterize:brand-assets";
+  if (worst > FEATURE_RENDER_WORST) {
     throw new Error(
-      `${label}: differs from a fresh render by ${worst} levels at (${pixel % FEATURE_WIDTH}, ${Math.floor(pixel / FEATURE_WIDTH)}) ` +
-        `(tolerance ${FEATURE_RENDER_TOLERANCE}). The crest, the word or the line changed without re-rendering: run npm run rasterize:brand-assets`,
+      `${label}: differs from a fresh render by ${worst} levels at (${at % FEATURE_WIDTH}, ${Math.floor(at / FEATURE_WIDTH)}), ` +
+        `over the ${FEATURE_RENDER_WORST}-level limit. ${rerender}`,
+    );
+  }
+  if (drifted > FEATURE_RENDER_DRIFT_MAX) {
+    throw new Error(
+      `${label}: ${drifted} pixels differ from a fresh render by more than ${FEATURE_RENDER_ROUNDING} levels, ` +
+        `over the ${FEATURE_RENDER_DRIFT_MAX}-pixel limit. ${rerender}`,
     );
   }
 }
