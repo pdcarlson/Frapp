@@ -11,7 +11,19 @@ import {
 
 describe('NotificationController', () => {
   let controller: NotificationController;
-  let notificationService: jest.Mocked<Partial<NotificationService>>;
+  let notificationService: jest.Mocked<
+    Pick<
+      NotificationService,
+      | 'registerPushToken'
+      | 'removePushToken'
+      | 'listNotifications'
+      | 'markNotificationRead'
+      | 'getPreferences'
+      | 'updatePreference'
+      | 'getSettings'
+      | 'updateSettings'
+    >
+  >;
 
   beforeEach(async () => {
     notificationService = {

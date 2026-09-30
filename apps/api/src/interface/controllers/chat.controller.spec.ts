@@ -3,13 +3,31 @@ import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory'
 import { InternalServerErrorException } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
+import type { MaskedChatMessage } from '../../application/services/chat-block-mask';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 describe('ChatController', () => {
   let controller: ChatController;
-  let service: jest.Mocked<Partial<ChatService>>;
+  let service: jest.Mocked<
+    Pick<
+      ChatService,
+      | 'deleteMessage'
+      | 'editMessage'
+      | 'pinMessage'
+      | 'unpinMessage'
+      | 'updateCategory'
+      | 'deleteCategory'
+      | 'getChannelList'
+      | 'getChannel'
+      | 'createChannel'
+      | 'getMessages'
+      | 'requestChatUploadUrl'
+      | 'addPrivateChannelMember'
+      | 'removePrivateChannelMember'
+    >
+  >;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
 
   beforeEach(async () => {
@@ -194,7 +212,7 @@ describe('ChatController', () => {
 
   describe('getMessages', () => {
     it('forwards limit, before, and since from the query DTO', async () => {
-      const messages = [{ id: 'm1' }];
+      const messages = [{ id: 'm1' }] as MaskedChatMessage[];
       service.getMessages!.mockResolvedValue(messages);
 
       await expect(

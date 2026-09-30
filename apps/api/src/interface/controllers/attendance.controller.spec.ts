@@ -8,7 +8,16 @@ import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('AttendanceController', () => {
   let controller: AttendanceController;
-  let attendanceService: jest.Mocked<Partial<AttendanceService>>;
+  let attendanceService: jest.Mocked<
+    Pick<
+      AttendanceService,
+      | 'checkIn'
+      | 'getAttendance'
+      | 'updateStatus'
+      | 'markAutoAbsent'
+      | 'mintCheckInToken'
+    >
+  >;
 
   beforeEach(async () => {
     attendanceService = {
