@@ -27,6 +27,8 @@ describe('ChatController', () => {
       | 'requestChatUploadUrl'
       | 'addPrivateChannelMember'
       | 'removePrivateChannelMember'
+      | 'sendMessage'
+      | 'recordMessageAction'
     >
   >;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;

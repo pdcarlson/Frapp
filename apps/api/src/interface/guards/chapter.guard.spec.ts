@@ -26,6 +26,7 @@ describe('ChapterGuard', () => {
     member: undefined as unknown,
     chapterId: undefined as unknown,
     subscriptionStatus: undefined as unknown,
+    enabledModules: undefined as unknown,
     ...overrides,
   });
 
