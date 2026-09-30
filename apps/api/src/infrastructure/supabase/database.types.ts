@@ -33,6 +33,7 @@ import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
+  DiscordImportCreatedChannel,
   DiscordOAuthState,
   DiscordAuthorLink,
   Event,
@@ -125,6 +126,7 @@ export interface Database {
       discord_imports: TableDefinition<DiscordImport>;
       discord_import_channels: TableDefinition<DiscordImportChannel>;
       discord_import_files: TableDefinition<DiscordImportFile>;
+      discord_import_created_channels: TableDefinition<DiscordImportCreatedChannel>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
@@ -507,6 +509,15 @@ export interface Database {
       unlink_discord_author: {
         Args: { p_chapter_id: string; p_user_id: string };
         Returns: number | null;
+      };
+      /**
+       * `20260930030000` (#2905). Deletes the channels a `purging` import
+       * created that now hold nothing, and returns their ids. A no-op for any
+       * other status.
+       */
+      delete_empty_discord_import_channels: {
+        Args: { p_import_id: string; p_chapter_id: string };
+        Returns: string[];
       };
       /**
        * `20260805150000`. `claim_outcome` is `text` in SQL, narrowed here to
