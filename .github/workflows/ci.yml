@@ -949,13 +949,14 @@ jobs:
 
       # What the binaries actually declare, read from the config the plugins'
       # mods produce rather than from app.json (#2343): the exact iOS purpose
-      # strings, the Android runtime permissions and `tools:node="remove"` set,
-      # and a required-reason API scan of every linked iOS pod against
-      # ios.privacyManifests. An app.json-level check can't see an omitted
-      # plugin option shipping its default purpose string, a vendor option
-      # spelled some other way, or a new pod using an undeclared API (an
-      # ITMS-91053 rejection). `expo config --type introspect` writes nothing
-      # and needs no native toolchain; the step adds about five seconds. It runs
+      # strings and background modes, the Android manifest's exact declared and
+      # `tools:node="remove"` sets, and a required-reason API scan of every
+      # linked iOS pod against ios.privacyManifests. An app.json-level check
+      # can't see an omitted plugin option shipping its default purpose
+      # string, a vendor option spelled some other way, or a new pod using an
+      # undeclared API (an ITMS-91053 rejection). `expo config --type
+      # introspect` writes nothing and needs no native toolchain; the whole
+      # step took about three seconds locally. It runs
       # before prebuild on purpose: introspection reads apps/mobile/ios and
       # android when they exist, so it must see the checkout's templates, which
       # is what EAS starts from. The roster and its reasons:

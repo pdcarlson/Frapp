@@ -1105,12 +1105,14 @@ describe("assertProductionAskDisabled", () => {
  * couldn't: an **omitted** option shipping its plugin's default purpose string
  * (`IOSConfig.Permissions.applyPermissions` deletes a key only for a strict
  * `false`), and a vendor option not spelled `*Permission`. The same gate
- * scans every linked iOS pod for required-reason APIs and fails on a category
- * the array below doesn't declare, so the bundled-SDK side of #2294 is encoded
- * rather than narrated. It can't read the pods CocoaPods fetches at `pod
- * install` (sentry-cocoa, the Stripe iOS SDK, SDWebImage), or tell which
- * reason code a use needs, so the audit recorded in the array test below
- * still stands for those.
+ * scans every linked iOS pod in node_modules for required-reason APIs and
+ * fails on a category the array below doesn't declare, so the bundled-SDK side
+ * of #2294 is encoded rather than narrated. It can't tell which reason code a
+ * use needs, and it can't read native code fetched from elsewhere: podspec
+ * dependencies (sentry-cocoa, SDWebImage, ReachabilitySwift, react-native's
+ * third-party pods, hermes-engine) and the Stripe iOS SDK, which comes through
+ * Swift Package Manager. The audit recorded in the array test below covers
+ * sentry-cocoa and SDWebImage; the rest are unaudited (#3030).
  */
 describe("iOS privacy manifest (#2294)", () => {
   function resolved() {

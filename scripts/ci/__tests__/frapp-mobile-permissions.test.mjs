@@ -120,17 +120,10 @@ function livePermissionFiles() {
   }));
 }
 
-export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
+// The prompt strings themselves, app.json's included, are the walk's
+// (walkedPermissionCopyProblems): one predicate, one place.
+export function mobilePermissionLockProblems({ stripe, push, dues }) {
   const problems = [];
-  for (const prompt of collectPermissionStrings(appJson)) {
-    if (!/\bFrapp\b/.test(prompt.value)) {
-      problems.push(`${prompt.key} must name Frapp`);
-    }
-    if (/\bSignet\b/.test(prompt.value)) {
-      problems.push(`${prompt.key} must not name Signet`);
-    }
-  }
-
   if (!/export function stripeUnavailableReason/.test(stripe)) {
     problems.push("must keep stripeUnavailableReason");
   }
@@ -190,8 +183,7 @@ export function lockSelfProblems(source) {
 test("OS permission, Expo Go, and merchant copy say Frapp", () => {
   assert.deepEqual(
     mobilePermissionLockProblems({
-      appJson: readRepo(APP_JSON),
-      stripe: readRepo(STRIPE),
+        stripe: readRepo(STRIPE),
       push: readRepo(PUSH),
       dues: readRepo(DUES),
     }),
@@ -202,15 +194,12 @@ test("OS permission, Expo Go, and merchant copy say Frapp", () => {
 });
 
 test("putting Signet in a camera permission string fails", () => {
-  const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON).replace(
-      "Frapp uses the camera",
-      "Signet uses the camera",
-    ),
-    stripe: readRepo(STRIPE),
-    push: readRepo(PUSH),
-    dues: readRepo(DUES),
-  });
+  const problems = walkedPermissionCopyProblems([
+    {
+      rel: APP_JSON,
+      source: readRepo(APP_JSON).replace("Frapp uses the camera", "Signet uses the camera"),
+    },
+  ]);
   assert.ok(
     problems.some((problem) => problem.includes("cameraPermission")),
     problems.join("; "),
@@ -228,15 +217,15 @@ test("a third JS-style *Permission site fails the walk", () => {
 });
 
 test("turning a disabled microphonePermission into a Signet prompt fails", () => {
-  const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON).replace(
-      '"microphonePermission": false',
-      '"microphonePermission": "Signet uses the microphone."',
-    ),
-    stripe: readRepo(STRIPE),
-    push: readRepo(PUSH),
-    dues: readRepo(DUES),
-  });
+  const problems = walkedPermissionCopyProblems([
+    {
+      rel: APP_JSON,
+      source: readRepo(APP_JSON).replace(
+        '"microphonePermission": false',
+        '"microphonePermission": "Signet uses the microphone."',
+      ),
+    },
+  ]);
   assert.ok(
     problems.some((problem) => problem.includes("microphonePermission")),
     problems.join("; "),
@@ -245,7 +234,6 @@ test("turning a disabled microphonePermission into a Signet prompt fails", () =>
 
 test("putting Signet back in stripeUnavailableReason fails", () => {
   const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE).replaceAll("Frapp", "Signet"),
     push: readRepo(PUSH),
     dues: readRepo(DUES),
@@ -258,7 +246,6 @@ test("putting Signet back in stripeUnavailableReason fails", () => {
 
 test("dropping stripeUnavailableReason fails", () => {
   const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE).replaceAll(
       "stripeUnavailableReason",
       "payUnavailableReason",
@@ -274,7 +261,6 @@ test("dropping stripeUnavailableReason fails", () => {
 
 test("pinning the merchant default to Signet fails", () => {
   const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE),
     push: readRepo(PUSH),
     dues: readRepo(DUES).replace(

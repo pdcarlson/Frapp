@@ -13,17 +13,21 @@ import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 import {
   ANDROID_REMOVED_PERMISSIONS,
   ANDROID_RUNTIME_PERMISSIONS,
+  ANDROID_TEMPLATE_PERMISSIONS,
   IOS_PURPOSE_STRINGS,
   MANIFESTLESS_REQUIRED_REASON_USERS,
   androidPermissionProblems,
+  backgroundModeProblems,
   declaredCategories,
   linkedIosPods,
   main,
   purposeStringProblems,
+  reactNativeCoreCategories,
   requesterProblems,
   requiredReasonCategories,
   requiredReasonProblems,
   scanPod,
+  withoutComments,
 } from "../../check-mobile-native-declarations.mjs";
 
 const UD = "NSPrivacyAccessedAPICategoryUserDefaults";
@@ -58,6 +62,7 @@ function currentManifest() {
     ["android.permission.SYSTEM_ALERT_WINDOW"],
     ["android.permission.VIBRATE"],
     ["android.permission.READ_EXTERNAL_STORAGE", { "android:maxSdkVersion": "32" }],
+    ["android.permission.WRITE_EXTERNAL_STORAGE", { "android:maxSdkVersion": "32" }],
     ["android.permission.CAMERA"],
     ["android.permission.ACCESS_COARSE_LOCATION"],
     ["android.permission.ACCESS_FINE_LOCATION"],
@@ -83,6 +88,8 @@ function currentScan() {
 }
 
 const DECLARED = [UD, FT, BOOT, DISK];
+/** What react-native's get_core_accessed_apis declared when this gate landed. */
+const RN_CORE = { reactNativeCore: [FT, BOOT, UD] };
 
 // ── 1. iOS purpose strings ───────────────────────────────────────────────────
 
@@ -161,6 +168,24 @@ test("a purpose string whose feature is gone fails", () => {
   );
 });
 
+test("a requester call that survives only in a comment fails", () => {
+  const live = "requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  for (const leftover of [
+    "// was useCameraPermissions() before the check-in rebuild",
+    "/* useCameraPermissions(); */",
+    "/**\n * Calls useCameraPermissions() on mount.\n */",
+  ]) {
+    const problems = requesterProblems((file) => (file.endsWith("check-in.tsx") ? leftover : live));
+    assert.equal(problems.length, 2, leftover);
+    assert.match(problems[0], /check-in\.tsx no longer calls useCameraPermissions/);
+  }
+});
+
+test("withoutComments keeps code and URLs", () => {
+  assert.equal(withoutComments('const u = "https://frapp.live"; useCameraPermissions();'), 'const u = "https://frapp.live"; useCameraPermissions();');
+  assert.equal(withoutComments("a(); // b()\n/* c() */d();").trim(), "a(); \nd();".trim());
+});
+
 test("a deleted requester file fails", () => {
   const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : "useCameraPermissions( requestMediaLibraryPermissionsAsync("));
   assert.ok(problems.some((p) => p === "NSLocationWhenInUseUsageDescription: its requester apps/mobile/lib/location.ts no longer exists"), problems.join("\n"));
@@ -210,8 +235,9 @@ test("losing the RECORD_AUDIO removal fails, since the picker then adds it (blin
       : entry,
   );
   const problems = androidPermissionProblems(manifest);
-  assert.equal(problems.length, 1);
-  assert.match(problems[0], /no longer removes android\.permission\.RECORD_AUDIO/);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /declares android\.permission\.RECORD_AUDIO, which is in neither/);
+  assert.match(problems[1], /no longer removes android\.permission\.RECORD_AUDIO/);
 });
 
 test("a manifest with no permission list fails instead of checking nothing", () => {
@@ -220,9 +246,45 @@ test("a manifest with no permission list fails instead of checking nothing", () 
 });
 
 test("the Android rosters don't overlap", () => {
-  for (const permission of ANDROID_REMOVED_PERMISSIONS.keys()) {
-    assert.equal(ANDROID_RUNTIME_PERMISSIONS.has(permission), false, permission);
-  }
+  const rosters = [ANDROID_RUNTIME_PERMISSIONS, ANDROID_TEMPLATE_PERMISSIONS, ANDROID_REMOVED_PERMISSIONS];
+  const all = rosters.flatMap((roster) => [...roster.keys()]);
+  assert.equal(new Set(all).size, all.length, all.join(", "));
+});
+
+test("a permission a plugin option or app.json adds fails, background location included", () => {
+  // isAndroidBackgroundLocationEnabled: true, or a hand-written android.permissions entry.
+  const manifest = currentManifest();
+  manifest.manifest["uses-permission"].push(
+    { $: { "android:name": "android.permission.ACCESS_BACKGROUND_LOCATION" } },
+    { $: { "android:name": "android.permission.READ_CONTACTS" } },
+  );
+  const problems = androidPermissionProblems(manifest);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /declares android\.permission\.ACCESS_BACKGROUND_LOCATION, which is in neither/);
+  assert.match(problems[1], /declares android\.permission\.READ_CONTACTS/);
+});
+
+test("a template permission that disappears fails, so the roster stays exact", () => {
+  const manifest = currentManifest();
+  manifest.manifest["uses-permission"] = manifest.manifest["uses-permission"].filter(
+    (entry) => entry.$["android:name"] !== "android.permission.VIBRATE",
+  );
+  assert.deepEqual(androidPermissionProblems(manifest).map((p) => p.split(",")[0]), [
+    "the Android manifest no longer declares android.permission.VIBRATE",
+  ]);
+});
+
+test("no background mode ships today, and one a plugin adds fails", () => {
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist()), []);
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: [] })), []);
+  // isIosBackgroundLocationEnabled: true
+  const problems = backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: ["location"] }));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /"location" background mode.*Guideline 2\.5\.4/);
+  assert.match(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: "location" }))[0], /not a list/);
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist(), ["remote-notification"]), [
+    'iOS no longer ships the "remote-notification" background mode the roster lists',
+  ]);
 });
 
 // ── 4. required-reason APIs ──────────────────────────────────────────────────
@@ -262,7 +324,7 @@ test("look-alikes aren't counted", () => {
 });
 
 test("the scan when this gate landed passes", () => {
-  assert.deepEqual(requiredReasonProblems(currentScan(), DECLARED), []);
+  assert.deepEqual(requiredReasonProblems(currentScan(), DECLARED, RN_CORE), []);
 });
 
 test("an undeclared category fails, whether or not the pod ships a manifest (blind spot 3)", () => {
@@ -271,13 +333,14 @@ test("an undeclared category fails, whether or not the pod ships a manifest (bli
   const problems = requiredReasonProblems(
     [...currentScan(), pod("expo-keyboard-thing", { [KEYS]: ["A.swift", "B.swift", "C.swift", "D.swift"] }, true)],
     DECLARED,
+    RN_CORE,
   );
   assert.equal(problems.length, 1);
   assert.match(problems[0], /expo-keyboard-thing uses a NSPrivacyAccessedAPICategoryActiveKeyboards API \(A\.swift, B\.swift, C\.swift, …\).*ITMS-91053/);
 });
 
 test("dropping a declared category a pod uses fails", () => {
-  const problems = requiredReasonProblems(currentScan(), [UD, FT, BOOT]);
+  const problems = requiredReasonProblems(currentScan(), [UD, FT, BOOT], RN_CORE);
   assert.equal(problems.length, 1);
   assert.match(problems[0], /expo-file-system uses a NSPrivacyAccessedAPICategoryDiskSpace API/);
 });
@@ -287,6 +350,7 @@ test("a new manifest-less user of a declared category fails, because its reason 
   const problems = requiredReasonProblems(
     [...currentScan(), pod("react-native-device-info", { [DISK]: ["RNDeviceInfo.m"], [BOOT]: ["RNDeviceInfo.m"] })],
     DECLARED,
+    RN_CORE,
   );
   assert.equal(problems.length, 1);
   assert.match(problems[0], /react-native-device-info uses NSPrivacyAccessedAPICategoryDiskSpace, NSPrivacyAccessedAPICategorySystemBootTime and ships no privacy manifest/);
@@ -295,7 +359,7 @@ test("a new manifest-less user of a declared category fails, because its reason 
 test("a roster package using a new category fails", () => {
   const scan = currentScan();
   scan[0] = pod("@stripe/stripe-react-native", { [UD]: ["a.swift"], [DISK]: ["b.swift"] });
-  const problems = requiredReasonProblems(scan, DECLARED);
+  const problems = requiredReasonProblems(scan, DECLARED, RN_CORE);
   assert.equal(problems.length, 1);
   assert.match(problems[0], /@stripe\/stripe-react-native now uses .*DiskSpace.*UserDefaults, not .*UserDefaults/);
 });
@@ -305,9 +369,61 @@ test("a roster package that gains a manifest, or leaves, fails so the roster shr
   scan.push(pod("expo-updates", {}, true));
   const withManifest = scan.map((p) => (p.packageName === "expo-updates" ? { ...p, hasManifest: true } : p));
   assert.deepEqual(
-    requiredReasonProblems(withManifest, DECLARED).map((problem) => problem.split(".")[0]),
+    requiredReasonProblems(withManifest, DECLARED, RN_CORE).map((problem) => problem.split(".")[0]),
     ["expo-sharing is no longer a linked iOS pod using a required-reason API", "expo-updates now ships its own privacy manifest"],
   );
+});
+
+test("react-native's pods may use only what its aggregation's core list declares", () => {
+  // React-RCTSettings and React-CoreModules ship no manifest, and React-Core's
+  // manifest sits under the same root, so a manifest can't excuse them.
+  const scan = currentScan().map((p) =>
+    p.packageName === "react-native" ? pod("react-native", { [UD]: ["a.mm"], [DISK]: ["Libraries/Disk/RCTDisk.mm"] }, true) : p,
+  );
+  const problems = requiredReasonProblems(scan, DECLARED, RN_CORE);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /^react-native uses NSPrivacyAccessedAPICategoryDiskSpace beyond the core list its pod-install aggregation declares/);
+  // Once audited, the roster records it like any manifest-less pod.
+  const audited = new Map([...MANIFESTLESS_REQUIRED_REASON_USERS, ["react-native", [DISK]]]);
+  assert.deepEqual(requiredReasonProblems(scan, DECLARED, { ...RN_CORE, manifestless: audited }), []);
+  assert.match(
+    requiredReasonProblems(currentScan(), DECLARED, { ...RN_CORE, manifestless: audited }).join("\n"),
+    /react-native now stays within the core list/,
+  );
+});
+
+test("an unreadable react-native core list fails rather than excusing its pods", () => {
+  const problems = requiredReasonProblems(currentScan(), DECLARED, { reactNativeCore: [] });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /core required-reason list .* couldn't be read/);
+});
+
+test("reactNativeCoreCategories reads get_core_accessed_apis and nothing else", () => {
+  const ruby = `
+    def self.get_privacy_manifest_paths_from(user_project)
+        "NSPrivacyAccessedAPICategoryDiskSpace"
+    end
+
+    def self.get_core_accessed_apis()
+        file_timestamp_accessed_api = {
+            "NSPrivacyAccessedAPIType" => "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons" => ["C617.1"],
+        }
+        boot_time_accessed_api = {
+            "NSPrivacyAccessedAPIType" => "NSPrivacyAccessedAPICategorySystemBootTime",
+        }
+        return [file_timestamp_accessed_api, boot_time_accessed_api]
+    end
+  `;
+  assert.deepEqual(reactNativeCoreCategories(ruby), [FT, BOOT]);
+  assert.deepEqual(reactNativeCoreCategories("def self.something_else\nend"), []);
+  assert.deepEqual(reactNativeCoreCategories(undefined), []);
+});
+
+test("a roster entry's category order doesn't matter", () => {
+  const scan = [...currentScan(), pod("react-native-device-info", { [DISK]: ["a.m"], [BOOT]: ["a.m"] })];
+  const roster = new Map([...MANIFESTLESS_REQUIRED_REASON_USERS, ["react-native-device-info", [BOOT, DISK]]]);
+  assert.deepEqual(requiredReasonProblems(scan, DECLARED, { ...RN_CORE, manifestless: roster }), []);
 });
 
 test("an Expo module's pods are one roster entry", () => {
@@ -318,6 +434,7 @@ test("an Expo module's pods are one roster entry", () => {
       pod("expo-updates", {}),
     ],
     DECLARED,
+    RN_CORE,
   );
   assert.deepEqual(problems, []);
 });
@@ -380,16 +497,29 @@ test("linkedIosPods takes Expo modules, community modules and react-native itsel
   ]);
 });
 
+test("linkedIosPods scans a directory once, however many reports or pods name it", () => {
+  const pods = linkedIosPods({
+    expoModules: {
+      modules: [
+        { packageName: "expo", pods: [{ podName: "Expo", podspecDir: "/n/expo" }] },
+        { packageName: "expo-modules-core", pods: [{ podName: "ExpoModulesCore", podspecDir: "/n/emc" }, { podName: "ExpoModulesWorklets", podspecDir: "/n/emc" }] },
+      ],
+    },
+    reactNativeConfig: { dependencies: { expo: { platforms: { ios: { podspecPath: "/n/expo/Expo.podspec" } } } } },
+  });
+  assert.deepEqual(pods.map((p) => p.dir), ["/n/expo", "/n/emc"]);
+});
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 /** A repo root whose requesters exist, one pod dir, and a runner faking the Expo CLI. */
-function fixture({ infoPlist = rosterInfoPlist(), manifest = currentManifest(), declared = DECLARED, podSource = "UserDefaults.standard", modules } = {}) {
+function fixture({ infoPlist = rosterInfoPlist(), manifest = currentManifest(), declared = DECLARED, podSource = "UserDefaults.standard", modules, checkIn = "useCameraPermissions();" } = {}) {
   const root = mkdtempSync(join(tmpdir(), "native-declarations-"));
   const put = (rel, text) => {
     mkdirSync(dirname(join(root, rel)), { recursive: true });
     writeFileSync(join(root, rel), text);
   };
-  put("apps/mobile/app/(tabs)/check-in.tsx", "useCameraPermissions();");
+  put("apps/mobile/app/(tabs)/check-in.tsx", checkIn);
   put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
@@ -424,8 +554,8 @@ test("main passes a coherent project, and asks the CLI for iOS introspection and
     assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size);
     assert.deepEqual(f.calls, [
       "cli config --type introspect --json",
-      "autolinking resolve --platform ios --json",
       "autolinking react-native-config --platform ios --json",
+      "autolinking resolve --platform ios --json",
     ]);
   } finally {
     f.cleanup();
@@ -443,6 +573,25 @@ test("main reports each check's failure together", () => {
     assert.match(text, /NSMicrophoneUsageDescription/);
     assert.match(text, /removes android\.permission\.CAMERA/);
     assert.match(text, /ActiveKeyboards API/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main reports a purpose string whose requester is gone", () => {
+  const f = fixture({ checkIn: "// useCameraPermissions() went with the old scanner\nexport default function CheckIn() {}" });
+  try {
+    const { violations } = main(f.root, f.run);
+    assert.deepEqual(violations.map((v) => v.split(":")[0]), ["NSCameraUsageDescription", "android.permission.CAMERA"]);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main reports a background mode", () => {
+  const f = fixture({ infoPlist: rosterInfoPlist({ UIBackgroundModes: ["location"] }) });
+  try {
+    assert.match(main(f.root, f.run).violations.join("\n"), /"location" background mode/);
   } finally {
     f.cleanup();
   }

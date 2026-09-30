@@ -37,12 +37,14 @@
 //
 // Four checks, all read from the resolved config:
 //
-// 1. iOS purpose strings. The shipped `*UsageDescription*` keys are exactly
+// 1. iOS. The shipped `*UsageDescription*` keys are exactly
 //    IOS_PURPOSE_STRINGS, each with its exact text, and each entry's
-//    `requestedBy` call still exists in the app's source. A key for a feature
-//    the app doesn't have fails, however it got into Info.plist.
-// 2. Android runtime permissions. Every entry in ANDROID_RUNTIME_PERMISSIONS
-//    is in the app manifest and none is marked `tools:node="remove"`.
+//    `requestedBy` call is still in the app's source (comments don't count).
+//    A key for a feature the app doesn't have fails, however it got into
+//    Info.plist. `UIBackgroundModes` is exactly IOS_BACKGROUND_MODES.
+// 2. Android declarations. The app manifest declares exactly
+//    ANDROID_RUNTIME_PERMISSIONS plus ANDROID_TEMPLATE_PERMISSIONS, and marks
+//    none of the runtime ones `tools:node="remove"`.
 // 3. Android removals. The app manifest's `tools:node="remove"` set is exactly
 //    ANDROID_REMOVED_PERMISSIONS. A removal survives Gradle's manifest merge
 //    and strips the permission from every library that adds it, so a new one
@@ -52,19 +54,26 @@
 //    linked iOS pod uses is declared in `ios.privacyManifests`, whether or not
 //    the pod ships its own manifest: static xcframeworks and Expo's precompiled
 //    modules drop pod manifests from the shipped file (spec/ui/mobile/
-//    navigation.md, the #2526 correction). And the pods that ship no manifest
-//    at all are exactly MANIFESTLESS_REQUIRED_REASON_USERS, because their reason
-//    codes are the app's to declare.
+//    navigation.md, the #2526 correction). The pods other than react-native's
+//    that ship no manifest at all are exactly MANIFESTLESS_REQUIRED_REASON_USERS,
+//    because their reason codes are the app's to declare. react-native's own
+//    pods get theirs from its `pod install` aggregation, which merges a
+//    hard-coded core list into the app's manifest, so the categories they use
+//    must stay inside that list.
 //
 // What a green run does NOT prove:
 //   - Library manifests merge into the Android manifest at Gradle build time,
-//     which introspection doesn't run. So check 2 covers the permissions config
-//     plugins add. POST_NOTIFICATIONS, which expo-notifications' own manifest
-//     adds, is protected only by check 3.
-//   - The scan reads the pod sources in node_modules. Pods CocoaPods fetches at
-//     `pod install` (sentry-cocoa, the Stripe iOS SDK, SDWebImage) aren't there,
-//     so their categories stay covered by the hand audit that
-//     `app.config.spec.ts` records beside the declared array.
+//     which introspection doesn't run. So check 2 covers what the template and
+//     config plugins declare. POST_NOTIFICATIONS, which expo-notifications' own
+//     manifest adds, is protected only by check 3.
+//   - The scan reads pod sources in node_modules. Native code the build fetches
+//     from elsewhere isn't there: pods a podspec depends on (sentry-cocoa,
+//     SDWebImage, ReachabilitySwift, react-native's third-party pods and
+//     hermes-engine) and Swift packages (the Stripe iOS SDK, which
+//     stripe-react-native takes through Swift Package Manager). The hand audit
+//     beside the declared array in `app.config.spec.ts` covers sentry-cocoa and
+//     SDWebImage. The rest rely on their own privacy manifests, which nothing
+//     here checks yet (#3030).
 //   - It matches symbols in the text, so it can't tell which reason code a use
 //     needs. It proves each category is declared, not that the declared reason
 //     is right. The manifest-less roster exists so that a change there brings
@@ -124,11 +133,34 @@ export const IOS_PURPOSE_STRINGS = new Map([
   ],
 ]);
 
+/**
+ * The iOS background modes the binary declares. None: location is foreground
+ * only (expo-location's `isIosBackgroundLocationEnabled: false`), and push
+ * needs no mode while expo-notifications' `enableBackgroundRemoteNotifications`
+ * is off. A mode for work the app doesn't do is a Guideline 2.5.4 finding.
+ */
+export const IOS_BACKGROUND_MODES = [];
+
 /** Android permissions a screen requests at runtime, which a config plugin adds. */
 export const ANDROID_RUNTIME_PERMISSIONS = new Map([
   ["android.permission.CAMERA", { file: "apps/mobile/app/(tabs)/check-in.tsx", call: "useCameraPermissions(" }],
   ["android.permission.ACCESS_FINE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
   ["android.permission.ACCESS_COARSE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
+]);
+
+/**
+ * The rest of what the app manifest declares: the base manifest prebuild and
+ * introspection both start from (`@expo/config-plugins`' withAndroidBaseMods).
+ */
+export const ANDROID_TEMPLATE_PERMISSIONS = new Map([
+  ["android.permission.INTERNET", "the app talks to the API and Supabase"],
+  ["android.permission.VIBRATE", "notifications vibrate"],
+  ["android.permission.SYSTEM_ALERT_WINDOW", "the template's; nothing in the app draws over other apps"],
+  [
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "capped at SDK 32; expo-image-picker's requestMediaLibraryPermissionsAsync asks for it on Android 12 and below",
+  ],
+  ["android.permission.WRITE_EXTERNAL_STORAGE", "capped at SDK 32; nothing writes shared storage"],
 ]);
 
 /**
@@ -175,12 +207,10 @@ export const REQUIRED_REASON_APIS = {
  * Linked iOS pods that use a required-reason API and ship no `.xcprivacy` of
  * their own, with the categories the scan finds in them. Their reason codes
  * are the app's to declare, so a change to this list is a re-audit of
- * `ios.privacyManifests` (the reasons are recorded in app.config.spec.ts):
- *   - @stripe/stripe-react-native, expo-eas-client and expo-updates read
- *     `UserDefaults.standard`, the app-local case CA92.1 covers.
- *   - expo-sharing uses `UserDefaults(suiteName:)`, the app-group case, whose
- *     reason is 1C8F.1. The app configures no app group, so the path is
- *     unreachable. A share extension would have to declare 1C8F.1.
+ * `ios.privacyManifests`. The reason each one rests on is recorded once,
+ * beside the declared array in app.config.spec.ts. An entry for react-native
+ * would list the categories its pods use beyond the core list its
+ * `pod install` aggregation declares; there is none today.
  */
 export const MANIFESTLESS_REQUIRED_REASON_USERS = new Map([
   ["@stripe/stripe-react-native", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
@@ -189,6 +219,7 @@ export const MANIFESTLESS_REQUIRED_REASON_USERS = new Map([
   ["expo-updates", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
 ]);
 
+const REACT_NATIVE = "react-native";
 const NATIVE_SOURCE = /\.(?:swift|m|mm|h|hpp|c|cc|cpp)$/;
 // Android sources can't reach the iOS binary. ReactAndroid is react-native's.
 const SKIP_DIRS = new Set(["node_modules", "android", "ReactAndroid"]);
@@ -219,9 +250,38 @@ export function purposeStringProblems(infoPlist, roster = IOS_PURPOSE_STRINGS) {
   return problems;
 }
 
+/** Problems with the Info.plist's `UIBackgroundModes`, against IOS_BACKGROUND_MODES. */
+export function backgroundModeProblems(infoPlist, modes = IOS_BACKGROUND_MODES) {
+  const shipped = infoPlist?.UIBackgroundModes ?? [];
+  if (!Array.isArray(shipped)) {
+    return [`iOS ships UIBackgroundModes = ${JSON.stringify(shipped)}, which is not a list`];
+  }
+  const problems = [];
+  for (const mode of [...new Set(shipped)].sort()) {
+    if (!modes.includes(mode)) {
+      problems.push(
+        `iOS ships the ${JSON.stringify(mode)} background mode, which is not in IOS_BACKGROUND_MODES: a background mode for work the app doesn't do is a Guideline 2.5.4 finding. If a plugin option added it (expo-location's isIosBackgroundLocationEnabled, expo-notifications' enableBackgroundRemoteNotifications), set it back; if the feature is real, add the mode to the roster`,
+      );
+    }
+  }
+  for (const mode of modes) {
+    if (!shipped.includes(mode)) problems.push(`iOS no longer ships the ${JSON.stringify(mode)} background mode the roster lists`);
+  }
+  return problems;
+}
+
+/**
+ * Source text with its JS comments removed, so a call left in a comment isn't
+ * read as a live one. A `//` after a colon is a URL, not a comment.
+ */
+export function withoutComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/gm, "$1");
+}
+
 /**
  * Problems with the roster's `requestedBy` calls, given a reader from a
- * repo-relative path to its text (null when the file is missing).
+ * repo-relative path to its text (null when the file is missing). A call that
+ * survives only in a comment doesn't count.
  */
 export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, ANDROID_RUNTIME_PERMISSIONS]) {
   const problems = [];
@@ -231,7 +291,7 @@ export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, AN
       const source = readSource(file);
       if (source === null) {
         problems.push(`${key}: its requester ${file} no longer exists`);
-      } else if (!source.includes(call)) {
+      } else if (!withoutComments(source).includes(call)) {
         problems.push(
           `${key}: ${file} no longer calls ${call.replace(/\($/, "")}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
         );
@@ -251,10 +311,14 @@ export function manifestPermissions(manifest) {
   }));
 }
 
-/** Problems with the app manifest's permissions, against the two Android rosters. */
+/** Problems with the app manifest's permissions, against the three Android rosters. */
 export function androidPermissionProblems(
   manifest,
-  { runtime = ANDROID_RUNTIME_PERMISSIONS, removed = ANDROID_REMOVED_PERMISSIONS } = {},
+  {
+    runtime = ANDROID_RUNTIME_PERMISSIONS,
+    template = ANDROID_TEMPLATE_PERMISSIONS,
+    removed = ANDROID_REMOVED_PERMISSIONS,
+  } = {},
 ) {
   const entries = manifestPermissions(manifest);
   if (!entries) {
@@ -268,7 +332,22 @@ export function androidPermissionProblems(
       problems.push(`the Android manifest doesn't declare ${permission}, which a screen requests at runtime`);
     }
   }
+  const declared = [...new Set(entries.filter((entry) => !entry.remove).map((entry) => entry.name))].sort();
   const removals = [...new Set(entries.filter((entry) => entry.remove).map((entry) => entry.name))].sort();
+  for (const permission of declared) {
+    if (!runtime.has(permission) && !template.has(permission)) {
+      problems.push(
+        `the Android manifest declares ${permission}, which is in neither ANDROID_RUNTIME_PERMISSIONS nor ANDROID_TEMPLATE_PERMISSIONS: a permission for a feature the app doesn't have is a Play policy finding, and background location needs its own declaration. If a plugin option added it, set the option back; if the feature is real, add it to the roster`,
+      );
+    }
+  }
+  for (const permission of template.keys()) {
+    if (!declared.includes(permission) && !removals.includes(permission)) {
+      problems.push(
+        `the Android manifest no longer declares ${permission}, which Expo's base manifest did. Update ANDROID_TEMPLATE_PERMISSIONS once you know why`,
+      );
+    }
+  }
   for (const permission of removals) {
     if (runtime.has(permission)) {
       problems.push(
@@ -297,23 +376,37 @@ export function requiredReasonCategories(source, apis = REQUIRED_REASON_APIS) {
     .sort();
 }
 
-/** Every linked iOS pod as `{ packageName, dir }`, from the two autolinking reports. */
+/**
+ * Every linked iOS pod directory as `{ packageName, dir }`, from the two
+ * autolinking reports, once each: `expo` is in both reports, and two of
+ * expo-modules-core's pods share its root.
+ */
 export function linkedIosPods({ expoModules, reactNativeConfig }) {
-  const pods = [];
+  const pods = new Map();
+  const add = (packageName, dir) => {
+    if (dir && !pods.has(dir)) pods.set(dir, { packageName, dir });
+  };
   for (const module of expoModules?.modules ?? []) {
-    for (const pod of module.pods ?? []) {
-      pods.push({ packageName: module.packageName, dir: pod.podspecDir });
-    }
+    for (const pod of module.pods ?? []) add(module.packageName, pod.podspecDir);
   }
   for (const [packageName, dependency] of Object.entries(reactNativeConfig?.dependencies ?? {})) {
     const podspec = dependency?.platforms?.ios?.podspecPath;
-    if (podspec) pods.push({ packageName, dir: dirname(podspec) });
+    if (podspec) add(packageName, dirname(podspec));
   }
   // react-native's own pods: react-native-config names the package, not a dependency.
-  if (reactNativeConfig?.reactNativePath) {
-    pods.push({ packageName: "react-native", dir: reactNativeConfig.reactNativePath });
-  }
-  return pods;
+  add("react-native", reactNativeConfig?.reactNativePath);
+  return [...pods.values()];
+}
+
+/**
+ * The categories react-native's `pod install` aggregation merges into the
+ * app's manifest for its own pods: `get_core_accessed_apis` in
+ * `scripts/cocoapods/privacy_manifest_utils.rb`. Empty when the method can't
+ * be found, which the caller reports.
+ */
+export function reactNativeCoreCategories(rubySource) {
+  const body = rubySource?.match(/def self\.get_core_accessed_apis\b([\s\S]*?)\n\s*end\b/)?.[1] ?? "";
+  return [...new Set(body.match(/NSPrivacyAccessedAPICategory\w+/g) ?? [])].sort();
 }
 
 /** The categories a pod directory's native sources use, and whether it ships a manifest. */
@@ -342,12 +435,13 @@ export function scanPod(dir, apis = REQUIRED_REASON_APIS) {
 
 /**
  * Problems with the required-reason declarations, given each scanned pod
- * (`{ packageName, categories, hasManifest }`) and the declared categories.
+ * (`{ packageName, categories, hasManifest }`), the declared categories, and
+ * the categories react-native's aggregation declares for its own pods.
  */
 export function requiredReasonProblems(
   scanned,
   declared,
-  manifestless = MANIFESTLESS_REQUIRED_REASON_USERS,
+  { reactNativeCore, manifestless = MANIFESTLESS_REQUIRED_REASON_USERS } = {},
 ) {
   const problems = [];
   const declaredSet = new Set(declared);
@@ -361,22 +455,40 @@ export function requiredReasonProblems(
     }
   }
 
-  // One entry per package: Expo modules can link several pods.
+  // The categories whose reason codes are the app's to declare, one entry per
+  // package (Expo modules can link several pods). A pod with its own manifest
+  // has none. react-native's pods all sit under one root, and some ship a
+  // manifest while others don't, so its own manifests can't settle it: its
+  // aggregation covers the core list, and anything beyond that is the app's.
   const found = new Map();
   for (const pod of scanned) {
-    if (pod.hasManifest || pod.categories.size === 0) continue;
-    const categories = new Set(found.get(pod.packageName) ?? []);
-    for (const category of pod.categories.keys()) categories.add(category);
-    found.set(pod.packageName, [...categories].sort());
+    let categories = [...pod.categories.keys()];
+    if (pod.packageName === REACT_NATIVE) {
+      if (!Array.isArray(reactNativeCore) || reactNativeCore.length === 0) {
+        problems.push(
+          "react-native's core required-reason list (get_core_accessed_apis in scripts/cocoapods/privacy_manifest_utils.rb) couldn't be read, so its pods' reason codes went unchecked",
+        );
+        continue;
+      }
+      categories = categories.filter((category) => !reactNativeCore.includes(category));
+    } else if (pod.hasManifest) {
+      continue;
+    }
+    if (categories.length === 0) continue;
+    found.set(pod.packageName, [...new Set([...(found.get(pod.packageName) ?? []), ...categories])].sort());
   }
   const shippedManifest = new Set(scanned.filter((pod) => pod.hasManifest).map((pod) => pod.packageName));
   for (const [packageName, categories] of [...found].sort(([a], [b]) => a.localeCompare(b))) {
     const expected = manifestless.get(packageName);
     if (!expected) {
+      const why =
+        packageName === REACT_NATIVE
+          ? "beyond the core list its pod-install aggregation declares"
+          : "and ships no privacy manifest";
       problems.push(
-        `${packageName} uses ${categories.join(", ")} and ships no privacy manifest, so its reason codes are the app's to declare. Audit which reason fits, then add it to MANIFESTLESS_REQUIRED_REASON_USERS`,
+        `${packageName} uses ${categories.join(", ")} ${why}, so its reason codes are the app's to declare. Audit which reason fits, then add it to MANIFESTLESS_REQUIRED_REASON_USERS`,
       );
-    } else if (expected.join() !== categories.join()) {
+    } else if ([...expected].sort().join() !== categories.join()) {
       problems.push(
         `${packageName} now uses ${categories.join(", ")}, not ${expected.join(", ")}: re-audit its reason codes, then update MANIFESTLESS_REQUIRED_REASON_USERS`,
       );
@@ -384,9 +496,12 @@ export function requiredReasonProblems(
   }
   for (const packageName of manifestless.keys()) {
     if (!found.has(packageName)) {
-      const why = shippedManifest.has(packageName)
-        ? "now ships its own privacy manifest"
-        : "is no longer a linked iOS pod using a required-reason API";
+      const why =
+        packageName === REACT_NATIVE
+          ? "now stays within the core list its pod-install aggregation declares"
+          : shippedManifest.has(packageName)
+            ? "now ships its own privacy manifest"
+            : "is no longer a linked iOS pod using a required-reason API";
       problems.push(
         `${packageName} ${why}. Drop it from MANIFESTLESS_REQUIRED_REASON_USERS, and check whether the category it justified is still needed`,
       );
@@ -454,9 +569,10 @@ export function main(root = process.cwd(), run = expoCli(root)) {
     };
   }
 
+  const reactNativeConfig = run("autolinking", ["react-native-config", "--platform", "ios", "--json"]);
   const pods = linkedIosPods({
     expoModules: run("autolinking", ["resolve", "--platform", "ios", "--json"]),
-    reactNativeConfig: run("autolinking", ["react-native-config", "--platform", "ios", "--json"]),
+    reactNativeConfig,
   });
   const declared = declaredCategories(config);
   const setupProblems = [];
@@ -468,15 +584,21 @@ export function main(root = process.cwd(), run = expoCli(root)) {
     return existsSync(path) ? readFileSync(path, "utf8") : null;
   };
   const scanned = pods.map((pod) => ({ packageName: pod.packageName, ...scanPod(pod.dir) }));
+  const aggregation = reactNativeConfig?.reactNativePath
+    ? join(reactNativeConfig.reactNativePath, "scripts/cocoapods/privacy_manifest_utils.rb")
+    : null;
+  const reactNativeCore =
+    aggregation && existsSync(aggregation) ? reactNativeCoreCategories(readFileSync(aggregation, "utf8")) : [];
 
   return {
     checked: { purposeStrings: IOS_PURPOSE_STRINGS.size, pods: pods.length, declared },
     violations: [
       ...setupProblems,
       ...purposeStringProblems(modResults.ios.infoPlist),
+      ...backgroundModeProblems(modResults.ios.infoPlist),
       ...requesterProblems(readSource),
       ...androidPermissionProblems(modResults.android.manifest),
-      ...requiredReasonProblems(scanned, declared),
+      ...requiredReasonProblems(scanned, declared, { reactNativeCore }),
     ],
   };
 }
@@ -485,7 +607,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const { checked, violations } = main();
   if (violations.length === 0) {
     console.log(
-      `✓ ${checked.purposeStrings} iOS purpose strings, the Android runtime permissions and removals, and ${checked.pods} linked iOS pods' required-reason APIs match the roster (${checked.declared.length} categories declared)`,
+      `✓ ${checked.purposeStrings} iOS purpose strings and the background modes, the Android manifest's declarations and removals, and ${checked.pods} linked iOS pod directories' required-reason APIs match the roster (${checked.declared.length} categories declared)`,
     );
     process.exit(0);
   }
