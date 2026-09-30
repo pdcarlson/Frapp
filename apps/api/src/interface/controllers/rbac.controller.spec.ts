@@ -172,7 +172,7 @@ describe('RbacController', () => {
         eligible: true,
         next_role_name: 'Treasurer',
       };
-      rbacService.getPresidencyClaimStatus.mockResolvedValue(status as any);
+      rbacService.getPresidencyClaimStatus.mockResolvedValue(status);
 
       const result = await controller.presidencyClaimStatus(chapterId, member);
 

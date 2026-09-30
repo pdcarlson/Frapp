@@ -95,7 +95,10 @@ describe('ChapterController', () => {
   describe('create', () => {
     it('should call chapterService.create with correct parameters', async () => {
       const userId = 'user-1';
-      const dto: CreateChapterDto = { name: 'Test Chapter' };
+      const dto: CreateChapterDto = {
+        name: 'Test Chapter',
+        university: 'Test University',
+      };
       const expectedResult = { id: 'chapter-1', ...dto } as any;
 
       chapterService.create.mockResolvedValue(expectedResult);
@@ -107,7 +110,10 @@ describe('ChapterController', () => {
     });
 
     it('requires an existing Terms acceptance before creating anything (#2302)', async () => {
-      const dto: CreateChapterDto = { name: 'Test Chapter' };
+      const dto: CreateChapterDto = {
+        name: 'Test Chapter',
+        university: 'Test University',
+      };
       chapterService.create.mockResolvedValue({ id: 'chapter-1' } as any);
 
       await controller.create('user-1', dto);
@@ -128,7 +134,10 @@ describe('ChapterController', () => {
       );
 
       await expect(
-        controller.create('user-1', { name: 'Test Chapter' }),
+        controller.create('user-1', {
+          name: 'Test Chapter',
+          university: 'Test University',
+        }),
       ).rejects.toThrow('legal.acceptance_required');
       expect(chapterService.create).not.toHaveBeenCalled();
     });

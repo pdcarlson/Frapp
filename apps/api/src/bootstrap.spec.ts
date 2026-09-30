@@ -69,9 +69,9 @@ describe('configureApp', () => {
     };
 
     it('sets the measured hop count on the Express instance', () => {
-      const instance = app
-        .getHttpAdapter()
-        .getInstance<{ get: (setting: string) => unknown }>();
+      const instance = app.getHttpAdapter().getInstance() as {
+        get: (setting: string) => unknown;
+      };
 
       expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.local);
       // Measured per service: staging's chain is three entries (#864),
@@ -171,9 +171,9 @@ describe('configureApp', () => {
       async (environment, hops) => {
         const configured = await appFor(environment);
 
-        const instance = configured
-          .getHttpAdapter()
-          .getInstance<{ get: (setting: string) => unknown }>();
+        const instance = configured.getHttpAdapter().getInstance() as {
+          get: (setting: string) => unknown;
+        };
         expect(instance.get('trust proxy')).toBe(hops);
         expect(createProxyChainTripwire).toHaveBeenCalledWith(hops);
       },
@@ -189,9 +189,9 @@ describe('configureApp', () => {
         process.env.NODE_ENV = savedNodeEnv;
       });
 
-      const instance = configured
-        .getHttpAdapter()
-        .getInstance<{ get: (setting: string) => unknown }>();
+      const instance = configured.getHttpAdapter().getInstance() as {
+        get: (setting: string) => unknown;
+      };
       expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.production);
       expect(createProxyChainTripwire).toHaveBeenCalledWith(
         TRUST_PROXY_HOPS.production,

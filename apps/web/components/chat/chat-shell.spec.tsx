@@ -185,6 +185,18 @@ const sidebarState = {
   levels: [] as { channel_id: string; level: string }[],
 };
 
+/**
+ * The two chapter reads the slash gate could come from (#2957, #2993): the
+ * officer-only config, which errors for every member below President, and the
+ * member view, which is the gate's real source. Reset in the top `beforeEach`.
+ */
+const slashGateReads = {
+  orgConfigError: false,
+  enabledModules: null as Record<string, boolean> | null,
+  recruitment: undefined as string | undefined,
+  archetype: undefined as string | undefined,
+};
+
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
 // instead of hitting the network.
@@ -255,8 +267,24 @@ vi.mock("@repo/hooks", async () => ({
     data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
     isError: sidebarState.unreadError,
   }),
-  useOrgConfig: () => ({
-    data: { isModuleEnabled: () => true },
+  useOrgConfig: () =>
+    slashGateReads.orgConfigError
+      ? { data: undefined, isError: true, refetch: vi.fn() }
+      : {
+          data: { isModuleEnabled: () => true },
+          isError: false,
+          refetch: vi.fn(),
+        },
+  // The slash gate's source: the member view, through
+  // `useChapterModuleGateState` (#2957, #2993).
+  useCurrentChapter: () => ({
+    data: {
+      enabled_modules: slashGateReads.enabledModules,
+      org_archetype: slashGateReads.archetype,
+      vocabulary: slashGateReads.recruitment
+        ? { recruitment: slashGateReads.recruitment }
+        : undefined,
+    },
     isError: false,
     refetch: vi.fn(),
   }),
@@ -518,8 +546,14 @@ vi.mock("./composer", () => ({
     replyTo,
     onCancelReply,
     onRestoreReply,
+    isModuleEnabled,
+    slashCommandsStatus,
+    recruitmentVocab,
   }: {
     channelId: string;
+    recruitmentVocab?: string;
+    isModuleEnabled?: (moduleKey: string) => boolean;
+    slashCommandsStatus?: string;
     // The shell-to-editor handoff (#2176) is entirely carried by these two:
     // `draft` is what the real `useEditor` builds its document from, and
     // `claimShellFocus` is the caret the shell's `<textarea>` was holding.
@@ -549,7 +583,13 @@ vi.mock("./composer", () => ({
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
-      <div data-testid="composer" data-draft={draft ?? ""}>
+      <div
+        data-testid="composer"
+        data-draft={draft ?? ""}
+        data-slash-status={slashCommandsStatus ?? ""}
+        data-polls-enabled={String(isModuleEnabled?.("polls"))}
+        data-recruitment={recruitmentVocab ?? ""}
+      >
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
             here (jsdom renders no ProseMirror view), so these expose the two
@@ -792,6 +832,10 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
+  slashGateReads.orgConfigError = false;
+  slashGateReads.enabledModules = null;
+  slashGateReads.recruitment = undefined;
+  slashGateReads.archetype = undefined;
   // Session-wide by design, so a row an earlier case showed against a ready
   // list would otherwise stay cleared into the next one.
   blockClearance.reset();
@@ -814,6 +858,53 @@ beforeEach(() => {
   mockBookmarkIsError.mockReturnValue(false);
   mockBookmarkReset.mockClear();
   mockUnbookmarkReset.mockClear();
+});
+
+describe("ChatShell slash-command module gate (#2957, #2993)", () => {
+  it("gates from the member view, so a member whose config read fails still gets their commands", () => {
+    // Every member below President: the officer-only config read errors. The
+    // gate used to sit on it, and read "error" for them for good.
+    slashGateReads.orgConfigError = true;
+    render(<ChatShell />);
+
+    const composer = screen.getByTestId("composer");
+    expect(composer).toHaveAttribute("data-slash-status", "ready");
+    expect(composer).toHaveAttribute("data-polls-enabled", "true");
+  });
+
+  it("takes the recruitment word from the member view too, so a member sees /intake", () => {
+    slashGateReads.orgConfigError = true;
+    slashGateReads.recruitment = "intake";
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-recruitment",
+      "intake",
+    );
+  });
+
+  it("falls back to the archetype's word when the chapter stores none", () => {
+    // The member view carries the raw column; the archetype merge the config
+    // read applied has to happen on this path too, or an NPHC chapter with no
+    // stored word gets /rush.
+    slashGateReads.archetype = "nphc";
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-recruitment",
+      "Intake",
+    );
+  });
+
+  it("hands the composer the chapter's switched-off modules", () => {
+    slashGateReads.enabledModules = { polls: false };
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-polls-enabled",
+      "false",
+    );
+  });
 });
 
 describe("ChatShell channel categories", () => {

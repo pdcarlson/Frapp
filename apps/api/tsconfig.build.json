@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "./src",
-    "inlineSources": true
+    "inlineSources": true,
+    "types": ["node"]
   },
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
 }

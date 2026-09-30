@@ -46,7 +46,7 @@ function postgrestBody(): {
 
 function loggerPrinted(spy: jest.SpyInstance): string {
   return spy.mock.calls
-    .map((args) =>
+    .map((args: unknown[]) =>
       args
         .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
         .join('\n'),
@@ -267,6 +267,8 @@ describe('BillingService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -916,9 +918,26 @@ describe('BillingService', () => {
   });
 
   describe('handleWebhookEvent', () => {
-    it('should fall back to unpaid if unknown status is received', async () => {
+    it('maps a status outside the map to null, so the event changes nothing', async () => {
       const result = service['mapStripeStatus']('some_weird_status');
       expect(result).toBeNull();
+    });
+
+    // The whole map `spec/behavior/billing.md` documents (#1021). `trialing`
+    // and `paused` had no test before this: deleting either entry left the
+    // suite green while a trialing chapter's update was dropped, or a paused
+    // one never started the grace clock.
+    it.each([
+      ['active', 'active'],
+      ['trialing', 'active'],
+      ['past_due', 'past_due'],
+      ['unpaid', 'past_due'],
+      ['paused', 'past_due'],
+      ['canceled', 'canceled'],
+      ['incomplete_expired', 'canceled'],
+      ['incomplete', 'incomplete'],
+    ])('maps Stripe `%s` to `%s`', (stripeStatus, chapterStatus) => {
+      expect(service['mapStripeStatus'](stripeStatus)).toBe(chapterStatus);
     });
 
     it('should fall back to unpaid if incomplete status is received', async () => {
@@ -1051,6 +1070,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -1221,6 +1241,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -1235,6 +1256,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -2021,6 +2043,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -2034,6 +2057,7 @@ describe('BillingService', () => {
         role_ids: ['role-pres'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       };
@@ -3356,6 +3380,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -3370,6 +3395,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -3434,6 +3460,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -3520,6 +3547,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -3534,6 +3562,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },

@@ -33,6 +33,7 @@ import { ChatBlockService } from '../../application/services/chat-block.service'
 import { ChannelCacheService } from './channel-cache.service';
 import type { CachedChannelRow } from './channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 
 interface ChatMessageRow {
   id: string;
@@ -742,24 +743,15 @@ export class ChatPushWorkerService
     const now = Date.now();
     if (now - this.lastPresenceReportAt < PRESENCE_REPORT_INTERVAL_MS) return;
     this.lastPresenceReportAt = now;
-    try {
-      Sentry.captureMessage('chat-push presence join failed', {
-        level: 'warning',
-        tags: {
-          realtime_status: status,
-          presence_channels: String(this.presenceChannels.size),
-        },
-        fingerprint: ['chat-push-presence-join', status],
-      });
-    } catch (error) {
-      // The warning above already carries it.
-      logThrowable(
-        this.logger,
-        'warn',
-        'chat-push: Sentry report failed for a presence join',
-        error,
-      );
-    }
+    reportSwallowed(this.logger, 'a chat-push presence join', () => ({
+      message: 'chat-push presence join failed',
+      level: 'warning',
+      tags: {
+        realtime_status: status,
+        presence_channels: String(this.presenceChannels.size),
+      },
+      fingerprint: ['chat-push-presence-join', status],
+    }));
   }
 
   /**

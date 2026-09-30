@@ -4,7 +4,10 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { CustomFieldService } from './custom-field.service';
+import {
+  CustomFieldService,
+  type UpdateCustomFieldInput,
+} from './custom-field.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -395,10 +398,11 @@ describe('CustomFieldService', () => {
       };
       // Nulling options on a select field would leave it with no choices —
       // the same invariant create() enforces.
-      for (const body of [
+      const bodies: UpdateCustomFieldInput[] = [
         { options: null },
         { options: { choices: [] } },
-      ] as const) {
+      ];
+      for (const body of bodies) {
         const supabase = makeSupabase({ existingField: existing });
         const service = await buildService(supabase);
         await expect(

@@ -67,7 +67,10 @@ import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
-import { ChapterAuditLogService } from './chapter-audit-log.service';
+import {
+  ChapterAuditLogService,
+  type AuditDiff,
+} from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
 
@@ -209,9 +212,9 @@ function makeSupabase(
       // `eq('id', …)` is the terminal for the config update (awaited), a
       // passthrough for selects (`maybeSingle`), and the start of the palette
       // write's seed guard (`eq`/`is` on the accent path, then `select('id')`).
-      const terminal: Record<string, unknown> = Object.assign(
-        Promise.resolve({ error: null }),
-        {
+      const terminal: Promise<{ error: null }> &
+        Record<'maybeSingle' | 'eq' | 'is' | 'select', jest.Mock> =
+        Object.assign(Promise.resolve({ error: null }), {
           maybeSingle: jest
             .fn()
             .mockImplementation(() =>
@@ -231,8 +234,7 @@ function makeSupabase(
             return terminal;
           }),
           select: jest.fn(() => Promise.resolve(paletteWrite)),
-        },
-      );
+        });
       builder.eq = jest.fn().mockReturnValue(terminal);
       return builder;
     }
@@ -469,8 +471,12 @@ describe('ChapterConfigService — workflows', () => {
       expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
       const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.action).toBe('chapter_config_updated');
-      expect(auditRow.diff.workflows.to).toHaveProperty('wf_advisor_digest');
-      expect(auditRow.diff.workflows.to).not.toHaveProperty('wf_task_confirm');
+      expect((auditRow.diff as AuditDiff).workflows.to).toHaveProperty(
+        'wf_advisor_digest',
+      );
+      expect((auditRow.diff as AuditDiff).workflows.to).not.toHaveProperty(
+        'wf_task_confirm',
+      );
     });
 
     it('ignores unknown workflow keys (no bare write)', async () => {
@@ -559,7 +565,9 @@ describe('ChapterConfigService — dues', () => {
       expect(supabase.chapterUpdate).not.toHaveBeenCalled();
       expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
       const auditRow = mockAuditLog.record.mock.calls[0][0];
-      expect(auditRow.diff.dues.to).toMatchObject({ cadence: 'monthly' });
+      expect((auditRow.diff as AuditDiff).dues.to).toMatchObject({
+        cadence: 'monthly',
+      });
     });
 
     it('is a no-op when the dues payload matches the current row', async () => {
@@ -613,7 +621,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // audit log that the column never actually held.
       const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.diff).not.toHaveProperty('accent_color');
-      expect(auditRow.diff.branding.to).toMatchObject({
+      expect((auditRow.diff as AuditDiff).branding.to).toMatchObject({
         colors: { accent: '#8B0000' },
       });
     });
@@ -778,9 +786,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // `POST /v1/chapters/:id/theme-palette` returns the build. Spreading it
       // sent `failedFillChecks`, which only a broken lift causes, to the
       // client; the route picks what it discloses instead.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockReturnValueOnce({
         palette: { '--signet-accent-primary': '#8B0000' },
         resolvedSeed: '#8B0000',
@@ -817,9 +825,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // The engine reports a check for every ladder surface, passing or not;
       // only the failures belong in the log, or every save would log a fill
       // warning naming all four surfaces and bury the one a broken lift raises.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       const fillCheck = (against: string, ratio: number) => ({
         role: '--signet-accent-primary',
         against,
@@ -868,9 +876,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // The engine fails a check on the unrounded ratio; `toFixed(2)` logged a
       // 4.4954 as "4.50:1" under "below AA", and would log a 2.996 fill as
       // "3.00:1" under "below 3:1". Both lines truncate.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockReturnValueOnce({
         palette: { '--signet-accent-primary': '#0086FE' },
         resolvedSeed: '#0086FE',
@@ -919,9 +927,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // `chapters.accent_color` is a second source for the same fact and the
       // two can disagree; which one wins is open in #795. Until that lands the
       // engine must read `branding.colors.accent` and nothing else.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       expect(deriveSignetPalette).toHaveBeenCalledWith('#8B0000');
     });
 
@@ -970,7 +978,7 @@ describe('ChapterConfigService — analytics opt-out', () => {
       // `memberVisible` is left unset so `record`'s default (true) applies;
       // the row value itself is pinned in chapter-audit-log.service.spec.ts.
       expect(auditRow.memberVisible).toBeUndefined();
-      expect(auditRow.diff.analytics_opt_out).toEqual({
+      expect((auditRow.diff as AuditDiff).analytics_opt_out).toEqual({
         from: false,
         to: true,
       });
@@ -1029,7 +1037,7 @@ describe('ChapterConfigService — service hours', () => {
         { onConflict: 'chapter_id' },
       );
       const auditRow = mockAuditLog.record.mock.calls[0][0];
-      expect(auditRow.diff.service).toEqual({
+      expect((auditRow.diff as AuditDiff).service).toEqual({
         from: { minutes_per_point: 60 },
         to: { minutes_per_point: 45 },
       });
@@ -1103,7 +1111,7 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
         { onConflict: 'chapter_id' },
       );
       const auditRow = mockAuditLog.record.mock.calls[0][0];
-      expect(auditRow.diff.points).toEqual({
+      expect((auditRow.diff as AuditDiff).points).toEqual({
         from: DEFAULTS,
         to: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
       });

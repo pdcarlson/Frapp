@@ -26,6 +26,7 @@ describe('ChapterGuard', () => {
     member: undefined as unknown,
     chapterId: undefined as unknown,
     subscriptionStatus: undefined as unknown,
+    enabledModules: undefined as unknown,
     ...overrides,
   });
 
@@ -333,6 +334,24 @@ describe('ChapterGuard', () => {
     expect(request.subscriptionStatus).toBe('active');
   });
 
+  it('leaves enabled_modules on the request for body-dependent module gates (#2993)', async () => {
+    // A `kind: "poll"` chat send and a poll-card vote go through chat routes,
+    // which carry no `@RequireModule`; ChatService gates them from this.
+    mockSupabaseChain({
+      appUser: { id: 'user-1' },
+      member: { id: 'member-1', role_ids: ['role-1'] },
+      chapter: {
+        subscription_status: 'active',
+        enabled_modules: { polls: false },
+      },
+    });
+
+    const request = buildRequest();
+    await guard.canActivate(mockExecutionContext(request));
+
+    expect(request.enabledModules).toEqual({ polls: false });
+  });
+
   it('selects custom_role_ids on the membership and carries it into request.member', async () => {
     // PermissionsGuard resolves custom-role capabilities from
     // request.member.custom_role_ids — if this select drops the column, the
@@ -378,7 +397,10 @@ describe('ChapterGuard', () => {
     // grace-window boundaries are deterministic (no real clocks).
     const NOW = Date.parse('2026-06-02T12:00:00.000Z');
     const withPastDue = (daysAgo: number) => {
-      jest.spyOn(guard, 'currentTime').mockReturnValue(NOW);
+      // `currentTime` is the guard's protected clock seam.
+      jest
+        .spyOn(guard as unknown as { currentTime(): number }, 'currentTime')
+        .mockReturnValue(NOW);
       mockSupabaseChain({
         appUser: { id: 'user-1' },
         member: { id: 'member-1', role_ids: ['role-1'] },

@@ -166,7 +166,6 @@ describe('SemesterRolloverService', () => {
         service.rollover({
           chapterId: 'ch-1',
           userId: 'user-1',
-          userId: 'user-1',
           label: 'Spring 2026',
           startDate: '2026-01-10',
           endDate: '2026-05-15',
@@ -190,7 +189,6 @@ describe('SemesterRolloverService', () => {
       await expect(
         service.rollover({
           chapterId: 'ch-1',
-          userId: 'user-1',
           userId: 'user-1',
           label: 'Duplicate',
           startDate: '2026-01-01',
@@ -271,6 +269,7 @@ describe('SemesterRolloverService', () => {
 
     const input = {
       chapterId: 'ch-1',
+      userId: 'user-1',
       label: 'Fall 2026',
       startDate: '2026-08-01',
       endDate: '2026-12-15',
@@ -307,6 +306,11 @@ describe('SemesterRolloverService', () => {
       });
 
       expect(result).toEqual(baseArchive);
+      // Authority is the caller's own, not the service-role connection's.
+      expect(mockRbacService.getEffectivePermissions).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
       // The archive insert and the role swap must go through the single
       // transactional RPC, never the plain insert plus a second write.
       expect(mockArchiveRepo.create).not.toHaveBeenCalled();

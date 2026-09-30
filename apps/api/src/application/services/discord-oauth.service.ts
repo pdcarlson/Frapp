@@ -7,7 +7,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as Sentry from '@sentry/nestjs';
 import { randomUUID } from 'node:crypto';
 import { logSafe } from '../../infrastructure/observability/log-safe';
 import {
@@ -24,7 +23,7 @@ import {
 } from '#domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
-import { errorFingerprint } from '../../infrastructure/observability/error-fingerprint';
+import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 import {
   classifyApplicationFetchFailure,
   evaluateDiscordApplication,
@@ -123,45 +122,13 @@ const ADMINISTRATOR = 1n << 3n;
  *
  * The one behavior that changed in moving: `details` is no longer included.
  * That is the field Postgres fills with the offending ROW VALUES, and it was
- * reaching Sentry through `captureSwallowed` below. See `reportable-error.ts`
- * for why the free-text scrubber is not a sufficient answer for it.
+ * reaching Sentry through the callback's swallowed-failure report. See
+ * `reportable-error.ts` for why the free-text scrubber is not a sufficient
+ * answer for it.
  */
 function describeError(error: unknown): string {
   const reportable = toReportableError(error);
   return reportable.stack ?? reportable.message;
-}
-
-/**
- * Report a failure this method deliberately swallows.
- *
- * Every `Sentry.captureException` in the API today sits in
- * `AllExceptionsFilter`, gated on `status >= 500` — so alerting is coupled to
- * the user seeing an error page. That coupling is exactly what broke here:
- * turning the raw 500 into a redirect is right for the admin and, on its own,
- * silently deletes the only signal an operator had. The 5xx rate goes flat and
- * Sentry stays empty while 100% of Discord connects fail.
- *
- * So a swallowed failure has to report itself. `new Error(String(error))` would
- * not do — on the plain object PostgREST throws, `String` yields
- * `[object Object]` — hence the shared normalizer here too, which is the same
- * one `AllExceptionsFilter` reports every other 5xx through. The fingerprint
- * is shared for the same reason: the normalizer's stack is identical for every
- * fault it builds, so without one a missing table and a statement timeout
- * swallowed here would be one Sentry issue (#2131).
- */
-function captureSwallowed(
-  error: unknown,
-  sweptUnder: DiscordConnectCode,
-): void {
-  const reported = toReportableError(error);
-  const fingerprint = errorFingerprint(reported);
-  Sentry.captureException(reported, {
-    tags: {
-      route: 'discord/connect/callback',
-      swallowed_as: sweptUnder,
-    },
-    ...(fingerprint ? { fingerprint } : {}),
-  });
 }
 
 export interface DiscordConnectionView {
@@ -434,28 +401,51 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         return;
       case 'misconfigured':
         this.logger.error(`Connect Discord withdrawn. ${check.reason}`);
-        try {
-          Sentry.captureMessage(`Discord setup: ${check.kind}`, {
-            level: 'error',
-            tags: { integration: 'discord', discord_check: check.kind },
-            extra: { reason: check.reason },
-            fingerprint: ['discord-application-check', check.kind],
-          });
-        } catch (error) {
-          // Reporting must not change the verdict: the flow is withdrawn
-          // either way, and the log line above already carries the reason.
-          this.logger.warn(
-            `Sentry report failed for the Discord setup check: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
+        // Reporting must not change the verdict: the flow is withdrawn either
+        // way. The reason rides on the log line above, not the event: the
+        // scrubber's allowlist drops `extra`.
+        reportSwallowed(this.logger, 'the Discord setup check', () => ({
+          message: `Discord setup: ${check.kind}`,
+          level: 'error',
+          tags: { integration: 'discord', discord_check: check.kind },
+          fingerprint: ['discord-application-check', check.kind],
+        }));
         return;
     }
   }
 
   private redirectUri(): string {
     return `${this.apiUrl as string}${DISCORD_CALLBACK_PATH}`;
+  }
+
+  /**
+   * Report a callback failure this service turns into a redirect.
+   *
+   * Alerting on an unexpected failure otherwise rides on the 5xx that
+   * `AllExceptionsFilter` reports, so it is coupled to the user seeing an
+   * error page. Turning the raw 500 into a redirect is right for the admin
+   * and, on its own, silently deletes the only signal an operator had: the
+   * 5xx rate goes flat and Sentry stays empty while 100% of Discord connects
+   * fail. So the swallowed failure reports itself, through the same
+   * normalizer and fingerprint the filter uses, which keeps a missing table
+   * and a statement timeout in separate issues (#2131).
+   */
+  private reportSwallowedCallback(
+    error: unknown,
+    sweptUnder: DiscordConnectCode,
+  ): void {
+    reportSwallowed(
+      this.logger,
+      'a swallowed Discord callback failure',
+      () => ({
+        error,
+        level: 'error',
+        tags: {
+          route: 'discord/connect/callback',
+          swallowed_as: sweptUnder,
+        },
+      }),
+    );
   }
 
   async getConnection(chapterId: string): Promise<DiscordConnectionView> {
@@ -638,7 +628,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
           'Could not consume Discord OAuth state',
           describeError(error),
         );
-        captureSwallowed(error, 'failed');
+        this.reportSwallowedCallback(error, 'failed');
         // Same best-effort lookup as the `expired` branch below: a member's
         // link attempt goes back to `/profile`, not the officer wizard
         // (#2878). With the store fully down it fails too, and the default
@@ -758,7 +748,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
       );
       // Same gap, pre-dating the one above: this arm already swallowed an
       // unexpected failure into a redirect, so it already had no alerting.
-      captureSwallowed(error, 'failed');
+      this.reportSwallowedCallback(error, 'failed');
       return finish('failed', 'Unexpected error.');
     }
   }

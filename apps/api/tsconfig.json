@@ -20,6 +20,11 @@
     // Emit uses `tsconfig.build.json`, which sets `"rootDir": "./src"`.
     "incremental": true,
     "skipLibCheck": true,
+    // TypeScript 6/7 default `types` to `[]`, so without jest here every spec's
+    // `describe` / `jest.fn` is an unresolved name; `tsconfig.build.json`
+    // narrows it to `["node"]`. Why `check-types` runs both programs, and with
+    // `--incremental false`: docs/ci-cd/agent-infra.md § TypeScript 7.
+    "types": ["node", "jest"],
     // TypeScript 6/7 default `strict` to true. This app never opted into the
     // full bundle — only the flags below. Nest DTO class fields are assigned
     // by class-validator, not constructors, so `strictPropertyInitialization`

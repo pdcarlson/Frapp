@@ -34,7 +34,7 @@ const seed = () => ({
       last_heartbeat_at: '2026-05-01T10:05:00.000Z',
       paused_at: null,
       total_foreground_minutes: 5,
-      points_awarded: 0,
+      points_awarded: false,
       created_at: '2026-05-01T10:00:00.000Z',
     }),
     inB({
@@ -47,7 +47,7 @@ const seed = () => ({
       last_heartbeat_at: '2026-05-01T10:05:00.000Z',
       paused_at: null,
       total_foreground_minutes: 5,
-      points_awarded: 0,
+      points_awarded: false,
       created_at: '2026-05-01T10:00:00.000Z',
     }),
   ],
@@ -96,7 +96,7 @@ describe('SupabaseStudySessionRepository — tenant scope', () => {
         start_time: '2026-05-02T10:00:00.000Z',
         last_heartbeat_at: '2026-05-02T10:00:00.000Z',
         total_foreground_minutes: 0,
-        points_awarded: 0,
+        points_awarded: false,
       }),
     );
 
