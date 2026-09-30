@@ -326,7 +326,9 @@ describe("readDumpFreshness", () => {
     assert.equal(calls.length, 3);
   });
 
-  it("does not retry a 500", async () => {
+  // #2333: a blip on the Actions read is re-asked on the same token before
+  // the verdict calls it unreadable. The fallback token is only for 401/403.
+  it("retries a 500 on the same token, never with the fallback token", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       {
         method: "GET",
@@ -341,10 +343,11 @@ describe("readDumpFreshness", () => {
       repo: "org/repo",
       fetchImpl,
       now: NOW,
+      retryOptions: { sleep: async () => {} },
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /unreadable \(HTTP 500\)/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 3, "three attempts on one token; the fallback would add three more");
   });
 });
 

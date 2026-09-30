@@ -17,13 +17,23 @@
 // imported it from `../ci-wake.mjs`, so a library depended on a script. Moving
 // the function inverts that back the right way up.
 //
-// ── Why retry is OFF by default ─────────────────────────────────────────────
-// The watchdogs (`ci-wake`, `pr-base-sync`) treat `ok: false` as a fail-safe
-// skip and their suites assert exact call counts against 5xx fixtures — e.g.
-// "exactly one API call: the freshness check". Retrying by default would change
-// those counts, so the default is byte-identical to the behaviour that moved
-// here. Callers that want resilience opt in with `retry: true`; the production
-// deploy path uses `fetchWithRetry` from `./http.mjs` directly.
+// ── Every request is bounded; retry is OFF by default ───────────────────────
+// Every call goes through `fetchWithRetry` from `./http.mjs`, so every call gets
+// its timeout (15s for a read, 120s for a write, the ceilings that module
+// explains), and the timeout also covers reading the body. Before #2333 a call
+// without `retry: true` was a bare `fetchImpl`, and no caller passed it. A
+// GitHub API that accepted the connection and never answered held the call
+// until undici's own ~300s header timeout, so two such calls used up a
+// watchdog's `timeout-minutes: 10`. The runner then cancelled the job
+// mid-`raiseAlert`, and a real failure wrote no alert at all.
+//
+// Retry stays opt-in. The watchdogs (`ci-wake`, `pr-base-sync`) treat
+// `ok: false` as a fail-safe skip and their suites assert exact call counts
+// against 5xx fixtures — e.g. "exactly one API call: the freshness check".
+// Retrying by default would change those counts, so without `retry` a call
+// makes exactly one attempt, as it always did. Callers that want resilience opt
+// in with `retry: true`; the production deploy path uses `fetchWithRetry`
+// directly.
 
 import { fetchWithRetry } from "./http.mjs";
 
@@ -39,18 +49,6 @@ export function githubHeaders({ token, hasBody = false } = {}) {
   };
 }
 
-/**
- * A GitHub REST call that never throws.
- *
- * Network-level rejections (DNS, ECONNRESET — undici throws, it doesn't return
- * a response) surface as an ordinary failed request. Both watchdogs treat
- * `ok: false` as a fail-safe skip; an uncaught throw instead aborted the WHOLE
- * run — for pr-base-sync that dropped every PR after the failing one and turned
- * a transient socket blip into a red run on main.
- *
- * `retry` opts into the bounded retry in `./http.mjs`; `retryOptions` is passed
- * straight through (attempts, backoff, timeout, sleep) so tests stay offline.
- */
 /**
  * A thrown transport error as one line: its message, plus the `cause` undici
  * hangs the real diagnosis on (and that cause's `code`, where it has one).
@@ -70,6 +68,20 @@ function describeThrown(error) {
   return detail ? `${error.message}: ${detail}` : error.message;
 }
 
+/**
+ * A GitHub REST call that never throws, and never waits past its timeout.
+ *
+ * Network-level rejections (DNS, ECONNRESET — undici throws, it doesn't return
+ * a response) surface as an ordinary failed request, and so does a call or a
+ * body read that outlives its timeout. Both watchdogs treat `ok: false` as a
+ * fail-safe skip; an uncaught throw instead aborted the WHOLE run — for
+ * pr-base-sync that dropped every PR after the failing one and turned a
+ * transient socket blip into a red run on main.
+ *
+ * `retry` opts into the bounded retry in `./http.mjs`. `retryOptions` is passed
+ * straight through (attempts, backoff, timeout, sleep) so tests stay offline;
+ * its `timeoutMs` applies with or without `retry`.
+ */
 export async function ghRequest({
   token,
   fetchImpl = fetch,
@@ -87,9 +99,12 @@ export async function ghRequest({
   };
 
   try {
-    const response = retry
-      ? await fetchWithRetry(url, init, { fetchImpl, ...retryOptions })
-      : await fetchImpl(url, init);
+    // One attempt unless the caller opted into retry, but bounded either way.
+    const response = await fetchWithRetry(url, init, {
+      fetchImpl,
+      ...retryOptions,
+      ...(retry ? {} : { attempts: 1 }),
+    });
 
     let data = null;
     const text = await response.text();

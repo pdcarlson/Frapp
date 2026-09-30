@@ -450,10 +450,10 @@ drift this layer exists to stop (stage 4 of the CI/CD redesign, [#1382](https://
 | --- | --- | --- |
 | `scripts/ci/lib/env.mjs` | `requireEnv`, `SECRETS_RUNBOOK` | Reading a required environment variable. Exits 1 naming the variable; emits a GitHub Actions `::error::` annotation under Actions and a plain `Error:` line locally. `hint` appends a pointer — pass `SECRETS_RUNBOOK` where the fix is provisioning a secret. |
 | `scripts/ci/lib/http.mjs` | `fetchWithRetry`, `resilientFetch`, `isRetriableStatus`, `IDEMPOTENT_METHODS` | Any outbound call. `resilientFetch` is a drop-in `fetch` carrying a 15s timeout and a bounded 3-attempt retry. |
-| `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: <message> }`, where the message folds in the error's `cause` (undici leaves `message` as the bare "fetch failed" and hangs the real diagnosis there). `data` is `null` only when a real HTTP response carried an empty body, so a truthy `data` is **not** evidence a response was received — check `status !== 0` for that. |
+| `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Every call is bounded by `http.mjs`'s timeout (15s for a read, 120s for a write), with or without `retry` ([#2333](https://github.com/pdcarlson/Frapp/issues/2333)). Never throws — a network rejection, or a call that outlives its timeout, returns `{ ok: false, status: 0, data: <message> }`, where the message folds in the error's `cause` (undici leaves `message` as the bare "fetch failed" and hangs the real diagnosis there). `data` is `null` only when a real HTTP response carried an empty body, so a truthy `data` is **not** evidence a response was received — check `status !== 0` for that. |
 | `scripts/ci/lib/providers.mjs` | `fetchJson`, `fetchRenderDeploys`, `fetchVercelDeployments`, `findVercelDeploymentBySha`, `vercelDeploymentCreatedAt` | `fetchJson` is the shared ok-check-throw-json wrapper (was three near-identical copies, #1351); `fetchRenderDeploys` / `fetchVercelDeployments` list one page through it. `findVercelDeploymentBySha` pages back through the Vercel listing, bounded, looking for a SHA — use it rather than the single-page fetcher when matching against a specific commit, since a page holds only the newest slice and an older SHA can fall off it (#1377). |
 | `scripts/ci/lib/polling.mjs` | `createClock`, `pollUntilTerminal` | `createClock` is an injectable clock, so a poll loop's tests run without sleeping. `pollUntilTerminal` is the shared "fetch, classify, sleep, repeat until terminal or timeout" loop behind the pollers (`verify-vercel-deploy.mjs`, `deploy-render-production.mjs`, `deploy-vercel.mjs`, `verify-served-commit.mjs`; #1351, #2505) — it owns only the loop mechanics; each caller's `classify` closure keeps its own terminal-state judgment (the deploy-path pollers treat a cancel as failure where `verify-vercel-deploy.mjs`'s classifier treats it as neutral, deliberately not unified). |
-| `scripts/ci/lib/alert-issue.mjs` | `defineAlert`, `isDefinedAlert`, `selectAlertConfig`, `findAlertIssues`, `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert`, `withAgentNote`, `ALERT_LOOKUP_LABEL`, `ALERT_ASSIGNEE` | The create/reopen/comment/close upsert contract for `incident` alert issues, and the one place their label and assignee are set. An alert's identity is declared once with `defineAlert({ title, labels })`, and the find, raise and resolve functions take that value as `alert`, refusing anything else (#1731). `selectAlertConfig` picks a script's config by name and throws on a missing or unknown one. |
+| `scripts/ci/lib/alert-issue.mjs` | `defineAlert`, `isDefinedAlert`, `selectAlertConfig`, `findAlertIssues`, `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert`, `withAgentNote`, `ALERT_LOOKUP_LABEL`, `ALERT_ASSIGNEE` | The create/reopen/comment/close upsert contract for `incident` alert issues, and the one place their label and assignee are set. An alert's identity is declared once with `defineAlert({ title, labels })`, and the find, raise and resolve functions take that value as `alert`, refusing anything else (#1731). A watchdog that reads its alert before deciding hands that `findAlertIssuesDetailed` result to `raiseAlert` or `resolveAlert` as `lookup`, which reuse a successful read instead of reading the same pages again, and refuse one read for another alert (#2333). `selectAlertConfig` picks a script's config by name and throws on a missing or unknown one. |
 
 Every one of these takes an injectable `fetchImpl` (or clock), which is what keeps the suites offline.
 
@@ -490,6 +490,14 @@ The watchdogs (`ci-wake`, `pr-base-sync`) treat `ok: false` as a fail-safe skip,
 assert exact call counts against `5xx` fixtures — *"exactly one API call: the freshness check"*.
 A default retry would silently change those counts, so callers opt in with `retry: true`. The
 production deploy path uses `resilientFetch` directly instead.
+
+Retry is off by default; the timeout is not. Without `retry` a call makes exactly one attempt, under
+the same timeout `fetchWithRetry` applies. Before
+[#2333](https://github.com/pdcarlson/Frapp/issues/2333) such a call was a bare `fetch`, and no
+caller passed `retry`. So a GitHub API that accepted the connection and never answered held each
+call until undici's own ~300s header timeout, and two stalls used up a watchdog's
+`timeout-minutes: 10` before its alert was written. The two backup-freshness watchdogs pass
+`retry: true` for their Actions reads, because an unreadable read there files a P1.
 
 ## PR babysitting: wake signals and CI-failure triage
 
@@ -776,6 +784,29 @@ that HTML comments do not survive the GitHub MCP round-trip agents read issues t
 owner only. That ceiling is exactly backwards for the scheduled watchdogs — a long quiet stretch
 silently turns off the things that watch quiet stretches. Every `schedule:` workflow in the table
 above disables together. If the repo goes dormant, re-enable them from the Actions tab.
+
+**What watches the watchdogs: a check-in outside GitHub, not another watchdog**
+([#2333](https://github.com/pdcarlson/Frapp/issues/2333)). A watchdog that stops leaves no alert,
+and that silence reads exactly like health. It can stop because its schedule was disabled, because
+its run died in `Checkout` or `Setup Node` before the script ran, or because its token lost
+`issues: write`. Three answers were weighed:
+
+- **A meta-watch**: one more scheduled workflow asserting that each watchdog ran recently. Rejected.
+  It runs on the same GitHub cron, under the same 60-day disable and the same token, so it goes
+  silent in the same ways as the jobs it watches.
+- **An external dead-man's switch**: each scheduled job checks in to a monitor outside GitHub, and
+  a missed check-in pages. **Chosen**, and already settled by
+  [ADR-24](../../spec/architecture/adr/adr-24.md): rule I4 (every failure pages within 15 minutes,
+  and a skip never reads green) and decision 3 (Sentry Team at the start of the beta, because the
+  free plan's single cron monitor can't cover I4). "A check-in from every scheduled workflow" is
+  [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s Team slice.
+- **Accept and document**: the state of every watchdog until that slice ships.
+
+On the free plan the one cron monitor watches the nightly dump itself, `production-db-backup`
+([`ALERT_ROUTING.md` § Primary channels](../internal/ops/ALERT_ROUTING.md#primary-channels)), so a
+dump that stops is noticed outside GitHub even when both freshness watches have gone silent. No
+other scheduled job has an external check yet. Until the Team slice gives each one a check-in, the
+absence of an alert from them is not evidence of health.
 
 Two assertions ship degraded on purpose, each saying so in the step summary:
 

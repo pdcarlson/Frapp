@@ -88,15 +88,20 @@ function isAuthish(status) {
   return status === 401 || status === 403;
 }
 
-async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
-  const first = await ghRequest({ token, fetchImpl, path });
+// Each read retries a 429, a 5xx, a network error or a timeout on the same
+// token (`lib/http.mjs`), because an unreadable Actions response is FAIL: one
+// blip would otherwise file a P1 against a healthy backup. Every attempt is
+// bounded, so a stalled API can't hold the job past its `timeout-minutes`
+// before the alert is written (#2333). The fallback token is a separate rule.
+async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path, retryOptions }) {
+  const first = await ghRequest({ token, fetchImpl, path, retry: true, retryOptions });
   if (
     isAuthish(first.status) &&
     typeof fallbackToken === "string" &&
     fallbackToken &&
     fallbackToken !== token
   ) {
-    return ghRequest({ token: fallbackToken, fetchImpl, path });
+    return ghRequest({ token: fallbackToken, fetchImpl, path, retry: true, retryOptions });
   }
   return first;
 }
@@ -118,7 +123,8 @@ function jobsPath(repo, runId) {
  * A feature-branch dispatch is not the production dump. Schedule and
  * workflow_dispatch on `main` both count: a failed dump on `main` is a
  * failed dump. Retry with the fallback token only on 401/403, and only
- * when the fallback token is different. Never PUT.
+ * when the fallback token is different. A transport failure is retried on
+ * the same token first (`ghGetWithFallback`). Never PUT.
  */
 export async function readDumpFreshness({
   token,
@@ -126,6 +132,8 @@ export async function readDumpFreshness({
   fetchImpl,
   fallbackToken,
   now = Date.now(),
+  // Passed to `ghRequest` (backoff, sleep, timeout) so tests stay offline.
+  retryOptions,
 }) {
   return readJobFreshness({
     jobName: PRODUCTION_JOB_NAME,
@@ -135,7 +143,7 @@ export async function readDumpFreshness({
     timeoutMs: JOB_TIMEOUT_MS,
     runsPath: runsPath(repo),
     jobsPath: (runId) => jobsPath(repo, runId),
-    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path }),
+    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path, retryOptions }),
     now,
   });
 }

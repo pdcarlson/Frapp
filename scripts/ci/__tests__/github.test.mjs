@@ -127,6 +127,64 @@ describe("ghRequest", () => {
     assert.equal(data, "ECONNRESET");
   });
 
+  // #2333: a call without `retry` used to be a bare fetch with no deadline, so
+  // an API that accepted the connection and never answered held the watchdog
+  // until undici's ~300s header timeout.
+  it("bounds a call made without retry", async () => {
+    const { calls, fetchImpl } = recorder(() => ok({}));
+    await ghRequest({ token: "t", path: "/x", fetchImpl });
+    await ghRequest({ token: "t", path: "/x", method: "POST", body: { a: 1 }, fetchImpl });
+    assert.ok(calls[0].init.signal instanceof AbortSignal);
+    assert.ok(calls[1].init.signal instanceof AbortSignal);
+  });
+
+  function hangsUntilAborted(signal) {
+    return new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  }
+
+  it("turns a call that never answers into ok:false status:0, once, within its timeout", async () => {
+    const { calls, fetchImpl } = recorder((_n, init) => hangsUntilAborted(init.signal));
+    const result = await ghRequest({
+      token: "t",
+      path: "/x",
+      fetchImpl,
+      retryOptions: { timeoutMs: 20 },
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 0);
+    assert.match(result.data, /timeout|aborted/i);
+  });
+
+  it("turns a body that stalls after the headers into ok:false status:0", async () => {
+    const { fetchImpl } = recorder((_n, init) => ({
+      ok: true,
+      status: 200,
+      text: () => hangsUntilAborted(init.signal),
+    }));
+    const result = await ghRequest({
+      token: "t",
+      path: "/x",
+      fetchImpl,
+      retryOptions: { timeoutMs: 20 },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 0);
+  });
+
+  it("keeps a caller's `attempts` from turning retry on", async () => {
+    const { calls, fetchImpl } = recorder(() => ({ ok: false, status: 503, text: async () => "" }));
+    await ghRequest({
+      token: "t",
+      path: "/x",
+      fetchImpl,
+      retryOptions: { attempts: 3, sleep: async () => {} },
+    });
+    assert.equal(calls.length, 1);
+  });
+
   it("retries when the caller opts in", async () => {
     const { calls, fetchImpl } = recorder((n) =>
       n < 3 ? { ok: false, status: 503, text: async () => "" } : ok({ done: true }),
