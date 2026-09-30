@@ -11,7 +11,19 @@ vi.mock("@repo/hooks", () => ({
   useRushCandidate: (id: string) => mockUseRushCandidate(id),
   useVoteRushCandidate: () => ({ mutate: voteMutate, isPending: false }),
   useBidRushCandidate: () => ({ mutate: bidMutate, isPending: false }),
-  useOrgConfig: () => ({ data: { vocabulary: { recruitment: "Intake" } } }),
+  // The member view, which any member can read (#2957): the card's word comes
+  // from here, not from the officer-only config.
+  useCurrentChapter: () => ({
+    data: { org_archetype: "ifc", vocabulary: { recruitment: "Intake" } },
+  }),
+  useOrgConfig: () => {
+    throw new Error("the rush card must not read the officer-only config");
+  },
+}));
+
+vi.mock("@/lib/stores/chapter-store", () => ({
+  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
+    selector({ activeChapterId: "chapter-1" }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({

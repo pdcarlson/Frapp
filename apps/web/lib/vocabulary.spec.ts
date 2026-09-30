@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { titleCase, vocab } from "./vocabulary";
+import { memberViewVocabulary, titleCase, vocab } from "./vocabulary";
 
 describe("vocab", () => {
   it("falls back to the IFC default when the chapter has no override", () => {
@@ -39,5 +39,34 @@ describe("titleCase", () => {
 
   it("handles an empty string without throwing", () => {
     expect(titleCase("")).toBe("");
+  });
+});
+
+// The member view carries the raw `vocabulary` column, so the archetype's
+// defaults have to be merged in here, as `ChapterConfigService` does for the
+// config read. Otherwise a chapter with no stored word loses its /intake.
+describe("memberViewVocabulary", () => {
+  it("prefers the chapter's stored word", () => {
+    const config = memberViewVocabulary({
+      org_archetype: "nphc",
+      vocabulary: { recruitment: "Induction" },
+    });
+    expect(vocab("recruitment", config)).toBe("Induction");
+  });
+
+  it("falls back to the archetype's word when none is stored", () => {
+    expect(
+      vocab(
+        "recruitment",
+        memberViewVocabulary({ org_archetype: "nphc", vocabulary: null }),
+      ),
+    ).toBe("Intake");
+    expect(
+      vocab("recruitment", memberViewVocabulary({ org_archetype: null })),
+    ).toBe("Rush");
+  });
+
+  it("says nothing until the read answers", () => {
+    expect(memberViewVocabulary(undefined)).toBeUndefined();
   });
 });

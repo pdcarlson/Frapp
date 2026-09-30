@@ -29,6 +29,7 @@ import { FreeTier } from '../decorators/subscription.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
+  CurrentEnabledModules,
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -386,6 +387,7 @@ export class ChatController {
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: SendMessageDto,
   ) {
     return this.chatService.sendMessage({
@@ -399,6 +401,7 @@ export class ChatController {
       reply_to_id: dto.reply_to_id,
       metadata: dto.metadata,
       attachments: dto.attachments,
+      enabled_modules: enabledModules,
     });
   }
 
@@ -553,12 +556,16 @@ export class ChatController {
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: ChatMessageActionDto,
   ) {
-    return this.chatService.recordMessageAction(messageId, chapterId, userId, {
-      action_type: dto.action_type,
-      payload: dto.payload,
-    });
+    return this.chatService.recordMessageAction(
+      messageId,
+      chapterId,
+      userId,
+      { action_type: dto.action_type, payload: dto.payload },
+      enabledModules,
+    );
   }
 
   // ── Reactions ────────────────────────────────────────────────────────

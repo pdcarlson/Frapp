@@ -1,3 +1,4 @@
+import { moduleRefusalFromServerMessage } from "@repo/validation";
 import type { ChatMessage } from "./types";
 
 /**
@@ -29,6 +30,27 @@ export interface PollPayload {
 }
 
 export const POLL_VOTE_ACTION_TYPE = "vote";
+
+/**
+ * Member copy for the Polls module refusal: `spec/ui/design-system/writing.md`
+ * § Module off, "Poll (chat card, web and mobile)".
+ */
+export const POLLS_OFF_COPY =
+  "Polls are turned off for your chapter right now. An officer can turn them back on.";
+
+/**
+ * A poll sent or voted on while Polls is off is refused with the module
+ * gate's sentence to an officer ("Re-enable it in Settings → Modules"), which
+ * a member can't act on (#2993). chat-core runs every server message it
+ * surfaces through this, so the toast, the failed row's inline error and the
+ * persisted outbox error all carry the member's row. Every other message
+ * passes through.
+ */
+export function memberFacingRefusal(message: string): string {
+  return moduleRefusalFromServerMessage(message)?.moduleKey === "polls"
+    ? POLLS_OFF_COPY
+    : message;
+}
 
 export function readPollPayload(message: ChatMessage): PollPayload | null {
   const raw = message.payload;

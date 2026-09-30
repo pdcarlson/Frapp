@@ -31,9 +31,11 @@ export interface SlashPaletteProps {
    */
   recruitmentVocab?: string;
   /**
-   * Reflects the chapter-config query state so the palette can fail closed
-   * while modules are still loading or errored. Defaults to `"ready"` so
-   * existing callers and tests don't need to thread the prop.
+   * Reflects the state of the read behind the module gate, the member view
+   * (`useChapterModuleGateState`), so the palette can fail closed while
+   * modules are still loading or errored. Never wire it to `useOrgConfig()`,
+   * which errors for every member below President (#2957). Defaults to
+   * `"ready"` so existing callers and tests don't need to thread the prop.
    */
   status?: "loading" | "error" | "ready";
   /** Retry callback rendered in the error state. */
@@ -48,7 +50,7 @@ export interface SlashPaletteProps {
  * a command surfaces an "Available in Chunk 05" toast via the caller — the
  * palette itself is module-aware and accessible.
  *
- * Fails closed while the chapter config is still loading or errored — see
+ * Fails closed while the chapter's modules are still loading or errored — see
  * issue #310. The dialog opens to an explicit Loading or Error state instead
  * of a filtered list that defaults to "no modules enabled".
  *

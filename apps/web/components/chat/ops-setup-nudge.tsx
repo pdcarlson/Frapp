@@ -31,13 +31,15 @@ import { asArray, cn } from "@/lib/utils";
  * chapter**, clicking through to Settings → Modules on the module it names.
  *
  * Self-contained rather than driven by props from `chat-shell`. The shell does
- * already hold three of these reads — `useChapterStore` (:147), `useOrgConfig`
- * (:149) and `useMyPermissions` (:397), from which it computes its own `can(...)`
- * — so this is not "the shell has none of them". It is that threading four values
- * through a file already past 1,100 lines, for a card that renders `null` in the
- * common case, grows the file that most needs not to grow. The duplicate reads
- * are free: all three are `useQuery` calls on keys the shell has already warmed,
- * so they resolve from cache rather than refetching.
+ * already hold two of these reads — `useChapterStore` and `useMyPermissions`,
+ * from which it computes its own `can(...)` — so this is not "the shell has none
+ * of them". It is that threading four values through a file already past 1,100
+ * lines, for a card that renders `null` in the common case, grows the file that
+ * most needs not to grow. Those two duplicate reads are free: they resolve from
+ * the cache the shell has warmed. `useOrgConfig` is not one of them any more:
+ * the shell moved its slash gate and recruitment word to the member view
+ * (#2957, #2993), so this card is the chat surface's only caller of the
+ * officer-only config read, which errors for every member below President.
  *
  * The cost is that the two surfaces could disagree about the viewer if one of
  * them later moves off `useMyPermissions` — see the note on the permission gate
@@ -98,9 +100,10 @@ export function OpsSetupNudge() {
     President, who holds the wildcard), but custom roles are a shipped feature.
     If the server's requirement ever changes, this list changes with it.
 
-    Otherwise the same call `chat-shell` makes at :397-398 and `settings-page` at
-    :204. If permission resolution moves off `useMyPermissions` onto a viewer
-    context, this call site has to move with them or the surfaces will disagree.
+    Otherwise the same `useMyPermissions()` + `can(...)` call `ChatShell` and
+    `SettingsPage` make. If permission resolution moves off `useMyPermissions`
+    onto a viewer context, this call site has to move with them or the surfaces
+    will disagree.
   */
   const canDismiss = canAll(
     ["chapter-config:manage", "members:view"],
