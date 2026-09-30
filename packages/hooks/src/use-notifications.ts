@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -30,6 +31,17 @@ export const notificationKeys = {
 export const userSettingsKey = ["settings"] as const;
 
 /**
+ * What `GET` and `PATCH /v1/settings` answer: every field, always, including
+ * for a member who has never saved (#2885).
+ *
+ * Taken from the contract, not restated, so a screen that derives its own
+ * shape from it (`Pick<UserSettings, …>`) stops compiling when a field is
+ * renamed. A hand-written all-optional copy would not: TypeScript accepts any
+ * object sharing one property with it.
+ */
+export type UserSettings = components["schemas"]["UserSettingsDto"];
+
+/**
  * The quiet-hour and theme fields `PATCH /v1/settings` accepts.
  *
  * `null` clears a field; **omitting** it preserves the stored value. Both
@@ -37,12 +49,8 @@ export const userSettingsKey = ["settings"] as const;
  * rather than echoing a zone this browser's tzdata may not resolve — which is
  * why the optimistic merge below drops `undefined` instead of spreading it.
  */
-export interface UpdateUserSettingsBody {
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
-  quiet_hours_tz?: string | null;
-  theme?: "light" | "dark" | "system";
-}
+export type UpdateUserSettingsBody =
+  components["schemas"]["UpdateUserSettingsDto"];
 
 export interface UpdateNotificationPreferenceBody {
   chapter_id: string;
@@ -189,6 +197,15 @@ export function useNotificationPreferences(chapterId: string) {
   });
 }
 
+/**
+ * The caller's quiet hours and theme. Never resolves `undefined`.
+ *
+ * The API answers a member who has never saved with the defaults (#2885). It
+ * used to send an empty body, which `openapi-fetch` reads as `data: undefined`,
+ * and TanStack Query refuses that with a console error and a failed query. An
+ * empty body is now a contract break, so it rejects under a name that says so
+ * rather than tripping TanStack's generic guard.
+ */
 export function useUserSettings() {
   const client = useFrappClient();
   return useQuery({
@@ -196,6 +213,9 @@ export function useUserSettings() {
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/settings");
       if (error) throw error;
+      if (data === undefined) {
+        throw new Error("GET /v1/settings answered with an empty body");
+      }
       return data;
     },
     staleTime: 300_000,
@@ -321,10 +341,10 @@ export function useUpdateUserSettings() {
     onMutate: async (body) => {
       await queryClient.cancelQueries({ queryKey: userSettingsKey });
       const previous = queryClient.getQueryData(userSettingsKey);
-      // Only predict against a payload the server actually sent. With no
-      // response schema on `GET /v1/settings` an unfetched entry is
-      // `undefined`, and writing a body-shaped object into it would hand
-      // consumers a settings row that never existed.
+      // Only predict against a payload the server actually sent. An entry
+      // that has not loaded (offline, or failed) is `undefined`, and writing a
+      // body-shaped object into it would hand consumers settings the server
+      // never reported.
       const wrote = previous !== undefined;
       if (wrote) {
         queryClient.setQueryData(

@@ -1,10 +1,11 @@
 /**
  * Links in a message body, for both clients (#2775).
  *
- * Web renders a body through react-markdown (`message-markdown.tsx`) and reads
- * only `isSafeHref` from here. Mobile has no markdown renderer (a dependency
- * is an integrator change to its frozen `package.json`), so it draws a body as
- * text and makes the links in it tappable through `linkSegments`.
+ * Both render a body through react-markdown (`message-markdown.tsx` in each
+ * app), which finds `[text](url)` and `<url>` links. This file holds what
+ * decides whether one is a link at all (`isSafeHref`, and `isOpenableHref` on
+ * a phone) and the bare-URL rule (`bareUrls`) that `remarkBareUrls` in
+ * `./markdown` applies.
  */
 
 const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"]);
@@ -52,14 +53,6 @@ export function isOpenableHref(href: string): boolean {
   return schemeOf(href) !== null;
 }
 
-export type LinkSegment =
-  | { kind: "text"; text: string }
-  | { kind: "link"; text: string; href: string };
-
-/** Longest markdown link label and target this looks for, like `reply-preview`'s caps. */
-const MAX_LABEL_LENGTH = 300;
-const MAX_TARGET_LENGTH = 2000;
-
 const URL_PREFIXES = ["https://", "http://"];
 
 /** Punctuation that ends a sentence around a bare URL rather than belonging to it. */
@@ -90,31 +83,22 @@ function urlPrefixAt(content: string, index: number): boolean {
 }
 
 /**
- * The first `needle` in `content` at or after `from` and no more than
- * `maxLength` characters past it, or -1. Bounded so that a body full of
- * unmatched openers costs a fixed window per opener, not the rest of the body.
+ * The end (exclusive) of a bare URL starting at `start`: up to whitespace,
+ * `<` or `limit`, then trailing punctuation dropped, and a closing bracket
+ * dropped when the URL does not open one (`(see https://x.test/a)` keeps its
+ * paren out, `https://en.wikipedia.org/wiki/Frapp_(drink)` keeps it in). The
+ * bracket counts are taken once and adjusted as characters drop, so a URL
+ * ending in a long run of brackets is still one pass. `remarkBareUrls` also
+ * measures a URL with it on the raw body, where the parser split it, and caps
+ * it at the first thing a URL can't run through.
  */
-function indexWithin(
+export function bareUrlEnd(
   content: string,
-  needle: string,
-  from: number,
-  maxLength: number,
+  start: number,
+  limit = content.length,
 ): number {
-  const found = content.slice(from, from + maxLength + 1).indexOf(needle);
-  return found === -1 ? -1 : from + found;
-}
-
-/**
- * The end (exclusive) of a bare URL starting at `start`: up to whitespace or
- * `<`, then trailing punctuation dropped, and a closing bracket dropped when
- * the URL does not open one (`(see https://x.test/a)` keeps its paren out,
- * `https://en.wikipedia.org/wiki/Frapp_(drink)` keeps it in). The bracket
- * counts are taken once and adjusted as characters drop, so a URL ending in a
- * long run of brackets is still one pass.
- */
-function bareUrlEnd(content: string, start: number): number {
   let end = start;
-  while (end < content.length && !/[\s<]/.test(content[end]!)) end += 1;
+  while (end < limit && !/[\s<]/.test(content[end]!)) end += 1;
   let openParens = 0;
   let closeParens = 0;
   let openBrackets = 0;
@@ -143,142 +127,54 @@ function bareUrlEnd(content: string, start: number): number {
   return end;
 }
 
+/** A bare URL in a run of text: `text.slice(start, end)`, which is its href. */
+export interface BareUrl {
+  start: number;
+  end: number;
+  href: string;
+}
+
 /**
- * Split a message body into text and the links a reader can tap.
+ * The bare `http://` and `https://` URLs in `text`, in order. CommonMark links
+ * only `<url>` and `[text](url)`; this is the rule for a URL typed on its own,
+ * which GFM's autolink extension would cover and neither client loads.
  *
- * Recognized, in the order a scan meets them:
+ * A URL starts at a word boundary (`xhttps://` is not one) and needs a host
+ * after its scheme. It runs to whitespace or `<`, then gives back trailing
+ * punctuation and a closing bracket it didn't open (`bareUrlEnd`). It is
+ * linked only when `isOpenableHref` accepts it.
  *
- * - **Code**, fenced (```` ``` ````) or inline (`` ` ``): kept as text, never
- *   linkified, as on web, where a URL in a code span is code.
- * - **`[label](target)`**: a link reading `label`. A target that is not
- *   openable (`isOpenableHref`) leaves the label as plain text, the way web
- *   renders an unsafe href as its children alone.
- * - **`<https://…>`**: CommonMark's autolink, reading as the URL.
- * - **A bare `http://` or `https://` URL** at a word boundary. Web does not
- *   link these yet (it renders CommonMark without the GFM autolink
- *   extension, #2862).
+ * `text` is prose, never code: `remarkBareUrls` hands this the `text` nodes of
+ * a parsed body, so markdown syntax and code spans are already gone.
  *
- * Everything else, markdown emphasis included, stays as the text it was
- * typed as: mobile does not render formatting (see the module doc).
- *
- * Linear in the body: every search is bounded or advances past what it read,
- * and a backtick run with no closer is remembered so the next run of the same
- * length does not search the rest of the body again.
+ * Linear in `text`: a URL that is linked is skipped past, and one that is not
+ * is only its scheme followed by characters `bareUrlEnd` gives back, none of
+ * which can start another.
  */
-export function linkSegments(content: string): LinkSegment[] {
-  const segments: LinkSegment[] = [];
-  let text = "";
-  const pushText = (value: string) => {
-    text += value;
-  };
-  const pushLink = (label: string, href: string) => {
-    if (text) segments.push({ kind: "text", text });
-    text = "";
-    segments.push({ kind: "link", text: label, href });
-  };
-
-  const unclosedTicks = new Set<number>();
+export function bareUrls(text: string): BareUrl[] {
+  const found: BareUrl[] = [];
   let i = 0;
-  while (i < content.length) {
-    const char = content[i]!;
-
-    if (char === "`") {
-      let run = 1;
-      while (content[i + run] === "`") run += 1;
-      const fence = "`".repeat(run);
-      const close = unclosedTicks.has(run)
-        ? -1
-        : content.indexOf(fence, i + run);
-      if (close === -1) {
-        unclosedTicks.add(run);
-        pushText(fence);
-        i += run;
-        continue;
-      }
-      pushText(content.slice(i, close + run));
-      i = close + run;
-      continue;
-    }
-
-    if (char === "[") {
-      const labelEnd = indexWithin(content, "]", i + 1, MAX_LABEL_LENGTH);
-      if (
-        labelEnd > i + 1 &&
-        content[labelEnd + 1] === "("
-      ) {
-        const label = content.slice(i + 1, labelEnd);
-        const targetStart = labelEnd + 2;
-        let targetEnd = indexWithin(
-          content,
-          ")",
-          targetStart,
-          MAX_TARGET_LENGTH,
-        );
-        // One level of balanced parens in the target, as CommonMark allows:
-        // `[wiki](https://en.wikipedia.org/wiki/Frapp_(drink))`.
-        if (
-          targetEnd !== -1 &&
-          content.slice(targetStart, targetEnd).includes("(") &&
-          content[targetEnd + 1] === ")"
-        ) {
-          targetEnd += 1;
-        }
-        const target =
-          targetEnd === -1 ? "" : content.slice(targetStart, targetEnd);
-        if (
-          !label.includes("[") &&
-          targetEnd !== -1 &&
-          target.length > 0 &&
-          !/\s/.test(target)
-        ) {
-          if (isOpenableHref(target)) pushLink(label, target);
-          else pushText(label);
-          i = targetEnd + 1;
-          continue;
-        }
-      }
-      pushText(char);
-      i += 1;
-      continue;
-    }
-
-    if (char === "<" && urlPrefixAt(content, i + 1)) {
-      const close = indexWithin(content, ">", i + 1, MAX_TARGET_LENGTH);
-      const target = close === -1 ? "" : content.slice(i + 1, close);
-      if (
-        close !== -1 &&
-        !/[\s<]/.test(target) &&
-        isOpenableHref(target)
-      ) {
-        pushLink(target, target);
-        i = close + 1;
-        continue;
-      }
-      pushText(char);
-      i += 1;
-      continue;
-    }
-
+  while (i < text.length) {
+    const char = text[i];
     if (
       (char === "h" || char === "H") &&
-      !isWordChar(content[i - 1]) &&
-      urlPrefixAt(content, i)
+      !isWordChar(text[i - 1]) &&
+      urlPrefixAt(text, i)
     ) {
-      const end = bareUrlEnd(content, i);
-      const url = content.slice(i, end);
+      const end = bareUrlEnd(text, i);
+      const href = text.slice(i, end);
       const hasHost = URL_PREFIXES.some(
-        (prefix) => url.length > prefix.length && url.toLowerCase().startsWith(prefix),
+        (prefix) =>
+          href.length > prefix.length &&
+          href.toLowerCase().startsWith(prefix),
       );
-      if (hasHost && isOpenableHref(url)) {
-        pushLink(url, url);
+      if (hasHost && isOpenableHref(href)) {
+        found.push({ start: i, end, href });
         i = end;
         continue;
       }
     }
-
-    pushText(char);
     i += 1;
   }
-  if (text) segments.push({ kind: "text", text });
-  return segments;
+  return found;
 }
