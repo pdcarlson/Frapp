@@ -172,7 +172,7 @@ layers are that job's steps named `inputs.environment == 'production'`:
 There used to be two human gates: the `main` → `production` promotion PR's required
 review, and then this environment approval after merge, on a click nobody was paged for.
 That second click was measured holding a one-migration apply for 29m52s (evidence:
-`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). #1340
+`docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap secrets). #1340
 kept the approval and dropped the promotion PR, so the surviving gate is the one where a
 human is actually looking at what is about to ship.
 
@@ -238,7 +238,7 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../../scr
 
 **CD (deploy workflows)** uses Infisical-injected runtime secrets in `_deploy.yml`, the job `deploy-staging.yml` (staging) and `deploy-production.yml` (production) both call. Variable names are **unified** across environments ([`SECRETS_MANAGEMENT.md` § Key Design Principles](../../environment/SECRETS_MANAGEMENT.md#key-design-principles)). Each workflow resolves secrets at runtime from Infisical using the environment slug for its target (`staging` for `main`, `prod` for a production deploy). Which variables it reads, and what each is for, is kept in one place: [`ENV_REFERENCE.md` § CD Secrets](../../environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only).
 
-Two GitHub secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET`. Like every GitHub secret here they belong in environments restricted to `main`, never in repository scope, because a repository secret is readable from any branch ([#2518](https://github.com/pdcarlson/Frapp/issues/2518)). The deploy-time values themselves come from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)). Which environment holds which secret, including the provider API tokens the deploy workflows use: [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
+Two GitHub secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET`. Like every GitHub secret here they belong in environments restricted to `main`, never in repository scope, because a repository secret is readable from any branch ([#2518](https://github.com/pdcarlson/Frapp/issues/2518)). The deploy-time values themselves come from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)). Which environment holds which secret, including the provider API tokens the deploy workflows use: [`agent-infra.md` § GitHub environments and bootstrap secrets](../../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets).
 
 
 ---

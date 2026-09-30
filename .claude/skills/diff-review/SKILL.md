@@ -21,7 +21,7 @@ Never get past the gate with `git push --no-verify`: it leaves no review evidenc
 prompt carries the token whitespace-delimited (regex `(?<!\S)/code-review(?=$|\s)`), never inside a
 subagent or a slash-command expansion. It knows none of Frapp's angles and doesn't write the marker.
 When a turn does carry the token, run it as asked, then run this skill. Full rule:
-`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
+`docs/ci-cd/ai-code-review-runbook.md`.
 
 ## 1. Scope
 

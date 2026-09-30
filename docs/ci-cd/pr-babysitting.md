@@ -1,6 +1,6 @@
 # PR babysitting: wake signals and CI-failure triage
 
-Facts for wake signals, CI-failure triage, CI branch filters, the CI-wake watchdog, and base-branch sync. Router: [`AGENT_INFRA.md`](AGENT_INFRA.md). Cite this file and a heading, never `§N`.
+Facts for wake signals, CI-failure triage, CI branch filters, the CI-wake watchdog, and base-branch sync. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
 
 Why the babysit loop needs more than `subscribe_pr_activity`, and what each layer covers. Root
 cause on record: during the 2026-08-06 GitHub Actions outage, PR #659's `secret-scan` job died in
@@ -144,7 +144,7 @@ net — it is the one layer that misses nothing — but it prompts the owner on 
 cloud surface it is not usable unattended and is deliberately not armed (below). The coverage it
 would have added is a known, accepted gap, not an oversight.
 `api.github.com` is readable from a sandbox over the direct route; which route to use, and why, is
-under [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
+under [`agent-infra.md` → Work status](agent-infra.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
 directly for ground truth, but nothing in this sandbox runs while the session is asleep, so
 background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
 Treat GitHub as reachable only while awake, through the MCP tools; direct REST only for the
@@ -154,7 +154,7 @@ settings reads the MCP has no tool for.
 repo.** Directly observed (2026-08-08): it **still prompted the owner** through every allow-list
 spelling then present. Those 21 entries were later removed so they would stop being misread as
 permission. The likely mechanism is the ceiling rule
-([`AGENT_INFRA.md` → Applied permission allows](AGENT_INFRA.md#applied-permission-allows)) — the harness's `--allowed-tools` snapshot contains no
+([`agent-infra.md` → Applied permission allows](agent-infra.md#applied-permission-allows)) — the harness's `--allowed-tools` snapshot contains no
 `mcp__Claude_Code_Remote__*` entry at all — but that rule is a working hypothesis, and the
 practical conclusion does not depend on it: **more allow entries have already been tried and did
 not work.** Do not re-add them.
@@ -215,7 +215,7 @@ that has already failed three times.
   gap is accepted and a human notices instead. Keeping this workflow's surface minimal is
   therefore load-bearing, not just tidy.
 - Scope note vs. AI review: there is no CI-side AI reviewer at all any more — the advisory
-  `codex-review.yml` was removed 2026-09-21 (see `AI_CODE_REVIEW_RUNBOOK.md`), so nothing posts
+  `codex-review.yml` was removed 2026-09-21 (see `ai-code-review-runbook.md`), so nothing posts
   review findings on a PR. That never changed THIS watchdog in any case: the wake comment is machine
   signaling about CI state, and a healthy PR still carries no wake comment at all.
 
@@ -266,7 +266,7 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     usual sweep has no *other* open PR to update, and an alert gated on a same-sweep success would
     stay open for weeks after the fix. A sweep with **no** token and nothing behind proves nothing
     and never closes it (the "a no-op run never closes an open alert" rule under
-    [`AGENT_INFRA.md` → Deploy visibility](AGENT_INFRA.md#deploy-visibility-scriptscideploy-alertmjs)).
+    [`agent-infra.md` → Deploy visibility](agent-infra.md#deploy-visibility-scriptscideploy-alertmjs)).
 - **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
   Unknown mergeability (API error, `mergeable` never resolves) is skipped fail-safe: never
   blind-updated, never falsely accused of conflicts; the next base move re-sweeps.
@@ -281,7 +281,7 @@ runs on the updated head, and a failure there reaches the watching session throu
 `PR_BASE_SYNC_TOKEN` is a **GitHub App installation token**, minted per run by
 `actions/create-github-app-token@v3` in `pr-base-sync.yml` from two secrets that belong in the
 `automation` environment: `PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY` (#2518,
-#2583; [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](AGENT_INFRA.md#github-environments-and-bootstrap-secrets)). An App was chosen over the
+#2583; [`agent-infra.md` § GitHub environments and bootstrap secrets](agent-infra.md#github-environments-and-bootstrap-secrets)). An App was chosen over the
 fine-grained PAT this originally specified for two reasons: an installation token has no expiry
 for a human to renew on a calendar reminder (it is minted fresh each run and expires in an hour),
 and it is not tied to one person's account, so it survives that person's PAT policy, their token
@@ -359,7 +359,7 @@ this compares against a design, not against something that ran.) What makes it s
   open, and its body still describes the script as PUT-only, so cite the capability rather than the
   issue. **That read is available to a session**, contrary to what this bullet used to say: it called the read "session-dependent" and
   therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
-  [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status) corrects — `GET /repos/{owner}/Frapp/branches/main/protection` returns 200 direct
+  [`agent-infra.md` → Work status](agent-infra.md#work-status) corrects — `GET /repos/{owner}/Frapp/branches/main/protection` returns 200 direct
   (21 required contexts as the roster stood at that read, since reduced by #1637 and by the
   docs-gate retirement; read `ALL_REQUIRED_CHECKS` rather than any count quoted here. Plus
   `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
@@ -372,7 +372,7 @@ this compares against a design, not against something that ran.) What makes it s
   `false`, so a divergence on that one key stays invisible to a green `:verify`
   (#1580 closed the divergence that existed;
   the exclusion remains). Canonical state, including the roster's current context count:
-  [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Step 1 —
+  [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Step 1 —
   read it rather than the dated counts above, and do not add new ones here. What survives is
   that a read is a **dated snapshot**, not a standing guarantee: nothing stops `main` drifting again
   between applies, so re-run the verify rather than trusting this date; (b) `restrictions: null` means the push-restriction
@@ -409,7 +409,7 @@ the cheapest hardening available if that trade is ever revisited. Count the work
 `ls .github/workflows/*.yml` rather than trusting a number written here.
 
 One pre-existing property this rests on: `main` requires **zero** approving reviews — and since
-#1340 it is the only branch, so there is no branch anywhere that requires one ([`CONTRIBUTING.md` § PR review requirement policy](../../../CONTRIBUTING.md#pr-review-requirement-policy)).
+#1340 it is the only branch, so there is no branch anywhere that requires one ([`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy)).
 So "only reviewed code runs with the App token" is really "only code merged by someone with
 write access" — fine for a single-maintainer repo, and the thing to revisit first if
 collaborators are ever added. Note this is about the App token, not about what ships: the

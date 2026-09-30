@@ -12,7 +12,7 @@ React workspaces share [`react-hooks.js`](./react-hooks.js): `eslint-plugin-reac
 `recommended` also turns on React Compiler rules. The shared config **allowlists** every
 rule in that preset at upstream severity. A later plugin bump that adds a new
 `recommended` rule stays `"off"` until a dedicated cleanup. Why:
-[`docs/internal/ci-cd/AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md).
+[`docs/ci-cd/agent-infra.md`](../../docs/ci-cd/agent-infra.md).
 
 ## Usage examples
 

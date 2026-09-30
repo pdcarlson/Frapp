@@ -93,7 +93,7 @@ test("a fully-fetched clone is complete", () => {
   assert.deepEqual(result.reasons, []);
 });
 
-// SECRET_SCANNING.md's middle row: full depth, so `--is-shallow-repository`
+// secret-scanning.md's middle row: full depth, so `--is-shallow-repository`
 // says false and `--unshallow` is a no-op, yet history is largely absent.
 test("full-depth but under-fetched is incomplete even though it is NOT shallow", () => {
   const result = evaluateRefCompleteness({ ...COMPLETE, localObjects: ["sha-main"] });

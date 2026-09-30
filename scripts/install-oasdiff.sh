@@ -10,7 +10,7 @@
 # Idempotent — a no-op when the pinned version is already cached.
 # Override with OASDIFF_VERSION=x.y.z (e.g. to test an upgrade).
 #
-# Docs: docs/internal/ci-cd/QUALITY_GATES.md
+# Docs: docs/ci-cd/quality-gates.md
 set -euo pipefail
 
 # The pinned version, the one place it is written. Its archives' digests are

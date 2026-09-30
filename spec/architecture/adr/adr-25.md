@@ -46,7 +46,7 @@
        - the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`;
        - a new dated entry for the system actor in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`, which record the 2026-09-09 `Signet System` rename;
        - every email string in `docs/internal/ops/deployment/supabase.md`: the SMTP table, the From addresses, the conformance description, and the Magic Link template's subject and body;
-       - the conformance assertions restated in `AGENT_INFRA.md` (the staging and production conformance rows) and `ALERT_ROUTING.md` (the production Auth row);
+       - the conformance assertions restated in `agent-infra.md` (the staging and production conformance rows) and `ALERT_ROUTING.md` (the production Auth row);
        - the `RESEND_FROM_EMAIL` default and staging value in `ENV_REFERENCE.md`.
      - *Consoles (owner):*
        - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject and the body's link shape (TokenHash and `type=magiclink`, no ConfirmationURL), but never the body's brand text, so a missed heading stays silent. Keep the link shape when retyping it. *2026-09-24: step 3 closed that gap. `auth-magic-link` now also fails a Magic Link body that says Signet ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).*
