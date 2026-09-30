@@ -450,3 +450,13 @@ export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmarkRef {
    */
   message_available: boolean;
 }
+
+/**
+ * A bookmark and its message as the repository reads them: everything but
+ * `message_available`, which only `ChatBookmarkService` can answer, because
+ * it takes the caller's current channel access.
+ */
+export type StoredChatMessageBookmark = Omit<
+  ChatMessageBookmarkWithMessage,
+  'message_available'
+>;

@@ -8,7 +8,7 @@ import {
   ChannelReadReceipt,
   ChannelUnreadCount,
   ChatMessageBookmarkRef,
-  ChatMessageBookmarkWithMessage,
+  StoredChatMessageBookmark,
 } from '../entities/chat.entity';
 
 export const CHAT_CHANNEL_REPOSITORY = 'CHAT_CHANNEL_REPOSITORY';
@@ -316,7 +316,7 @@ export interface IChatMessageBookmarkRepository {
   findByUserAndChapter(
     userId: string,
     chapterId: string,
-  ): Promise<ChatMessageBookmarkWithMessage[]>;
+  ): Promise<StoredChatMessageBookmark[]>;
 }
 
 /**

@@ -12,7 +12,7 @@ import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.r
 import type {
   BookmarkedMessage,
   ChatMessageBookmarkRef,
-  ChatMessageBookmarkWithMessage,
+  StoredChatMessageBookmark,
 } from '#domain/entities/chat.entity';
 
 const CHAPTER = 'chap-1';
@@ -179,9 +179,8 @@ describe('ChatBookmarkService', () => {
       // message's own content to that string, so the service must not filter —
       // and a filter added here would defeat the repository-level guarantee
       // even though that query stayed correct.
-      const deleted: ChatMessageBookmarkWithMessage = {
+      const deleted: StoredChatMessageBookmark = {
         ...bookmark,
-        message_available: true,
         message: message({ content: '[message deleted]', is_deleted: true }),
       };
       mockRepo.findByUserAndChapter.mockResolvedValue([deleted]);
@@ -219,7 +218,7 @@ describe('ChatBookmarkService', () => {
       // redacted row that differed structurally from an available one would be
       // the same "carries fields its declared shape omits" problem inverted.
       mockRepo.findByUserAndChapter.mockResolvedValue([
-        { ...bookmark, message_available: true, message: message() },
+        { ...bookmark, message: message() },
       ]);
       mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
 
