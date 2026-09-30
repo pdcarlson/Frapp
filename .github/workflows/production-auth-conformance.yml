@@ -6,11 +6,10 @@ name: Production Auth conformance
 # Staging already watches hook, redirects, SMTP and leaked-password
 # protection (plus Infisical and a sign-in probe) and FAILs on empty SMTP.
 # Leaked-password protection is asserted whatever the SMTP state.
-# Production SMTP is skip-until-on: empty host (hosted 2/hour cap) is
-# SKIPPED so this job stays green until #1824. SMTP on with a From
-# other than no-reply@mail.frapp.live fails the next tick. Magic Link is the
-# same gate: ConfirmationURL is SKIPPED while SMTP is unset; SMTP on
-# without token_hash fails.
+# Production SMTP is on (#1824), so empty SMTP fails here too, and so does
+# a From other than no-reply@mail.frapp.live. A Magic Link template without
+# token_hash fails whatever the SMTP state. Both used to SKIP while SMTP was
+# unset, which let a switched-off mailer read as a healthy run (#2349).
 #
 # Own alert title. A shared one would let a recovered staging close a live
 # production incident. Project ref comes from .github/environments.json, not
