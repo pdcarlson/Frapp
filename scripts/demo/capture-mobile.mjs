@@ -254,9 +254,9 @@ const APP_SCREENS = [
     slug: "02-ask-answer",
     // Deliberately not the `/ask` route. Ask is a sheet hosted by Chat home and
     // Events behind the ✦ pill, never a screen of its own
-    // (`spec/ui/mobile/navigation.md:60`); `app/(tabs)/ask.tsx` exists only to
-    // back a frozen `Tabs.Screen` registration and says so in its own header
-    // comment. Shooting the route photographs a deliberately bare shell — the
+    // (`spec/ui/mobile/navigation.md` § Global entries outside the tab bar);
+    // `app/(tabs)/ask.tsx` exists only to back a frozen `Tabs.Screen`
+    // registration and says so in its own header comment. Shooting the route photographs a deliberately bare shell — the
     // pill on s04 is where a member actually opens this.
     route: "/",
     label: "s17 — Ask sheet over Chat home, answered with citations",
@@ -398,8 +398,8 @@ const STORE_SCREENS = [
 
 /**
  * Whether any Ask surface is on screen: the ✦ glyph, the pill's accessible
- * name, or a leaf whose whole text is "Ask" (the pill's label, or the tab
- * navigator's title on the `ask` route). Runs in the page.
+ * name, or a leaf whose whole text is "Ask" (the pill's label, or the `ask`
+ * route's own title when the build has Ask). Runs in the page.
  */
 const ASK_ON_SCREEN = () =>
   document.body.innerText.includes("✦") ||

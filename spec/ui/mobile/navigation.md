@@ -18,7 +18,8 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 - The bar previously showed six tabs — Home, Chat, Events, Points, Profile, More. It now shows these four; Home and Points are gone as screens, and Profile moved to the More hub per [`screens.md`](screens.md).
 - Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md). They are custom `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`, transcribed from the tab bar drawn in the Canvas reference — not an off-the-shelf icon pack.
 - Every route outside these four is hidden from the bar (`href: null`) and reached by navigation.
-- **No screen draws the tab navigator's header** (`headerShown: false`, [#2485](https://github.com/pdcarlson/Frapp/issues/2485)). The board draws none: every screen carries its own title, through `ScreenShell` or its own bar (s05's `‹ #name`, s22's `✕ End`), so the header only said that title again above it. It supplied no way back either, because a tab route's header renders without a `back`. A pushed route's back control is one it draws itself. `apps/mobile/lib/tab-layout.spec.tsx` renders the layout and fails if the header comes back, for the navigator or for any one registration.
+- **No screen draws the tab navigator's header** (`headerShown: false`, [#2485](https://github.com/pdcarlson/Frapp/issues/2485)). The board draws none: each screen's top is its own, through `ScreenShell` or its own bar (s05's `‹ #name`, s22's `✕ End`), so the header only said the screen's title again above it. It supplied no way back either, because a tab route's header renders without a `back`. A pushed route's back control is one it draws itself. `apps/mobile/lib/tab-layout.spec.tsx` renders the layout and fails if the layout turns the header back on, for the whole navigator or for any registration in it. It renders no route, so an override a route sets for itself (a `<Tabs.Screen options>` inside the route file, or `navigation.setOptions`) is outside what it can see; don't add one.
+- **Chat home (s04) is the one title the board doesn't draw.** The board opens s04 on its UP NEXT row. The app titles it with the chapter's name and mark instead, because [`../../behavior/branding.md`](../../behavior/branding.md) § Chapter mark makes that row the mark's one mobile surface. That is a recorded departure, not drift to restore from the board. Before #2485 the screen drew two title rows there, the header's chapter name and the shell's "Chat".
 
 ## More hub (s09)
 
@@ -283,5 +284,6 @@ the header had been doing: it takes the top safe-area inset, marks its title as 
 screen's heading, and gained an optional `titleMark` slot before the title. Chat home
 fills that slot with the chapter mark, which had been the header's title and is the mark's
 one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
-mark). The two screens that opt out of the shell, s05 and s13, took the top inset
-themselves.
+mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
+this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
+their own titles took the heading role the header's title used to carry.

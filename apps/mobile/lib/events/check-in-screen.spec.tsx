@@ -229,3 +229,22 @@ describe("Check-in on a module-off refusal (#2393)", () => {
     act(() => tree.unmount());
   });
 });
+
+describe("Check-in's title (#2485)", () => {
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+  });
+
+  it("is the screen's heading, now that no navigator header names it", () => {
+    const tree = render();
+    const headings = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityRole === "header" &&
+        node.type === ("Text" as never),
+    );
+
+    expect(headings.map((node) => node.props.children)).toEqual(["Check in"]);
+  });
+});

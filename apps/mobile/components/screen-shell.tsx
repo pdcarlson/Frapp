@@ -28,8 +28,9 @@ type ScreenShellProps = {
 };
 
 /**
- * The screen frame every drawn tab screen shares: its title row, subtitle and
- * scrolling body. The title is the screen's only heading. The tab layout draws
+ * The screen frame most tab screens share: its title row, subtitle and
+ * scrolling body. s05, s13, s18 and s22 draw their own. The title is the
+ * screen's only heading. The tab layout draws
  * no navigator header (#2485), so the shell also takes the top safe-area inset
  * the header used to absorb.
  */
