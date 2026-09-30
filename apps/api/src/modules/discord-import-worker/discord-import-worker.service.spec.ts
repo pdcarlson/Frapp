@@ -243,6 +243,12 @@ function makeRepo(initial: DiscordImport) {
       return round;
     }),
     deletedChannels: [] as string[],
+    createdChannels: [] as string[],
+    recordCreatedChannel: jest.fn(
+      async (_importId: string, channelId: string) => {
+        repoRef.createdChannels.push(channelId);
+      },
+    ),
     deleteEmptyCreatedChannels: jest.fn(
       async (): Promise<string[]> => repoRef.deletedChannels,
     ),
@@ -529,6 +535,55 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.channelUpdates[0]).toMatchObject({
       target_channel_id: 'created-channel-1',
     });
+  });
+
+  // The purge deletes what an import created once it is empty (#2905). It
+  // can't learn that from the mapping rows, which remapping a failed import
+  // rewrites without their targets, so the worker records it as it creates.
+  it('records a channel it creates for the purge, before the mapping row learns its target', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'discord-general',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.recordCreatedChannel).toHaveBeenCalledTimes(1);
+    expect(repoRef.recordCreatedChannel).toHaveBeenCalledWith(
+      job().id,
+      'created-channel-1',
+    );
+    expect(
+      repoRef.recordCreatedChannel.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(channelRepo.create.mock.invocationCallOrder[0]);
+    expect(
+      repoRef.recordCreatedChannel.mock.invocationCallOrder[0],
+    ).toBeLessThan(repoRef.updateChannel.mock.invocationCallOrder[0]);
+  });
+
+  it('records nothing for a channel it merges into', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'use_existing',
+        target_channel_id: SIGNET_CHANNEL,
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).not.toHaveBeenCalled();
+    expect(repoRef.recordCreatedChannel).not.toHaveBeenCalled();
   });
 
   it('creates a restricted channel ROLE_GATED, with the permissions the admin chose (#2787)', async () => {

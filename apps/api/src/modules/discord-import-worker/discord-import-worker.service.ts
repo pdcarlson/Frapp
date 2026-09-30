@@ -925,6 +925,10 @@ export class DiscordImportWorkerService {
       category_id: null,
       is_read_only: mapping.new_channel_is_read_only,
     });
+    // Recorded before the mapping row learns its target: remapping a failed
+    // import rewrites the mapping rows without targets, and this is how the
+    // purge still finds a channel the import made (#2905).
+    await this.importRepo.recordCreatedChannel(importId, created.id);
     await this.importRepo.updateChannel(mapping.id, importId, {
       target_channel_id: created.id,
     });
@@ -982,10 +986,11 @@ export class DiscordImportWorkerService {
     }
 
     // Then the channels this import created, now that its rows are gone (#2905).
-    // Left behind, each one came back as a second, like-named channel on a
-    // re-import of the same server. The function keeps any channel that still
-    // holds a message of any kind, an attachment, or another import's mapping,
-    // and it checks and deletes each one under the channel's row lock, so a
+    // Left behind, each met a re-import of the same server as a name clash to
+    // resolve, or as a duplicate when hidden from the admin (#2799). The
+    // function keeps any channel that still holds a message of any kind, an
+    // attachment, a points-ledger link, or another import's merge into it, and
+    // it checks and deletes each one under the channel's row lock, so a
     // message sent meanwhile keeps its channel.
     const channelsDeleted = await this.importRepo.deleteEmptyCreatedChannels(
       job.id,

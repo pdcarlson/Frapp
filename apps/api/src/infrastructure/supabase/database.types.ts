@@ -32,6 +32,7 @@ import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
+  DiscordImportCreatedChannel,
   DiscordOAuthState,
   DiscordAuthorLink,
   Event,
@@ -124,6 +125,7 @@ export interface Database {
       discord_imports: TableDefinition<DiscordImport>;
       discord_import_channels: TableDefinition<DiscordImportChannel>;
       discord_import_files: TableDefinition<DiscordImportFile>;
+      discord_import_created_channels: TableDefinition<DiscordImportCreatedChannel>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;

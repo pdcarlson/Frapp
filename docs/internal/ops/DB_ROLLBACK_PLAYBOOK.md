@@ -2384,14 +2384,15 @@ Then undo it in two new forward migrations, not by hand. A deploy applies migrat
 
 * **Migration**: `20260930030000_discord_import_purge_channels.sql`
 
-One function, `delete_empty_discord_import_channels` (#2905). No schema changes and no existing row is rewritten. The only data it touches is what a purge deletes: channels an import created and left empty.
+A table, `discord_import_created_channels` (RLS on, no policies), and a function, `delete_empty_discord_import_channels` (#2905). The migration itself rewrites no row. What changes data is the function, when a purge calls it: it deletes channels an import created that hold no message, attachment, points-ledger link or `use_existing` mapping. Each delete also cascades that channel's read receipts, sidebar pins and created-channel row. It sets `target_channel_id` to null on the mapping rows that named it, which removes the one record of which channel that `create_new` row made.
 
-**Revert the API code forward, and keep the migration file.** The worker that ships with this migration calls the function in every purge slice. Revert the #2905 code on `main` and ship that, but keep `supabase/migrations/20260930030000_discord_import_purge_channels.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker never calls the function, so leaving it in place is safe.
+**Revert the API code forward, and keep the migration file.** The worker that ships with this migration writes a row to the table for every channel it creates, and calls the function in every purge slice. Revert the #2905 code on `main` and ship that, but keep `supabase/migrations/20260930030000_discord_import_purge_channels.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker neither writes the table nor calls the function, so leaving both in place is safe.
 
-To remove it, drop it in a new forward migration once the reverted API is live, not by hand: a newer worker that still calls it fails every purge slice with a missing-function error until the revert deploys.
+To remove them, drop them in a new forward migration once the reverted API is live, not by hand. A newer worker still running fails its channel creation and every purge slice until the revert deploys.
 
 ```sql
 drop function if exists public.delete_empty_discord_import_channels(uuid, uuid);
+drop table if exists public.discord_import_created_channels;
 ```
 
-A channel a purge already deleted can't be recovered by rollback. It held nothing when it went: no message of any kind, and no other import mapped into it. Its read receipts and sidebar pins went with it, as they do when an officer deletes a channel. A re-import recreates it.
+A channel a purge already deleted can't be recovered by rollback. It held no message of any kind, no attachment, no points-ledger link and no other import's merge when it went; a re-import recreates it.

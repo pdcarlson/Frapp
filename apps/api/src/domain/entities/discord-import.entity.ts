@@ -289,6 +289,17 @@ export type DiscordImportFileKind = 'export' | 'media';
  * resolves that by looking `relative_path` up here — never by rebuilding a
  * storage key out of parts.
  */
+/**
+ * A channel the worker created for an import (#2905). The purge deletes the
+ * ones left holding nothing. Kept apart from the mapping rows, because
+ * remapping a failed import rewrites those without their targets.
+ */
+export interface DiscordImportCreatedChannel {
+  import_id: string;
+  channel_id: string;
+  created_at: string;
+}
+
 export interface DiscordImportFile {
   id: string;
   import_id: string;

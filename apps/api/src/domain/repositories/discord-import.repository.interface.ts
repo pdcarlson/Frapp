@@ -291,10 +291,16 @@ export interface IDiscordImportRepository {
   ): Promise<number>;
 
   /**
+   * Record that the worker created this channel for this import (#2905), so
+   * the purge can find it even after the mapping rows are rewritten.
+   */
+  recordCreatedChannel(importId: string, channelId: string): Promise<void>;
+
+  /**
    * Delete the channels this import created that now hold nothing: no message
-   * of any kind, no attachment, and no other import mapped into them (#2905).
-   * Runs only while the import is `purging`, after its messages are gone.
-   * Returns the ids of the channels it deleted.
+   * of any kind, no attachment, no points-ledger link, and no `use_existing`
+   * mapping of any import (#2905). Runs only while the import is `purging`,
+   * after its messages are gone. Returns the ids of the channels it deleted.
    */
   deleteEmptyCreatedChannels(
     importId: string,

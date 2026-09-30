@@ -576,11 +576,23 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ### 20260930030000_discord_import_purge_channels.sql
 
-- **Purpose**: Adds `public.delete_empty_discord_import_channels(p_import_id uuid, p_chapter_id uuid) returns setof uuid` (service role only, `security invoker`). The purge worker calls it after deleting an import's messages. It does nothing unless the import is `purging` in that chapter. For each channel the import created (a `create_new` mapping row whose `target_channel_id` is set), it locks the channel row, then deletes the channel only if it holds no `chat_messages` row of any kind, no `chat_message_attachments` row, no other import's mapping row, and no `use_existing` row of any import pointing at it. It returns the deleted ids. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
-- **Checks**: After `db push`,
-  `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');` returns `f`, and
-  `select has_function_privilege('service_role', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');` returns `t`.
-- **Promoter notes**: Ship it before, or with, the API that calls it. Against an unmigrated database the newer worker fails every purge slice at this call, after the messages are gone and before the archive objects are swept, and marks the import `failed`; deleting it again after the migration lands finishes it. An older API never calls the function. Nothing runs at apply time: channels go only as imports are purged afterwards, so channels that earlier purges left behind stay until an officer deletes them. `create or replace function` and the grants are idempotent. Hosted projects are not applied from a cloud-agent session.
+- **Purpose**: Adds two things; the rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+  - **The table** `public.discord_import_created_channels` has one row per channel the worker creates for an import, keyed on `(import_id, channel_id)`. Both columns cascade on delete, and RLS is on with no policies.
+  - **The function** `public.delete_empty_discord_import_channels(p_import_id uuid, p_chapter_id uuid) returns setof uuid` is service role only and `security invoker`. The purge worker calls it after deleting an import's messages, and it does nothing unless the import is `purging` in that chapter.
+    - Its candidates are the channels the table records for the import, plus each `create_new` mapping row's target that is no older than the import (for imports from before the table).
+    - It locks each candidate's row, then deletes the channel only if it holds no `chat_messages` row of any kind, no `chat_message_attachments` row, no `point_transactions` row, and no `use_existing` mapping row of any import.
+    - It returns the deleted ids.
+- **Checks**: After `db push`, these return `t`, `f` and `t`:
+  - `select relrowsecurity from pg_class where relname = 'discord_import_created_channels';`
+  - `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');`
+  - `select has_function_privilege('service_role', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');`
+- **Promoter notes**:
+  - **Order:** ship it before, or with, the API that uses it. A deploy applies migrations first, so the worker never sees a database without them.
+  - **Against an unmigrated database**, the newer worker fails at its first channel creation, and every purge slice fails at the call. The import is marked `failed`, and retrying once the migration is in finishes it.
+  - **An older API** never touches either object.
+  - **Nothing runs at apply time.** Channels go only as imports are purged afterwards. The table starts empty; a purge finds an older import's channels through its mapping rows. Channels that earlier purges left behind stay until an officer deletes them.
+  - **Idempotent:** `create table if not exists`, `create index if not exists`, `create or replace function` and the grants.
+  - Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-emptied-import-channels-20260930030000) § Rollback emptied import channels.
 

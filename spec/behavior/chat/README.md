@@ -786,14 +786,30 @@ channel that reports a different one fails the import rather than being skipped.
   attachments and reactions, and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a
   live channel leaves that channel's live messages — and any *other* import's
-  messages — untouched. It then deletes each channel the import **created** that
-  is left holding nothing: no message of any kind (live, deleted, a tombstone,
-  or another import's), no attachment, and no other import mapped into it
-  (#2905). A channel it merged into is never deleted, and neither is a created
-  channel that still holds something, so a re-import of the same server finds
-  no empty leftover to duplicate. Before #2905 every created channel stayed, and
-  a re-import minted a second, like-named one beside it, since `chat_channels`
-  has no unique name and a channel private in Discord never merges by default.
+  messages — untouched. It then deletes each channel the import **created**
+  (#2905) that is left holding nothing:
+  - no message of any kind (live, deleted, a tombstone, or another import's);
+  - no attachment;
+  - no points-ledger row pointing at it;
+  - no other import merged into it.
+
+  The worker records each channel it creates, so this holds even after a
+  failed import was remapped, which rewrites the mapping rows without their
+  targets. For an import from before that record existed, a `create_new` row's
+  target counts only if the channel is no older than the import. An upload
+  mapped before #2859 could name an existing channel there.
+
+  A channel the import merged into is never deleted, and neither is a created
+  channel that still holds something. **Known gap:** a created channel another
+  import merged into stays even after both are deleted (#2922), because
+  `discord_import_channels_target_present` won't let that import's mapping row
+  lose its target.
+
+  Before #2905 every created channel stayed. A re-import then merged a public
+  leftover by default (#2856), and flagged a private one's name as a clash to
+  resolve by hand. The clash reached the chapter as a duplicate only when the
+  leftover was hidden from the admin (#2799), which #2905 does not change.
+
   The roles the import created stay either way, as the role mapping above
   says. This is currently the only deletion path that reaps the `chat-archive`
   bucket; there is no chapter-deletion path in the product.

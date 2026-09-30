@@ -821,6 +821,24 @@ describe('SupabaseDiscordImportRepository.deleteEmptyCreatedChannels (#2905)', (
     });
   });
 
+  it('records a created channel idempotently, keyed on the import and the channel', async () => {
+    const upsert = jest.fn(async () => ({ error: null }));
+    const from = jest.fn(() => ({ upsert }));
+    const repo = new SupabaseDiscordImportRepository({
+      from,
+    } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0]);
+
+    await repo.recordCreatedChannel(IMPORT_A, CHANNEL_A);
+
+    expect(from).toHaveBeenCalledWith('discord_import_created_channels');
+    expect(upsert).toHaveBeenCalledWith(
+      { import_id: IMPORT_A, channel_id: CHANNEL_A },
+      { onConflict: 'import_id,channel_id', ignoreDuplicates: true },
+    );
+  });
+
   it('reads no rows as nothing deleted', async () => {
     const [repo] = repoWithRpc({ data: null, error: null });
 

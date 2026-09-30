@@ -716,6 +716,22 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     return ids.length;
   }
 
+  async recordCreatedChannel(
+    importId: string,
+    channelId: string,
+  ): Promise<void> {
+    // Idempotent: a slice that dies after this insert and before the mapping
+    // row learns its target mints a second channel on the retry, and each gets
+    // its own row; recording the same pair twice is a no-op.
+    const { error } = await this.supabase
+      .from('discord_import_created_channels')
+      .upsert(
+        { import_id: importId, channel_id: channelId },
+        { onConflict: 'import_id,channel_id', ignoreDuplicates: true },
+      );
+    if (error) throw error;
+  }
+
   async deleteEmptyCreatedChannels(
     importId: string,
     chapterId: string,
