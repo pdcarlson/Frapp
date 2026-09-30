@@ -3,8 +3,9 @@ import { ChannelCacheService } from './channel-cache.service';
 
 /**
  * Isolated so `ChannelCacheService` can be shared between `ChatPushWorkerModule`
- * (which reads and populates it) and `ChatModule` (which invalidates it on
- * write) without either pulling in the other's full provider graph.
+ * (which reads and populates it) and the modules that invalidate it on write
+ * (`ChatModule`, `MemberModule`, and `DiscordImportModule` for the import
+ * purge, #2905) without any of them pulling in another's full provider graph.
  */
 @Module({
   providers: [ChannelCacheService],

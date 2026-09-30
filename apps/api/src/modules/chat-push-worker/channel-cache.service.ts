@@ -31,7 +31,10 @@ export interface CachedChannelRow {
  * The TTL bounds staleness as a backstop, but any write path that can change
  * either field must call {@link invalidate} — see `ChatService.updateChannel`
  * and `deleteChannel`, and the `member_ids` writers `leaveChannel`,
- * `addPrivateChannelMember` and `removePrivateChannelMember` (#1302).
+ * `addPrivateChannelMember` and `removePrivateChannelMember` (#1302). Outside
+ * `ChatService`, `MemberService` evicts the channels a removed member leaves,
+ * and the Discord import purge (`DiscordImportWorkerService.runPurgeSlice`)
+ * evicts the channels it deletes (#2905).
  *
  * `set` is fenced by an epoch counter rather than writing unconditionally.
  * Without it, a read started before a write's `invalidate()` call can still
