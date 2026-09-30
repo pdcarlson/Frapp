@@ -89,6 +89,7 @@ import { join } from "node:path";
 
 import {
   ALERT_LOOKUP_LABEL,
+  defineAlert,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -104,10 +105,10 @@ export const SUPABASE_API_BASE = "https://api.supabase.com";
 // stable across releases. The lookup label, the assignee, and the create /
 // reopen / close upsert all come from lib/alert-issue.mjs (#909), like every
 // other watchdog's.
-export const ALERT_ISSUE_TITLE =
-  "Database schema drift — a deployed database no longer matches supabase/migrations/";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:db", "P1"];
+export const ALERT = defineAlert({
+  title: "Database schema drift — a deployed database no longer matches supabase/migrations/",
+  labels: ["area:db", "P1"],
+});
 
 // A migration merged minutes ago is legitimately not applied yet. The grace
 // window is measured from the migration's own 14-digit version timestamp, which
@@ -546,7 +547,7 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "While it is open, at least one deployed database is drifting from this repository right now.",
     "It closes itself as soon as a later run finds every environment in sync.",
     "",
-    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
+    `Do not claim this issue as backlog work — it carries \`${ALERT_LOOKUP_LABEL}\` and tracks live state,`,
     "not a unit of work. Fix the underlying drift and it resolves on its own.",
     "",
     "### Current state",
@@ -721,14 +722,12 @@ export async function runMigrationDriftCheck({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
   };
   let alert = { action: "none" };
   if (status === "drift") {
     alert = await raiseAlert({
       ...alertIdentity,
-      labels: ALERT_ISSUE_LABELS,
       buildIssueBody: () => buildAlertIssueBody({ results, graceHours, runUrl }),
       buildCommentBody: ({ reopened }) =>
         buildAlertCommentBody({ results, graceHours, runUrl, reopened }),
