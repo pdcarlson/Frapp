@@ -21,7 +21,41 @@ export type ImportRow = {
   created_at: string;
   /** A bot import's date cutoff (#2858): only messages since it. */
   messages_after?: string | null;
+  /**
+   * Imported messages the deletion has removed so far (#2944), out of
+   * `imported_messages`. Kept by the purge worker, so reading it is free.
+   */
+  purged_messages?: number;
 };
+
+/** How far a deletion has got, in messages, for a row that is `purging`. */
+export type PurgeProgress = {
+  /** Messages still to delete, out of `total`. Never below 0. */
+  left: number;
+  total: number;
+  /** Whole percent deleted, capped at 99: only `purged` means done. */
+  percent: number;
+};
+
+/**
+ * A deleting import's progress, or null for any other status.
+ *
+ * The total is `imported_messages`, the figure the row and the delete
+ * confirmation both show. The count can finish short of it (a message deleted
+ * before #2878 lost its import id, so the purge no longer finds it) or run
+ * past it (a slice that died after inserting and before its checkpoint left
+ * rows it never counted), so `left` is clamped and the percent stops at 99.
+ * The status, never this count, says the deletion is over.
+ */
+export function purgeProgress(row: ImportRow): PurgeProgress | null {
+  if (row.status !== "purging") return null;
+  const total = row.imported_messages;
+  const purged = row.purged_messages ?? 0;
+  const left = Math.max(0, total - purged);
+  const percent =
+    total === 0 ? 99 : Math.min(99, Math.floor((purged / total) * 100));
+  return { left, total, percent };
+}
 
 /**
  * How far along an import is, in whole percent, or null when there is no

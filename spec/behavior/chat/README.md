@@ -858,6 +858,17 @@ channel that reports a different one fails the import rather than being skipped.
   says. This is currently the only deletion path that reaps the `chat-archive`
   bucket; there is no chapter-deletion path in the product.
 
+  Delete asks first (#2944), in a dialog that names the import's message and
+  attachment counts and says what goes and what stays in this section's words
+  ([`writing.md` § Discord Import (dashboard)](../../ui/design-system/writing.md#discord-import-dashboard)). The
+  purge runs in the background, 500 messages a round, so a large import takes
+  many minutes. While it runs, the import's row counts down the messages left
+  out of `imported_messages`, from `purged_messages`: the worker records that
+  count with each lease renewal rather than anyone counting the rows left.
+  The row says the import is deleted once its status is `purged`, never from
+  the count, which can finish short of the total (a message deleted before
+  #2878 lost its import id).
+
 What follows is the behaviour the archive has once it is in.
 
 - **Attribution without accounts, until the author links.** An imported message is written with `sender_id = null` and

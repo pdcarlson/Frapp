@@ -549,10 +549,12 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     lockToken: string,
     now: Date,
     leaseMs: number,
+    progress?: Pick<DiscordImport, 'purged_messages'>,
   ): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('discord_imports')
       .update({
+        ...progress,
         lease_expires_at: new Date(now.getTime() + leaseMs).toISOString(),
         updated_at: now.toISOString(),
       })
