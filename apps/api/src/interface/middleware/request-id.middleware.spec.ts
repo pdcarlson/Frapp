@@ -22,7 +22,10 @@ describe('requestIdMiddleware', () => {
   const isolationScope = { setTag: jest.fn() };
 
   beforeEach(() => {
-    jest.mocked(Sentry.getIsolationScope).mockReturnValue(isolationScope);
+    // The middleware only tags the scope.
+    jest
+      .mocked(Sentry.getIsolationScope)
+      .mockReturnValue(isolationScope as unknown as Sentry.Scope);
     isolationScope.setTag.mockClear();
   });
 

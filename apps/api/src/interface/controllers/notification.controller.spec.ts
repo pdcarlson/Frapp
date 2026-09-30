@@ -66,7 +66,7 @@ describe('NotificationController', () => {
       };
       const expectedResult = { id: 'push-1', ...dto, user_id: userId };
 
-      notificationService.registerPushToken!.mockResolvedValue(
+      notificationService.registerPushToken.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -86,7 +86,7 @@ describe('NotificationController', () => {
       const userId = 'user-1';
       const id = 'push-1';
 
-      notificationService.removePushToken!.mockResolvedValue(undefined);
+      notificationService.removePushToken.mockResolvedValue(undefined);
 
       const result = await controller.removePushToken(userId, id);
 
@@ -104,7 +104,7 @@ describe('NotificationController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = [{ id: 'notif-1' }];
 
-      notificationService.listNotifications!.mockResolvedValue(
+      notificationService.listNotifications.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -123,7 +123,7 @@ describe('NotificationController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = [{ id: 'notif-1' }];
 
-      notificationService.listNotifications!.mockResolvedValue(
+      notificationService.listNotifications.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -147,7 +147,7 @@ describe('NotificationController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = { id, is_read: true };
 
-      notificationService.markNotificationRead!.mockResolvedValue(
+      notificationService.markNotificationRead.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -168,7 +168,7 @@ describe('NotificationController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = [{ id: 'pref-1' }];
 
-      notificationService.getPreferences!.mockResolvedValue(
+      notificationService.getPreferences.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -192,7 +192,7 @@ describe('NotificationController', () => {
       };
       const expectedResult = { id: 'pref-1', ...dto, user_id: userId };
 
-      notificationService.updatePreference!.mockResolvedValue(
+      notificationService.updatePreference.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -218,7 +218,7 @@ describe('NotificationController', () => {
         theme: 'system' as const,
       };
 
-      notificationService.getSettings!.mockResolvedValue(expectedResult);
+      notificationService.getSettings.mockResolvedValue(expectedResult);
 
       const result = await controller.getSettings(userId);
 
@@ -240,7 +240,7 @@ describe('NotificationController', () => {
         theme: 'dark' as const,
       };
 
-      notificationService.updateSettings!.mockResolvedValue(expectedResult);
+      notificationService.updateSettings.mockResolvedValue(expectedResult);
 
       const result = await controller.updateSettings(userId, dto);
 

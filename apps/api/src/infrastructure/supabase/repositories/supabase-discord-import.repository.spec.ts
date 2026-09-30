@@ -387,7 +387,7 @@ describe('SupabaseDiscordImportRepository — purging a large import', () => {
     reader.limit = jest.fn(() =>
       Promise.resolve({ data: candidates, error: null }),
     );
-    const writer = {
+    const writer: Record<string, unknown> = {
       delete: jest.fn(() => writer),
       in: jest.fn((_column: string, ids: string[]) => {
         deleted.push(ids);

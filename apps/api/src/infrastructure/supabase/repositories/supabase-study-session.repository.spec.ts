@@ -96,7 +96,7 @@ describe('SupabaseStudySessionRepository — tenant scope', () => {
         start_time: '2026-05-02T10:00:00.000Z',
         last_heartbeat_at: '2026-05-02T10:00:00.000Z',
         total_foreground_minutes: 0,
-        points_awarded: 0,
+        points_awarded: false,
       }),
     );
 

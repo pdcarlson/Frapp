@@ -213,7 +213,7 @@ describe('ChatController', () => {
   describe('getMessages', () => {
     it('forwards limit, before, and since from the query DTO', async () => {
       const messages = [{ id: 'm1' }] as MaskedChatMessage[];
-      service.getMessages!.mockResolvedValue(messages);
+      service.getMessages.mockResolvedValue(messages);
 
       await expect(
         controller.getMessages('chan-1', 'ch-1', 'user-1', {

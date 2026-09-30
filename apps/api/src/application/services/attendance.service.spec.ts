@@ -207,7 +207,7 @@ describe('AttendanceService', () => {
       mockAttendanceRepo.findByEvent.mockResolvedValue([]);
       mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
       mockAttendanceRepo.createMany.mockImplementation(
-        async (rows: unknown[]) => rows,
+        async (rows: Partial<EventAttendance>[]) => rows as EventAttendance[],
       );
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');

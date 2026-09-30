@@ -416,7 +416,7 @@ describe('DiscordImportWorkerService — importing', () => {
     const afterFirst = repoRef.inserted().get(SIGNET_CHANNEL)!.size;
 
     // Reset the cursor exactly as a re-import would, and run again.
-    repoRef.update(IMPORT_ID, CHAPTER, {
+    await repoRef.update(IMPORT_ID, CHAPTER, {
       status: 'ready',
       cursor_part_index: 0,
       cursor_message_index: 0,
@@ -673,7 +673,7 @@ describe('DiscordImportWorkerService — importing', () => {
     const { worker } = await buildWorker(repoRef, makeStorage(part000()));
     repoRef.insertMessages.mockImplementationOnce(async () => {
       // The admin cancels while the first batch is in flight.
-      repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
+      await repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
       return new Map();
     });
 
@@ -685,7 +685,7 @@ describe('DiscordImportWorkerService — importing', () => {
   it('does not mark a cancelled job failed either', async () => {
     const storage = makeStorage(part000());
     storage.downloadFile.mockImplementation(async () => {
-      repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
+      await repoRef.update(IMPORT_ID, CHAPTER, { status: 'cancelled' });
       throw new Error('storage exploded');
     });
     const { worker } = await buildWorker(repoRef, storage);

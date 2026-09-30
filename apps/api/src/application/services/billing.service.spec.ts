@@ -46,7 +46,7 @@ function postgrestBody(): {
 
 function loggerPrinted(spy: jest.SpyInstance): string {
   return spy.mock.calls
-    .map((args) =>
+    .map((args: unknown[]) =>
       args
         .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
         .join('\n'),

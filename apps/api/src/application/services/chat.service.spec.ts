@@ -390,7 +390,7 @@ describe('ChatService', () => {
     // asserting the insert shape alone would not prove the channel is readable.
     it('should produce a PRIVATE row its creator can actually read', async () => {
       mockChannelRepo.create.mockImplementation((data) =>
-        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+        Promise.resolve({ ...baseChannel, ...data }),
       );
 
       const created = await service.createChannel(
@@ -416,7 +416,7 @@ describe('ChatService', () => {
     // it readable by another chapter member.
     it('should not make a seeded PRIVATE channel readable by anyone else', async () => {
       mockChannelRepo.create.mockImplementation((data) =>
-        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+        Promise.resolve({ ...baseChannel, ...data }),
       );
 
       const created = await service.createChannel(
@@ -3468,6 +3468,7 @@ describe('ChatService', () => {
         channel_id: 'ch-chan-1',
         user_id: 'user-1',
         last_read_at: '2026-01-01T12:00:00.000Z',
+        hidden_at: null,
         updated_at: '2026-01-01T12:00:00.000Z',
       });
 
@@ -3891,8 +3892,9 @@ describe('ChatService', () => {
         'user-1',
       );
 
-      expect(result.some((r) => r.kind === 'imported')).toBe(false);
-      expect(result.some((r) => r.kind === 'loading')).toBe(false);
+      const kinds = result.map((r) => r.kind);
+      expect(kinds).not.toContain('imported');
+      expect(kinds).not.toContain('loading');
       expect(result).not.toHaveLength(0);
     });
 
@@ -4417,7 +4419,7 @@ describe('ChatService', () => {
     describe('poll-card vote validation (#871)', () => {
       // The card payload the composer writes (@repo/chat-core/dispatch):
       // options carry ids, and the deadline is `closes_at`.
-      const pollMessage = {
+      const pollMessage: ChatMessage = {
         ...baseMessage,
         kind: 'poll',
         payload: {

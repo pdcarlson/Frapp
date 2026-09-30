@@ -53,7 +53,7 @@ describe('AttendanceController', () => {
       const dto: CheckInDto = {};
       const expectedResult = { success: true };
 
-      attendanceService.checkIn!.mockResolvedValue(expectedResult as any);
+      attendanceService.checkIn.mockResolvedValue(expectedResult as any);
 
       const result = await controller.checkIn(eventId, userId, chapterId, dto);
 
@@ -80,7 +80,7 @@ describe('AttendanceController', () => {
         lat: 42.7298,
         lng: -73.678,
       };
-      attendanceService.checkIn!.mockResolvedValue({ ok: true } as any);
+      attendanceService.checkIn.mockResolvedValue({ ok: true } as any);
 
       await controller.checkIn('event-1', 'user-1', 'chapter-1', dto);
 
@@ -101,7 +101,7 @@ describe('AttendanceController', () => {
   describe('mintCheckInToken', () => {
     it('should call attendanceService.mintCheckInToken with correct parameters', async () => {
       const expectedResult = { token: 't', manualCode: '4KQ-88' };
-      attendanceService.mintCheckInToken!.mockResolvedValue(
+      attendanceService.mintCheckInToken.mockResolvedValue(
         expectedResult as any,
       );
 
@@ -144,7 +144,7 @@ describe('AttendanceController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = [{ id: 'attendance-1' }];
 
-      attendanceService.getAttendance!.mockResolvedValue(expectedResult as any);
+      attendanceService.getAttendance.mockResolvedValue(expectedResult as any);
 
       const result = await controller.list(eventId, chapterId);
 
@@ -168,7 +168,7 @@ describe('AttendanceController', () => {
       };
       const expectedResult = { id: 'attendance-1' };
 
-      attendanceService.updateStatus!.mockResolvedValue(expectedResult as any);
+      attendanceService.updateStatus.mockResolvedValue(expectedResult as any);
 
       const result = await controller.updateStatus(
         eventId,
@@ -199,7 +199,7 @@ describe('AttendanceController', () => {
       };
       const expectedResult = { id: 'attendance-1' };
 
-      attendanceService.updateStatus!.mockResolvedValue(expectedResult as any);
+      attendanceService.updateStatus.mockResolvedValue(expectedResult as any);
 
       const result = await controller.updateStatus(
         eventId,
@@ -227,9 +227,7 @@ describe('AttendanceController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = { marked: 5 };
 
-      attendanceService.markAutoAbsent!.mockResolvedValue(
-        expectedResult as any,
-      );
+      attendanceService.markAutoAbsent.mockResolvedValue(expectedResult);
 
       const result = await controller.markAutoAbsent(eventId, chapterId);
 

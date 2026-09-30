@@ -786,9 +786,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // `POST /v1/chapters/:id/theme-palette` returns the build. Spreading it
       // sent `failedFillChecks`, which only a broken lift causes, to the
       // client; the route picks what it discloses instead.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockReturnValueOnce({
         palette: { '--signet-accent-primary': '#8B0000' },
         resolvedSeed: '#8B0000',
@@ -825,9 +825,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // The engine reports a check for every ladder surface, passing or not;
       // only the failures belong in the log, or every save would log a fill
       // warning naming all four surfaces and bury the one a broken lift raises.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       const fillCheck = (against: string, ratio: number) => ({
         role: '--signet-accent-primary',
         against,
@@ -876,9 +876,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // The engine fails a check on the unrounded ratio; `toFixed(2)` logged a
       // 4.4954 as "4.50:1" under "below AA", and would log a 2.996 fill as
       // "3.00:1" under "below 3:1". Both lines truncate.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       deriveSignetPalette.mockReturnValueOnce({
         palette: { '--signet-accent-primary': '#0086FE' },
         resolvedSeed: '#0086FE',
@@ -927,9 +927,9 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // `chapters.accent_color` is a second source for the same fact and the
       // two can disagree; which one wins is open in #795. Until that lands the
       // engine must read `branding.colors.accent` and nothing else.
-      const { deriveSignetPalette } = jest.requireMock(
-        '@repo/chapter-theme',
-      ) as { deriveSignetPalette: jest.Mock };
+      const { deriveSignetPalette } = jest.requireMock<{
+        deriveSignetPalette: jest.Mock;
+      }>('@repo/chapter-theme');
       expect(deriveSignetPalette).toHaveBeenCalledWith('#8B0000');
     });
 
