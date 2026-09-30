@@ -166,9 +166,11 @@ export async function runWatchdog({
 }) {
   if (!result.ok) {
     // A 15-minute cadence must not comment on every tick. Create or reopen
-    // only; an already-open P1 *is* the incident. A failed lookup falls
-    // through to raiseAlert, which looks again and creates on a second failure:
-    // a duplicate self-heals on recovery, silence about an outage does not.
+    // only; an already-open P1 *is* the incident. The lookup is handed to
+    // raiseAlert, which reuses a successful one rather than reading the same
+    // pages again (#2333). A failed lookup falls through to raiseAlert, which
+    // looks again and creates on a second failure: a duplicate self-heals on
+    // recovery, silence about an outage does not.
     const lookup = await findAlertIssuesDetailed({
       token,
       repo,
@@ -194,6 +196,7 @@ export async function runWatchdog({
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still failing: ${result.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
       refreshBodyOnRaise: true,
+      lookup,
     });
     return { outcome: "fail", alert: raised, lookupOk: lookup.lookupOk };
   }

@@ -1401,12 +1401,13 @@ export async function runStagingConformance({
 
   // Recovery is gated on the assertions the OPEN alert names, not on this
   // run's pass count. Read them before deciding to close.
-  const { issues: allAlerts, lookupOk } = await findAlertIssuesDetailed({
+  const lookup = await findAlertIssuesDetailed({
     token,
     repo,
     fetchImpl,
     alert: ALERT,
   });
+  const { issues: allAlerts, lookupOk } = lookup;
 
   // Falling through on a failed lookup would let a transient 5xx close an
   // alert whose gated assertion was never proven — and because the unproven
@@ -1422,8 +1423,6 @@ export async function runStagingConformance({
   const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
   // The gate just read that nothing is open, so there is nothing to close.
-  // resolveAlert would look again, and a transient failure of that second read
-  // would red a run that already knows the answer.
   if (openAlerts.length === 0) {
     writeSummary(buildRunSummary({ outcome, results, runUrl }));
     return { outcome, results, alert: { action: "none", closed: [] } };
@@ -1470,12 +1469,15 @@ export async function runStagingConformance({
   }
 
   writeSummary(buildRunSummary({ outcome, results, runUrl }));
+  // The gate's own read is handed on, so the close doesn't read the same
+  // pages again (#2333).
   const alert = await resolveAlert({
     token,
     repo,
     fetchImpl,
     alert: ALERT,
     buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
+    lookup,
   });
   if (alert.action === "closed") {
     logger.log?.(`[staging-conformance] closed alert issue(s): ${alert.closed.join(", ")}`);
@@ -1487,10 +1489,6 @@ export async function runStagingConformance({
       "::error::Staging is conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
-  } else if (alert.action === "unread") {
-    // resolveAlert's own lookup failed after the gate's succeeded. Whether an
-    // alert is open is unknown, so the message must not say it is.
-    logger.log?.(STAGING_ALERT_UNREAD);
   }
   return { outcome, results, alert };
 }

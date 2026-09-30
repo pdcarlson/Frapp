@@ -734,14 +734,13 @@ describe("alert contract", () => {
     assert.ok(!lines.some((l) => /still open/.test(l)));
   });
 
-  it("a conformant run whose second alert lookup (resolveAlert's) fails is red, with an ::error::", async () => {
-    const lines = [];
+  it("a conformant run closes an open alert on the gate's one read (#2333)", async () => {
+    // A 502 on a second read can't reach the close: resolveAlert reuses the
+    // gate's read instead of reading the same pages again.
     const open = [{ number: 700, state: "open", title: ALERT.title, body: "" }];
-    const result = await run(issueLookups([open, 502]), lines);
-    assert.deepEqual(result.alert, { action: "unread", closed: [] });
-    assert.equal(conformanceExitCode(result), 1);
-    assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
-    assert.ok(!lines.some((l) => /still open/.test(l)));
+    const result = await run(issueLookups([open, 502]));
+    assert.deepEqual(result.alert, { action: "closed", closed: [700] });
+    assert.equal(conformanceExitCode(result), 0);
   });
 
   it("a conformant run whose gate read nothing open does not look again, and stays green", async () => {
