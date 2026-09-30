@@ -18,7 +18,6 @@ import {
   resolveDeploymentByHost,
   stashDirFor,
 } from "../deploy-vercel.mjs";
-import { verifyVercelDeploy } from "../verify-vercel-deploy.mjs";
 import {
   VERCEL_TARGET_PREVIEW,
   VERCEL_TARGET_PRODUCTION,
@@ -149,45 +148,16 @@ function makeRunStub(host = HOST) {
 // Before the #1340 cutover, production deployments lived on the `production`
 // branch, which had no earlier successful deployments — Vercel's own build log
 // said `No previous deployments found for "web" on branch "production"`. That
-// is the ONLY reason `verify-vercel-deploy.mjs` could safely call a CANCELED
-// deployment neutral.
+// is the ONLY reason the push-triggered observer (`verify-vercel-deploy.mjs`,
+// deleted in #1778) could safely call a CANCELED deployment neutral when a
+// later push had overtaken it.
 //
 // Deploying from `main` inverts the precondition. And since #1578 there is a
 // second, stronger reason: a deployment CI created from prebuilt output cannot
 // be superseded at all — there is no push behind it for a newer push to cancel.
 // So on this path a cancel is never neutral, in either channel.
-describe("CANCELED: the CI-created path is stricter than the observer", () => {
-  const cancelledOnMain = {
-    uid: "dpl_cancelled",
-    state: "CANCELED",
-    target: null,
-    created: 2000,
-    meta: { githubCommitSha: SHA, githubCommitRef: "main" },
-  };
-  const laterOnMain = {
-    uid: "dpl_later",
-    state: "BUILDING",
-    target: null,
-    created: 3000,
-    meta: { githubCommitSha: "f".repeat(40), githubCommitRef: "main" },
-  };
-
-  it("the observer reports NEUTRAL for a superseded cancel", async () => {
-    const { fetchImpl } = makeFetchStub([
-      okJson({ deployments: [cancelledOnMain, laterOnMain] }),
-    ]);
-    const result = await verifyVercelDeploy({
-      apiKey: API_KEY,
-      projectId: "prj_web",
-      sha: SHA,
-      clock: makeFakeClock(),
-      fetchImpl,
-      logger: quiet,
-    });
-    assert.equal(result.status, "neutral");
-  });
-
-  it("the CI-created path reports FAILURE for the same deployment", async () => {
+describe("CANCELED: the CI-created path never reads a cancel as neutral", () => {
+  it("reports FAILURE for a cancelled deployment it created", async () => {
     const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_cancelled", state: "CANCELED" })]);
     const result = await pollVercelDeployment({
       apiKey: API_KEY,
@@ -426,6 +396,26 @@ describe("pollVercelDeployment", () => {
     assert.equal(result.status, "success");
     assert.ok(calls[0].url.includes("/deployments/dpl_1"));
     assert.ok(!calls[0].url.includes("projectId"));
+  });
+
+  it("reads `readyState`, the only state field the single-deployment endpoint returns", async () => {
+    // Vercel's `GET /v13/deployments/:id` documents `readyState` and `status`,
+    // no top-level `state` (read 2026-09-30). The fixtures above spell it
+    // `state`, so without this case a poll that stopped going through
+    // `vercelDeploymentState` would pass here and time out on every real deploy.
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_1", readyState: "BUILDING" }),
+      okJson({ id: "dpl_1", readyState: "READY", status: "READY" }),
+    ]);
+    const result = await pollVercelDeployment({
+      apiKey: API_KEY,
+      deploymentId: "dpl_1",
+      teamId: TEAM_ID,
+      clock: makeFakeClock(),
+      fetchImpl,
+      logger: quiet,
+    });
+    assert.equal(result.status, "success");
   });
 
   it("fails on ERROR", async () => {

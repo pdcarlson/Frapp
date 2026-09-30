@@ -40,8 +40,12 @@
 // has only a SHA, and it keeps its non-fatal skip; it is no longer how the
 // staging workflow reaches this file.
 
-import { findVercelDeploymentBySha, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
-import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
+import {
+  VERCEL_NEUTRAL_TERMINAL_STATES,
+  findVercelDeploymentBySha,
+  vercelDeploymentCreatedAt,
+  vercelDeploymentState,
+} from "./lib/providers.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
@@ -116,8 +120,7 @@ export async function ensureVercelStagingAlias({
     return {
       status: "skipped",
       message:
-        `No deployment for commit ${sha} (${searchNote}); nothing to alias, skipping. ` +
-        `verify-vercel-deploy reports this case as a failure.`,
+        `No deployment for commit ${sha} (${searchNote}); nothing to alias, skipping.`,
     };
   }
 
@@ -125,7 +128,7 @@ export async function ensureVercelStagingAlias({
     (a, b) => vercelDeploymentCreatedAt(b) - vercelDeploymentCreatedAt(a),
   )[0];
 
-  const state = latest.state ?? latest.readyState;
+  const state = vercelDeploymentState(latest);
   const deploymentId = latest.uid;
   if (!deploymentId) {
     return { status: "failure", message: "Matched deployment has no uid." };
@@ -134,7 +137,7 @@ export async function ensureVercelStagingAlias({
   if (VERCEL_NEUTRAL_TERMINAL_STATES.has(state)) {
     return {
       status: "skipped",
-      message: `Deployment ${deploymentId} is ${state}; skipping staging alias (same semantics as verify-vercel-deploy neutral).`,
+      message: `Deployment ${deploymentId} is ${state}; nothing was deployed, skipping staging alias.`,
     };
   }
 
