@@ -103,9 +103,11 @@ export const DEFAULT_RETENTION_DAYS = 30;
 // happened (`settleManifest`), and fails. The next run carries on from there.
 // One failed transfer doesn't stop the others, and the run fails at the end
 // naming it. The cap is there so a broken destination stops quickly instead of
-// failing every object. A download that 404s is not a failure at all: the object
-// was deleted after the listing, which is ordinary on a live corpus, so the run
-// skips it and the next listing records the deletion. The budget is counted from
+// failing every object. A download that fails for an object that is no longer
+// listed is not a failure at all: it was deleted after the listing, which is
+// ordinary on a live corpus, so the run skips it and the next listing records
+// the deletion (`stillListed`). Storage answers a missing object with HTTP 400
+// and "404" only in the body, so the status can't be what decides it. The budget is counted from
 // process start, because listing Storage and R2 spends the same job timeout. It
 // sits well inside `timeout-minutes: 60` (db-backup.yml), so the manifest write
 // and the offsite check always get to run.
@@ -199,7 +201,8 @@ export function knownGapIds({ plan, uploaded, pruned }) {
  *     so the next run finds the gap again and re-uploads it;
  *   - `failed`: its transfer failed; the next run retries it the same way;
  *   - neither: it `vanished` from Storage before its download, so nothing can
- *     bring it back, and the next run marks it `lost_offsite_at`.
+ *     bring it back. Its record is marked `lost_offsite_at` now, as the next
+ *     run would, so the loss is reported by this run alone.
  * The run uploads these first (`uploadOrder`).
  *
  * `uploaded`, `pruned`, `deferred` and `vanished` are Sets of `objectId`s. With
@@ -211,11 +214,14 @@ export function settleManifest({ plan, previous, uploaded, pruned, deferred = ne
   const unpruned = plan.prune.filter((o) => !pruned.has(objectId(o)));
   if (skipped.size === 0 && unpruned.length === 0) return plan.manifest;
 
+  const recovering = recoveringIds(plan);
   const objects = [];
   for (const record of plan.manifest.objects) {
     const id = objectId(record);
     if (!skipped.has(id)) objects.push(record);
-    else if (prior.has(id)) objects.push(prior.get(id));
+    else if (!prior.has(id)) continue;
+    else if (recovering.has(id) && vanished.has(id)) objects.push({ ...prior.get(id), lost_offsite_at: plan.manifest.generated_at });
+    else objects.push(prior.get(id));
   }
   // A prune entry is the previous record as it stood. For an object that left
   // Storage in this same run (retention 0) that record is still live, so stamp
@@ -823,7 +829,7 @@ export async function listBuckets({ supabaseUrl, serviceKey, fetchImpl = fetch }
  * `prefix` starts the walk at one folder (no trailing slash) instead of the
  * bucket root: scripts/demo/seed-demo.mjs lists a demo chapter's folder this way.
  */
-export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: start = "", fetchImpl = fetch }) {
+export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: start = "", recursive = true, fetchImpl = fetch }) {
   const out = [];
   const queue = [start];
 
@@ -849,7 +855,7 @@ export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefi
       const rows = await res.json();
       const { files, folders } = parseObjectPage(rows, bucket, prefix);
       out.push(...files);
-      queue.push(...folders);
+      if (recursive) queue.push(...folders);
 
       if (rows.length < LIST_PAGE_SIZE) break;
       offset += LIST_PAGE_SIZE;
@@ -859,15 +865,25 @@ export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefi
   return out;
 }
 
+/**
+ * Does Storage still list this object? Asked after a download fails: gone means
+ * it was deleted after the listing, and still there means the download really
+ * failed. Lists only the object's own folder, one level deep.
+ */
+export async function stillListed({ supabaseUrl, serviceKey, bucket, path, fetchImpl = fetch }) {
+  const cut = path.lastIndexOf("/");
+  const folder = cut === -1 ? "" : path.slice(0, cut);
+  const files = await listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: folder, recursive: false, fetchImpl });
+  return files.some((f) => f.path === path);
+}
+
 export async function downloadObject({ supabaseUrl, serviceKey, bucket, path, fetchImpl = fetch }) {
   const res = await fetchImpl(
     `${supabaseUrl}/storage/v1/object/${bucket}/${encodePath(path)}`,
     { headers: storageHeaders(serviceKey) },
   );
   if (!res.ok) {
-    // `status` so a caller can tell an object deleted since the listing (404)
-    // from a failed read.
-    throw Object.assign(new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`), { status: res.status });
+    throw new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`);
   }
   return Buffer.from(await res.arrayBuffer());
 }

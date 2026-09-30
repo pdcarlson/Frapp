@@ -58,6 +58,7 @@ import {
   runPool,
   settleManifest,
   sha256,
+  stillListed,
   TRANSFER_CONCURRENCY,
   uploadObject,
   uploadOrder,
@@ -319,8 +320,9 @@ async function runBackup(opts) {
     // changes between the listing and the download.
     const records = new Map(plan.manifest.objects.map((o) => [objectId(o), o]));
     let bytes = 0;
-    // Deleted from Storage after the listing: nothing to copy, and the next
-    // listing records the deletion. Not a failure, or every busy night is red.
+    // Deleted from Storage after the listing (`stillListed`): nothing to copy,
+    // and the next listing records the deletion. Not a failure, or every busy
+    // night is red.
     const vanished = new Set();
     // Failures are shared across both pools, so the cap is on the run. A pool
     // handed a cap of zero or less starts nothing.
@@ -335,7 +337,10 @@ async function runBackup(opts) {
       try {
         body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
       } catch (err) {
-        if (err.status === 404) {
+        // A listing that fails too counts as "still listed": the download
+        // failure is reported rather than assumed away.
+        const listed = await stillListed({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path }).catch(() => true);
+        if (!listed) {
           vanished.add(objectId(obj));
           return;
         }
@@ -409,7 +414,9 @@ async function runBackup(opts) {
         `${transferFailures.length} transfer(s) failed` +
           (stoppedBy === "cap"
             ? `, which reached MAX_TRANSFER_FAILURES, so the run started no more.`
-            : `. The rest of the run went ahead.`) +
+            : notStarted.size === 0
+              ? `. The rest of the run went ahead.`
+              : ".") +
           ` The next run retries them:\n${shown}${more}`,
       );
     }
@@ -497,10 +504,7 @@ async function runRestore(opts) {
   const tmp = mkdtempSync(join(tmpdir(), "storage-restore-"));
   try {
     const manifest = readManifest({ bucket: s3Bucket, prefix: opts.prefix, endpoint, tmp });
-    if (!manifest) {
-      console.error("::error::No manifest offsite -- there is nothing to restore from.");
-      process.exit(1);
-    }
+    if (!manifest) throw new Error("No manifest offsite -- there is nothing to restore from.");
 
     // Tombstoned objects are restorable ON PURPOSE: recovering a file someone
     // deleted is the most likely reason anyone runs this.
@@ -513,10 +517,7 @@ async function runRestore(opts) {
     for (const o of matching.filter((o) => o.lost_offsite_at)) {
       console.log(`  skipping ${o.bucket}/${o.path}: lost offsite since ${o.lost_offsite_at}`);
     }
-    if (targets.length === 0) {
-      console.error("::error::Nothing in the manifest matches that --bucket/--path.");
-      process.exit(1);
-    }
+    if (targets.length === 0) throw new Error("Nothing in the manifest matches that --bucket/--path.");
 
     console.log(`Restoring ${targets.length} object(s)${opts.dryRun ? " (dry run)" : ""}.`);
     if (opts.dryRun) {
@@ -578,33 +579,35 @@ async function runRehearsal(opts) {
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
     });
 
-  console.log("2/5 backing up");
+  // Whatever fails from here on, the canary must not stay in live Storage: the
+  // rehearsal promises to delete what it wrote, and the next backup would
+  // mirror it as a real object. If it was backed up, the next run tombstones it
+  // like any delete, and the tombstone stays until retention prunes it, which
+  // is correct: it is a real record of a deletion.
   try {
+    console.log("2/5 backing up");
     await runBackup(opts);
-  } catch (err) {
-    // A backup that failed (a backlog past the budget, say) must not leave the
-    // canary in live Storage: the rehearsal promises to delete what it wrote.
-    // If the canary was backed up, the next run tombstones it like any delete.
-    await deleteCanary().catch(() => {});
-    throw err;
+
+    console.log("3/5 deleting the canary from Storage");
+    const del = await deleteCanary();
+    if (!del.ok) throw new Error(`Deleting the canary failed: HTTP ${del.status}`);
+
+    console.log("4/5 restoring it from the offsite copy");
+    await runRestore({ ...opts, bucket: REHEARSAL_BUCKET, path });
+
+    console.log("5/5 verifying the bytes");
+    const got = await downloadObject({ supabaseUrl, serviceKey, bucket: REHEARSAL_BUCKET, path });
+    if (sha256(got) !== want) {
+      throw new Error(`Rehearsal FAILED: restored bytes differ (want ${want}, got ${sha256(got)}).`);
+    }
+  } finally {
+    // Gone already (a failure between steps 3 and 4) is fine; anything else
+    // means a canary may be left behind, which is worth a line either way.
+    const res = await deleteCanary().catch((err) => ({ ok: false, status: err.message }));
+    if (!res.ok && res.status !== 404 && res.status !== 400) {
+      console.log(`::warning::Deleting the canary ${REHEARSAL_BUCKET}/${path} failed (${res.status}); delete it by hand.`);
+    }
   }
-
-  console.log("3/5 deleting the canary from Storage");
-  const del = await deleteCanary();
-  if (!del.ok) throw new Error(`Deleting the canary failed: HTTP ${del.status}`);
-
-  console.log("4/5 restoring it from the offsite copy");
-  await runRestore({ ...opts, bucket: REHEARSAL_BUCKET, path });
-
-  console.log("5/5 verifying the bytes");
-  const got = await downloadObject({ supabaseUrl, serviceKey, bucket: REHEARSAL_BUCKET, path });
-  if (sha256(got) !== want) {
-    throw new Error(`Rehearsal FAILED: restored bytes differ (want ${want}, got ${sha256(got)}).`);
-  }
-
-  // Clean up after ourselves. The tombstone stays in the manifest until
-  // retention prunes it, which is correct -- it is a real record of a deletion.
-  await deleteCanary();
 
   console.log("Rehearsal PASSED: an object deleted from Storage was restored from the offsite copy byte-for-byte.");
 }
@@ -621,13 +624,8 @@ async function runVerify(opts) {
   try {
     const manifest = readManifest({ bucket: s3Bucket, prefix: opts.prefix, endpoint, tmp });
     assertManifestDestination({ manifest, expected: expectedDestination(opts, s3Bucket), readOnly: true });
-    const checked = verifyOffsite({ manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
-    const lost = manifest.objects.length - checked;
-    console.log(
-      `Verified: ${checked} manifest object(s) found offsite, at the written size where recorded ` +
-        `(${manifest.object_count} live, ${manifest.tombstone_count} tombstoned` +
-        `${lost > 0 ? `, of which ${lost} marked lost` : ""}); manifest generated ${manifest.generated_at}.`,
-    );
+    // The last loss first: after a failed run it says what was hit, and the
+    // check below throws while a gap stands.
     const loss = manifest.last_offsite_loss;
     if (loss) {
       console.log(`Last offsite loss, found ${loss.found_at} (${loss.objects.length} object(s)):`);
@@ -640,6 +638,13 @@ async function runVerify(opts) {
         ),
       );
     }
+    const checked = verifyOffsite({ manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
+    const lost = manifest.objects.length - checked;
+    console.log(
+      `Verified: ${checked} manifest object(s) found offsite, at the written size where recorded ` +
+        `(${manifest.object_count} live, ${manifest.tombstone_count} tombstoned` +
+        `${lost > 0 ? `, of which ${lost} marked lost` : ""}); manifest generated ${manifest.generated_at}.`,
+    );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

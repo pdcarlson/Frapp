@@ -1182,14 +1182,16 @@ test("the backup checks the destination before listing, and the offsite mirror a
   assert.equal((callers.match(/AWS_EXEC_OPTIONS/g) || []).length, 2, "aws and awsAsync both pass AWS_EXEC_OPTIONS");
 });
 
-test("the backup uploads in uploadOrder, and no refusal inside a mode exits the process", () => {
+test("the backup uploads in uploadOrder, no refusal inside any mode exits the process, and the rehearsal always cleans up", () => {
   const src = readFileSync("scripts/storage-backup-run.mjs", "utf8");
-  const body = src.slice(src.indexOf("async function runBackup"), src.indexOf("async function runRestore"));
-  assert.match(body, /runPool\(uploadOrder\(plan\), pool\(\)/);
-  // The rehearsal deletes its canary on a thrown error; process.exit would skip that.
-  assert.doesNotMatch(body, /process\.exit/);
-  const requireEnvSrc = src.slice(src.indexOf("function requireEnv"), src.indexOf("function awsFailure"));
-  assert.doesNotMatch(requireEnvSrc, /process\.exit/);
+  const backup = src.slice(src.indexOf("async function runBackup"), src.indexOf("async function runRestore"));
+  assert.match(backup, /runPool\(uploadOrder\(plan\), pool\(\)/);
+  // The rehearsal deletes its canary in a `finally`; process.exit would skip it.
+  const modes = src.slice(src.indexOf("async function runBackup"), src.indexOf("const opts = parseArgs"));
+  assert.doesNotMatch(modes, /process\.exit/);
+  assert.doesNotMatch(src.slice(src.indexOf("function requireEnv"), src.indexOf("function awsFailure")), /process\.exit/);
+  const rehearsal = src.slice(src.indexOf("async function runRehearsal"), src.indexOf("async function runVerify"));
+  assert.match(rehearsal, /try \{[\s\S]*await runBackup\(opts\)[\s\S]*5\/5 verifying[\s\S]*\} finally \{[\s\S]*deleteCanary\(\)/);
 });
 
 test("a failed manifest read is a failure; only a missing key is 'no manifest'", () => {
@@ -1608,4 +1610,45 @@ test("e2e (#2916 review): a rehearsal whose backup refuses still deletes its can
   assert.match(res.out, /STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number/);
   const left = Object.keys(box.storage()[REHEARSAL_BUCKET]).filter((p) => p.startsWith(REHEARSAL_PREFIX));
   assert.deepEqual(left, [], "the canary was deleted");
+});
+
+test("e2e (#2916 review): an object still listed but not downloadable is a failure, not a deletion", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const res = box.run("backup", { documents: { "a.txt": "one", "no-bytes.txt": true }, profiles: {} }, { STORAGE_BACKUP_NEW_DESTINATION: "true" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /1 transfer\(s\) failed\. The rest of the run went ahead/);
+  assert.match(res.out, /Downloading documents\/no-bytes\.txt failed: HTTP 400/);
+  assert.doesNotMatch(res.out, /deleted from Storage after the listing/);
+});
+
+test("e2e (#2916 review): a lost object whose re-upload fails is reported as failed, here and by verify", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const BROKEN = { documents: { "chapter-1/a.txt": "hello", "b.txt": { bytes: "world", download: 500 } }, profiles: {} };
+  const res = box.run("backup", BROKEN);
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /documents\/b\.txt: not offsite; re-upload failed \(listed above\); the next run retries it/);
+  const verify = box.run("verify", BROKEN);
+  assert.match(verify.out, /documents\/b\.txt: not offsite; re-upload failed; the next run retries it/);
+  assert.equal(box.run("backup", TWO).status, 1, "the retry that repairs it reports the loss once");
+  assert.equal(box.run("backup", TWO).status, 0);
+});
+
+test("e2e (#2916 review): a lost object deleted before its re-upload is marked lost at once, and the next run passes", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const res = box.run("backup", { documents: { "chapter-1/a.txt": "hello", "b.txt": { bytes: "world", download: "vanish" } }, profiles: {} });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /documents\/b\.txt: not offsite; deleted from Storage too, so it is unrecoverable/);
+  const b = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8")).objects.find((o) => o.path === "b.txt");
+  assert.ok(b.lost_offsite_at, "marked lost by this run");
+  const ONE = { documents: { "chapter-1/a.txt": "hello" }, profiles: {} };
+  const next = box.run("backup", ONE);
+  assert.equal(next.status, 0, next.out);
+  assert.match(box.run("verify", ONE).out, /documents\/b\.txt: not offsite; unrecoverable/);
 });
