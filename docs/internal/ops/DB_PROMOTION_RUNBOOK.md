@@ -578,6 +578,22 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-30: A chat report keeps the reported message's attachments while it is open (#2481)
+
+### 20260930191500_chat_report_attachment_evidence.sql
+
+- **Purpose**: Adds two columns to `public.chat_message_reports` and one partial index. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#report) § Report.
+  - `reported_attachments jsonb not null default '[]'`, with a CHECK that it is an array: one `{bucket, storage_path, filename, content_type, byte_size}` per attachment on the message when the report was filed. While the report is open, the API's message-delete purge and the Discord import purge keep the objects it names, and the officer queue signs them.
+  - `evidence_released_at timestamptz`: when the API finished deleting what a resolved report held.
+  - `idx_chat_message_reports_evidence_unreleased` on `(resolved_at)` where the report is resolved, unreleased and holds something: the hourly sweep's read.
+
+  Every existing report takes `'[]'`, so reports filed before this hold nothing. No data is rewritten, and no policy changes: the table keeps RLS on with zero policies.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'chat_message_reports' and column_name in ('reported_attachments', 'evidence_released_at') order by column_name;` returns two rows: `evidence_released_at | timestamp with time zone | YES | NULL` and `reported_attachments | jsonb | NO | '[]'::jsonb`. `select indexname from pg_indexes where indexname = 'idx_chat_message_reports_evidence_unreleased';` returns one row.
+- **Promoter notes**: Ship it before, or with, the API that writes it. A deploy applies migrations first, so the API never sees a database without it. Against an unmigrated database the newer API fails every report filing (its insert names an unknown column), and its purges keep every object, because the hold read fails and the purge fails closed. An older API never writes the columns, and hands back `'[]'` and `NULL` for them, which clients ignore. On Postgres 11 and later, adding a column with a constant default rewrites no rows. The CHECK scans the table once to validate it, under a brief lock; the table holds a chapter's reports, so it is small. Re-applying is idempotent (`add column if not exists` skips the column and its CHECK together, and `create index if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-chat-report-attachment-evidence-20260930191500) § Rollback chat report attachment evidence.
+
 ## 2026-09-30: A Discord import's deletion shows how far it has got (#2944)
 
 ### 20260930150000_discord_import_purged_messages.sql

@@ -28,6 +28,8 @@ const {
   mockRefetch,
   requestedStatuses,
   removeTimeline,
+  attachmentsQuery,
+  attachmentRequests,
 } = vi.hoisted(() => ({
   mockOffline: { value: false },
   mockToast: vi.fn(),
@@ -40,6 +42,8 @@ const {
   mockRefetch: vi.fn(),
   requestedStatuses: [] as string[],
   removeTimeline: { value: undefined as unknown },
+  attachmentsQuery: { value: {} as Record<string, unknown> },
+  attachmentRequests: [] as { reportId: string; enabled: boolean }[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -69,6 +73,16 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         fetchStatus: "idle",
         refetch: mockRefetch,
         ...reportsByStatus.value[status],
+      };
+    },
+    useChatReportAttachments: (reportId: string, enabled: boolean) => {
+      attachmentRequests.push({ reportId, enabled });
+      return {
+        data: undefined,
+        isPending: enabled,
+        isError: false,
+        refetch: mockRefetch,
+        ...(enabled ? attachmentsQuery.value : {}),
       };
     },
     useResolveChatReport: () => ({ mutateAsync: mockResolve }),
@@ -112,6 +126,7 @@ function report(overrides: Partial<ChatReport> = {}): ChatReport {
     created_at: "2026-09-22T11:55:00Z",
     resolved_at: null,
     resolved_by: null,
+    reported_attachments: [],
     ...overrides,
   };
 }
@@ -131,6 +146,8 @@ beforeEach(() => {
   mockOffline.value = false;
   permissions.value = ["members:view", "channels:manage"];
   requestedStatuses.length = 0;
+  attachmentRequests.length = 0;
+  attachmentsQuery.value = {};
   reportsByStatus.value = { open: settled([report()]) };
   mockResolve.mockResolvedValue({});
   mockRemove.mockResolvedValue({});
@@ -185,6 +202,130 @@ describe("ChatReportsCard — what a row shows", () => {
     };
     render(<ChatReportsCard />);
     expect(screen.getByText("This message had no text.")).toBeInTheDocument();
+  });
+});
+
+// A report keeps the message's attachments while it is open (#2481), so a
+// photo stays reviewable after its sender deletes it.
+describe("ChatReportsCard — reported attachments", () => {
+  const photo = {
+    filename: "photo.png",
+    content_type: "image/png",
+    byte_size: 2048,
+  };
+  const pdf = {
+    filename: "notes.pdf",
+    content_type: "application/pdf",
+    byte_size: 4096,
+  };
+  const photoOnly = () =>
+    report({ reported_content: "", reported_attachments: [photo, pdf] });
+
+  it("names the held files from the report, and loads none until asked", () => {
+    reportsByStatus.value = { open: settled([photoOnly()]) };
+    render(<ChatReportsCard />);
+
+    expect(screen.getByText("2 attachments")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Kept while this report is open, even if the sender deletes the message.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("photo.png")).toBeInTheDocument();
+    expect(screen.getByText("notes.pdf")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(attachmentRequests.every(({ enabled }) => !enabled)).toBe(true);
+  });
+
+  it("loads the report's signed files on request: an image previews, a file downloads", async () => {
+    attachmentsQuery.value = {
+      isPending: false,
+      data: [
+        { ...photo, download_url: "https://signed.test/photo" },
+        { ...pdf, download_url: "https://signed.test/notes" },
+      ],
+    };
+    reportsByStatus.value = { open: settled([photoOnly()]) };
+    render(<ChatReportsCard />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^Show attachments:/ }),
+    );
+
+    expect(attachmentRequests.at(-1)).toEqual({
+      reportId: "r-1",
+      enabled: true,
+    });
+    const image = screen.getByRole("img", { name: "photo.png" });
+    expect(image).toHaveAttribute("src", "https://signed.test/photo");
+    expect(image.closest("a")).toHaveAttribute(
+      "href",
+      "https://signed.test/photo",
+    );
+    expect(screen.getByText("notes.pdf").closest("a")).toHaveAttribute(
+      "href",
+      "https://signed.test/notes",
+    );
+    expect(
+      screen.queryByRole("button", { name: /^Show attachments:/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says how many files could not be loaded when fewer come back signed", async () => {
+    attachmentsQuery.value = {
+      isPending: false,
+      data: [{ ...pdf, download_url: "https://signed.test/notes" }],
+    };
+    reportsByStatus.value = { open: settled([photoOnly()]) };
+    render(<ChatReportsCard />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^Show attachments:/ }),
+    );
+
+    expect(
+      screen.getByText("1 attachment couldn't be loaded."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a failed load with a retry, not a blank", async () => {
+    attachmentsQuery.value = { isPending: false, isError: true };
+    reportsByStatus.value = { open: settled([photoOnly()]) };
+    render(<ChatReportsCard />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^Show attachments:/ }),
+    );
+    expect(
+      screen.getByText("Couldn't load the attachments."),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it("lists a resolved report's files without offering them, since they are released", async () => {
+    reportsByStatus.value = {
+      open: settled([]),
+      dismissed: settled([
+        report({
+          status: "dismissed",
+          resolved_at: "2026-09-22T11:58:00Z",
+          resolved_by: "u-officer",
+          reported_attachments: [photo],
+        }),
+      ]),
+    };
+    render(<ChatReportsCard />);
+    await userEvent.click(screen.getByRole("tab", { name: "Dismissed" }));
+
+    expect(await screen.findByText("photo.png")).toBeInTheDocument();
+    expect(
+      screen.getByText("Attachments are kept only while a report is open."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Show attachments:/ }),
+    ).not.toBeInTheDocument();
+    expect(attachmentRequests.every(({ enabled }) => !enabled)).toBe(true);
   });
 });
 

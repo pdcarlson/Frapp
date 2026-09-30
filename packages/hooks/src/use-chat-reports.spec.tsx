@@ -6,6 +6,7 @@ import {
   chatReportKeys,
   readsRemovedMessage,
   removalOutcomeUnknown,
+  useChatReportAttachments,
   useChatReports,
   useInvalidateChatReports,
   useRemoveReportedMessage,
@@ -60,6 +61,62 @@ function createWrapper(
   Wrapper.displayName = "Wrapper";
   return Wrapper;
 }
+
+describe("useChatReportAttachments", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("asks for nothing until the officer asks to see the files", () => {
+    const mockGet = vi.fn();
+    renderHook(() => useChatReportAttachments("r-1", false), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
+    });
+
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it("reads the report's own attachments route, keyed under the chapter's report", async () => {
+    const signed = [
+      {
+        filename: "photo.png",
+        content_type: "image/png",
+        byte_size: 2048,
+        download_url: "https://signed.test/photo",
+      },
+    ];
+    const mockGet = vi.fn().mockResolvedValue({ data: signed, error: null });
+    const { result } = renderHook(() => useChatReportAttachments("r-1", true), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports/{id}/attachments", {
+      params: { path: { id: "r-1" } },
+    });
+    expect(result.current.data).toEqual(signed);
+    expect(
+      queryClient.getQueryData([
+        ...chatReportKeys.detail(CHAPTER, "r-1"),
+        "attachments",
+      ]),
+    ).toEqual(signed);
+  });
+
+  it("surfaces a refusal (a resolved report's 409) as an error", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { statusCode: 409, message: "This report is no longer open" },
+    });
+    const { result } = renderHook(() => useChatReportAttachments("r-1", true), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
 
 describe("useChatReports", () => {
   let queryClient: QueryClient;
