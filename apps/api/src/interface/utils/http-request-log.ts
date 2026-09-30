@@ -1,5 +1,9 @@
 import { Logger } from '@nestjs/common';
 import type { Request } from 'express';
+import {
+  CLIENT_VERSION_HEADER,
+  clientVersionForLog,
+} from '#domain/constants/client-version';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from './path-only';
 import { httpStatusClass } from '../../infrastructure/analytics/http-status-class';
@@ -95,6 +99,9 @@ export function emitSanitizedHttpRequestLog(
   const { xffCount, xffSocketIsLast } = forwardedShape(request);
   const path = pathOnly(request.url);
   const requestId = request.requestId ?? 'unknown';
+  const clientVersion = clientVersionForLog(
+    request.headers?.[CLIENT_VERSION_HEADER],
+  );
 
   logger.log(
     JSON.stringify({
@@ -112,6 +119,9 @@ export function emitSanitizedHttpRequestLog(
       ...(latencyMs !== undefined ? { latencyMs } : {}),
       xffCount,
       xffSocketIsLast,
+      // Which mobile build made the call, so a minimum version (#2526) can be
+      // set from what is actually in use rather than guessed.
+      ...(clientVersion ? { clientVersion } : {}),
       timestamp: new Date().toISOString(),
     }),
   );
@@ -128,6 +138,7 @@ export function emitSanitizedHttpRequestLog(
       status_code: status,
       status_class: httpStatusClass(status),
       ...(latencyMs !== undefined ? { latency_ms: latencyMs } : {}),
+      ...(clientVersion ? { client_version: clientVersion } : {}),
       ...(userHash ? { user_hash: userHash } : {}),
       ...(chapterHash ? { chapter_hash: chapterHash } : {}),
     },

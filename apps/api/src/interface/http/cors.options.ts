@@ -1,8 +1,10 @@
+import { PRODUCTION_APP_ORIGIN } from '@repo/validation';
 import {
   BAGGAGE_HEADER,
   REQUEST_ID_HEADER,
   SENTRY_TRACE_HEADER,
 } from './correlation-headers';
+import type { DeploymentEnvironment } from './deployment-environment';
 
 /**
  * The CORS contract the dashboard and Expo-web origins actually hit.
@@ -34,14 +36,46 @@ export const CORS_EXPOSED_HEADERS = [
   BAGGAGE_HEADER,
 ] as const;
 
-export const CORS_ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:3002',
-  /^https:\/\/(?:[a-zA-Z0-9-]+\.)*frapp\.live$/,
-];
+/** The staging dashboard, the one browser origin that calls the staging API. */
+export const STAGING_APP_ORIGIN = 'https://app.staging.frapp.live';
 
-export const CORS_OPTIONS = {
-  origin: CORS_ALLOWED_ORIGINS,
-  credentials: true,
-  exposedHeaders: [...CORS_EXPOSED_HEADERS],
+/**
+ * The dashboard's dev server (`npm run dev:web`), and Expo web on 3002, the
+ * port `docs/guides/demo-data.md` and the store-screenshot runbook
+ * (`mobile.md`) start it on because it is listed here. The landing's dev
+ * server also runs on 3002 but never calls the API.
+ */
+const LOCAL_DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:3002'];
+
+/**
+ * Exact browser origins per deployment (#2507). No patterns.
+ *
+ * This used to be `localhost` plus `/^https:\/\/(?:[a-zA-Z0-9-]+\.)*frapp\.live$/`
+ * in every environment, so production admitted the staging dashboard and any
+ * other `*.frapp.live` host, including one left dangling after its service is
+ * gone (`vercel.md` still carries a `docs.frapp.live` clean-up item). Every
+ * deployed origin listed here is one a deployed client really calls from: the
+ * `frapp-web` Vercel project serves exactly `app.frapp.live` and
+ * `app.staging.frapp.live`, the landing never calls the API from the browser,
+ * and the native apps send no `Origin` at all, which CORS lets through.
+ *
+ * Staging keeps the local dev ports. A dashboard on a laptop pointed at the
+ * staging API is how staging gets exercised while its own web host sits behind
+ * Vercel SSO (#1951), and staging holds test data only. Production doesn't.
+ */
+export const CORS_ALLOWED_ORIGINS: Readonly<
+  Record<DeploymentEnvironment, readonly string[]>
+> = {
+  production: [PRODUCTION_APP_ORIGIN],
+  staging: [STAGING_APP_ORIGIN, ...LOCAL_DEV_ORIGINS],
+  local: LOCAL_DEV_ORIGINS,
 };
+
+/** The options `configureApp` hands `enableCors` for one deployment. */
+export function corsOptionsFor(environment: DeploymentEnvironment) {
+  return {
+    origin: [...CORS_ALLOWED_ORIGINS[environment]],
+    credentials: true,
+    exposedHeaders: [...CORS_EXPOSED_HEADERS],
+  };
+}

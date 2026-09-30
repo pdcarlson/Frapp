@@ -225,6 +225,38 @@ describe("browser path — no salt available", () => {
     });
   });
 
+  // The API push worker's fan-out is a root span with no HTTP request behind
+  // it, so its counts arrive on `contexts.trace.data` (#2507).
+  it("keeps the push fan-out counts on a root span, and nothing beside them", () => {
+    const scrubbed = browser.scrubSentryTransaction({
+      transaction: "chat.push.fanout",
+      contexts: {
+        trace: {
+          op: "chat.push",
+          data: {
+            "chat.push.recipients": 12,
+            "chat.push.sent": 9,
+            "chat.push.presence_channels": 41,
+            "chat.push.channel_id": "0b7c9b1e-6f7e-4a57-9c1a-3f1e2d4c5b6a",
+            "chat.push.preview": `ping ${MEMBER_EMAIL}`,
+          },
+        },
+      },
+    });
+
+    const traceData = (
+      scrubbed as {
+        contexts?: { trace?: { data?: Record<string, unknown> } };
+      }
+    ).contexts?.trace?.data;
+    expect(traceData).toEqual({
+      "chat.push.recipients": 12,
+      "chat.push.sent": 9,
+      "chat.push.presence_channels": 41,
+    });
+    expect(serialize(scrubbed)).not.toContain(MEMBER_EMAIL);
+  });
+
   it("reduces HTTP-shaped span descriptions to method + path-only (#2080)", () => {
     const ingest = "https://us.i.posthog.com/i/v1/logs";
     const credentialled = "https://svc:s3cr3t@us.i.posthog.com/i/v1/logs?token=abc";

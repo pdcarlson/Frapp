@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
-import { CORS_OPTIONS } from './interface/http/cors.options';
+import { corsOptionsFor } from './interface/http/cors.options';
+import {
+  deploymentEnvironment,
+  type DeploymentEnvironment,
+} from './interface/http/deployment-environment';
+import { createProxyChainTripwire } from './interface/middleware/proxy-chain-tripwire.middleware';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
@@ -41,26 +46,40 @@ import { RequestContextLogger } from './infrastructure/observability/request-con
  * belongs here, not in `main.ts`.
  */
 /**
- * Express `trust proxy` hop count for the Render deployment.
+ * Express `trust proxy` hop count, per deployment.
  *
- * **Measured, not assumed** (#864). Probes against `api-staging.frapp.live` on
- * 2026-08-28 returned an `x-forwarded-for` length of 3, 4 and 5 for 0, 1 and 2
- * forged entries — exactly linear, so the infrastructure contribution is a
- * constant three: Render's Cloudflare edge, Render's ingress, and the origin
- * hop whose address arrives on the socket. Evidence, with the raw log lines:
- * https://github.com/pdcarlson/Frapp/issues/864#issuecomment-5457812781
+ * **Measured, not assumed, and measured per service**, because the two Render
+ * services do not have the same chain:
+ *
+ * - **Staging: 3** (#864). Probes against `api-staging.frapp.live` on
+ *   2026-08-28 returned an `x-forwarded-for` length of 3, 4 and 5 for 0, 1 and
+ *   2 forged entries: exactly linear, so the infrastructure contribution is a
+ *   constant three. Evidence, with the raw log lines:
+ *   https://github.com/pdcarlson/Frapp/issues/864#issuecomment-5457812781.
+ *   Staging's dashboard traffic still logs `xffCount` 3 (2026-09-30).
+ * - **Production: 2** (#2972). `frapp-api-prod` logs `xffCount` 2 for callers
+ *   that send no chain of their own (Stripe's webhook deliveries, a scanner;
+ *   Render logs, 2026-09-29 and 30). This value used to be the staging figure
+ *   applied to production unobserved, which left one entry of production's
+ *   chain client-supplied: a single forged `X-Forwarded-For` value set `req.ip`
+ *   and with it the caller's own rate-limit bucket. The likely difference is
+ *   Render's free plan (staging) adding a proxy that the starter plan
+ *   (production) does not. That is inferred, not confirmed with Render, so a
+ *   plan change on either service means re-measuring (#1947 moves staging off
+ *   free).
  *
  * Why a count rather than `true`: `true` trusts the entire chain, so any client
  * can prepend a forged address and rotate it to evade the very rate limit this
- * restores — strictly worse than leaving the setting off. And why not the
- * intuitive small numbers: `1` resolves `req.ip` to a Render-internal address
- * and `2` to Cloudflare's edge, so both keep every unauthenticated caller in
- * one shared bucket while looking like a fix.
+ * restores — strictly worse than leaving the setting off. And why not a
+ * smaller number than the measured one: on staging, `1` resolves `req.ip` to a
+ * Render-internal address and `2` to Cloudflare's edge, so both keep every
+ * unauthenticated caller in one shared bucket while looking like a fix.
  *
- * Both public hostnames — `api-staging.frapp.live` and the default
+ * On staging, both public hostnames — `api-staging.frapp.live` and the default
  * `frapp-api-staging.onrender.com` — share one DNS record pointing at the same
  * Cloudflare-fronted Render addresses, so neither public path is a shorter
- * chain that would leave this over-trusting.
+ * chain that would leave this over-trusting. Production's two hostnames have
+ * not been compared that way; the tripwire below covers a shorter one.
  *
  * **The limit of a hop count, stated rather than left sharp:** it trusts N
  * entries whether or not N proxies actually appended them. Where the real
@@ -70,13 +89,19 @@ import { RequestContextLogger } from './infrastructure/observability/request-con
  * inert for the rate limiter locally and correct in the deployed environments
  * measured above, but a new ingress that bypasses Render's edge would need
  * this re-measured, not inherited. Trusting by address range instead of a
- * count would remove the assumption entirely — considered in #1341.
+ * count would remove the assumption entirely — considered in #1341. Until then
+ * `createProxyChainTripwire` reports the first deployed request whose chain is
+ * shorter than the count, which is how a stale count shows itself.
  *
- * This is the **staging** figure. `frapp-api-prod` is a separate service whose
- * chain has never been observed (#1273 — it has never deployed), so the value
- * is unverified there.
+ * `local` has no proxy, so any count over-trusts there. It carries staging's
+ * figure so the suite exercises the resolution staging runs.
  */
-export const TRUST_PROXY_HOPS = 3;
+export const TRUST_PROXY_HOPS: Readonly<Record<DeploymentEnvironment, number>> =
+  {
+    production: 2,
+    staging: 3,
+    local: 3,
+  };
 
 /** The one Express method used here — narrower than importing express types. */
 interface ExpressSettable {
@@ -100,8 +125,8 @@ interface ExpressSettable {
  * The one directive this API does override: Helmet's default
  * `Cross-Origin-Resource-Policy` is `same-origin`, which Chrome/Firefox
  * enforce independently of CORS. The dashboard is deliberately cross-origin
- * from this API (`CORS_OPTIONS` / `enableCors()` in `configureApp` allowlists
- * `*.frapp.live` and the local dev ports, with `credentials: true`) — left at
+ * from this API (`corsOptionsFor` / `enableCors()` in `configureApp` allowlists
+ * each deployment's exact dashboard origin, with `credentials: true`) — left at
  * the default, every dashboard `fetch()` response body would be silently
  * blocked client-side
  * even with a matching `Access-Control-Allow-Origin`. `'cross-origin'` is
@@ -112,10 +137,18 @@ const HELMET_OPTIONS = {
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 } as const;
 
-export function configureApp(app: INestApplication): void {
+/**
+ * `environment` defaults to this process's own (`NODE_ENV`). Tests pass one to
+ * exercise another deployment's origins and hop count without mutating
+ * `process.env`.
+ */
+export function configureApp(
+  app: INestApplication,
+  environment: DeploymentEnvironment = deploymentEnvironment(),
+): void {
   // Before Helmet, matching the previous main.ts order: CORS preflight
   // must see the request before other middleware short-circuits OPTIONS.
-  app.enableCors(CORS_OPTIONS);
+  app.enableCors(corsOptionsFor(environment));
 
   // First of the remaining stack, so every response — success, error, or a
   // guard rejection before any handler runs — carries the same security
@@ -130,7 +163,11 @@ export function configureApp(app: INestApplication): void {
   // this whole function exists to close.
   const httpAdapter: { getInstance: () => unknown } = app.getHttpAdapter();
   const expressInstance = httpAdapter.getInstance() as ExpressSettable;
-  expressInstance.set('trust proxy', TRUST_PROXY_HOPS);
+  const trustedHops = TRUST_PROXY_HOPS[environment];
+  expressInstance.set('trust proxy', trustedHops);
+  if (environment !== 'local') {
+    app.use(createProxyChainTripwire(trustedHops));
+  }
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 

@@ -439,9 +439,11 @@ class ChatRealtimeManager {
     // `realtime_messages_scoped_select` / `_insert` on `realtime.messages`
     // (migration 20260906203000, predicate `can_read_chat_channel`). Private
     // and public are separate rooms on the server, so the push worker's
-    // `ensurePresenceChannel` carries the identical config — a worker left
-    // public would see an empty roster and send every push. Pinned byte-for-
-    // byte by `presence-contract.spec.ts`. `postgres_changes` bound below still
+    // `ensurePresenceChannel` carries the same config — a worker left
+    // public would see an empty roster and send every push. The worker also
+    // sets `presence.enabled: true`, because it reads the roster; this side
+    // only `track()`s, which needs no flag (#2974). Pinned by
+    // `presence-contract.spec.ts`. `postgres_changes` bound below still
     // deliver on a private channel; verified against local Realtime before the
     // flip.
     const channel = supabase.channel(topic, {

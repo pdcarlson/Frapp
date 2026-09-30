@@ -76,6 +76,24 @@ export function parseClientVersionHeader(
   return parsed ? { platform, ...parsed } : null;
 }
 
+/**
+ * The build as the request log records it (#2507): the parsed value written
+ * back out, never the raw header, so a caller can't put free text into the log
+ * through it. `invalid` is a header that was sent but doesn't parse. Absent
+ * (`undefined`) is no header at all, which is the web dashboard and anything
+ * older than #2526.
+ */
+export function clientVersionForLog(
+  raw: string | string[] | undefined,
+): string | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = parseClientVersionHeader(raw);
+  if (!parsed) return 'invalid';
+  const [major, minor, patch] = parsed.version;
+  const build = parsed.build === null ? '' : `+${parsed.build}`;
+  return `${parsed.platform}/${major}.${minor}.${patch}${build}`;
+}
+
 export function isClientPlatform(value: string): value is ClientPlatform {
   return (CLIENT_PLATFORMS as readonly string[]).includes(value);
 }
