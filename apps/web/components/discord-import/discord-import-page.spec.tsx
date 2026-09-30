@@ -206,6 +206,21 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
     );
   });
 
+  // A purge that failed part-way: the row is `failed`, Delete is offered
+  // again, and its counts must not read as though nothing were gone.
+  it("says how many a failed deletion already removed, and asks about what is left", async () => {
+    hooks.rows = [{ ...large, status: "failed", purged_messages: 100000 }];
+    render(<DiscordImportPage />);
+    const failed = rowOf("Tau Nu Discord");
+    expect(failed.getByText(/100000 already deleted/)).toBeInTheDocument();
+
+    fireEvent.click(failed.getByRole("button", { name: "Delete import" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(
+      dialog.getByText(/An earlier deletion already removed/).textContent,
+    ).toContain(`This deletes the ${n(45574)} left`);
+  });
+
   it("counts a deleting import's messages down from the API's count", () => {
     hooks.rows = [
       {

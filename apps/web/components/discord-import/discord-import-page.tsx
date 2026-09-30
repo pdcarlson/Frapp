@@ -383,6 +383,11 @@ function DiscordImportList({
                             live.channels_total > 0
                               ? ` · ${live.channels_done ?? 0} of ${live.channels_total} channels and threads`
                               : ""}
+                            {/* A deletion that failed part-way (#2944): the
+                                totals above include what it already removed. */}
+                            {(live.purged_messages ?? 0) > 0
+                              ? ` · ${live.purged_messages} already deleted`
+                              : ""}
                           </span>
                         )}
                         {/* The bar is aria-hidden; this is the accessible signal. */}

@@ -43,6 +43,39 @@ describe("deleteImportConfirmation (#2944)", () => {
     expect(description).toMatch(/This cannot be undone\.$/);
   });
 
+  // A purge that failed part-way leaves the row `failed` with its count kept,
+  // and Delete is offered again: the totals include what is already gone.
+  it("counts what is left when an earlier deletion failed part-way", () => {
+    const { description } = deleteImportConfirmation(
+      row({
+        status: "failed",
+        imported_messages: 145574,
+        attachments_imported: 11612,
+        purged_messages: 100000,
+      }),
+    );
+    const n = (count: number) => count.toLocaleString();
+    expect(description).toContain(
+      `An earlier deletion already removed ${n(100000)} of its ${n(145574)} messages. This deletes the ${n(45574)} left, their attachments, and its archive files.`,
+    );
+    expect(description).not.toContain((11612).toLocaleString());
+    expect(description).toMatch(/This cannot be undone\.$/);
+  });
+
+  it("names only the archive files when an earlier deletion removed every message", () => {
+    expect(
+      deleteImportConfirmation(
+        row({
+          status: "failed",
+          imported_messages: 50,
+          purged_messages: 50,
+        }),
+      ).description,
+    ).toMatch(
+      /^An earlier deletion already removed its messages\. This deletes its archive files\./,
+    );
+  });
+
   it("asks about this Discord import when the server has no name", () => {
     expect(deleteImportConfirmation(row({ guild_name: null })).title).toBe(
       "Delete this Discord import?",

@@ -12,6 +12,30 @@ function countOf(count: number, noun: string): string {
   return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+/** What the confirmation says goes, before the channel and role sentences. */
+function removesSentence(row: ImportRow): string {
+  const purged = row.purged_messages ?? 0;
+  // A delete offered again after one failed part-way (the row went `failed`
+  // with its count kept): the import's own totals include what is already
+  // gone, and the attachments went with their messages, so the count left is
+  // the honest one.
+  if (purged > 0) {
+    const left = Math.max(0, row.imported_messages - purged);
+    return left > 0
+      ? `An earlier deletion already removed ${purged.toLocaleString()} of its ${countOf(row.imported_messages, "message")}. This deletes the ${left.toLocaleString()} left, their attachments, and its archive files.`
+      : "An earlier deletion already removed its messages. This deletes its archive files.";
+  }
+  const held = [
+    row.imported_messages > 0 ? countOf(row.imported_messages, "message") : "",
+    row.attachments_imported > 0
+      ? countOf(row.attachments_imported, "attachment")
+      : "",
+  ].filter(Boolean);
+  return held.length > 0
+    ? `This deletes the ${held.join(" and ")} it brought in, and its archive files.`
+    : "This deletes its archive files.";
+}
+
 /**
  * The confirmation Delete import opens. It names the counts because a delete
  * of five thousand messages and one of a hundred and forty thousand look the
@@ -19,16 +43,7 @@ function countOf(count: number, noun: string): string {
  * same control.
  */
 export function deleteImportConfirmation(row: ImportRow): ConfirmRequest {
-  const held = [
-    row.imported_messages > 0 ? countOf(row.imported_messages, "message") : "",
-    row.attachments_imported > 0
-      ? countOf(row.attachments_imported, "attachment")
-      : "",
-  ].filter(Boolean);
-  const removes =
-    held.length > 0
-      ? `This deletes the ${held.join(" and ")} it brought in, and its archive files.`
-      : "This deletes its archive files.";
+  const removes = removesSentence(row);
   return {
     title: row.guild_name
       ? `Delete the import from ${row.guild_name}?`

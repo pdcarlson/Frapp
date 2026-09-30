@@ -1029,8 +1029,10 @@ export class DiscordImportWorkerService {
       status: 'purged',
       purged_at: new Date().toISOString(),
     });
+    // The running total, not this slice's: a large purge spans many slices,
+    // and the last one can delete nothing if the one before emptied the rows.
     this.logger.log(
-      `Purged Discord import ${job.id}: ${deleted} messages, ${channelsDeleted.length} emptied channels it created, and its archive objects.`,
+      `Purged Discord import ${job.id}: ${job.purged_messages + deleted} messages, ${channelsDeleted.length} emptied channels it created, and its archive objects.`,
     );
     return { claimed: true, importId: job.id, finished: true };
   }
