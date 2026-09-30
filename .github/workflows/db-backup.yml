@@ -145,6 +145,9 @@ jobs:
   backup-staging-storage:
     runs-on: ubuntu-latest
     environment: staging
+    # Stays well above DEFAULT_BUDGET_MINUTES (scripts/storage-backup.mjs): past
+    # its budget a run stops copying and writes what it did, and this is the
+    # margin that write needs. A run cut off here records nothing (#2916).
     timeout-minutes: 60
 
     steps:
@@ -207,6 +210,9 @@ jobs:
   backup-production-storage:
     runs-on: ubuntu-latest
     environment: production-backup
+    # Stays well above DEFAULT_BUDGET_MINUTES (scripts/storage-backup.mjs): past
+    # its budget a run stops copying and writes what it did, and this is the
+    # margin that write needs. A run cut off here records nothing (#2916).
     timeout-minutes: 60
 
     steps:
