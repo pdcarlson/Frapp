@@ -17,6 +17,9 @@
 //   `2026-09.2`, then `2026-09.3`. Any other value asks nobody again, and the
 //   members who accepted the earlier text would keep a stamp naming it.
 // - FERPA is a notice nobody accepts, so it has a date but no constant.
+// - The constant is pinned too (`PINNED_POLICY_VERSION`). The month rule
+//   accepts `2026-09` and `2026-09.2` alike, so without the pin a merge that
+//   brought back an older value would pass and ask nobody again (#2895).
 // - Each page's text is pinned below with its date. Editing a page's text
 //   fails until its pin is updated, which forces the call nothing else made:
 //   a material change also moves the page's date (and, for Terms or Privacy,
@@ -42,6 +45,12 @@ const VALIDATION = "packages/validation/src/index.ts";
 
 /** The pages the acceptance checkbox covers. The constant follows the newer. */
 const ACCEPTED_PAGES = ["terms", "privacy"];
+
+/**
+ * `LEGAL_POLICY_VERSION` as last decided. It moves only with a material change
+ * to Terms or Privacy, in the same commit as that page's row below.
+ */
+export const PINNED_POLICY_VERSION = "2026-09.2";
 
 /**
  * Each legal page's served date and text fingerprint. Update a row only
@@ -167,6 +176,16 @@ test("LEGAL_POLICY_VERSION is the month of the newer Terms or Privacy date", () 
       "A page whose date moved needs the constant moved with it, which asks every member to accept again; " +
       "a constant that moved needs the page date that justifies it. A second material revision in the same month " +
       "keeps the date and takes the next suffix (2026-09 → 2026-09.2). spec/behavior/legal.md § Acceptance record.",
+  );
+});
+
+test("LEGAL_POLICY_VERSION matches its pin", () => {
+  assert.equal(
+    readPolicyVersion(readRepo(VALIDATION)),
+    PINNED_POLICY_VERSION,
+    "LEGAL_POLICY_VERSION differs from PINNED_POLICY_VERSION. If a material change to Terms or Privacy moved it, " +
+      "move the pin in the same commit as that page's row. If a merge brought back an older value, keep the pinned one: " +
+      "an older value asks nobody again, and members who accepted the earlier text keep a stamp naming it.",
   );
 });
 
