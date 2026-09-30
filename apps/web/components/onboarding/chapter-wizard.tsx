@@ -667,8 +667,6 @@ function ArchetypeStep({
                 `--ring` at 25% composites to ~1.3:1 — and it is the border
                 going solid accent that makes focus visible. This had the ring
                 and not the border swap. `FOCUS_RING` is the whole recipe.
-                (Importing it is not touching the primitive #1215 is filed
-                against; that issue is about `FOCUS_RING_OFFSET`.)
               */
               className={cn(
                 "flex flex-col gap-1 rounded-lg border p-3 text-left transition",

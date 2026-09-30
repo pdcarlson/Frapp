@@ -235,10 +235,10 @@ function ModuleRow({
 
               This call site used to carry the residual: the offset ring cut §6
               3:1 failures from 8 seeds to 5, but not to 0, because the recipe
-              drew in `--primary` (accent-9). #1215 fixed that in the primitive
-              — it now draws in `--ring` (accent-8), which clears all 19 — so
-              there is no residual left here. See `components/ui/focus.ts` and
-              its `focus-contrast.spec.ts` guard.
+              drew in `--primary` (accent-9). The primitive now draws in
+              `--accent-text` (accent-11), which clears all 19, so there is no
+              residual left here. See `components/ui/focus.ts` and its
+              `focus-contrast.spec.ts` guard.
             */
             className={cn(
               "mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground",
