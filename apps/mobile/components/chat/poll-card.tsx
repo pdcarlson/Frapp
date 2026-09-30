@@ -20,24 +20,20 @@ import {
   groupReactions,
   messageActionsA11yProps,
   ReactionRow,
-} from "./message-bubble";
-import { ReplyQuote } from "./reply-quote";
+} from "./message-item";
 
 /**
  * #528 — mobile in-chat poll voting. Mirrors
  * `apps/web/components/chat/renderers/poll-card.tsx` (question + tappable
  * options pre-vote, bar tallies post-vote), with two differences:
  *
- * 1. **Not sided.** Web's `MessageRenderer` routes `kind: "poll"` to a card
- *    outside the bubble/avatar layout entirely (`rendersAsBubble` excludes
- *    every card kind); `chat-thread.tsx` does the same — this component is
- *    rendered directly by the list, not wrapped in `MessageBubble`. Web still
- *    gets retry/discard/reactions on a card row from the shared `MessageItem`
- *    wrapper every kind renders inside; mobile has no such wrapper, so this
- *    card renders that chrome itself — status text + Retry/Discard sourced
- *    from `message._status`/`_error` via exhaustive `deliveryChrome` (#1910)
- *    (mirroring `MineMessageBubble`), and
- *    `ReactionRow` imported from `message-bubble.tsx` rather than
+ * 1. **A card in the row, not a message body.** `thread-message-row.tsx` puts
+ *    it inside `MessageRowFrame`, which draws the reply quote, the avatar and
+ *    the author line every row has (a card always starts a run,
+ *    `@repo/chat-core/grouping`). The card itself renders the rest of the
+ *    chrome — status text + Retry/Discard sourced from
+ *    `message._status`/`_error` via exhaustive `deliveryChrome` (#1910), and
+ *    `ReactionRow` imported from `message-item.tsx` rather than
  *    reimplemented, so a poll message keeps the same affordances every other
  *    mobile message kind has. `unconfirmed`/`recorded` are a muted note with
  *    no Discard; mobile has no slash replay path, so they are read-only.
@@ -72,14 +68,6 @@ export interface PollCardProps {
   viewerId: string;
   /** Confirmed messages can be voted on; pending optimistic rows cannot. */
   isConfirmed: boolean;
-  /**
-   * Resolves a `users.id` to a display name. Required so a poll that is a
-   * reply can caption its parent without silently falling back to a uuid.
-   */
-  nameFor: (userId: string) => string | null;
-  replyParent?: ChatMessage | null;
-  /** The placeholder when the block list hides the parent — see `MessageBubbleProps`. */
-  replyParentHidden?: string;
   onVote: (
     messageId: string,
     actionType: string,
@@ -90,34 +78,38 @@ export interface PollCardProps {
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
   /**
-   * Opens the message actions sheet — the same one `MessageBubble` uses. A
+   * Opens the message actions sheet — the same one `MessageItem` uses. A
    * poll's question and options are member-authored text, so a poll from
    * someone else is reportable like any message (#2312 §2). The viewer's own
    * poll gets it too, for Reply and Delete (#2775); which rows the sheet shows
    * is decided by `messageActionsFor`, not by whether this is passed.
    */
   onOpenActions?: () => void;
+  /**
+   * Scrolls to the parent when this poll is a reply whose parent is shown.
+   * The quote above the row is tappable; this is its screen-reader twin on the
+   * card's own accessible container, as a text reply has on its body.
+   */
+  onJumpToParent?: () => void;
 }
 
 export function PollCard({
   message,
   viewerId,
   isConfirmed,
-  nameFor,
-  replyParent,
-  replyParentHidden,
   onVote,
   onRetry,
   onDiscard,
   onReact,
   onUnreact,
   onOpenActions,
+  onJumpToParent,
 }: PollCardProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  // The chapter accent is the tally fill and the selected-option chip, the
-  // same identity signal `MineMessageBubble` gives the self bubble
-  // (components.md:210) — a poll's own vote is the viewer's content too.
+  // The chapter accent is the tally fill and the selected-option chip: a
+  // poll's own vote is the viewer's content, and the engine's solid-fill pair
+  // (accent-engine.md §8) is what a filled control takes.
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const payload = readPollPayload(message);
   const now = useNow();
@@ -154,29 +146,18 @@ export function PollCard({
       onUnreact={onUnreact}
       onLongPress={onOpenActions}
       styles={styles}
-      align="flex-start"
     />
   );
-  const replyQuote =
-    message.reply_to_id && !message.is_deleted ? (
-      <ReplyQuote
-        message={message}
-        replyParent={replyParent}
-        hiddenText={replyParentHidden}
-        nameFor={nameFor}
-        viewerId={viewerId}
-        borderColor={tokens.color.border.hairline}
-        textColor={tokens.color.text.muted}
-      />
-    ) : null;
 
-  // Same shape as `MessageBubble`'s incoming row: the gesture on a wrapper that
+  // Same shape as `MessageItem`'s row: the gesture on a wrapper that
   // is not itself an accessibility element (so the option buttons stay
   // reachable), and the screen-reader action on an accessible `View` around
   // the card's own text — never on a bare `Text` (see
   // `messageActionsA11yProps`).
-  const a11yActions = messageActionsA11yProps(onOpenActions);
-  const hasActions = !!onOpenActions;
+  const a11yActions = messageActionsA11yProps(onOpenActions, {
+    onJumpToParent,
+  });
+  const hasActions = "accessibilityActions" in a11yActions;
 
   if (!payload) {
     return (
@@ -187,7 +168,6 @@ export function PollCard({
         style={styles.card}
       >
         <View accessible={hasActions} {...a11yActions}>
-          {replyQuote}
           <Text style={styles.malformed}>
             Malformed poll · {message.content}
           </Text>
@@ -215,7 +195,6 @@ export function PollCard({
       style={styles.card}
     >
       <View accessible={hasActions} {...a11yActions}>
-        {replyQuote}
         <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
         <Text style={styles.question}>{payload.question}</Text>
       </View>
@@ -350,10 +329,9 @@ function PollDeliveryChrome({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // The body column's full width: a card in the row, under its author line.
     card: {
       marginTop: tokens.spacing.xs,
-      maxWidth: "86%",
-      alignSelf: "flex-start",
       padding: tokens.spacing.md,
       borderRadius: tokens.radius.card,
       backgroundColor: tokens.color.surface.card,
@@ -419,12 +397,12 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.sm + 1,
     },
-    // Matches `MineMessageBubble`'s equivalent styles in message-bubble.tsx —
-    // same pending/failed/unconfirmed/recorded treatment, since a poll
-    // message shares the `sendMessage` contract any other kind is.
+    // Matches `MessageItem`'s delivery line in message-item.tsx — same
+    // pending/failed/unconfirmed/recorded treatment, since a poll message
+    // shares the `sendMessage` contract any other kind is.
     metaText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+      color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.sm + 1,
     },
     failedRow: {
@@ -445,10 +423,10 @@ function createStyles(tokens: SignetTokens) {
     },
     discardText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+      color: tokens.color.text.mutedForeground,
     },
-    // Matches `MessageBubble`'s equivalent styles — `ReactionRow` (imported
-    // from message-bubble.tsx) is narrowed to exactly these five keys.
+    // Matches `MessageItem`'s equivalent styles — `ReactionRow` (imported
+    // from message-item.tsx) is narrowed to exactly these five keys.
     reactionRow: {
       flexDirection: "row",
       flexWrap: "wrap",

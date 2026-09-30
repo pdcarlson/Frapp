@@ -44,10 +44,13 @@ export function formatLocaleDate(value: unknown): string {
 }
 
 /**
- * Chat clock: `"Aug 16, 5:09 PM"` (locale-dependent), or `""` when missing.
+ * A clock with its date: `"Aug 16, 5:09 PM"` (locale-dependent), or `""` when
+ * missing. The chat popovers (pins, saved messages, search) and the events
+ * calendar use it. The thread's author line does not: the date there lives in
+ * the day divider, so it takes {@link formatTimeOfDay}.
  *
- * Empty string, not `"—"`, because the chat meta line concatenates this
- * next to a name and a missing timestamp should not paint an em dash.
+ * Empty string, not `"—"`, because callers concatenate this next to a name
+ * and a missing timestamp should not paint an em dash.
  */
 export function formatClock(value: unknown): string {
   const parsed = parseInstant(value);
@@ -58,4 +61,87 @@ export function formatClock(value: unknown): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/**
+ * Cached: constructing an `Intl.DateTimeFormat` is the expensive part, and the
+ * chat timeline formats a time for every row on every render. Created on first
+ * use rather than at import, so a test that sets a locale or time zone before
+ * its first call is honoured. {@link formatTimeOfDay} and
+ * {@link formatTimeOfDayShort} both read it, so a run's author line and its
+ * gutter times always agree.
+ *
+ * A formatter keeps the zone it was built in, but the day dividers beside
+ * these times read `Date`'s getters, which follow the device's current zone.
+ * So the cache is rebuilt whenever the current UTC offset changes (a laptop
+ * tab or a backgrounded phone that crossed zones); otherwise a message under
+ * "Today" could print its time in the zone the session started in.
+ */
+let clockFormat: { offset: number; format: Intl.DateTimeFormat } | null = null;
+function clock(): Intl.DateTimeFormat {
+  const offset = new Date().getTimezoneOffset();
+  if (clockFormat?.offset !== offset) {
+    clockFormat = {
+      offset,
+      format: new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+  }
+  return clockFormat.format;
+}
+function clockParts(at: Date): Intl.DateTimeFormatPart[] {
+  return clock().formatToParts(at);
+}
+
+/**
+ * Chat's time of day, `"5:09 PM"` (locale-dependent), or `""` when missing.
+ *
+ * What a run's author line prints, on web and mobile alike. It carries no date
+ * on purpose: in the compact chat layout the date lives only in the day
+ * divider (`components.md` §11, #2873), and {@link formatClock}'s
+ * `"Aug 16, 5:09 PM"` on every author line is exactly what that decision
+ * removed.
+ */
+export function formatTimeOfDay(value: unknown): string {
+  const parsed = parseInstant(value);
+  if (!parsed) return "";
+  // `Intl` separates the day period with a narrow no-break space (U+202F);
+  // `Date#toLocaleTimeString`, which this used to call, prints a plain one in
+  // V8. Kept plain, so the text members see does not change.
+  // `format`, not `formatToParts`: this is the author line on mobile too, and
+  // `format` is the part of `Intl.DateTimeFormat` every engine ships.
+  return clock()
+    .format(parsed)
+    .replace(/\u202f/g, " ");
+}
+
+function dayPeriodOf(at: Date): string | undefined {
+  return clockParts(at).find((part) => part.type === "dayPeriod")?.value;
+}
+
+/**
+ * {@link formatTimeOfDay} without the day period when `since` is in the same
+ * one: `"5:09"`, or `""` when missing. A grouped chat row's hover time, which
+ * sits in the 32px avatar gutter under a run whose author line (`since`, the
+ * run's first message) already says AM or PM.
+ *
+ * A run is measured row to row, so it can cross noon: a follow-on at 12:20 PM
+ * under an author line reading 11:50 AM keeps its "PM" rather than reading as
+ * 12:20 AM. Without `since`, or in a 24-hour locale with no day period, it is
+ * the short form.
+ */
+export function formatTimeOfDayShort(value: unknown, since?: unknown): string {
+  const parsed = parseInstant(value);
+  if (!parsed) return "";
+  const anchor = parseInstant(since);
+  if (anchor && dayPeriodOf(anchor) !== dayPeriodOf(parsed)) {
+    return formatTimeOfDay(value);
+  }
+  return clockParts(parsed)
+    .filter((part) => part.type !== "dayPeriod")
+    .map((part) => part.value)
+    .join("")
+    .trim();
 }
