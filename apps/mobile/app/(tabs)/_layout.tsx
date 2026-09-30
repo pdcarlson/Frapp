@@ -23,8 +23,9 @@ import { useFrappTheme } from "@/lib/theme";
  * ship as stubs rather than as registrations alone.
  *
  * No screen here gets the navigator's header (#2485). The Canvas board draws
- * none: every screen carries its own title (`ScreenShell`, or the thread's
- * `‹ #name` bar), so the header only ever said the same thing again above it.
+ * none, and every screen here carries its own title (`ScreenShell`, or a bar of
+ * its own such as the thread's `‹ #name`), so the header only ever said that
+ * title again above it.
  * It never supplied a way back either — a tab route's header renders with no
  * `back` — so the pushed routes keep the back controls they draw themselves.
  * Chat home's chapter mark, which used to ride in the header, is now its

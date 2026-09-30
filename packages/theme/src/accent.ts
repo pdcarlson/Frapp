@@ -102,10 +102,11 @@ export function resolveChapterAccentColor(
   // closes — the light brand token scores 2.63:1 on the native dark card, below
   // inputs it would replace. The requested fallback is tried first, so a caller
   // passing its own mode's token (all of them do today) is unaffected.
-  // Resolved lazily, inside the closure: this runs on every render of the
-  // dashboard shell and whenever mobile's `useChapterBranding` recomputes, and
-  // walking the ladder is several contrast evaluations whose result is thrown
-  // away whenever the chapter's own accent passes — which is the normal case.
+  // Resolved lazily, inside the closure: this runs on every render of web
+  // Settings' accent preview and whenever mobile's `useChapterBranding`
+  // recomputes, and walking the ladder is several contrast evaluations whose
+  // result is thrown away whenever the chapter's own accent passes — which is
+  // the normal case.
   const fallback = (
     reason: AccentValidationResult["reason"],
   ): AccentValidationResult => {

@@ -8,12 +8,12 @@ import { FrappThemeProvider } from "@/lib/theme";
 /**
  * #2485 — no tab screen gets the navigator's header.
  *
- * Every screen draws its own title (`ScreenShell`, the thread's `‹ #name` bar,
- * the Canvas board's layout), so a navigator header on top of it is the same
- * title said twice, which is what every App Store screenshot showed. This
- * renders the real layout, rather than reading its source, and holds both
- * halves: the header is off for the whole navigator, and no registration turns
- * one back on for itself.
+ * Every screen draws its own title (`ScreenShell`, or a bar of its own such as
+ * the thread's `‹ #name`), and the Canvas board draws no navigator header, so
+ * one on top is the same title said twice, which is what every App Store
+ * screenshot showed. This renders the real layout, rather than reading its
+ * source, and holds both halves: the header is off for the whole navigator,
+ * and no registration turns one back on for itself.
  *
  * It lives in `lib/`, not beside the layout: a spec under `app/` is a route
  * module and ships in the bundle (`lib/routes.spec.ts`).

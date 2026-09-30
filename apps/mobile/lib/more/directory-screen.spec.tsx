@@ -223,4 +223,14 @@ describe("s13's frame (#2485)", () => {
 
     expect(frame.props.edges).toContain("top");
   });
+
+  it("marks its title as the screen's heading, which no header supplies now", () => {
+    const tree = render();
+    const title = inHeader(
+      tree,
+      (element) => element.props.accessibilityRole === "header",
+    );
+
+    expect(title.children).toBe("Directory");
+  });
 });

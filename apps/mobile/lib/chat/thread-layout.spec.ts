@@ -80,3 +80,25 @@ describe("s05 wires the layout into its rows", () => {
     );
   });
 });
+
+/**
+ * s05's frame (#2485). No navigator header sits above the thread any more, so
+ * its `‹ #name` bar is the top of the screen and the screen's own
+ * `SafeAreaView` has to take the status-bar inset. Read from source for the
+ * reason above; it becomes a render assertion with #2705.
+ */
+describe("s05 takes the top safe-area inset itself", () => {
+  const THREAD = readFileSync(
+    join(
+      fileURLToPath(new URL(".", import.meta.url)),
+      "../..",
+      "app/(tabs)/chat-thread.tsx",
+    ),
+    "utf8",
+  );
+
+  it("puts the top edge on the screen's outer SafeAreaView", () => {
+    const frame = THREAD.match(/<SafeAreaView\s[^>]*>/);
+    expect(frame?.[0]).toMatch(/edges=\{\[[^\]]*"top"[^\]]*\]\}/);
+  });
+});

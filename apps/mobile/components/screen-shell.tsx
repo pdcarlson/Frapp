@@ -20,8 +20,9 @@ type ScreenShellProps = {
    *
    * Added in S2 because this file freezes afterwards (#937's hotspot protocol)
    * and three drawn screens need it: the ✦ Ask pill on s04 and s06, and the `+`
-   * on s08 (spec/ui/mobile/navigation.md:44). Optional, so every existing call
-   * site is unaffected.
+   * on s08, as the Canvas board draws them (the pill's rule is
+   * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar).
+   * Optional, so every existing call site is unaffected.
    */
   headerAction?: ReactNode;
   children: ReactNode;
