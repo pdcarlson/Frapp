@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
+  CLIENT_PLATFORMS,
   isBelowMinimum,
   parseClientVersionHeader,
   parseVersionWithBuild,
@@ -112,5 +115,24 @@ describe('isBelowMinimum', () => {
 
   it('fails open when the client reported no build and the minimum needs one', () => {
     expect(isBelowMinimum(v('0.9.0'), v('0.9.0+14'))).toBe(false);
+  });
+});
+
+// `expo.version` is what every native build reports in `X-Client-Version`
+// (`apps/mobile/lib/client-version.ts`), and it is edited on every native
+// change. A shape this parser refuses, such as a `-beta.1` tag, reads as no
+// header, which the policy treats as supported. Android accepts any
+// `versionName`, so that build would ship, and no minimum could ever retire it.
+describe('the version the mobile app ships', () => {
+  const appJson = JSON.parse(
+    readFileSync(join(__dirname, '../../../../mobile/app.json'), 'utf8'),
+  ) as { expo: { version: string } };
+
+  it.each(CLIENT_PLATFORMS)('parses as the %s header', (platform) => {
+    const expected = parseVersionWithBuild(appJson.expo.version);
+    expect(expected).not.toBeNull();
+    expect(
+      parseClientVersionHeader(`${platform}/${appJson.expo.version}+1`),
+    ).toEqual({ platform, version: expected?.version, build: 1 });
   });
 });
