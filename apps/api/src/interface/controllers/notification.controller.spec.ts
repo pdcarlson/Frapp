@@ -199,9 +199,14 @@ describe('NotificationController', () => {
   describe('getSettings', () => {
     it('should call notificationService.getSettings with correct parameters', async () => {
       const userId = 'user-1';
-      const expectedResult = { id: 'settings-1', user_id: userId };
+      const expectedResult = {
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+        theme: 'system' as const,
+      };
 
-      notificationService.getSettings!.mockResolvedValue(expectedResult as any);
+      notificationService.getSettings!.mockResolvedValue(expectedResult);
 
       const result = await controller.getSettings(userId);
 
@@ -217,14 +222,13 @@ describe('NotificationController', () => {
         theme: 'dark',
       };
       const expectedResult = {
-        id: 'settings-1',
-        user_id: userId,
-        theme: 'dark',
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+        theme: 'dark' as const,
       };
 
-      notificationService.updateSettings!.mockResolvedValue(
-        expectedResult as any,
-      );
+      notificationService.updateSettings!.mockResolvedValue(expectedResult);
 
       const result = await controller.updateSettings(userId, dto);
 

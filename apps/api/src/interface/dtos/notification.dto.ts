@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -16,6 +17,11 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
+import {
+  THEMES,
+  type Theme,
+  type UserSettingsValues,
+} from '#domain/entities/notification.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -172,12 +178,47 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description: 'Theme preference',
-    enum: ['light', 'dark', 'system'],
+    enum: THEMES,
   })
   @IsOptional()
-  @IsString()
-  @Matches(/^(light|dark|system)$/, {
-    message: 'theme must be light, dark, or system',
+  @IsIn(THEMES, { message: `theme must be one of: ${THEMES.join(', ')}` })
+  theme?: Theme;
+}
+
+/**
+ * `GET` and `PATCH /v1/settings`: the caller's settings. Always a full object.
+ * A member who has never saved gets the defaults, not an empty body (#2885).
+ */
+export class UserSettingsDto implements UserSettingsValues {
+  @ApiProperty({
+    description:
+      'Quiet hours start, as Postgres returns a `time` (HH:mm:ss). Null when no window is set; quiet hours are enforced only while start and end are both set.',
+    nullable: true,
+    type: String,
+    example: '22:00:00',
   })
-  theme?: 'light' | 'dark' | 'system';
+  quiet_hours_start: string | null;
+
+  @ApiProperty({
+    description: 'Quiet hours end (HH:mm:ss). Null when no window is set.',
+    nullable: true,
+    type: String,
+    example: '08:00:00',
+  })
+  quiet_hours_end: string | null;
+
+  @ApiProperty({
+    description:
+      'Time zone the window is evaluated in. Null means UTC while a window is set.',
+    nullable: true,
+    type: String,
+    example: 'America/New_York',
+  })
+  quiet_hours_tz: string | null;
+
+  @ApiProperty({
+    description: 'Theme preference. `system` until the member saves one.',
+    enum: THEMES,
+  })
+  theme: Theme;
 }

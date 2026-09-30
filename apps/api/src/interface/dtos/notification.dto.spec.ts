@@ -4,6 +4,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { isSupportedTimeZone } from '@repo/validation';
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
+import { THEMES } from '#domain/entities/notification.entity';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
   ListNotificationPreferencesQueryDto,
@@ -116,6 +117,28 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
   it('rejects an over-long value', async () => {
     expect(await failingProps({ quiet_hours_tz: 'A'.repeat(101) })).toContain(
       'quiet_hours_tz',
+    );
+  });
+});
+
+// `THEMES` is the one list the published enum and this validation read, so a
+// theme the contract lists must pass here and anything else must not.
+describe('UpdateUserSettingsDto — theme', () => {
+  it.each(THEMES)('accepts %s', async (theme) => {
+    expect(await failingProps({ theme })).not.toContain('theme');
+  });
+
+  it('rejects a theme outside the list', async () => {
+    expect(await failingProps({ theme: 'neon' })).toContain('theme');
+  });
+
+  it('rejects a non-string', async () => {
+    expect(await failingProps({ theme: 5 })).toContain('theme');
+  });
+
+  it('accepts an omitted theme', async () => {
+    expect(await failingProps({ quiet_hours_tz: 'UTC' })).not.toContain(
+      'theme',
     );
   });
 });

@@ -22,10 +22,34 @@ import type {
   PushToken,
   NotificationPreference,
   UserSettings,
+  UserSettingsValues,
 } from '#domain/entities/notification.entity';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+
+/**
+ * What a member with no `user_settings` row has, which is every member until
+ * their first save: nothing writes the row at sign-up or on joining a chapter.
+ * Mirrors the table's column defaults (`00000000000000_initial_schema.sql`): no
+ * quiet-hours window, so none is enforced, and the `system` theme.
+ */
+const USER_SETTINGS_DEFAULTS: UserSettingsValues = {
+  quiet_hours_start: null,
+  quiet_hours_end: null,
+  quiet_hours_tz: null,
+  theme: 'system',
+};
+
+/** The {@link UserSettingsValues} a stored row holds. */
+function toUserSettingsValues(row: UserSettings): UserSettingsValues {
+  return {
+    quiet_hours_start: row.quiet_hours_start,
+    quiet_hours_end: row.quiet_hours_end,
+    quiet_hours_tz: row.quiet_hours_tz,
+    theme: row.theme,
+  };
+}
 
 /** Cap on how much of an offending value reaches a log line. */
 const LOGGED_VALUE_MAX_LENGTH = 64;
@@ -612,8 +636,16 @@ export class NotificationService {
     }
   }
 
-  async getSettings(userId: string): Promise<UserSettings | null> {
-    return this.settingsRepo.findByUser(userId);
+  /**
+   * Never `null`. It used to be, for a member with no row, and Nest sends `null`
+   * as an empty body: `openapi-fetch` read that as `data: undefined`, which
+   * TanStack Query refuses, so both clients showed their error state to every
+   * member who had never saved (#2885). `findByUser` throws on a failed read, so
+   * a `null` here is only ever "no row", and the defaults cannot mask an outage.
+   */
+  async getSettings(userId: string): Promise<UserSettingsValues> {
+    const row = await this.settingsRepo.findByUser(userId);
+    return row ? toUserSettingsValues(row) : { ...USER_SETTINGS_DEFAULTS };
   }
 
   async updateSettings(
@@ -624,7 +656,7 @@ export class NotificationService {
         'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
       >
     >,
-  ): Promise<UserSettings> {
+  ): Promise<UserSettingsValues> {
     const existing = await this.settingsRepo.findByUser(userId);
     // `undefined` means "not supplied" and `null` means "clear this". Test the
     // VALUE, not key presence: `field in data` is always true here, because
@@ -635,12 +667,13 @@ export class NotificationService {
       data[field] !== undefined
         ? (data[field] ?? null)
         : (existing?.[field] ?? null);
-    return this.settingsRepo.upsert({
+    const saved = await this.settingsRepo.upsert({
       user_id: userId,
       quiet_hours_start: resolve('quiet_hours_start'),
       quiet_hours_end: resolve('quiet_hours_end'),
       quiet_hours_tz: resolve('quiet_hours_tz'),
-      theme: data.theme ?? existing?.theme ?? 'system',
+      theme: data.theme ?? existing?.theme ?? USER_SETTINGS_DEFAULTS.theme,
     });
+    return toUserSettingsValues(saved);
   }
 }
