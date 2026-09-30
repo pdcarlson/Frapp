@@ -7,7 +7,11 @@ import {
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
-import { useAwaitInvoicePaid, usePayInvoice } from "@repo/hooks";
+import {
+  payIntentErrorCopy,
+  useAwaitInvoicePaid,
+  usePayInvoice,
+} from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,57 +28,6 @@ export type PayableInvoice = {
   title: string;
   amount: number;
 };
-
-/**
- * Map a `POST /v1/invoices/:id/payment-intent` failure to member-facing copy.
- *
- * Every branch here is a response the endpoint really returns, so none of them
- * are hypothetical. Where the server's own wording is precise and safe to show
- * — the two distinct 409s ("already completed, confirmation processing" vs
- * "an attempt is already in flight, retry") and the 400's current-status text —
- * we prefer it over a generic string, because the difference is exactly what
- * tells a member whether to wait or to stop.
- *
- * Exported for unit testing: this mapping is the part most likely to silently
- * regress if the API's error shape changes.
- */
-export function payIntentErrorCopy(error: unknown): string {
-  const candidate = (error ?? {}) as {
-    statusCode?: unknown;
-    status?: unknown;
-    message?: unknown;
-  };
-  const status =
-    typeof candidate.statusCode === "number"
-      ? candidate.statusCode
-      : typeof candidate.status === "number"
-        ? candidate.status
-        : undefined;
-  const serverMessage =
-    typeof candidate.message === "string"
-      ? candidate.message
-      : Array.isArray(candidate.message)
-        ? candidate.message.join(", ")
-        : null;
-
-  switch (status) {
-    case 400:
-      return serverMessage ?? "This invoice is no longer open for payment.";
-    case 403:
-      return "You can only pay your own invoices.";
-    case 404:
-      return "This invoice could not be found.";
-    case 409:
-      return (
-        serverMessage ??
-        "A payment for this invoice is already being processed."
-      );
-    case 503:
-      return "The payment provider is unavailable right now. Please try again.";
-    default:
-      return serverMessage ?? "Could not start payment. Please try again.";
-  }
-}
 
 type Outcome = { settled: boolean } | null;
 
