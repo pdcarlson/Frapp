@@ -180,7 +180,7 @@ the ones a later reader would otherwise re-litigate.
   substitutes for any `Authorization` header. So what the proxy route passes varies by session and
   path, and its 403s say nothing about the PAT. The direct route with `GITHUB_PAT` still returned
   200, so the read half above stands. Measurements:
-  [`AGENT_INFRA.md` → Work status](../../../docs/internal/ci-cd/AGENT_INFRA.md#work-status).
+  [`agent-infra.md` → Work status](../../../docs/ci-cd/agent-infra.md#work-status).
 
   The 2026-09-01 caution holds unchanged: a read reports what an admin last applied, so re-read
   rather than cite. Re-read on 2026-09-02, `main` still carried 21 required contexts with

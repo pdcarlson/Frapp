@@ -5,7 +5,7 @@
 # git at this directory via `core.hooksPath` (scripts/setup-git-hooks.mjs).
 #
 # Emergency bypass: `git commit --no-verify` (the CI `secret-scan` job still enforces it).
-# Docs: docs/internal/ci-cd/SECRET_SCANNING.md
+# Docs: docs/ci-cd/secret-scanning.md
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"

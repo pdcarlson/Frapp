@@ -2,7 +2,7 @@
 
 Where a fact lives, what a doc owes a reader, and what to do when a doc turns out to be wrong. These docs are read by agents mid-task: optimise for retrieval, not for reading.
 
-**What this document does not do is enforce itself.** Placement, naming and whether a cited path still exists used to be machine-checked; the four gates that did it were deleted, and no check replaced them — in CI those questions are now nobody's. So everything below is a convention this document states and a reviewer applies ([`.claude/skills/diff-review/angles.md`](../../.claude/skills/diff-review/angles.md)), not a rule a check will fail you on. A misplaced doc reds nothing; the cost lands later, on the reader who cannot find the fact or who trusts the stale copy of it. What CI does still check, and what it does not: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md).
+**What this document does not do is enforce itself.** Placement, naming and whether a cited path still exists used to be machine-checked; the four gates that did it were deleted, and no check replaced them — in CI those questions are now nobody's. So everything below is a convention this document states and a reviewer applies ([`.claude/skills/diff-review/angles.md`](../../.claude/skills/diff-review/angles.md)), not a rule a check will fail you on. A misplaced doc reds nothing; the cost lands later, on the reader who cannot find the fact or who trusts the stale copy of it. What CI does still check, and what it does not: [`../ci-cd/docs-ci.md`](../ci-cd/docs-ci.md).
 
 **Cite a rule here by its section, never by a number.** These rules are named, not numbered, so a
 citation survives one being added or reordered. Records that cite "hard rule N" predate that; read
@@ -12,7 +12,7 @@ them against the section whose wording matches.
 
 - **A fact belongs where the thing that would falsify it lives.** If a change to a guard, a schema, a workflow or a provider setting would make the sentence false, the sentence belongs in the doc that owns that thing. Everywhere else, link to it — path plus heading anchor, never a restatement. Most changes falsify nothing and need no doc edit; the question is never "did I touch a doc" but "which doc owns this fact". A paragraph parked in a canonical doc to look diligent is worse than none, because the next reader believes it.
 - **Two homes for one fact is a structure defect to merge, not a tie-break rule to write down.** Delete one copy and link to the other; never add a case-specific exception here to arbitrate a seam. The test is not whether text is repeated but whether one real-world change would require editing two docs — and two copies that are both correct today are still a defect, because they diverge: in #1586 one wrong timestamp reached five files in a single commit, because the list it belonged to had been copied six times.
-- **Never create a new top-level file, and never invent a top-level folder.** Put the change in the relevant existing doc; a new topic folder under `spec/` owes a `README.md` that routes to its files. Three homes are retired and must not come back: `docs/archive/` (git history is the archive), `docs/backlog/` (work tracking lives in **GitHub Issues** — see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md)), and `spec/**/chunks/` (merge canon into the real spec and track delivery as issues).
+- **Never create a new top-level file, and never invent a top-level folder.** Put the change in the relevant existing doc; a new topic folder under `spec/` owes a `README.md` that routes to its files. Three homes are retired and must not come back: `docs/archive/` (git history is the archive), `docs/backlog/` (work tracking lives in **GitHub Issues** — see [`../ci-cd/github-pm.md`](../ci-cd/github-pm.md)), and `spec/**/chunks/` (merge canon into the real spec and track delivery as issues).
 - **Work status is not a doc, and a restructure is not a document.** Status, plans and one-off narrative markdown — audits, "NOTES", "STATUS", consolidation writeups, migration plans — go to GitHub Issues, as an `[Epic]` with sub-issues when the work is large. Narrating a restructure into a file is forbidden; doing one is not.
 
 ## Where things go
@@ -38,7 +38,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
 | How to run locally / test / contribute, including the UI accessibility protocol | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
-| CI / agent infra / automations | `docs/internal/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](ci-cd/pr-babysitting.md) |
+| CI / agent infra / automations | `docs/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](../ci-cd/pr-babysitting.md) |
 | Ops runbooks (DB, incidents, branch protection) | `docs/internal/ops/` |
 | Deploy runbook (providers, CI/CD gate, launch) | `docs/internal/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
@@ -46,7 +46,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Mobile testing / smoke | `docs/mobile/` |
 | Performance notes (one file per optimization or per service) | `docs/performance/` |
 | Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |
-| Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
+| Work status / planning | **GitHub Issues** — not a doc; see [`../ci-cd/github-pm.md`](../ci-cd/github-pm.md) |
 
 ## What a doc owes a reader
 
@@ -72,4 +72,4 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 
 - Tree indexes: [`docs/README.md`](../README.md) · [`spec/README.md`](../../spec/README.md) — they
   route to files; the directory map is the table above, and they point back here for it
-- Work tracking: [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md)
+- Work tracking: [`../ci-cd/github-pm.md`](../ci-cd/github-pm.md) · ADR-16 in [`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md)

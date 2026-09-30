@@ -15,7 +15,7 @@ noise. Keep it that way. A COERCIVE check — one that requires a doc *write* ra
 anything — cannot tell truth from filler, so it gets filler. This repo had exactly one,
 `docs-spec-sync`, and deleted it in #1597. Do not add one back. The measured account sits at the
 site where the temptation is acted on: `DOCS_CHECKS` in
-[`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
+[`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
 ## Env slugs (`check-env-slugs.mjs`)
 
@@ -44,7 +44,7 @@ gate — which names and which slugs, and how far the wrong one spread — is in
 header, which is the canonical telling; do not restate it here.
 
 `INFISICAL_ENV_SLUGS` in the script is the only copy of the slug list, mirrored from **Infisical →
-Project Settings → Environments**; [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md)
+Project Settings → Environments**; [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md)
 § Infisical Environments is the doc it is asserted against. On a genuine rename update both — do
 **not** widen the list to silence a failing reference. The gate cannot see a dashboard rename; that
 surfaces as a failing deploy run.
@@ -75,7 +75,7 @@ that has moved reads exactly as it did before, in every file in the corpus. The 
 narrower still: it reads only the `SCAN_ROOTS` listed above, so a wrong Infisical slug outside them
 is caught by nothing.
 
-What closes that is [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) — one
+What closes that is [`DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md) — one
 canonical place per fact, and verify a claim against whatever owns it before you act on it — read
 when you rely on a doc, and applied to a diff by the docs angle in
-[`diff-review`](../../../.claude/skills/diff-review/angles.md) before a push.
+[`diff-review`](../../.claude/skills/diff-review/angles.md) before a push.

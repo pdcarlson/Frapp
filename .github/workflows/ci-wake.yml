@@ -1,6 +1,6 @@
 name: CI wake
 
-# Wake path for the PR-babysitting loop (docs/internal/ci-cd/pr-babysitting.md).
+# Wake path for the PR-babysitting loop (docs/ci-cd/pr-babysitting.md).
 # `workflow_run: completed` fires for EVERY terminal
 # conclusion — success, failure, cancelled, timed_out — which is broader than
 # the PR-activity webhook, which carries CI failures, successful check-suite

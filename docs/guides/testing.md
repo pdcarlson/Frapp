@@ -280,16 +280,16 @@ guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
 
 The **`lint-and-typecheck`** job in `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and a set of per-workspace unit suites. That set is not restated here — it is in [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Required Status Checks. **Nothing asserts that copy against `ci.yml`** — `check:doc-tables` did, and it was deleted with the other docs gates, so the runbook's list is hand-kept and can lag this job. The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, default, passthrough, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`). `@repo/formatting` holds the shared locale date helpers plus tests that fail if a protected cluster (stopwatch padding, bare-date timezone parsing, minute-duration rounding) is folded into the generic formatter.
 
-The four docs gates that covered structure, citations, references and rosters are **gone** — scripts, `check:doc-*` npm scripts and jobs alike. What still runs over the docs outside `ci.yml`, and what it checks: [`DOCS_CI.md` § What runs](../internal/ci-cd/DOCS_CI.md#what-runs). None of it is a required check, and none of it requires a doc edit.
+The four docs gates that covered structure, citations, references and rosters are **gone** — scripts, `check:doc-*` npm scripts and jobs alike. What still runs over the docs outside `ci.yml`, and what it checks: [`docs-ci.md` § What runs](../ci-cd/docs-ci.md#what-runs). None of it is a required check, and none of it requires a doc edit.
 
-`lint` also surfaces the `nestjs-typed` response-schema rule as **warnings**, which do not fail ESLint, so this job stays green while the backlog stays visible. How to measure that backlog rather than copy a number, and when the rule flips to `error`: [`QUALITY_GATES.md` § nestjs-typed](../internal/ci-cd/QUALITY_GATES.md#nestjs-typed--the-response-schema-rule).
+`lint` also surfaces the `nestjs-typed` response-schema rule as **warnings**, which do not fail ESLint, so this job stays green while the backlog stays visible. How to measure that backlog rather than copy a number, and when the rule flips to `error`: [`quality-gates.md` § nestjs-typed](../ci-cd/quality-gates.md#nestjs-typed--the-response-schema-rule).
 
 ## 5a. Coverage
 
 Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate. This
 is a deliberate decision, not an oversight; `spec/architecture/README.md` § 11 states the current
 measured baseline instead of an unenforced minimum — see
-[`QUALITY_GATES.md` § Coverage](../internal/ci-cd/QUALITY_GATES.md#coverage) for why it stays
+[`quality-gates.md` § Coverage](../ci-cd/quality-gates.md#coverage) for why it stays
 ungated.
 
 ```bash
@@ -300,7 +300,7 @@ npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
 
 Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
 Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
-`test:cov` throw; the details are in [`QUALITY_GATES.md`](../internal/ci-cd/QUALITY_GATES.md) and
+`test:cov` throw; the details are in [`quality-gates.md`](../ci-cd/quality-gates.md) and
 matter before anyone touches the root `overrides` block.
 
 The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.

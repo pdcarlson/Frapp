@@ -548,7 +548,7 @@ already carries. **The name check is the load-bearing one** — the audit built 
 env values, so it establishes which variables reach the browser, not which values do; a clean
 gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
 method, caveats, and re-run instructions:
-[`SECRET_SCANNING.md` § Audit history](../ci-cd/SECRET_SCANNING.md#audit-history).
+[`secret-scanning.md` § Audit history](../../ci-cd/secret-scanning.md#audit-history).
 
 **Adding a client-read variable? The prefix decision is the security review.** Step 3 of _Adding a
 New Variable_ at the end of this document is mechanical — it tells you how to add the reference, not
@@ -585,7 +585,7 @@ Every GitHub secret belongs in an **environment** restricted to `main`, never in
 because a repository secret is readable from any branch (#2518). The Infisical pair below is not the
 only GitHub secret. The provider API keys, the release PAT and the base-sync App pair live there
 too. Which secrets exist, which environment holds each, and the state today:
-[`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
+[`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets).
 
 **Permanent (Infisical bootstrap):**
 

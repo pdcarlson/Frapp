@@ -22,7 +22,7 @@
  * `gitleaks git` scans every ref the clone holds — and silently reports clean over
  * the ones it doesn't. A partial clone therefore produces an all-clear that is
  * indistinguishable from a real audit, which is how a false entry gets appended to
- * the audit record in SECRET_SCANNING.md. Full mode now refuses to pretend.
+ * the audit record in secret-scanning.md. Full mode now refuses to pretend.
  *
  * **Shallowness is the wrong diagnostic.** A full-depth `--single-branch` clone
  * reports `is-shallow=false`, `git fetch --unshallow` errors as a no-op, and the
@@ -44,7 +44,7 @@
  *     UNLESS shallowness or the refspec already proves the clone incomplete
  *     without needing the network, which still refuses.
  *
- * Docs: docs/internal/ci-cd/SECRET_SCANNING.md
+ * Docs: docs/ci-cd/secret-scanning.md
  */
 
 import { spawnSync } from "node:child_process";
@@ -401,7 +401,7 @@ const REMEDY =
   "    git remote set-branches origin '*'          # widens a --single-branch clone\n" +
   "    git fetch --unshallow 2>/dev/null || true   # only needed for a shallow clone\n" +
   "    git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'\n" +
-  "  See docs/internal/ci-cd/SECRET_SCANNING.md § The audit is only as complete as the clone's refs.";
+  "  See docs/ci-cd/secret-scanning.md § The audit is only as complete as the clone's refs.";
 
 /**
  * Gate a full-mode scan on ref completeness. Returns a coverage note to append to
@@ -517,7 +517,7 @@ function main() {
       "\n❌ gitleaks found potential secrets (or errored) above.\n" +
         "  If it's a real secret: remove it from the diff and rotate it.\n" +
         "  If it's a false positive: add a tight entry to .gitleaks.toml [allowlist]\n" +
-        "  or an inline `gitleaks:allow` comment. See docs/internal/ci-cd/SECRET_SCANNING.md.",
+        "  or an inline `gitleaks:allow` comment. See docs/ci-cd/secret-scanning.md.",
     );
     // result.status is null when gitleaks was signal-killed (OOM/SIGTERM); treat that as a
     // failure, never a pass (process.exit(null) would coerce to 0 and falsely report clean).

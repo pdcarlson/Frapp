@@ -9,7 +9,7 @@
 # This pinned cache is the source of truth; scan-secrets.mjs falls back to a compatible
 # `gitleaks` on PATH (e.g. `brew install gitleaks`) only when this installer can't run.
 #
-# Docs: docs/internal/ci-cd/SECRET_SCANNING.md
+# Docs: docs/ci-cd/secret-scanning.md
 set -euo pipefail
 
 GITLEAKS_VERSION="${GITLEAKS_VERSION:-8.30.1}"

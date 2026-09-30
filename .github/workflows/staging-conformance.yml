@@ -22,7 +22,7 @@ name: Staging conformance
 # `deploy-staging.yml` deploys staging by commit, and auto-deploy would build every
 # push before CI and race it). Production's copy of the auto-deploy assertion
 # lives in production-guardrails.yml. Doc pointer:
-# docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+# docs/ci-cd/agent-infra.md § Scheduled conformance.
 
 on:
   schedule:
@@ -35,12 +35,12 @@ on:
     # (06:30) — so this workflow's Management API reads never overlap another
     # daily watchdog's own reads or the backup. `production-uptime.yml` probes live
     # `/health/ready` on its own cadence and does not share this stagger. Full schedule:
-    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
     #
     # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
     # 60 days, notifying the repo owner by email only. That ceiling is backwards
     # for every `schedule:` watchdog. If the repo goes dormant, re-enable them
-    # from the Actions tab. Tracked in AGENT_INFRA.md § "Scheduled conformance".
+    # from the Actions tab. Tracked in agent-infra.md § "Scheduled conformance".
     - cron: "30 7 * * *"
   workflow_dispatch:
 
@@ -66,7 +66,7 @@ jobs:
     # Secrets belong to the `staging` environment, `main` only (#2518, #2583).
     # `deployment: false`: a
     # check, not a deploy, so no deployment record. See
-    # docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
+    # docs/ci-cd/agent-infra.md § GitHub environments and bootstrap secrets.
     environment:
       name: staging
       deployment: false

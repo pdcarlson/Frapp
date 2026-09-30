@@ -623,7 +623,7 @@ jobs:
       # removing a response field regenerates perfectly cleanly and breaks every
       # client.
       #
-      # Two comparisons, two postures (docs/internal/ci-cd/QUALITY_GATES.md):
+      # Two comparisons, two postures (docs/ci-cd/quality-gates.md):
       # against every shipped mobile build's contract BLOCKING, because a store
       # binary keeps the calls it was built with; against the PR base ADVISORY,
       # because apps/web ships with the change.
@@ -660,7 +660,7 @@ jobs:
   # HARD GATE. The committed baseline
   # (`scripts/dependency-cruiser-known-violations.json`) exists to shrink, not to
   # grow; when it is empty, every violation fails. Current posture lives in
-  # docs/internal/ci-cd/QUALITY_GATES.md § dependency-cruiser — do not restate a
+  # docs/ci-cd/quality-gates.md § dependency-cruiser — do not restate a
   # count here.
   #
   # Needs the shared packages built — the cruise resolves workspace imports
@@ -696,7 +696,7 @@ jobs:
   #
   # jscpd has no clone-level baseline the way dependency-cruiser does, so the
   # only lever is a repo-wide duplication percentage. The threshold and ratchet
-  # live in docs/internal/ci-cd/QUALITY_GATES.md § jscpd (config: `.jscpd.json`)
+  # live in docs/ci-cd/quality-gates.md § jscpd (config: `.jscpd.json`)
   # — do not restate a number here. That percentage is too coarse to block a
   # merge on: it cannot distinguish one bad copy-paste from ordinary drift, and
   # the ratchet only ever moves down as consolidation lands.
@@ -996,7 +996,7 @@ jobs:
   # local primary; this is the enforced server-side net. It was adopted to replace the
   # secret push-protection lost when the repo went private — the repo is public again, so
   # that premise has lapsed and the gitleaks-vs-GHAS choice is unmade rather than settled.
-  # See docs/internal/ci-cd/SECRET_SCANNING.md.
+  # See docs/ci-cd/secret-scanning.md.
   secret-scan:
     runs-on: ubuntu-latest
     permissions:
@@ -1042,7 +1042,7 @@ jobs:
   # run and their `to authenticated` clause binds the probe.
   # Out of reach: Realtime, Presence, GoTrue with real JWTs, and `to anon`
   # targeting (no `anon` role here, though `auth.role()` is stubbed to it).
-  # Those live in the NestJS Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
+  # Those live in the NestJS Jest tier (see ADR-11/ADR-12 + agent-infra.md).
   pglite-migrations:
     needs: changes
     if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
@@ -1096,7 +1096,7 @@ jobs:
   # into no job at all. Do not reintroduce a `--grep` filter without a second
   # job to catch what it excludes.
   #
-  # No `continue-on-error`, per docs/internal/ci-cd/QUALITY_GATES.md: that key
+  # No `continue-on-error`, per docs/ci-cd/quality-gates.md: that key
   # rewrites the step's conclusion to success, which would leave this job green
   # on a breached floor — a required check that cannot fail is not a gate.
   #
@@ -1224,7 +1224,7 @@ jobs:
   # mask the first one's removal, exactly as `apps/web/playwright.config.ts`
   # warns. Adding one means porting apps/web's sibling-reading guard too.
   #
-  # No `continue-on-error`, per docs/internal/ci-cd/QUALITY_GATES.md: that key
+  # No `continue-on-error`, per docs/ci-cd/quality-gates.md: that key
   # rewrites the step's conclusion to success, and a required check that cannot
   # fail is not a gate.
   #

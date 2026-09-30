@@ -32,7 +32,7 @@ const ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
 
-const RUNBOOK_REL = "docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md";
+const RUNBOOK_REL = "docs/ci-cd/ai-code-review-runbook.md";
 
 // Every file that states the literal scan regex. The runbook is canonical; the
 // rest must agree with it character for character.

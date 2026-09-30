@@ -58,14 +58,14 @@ These encode invariants the codebase can't enforce for itself.
 
     | Source of truth | Docs that restate it |
     | --- | --- |
-    | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `spec/environments/README.md`, `QUALITY_GATES.md`, `docs/README.md`, `docs/hooks/README.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
+    | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `spec/environments/README.md`, `quality-gates.md`, `docs/README.md`, `docs/hooks/README.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
     | `.github/workflows/ci.yml` job steps (which workspaces `web-tests` runs) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
     | `CHAT_MESSAGE_KINDS`, declared in three files (`@repo/validation`, `chat.entity.ts`, `@repo/chat-core`) | `spec/behavior/chat/README.md`, `spec/architecture/README.md` |
     | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
     | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds); per-bucket caps differ, and `config.toml` is a different number | `content-validation.md` (the owner), `spec/architecture/README.md` § 7 |
     | `buildChapterConfigFromArchetype` (which seeds are `structuredClone`d) | `spec/engineering.md`, `spec/architecture/README.md` |
     | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/behavior/alumni.md`, `spec/product/modules.md`, `spec/product/personas.md`, `authorization-model.md` |
-    | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md` (the owner), and the slug warnings in `SECRETS_MANAGEMENT.md`, `LOCAL_DEV.md`, `AGENT_INFRA.md`, `.claude/skills/infrastructure-research/SKILL.md` |
+    | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md` (the owner), and the slug warnings in `SECRETS_MANAGEMENT.md`, `LOCAL_DEV.md`, `agent-infra.md`, `.claude/skills/infrastructure-research/SKILL.md` |
     | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `authorization-model.md` |
     | `apps/web/tests/visual/routes.ts` | `apps/web/tests/visual/README.md` |
     | The React pin in every `package.json`, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md` (the owner), `security-fixes.md` |
@@ -84,14 +84,14 @@ These encode invariants the codebase can't enforce for itself.
 
   This angle sees only the drift the diff makes visible. It can't catch two files drifting apart
   when neither is in the diff, and CI doesn't close that gap either (what CI still scans is in
-  [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)). Never report a clean review as evidence
+  [`docs-ci.md`](../../../docs/ci-cd/docs-ci.md)). Never report a clean review as evidence
   that the corpus is clean.
 - **Blast radius, not diff radius.** A rule every reviewer applies, not an angle of its own.
   "Pre-existing" is no reason to drop a candidate. Judge it
   against [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing
   existing code, which draws the fence.
 - **Tracker.** Flag code, scripts, or workflows that write to a retired tracker. Issues live on
-  GitHub ([`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)).
+  GitHub ([`routines.md`](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)).
 - **Secrets.** No secret values in source, logs, error messages, or committed files. Local Supabase
   demo keys are not secrets; real Stripe or Infisical values are.
 - **Verification honesty.** Flag a comment, doc line, or PR text claiming a check ran that the diff

@@ -246,7 +246,7 @@ function buildProtectionPayload(branch) {
 // network confined to `callGitHubApi`, because the call itself is the one part
 // that depends on the environment (route, allowlist, token). Reaching
 // `api.github.com` from a cloud sandbox is ROUTE-DEPENDENT (ADR-20 amendment of
-// 2026-09-02, (b), and AGENT_INFRA.md → Work status). Node's global `fetch`,
+// 2026-09-02, (b), and agent-infra.md → Work status). Node's global `fetch`,
 // which `ghRequest` uses, ignores HTTPS_PROXY and goes direct, and that route
 // has returned 200 with a PAT. The agent proxy's route (curl, or node under
 // NODE_USE_ENV_PROXY=1) passes some repo paths and 403s others, varying by

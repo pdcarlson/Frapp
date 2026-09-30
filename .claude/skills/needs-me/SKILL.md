@@ -27,7 +27,7 @@ GitHub MCP only, schemas loaded first:
 mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__list_pull_requests,
 mcp__github__pull_request_read,mcp__github__list_tags,mcp__github__list_commits")`.
 If the MCP is unavailable, stop and say so; there is no fallback tracker
-([`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines)).
+([`routines.md` → Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines)).
 
 ## Phase 1 — Sweep
 

@@ -25,7 +25,7 @@
 // Out of reach: Realtime, Presence, and GoTrue with real JWTs — the enforcement
 // tier stubs the two `auth.*` functions rather than minting a token, so claims
 // beyond `sub` and `role` are not exercised here. That half stays with the
-// NestJS Jest tier. See `docs/internal/ci-cd/AGENT_INFRA.md` ("Agent dev
+// NestJS Jest tier. See `docs/ci-cd/agent-infra.md` ("Agent dev
 // stack").
 //
 // Extensions: a migration may only use what is registered on the PGlite

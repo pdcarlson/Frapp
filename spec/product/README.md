@@ -16,4 +16,4 @@ This file's title and tagline used to name Frapp and quote "The Operating System
 | Core domains and module catalog                      | [`modules.md`](modules.md)                 |
 | Chapter creation, lifecycle, invites                 | [`onboarding.md`](onboarding.md)           |
 
-Chat-rework delivery (what's shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md)), not in this spec.
+Chat-rework delivery (what's shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/ci-cd/github-pm.md`](../../docs/ci-cd/github-pm.md)), not in this spec.
