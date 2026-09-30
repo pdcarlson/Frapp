@@ -1,10 +1,10 @@
 ---
 name: handoff
 description: >
-  Draft a copy-pasteable prompt that hands work to a fresh Claude Code session — for when this
-  session's context is filling up, when a task is finishing and the next one should start clean, or
-  when a parallel workstream should run in its own chat. Offer this proactively; do not wait to be
-  asked.
+  Draft the prompt that hands work to a fresh Claude Code session — queued as a suggested task where
+  the session has that tool, otherwise a copy-pasteable block — for when this session's context is
+  filling up, when a task is finishing and the next one should start clean, or when a parallel
+  workstream should run in its own chat. Offer this proactively; do not wait to be asked.
 argument-hint: "[continue|next|parallel] [<what the new session should pick up>]"
 allowed-tools: Read, Grep, Glob, Bash(git status *), Bash(git log *), Bash(git branch *), Bash(git rev-parse *), Bash(git diff *)
 ---
@@ -13,7 +13,8 @@ allowed-tools: Read, Grep, Glob, Bash(git status *), Bash(git log *), Bash(git b
 
 A fresh session is often more capable on the same task than a long one whose context is full of
 dead ends and superseded plans; it only needs orientation. This skill produces that orientation as
-one fenced block the user pastes into a new chat.
+a suggested task the user starts with one click, or, where the session lacks that tool, as one fenced
+block the user pastes into a new chat.
 
 ## Write orientation, not instructions
 
@@ -43,6 +44,10 @@ Offer it in one sentence, without stopping work, when:
 
 For example: *"This is a good handoff point — want me to draft a prompt for a fresh session?"* Run
 the skill if they say yes, and don't repeat the offer.
+
+Where the session has the suggested-task tool, skip the question: the card is the offer, and the
+user starts or dismisses it. Queue it and say so in one line. Whether a card is worth queuing at all
+is the judgment in [`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset).
 
 ## Modes
 
@@ -81,6 +86,22 @@ git rev-parse HEAD
 Include PR number, CI state, and the tracker issue's status only if you can read them live in this
 session (they need GitHub tools this skill doesn't request). Otherwise write "unverified". A stale CI
 verdict is worse than none, because the new session will act on it.
+
+## Queue it as a suggested task where you can
+
+When the session has the suggested-task tool (`spawn_task`), deliver the handoff as a card:
+
+- `title`: a short imperative phrase, under 60 characters, that makes sense on its own.
+- `tldr`: one or two plain sentences on what the new session does and why it's worth doing.
+- `prompt`: the seven items below, in the same order, without the outer fence.
+
+The user may start the card on their machine or in the cloud, on a checkout that has none of this
+session's unpushed work. So push first, or name what isn't pushed (branch and SHA), and give
+repo-relative paths only. When a card goes stale (the work landed here, or a better-scoped card
+replaces it), withdraw it with `dismiss_task`. A card the user already started or dismissed stays as
+they left it.
+
+Without the tool, emit the block below.
 
 ## Emit exactly one fenced block
 
