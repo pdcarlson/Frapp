@@ -2489,23 +2489,43 @@ alter table public.discord_imports drop column if exists purged_messages;
 
 * **Migration**: `20260930191500_chat_report_attachment_evidence.sql`
 
-Two columns on `chat_message_reports`, `reported_attachments` and `evidence_released_at`, and the partial index `idx_chat_message_reports_evidence_unreleased` (#2481). No data is rewritten.
+Two columns on `chat_message_reports`, `reported_attachments` and `evidence_released_at`, and two partial indexes, `idx_chat_message_reports_evidence_held` and `idx_chat_message_reports_evidence_unreleased` (#2481). No data is rewritten.
 
-**Revert the API and web code forward, and keep the migration file.** Revert the #2481 code on `main` and ship that, but keep `supabase/migrations/20260930191500_chat_report_attachment_evidence.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API never writes the columns and ignores what they hold, so leaving them in place is safe.
+**Revert the API and web code forward, and keep the migration file.** Revert the #2481 code on `main` and ship that, but keep `supabase/migrations/20260930191500_chat_report_attachment_evidence.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
 
-**What the revert leaves behind.** The reverted API purges on delete without asking about reports, and never releases. So an object an open report held when the revert shipped stays in its bucket after that report resolves: an orphan in Storage, reachable by no route, since the reverted queue has no attachments route. Before dropping the columns, list what is still held by reports whose message is gone, and delete those objects if they should not be kept:
+**Scrub the snapshots in the same revert; don't just leave the columns.** The reverted report repository selects every column and strips only `reporter_user_id`, so a reverted API would hand each report's `reported_attachments` (bucket and storage path included) and `evidence_released_at` to the officer queue. So the revert PR carries a forward migration that empties them, which a deploy applies before the reverted API goes live:
 
 ```sql
-select r.id, a->>'bucket' as bucket, a->>'storage_path' as storage_path
+update public.chat_message_reports
+  set reported_attachments = '[]'::jsonb, evidence_released_at = null
+  where reported_attachments <> '[]'::jsonb;
+```
+
+The newer API still running in the minutes before the revert deploys keeps working against it: its reports just hold nothing.
+
+**Clean up the files first, because the scrub loses the list.** The reverted API purges on delete without asking about reports, and never releases, so an object a report still held when the revert shipped would stay in its bucket, reachable by no route. Before merging the revert, list what unreleased reports still hold for a message that is gone and that no undeleted message still shows (a claimed path or a deduplicated import file can be shared, and deleting it would break the live message):
+
+```sql
+select distinct r.status, a->>'bucket' as bucket, a->>'storage_path' as storage_path
 from public.chat_message_reports r
 cross join lateral jsonb_array_elements(r.reported_attachments) a
 left join public.chat_messages m on m.id = r.message_id
 where r.evidence_released_at is null
   and r.reported_attachments <> '[]'::jsonb
-  and (m.id is null or m.is_deleted);
+  and (m.id is null or m.is_deleted)
+  and not exists (
+    select 1
+    from public.chat_message_attachments ca
+    join public.chat_messages cm on cm.id = ca.message_id
+    where ca.bucket = a->>'bucket'
+      and ca.storage_path = a->>'storage_path'
+      and not cm.is_deleted
+  );
 ```
 
-To remove the columns, drop them in a new forward migration once the reverted API is live, not by hand. The index goes with its column.
+Delete the rows of resolved reports. A row whose report is still `open` is evidence an officer hasn't reviewed, and the reverted queue can't show it: resolve those reports first, or keep the files and accept that they stay until someone deletes them by hand.
+
+To remove the columns, drop them in a later forward migration once the reverted API is live, not by hand. The indexes go with their columns.
 
 ```sql
 alter table public.chat_message_reports

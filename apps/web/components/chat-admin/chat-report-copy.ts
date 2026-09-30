@@ -309,6 +309,8 @@ export const chatReportActionLabel = {
   actioned: (subject: string, report: string) =>
     `Mark actioned: report on ${subject} (${report})`,
   remove: (subject: string, report: string) => `Remove ${subject} (${report})`,
+  showAttachments: (subject: string, report: string) =>
+    `Show attachments: ${subject} (${report})`,
 } as const;
 
 const SECOND = 1_000;

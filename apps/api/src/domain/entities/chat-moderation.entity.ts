@@ -117,18 +117,18 @@ export interface ChatMessageReport {
    * (#2481), from its `chat_message_attachments` rows. Empty for a message with
    * none, and for every report filed before the column existed.
    *
-   * The files themselves are kept rather than copied. While the report is
-   * `open`, every purge skips the objects named here (the message delete and
-   * the Discord import's deletion), so a sender deleting a reported photo no
-   * longer destroys the evidence with it. Once the report resolves, its
-   * objects are released: deleted unless an undeleted message or another open
-   * report still names them.
+   * The files themselves are kept rather than copied. Until the report's
+   * release finishes ({@link evidence_released_at}), every purge skips the
+   * objects named here (the message delete and the Discord import's
+   * deletion), so a sender deleting a reported photo no longer destroys the
+   * evidence with it. Once the report resolves, its objects are released:
+   * deleted unless an undeleted message or another report still holds them.
    */
   reported_attachments: ReportedAttachment[];
   /**
-   * When the release of this report's objects last finished. NULL while the
-   * report is open, and after it resolves until a release succeeds, which is
-   * what the hourly sweep looks for.
+   * When the release of this report's objects last finished, which is what
+   * ends its hold. NULL while the report is open, and after it resolves until
+   * a release succeeds, which is what the hourly sweep looks for.
    */
   evidence_released_at: string | null;
 }

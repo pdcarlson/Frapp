@@ -44,6 +44,7 @@ import {
 } from '#domain/repositories/member.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import type {
+  HeldObject,
   IChatMessageReportRepository,
   StoredObjectRef,
 } from '#domain/repositories/chat-moderation.repository.interface';
@@ -306,8 +307,9 @@ export class ChatService {
     // Report and block (#2257) live in their own services; the hot path needs
     // only the block list, to mask what it serves.
     private readonly chatBlocks: ChatBlockService,
-    // An open report holds the reported message's attachments (#2481): the
-    // delete purge asks which objects to leave, and the release asks again.
+    // A report holds the reported message's attachments until it is released
+    // (#2481): the delete purge asks which objects to leave, and the release
+    // asks again.
     @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
     private readonly reportRepo: IChatMessageReportRepository,
   ) {}
@@ -1372,8 +1374,8 @@ export class ChatService {
 
   /**
    * Delete the Storage objects belonging to a just-deleted message, skipping
-   * any an undeleted message still references or an open report holds as
-   * evidence (#2481). A held object is released when its report resolves
+   * any an undeleted message still references or a report holds as evidence
+   * (#2481). A held object is released when its report resolves
    * ({@link releaseReportEvidence}).
    *
    * Owns its own read so that every failure on this path — the attachment
@@ -1438,11 +1440,11 @@ export class ChatService {
       (object) => !sharedKeys.has(objectKey(object)),
     );
 
-    // An open report holds what it names (#2481): the sender deleting a
-    // reported photo must not take the evidence with it. Asked by object, not
-    // by this message, because another message can reach the same object
-    // (#1622) and a report on *that* message holds it too. Only asked when
-    // there is something left to delete.
+    // A report holds what it names until its release finishes (#2481): the
+    // sender deleting a reported photo must not take the evidence with it.
+    // Asked by object, not by this message, because another message can reach
+    // the same object (#1622) and a report on *that* message holds it too.
+    // Only asked when there is something left to delete.
     let heldKeys = new Set<string>();
     if (unshared.length > 0) {
       try {
@@ -1546,30 +1548,46 @@ export class ChatService {
   }
 
   /**
-   * Release a resolved report's evidence: delete each object it held unless
-   * an **undeleted message still references it** — the reported message
-   * itself counts, so a report dismissed over a live message deletes nothing
-   * (the message's own delete purges later) — or **another open report**
-   * holds it.
+   * Release resolved reports' evidence (`releasingReportIds`, all in
+   * `chapterId`): delete each object they held unless
    *
-   * Answers whether the release finished: `false` when a read or a delete
-   * failed, and the caller then leaves the report unstamped for the hourly
-   * sweep. The reads fail closed, like the purge's: nothing is deleted on an
-   * answer that could not be had. Deleting an object that is already gone
-   * succeeds, so a release that runs twice is harmless.
+   * - an **undeleted message still references it** — the reported message
+   *   itself counts, so a report dismissed over a live message deletes nothing
+   *   (the message's own delete purges later) — or
+   * - **another report still holds it** (`findHeldObjects`, which leaves out
+   *   the reports being released).
+   *
+   * Answers whether the release finished, which is what lets the caller stamp
+   * the reports released. Not finished when a read or a delete failed, or when
+   * an object is held only by other reports that have resolved but not
+   * released yet (a removal's claim in flight, a release that failed): those
+   * may still reopen, or may be waiting on this one, so the object stays and
+   * so does this report's hold, for the hourly sweep to take up with theirs.
+   * An object an **open** report holds is that report's to release, so it
+   * does not keep this one from finishing.
+   *
+   * The reads fail closed, like the purge's: nothing is deleted on an answer
+   * that could not be had. Deleting an object that is already gone succeeds,
+   * so a release that runs twice is harmless.
    */
   async releaseReportEvidence(
     chapterId: string,
     attachments: readonly StoredObjectRef[],
+    releasingReportIds: readonly string[],
   ): Promise<boolean> {
     const objects = uniqueObjects(attachments);
     if (objects.length === 0) return true;
 
-    let keep: Set<string>;
+    let live: Set<string>;
+    let held: HeldObject[];
     try {
-      const live = await this.attachmentRepo.findSharedObjects(objects, null);
-      const held = await this.reportRepo.findHeldObjects(chapterId);
-      keep = objectKeys([...live, ...held]);
+      live = objectKeys(
+        await this.attachmentRepo.findSharedObjects(objects, null),
+      );
+      held = await this.reportRepo.findHeldObjects(
+        chapterId,
+        releasingReportIds,
+      );
     } catch (error) {
       this.logger.warn('Could not check report evidence before releasing it', {
         chapterId,
@@ -1579,8 +1597,22 @@ export class ChatService {
       return false;
     }
 
-    const doomed = objects.filter((object) => !keep.has(objectKey(object)));
-    return this.deleteChatObjects(doomed, { chapterId });
+    const heldBy = new Map(held.map((object) => [objectKey(object), object]));
+    const doomed = objects.filter((object) => {
+      const key = objectKey(object);
+      return !live.has(key) && !heldBy.has(key);
+    });
+    const waiting = objects.some((object) => {
+      const key = objectKey(object);
+      const holder = heldBy.get(key);
+      return !live.has(key) && holder !== undefined && !holder.heldOpen;
+    });
+
+    const deleted = await this.deleteChatObjects(doomed, {
+      chapterId,
+      releasingReportIds,
+    });
+    return deleted && !waiting;
   }
 
   /**
@@ -1588,53 +1620,18 @@ export class ChatService {
    * officer route (`ChatReportService.listReportEvidence`), which authorizes
    * the report first.
    *
-   * `forceDownload: true`, as {@link listMessageAttachments} passes and for
-   * the same reason: a member can store HTML under an image declaration, and a
-   * forced download is what keeps it from rendering when opened directly. An
-   * `<img>` still renders an image served this way. A bucket that cannot be
-   * signed is logged and omitted rather than failing the rest.
+   * Signed through {@link signChatObjects}, the same path as a message's own
+   * attachments, so the forced download that keeps a mislabeled object from
+   * rendering applies here too; an `<img>` still renders an image served this
+   * way. An object that cannot be signed is logged and omitted.
    */
   async signReportEvidence(
     reportId: string,
     attachments: readonly ReportedAttachment[],
   ): Promise<ReportedAttachmentWithUrl[]> {
-    const pathsByBucket = new Map<string, string[]>();
-    for (const { bucket, storage_path } of uniqueObjects(attachments)) {
-      const paths = pathsByBucket.get(bucket) ?? [];
-      paths.push(storage_path);
-      pathsByBucket.set(bucket, paths);
-    }
-
-    const urlByBucket = new Map<string, Record<string, string>>();
-    await Promise.all(
-      Array.from(pathsByBucket.entries()).map(async ([bucket, paths]) => {
-        try {
-          urlByBucket.set(
-            bucket,
-            await this.storageProvider.getSignedDownloadUrls(
-              bucket,
-              paths,
-              ATTACHMENT_URL_TTL_SECONDS,
-              true,
-            ),
-          );
-        } catch (error) {
-          this.logger.warn(
-            "Could not sign a reported message's attachments; omitting them",
-            {
-              reportId,
-              bucket,
-              error: error instanceof Error ? error.message : String(error),
-            },
-          );
-        }
-      }),
-    );
-
+    const urls = await this.signChatObjects(attachments, { reportId });
     return attachments.flatMap((attachment) => {
-      const downloadUrl = urlByBucket.get(attachment.bucket)?.[
-        attachment.storage_path
-      ];
+      const downloadUrl = urls.get(objectKey(attachment));
       if (!downloadUrl) return [];
       return [
         {
@@ -2388,79 +2385,94 @@ export class ChatService {
     const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
     if (rows.length === 0) return [];
 
-    // Batched per bucket (#1231) rather than one `getSignedDownloadUrl` call
-    // per row — `MAX_ATTACHMENTS_PER_MESSAGE` caps this at 10, so it was never
-    // urgent, but a signed URL is still one provider round trip whether it
-    // signs one path or ten. Every attachment on a message shares a bucket in
-    // every case observed today; grouping defensively costs nothing and stays
-    // correct if that ever changes.
-    //
-    // `forceDownload: true` on every call: `spec/behavior/chat/README.md`'s
-    // "trust boundary" section is explicit that a signed upload URL cannot
-    // pin a content type, so a member can store HTML declared as `image/png`
-    // — forcing `Content-Disposition: attachment` (not the declared MIME
-    // type) is what keeps that from rendering as HTML if a reader opens a
-    // non-previewable attachment's URL directly (`target="_blank"`).
-    // Dropping this is a security regression, not a UX one; see
-    // `IStorageProvider.getSignedDownloadUrls`'s doc comment. The saved
-    // filename can no longer be forced *per path* (the batch API takes one
-    // `download` option for the whole call), so web additionally sets an
-    // `<a download>` attribute for the display name (`message-attachments.
-    // tsx`) — best-effort UX on top of the still-enforced disposition.
-    const rowsByBucket = new Map<string, typeof rows>();
-    for (const row of rows) {
-      const group = rowsByBucket.get(row.bucket);
-      if (group) group.push(row);
-      else rowsByBucket.set(row.bucket, [row]);
+    const urls = await this.signChatObjects(rows, { messageId, channelId });
+    return rows.flatMap((row) => {
+      const downloadUrl = urls.get(objectKey(row));
+      return downloadUrl ? [{ ...row, download_url: downloadUrl }] : [];
+    });
+  }
+
+  /**
+   * Forced-download signed URLs for chat objects, keyed by {@link objectKey}:
+   * the one signing path for a message's attachments
+   * ({@link listMessageAttachments}) and a report's held evidence
+   * ({@link signReportEvidence}), so the trust-boundary choice below cannot
+   * drift between them. An object that could not be signed is left out of the
+   * map and logged; the caller omits it.
+   *
+   * Batched per bucket (#1231) rather than one `getSignedDownloadUrl` call
+   * per row — `MAX_ATTACHMENTS_PER_MESSAGE` caps this at 10, so it was never
+   * urgent, but a signed URL is still one provider round trip whether it
+   * signs one path or ten. Every attachment on a message shares a bucket in
+   * every case observed today; grouping defensively costs nothing and stays
+   * correct if that ever changes.
+   *
+   * `forceDownload: true` on every call: `spec/behavior/chat/README.md`'s
+   * "trust boundary" section is explicit that a signed upload URL cannot
+   * pin a content type, so a member can store HTML declared as `image/png`
+   * — forcing `Content-Disposition: attachment` (not the declared MIME
+   * type) is what keeps that from rendering as HTML if a reader opens a
+   * non-previewable attachment's URL directly (`target="_blank"`).
+   * Dropping this is a security regression, not a UX one; see
+   * `IStorageProvider.getSignedDownloadUrls`'s doc comment. The saved
+   * filename can no longer be forced *per path* (the batch API takes one
+   * `download` option for the whole call), so web additionally sets an
+   * `<a download>` attribute for the display name (`message-attachments.
+   * tsx`) — best-effort UX on top of the still-enforced disposition.
+   */
+  private async signChatObjects(
+    objects: readonly StoredObjectRef[],
+    context: Record<string, unknown>,
+  ): Promise<Map<string, string>> {
+    const pathsByBucket = new Map<string, string[]>();
+    for (const { bucket, storage_path } of uniqueObjects(objects)) {
+      const paths = pathsByBucket.get(bucket) ?? [];
+      paths.push(storage_path);
+      pathsByBucket.set(bucket, paths);
     }
 
-    const urlByBucket = new Map<string, Record<string, string>>();
+    const urls = new Map<string, string>();
     await Promise.all(
-      Array.from(rowsByBucket.entries()).map(async ([bucket, bucketRows]) => {
+      Array.from(pathsByBucket.entries()).map(async ([bucket, paths]) => {
+        let signed: Record<string, string>;
         try {
-          urlByBucket.set(
+          signed = await this.storageProvider.getSignedDownloadUrls(
             bucket,
-            await this.storageProvider.getSignedDownloadUrls(
-              bucket,
-              bucketRows.map((row) => row.storage_path),
-              ATTACHMENT_URL_TTL_SECONDS,
-              true,
-            ),
+            paths,
+            ATTACHMENT_URL_TTL_SECONDS,
+            true,
           );
         } catch (error) {
-          // A whole-bucket failure must not take every attachment on the
-          // message down with it, the same guarantee `allSettled` gave a
-          // single dead row before this was batched.
+          // A whole-bucket failure must not take every other bucket's objects
+          // down with it, the same guarantee `allSettled` gave a single dead
+          // row before signing was batched.
           this.logger.warn(
             'Could not sign a batch of chat attachments; omitting them',
             {
-              messageId,
-              channelId,
+              ...context,
               bucket,
               error: error instanceof Error ? error.message : String(error),
             },
           );
+          return;
+        }
+        for (const storagePath of paths) {
+          const url = signed[storagePath];
+          if (url) {
+            urls.set(objectKey({ bucket, storage_path: storagePath }), url);
+          } else {
+            // Only per object for a path missing from an otherwise signed
+            // bucket: a whole-bucket failure already logged once above with
+            // the real error.
+            this.logger.warn('Could not sign a chat attachment; omitting it', {
+              ...context,
+              storagePath,
+            });
+          }
         }
       }),
     );
-
-    return rows.flatMap((row) => {
-      const bucketUrls = urlByBucket.get(row.bucket);
-      const downloadUrl = bucketUrls?.[row.storage_path];
-      if (downloadUrl) return [{ ...row, download_url: downloadUrl }];
-      // Only warn per-row for a path missing from an otherwise-successful
-      // bucket. A whole-bucket failure already logged once above with the
-      // real error — re-warning here for every row in it would just repeat
-      // "omitting it" with no reason, N times, for one cause.
-      if (bucketUrls) {
-        this.logger.warn('Could not sign a chat attachment; omitting it', {
-          messageId,
-          channelId,
-          storagePath: row.storage_path,
-        });
-      }
-      return [];
-    });
+    return urls;
   }
 
   /**

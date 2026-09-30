@@ -22,7 +22,7 @@ export interface CreateChatReportInput {
   reported_content: string | null;
   reported_sender_id: string | null;
   reported_author_name: string | null;
-  /** The message's attachments at filing time, held while the report is open (#2481). */
+  /** The message's attachments at filing time, held until the report is released (#2481). */
   reported_attachments: ReportedAttachment[];
   reason: ChatReportReason;
   details: string | null;
@@ -32,6 +32,16 @@ export interface CreateChatReportInput {
 export interface StoredObjectRef {
   bucket: string;
   storage_path: string;
+}
+
+/** An object a report still holds, and whether an open report holds it. */
+export interface HeldObject extends StoredObjectRef {
+  /**
+   * True when an `open` report is among its holders. False when only resolved
+   * reports whose release has not finished hold it, which a release treats
+   * as "not yet": it keeps the object and leaves its own report for the sweep.
+   */
+  heldOpen: boolean;
 }
 
 /**
@@ -230,8 +240,20 @@ export interface IChatMessageReportRepository {
   ): Promise<boolean>;
 
   /**
-   * Every object an **open** report in this chapter holds (#2481), for a purge
-   * to leave alone.
+   * Every object a report in this chapter still holds (#2481), for a purge to
+   * leave alone and a release to weigh.
+   *
+   * **A report holds its objects until its release finishes**, not only while
+   * it is `open`. It is `evidence_released_at` that ends a hold, not the status:
+   * a removal claims its report (`actioned`) before it deletes the message and
+   * may withdraw the claim if the delete fails, and a hold that lapsed at the
+   * claim would let a delete landing in that window purge the evidence of a
+   * report that then reopens. A resolved report whose release failed holds
+   * too, until the sweep finishes it. Each object says whether an open report
+   * is among its holders (`heldOpen`).
+   *
+   * `excludingReportIds` are the reports a release is releasing: they must not
+   * hold against themselves.
    *
    * Keyed by object, not by message, because one object can be reached from
    * two messages (#1622: a message can claim another's path, and the Discord
@@ -243,12 +265,16 @@ export interface IChatMessageReportRepository {
    * can only snapshot a message it was authorized to read in its own chapter.
    * Not filtered by viewer — no one views this; it is the purge's question.
    *
-   * Paged until a page comes back empty, never until a short one: PostgREST
-   * serves `min(limit, max_rows)`, so a short page can be the server's cap
-   * rather than the end, and a truncated answer here reads a held object as
-   * free and deletes it.
+   * Paged by key (`id` after the last one read) until a page comes back empty.
+   * Not by offset, because a report that stops holding between two page reads
+   * would shift every later row down one and skip a holder; and not until a
+   * short page, because PostgREST serves `min(limit, max_rows)`. A skipped or
+   * truncated answer reads a held object as free and deletes it.
    */
-  findHeldObjects(chapterId: string): Promise<StoredObjectRef[]>;
+  findHeldObjects(
+    chapterId: string,
+    excludingReportIds?: readonly string[],
+  ): Promise<HeldObject[]>;
 
   /**
    * One report's evidence **as `reviewerUserId` may see it**, for the officer

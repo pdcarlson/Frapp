@@ -271,6 +271,22 @@ describe("ChatReportsCard — reported attachments", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("names each row's Show attachments apart when two members report the same photo", () => {
+    reportsByStatus.value = {
+      open: settled([
+        photoOnly(),
+        { ...photoOnly(), id: "r-2", details: "Second reporter" },
+      ]),
+    };
+    render(<ChatReportsCard />);
+
+    const names = screen
+      .getAllByRole("button", { name: /^Show attachments:/ })
+      .map((button) => button.getAttribute("aria-label"));
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+  });
+
   it("says how many files could not be loaded when fewer come back signed", async () => {
     attachmentsQuery.value = {
       isPending: false,

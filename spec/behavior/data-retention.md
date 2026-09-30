@@ -27,9 +27,9 @@ soft-deleted the message, which is precisely what the snapshot exists to defeat,
 chapter later hard-deleted the channel. The display-name scrub reaches that snapshot for the cards
 it rewrites, so a *third party* named in a reported card does not linger there; the exception is a
 report whose message was hard-deleted, which can no longer be re-synced and keeps its pre-scrub
-text. While a report is open it also keeps the reported message's attachments, the stored
-files themselves rather than a copy, even after the sender deletes the message, and releases them
-once it resolves (#2481; the rules are in [`chat/README.md`](chat/README.md#report) § Report).
+text. A report also keeps the reported message's attachments, the stored files themselves
+rather than a copy, even after the sender deletes the message, until it resolves and releases
+them (#2481; the rules are in [`chat/README.md`](chat/README.md#report) § Report).
 Account deletion does not purge chat attachments, so this changes nothing about what deletion
 reaches; it bounds how long a deleted message's files outlive it: until the reports on it are
 resolved.

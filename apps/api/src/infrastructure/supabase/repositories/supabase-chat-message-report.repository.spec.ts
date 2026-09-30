@@ -1,4 +1,7 @@
-import { SupabaseChatMessageReportRepository } from './supabase-chat-message-report.repository';
+import {
+  HELD_OBJECTS_PAGE_SIZE,
+  SupabaseChatMessageReportRepository,
+} from './supabase-chat-message-report.repository';
 import type { FrappSupabaseClient } from '../database.types';
 import {
   CHAPTER_A,
@@ -511,7 +514,8 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
 
 /**
  * What a report holds as evidence (#2481): the attachments it snapshotted, the
- * hold every purge honours while it is open, and the release once it resolves.
+ * hold every purge honours until it is released, and the release once it
+ * resolves.
  *
  * Its own seed, twinned across chapters like the one above, so each read can be
  * shown not to reach the other chapter's evidence. Reports hold objects, not
@@ -628,16 +632,34 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
     }
   });
 
-  it("findHeldObjects returns every object an open report in the chapter holds, and nothing else's", async () => {
+  it("findHeldObjects returns every object a report in the chapter still holds, once, and nothing else's", async () => {
     const held = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.findHeldObjects(CHAPTER_A),
     );
 
-    // HOLDING and ABOUT_REVIEWER are open and hold the photo; the resolved
-    // reports' clip is held by nobody, and B's twin is another chapter's.
+    // The photo: HOLDING and ABOUT_REVIEWER are open. The clip: PENDING and
+    // LATE are resolved and not yet released, so they still hold it (a
+    // removal's claim in flight looks exactly like them). RELEASED holds
+    // nothing any more, EMPTY never did, and B's twins are another chapter's.
     expect(held).toEqual([
-      { bucket: 'chat', storage_path: photo.storage_path },
-      { bucket: 'chat', storage_path: photo.storage_path },
+      { bucket: 'chat', storage_path: photo.storage_path, heldOpen: true },
+      {
+        bucket: 'chat-archive',
+        storage_path: clip.storage_path,
+        heldOpen: false,
+      },
+    ]);
+  });
+
+  it('findHeldObjects leaves out the reports a release is releasing', async () => {
+    const held = await repo.findHeldObjects(CHAPTER_A, [
+      PENDING,
+      LATE,
+      HOLDING,
+    ]);
+
+    expect(held).toEqual([
+      { bucket: 'chat', storage_path: photo.storage_path, heldOpen: true },
     ]);
   });
 
@@ -720,6 +742,51 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
     expect(
       harness.rows('chat_message_reports').find((r) => r.id === PENDING),
     ).toMatchObject({ status: 'open', evidence_released_at: null });
+  });
+});
+
+/**
+ * The hold read across more than one page (#2481). Every holding report is on
+ * the far side of `HELD_OBJECTS_PAGE_SIZE` but one, so a read that stopped
+ * after its first page, or on the first page that came back short, would miss
+ * the last holder and a purge would delete what it holds.
+ */
+describe('SupabaseChatMessageReportRepository — findHeldObjects across pages (#2481)', () => {
+  it('reads every page, so the holder past the first page still holds', async () => {
+    const count = HELD_OBJECTS_PAGE_SIZE + 1;
+    const id = (prefix: string, n: number) =>
+      `${prefix}000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const holding = (n: number) => ({
+      ...openRow(),
+      reported_attachments: [
+        {
+          bucket: 'chat',
+          storage_path: `chapters/a/chat/c/u/${n}.png`,
+          filename: `${n}.png`,
+          content_type: 'image/png',
+          byte_size: 1,
+        },
+      ],
+      evidence_released_at: null,
+    });
+    const harness = createTenantHarness({
+      tables: {
+        chat_message_reports: Array.from({ length: count }, (_, n) => [
+          inA({ id: id('0a', n), ...holding(n) }),
+          inB({ id: id('0b', n), ...holding(n) }),
+        ]).flat(),
+      },
+    });
+    const repo = new SupabaseChatMessageReportRepository(harness.client);
+
+    const held = await repo.findHeldObjects(CHAPTER_A);
+
+    expect(held).toHaveLength(count);
+    expect(held.at(-1)).toEqual({
+      bucket: 'chat',
+      storage_path: `chapters/a/chat/c/u/${count - 1}.png`,
+      heldOpen: true,
+    });
   });
 });
 

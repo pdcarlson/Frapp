@@ -173,6 +173,14 @@ export interface TenantHarnessOptions {
    * `id` and the tenant column are always exempt.
    */
   collisionExempt?: Record<string, string[]>;
+  /**
+   * Column defaults an insert fills in when the payload leaves the column
+   * out, as Postgres does from the table's `default` clauses, e.g.
+   * `{ chat_message_reports: { status: 'open' } }`. For a spec that runs a
+   * write and then reads the row back through a filter on the defaulted
+   * column; without it the row has no such column and no filter matches it.
+   */
+  columnDefaults?: Record<string, Row>;
   /** Canned RPC responses keyed by function name. */
   rpc?: Record<string, { data?: unknown; error?: unknown }>;
   /**
@@ -601,7 +609,10 @@ export function createTenantHarness(
             Object.assign(existing, row);
             matched.push(existing);
           } else {
-            const inserted = clone(row);
+            const inserted = {
+              ...clone(options.columnDefaults?.[table] ?? {}),
+              ...clone(row),
+            };
             stored.push(inserted);
             matched.push(inserted);
           }

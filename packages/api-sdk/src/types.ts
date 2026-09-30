@@ -4005,7 +4005,7 @@ export interface components {
             resolved_at: string | null;
             /** Format: uuid */
             resolved_by: string | null;
-            /** @description The message's attachments when the report was filed. While the report is open no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or open report still holds them. Empty for a message with none, and for reports filed before attachments were kept. */
+            /** @description The message's attachments when the report was filed. Until the report is resolved no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept. */
             reported_attachments: components["schemas"]["ChatReportAttachmentSummaryDto"][];
         };
         ResolveChatReportDto: {
@@ -4049,7 +4049,7 @@ export interface components {
             resolved_at: string | null;
             /** Format: uuid */
             resolved_by: string | null;
-            /** @description The message's attachments when the report was filed. While the report is open no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or open report still holds them. Empty for a message with none, and for reports filed before attachments were kept. */
+            /** @description The message's attachments when the report was filed. Until the report is resolved no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept. */
             reported_attachments: components["schemas"]["ChatReportAttachmentSummaryDto"][];
             /** @description True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way. */
             message_already_deleted: boolean;

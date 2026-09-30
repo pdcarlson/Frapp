@@ -1260,6 +1260,15 @@ describe('ChatReportService', () => {
         status: 'actioned',
         resolved_by: OFFICER,
       });
+      // Its evidence is released once every open report on the message has
+      // closed, not before: the siblings held the files until the sweep.
+      expect(reportRepo.findPendingRelease).toHaveBeenCalledWith(CHAPTER, [
+        'report-1',
+        'report-2',
+      ]);
+      expect(
+        reportRepo.resolveOpenForMessage.mock.invocationCallOrder[0],
+      ).toBeLessThan(reportRepo.findPendingRelease.mock.invocationCallOrder[0]);
       // So a Dismiss cannot record the removed message as left up.
       await expect(
         service.resolveReport('report-1', CHAPTER, 'dismissed', OTHER_OFFICER),
@@ -1381,6 +1390,7 @@ describe('ChatReportService', () => {
         expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
           [photo],
+          ['report-1'],
         );
       });
     });
@@ -1401,6 +1411,7 @@ describe('ChatReportService', () => {
         expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
           [photo],
+          ['report-1'],
         );
         expect(reportRepo.markEvidenceReleased).toHaveBeenCalledWith(
           'report-1',
@@ -1456,6 +1467,14 @@ describe('ChatReportService', () => {
           reportRepo.resolveOpenForMessage.mock.invocationCallOrder[0],
         ).toBeLessThan(
           reportRepo.findPendingRelease.mock.invocationCallOrder[0],
+        );
+        // One release for the whole set: the holds are read once, and neither
+        // report holds against the other.
+        expect(chatService.releaseReportEvidence).toHaveBeenCalledTimes(1);
+        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+          CHAPTER,
+          [photo, photo],
+          ['report-1', 'report-2'],
         );
         expect(reportRepo.markEvidenceReleased).toHaveBeenCalledTimes(2);
       });
@@ -1553,18 +1572,20 @@ describe('ChatReportService', () => {
 
     describe('sweepPendingEvidenceReleases', () => {
       const NOW = new Date('2026-09-30T12:00:00.000Z');
+      const OTHER_CHAPTER = 'chapter-2';
 
-      it('releases reports resolved before the grace window, and counts the ones it finished', async () => {
+      it('releases reports resolved before the grace window a chapter at a time, and counts the ones it stamped', async () => {
         reportRepo.listPendingRelease.mockResolvedValue([
           pending('report-1'),
+          { ...pending('report-3'), chapter_id: OTHER_CHAPTER },
           pending('report-2'),
         ]);
-        chatService.releaseReportEvidence
-          .mockResolvedValueOnce(true)
-          .mockResolvedValueOnce(false);
+        chatService.releaseReportEvidence.mockImplementation(
+          async (chapterId: string) => chapterId === CHAPTER,
+        );
 
         await expect(service.sweepPendingEvidenceReleases(NOW)).resolves.toBe(
-          1,
+          2,
         );
         // Fifteen minutes back: clear of a removal whose claim may yet be
         // withdrawn to open.
@@ -1572,18 +1593,26 @@ describe('ChatReportService', () => {
           '2026-09-30T11:45:00.000Z',
           100,
         );
-        expect(reportRepo.markEvidenceReleased).toHaveBeenCalledTimes(1);
-        expect(reportRepo.markEvidenceReleased).toHaveBeenCalledWith(
-          'report-1',
+        // Reports waiting on each other release together.
+        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
-          expect.any(String),
+          [photo, photo],
+          ['report-1', 'report-2'],
         );
+        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+          OTHER_CHAPTER,
+          [photo],
+          ['report-3'],
+        );
+        expect(
+          reportRepo.markEvidenceReleased.mock.calls.map(([id]) => id),
+        ).toEqual(['report-1', 'report-2']);
       });
 
-      it("keeps going past one report's failure", async () => {
+      it("keeps going past one chapter's failure", async () => {
         reportRepo.listPendingRelease.mockResolvedValue([
           pending('report-1'),
-          pending('report-2'),
+          { ...pending('report-2'), chapter_id: OTHER_CHAPTER },
         ]);
         chatService.releaseReportEvidence
           .mockRejectedValueOnce(new Error('boom'))
@@ -1594,7 +1623,7 @@ describe('ChatReportService', () => {
         );
         expect(reportRepo.markEvidenceReleased).toHaveBeenCalledWith(
           'report-2',
-          CHAPTER,
+          OTHER_CHAPTER,
           expect.any(String),
         );
       });

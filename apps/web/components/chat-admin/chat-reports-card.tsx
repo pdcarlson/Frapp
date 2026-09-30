@@ -468,7 +468,12 @@ function ReportRow({
       </blockquote>
 
       {report.reported_attachments.length > 0 ? (
-        <ReportAttachments report={report} isOpen={isOpen} subject={subject} />
+        <ReportAttachments
+          report={report}
+          isOpen={isOpen}
+          subject={subject}
+          details={details}
+        />
       ) : null}
 
       {note ? (
@@ -565,11 +570,14 @@ function ReportAttachments({
   report,
   isOpen,
   subject,
+  details,
 }: {
   report: ChatReport;
   isOpen: boolean;
   /** The message the row acts on, for the button's accessible name. */
   subject: string;
+  /** What tells this report from the others on the same message. */
+  details: string;
 }) {
   const [shown, setShown] = useState(false);
   const query = useChatReportAttachments(report.id, isOpen && shown);
@@ -683,7 +691,7 @@ function ReportAttachments({
         <Button
           variant="secondary"
           size="sm"
-          aria-label={`${copy.attachments.show}: ${subject}`}
+          aria-label={chatReportActionLabel.showAttachments(subject, details)}
           onClick={() => setShown(true)}
         >
           {copy.attachments.show}

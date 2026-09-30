@@ -10,9 +10,9 @@ import { escapeFilterValue } from '../supabase.utils';
 import type {
   CreateChatReportInput,
   CreateChatReportResult,
+  HeldObject,
   IChatMessageReportRepository,
   ReportEvidence,
-  StoredObjectRef,
 } from '#domain/repositories/chat-moderation.repository.interface';
 import type {
   ChatMessageReport,
@@ -23,11 +23,11 @@ import type {
 } from '#domain/entities/chat-moderation.entity';
 
 /**
- * Rows per page of the hold lookup. A chapter's open queue is short, so one
- * page is the ordinary case; the loop exists so a long one is still read
+ * Rows per page of the hold lookup. A chapter's holding reports are few, so
+ * one page is the ordinary case; the loop exists so a long list is still read
  * whole ({@link SupabaseChatMessageReportRepository.findHeldObjects}).
  */
-const HELD_OBJECTS_PAGE_SIZE = 500;
+export const HELD_OBJECTS_PAGE_SIZE = 500;
 
 /**
  * `reported_attachments` of a report that holds nothing, as a filter value.
@@ -311,34 +311,45 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
   }
 
   /**
-   * Ordered by `id` so the pages are stable, and read until a page comes back
-   * **empty**: a short page may be PostgREST's `max_rows` cap rather than the
-   * end (the interface says why that matters here). Only reports holding
-   * something are read, through `idx_chat_message_reports_chapter_status`.
+   * Paged by `id` (`id > last`), read until a page comes back empty; the
+   * interface says why neither offsets nor a short page will do. Only reports
+   * holding something and not yet released are read, through
+   * `idx_chat_message_reports_evidence_held`.
    */
-  async findHeldObjects(chapterId: string): Promise<StoredObjectRef[]> {
-    const held: StoredObjectRef[] = [];
-    for (let from = 0; ;) {
-      const { data, error } = await this.supabase
+  async findHeldObjects(
+    chapterId: string,
+    excludingReportIds: readonly string[] = [],
+  ): Promise<HeldObject[]> {
+    const excluded = new Set(excludingReportIds);
+    const held = new Map<string, HeldObject>();
+    let after: string | null = null;
+    for (;;) {
+      let page = this.supabase
         .from('chat_message_reports')
-        .select('id, reported_attachments')
+        .select('id, status, reported_attachments')
         .eq('chapter_id', chapterId)
-        .eq('status', 'open')
-        .filter('reported_attachments', 'neq', HOLDS_NOTHING)
+        .is('evidence_released_at', null)
+        .filter('reported_attachments', 'neq', HOLDS_NOTHING);
+      if (after !== null) page = page.gt('id', after);
+      const { data, error } = await page
         .order('id', { ascending: true })
-        .range(from, from + HELD_OBJECTS_PAGE_SIZE - 1);
+        .limit(HELD_OBJECTS_PAGE_SIZE);
       if (error) throw error;
       const rows = data ?? [];
-      if (rows.length === 0) return held;
+      if (rows.length === 0) return [...held.values()];
       for (const row of rows) {
-        for (const attachment of readAttachments(row.reported_attachments)) {
-          held.push({
-            bucket: attachment.bucket,
-            storage_path: attachment.storage_path,
-          });
+        if (excluded.has(row.id)) continue;
+        const open = row.status === 'open';
+        for (const { bucket, storage_path } of readAttachments(
+          row.reported_attachments,
+        )) {
+          const key = `${bucket} ${storage_path}`;
+          const known = held.get(key);
+          if (known) known.heldOpen ||= open;
+          else held.set(key, { bucket, storage_path, heldOpen: open });
         }
       }
-      from += rows.length;
+      after = rows[rows.length - 1].id;
     }
   }
 

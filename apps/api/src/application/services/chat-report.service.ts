@@ -64,7 +64,7 @@ export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
  * How long after a report resolves the sweep leaves its evidence alone
  * (#2481). A removal claims its report (`actioned`) before it deletes the
  * message, and withdraws the claim if the delete fails; a sweep landing in
- * that window would find a report that is about to be open again. The
+ * that window would release a report that is about to be open again. The
  * resolution path releases the evidence itself, so the sweep only ever
  * handles a release that did not finish, and a quarter of an hour late costs
  * nothing.
@@ -540,9 +540,10 @@ export class ChatReportService {
       officerUserId,
       resolvedAt,
     );
-    // After the sweep, not after the delete: until every open report on the
-    // message is closed, each still holds the objects, and the delete's own
-    // purge left them (#2481).
+    // After the sweep, not after the delete: the claimed report and every
+    // sibling still hold the objects until they are released, so the delete's
+    // own purge left them (#2481). Released together, none holds against the
+    // others.
     await this.releaseEvidence(chapterId, [
       claimed.id,
       ...swept.map(({ id }) => id),
@@ -827,28 +828,38 @@ export class ChatReportService {
   /**
    * Release the reports whose evidence did not release when they resolved
    * (#2481): a Storage outage, a failed read, a process that died between the
-   * resolution and the release. Hourly, from `ScheduledJobsService`.
+   * resolution and the release, or an object another resolved report was
+   * still holding. Hourly, from `ScheduledJobsService`.
    *
    * Takes reports resolved more than {@link EVIDENCE_SWEEP_GRACE_MS} ago, at
-   * most {@link EVIDENCE_SWEEP_BATCH} a tick, oldest first. Safe on every
-   * replica at once: a release deletes only objects nothing holds, deleting a
-   * gone object succeeds, and the stamp is idempotent. One report's failure is
-   * logged and does not stop the rest. Answers how many it released.
+   * most {@link EVIDENCE_SWEEP_BATCH} a tick, oldest first, and releases them
+   * a chapter at a time ({@link releaseBatch}), so reports that were waiting
+   * on each other release together. Safe on every replica at once: a release
+   * deletes only objects nothing holds, deleting a gone object succeeds, and
+   * the stamp is idempotent. One chapter's failure is logged and does not
+   * stop the rest. Answers how many reports it released.
    */
   async sweepPendingEvidenceReleases(now: Date): Promise<number> {
     const pending = await this.reportRepo.listPendingRelease(
       new Date(now.getTime() - EVIDENCE_SWEEP_GRACE_MS).toISOString(),
       EVIDENCE_SWEEP_BATCH,
     );
-    let released = 0;
+    const byChapter = new Map<string, ReportEvidence[]>();
     for (const report of pending) {
+      const reports = byChapter.get(report.chapter_id) ?? [];
+      reports.push(report);
+      byChapter.set(report.chapter_id, reports);
+    }
+
+    let released = 0;
+    for (const [chapterId, reports] of byChapter) {
       try {
-        if (await this.releaseOne(report)) released += 1;
+        released += await this.releaseBatch(chapterId, reports);
       } catch (error) {
         logThrowable(
           this.logger,
           'warn',
-          `Could not release the evidence of chat report ${report.id}; the next sweep retries`,
+          `Could not release the evidence of chat reports ${reports.map(({ id }) => id).join(', ')}; the next sweep retries`,
           error,
         );
       }
@@ -872,7 +883,7 @@ export class ChatReportService {
         chapterId,
         reportIds,
       );
-      for (const report of pending) await this.releaseOne(report);
+      if (pending.length > 0) await this.releaseBatch(chapterId, pending);
     } catch (error) {
       logThrowable(
         this.logger,
@@ -884,21 +895,31 @@ export class ChatReportService {
   }
 
   /**
-   * Delete what one resolved report held and nothing still needs, then stamp
-   * it. Unstamped when the release did not finish, so the sweep retries it.
+   * Delete what one chapter's resolved reports held and nothing still needs,
+   * in one pass: the holds are read once, and an object several of them name
+   * (the sibling reports a removal closes) is weighed and deleted once. None of
+   * them holds against the others. Stamped only when the release finished,
+   * so an unfinished one is the sweep's to retry. Answers how many it stamped.
    */
-  private async releaseOne(report: ReportEvidence): Promise<boolean> {
+  private async releaseBatch(
+    chapterId: string,
+    reports: readonly ReportEvidence[],
+  ): Promise<number> {
     const finished = await this.chatService.releaseReportEvidence(
-      report.chapter_id,
-      report.reported_attachments,
+      chapterId,
+      reports.flatMap(({ reported_attachments }) => reported_attachments),
+      reports.map(({ id }) => id),
     );
-    if (!finished) return false;
-    await this.reportRepo.markEvidenceReleased(
-      report.id,
-      report.chapter_id,
-      new Date().toISOString(),
-    );
-    return true;
+    if (!finished) return 0;
+    const releasedAt = new Date().toISOString();
+    for (const report of reports) {
+      await this.reportRepo.markEvidenceReleased(
+        report.id,
+        chapterId,
+        releasedAt,
+      );
+    }
+    return reports.length;
   }
 
   /**

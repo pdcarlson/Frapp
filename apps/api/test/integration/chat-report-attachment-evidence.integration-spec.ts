@@ -205,7 +205,7 @@ describeIntegration('Reported attachments against live storage', () => {
       { filename: 'photo.png', content_type: 'image/png', byte_size: 8 },
     ]);
     expect(await reports.findHeldObjects(chapterId)).toEqual([
-      { bucket: BUCKET, storage_path: reportedPath },
+      { bucket: BUCKET, storage_path: reportedPath, heldOpen: true },
     ]);
 
     // The sender deletes it. The open report holds the object.
@@ -228,7 +228,9 @@ describeIntegration('Reported attachments against live storage', () => {
     expect(served.status).toBe(200);
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(bytes);
 
-    // Resolved: the release deletes it, and the stamp takes it off the sweep.
+    // Resolved: until its release finishes the report still holds, the way a
+    // removal's claim does. Then the release deletes it, and the stamp ends
+    // the hold and takes it off the sweep.
     const resolvedAt = new Date().toISOString();
     await reports.resolve(
       report.id,
@@ -237,10 +239,15 @@ describeIntegration('Reported attachments against live storage', () => {
       officerId,
       resolvedAt,
     );
+    expect(await reports.findHeldObjects(chapterId)).toEqual([
+      { bucket: BUCKET, storage_path: reportedPath, heldOpen: false },
+    ]);
     const [pending] = await reports.findPendingRelease(chapterId, [report.id]);
     expect(pending?.reported_attachments).toEqual(snapshot);
     await expect(
-      chat.releaseReportEvidence(chapterId, pending.reported_attachments),
+      chat.releaseReportEvidence(chapterId, pending.reported_attachments, [
+        report.id,
+      ]),
     ).resolves.toBe(true);
     await reports.markEvidenceReleased(report.id, chapterId, resolvedAt);
 
