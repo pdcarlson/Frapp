@@ -1,4 +1,4 @@
-import type { ReactTestRenderer } from "react-test-renderer";
+import type { ReactTestInstance, ReactTestRenderer } from "react-test-renderer";
 
 /**
  * Everything a rendered screen says, as one string, so a check for text the
@@ -20,3 +20,15 @@ export const screenText = (tree: ReactTestRenderer) =>
         .join(""),
     )
     .join("\n");
+
+/**
+ * What one rendered element draws, the `Text`s nested inside it included, as
+ * the string a reader sees. Reads the rendered tree rather than
+ * `props.children`: a message body's children are markdown elements (#2861),
+ * and `JSON.stringify` of an element walks its DEV-only `_owner` fiber, which
+ * is circular.
+ */
+export const drawnText = (node: ReactTestInstance): string =>
+  node.children
+    .map((child) => (typeof child === "string" ? child : drawnText(child)))
+    .join("");
