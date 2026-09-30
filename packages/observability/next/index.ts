@@ -19,7 +19,7 @@
 export {
   buildAnonymousBrowserSentryOptions,
   buildAnonymousServerSentryOptions,
-  SENTRY_BROWSER_TRACING_OPTIONS,
+  sentryEnvelopeScrubIntegration,
 } from "./sentry-options";
 export type { AnonymousNextSentryRuntime } from "./sentry-options";
 

@@ -9,9 +9,9 @@
  * those are already measured and two were not:
  *
  * - **Shell visible** is FCP, and **CLS** is CLS. Sentry collects both already.
- *   `instrumentation-client.ts` keeps `browserTracingIntegration` (with INP
- *   off, #2736) and adds `userTimingIntegration`, so LCP/CLS/FCP/TTFB attach
- *   to the pageload transaction. Adding a second web-vitals
+ *   The SDK's default `browserTracingIntegration` attaches LCP/CLS/FCP/TTFB
+ *   to the pageload transaction, and `instrumentation-client.ts` adds
+ *   `userTimingIntegration` for the marks below. Adding a second web-vitals
  *   pipeline would be two sources of one number, and the second one would be the
  *   one nobody checks.
  * - **Channel readable** and **composer focusable** are application milestones.

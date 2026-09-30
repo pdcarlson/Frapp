@@ -83,9 +83,13 @@ user-installed provider would not compete with Sentry so much as be ignored by i
 never reach Sentry). v11 also streams spans by default, which skips `beforeSendTransaction`;
 every surface pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
 does not cover the browser's INP span, which v11 (like v10) sends standalone past both event hooks,
-named after the clicked element's selector. INP is therefore off on both Next browsers
-(`webVitals: { ignore: ['inp'] }`) until selector text is scrubbed (#2736); the other web vitals are unaffected
+named after the clicked element's selector. INP was therefore off on both Next browsers
+(`webVitals: { ignore: ['inp'] }`) until selector text was scrubbed (#2736); the other web vitals were unaffected
 (`docs/security/security-fixes.md` § v10 → v11).
+**Correction (2026-09-30, #2736):** INP is back on. The browser clients scrub every envelope in
+`beforeEnvelope` (`sentryEnvelopeScrubIntegration`), which does reach a standalone span and its
+header; the selector rule is in
+[`observability.md` § Error Tracking](../../behavior/observability.md#error-tracking).
 **Correction (2026-09-10):** API source maps are uploaded from `apps/api/Dockerfile` after
 `nest build`, not implied by `Sentry.init`. Live FRAPP-API-1 / FRAPP-API-3 showed
 `dist/*.js` ContextLines, not `.ts`. Upload targets `frapp-live` / `frapp-api` when
