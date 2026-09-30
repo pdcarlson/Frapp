@@ -77,7 +77,7 @@ export function withPostHogSentryCorrelation<
 ): (event: E, hint: H) => Promise<E | null> {
   return (event: E, hint: H) => {
     // `contexts.response` is dropped by the scrubber allowlist. Read the
-    // status class first so the timeline marker can still carry 2xx/4xx/5xx.
+    // status class first so the timeline marker can still carry it.
     const statusClass = httpStatusClass(statusFrom(event));
     const next = beforeSend ? beforeSend(event, hint) : event;
     return Promise.resolve(next).then((resolved) =>
