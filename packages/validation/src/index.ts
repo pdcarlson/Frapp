@@ -849,6 +849,7 @@ export type { MentionCandidate, MentionSpan } from "./mentions";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
   isSupportedTimeZone,
+  isUtcOffset,
   normalizeTimeZoneInput,
   MAX_TIME_ZONE_LENGTH,
 } from "./time-zone";

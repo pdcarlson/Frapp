@@ -138,7 +138,8 @@ function QuietHoursCard({
   }, [quietHoursWindow]);
 
   // Validate only what the member typed. A stored zone arrives here already
-  // accepted by the server, and this device's tzdata can be older than the
+  // accepted by the server (a UTC offset, which it now rejects, arrives already
+  // repaired by the sync hook), and this device's tzdata can be older than the
   // server's — so running our own resolvability check over it produces a
   // confident false negative (`Europe/Kyiv` on a build that knows only
   // `Europe/Kiev`). That would strand the member twice over: `commitDraft`
