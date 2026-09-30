@@ -10,7 +10,12 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { NotificationService } from '../../application/services/notification.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -29,6 +34,7 @@ import {
   ListNotificationsQueryDto,
   UpdateNotificationPreferenceDto,
   UpdateUserSettingsDto,
+  UserSettingsDto,
 } from '../dtos/notification.dto';
 
 @ApiTags('Notifications')
@@ -115,16 +121,20 @@ export class NotificationController {
 
   @Get('settings')
   @ApiOperation({ summary: 'Get user settings' })
-  async getSettings(@CurrentUser('id') userId: string) {
+  @ApiOkResponse({ type: UserSettingsDto })
+  async getSettings(
+    @CurrentUser('id') userId: string,
+  ): Promise<UserSettingsDto> {
     return this.notificationService.getSettings(userId);
   }
 
   @Patch('settings')
   @ApiOperation({ summary: 'Update user settings (quiet hours, theme)' })
+  @ApiOkResponse({ type: UserSettingsDto })
   async updateSettings(
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateUserSettingsDto,
-  ) {
+  ): Promise<UserSettingsDto> {
     return this.notificationService.updateSettings(userId, dto);
   }
 }
