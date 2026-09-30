@@ -47,7 +47,11 @@ import { resolveDeploymentByHost } from "./deploy-vercel.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { fetchVercelDeployments, vercelDeploymentCreatedAt } from "./lib/providers.mjs";
+import {
+  fetchVercelDeployments,
+  vercelDeploymentCreatedAt,
+  vercelDeploymentState,
+} from "./lib/providers.mjs";
 
 /** Enough to alias staging back a few merges by hand. */
 export const KEEP_PREVIEWS = 10;
@@ -62,7 +66,6 @@ const DELETE_URL = ({ id, teamId }) =>
   `https://api.vercel.com/v13/deployments/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`;
 
 const idOf = (deployment) => deployment?.uid ?? deployment?.id ?? null;
-const stateOf = (deployment) => deployment?.state ?? deployment?.readyState ?? null;
 
 /**
  * The pure choice. `deployments` is one project's list in any order;
@@ -75,7 +78,7 @@ export function selectPrunable(deployments, { keep = KEEP_PREVIEWS, protectedIds
     .sort((a, b) => vercelDeploymentCreatedAt(b) - vercelDeploymentCreatedAt(a));
   const prunable = previews
     .slice(keep)
-    .filter((deployment) => !protectedIds.has(idOf(deployment)) && TERMINAL_STATES.has(stateOf(deployment)))
+    .filter((deployment) => !protectedIds.has(idOf(deployment)) && TERMINAL_STATES.has(vercelDeploymentState(deployment)))
     .reverse()
     .slice(0, maxDeletions);
   return { previews: previews.length, prunable };

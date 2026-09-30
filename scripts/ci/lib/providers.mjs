@@ -1,5 +1,6 @@
-// Thin HTTP wrappers around the Render and Vercel deployment-listing APIs.
-// Both accept an injectable `fetchImpl` so tests can replay canned responses.
+// Thin HTTP wrappers around the Render and Vercel deployment-listing APIs,
+// plus the readers and state vocabulary for the Vercel rows they return. The
+// wrappers accept an injectable `fetchImpl` so tests can replay canned responses.
 
 const RENDER_DEPLOYS_URL = (serviceId, cursor) =>
   `https://api.render.com/v1/services/${serviceId}/deploys?limit=10` +
@@ -63,6 +64,24 @@ export async function fetchVercelDeployments({ apiKey, projectId, until, teamId,
 export function vercelDeploymentCreatedAt(deployment) {
   return new Date(deployment?.createdAt ?? deployment?.created ?? 0).getTime();
 }
+
+/** A deployment's state. Vercel's v6 deployments endpoint uses `state`, with
+ *  `readyState` as a legacy alias; rows and fixtures carry either spelling.
+ *  Prefer `state`; fall back to `readyState`. Shared for the same reason as
+ *  `vercelDeploymentCreatedAt`: an API change should be one edit, not one per
+ *  caller (it was five copies, one reading the pair in the other order). */
+export function vercelDeploymentState(deployment) {
+  return deployment?.state ?? deployment?.readyState;
+}
+
+// Terminal deployment states. A caller decides what each means for it:
+// `deploy-vercel.mjs` fails a deployment it created on CANCELED, and
+// `ensure-vercel-staging-alias.mjs` reads CANCELED as "nothing to alias".
+export const VERCEL_TERMINAL_SUCCESS_STATES = new Set(["READY"]);
+export const VERCEL_TERMINAL_FAILURE_STATES = new Set(["ERROR"]);
+// Neither a successful build nor a build failure: Vercel produced no deployed
+// output, without erroring.
+export const VERCEL_NEUTRAL_TERMINAL_STATES = new Set(["CANCELED"]);
 
 /**
  * Page back through Vercel's deployments list looking for `sha`, bounded by

@@ -6,6 +6,7 @@ import {
   fetchRenderDeploys,
   fetchVercelDeployments,
   findVercelDeploymentBySha,
+  vercelDeploymentState,
 } from "../lib/providers.mjs";
 
 function recorder(response) {
@@ -103,6 +104,24 @@ describe("fetchVercelDeployments", () => {
     const { calls, fetchImpl } = recorder(jsonOk({ deployments: [] }));
     await fetchVercelDeployments({ apiKey: "k", projectId: "prj_1", until: 1700000000000, fetchImpl });
     assert.match(calls[0].url, /until=1700000000000/);
+  });
+});
+
+// One reader for every script that classifies a deployment row: the deployer,
+// the staging alias, the preview pruner and the production release pin.
+describe("vercelDeploymentState", () => {
+  it("reads `state`, and falls back to the legacy `readyState`", () => {
+    assert.equal(vercelDeploymentState({ state: "READY" }), "READY");
+    assert.equal(vercelDeploymentState({ readyState: "CANCELED" }), "CANCELED");
+  });
+
+  it("prefers `state` when a row carries both", () => {
+    assert.equal(vercelDeploymentState({ state: "ERROR", readyState: "READY" }), "ERROR");
+  });
+
+  it("is undefined for a row with neither, or no row at all", () => {
+    assert.equal(vercelDeploymentState({ uid: "dpl_1" }), undefined);
+    assert.equal(vercelDeploymentState(undefined), undefined);
   });
 });
 
