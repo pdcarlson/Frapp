@@ -25,7 +25,8 @@
 
 The crest-editorial redesign of frapp.live, delivered as a Claude Design canvas on 2026-09-17 and
 copied here so agents and reviewers can read it as source. The editable original is the private
-canvas `https://claude.ai/artifact/3VDnuMFjA38HuLiat85Zaz` (the owner's account); `canvas/` is a
+canvas `https://claude.ai/artifact/3VDnuMFjA38HuLiat85Zaz` on the owner's personal Claude account,
+which sessions on the Frapp work account can't open (checked 2026-09-30); `canvas/` is a
 copy of that canvas's own `project/` files as of the commit that added them. When the canvas is
 edited, re-copy: the files are what an implementer reads, and the same rule that put
 [`../../web-greenfield/reference/web-framework.dc.html`](../../web-greenfield/reference/web-framework.dc.html)
