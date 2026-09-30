@@ -337,7 +337,8 @@ describe("Signet scales match foundations.md", () => {
 
     expect([radius.control]).toEqual(byRow("controls"));
     expect([radius.card, radius.cardLarge]).toEqual(byRow("cards"));
-    expect([radius.bubble, radius.bubbleTail]).toEqual(byRow("chat bubbles"));
+    // The chat bubble's row left the map with the bubble (#2873).
+    expect(table.some((cells) => /bubble/i.test(cells[0] ?? ""))).toBe(false);
     expect([radius.sheet]).toEqual(byRow("sheets"));
     expect([radius.chip, radius.chipLarge]).toEqual(byRow("badges"));
     expect([radius.navItem]).toEqual(byRow("sidebar"));
@@ -406,8 +407,8 @@ describe("getSignetCssVars", () => {
    *
    * The mention-chip pair is here for the mobile half of that reason only — it
    * is **not** a lift. It is a second fixed semantic family (§5's table, and
-   * `signet.css.spec.ts`'s `FIXED` list), and web draws the in-bubble mention
-   * chip today while mobile draws no in-bubble mention at all.
+   * `signet.css.spec.ts`'s `FIXED` list), and web draws the in-body mention
+   * chip today while mobile draws no in-body mention at all.
    *
    * A token here is a real token with a real home. This is not a suppression
    * list for tokens that were forgotten.

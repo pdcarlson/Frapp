@@ -478,11 +478,11 @@ describe("text selection is neutral, and deliberately so", () => {
     expect(rule![1]).toMatch(/color:\s*var\(--background\)/);
   });
 
-  it("does not read the accent slot, which would vanish on the self bubble", () => {
-    // The regression this guards is the first version of the rule.
-    // `text-renderer.tsx` paints the viewer's own chat bubble
-    // `bg-primary text-primary-foreground`; a selection wired to that same pair
-    // changes nothing when you drag across your own message. Stepping to
+  it("does not read the accent slot, which would vanish on an accent fill", () => {
+    // The regression this guards is the first version of the rule, which
+    // vanished on the chat self bubble (`bg-primary text-primary-foreground`,
+    // gone since #2873) and still would on every default Button label: a
+    // selection wired to that same pair changes nothing when you drag across it. Stepping to
     // `--accent-text` does not help either \u2014 accent-11 on accent-9 measures
     // ~1.18:1 on the house seed, under the fixture's perceptibility floor.
     for (const token of [

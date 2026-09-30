@@ -18,18 +18,20 @@
     "./blocks": "./src/blocks.ts",
     "./block-copy": "./src/block-copy.ts",
     "./message-actions": "./src/message-actions.ts",
+    "./grouping": "./src/grouping.ts",
     "./links": "./src/links.ts",
     "./attachments": "./src/attachments.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
-    "test": "vitest run",
-    "test:cov": "vitest run --coverage"
+    "test": "TZ=America/Los_Angeles vitest run",
+    "test:cov": "TZ=America/Los_Angeles vitest run --coverage"
   },
   "dependencies": {
     "@repo/api-sdk": "*",
     "@repo/chat-integrations": "*",
+    "@repo/formatting": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.117.1",
     "@tanstack/react-query": "^5.103.2"
