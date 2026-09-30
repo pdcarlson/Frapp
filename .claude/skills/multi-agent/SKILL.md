@@ -11,8 +11,9 @@ description: >
 # Multi-agent work: budget, effort, mechanics
 
 Paul runs almost every session with ultracode. The harness then tells the model to use the
-Workflow tool on every substantive task, says "token cost is not a constraint", and pins the
-session to `xhigh` effort. In this repo those defaults yield to the rules below. The loop stays:
+Workflow tool on every substantive task and says "token cost is not a constraint". (It also pinned
+the session to `xhigh` effort until Claude Code 2.1.284; § Effort.) In this repo those defaults
+yield to the rules below. The loop stays:
 discover or code, then verify independently. What this skill limits is how many agents that takes
 and how hard each one thinks. Decision and evidence: [ADR-23](../../../spec/architecture/adr/adr-23.md).
 
@@ -38,8 +39,11 @@ and how hard each one thinks. Decision and evidence: [ADR-23](../../../spec/arch
 ## Effort
 
 Every subagent inherits the session's effort unless something sets its own. Opus 5.5 defaults to
-`medium`, and ultracode raises the session to `xhigh`. Measured on 2026-09-23 from the `"effort"`
-field in subagent transcripts:
+`medium`. Ultracode used to raise the session to `xhigh`. Since Claude Code 2.1.284 it is its own
+toggle (`/effort ultracode on|off`) that, per the CLI's changelog, "no longer forces xhigh effort and
+stays on at any effort level"; only `ultracode` given as the level itself still means `xhigh`
+(checked against 2.1.285, 2026-09-30). Measured on 2026-09-23, in sessions running at `xhigh`,
+from the `"effort"` field in subagent transcripts:
 
 | Launch | Ran at |
 |---|---|
@@ -51,9 +55,18 @@ field in subagent transcripts:
 - **In a workflow, pass `effort` on every `agent()` call.** Use `medium` by default and `high` for
   finders and hard judgment calls. Never use `xhigh` or `max`.
 - **The Agent tool has no effort parameter.** `diff-finder` and `claim-verifier` pin theirs in
-  frontmatter (`high` and `medium`). Agent files load at session start, and nobody has yet measured
-  whether that frontmatter beats ultracode's `xhigh`. Built-in types (`general-purpose`, `Explore`)
-  always inherit, so under ultracode run reading fan-outs as a workflow with explicit `effort`.
+  frontmatter (`high` and `medium`), and the frontmatter wins: in a session running at `xhigh`
+  (2026-09-30), `diff-finder` ran at `high` and `claim-verifier` at `medium`. Built-in types
+  (`general-purpose`, `Explore`) always inherit, so in a session at `xhigh` run reading fan-outs as a
+  workflow with explicit `effort`.
+- **Choosing a session's level.** Anthropic's guidance for Opus 5.5 (the Claude API skill bundled
+  with Claude Code 2.1.285, § Migrating to Claude Opus 5.5 → Choosing an effort level, read
+  2026-09-30): the default `medium` matched or beat Opus 5 at `high` on agentic coding in
+  Anthropic's testing; start there, and keep `xhigh` and `max` for work where they have shown a
+  gain, because at those levels Opus 5.5 thinks more per turn and runs long turns. To get less
+  thinking, lower the level rather than prompting for it. `/effort <level>` can also save the level
+  as the default for new sessions, and its reply says whether it did. How a suggested-task card
+  picks a level: [`handoff`](../handoff/SKILL.md).
 - **To check what ran**, read the transcripts. They live in
   `~/.claude/projects/<cwd-slug>/<session-id>/subagents/`, with workflow agents under
   `workflows/<runId>/`: `grep -o '"effort":"[a-z]*"' agent-*.jsonl | sort | uniq -c`.

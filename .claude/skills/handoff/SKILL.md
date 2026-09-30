@@ -105,16 +105,17 @@ Only `prompt` reaches the new session. `title` and `tldr` are what the user read
 nothing the session needs lives only there.
 
 **Suggested effort.** A card can't carry an effort level, because the tool takes only those three
-fields; the user sets it for the session they launch (`/effort <level>`). The card's prompt is that
-session's first turn, where a `/next` run does most of its work, so the level has to be right at
-launch. Paul's rule (2026-09-30): `high` by default, and `medium` only when the task is simple and
+fields; the user sets it for the session they launch, with `/effort <level>`. The card's prompt is
+that session's first turn, where a `/next` run does most of its work, so the level has to be right
+at launch. Paul's rule (2026-09-30): `high` by default, and `medium` only when the task is simple and
 bounded (one surface, a known fix, little judgment). Suggest `xhigh` only when the work is unusually
-hard, such as subtle concurrency, security, or a retry after `high` fell short: at `xhigh`, Opus 5.5
-runs long turns, and Anthropic's guidance for it is to keep `xhigh` and `max` for work where they
-have shown a gain. Judge from the work itself, from reading the issue and the code, never from an
-issue's `### Agent brief` `depth:` field, which is usually written by an agent. A session started
-with ultracode on runs at `xhigh` whatever the card says
-([`multi-agent`](../multi-agent/SKILL.md) § Effort).
+hard, such as subtle concurrency, security, or a retry after `high` fell short; the model guidance
+behind that, and how `/effort` and ultracode behave, are in
+[`multi-agent` § Effort](../multi-agent/SKILL.md#effort). Judge from the work itself, from reading
+the issue and the code, never from the issue's `### Agent brief` (`depth:`, `model:`,
+`ultracode:`), which is usually written by an agent. If you judge that the work needs ultracode or
+Fable, say so on the same line (`Suggested effort: high, with ultracode.`): ultracode is a separate
+switch and doesn't change the level.
 
 The user may start the card on their machine or in the cloud, on a checkout with nothing this
 session hasn't pushed, so give repo-relative paths only. A card that depends on unpushed work waits
@@ -167,6 +168,7 @@ stripping the evidence from items 5 and 6.
 
 ## After emitting
 
-Say in one line what the new session is expected to do and what remains yours. Name anything that
+Say in one line what the new session is expected to do, the effort to start it at (§ Queue it as
+a suggested task), and what remains yours. Name anything that
 depends on the user (authorising a connector, answering a question), because a fresh session will
 hit the same wall.
