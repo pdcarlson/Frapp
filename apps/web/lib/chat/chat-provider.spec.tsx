@@ -17,7 +17,7 @@
 import { useContext } from "react";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { blockFloor, cachedViewerId, liveViewerId } = vi.hoisted(() => ({
   blockFloor: { current: null as ReadonlySet<string> | null },
@@ -60,6 +60,7 @@ vi.mock("@repo/chat-core/adapters", () => ({
 }));
 
 const { ChatProvider } = await import("./chat-provider");
+const { chatRealtime } = await import("@repo/chat-core/realtime-manager");
 const { useChatViewerId } = await import("./viewer-id");
 const { CachedBlockFloorContext } = await import("./use-thread-block-list");
 
@@ -77,13 +78,15 @@ function renderProvider() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const tree = () => (
     <QueryClientProvider client={client}>
       <ChatProvider>
         <Probe />
       </ChatProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(tree());
+  return { ...result, rerenderProvider: () => result.rerender(tree()) };
 }
 
 const viewer = () => screen.getByTestId("viewer").textContent;
@@ -138,5 +141,41 @@ describe("ChatProvider publishes the persisted block-list floor (#2688)", () => 
     renderProvider();
 
     expect(screen.getByTestId("floor").textContent).toBe("none");
+  });
+});
+
+describe("ChatProvider rebinds the realtime manager without tearing it down (#3002)", () => {
+  beforeEach(() => {
+    vi.mocked(chatRealtime.configure).mockClear();
+    vi.mocked(chatRealtime.destroy).mockClear();
+    cachedViewerId.current = null;
+    blockFloor.current = null;
+  });
+
+  it("re-configures for the viewer once it resolves, and never destroys to do it", () => {
+    // `destroy()` here dropped the thread's channel subscription, which the
+    // thread never re-took: its subscribe effect is keyed on the channel.
+    liveViewerId.current = null;
+    const { rerenderProvider } = renderProvider();
+    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ viewerId: null }),
+    );
+
+    liveViewerId.current = "user-live";
+    rerenderProvider();
+
+    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ viewerId: "user-live" }),
+    );
+    expect(chatRealtime.destroy).not.toHaveBeenCalled();
+  });
+
+  it("destroys the manager when the chat surface unmounts", () => {
+    liveViewerId.current = "user-live";
+    const { unmount } = renderProvider();
+
+    unmount();
+
+    expect(chatRealtime.destroy).toHaveBeenCalledTimes(1);
   });
 });

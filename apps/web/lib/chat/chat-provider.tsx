@@ -18,7 +18,10 @@ import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
 import { asArray } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
-import { browserKeyValueStore, browserNetworkState } from "@repo/chat-core/adapters";
+import {
+  browserKeyValueStore,
+  browserNetworkState,
+} from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
 import { flushOutbox } from "@repo/chat-core/chat-client";
@@ -68,9 +71,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   */
   const { viewerId: cachedViewerId, blockFloor } = useFirstChunkCache();
 
-  // Configure the realtime manager exactly once per mount. Manager is a
-  // module singleton; this just rebinds it to the current QueryClient /
-  // backfill fetcher.
+  /*
+    Bind the realtime manager (a module singleton) to this mount's clients,
+    and rebind it when the viewer resolves or changes.
+
+    Rebinding is a plain `configure`, never `destroy()` first (#3002). The live
+    `userId` answers after the thread has often already subscribed its channel,
+    from the first-chunk channel list. `destroy()` dropped that subscription,
+    and the thread's subscribe effect, keyed on the channel, never ran again:
+    the thread went quiet for good, with the pill still reading live and no
+    polling behind it. `configure` now reattaches every channel under the new
+    viewer itself, so presence tracks them (ADR-10). Mobile's runtime already
+    rebound this way. `supabase` is fixed for the mount and `queryClient` is
+    the app's one client, so a rebind never has to move a channel to another
+    client.
+  */
   useEffect(() => {
     chatRealtime.configure({
       queryClient,
@@ -90,10 +105,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return asArray<RawChatMessage>(data);
       },
     });
-    return () => {
-      chatRealtime.destroy();
-    };
   }, [queryClient, supabase, apiClient, userId]);
+
+  // Torn down on unmount only. On a remount the thread subscribes before this
+  // provider configures (a child's effects run first), and `configure`
+  // attaches that waiting channel.
+  useEffect(() => () => chatRealtime.destroy(), []);
 
   // Boot-time + on-reconnect outbox flush. The manager also pokes per-channel
   // flushes via `useChatChannel`, but this catches the first paint where no

@@ -1046,3 +1046,220 @@ describe("ChatRealtimeManager — typing after the viewer's block list (#2496)",
     expect(indicator()).toEqual([FRIEND]);
   });
 });
+
+describe("ChatRealtimeManager — typing list identity (#1004)", () => {
+  const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    queryClient = new QueryClient();
+    let supabase: SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill: vi.fn(async () => []),
+      kv: memoryStore(),
+    });
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+    vi.useRealTimers();
+  });
+
+  function joined(channelId: string): FakeChannel {
+    chatRealtime.subscribe(channelId);
+    const ch = channels.get(`chat:channel:${channelId}`);
+    if (!ch) throw new Error(`no fake channel for ${channelId}`);
+    ch.trigger("SUBSCRIBED");
+    return ch;
+  }
+
+  test("hands back the same array while the typists are unchanged", () => {
+    const ch = joined("c1");
+    const other = joined("c2");
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    const first = chatRealtime.getTypingUsers("c1");
+    expect(first).toEqual([A]);
+
+    // Pings that carry no change for c1: the same typist re-announcing, and
+    // someone typing in another channel. Each one re-reads the list.
+    vi.advanceTimersByTime(1000);
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    expect(chatRealtime.getTypingUsers("c1")).toBe(first);
+    other.emitBroadcast("typing", { userId: B, displayName: null });
+    expect(chatRealtime.getTypingUsers("c1")).toBe(first);
+  });
+
+  test("returns a new array when someone starts or stops typing", () => {
+    const ch = joined("c1");
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    const one = chatRealtime.getTypingUsers("c1");
+
+    ch.emitBroadcast("typing", { userId: B, displayName: null });
+    const two = chatRealtime.getTypingUsers("c1");
+    expect(two).not.toBe(one);
+    expect(two).toEqual([A, B]);
+    expect(chatRealtime.getTypingUsers("c1")).toBe(two);
+
+    // Both expire (4 s) and the sweep drops them.
+    vi.advanceTimersByTime(4500);
+    const none = chatRealtime.getTypingUsers("c1");
+    expect(none).toEqual([]);
+    expect(chatRealtime.getTypingUsers("c1")).toBe(none);
+  });
+
+  test("an unknown channel's empty list is one identity", () => {
+    expect(chatRealtime.getTypingUsers("nobody")).toEqual([]);
+    expect(chatRealtime.getTypingUsers("nobody")).toBe(
+      chatRealtime.getTypingUsers("nobody-else"),
+    );
+  });
+});
+
+describe("ChatRealtimeManager — configure attaches waiting channels and follows the viewer (#3002)", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const OTHER = "44444444-4444-4444-8444-444444444444";
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+
+  beforeEach(() => {
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    ({ supabase, channels } = makeFakeSupabase());
+    // Unconfigured, as the manager is before a provider's first configure and
+    // after every destroy().
+    chatRealtime.destroy();
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+  });
+
+  const ctx = (viewerId: string | null) => ({
+    queryClient,
+    supabase,
+    backfill,
+    kv: memoryStore(),
+    viewerId,
+  });
+
+  function current(channelId: string): FakeChannel | undefined {
+    return channels.get(`chat:channel:${channelId}`);
+  }
+
+  test("a channel subscribed before configure attaches when configure lands", () => {
+    // A child's effects run before its parent's: the thread subscribes, then
+    // the provider configures. Before #3002 the subscribe found no ctx and the
+    // channel sat in `joining` for good.
+    chatRealtime.subscribe("c1");
+    expect(current("c1")).toBeUndefined();
+
+    chatRealtime.configure(ctx(VIEWER));
+    const ch = current("c1");
+    expect(ch).toBeDefined();
+    ch!.trigger("SUBSCRIBED");
+
+    expect(ch!.track).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: VIEWER }),
+    );
+    expect(backfill).toHaveBeenCalledWith("c1", null);
+  });
+
+  test("a viewer that resolves after the attach reopens the channel and tracks them", async () => {
+    chatRealtime.configure(ctx(null));
+    chatRealtime.subscribe("c1");
+    const first = current("c1")!;
+    first.trigger("SUBSCRIBED");
+    expect(first.track).not.toHaveBeenCalled();
+
+    chatRealtime.configure(ctx(VIEWER));
+
+    await vi.waitFor(() => expect(current("c1")).not.toBe(first));
+    expect(first.teardown).toHaveBeenCalled();
+    const second = current("c1")!;
+    second.trigger("SUBSCRIBED");
+    expect(second.track).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: VIEWER }),
+    );
+  });
+
+  test("a different viewer reopens every channel under the new one", async () => {
+    chatRealtime.configure(ctx(VIEWER));
+    chatRealtime.subscribe("c1");
+    chatRealtime.subscribe("c2");
+    const first1 = current("c1")!;
+    const first2 = current("c2")!;
+    first1.trigger("SUBSCRIBED");
+    first2.trigger("SUBSCRIBED");
+
+    chatRealtime.configure(ctx(OTHER));
+
+    await vi.waitFor(() => {
+      expect(current("c1")).not.toBe(first1);
+      expect(current("c2")).not.toBe(first2);
+    });
+    current("c1")!.trigger("SUBSCRIBED");
+    expect(current("c1")!.track).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: OTHER }),
+    );
+  });
+
+  test("re-configuring for the same viewer leaves live channels alone", async () => {
+    chatRealtime.configure(ctx(VIEWER));
+    chatRealtime.subscribe("c1");
+    const first = current("c1")!;
+    first.trigger("SUBSCRIBED");
+    const channelFn = supabase.channel as unknown as ReturnType<typeof vi.fn>;
+    const calls = channelFn.mock.calls.length;
+
+    // What a new `apiClient` (and so a new backfill closure) does.
+    chatRealtime.configure(ctx(VIEWER));
+    await Promise.resolve();
+
+    expect(current("c1")).toBe(first);
+    expect(first.unsubscribe).not.toHaveBeenCalled();
+    expect(channelFn.mock.calls.length).toBe(calls);
+  });
+
+  test("a subscribe after destroy() attaches on the next configure (a remount)", async () => {
+    chatRealtime.configure(ctx(VIEWER));
+    chatRealtime.subscribe("c1");
+    current("c1")!.trigger("SUBSCRIBED");
+
+    // Unmount: the thread releases, then the provider destroys. Remount: the
+    // thread subscribes first, then the provider configures.
+    chatRealtime.unsubscribe("c1");
+    chatRealtime.destroy();
+    const channelFn = supabase.channel as unknown as ReturnType<typeof vi.fn>;
+    const calls = channelFn.mock.calls.length;
+    chatRealtime.subscribe("c1");
+    expect(channelFn.mock.calls.length).toBe(calls);
+
+    // The unmount's removal may still be leaving, so the attach waits for the
+    // topic to free (#783) before it installs.
+    chatRealtime.configure(ctx(VIEWER));
+    await vi.waitFor(() =>
+      expect(
+        channelFn.mock.calls
+          .slice(calls)
+          .some(([topic]) => topic === "chat:channel:c1"),
+      ).toBe(true),
+    );
+    current("c1")!.trigger("SUBSCRIBED");
+    expect(current("c1")!.track).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: VIEWER }),
+    );
+  });
+});

@@ -63,6 +63,9 @@ const mocks = vi.hoisted(() => {
   // refuse a send (#1728); unset, it resolves `undefined` as before.
   const enqueue = vi.fn();
   const clearAfterSend = vi.fn(async () => {});
+  // The manager's status pings, which also drive the typing line.
+  const statusListeners = new Set<(status: "live") => void>();
+  const noTypingUsers: readonly string[] = Object.freeze([]);
   return {
     GET,
     POST,
@@ -71,6 +74,17 @@ const mocks = vi.hoisted(() => {
     actionsRange,
     enqueue,
     clearAfterSend,
+    noTypingUsers,
+    getTypingUsers: vi.fn((): readonly string[] => noTypingUsers),
+    subscribeStatus: vi.fn((cb: (status: "live") => void) => {
+      statusListeners.add(cb);
+      return () => {
+        statusListeners.delete(cb);
+      };
+    }),
+    pingStatus: () => {
+      for (const cb of statusListeners) cb("live");
+    },
   };
 });
 
@@ -108,11 +122,12 @@ vi.mock("@/lib/providers/analytics-provider", () => ({
 // The realtime transport is not under test; the card echo never arrives, which
 // is the case where only the persisted row can carry the Retry.
 vi.mock("@repo/chat-core/realtime-manager", () => ({
+  NO_TYPING_USERS: mocks.noTypingUsers,
   chatRealtime: {
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
-    subscribeStatus: vi.fn(() => () => {}),
-    getTypingUsers: vi.fn(() => []),
+    subscribeStatus: mocks.subscribeStatus,
+    getTypingUsers: mocks.getTypingUsers,
     emitTyping: vi.fn(),
   },
 }));
@@ -903,5 +918,51 @@ describe("useChatChannel — a send the outbox refuses rejects (#1728)", () => {
     expect(mocks.clearAfterSend).not.toHaveBeenCalled();
     // `sendMessage` took its optimistic card back out.
     expect(result.current.messages).toHaveLength(0);
+  });
+});
+
+describe("useChatChannel — the typing line (#1004)", () => {
+  beforeEach(() => {
+    mocks.GET.mockReset();
+    mocks.GET.mockResolvedValue({ data: [], error: undefined });
+    mocks.getTypingUsers.mockReset();
+    mocks.getTypingUsers.mockImplementation(() => mocks.noTypingUsers);
+  });
+
+  afterEach(() => {
+    client?.clear();
+  });
+
+  it("hands on the manager's own array, re-read on each status ping", async () => {
+    // The manager keeps the array's identity while the typists are unchanged
+    // (`realtime-manager.spec.ts`), which is what lets the thread skip the
+    // re-render. That only holds if this hook passes the array on as it is.
+    const { result } = await mountChannel();
+    const typists = ["user-7"];
+    mocks.getTypingUsers.mockImplementation(() => typists);
+
+    act(() => mocks.pingStatus());
+
+    expect(result.current.typingUsers).toBe(typists);
+  });
+
+  it("shows nobody typing once no channel is open, not the last channel's typists", async () => {
+    const typists = ["user-7"];
+    mocks.getTypingUsers.mockImplementation(() => typists);
+    const view = renderHook(
+      ({ channelId }: { channelId: string | null }) => {
+        client = useQueryClient();
+        return useChatChannel(channelId);
+      },
+      {
+        wrapper,
+        initialProps: { channelId: CHANNEL_ID as string | null },
+      },
+    );
+    await waitFor(() => expect(view.result.current.typingUsers).toBe(typists));
+
+    view.rerender({ channelId: null });
+
+    expect(view.result.current.typingUsers).toEqual([]);
   });
 });

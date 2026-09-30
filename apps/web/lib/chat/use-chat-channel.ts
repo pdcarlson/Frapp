@@ -6,6 +6,15 @@
  * This hook is the **only** thing chat UI components touch. It hides the
  * normalized cache, the supabase singleton, the realtime manager, and the
  * outbox so components stay dumb (arrays + callbacks).
+ *
+ * Its mobile counterpart is `apps/mobile/lib/chat/use-chat-channel.ts`. The
+ * two are not one hook, on purpose (#1004): what they share is logic, and the
+ * logic lives in `@repo/chat-core`, which stays framework-free: the history
+ * pager and page fetcher, `olderHistoryView`, the realtime manager (including
+ * the typing list's identity), and the chat-client actions. Each hook holds
+ * only its client's React wiring around those. A fix to shared behaviour
+ * belongs in chat-core, where both clients get it. The header of the mobile
+ * file lists what differs and why.
  */
 
 import {
@@ -40,12 +49,13 @@ import {
 import {
   createHistoryPageFetcher,
   createHistoryPager,
-  hasOlderHistory,
   OLDER_PAGE_LIMIT,
+  olderHistoryView,
   type LoadOlderResult,
 } from "@repo/chat-core/history";
 import {
   chatRealtime,
+  NO_TYPING_USERS,
   type ConnectionStatus,
 } from "@repo/chat-core/realtime-manager";
 import {
@@ -116,7 +126,8 @@ export interface UseChatChannelResult {
   delete: (messageId: string) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
-  typingUsers: string[];
+  /** The manager's list: the same array until someone starts or stops typing. */
+  typingUsers: readonly string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
   retry: (clientMessageId: string) => Promise<void>;
@@ -397,17 +408,23 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     return unsub;
   }, []);
 
-  // Typing users tick: re-read from the manager when its status pings change
-  // (the manager bumps status listeners on typing membership changes too).
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  /*
+    Typing users: re-read from the manager on each status ping (it pings on
+    typing changes too). Most pings carry no change for this channel, and
+    `getTypingUsers` then hands back the array it returned last, so this set
+    bails out instead of re-rendering the thread (#1004). With no channel open
+    nobody is typing, rather than the last channel's typists.
+  */
+  const [typingUsersState, setTypingUsers] =
+    useState<readonly string[]>(NO_TYPING_USERS);
   useEffect(() => {
     if (!channelId) return;
     const refresh = () =>
       setTypingUsers(chatRealtime.getTypingUsers(channelId));
     refresh();
-    const unsub = chatRealtime.subscribeStatus(refresh);
-    return unsub;
+    return chatRealtime.subscribeStatus(refresh);
   }, [channelId]);
+  const typingUsers = channelId ? typingUsersState : NO_TYPING_USERS;
 
   /*
     Draft persistence lives in its own hook (#2176).
@@ -562,22 +579,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   */
   usePersistedChannelTail(channelId, messages, query.dataUpdatedAt);
 
-  // On the data, not on `isSuccess`: a refetch that failed keeps its data and
-  // reads `error`, and the history it holds can still be paged from.
-  const hasOlder =
-    !!channelId &&
-    hasOlderHistory(query.data, pagerState.starts.get(channelId));
-  const olderForChannel = channelId
-    ? (pagerState.older.get(channelId) ?? null)
-    : null;
-
   return {
     messages,
     isLoading: query.isPending,
     loadError: query.error ?? null,
-    hasOlder,
-    isLoadingOlder: olderForChannel === "loading",
-    olderError: olderForChannel === "error",
+    ...olderHistoryView(pagerState, channelId, query.data),
     loadOlder,
     loadNewer,
     send,
