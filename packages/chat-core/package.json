@@ -20,6 +20,7 @@
     "./message-actions": "./src/message-actions.ts",
     "./grouping": "./src/grouping.ts",
     "./links": "./src/links.ts",
+    "./markdown": "./src/markdown.ts",
     "./attachments": "./src/attachments.ts"
   },
   "scripts": {

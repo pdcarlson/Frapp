@@ -5,13 +5,12 @@
 // API field (`smtp_sender_name`). ADR-25 step 3 flipped the expected value
 // from Signet to Frapp in the same change as the owner's console rename. A
 // leftover sweep can put `Signet` back without the address check noticing,
-// or drop the skip-until-on sender hint so an operator does not know
-// production will require Frapp once SMTP is on.
+// or drop the empty-host sender hint so an operator turning SMTP back on
+// does not know the check requires Frapp.
 //
 // SCOPE. AUTH_SMTP_SENDER_NAME, the trim-only smtp_sender_name compare,
-// and the skip-until-on operator hint. Do not PATCH Auth. Do not
-// lowercase the compare (the console value is `Frapp`). Production empty
-// host still skips even when the sender is Signet. Mailer subjects are
+// and the empty-host operator hint. Do not PATCH Auth. Do not
+// lowercase the compare (the console value is `Frapp`). Mailer subjects are
 // frapp-mailer-subjects'. Invite From is frapp-invite-from's.
 
 import { test } from "node:test";
@@ -49,7 +48,7 @@ export function senderLockProblems(source) {
     problems.push("do not lowercase the sender; the console value is Frapp");
   }
   if (!/smtp_sender_name=\$\{AUTH_SMTP_SENDER_NAME\}/.test(source)) {
-    problems.push("skip-until-on hint must name the Frapp sender");
+    problems.push("empty-host hint must name the Frapp sender");
   }
   return problems;
 }
@@ -70,14 +69,14 @@ test("pinning AUTH_SMTP_SENDER_NAME to Signet fails", () => {
   );
 });
 
-test("dropping the skip-until-on sender hint fails", () => {
+test("dropping the empty-host sender hint fails", () => {
   const source = readRepo(CONFORMANCE).replace(
     "smtp_sender_name=${AUTH_SMTP_SENDER_NAME} and smtp_admin_email=",
     "smtp_admin_email=",
   );
   const problems = senderLockProblems(source);
   assert.ok(
-    problems.some((problem) => problem.includes("skip-until-on hint")),
+    problems.some((problem) => problem.includes("empty-host hint")),
     problems.join("; "),
   );
 });
