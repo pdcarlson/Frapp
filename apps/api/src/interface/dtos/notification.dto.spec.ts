@@ -79,18 +79,34 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
     expect(dto.quiet_hours_end).toBeNull();
   });
 
-  // Whether a fixed offset resolves is a property of the runtime's ICU, not of
-  // this DTO: Node 20 rejects `-05:00`, Node 22+ accepts it. CI and the
-  // Dockerfile have since moved from Node 20 to Node 24, so this verdict did
-  // flip — and this test stayed green through it, which is the whole reason it
-  // asserts the portable thing (the DTO reaches the same verdict as the shared
-  // predicate) rather than an outcome that tracks the Node version.
+  // The DTO must reach the same verdict as the shared predicate, whatever that
+  // verdict is. This test once had to be written this way because `Intl`'s
+  // answer on `-05:00` flipped between Node 20 and Node 22+ and it stayed green
+  // through the flip. Offsets are now rejected by a runtime-independent rule
+  // (#2361), but the agreement is still the property that keeps client and
+  // server from drifting, so it is kept as it was.
   it('agrees with the shared predicate on offset forms, whatever this runtime decides', async () => {
     const candidate = '-05:00';
     const rejectedByDto = (
       await failingProps({ quiet_hours_tz: candidate })
     ).includes('quiet_hours_tz');
     expect(rejectedByDto).toBe(!isSupportedTimeZone(candidate));
+  });
+
+  // Pinned outright, unlike the test above: the offset rule is a pattern, not
+  // an `Intl` probe, so this verdict cannot move with the Node version (#2361).
+  it('rejects a fixed UTC offset on any runtime', async () => {
+    for (const offset of ['-05:00', '+0530', '+05']) {
+      expect(await failingProps({ quiet_hours_tz: offset })).toContain(
+        'quiet_hours_tz',
+      );
+    }
+  });
+
+  it('still accepts a DST-free zone name such as Etc/GMT+5', async () => {
+    expect(await failingProps({ quiet_hours_tz: 'Etc/GMT+5' })).not.toContain(
+      'quiet_hours_tz',
+    );
   });
 
   it('rejects a plausible-looking but nonexistent zone', async () => {

@@ -50,11 +50,12 @@ import {
  *   JWT lifetime. Every one of those recovers by itself, so treating a bare
  *   403 as a permanent gate would delete the retry from faults that fix
  *   themselves.
- * - **An exact server message.** `AllExceptionsFilter` serialises only
- *   `{statusCode, error, message, requestId}`, so `codeOf` is `null` on every
- *   real response (#1020) and the message is all that reaches us. The match
- *   lives in `@repo/validation` against the four strings the guard throws, and
- *   a parity test keeps those in step with the guard source.
+ * - **An exact server message.** Written while `AllExceptionsFilter` dropped
+ *   the guard's `code`, so the message was all that reached us. The code
+ *   arrives since #1020; checking it first, with this match as the fallback,
+ *   is #2995. The match lives in `@repo/validation` against the four strings
+ *   the guard throws, and a parity test keeps those in step with the guard
+ *   source.
  *
  * Returns the refusal (carrying the guard's `code` and its `recoverable`
  * flag) so a caller can tell `canceled` from the recoverable states, or

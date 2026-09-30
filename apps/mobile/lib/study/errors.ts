@@ -53,9 +53,9 @@ export const MODULE_OFF_COPY = {
  * pause/resume mirror (which otherwise retries), so the copy and the latch
  * cannot disagree about what counts as permanent.
  *
- * Both are matched on the message, not `codeOf`, which is `null` on every
- * real response (#1020); the module branch used `codeOf` until #2393 and never
- * fired. Both must be caught before a relaying 403 arm: the subscription
+ * Both are matched on the message: the module branch used `codeOf` until
+ * #2393 and never fired, because the API dropped `code` until #1020. Checking
+ * the code first, with the message as fallback, is #2995. Both must be caught before a relaying 403 arm: the subscription
  * gate's own words are "…complete checkout to use this feature.", a purchase
  * instruction the store declaration forbids in this app (#2297), and the
  * module gate's tell an officer to "Re-enable it in Settings → Modules".

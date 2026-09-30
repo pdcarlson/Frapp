@@ -18,10 +18,11 @@ import { isTermsRequiredError } from "./legal-acceptance";
  * body and `useRedeemInvite` rethrows that body unchanged, so `statusOf` reads
  * it directly.
  *
- * Two refusals are told apart by their message, since no error `code` reaches
- * a client (#1020): the Terms refusal (a 403, `isTermsRequiredError`), which
- * wants the checkbox, and a deleted account whose session hasn't ended (a
- * 410 like an expired invite, but no new invite would help).
+ * Two refusals share a status with something else and need more than it: the
+ * Terms refusal (a 403, `isTermsRequiredError`, by its code or its message),
+ * which wants the checkbox, and a deleted account whose session hasn't ended
+ * (a 410 like an expired invite, but no new invite would help), which has no
+ * code and is told apart by its message.
  *
  * **This is error copy, not a status vocabulary.** Nothing here is persisted,
  * badged or coloured, so there is no badge kind to map.

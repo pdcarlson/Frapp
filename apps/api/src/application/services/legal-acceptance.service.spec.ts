@@ -190,7 +190,7 @@ describe('LegalAcceptanceService (#2302)', () => {
         status: 403,
         response: expect.objectContaining({
           code: 'legal.acceptance_required',
-          // The only part a client sees today (#1020): clients match on it.
+          // Clients fall back to matching this when a body has no code.
           message: 'shared refusal message',
         }),
       });

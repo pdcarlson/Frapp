@@ -86,7 +86,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             },
           },
         );
-        if (error) throw error as Error;
+        if (error) throw error;
         return asArray<RawChatMessage>(data);
       },
     });

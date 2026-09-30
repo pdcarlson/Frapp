@@ -275,6 +275,29 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     expect(mocks.updateSettingsMutateAsync).not.toHaveBeenCalled();
     expect(input.getAttribute("aria-invalid")).toBe("true");
   });
+
+  // An offset is rejected by rule, not by this browser's `Intl` (#2361), so
+  // the panel refuses it on any runtime, before a PATCH the server would 400.
+  it("blocks the save when the member types a fixed UTC offset", async () => {
+    mocks.settingsQuery.data = {
+      quiet_hours_start: "22:00",
+      quiet_hours_end: "08:00",
+      quiet_hours_tz: "America/New_York",
+      theme: "system",
+    };
+    render(<ProfilePanel />);
+
+    const input = await screen.findByDisplayValue("America/New_York");
+    await userEvent.clear(input);
+    await userEvent.type(input, "-05:00");
+    await savePreferences();
+
+    expect(
+      await screen.findByText(/fixed offset such as -05:00/i),
+    ).toBeTruthy();
+    expect(mocks.updateSettingsMutateAsync).not.toHaveBeenCalled();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
 });
 
 // #312 made `useUpdateUserSettings` optimistic, which changed how often this
