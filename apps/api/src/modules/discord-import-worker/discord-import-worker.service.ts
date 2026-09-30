@@ -1054,8 +1054,8 @@ export class DiscordImportWorkerService {
     // Left behind, each met a re-import of the same server as a name clash to
     // resolve, or as a duplicate when hidden from the admin (#2799). The
     // function keeps any channel that still holds a message of any kind, an
-    // attachment, a points-ledger link, or a merge by an import that may still
-    // write into it (#2922), and it checks and deletes each one under the
+    // attachment, a points-ledger link, or a merge into it by an import that
+    // isn't deleted (#2922), and it checks and deletes each one under the
     // channel's row lock, so a message sent meanwhile keeps its channel. It
     // also takes a channel an already-deleted import made that this one
     // merged into, which that import's purge had to keep.

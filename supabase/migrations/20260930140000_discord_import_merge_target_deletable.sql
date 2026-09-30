@@ -16,14 +16,15 @@
 --    one, and the worker fails the import with a sentence when the channel it
 --    merges into is deleted while it waits or runs.
 --
--- 2. The purge's keep rule stops counting a merge that can never write again.
+-- 2. The purge's keep rule stops counting a deleted import's merge.
 --    `discord_import_channel_holds_anything` kept any channel a `use_existing`
 --    row of any import pointed at, because deleting it would fail the CHECK.
---    Now only an import that may still write pins the channel it merges into:
---    one that isn't `purging` or `purged`. So the import being purged no
---    longer pins a channel it created and then merged into itself (a failed
---    import remapped through the API), and a merge by an import already
---    deleted pins nothing.
+--    Now a merge pins its channel only while its import isn't being or hasn't
+--    been deleted (`purging`, `purged`). So the import being purged no longer
+--    pins a channel it created and then merged into itself (a failed import
+--    remapped through the API), and a merge by an import already deleted pins
+--    nothing. Every other import's merge still pins, a finished one's
+--    included: it is that import's record of where its history went.
 --
 -- 3. The purge also reaps a channel an earlier purge had to keep. When import
 --    A created a channel and import B merged into it, A's purge kept it (it
