@@ -58,6 +58,7 @@ import {
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
+import { getArchetype, VOCABULARY_DEFAULTS } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -192,6 +193,31 @@ function ChannelHeaderMark({
   );
 }
 
+
+/** The two member-view fields the recruitment word is resolved from. */
+type MemberViewVocabulary = {
+  org_archetype?: string | null;
+  vocabulary?: { recruitment?: string } | null;
+};
+
+/**
+ * The chapter's recruitment word (`/intake`, `/recruitment`, …) from the member
+ * view. The member view carries the stored `vocabulary` column as-is, so this
+ * applies the merge `ChapterConfigService.getConfig` does for the config read:
+ * the stored word first, then the archetype's default. `undefined` until the
+ * read answers, which the palette shows as the canonical `/rush`.
+ */
+export function chapterRecruitmentWord(
+  chapter: MemberViewVocabulary | undefined,
+): string | undefined {
+  if (!chapter) return undefined;
+  return (
+    chapter.vocabulary?.recruitment ??
+    VOCABULARY_DEFAULTS[getArchetype(chapter.org_archetype ?? "ifc").key]
+      .recruitment
+  );
+}
+
 /**
  * The chat surface: channels column, then thread and composer.
  *
@@ -268,11 +294,9 @@ export function ChatShell({
     chapterId: activeChapterId,
     enabled: !!activeChapterId,
   });
-  const recruitmentVocab = (
-    currentChapter.data as
-      | { vocabulary?: { recruitment?: string } | null }
-      | undefined
-  )?.vocabulary?.recruitment;
+  const recruitmentVocab = chapterRecruitmentWord(
+    currentChapter.data as MemberViewVocabulary | undefined,
+  );
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
