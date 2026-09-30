@@ -96,6 +96,10 @@ open/closed + `state_reason` fields:
 **Promotion out of Triage requires setting a priority label** — mirroring Linear's "require
 explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` in the same update.
 
+**`parked` is a hold, not a state.** It overlays Triage or Backlog without changing either: `/next`
+skips a parked issue and issue-triage Pass B doesn't groom it, but its state and priority stay
+as they are. What it means and who sets it: [`routines.md` → Label roster](routines.md#label-roster).
+
 ## Labels and priority (lean taxonomy)
 
 The label roster, with what each label means and the caveats on it, is in
@@ -177,11 +181,11 @@ briefs are mostly agent-written). No step is skipped and `/diff-review` is never
 ## `/next` (the work-selection command)
 
 [`.claude/commands/next.md`](../../.claude/commands/next.md) is the canonical **procedure**:
-pull the **Backlog** (open, non-`triage`, unclaimed) ranked by **priority label** (P1→P4; unlabeled
-last), tie-break by lower issue number, drop anything with a live `Blocked by #N` (verified against
-the repo), never auto-start `triage` items, and **stop if the GitHub MCP is unavailable**. It keeps
-the tracker in sync (`in-progress` on claim, a comment trail, the PR link) and opens the PR with
-`Fixes #N`.
+pull the **Backlog** (open, non-`triage`, non-`parked`, unclaimed) ranked by **priority label**
+(P1→P4; unlabeled last), tie-break by lower issue number, drop anything with a live
+`Blocked by #N` (verified against the repo), never auto-start `triage` items, and **stop if the
+GitHub MCP is unavailable**. It keeps the tracker in sync (`in-progress` on claim, a comment trail,
+the PR link) and opens the PR with `Fixes #N`.
 
 It stays a **command**, not a skill: `/next` is the user-invocable work-selection entry point.
 Skills are playbooks loaded when relevant. This section is policy. Where they disagree, **this
