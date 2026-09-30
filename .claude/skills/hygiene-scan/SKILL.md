@@ -16,7 +16,7 @@ and nothing else consolidates, so each run fixes one theme itself. A run is done
 PR (one theme, or one small batch per Phase 2) is open for a human to merge (or you've written
 down why there is none), the rest is filed or ledgered, and the run report is written. The license
 and its limits:
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+[`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
 rule 3, and ADR-16 amendment 7 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
 It holds only while every run is grounded, whole-pattern, verified, reviewed, and human-merged.
 
@@ -26,7 +26,7 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
   (`package.json` deps, `package-lock.json`): schema changes hit shared databases, workflows are the
   gates judging this PR, and an upgrade is a behaviour change needing its own review.
 - Never change a gate's posture (required ↔ advisory); that is the owner's call
-  ([`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)).
+  ([`quality-gates.md`](../../../docs/ci-cd/quality-gates.md)).
 - Never change `apps/landing` visuals. The page is built to binding boards
   (`spec/ui/landing/reference/`) and its open items are owner decisions, so a visual change there is
   design work. Dead code and correctness there are fair game.
@@ -92,7 +92,7 @@ or live `dark:` variant is a defect now); the slice's app skill,
 [`api-development`](../api-development/SKILL.md) or [`ui-development`](../ui-development/SKILL.md),
 plus [`realtime-resilience`](../realtime-resilience/SKILL.md) when the slice touches
 `packages/chat-core` or a realtime subscription;
-[`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md); and
+[`quality-gates.md`](../../../docs/ci-cd/quality-gates.md); and
 [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md). When a doc
 you rely on is wrong, fix it in the PR if small and in scope, else report it; a stale doc never
 licenses skipping the check it describes.
@@ -115,10 +115,10 @@ year shifts it a day, accepted).
 | 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is flag-only | `api-development` |
 | 2 | `apps/web`, `packages/theme`, `packages/color`, `packages/chapter-theme`, `packages/brand-assets`, `packages/formatting` | `ui-development`, `signet-cutover` |
 | 3 | `apps/mobile`, `packages/chat-core`, `packages/chat-integrations`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
-| 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only), and the gates' own baselines | `testing`, `QUALITY_GATES.md` |
+| 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only), and the gates' own baselines | `testing`, `quality-gates.md` |
 
 The slice bounds the deep read, not the fix: a pattern found there is fixed everywhere it occurs.
-Don't re-scope a slice to balance it, because `ROUTINES.md` § Verify checks that two runs on one day
+Don't re-scope a slice to balance it, because `routines.md` § Verify checks that two runs on one day
 take the same one. Read `git ls-files` over the group in order, skipping generated files
 (`packages/api-sdk/src/types.ts`, `apps/api/openapi.json`, `*.d.ts`, snapshots; "unused" there is
 not a finding). If the budget runs out first, the ledger's `carry:` line names the last file read
@@ -148,7 +148,7 @@ lychee installed first ([`AGENTS.md` § Lint, test, build, type-check](../../../
   counts only with the exact title `Hygiene Scan — ledger` and the `routine-state` label (the PR
   Follow-ups tracking issue is the near-miss it offers). If none exists, create it with
   `issue_write`, labelled `routine-state` only (the routine-infrastructure carve-out in
-  `GITHUB_PM.md`), and ask the owner to pin it. `get_comments` pages oldest-first, so take the
+  `github-pm.md`), and ask the owner to pin it. `get_comments` pages oldest-first, so take the
   `comments` count from `issue_read get` and fetch `perPage: 30` at `page: ceil(count / 30)`, plus
   the page before if that one holds fewer than ten. A `declined:` line stands for 30 days unless
   `git log` shows the file changed since; `carry:` is the last run talking to you.
@@ -361,7 +361,7 @@ In this order:
 ## Self-maintenance
 
 Same contract as the other routines
-([`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)),
+([`routines.md` → Self-maintenance](../../../docs/ci-cd/routines.md#self-maintenance-the-update-themselves-contract)),
 folded into this run's PR. Check each run that the Phase 0.3 commands exist in `package.json`, the
 slice table names real directories (a new package joins a group), cited paths and skills resolve,
 and the frozen list matches `spec/ui/mobile/navigation.md`. Fix mechanical drift here.

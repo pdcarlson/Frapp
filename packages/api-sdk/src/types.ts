@@ -2792,7 +2792,7 @@ export interface paths {
         post?: never;
         /**
          * Delete an import and everything it brought in
-         * @description Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.
+         * @description Removes the imported messages, their attachments, the channels the import created once they hold nothing else, and the uploaded archive objects. The roles it created stay, and the job row survives as the record that it happened.
          */
         delete: operations["DiscordImportController_purge_v1"];
         options?: never;
@@ -3686,6 +3686,28 @@ export interface components {
             category: string;
             /** @description Whether notifications for this category are enabled */
             is_enabled: boolean;
+        };
+        UserSettingsDto: {
+            /**
+             * @description Quiet hours start, as Postgres returns a `time` (HH:mm:ss). Null when no window is set; quiet hours are enforced only while start and end are both set.
+             * @example 22:00:00
+             */
+            quiet_hours_start: string | null;
+            /**
+             * @description Quiet hours end (HH:mm:ss). Null when no window is set.
+             * @example 08:00:00
+             */
+            quiet_hours_end: string | null;
+            /**
+             * @description Time zone the window is evaluated in. Null means UTC while a window is set.
+             * @example America/New_York
+             */
+            quiet_hours_tz: string | null;
+            /**
+             * @description Theme preference. `system` until the member saves one.
+             * @enum {string}
+             */
+            theme: "light" | "dark" | "system";
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -6198,7 +6220,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UserSettingsDto"];
+                };
             };
         };
     };
@@ -6219,7 +6243,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UserSettingsDto"];
+                };
             };
         };
     };

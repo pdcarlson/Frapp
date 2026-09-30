@@ -28,7 +28,7 @@ fi
 # builtins and scripts/ci/lib/invoked-directly.mjs, which does too (the scan runs
 # `--soft-missing`).
 #
-# Cloud sessions only. A laptop keeps the rule SECRET_SCANNING.md documents: `npm install`
+# Cloud sessions only. A laptop keeps the rule secret-scanning.md documents: `npm install`
 # sets the path and `git config --unset core.hooksPath` undoes it, and rewriting it at every
 # session start would override a developer who opted out or chains a hooks directory of
 # their own. A cloud container is ephemeral and holds nobody's own hooks.

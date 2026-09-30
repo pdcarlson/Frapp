@@ -26,7 +26,15 @@ export interface NotificationPreference {
   updated_at: string;
 }
 
-export type Theme = 'light' | 'dark' | 'system';
+/**
+ * Every value `user_settings.theme` holds, as its check constraint lists them.
+ * The settings DTOs take both their published enum and their validation from
+ * this one list, so the contract and the API cannot disagree about which themes
+ * exist. The check constraint is the other copy, and moves in a migration.
+ */
+export const THEMES = ['light', 'dark', 'system'] as const;
+
+export type Theme = (typeof THEMES)[number];
 
 export interface UserSettings {
   id: string;
@@ -37,3 +45,13 @@ export interface UserSettings {
   theme: Theme;
   updated_at: string;
 }
+
+/**
+ * A member's settings as `GET` and `PATCH /v1/settings` answer them: the fields
+ * they can change, without the row's bookkeeping. A member who has never saved
+ * has no row, so they have no `id` or `updated_at` to report either (#2885).
+ */
+export type UserSettingsValues = Pick<
+  UserSettings,
+  'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
+>;

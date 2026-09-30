@@ -3,6 +3,8 @@ import {
   MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK,
   discordAttachmentKey,
   isLikelyMissingMessageContentIntent,
+  messageContentIntentOffError,
+  missingMessageContentIntentError,
   tallyMessageContent,
   toExportShapeMessage,
   type DiscordApiMessage,
@@ -351,6 +353,57 @@ describe('the missing Message Content Intent check', () => {
         substantive,
       ]);
       expect(isLikelyMissingMessageContentIntent(tally)).toBe(false);
+    }
+  });
+});
+
+describe('the Message Content Intent errors (#2317)', () => {
+  it('pre-flight: says no messages were imported only when the import holds none', () => {
+    expect(messageContentIntentOffError(0)).toMatch(
+      /No messages were imported\./,
+    );
+    const later = messageContentIntentOffError(300);
+    expect(later).toMatch(/Nothing more was imported/);
+    expect(later).toMatch(/already holds 300 messages from earlier runs/);
+    expect(later).not.toMatch(/No messages were imported/);
+    expect(messageContentIntentOffError(1)).toMatch(/holds 1 message from/);
+  });
+
+  it('tally: calls only this run’s messages empty, and counts earlier runs apart', () => {
+    const text = missingMessageContentIntentError({
+      thisRun: 20,
+      earlierRuns: 2000,
+    });
+    expect(text).toMatch(
+      /This run had already written 20 messages .* they are empty\./,
+    );
+    expect(text).toMatch(
+      /2000 messages from earlier runs, which this check did not see/,
+    );
+    expect(text).not.toMatch(/2000 messages[^.]*empty/);
+    expect(text).toMatch(
+      /Deleting this import removes everything it brought in/,
+    );
+  });
+
+  it('tally: with nothing written, mentions the channel it may have made and advises no deletion', () => {
+    const text = missingMessageContentIntentError({
+      thisRun: 0,
+      earlierRuns: 0,
+    });
+    expect(text).toMatch(/This run wrote no messages\. A channel it created/);
+    expect(text).not.toMatch(/Deleting this import/);
+    expect(text).not.toMatch(/Nothing was imported/);
+  });
+
+  it('names the toggle in every form', () => {
+    for (const text of [
+      messageContentIntentOffError(0),
+      messageContentIntentOffError(5),
+      missingMessageContentIntentError({ thisRun: 0, earlierRuns: 0 }),
+      missingMessageContentIntentError({ thisRun: 3, earlierRuns: 4 }),
+    ]) {
+      expect(text).toMatch(/Bot → Privileged Gateway Intents/);
     }
   });
 });

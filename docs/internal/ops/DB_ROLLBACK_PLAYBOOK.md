@@ -38,7 +38,7 @@ created after the gate cannot be added to it.
 
 Migrations are now applied automatically in the deploy pipeline:
 - **Staging:** Runs automatically on merge to `main` (no approval needed), in `.github/workflows/deploy-staging.yml`
-- **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`. The code-free path — apply migrations without shipping code — is now the same workflow run with `scope: migrations-only`, so it rehearses too; the separate `Migrate production` workflow that skipped the rehearsal (and SHA validation, and the guardrail preflight, and the working-tree fence) has been deleted. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets.)
+- **Production:** Never automatic. `deploy-production.yml` applies migrations for one named commit, and **pauses on the `production` environment's required reviewer** before it applies (`docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap secrets). That approval is the only human gate since #1340 retired the `main` → `production` promotion PR. Before applying, the workflow rehearses the migration against production's live applied state with `check-migration-replay.mjs`. The code-free path — apply migrations without shipping code — is now the same workflow run with `scope: migrations-only`, so it rehearses too; the separate `Migrate production` workflow that skipped the rehearsal (and SHA validation, and the guardrail preflight, and the working-tree fence) has been deleted. (The old justification for saying the environment did not gate anything — Enterprise-only environment rules *on private repos* — was corrected 2026-08-21: this repo is public. See `docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap secrets.)
 
 If an automated migration fails, the entire deploy pipeline halts: no API deploy happens, and no web or landing upload. Check the GitHub Actions run for the error output.
 
@@ -164,7 +164,7 @@ backups. The two now do different jobs:
 | Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
 | Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file. **A recovery pairs a database prefix with its Storage prefix**: `staging/<label>/` with `storage/`, `production/<label>/` with `storage-production/` |
-| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. The org moved to Pro on 2026-09-28 (#1403); point-in-time recovery is not enabled. #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
+| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. The org moved to Pro on 2026-09-28 (#1403); point-in-time recovery is not enabled. #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
 | Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets for today's shared bucket and the separate-production-bucket target (do not copy the staging token into `prod`). The production jobs read the same four from `staging` (injected first) and their source credentials from `prod` (injected second). Empty `prod` `BACKUP_S3_*` values keep the staging destination (`preserve-nonempty` on that inject in `db-backup.yml`); non-empty prod values still win. Storage mirrors: `storage/` (staging) and `storage-production/` |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
 | First verified run | Staging: [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects. **Production: `production/2026-09-06T22-22-57Z/`, taken 2026-09-06 by hand from an agent session** with the same `scripts/db-backup.sh --linked` the nightly job runs, uploaded with read-back (4 objects, manifest byte-identical to the local copy), plus the Storage mirror manifest under `storage-production/` (0 objects — production Storage was empty). That dump held 54 ledger rows and one `public.users` row (the migration-seeded system sender) and nothing else: production had no sign-ups yet. It exists so that the first scheduled production run (#1794) is not also the first production backup |
@@ -1014,7 +1014,10 @@ After any rollback event:
 * **Migration**: `20260824120000_discord_import.sql`
 * **Action**:
   ```sql
-  -- 1. the job tables (safe any time; nothing else references them)
+  -- 1. the job tables (safe any time). discord_import_created_channels
+  --    (20260930030000, #2905) references discord_imports, so it goes first;
+  --    roll that migration back first if its function is still in place.
+  DROP TABLE IF EXISTS public.discord_import_created_channels;
   DROP TABLE IF EXISTS public.discord_import_files;
   DROP TABLE IF EXISTS public.discord_import_channels;
   DROP TABLE IF EXISTS public.discord_imports;
@@ -2433,3 +2436,23 @@ Leaving the table after the revert is harmless: nothing writes it, and nothing p
 ```sql
 drop table if exists public.chat_push_dispatches;
 ```
+
+## Rollback emptied import channels (20260930030000)
+
+* **Migration**: `20260930030000_discord_import_purge_channels.sql`
+
+A table, `discord_import_created_channels` (RLS on, no policies), two functions, `delete_empty_discord_import_channels` and its check `discord_import_channel_holds_anything`, and two partial indexes, on `point_transactions (channel_id)` and `discord_import_channels (target_channel_id)` (#2905). The migration itself rewrites no row. What changes data is the function, when a purge calls it: it deletes channels an import created that hold no message, attachment, points-ledger link or `use_existing` mapping. Each delete also cascades that channel's read receipts, sidebar pins and created-channel row. It sets `target_channel_id` to null on the mapping rows that named it, which removes the one record of which channel that `create_new` row made.
+
+**Revert the API code forward, and keep the migration file.** The worker that ships with this migration writes a row to the table for every channel it creates, and calls the function in every purge slice. Revert the #2905 code on `main` and ship that, but keep `supabase/migrations/20260930030000_discord_import_purge_channels.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker neither writes the table nor calls the function, so leaving both in place is safe.
+
+To remove them, drop them in a new forward migration once the reverted API is live, not by hand. A newer worker still running fails its channel creation and every purge slice until the revert deploys.
+
+```sql
+drop function if exists public.delete_empty_discord_import_channels(uuid, uuid);
+drop function if exists public.discord_import_channel_holds_anything(uuid, uuid);
+drop table if exists public.discord_import_created_channels;
+```
+
+The two indexes are harmless to keep: they only speed up the `on delete set null` actions any channel delete runs. Drop them only if something else needs them gone (`drop index if exists public.idx_point_transactions_channel; drop index if exists public.idx_discord_import_channels_target;`).
+
+A channel a purge already deleted can't be recovered by rollback. It held no message of any kind, no attachment, no points-ledger link and no other import's merge when it went; a re-import recreates it.

@@ -2,8 +2,8 @@
 
 The four gates added in Wave 0 Phase 1, the Vercel-parity build gate added with #1371, plus the coverage tooling they sit alongside. Branch
 protection and the docs/spec gate are documented separately, in
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) and
-[`DOCS_CI.md`](DOCS_CI.md).
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) and
+[`docs-ci.md`](docs-ci.md).
 
 ## The gates, and why each has the posture it does
 
@@ -62,7 +62,7 @@ directory means taking that on deliberately.
 Enforces two things the codebase already asserted in prose and nothing checked:
 
 - **The API's layer direction.** Interface → Application → Infrastructure → Domain; outer may import
-  inner, never the reverse ([`api-development` skill](../../../.claude/skills/api-development/SKILL.md)).
+  inner, never the reverse ([`api-development` skill](../../.claude/skills/api-development/SKILL.md)).
   One rule per illegal edge, so a failure names the boundary that broke.
 - **Monorepo separation.** A package must not import an app; apps share code through `packages/`,
   never directly.
@@ -118,7 +118,7 @@ nobody re-records.
 resolve both — and a tsconfig's `include` globs resolve against the **cwd**, not the tsconfig, so
 `depcruise --ts-config apps/web/tsconfig.json` from the repo root fails outright with `TS18003`. The
 only correct resolution is one run per workspace with that workspace as cwd, which is what
-[`scripts/check-dep-cruiser.mjs`](../../../scripts/check-dep-cruiser.mjs) does.
+[`scripts/check-dep-cruiser.mjs`](../../scripts/check-dep-cruiser.mjs) does.
 
 **This is worth knowing because getting it wrong is silent, not loud.** Cruising everything from the
 repo root "works" and reports **806 violations, 792 of them `not-to-unresolvable`** — purely `@/*`
@@ -127,7 +127,7 @@ scripts/dependency-cruiser.cjs`. Baselining that run would have grandfathered 79
 real rule asleep underneath them. Resolved per workspace, the true total is **7**.
 
 Two consequences follow, and both are easy to trip over when editing
-[`scripts/dependency-cruiser.cjs`](../../../scripts/dependency-cruiser.cjs):
+[`scripts/dependency-cruiser.cjs`](../../scripts/dependency-cruiser.cjs):
 
 - **Every path in the config is workspace-relative.** A root-anchored `^apps/api/src/…` silently
   matches nothing. Rules that only apply to one workspace are selected with `DEPCRUISE_WORKSPACE`
@@ -149,22 +149,22 @@ running perfectly on any modern dev machine — **it did not reproduce locally**
 the runner did.
 
 So before bumping this major, compare its `engines` against `node-version:` in
-[`ci.yml`](../../../.github/workflows/ci.yml) and against `FROM node:` in
-[`apps/api/Dockerfile`](../../../apps/api/Dockerfile). Those pin only the Node major; the exact floor
+[`ci.yml`](../../.github/workflows/ci.yml) and against `FROM node:` in
+[`apps/api/Dockerfile`](../../apps/api/Dockerfile). Those pin only the Node major; the exact floor
 is the root `package.json` `engines.node`, and how the pins relate to it is in
-[`spec/environments/README.md` § Prerequisites](../../../spec/environments/README.md#prerequisites).
+[`spec/environments/README.md` § Prerequisites](../../spec/environments/README.md#prerequisites).
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
 move cleared it too. 6.0.0 went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable
 `require(esm)`). npm does not fail `npm ci` on an engines mismatch unless `engine-strict` is set,
 which this repo never sets (the same holds for undici 8.x; see
-[`security-fixes.md`](../../security/security-fixes.md)), so `api-docker-build` stayed green on
+[`security-fixes.md`](../security/security-fixes.md)), so `api-docker-build` stayed green on
 `node:20-alpine` while Jest's CommonJS runtime could not parse the ESM entry — that is what turned
-`api-tests` red, the stub in [`docs/guides/testing.md`](../../guides/testing.md) §6.
+`api-tests` red, the stub in [`docs/guides/testing.md`](../guides/testing.md) §6.
 
 The general lesson survives the specific fix: **a green Docker build is not proof a major is safe on
 the runtime under it.** An ESM-only dependency now loads because Node 24.9+ with `--experimental-vm-modules` lets Jest load
-it ([`testing.md` § 2a](../../guides/testing.md#2a-esm-only-dependencies-break-the-unit-suite-and-only-the-unit-suite)), not because the packaging question went away. Lift Docker and CI Node
+it ([`testing.md` § 2a](../guides/testing.md#2a-esm-only-dependencies-break-the-unit-suite-and-only-the-unit-suite)), not because the packaging question went away. Lift Docker and CI Node
 together, and read `api-tests` as the check that actually exercises the module graph.
 
 ### Why the baseline is ours rather than `--ignore-known`
@@ -173,7 +173,7 @@ depcruise's native `--ignore-known` matches the paths a run reports, which here 
 workspace-relative — so `src/index.ts` is ambiguous across 17 workspaces and one shared file cannot
 express which it meant. Paths are normalised to repo-root-relative and matched in the runner instead,
 which keeps one greppable baseline and makes the matching unit-testable
-([`check-dep-cruiser.test.mjs`](../../../scripts/ci/__tests__/check-dep-cruiser.test.mjs)). The
+([`check-dep-cruiser.test.mjs`](../../scripts/ci/__tests__/check-dep-cruiser.test.mjs)). The
 rollout posture is exactly the one `--ignore-known` exists for.
 
 ---
@@ -184,7 +184,7 @@ rollout posture is exactly the one `--ignore-known` exists for.
 
 Worth stating plainly, because it is the kind of thing a plan assumes and nobody re-checks: a
 "regenerate the SDK and `git diff --exit-code`" gate would have been **entirely redundant**.
-[`check-api-contract-drift.mjs`](../../../scripts/check-api-contract-drift.mjs) already regenerates
+[`check-api-contract-drift.mjs`](../../scripts/check-api-contract-drift.mjs) already regenerates
 **both** `apps/api/openapi.json` and `packages/api-sdk/src/types.ts` and fails on any diff, and
 `api-contract-check` is **already a required check**. It replaced an older
 did-you-touch-both-files heuristic some time ago.
@@ -200,7 +200,7 @@ consumer. Every install keeps the API calls it was built with until its owner up
 (ADR-24 decisions 6 (I5) and 8), so a PR that removes a route it calls, removes a required response
 field it reads, or makes a parameter required would merge green and break every install of that build. The
 only recovery then is forcing an upgrade through the minimum-version check. The check reads each SHA
-in [`apps/mobile/store/shipped-builds.json`](../../../apps/mobile/store/shipped-builds.json) and runs
+in [`apps/mobile/store/shipped-builds.json`](../../apps/mobile/store/shipped-builds.json) and runs
 `oasdiff breaking` from that commit's `apps/api/openapi.json` to the PR's, failing on any ERR-level
 change: a removed route, a removed required response field, a parameter made required. A removed
 *optional* response field is WARN-level. The generated SDK types it as possibly absent, so it doesn't
@@ -213,7 +213,7 @@ or oasdiff failing to run each fail it. A break to a route no shipped binary cal
 is waived by a reviewed line in `apps/mobile/store/api-breaking-ignore.txt`, whose `#` comment lines
 the check strips before oasdiff reads it. When to record a SHA,
 when one may go, and the ignore format:
-[`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract).
+[`apps/mobile/store/README.md` § Shipped builds and the API contract](../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract).
 
 **Against the PR base: advisory.** `apps/web` lives in this repo and regenerates from the same commit,
 so a breaking change ships atomically with the web client that adapts to it. The project is also
@@ -238,9 +238,9 @@ Both now trigger a regen.
 ### oasdiff is a pinned binary
 
 Not an npm package (the `oasdiff` name on npm is a security placeholder).
-[`scripts/install-oasdiff.sh`](../../../scripts/install-oasdiff.sh) fetches a pinned release into
+[`scripts/install-oasdiff.sh`](../../scripts/install-oasdiff.sh) fetches a pinned release into
 `.cache/oasdiff/`, following the same reasoning as
-[gitleaks](SECRET_SCANNING.md): local and CI run the identical version, and no third-party GitHub
+[gitleaks](secret-scanning.md): local and CI run the identical version, and no third-party GitHub
 Action enters the supply chain. It checks each archive against a SHA-256 digest pinned in the script
 beside the one pinned version (a fetched `checksums.txt` only for an `OASDIFF_VERSION` override;
 a version bump that misses the digests fails on the mismatch, and nothing installs unverified),
@@ -267,7 +267,7 @@ can't run (a `::warning::` that it was skipped), and its `!cancelled()` conditio
 after the blocking step fails, since it alone reports breaks to routes no shipped build had. It can't turn the blocking check
 green: `--shipped` fails on a missing oasdiff whenever a build is listed, and needs none when no build
 is. The blocking step also runs on push to `main`, so a break that reaches `main` anyway turns `main`
-red. [`check-api-breaking-changes.test.mjs`](../../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
+red. [`check-api-breaking-changes.test.mjs`](../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
 fails if that step gains a `continue-on-error` or an `if:`.
 
 ---
@@ -275,7 +275,7 @@ fails if that step gains a `continue-on-error` or an `if:`.
 ## nestjs-typed — the response-schema rule
 
 `nestjs-typed/api-method-should-specify-api-response`, scoped to `src/**/*.controller.ts` in
-[`apps/api/eslint.config.mjs`](../../../apps/api/eslint.config.mjs). A route with no declared
+[`apps/api/eslint.config.mjs`](../../apps/api/eslint.config.mjs). A route with no declared
 response generates `content?: never` in the SDK, so callers get no types for the body and the
 contract silently claims the route returns nothing.
 
@@ -305,7 +305,7 @@ once, which is a separate and much larger decision.
 
 ## jscpd — duplicate detection
 
-Config: [`.jscpd.json`](../../../.jscpd.json). Report written to `.jscpd/` (gitignored) and uploaded
+Config: [`.jscpd.json`](../../.jscpd.json). Report written to `.jscpd/` (gitignored) and uploaded
 as a CI artifact.
 
 **jscpd has no clone-level baseline**, unlike dependency-cruiser — there is no ignore-known file and
@@ -431,7 +431,7 @@ likely `collectCoverageFrom` excluding `*.module.ts`/`main.ts`), then set the fl
 — never lower it to make a red run green, same rule as the jscpd ratchet above.
 
 `coverage/**` is ignored by the shared ESLint config
-([`packages/eslint-config/base.js`](../../../packages/eslint-config/base.js)), and that line is
+([`packages/eslint-config/base.js`](../../packages/eslint-config/base.js)), and that line is
 load-bearing rather than tidiness: istanbul's HTML report assets carry an `/* eslint-disable */`
 header that suppresses nothing under the `react-internal` preset, so ESLint flags it as an unused
 directive — a warning, which `--max-warnings 0` turns into a failure. Without the ignore, running

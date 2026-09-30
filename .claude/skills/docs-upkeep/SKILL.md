@@ -15,7 +15,7 @@ doc is held to is
 [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md).
 
 Ownership, the tracker and the product-code ban are shared with every routine:
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+[`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
 (rule 3 holds this routine's wider path allowlist, rule 4 its MCP exception).
 
 ## Fix, don't file
@@ -52,7 +52,7 @@ Use tracked files only (never `find`, which picks up untracked scratch), and tak
 the command each run rather than writing one down.
 
 Derive the slice from the calendar and the corpus alone. Sessions are fresh and carry no state,
-and `ROUTINES.md` § Verify expects two runs in the same week to take the same slice.
+and `routines.md` § Verify expects two runs in the same week to take the same slice.
 
 1. Keep the command's output in its own order (already byte order; don't re-sort).
 2. Number the files `0 … n-1`; file `i` is in group `floor(i * 5 / n)`, so groups `0–4` differ by
@@ -169,7 +169,7 @@ you've pushed the branch. Your final message is the run report.
 ## Self-maintenance
 
 Per
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+[`routines.md` → Self-maintenance](../../../docs/ci-cd/routines.md#self-maintenance-the-update-themselves-contract),
 with this routine's own twist: this skill is inside the allowlist, so fix mechanical drift in it
 (the corpus command, the commands in the table, cited paths) in the same PR. A change to what the
 routine is for goes in the run report for the owner, never a self-authored rewrite and never an

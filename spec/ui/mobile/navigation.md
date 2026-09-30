@@ -262,3 +262,15 @@ The registration and the file went in one commit. A `Tabs.Screen` with no file t
 runtime. A file with no registration is worse, because expo-router's `Tabs` renders every
 child route and it would have become a fifth visible tab. `lib/routes.spec.ts` now fails on
 either half-deletion (#2727).
+
+**#2861 touched three of the seven, as an integrator change.** `package.json` gained
+`react-markdown` and `remark-breaks`, at web's ranges, so chat renders markdown with web's
+parser and plugins rather than a second parser that would disagree with web on edge cases.
+Both were already hoisted for `apps/web`, so the lockfile changed only in `apps/mobile`'s
+entry. The renderer that imports them is #2861's second PR, stacked on this change;
+declaring them ahead of it is not the #1045 hazard above, since neither package carries
+native code, a config plugin or a permission.
+`app/_layout.tsx` now loads `FIGTREE_FACES` from `lib/theme.tsx`, which adds Figtree's
+400 and 700 italic faces (`italicFontFamilyFor`); the three chat styles that set
+`fontStyle: "italic"` moved to the face. Why an italic has to be a face of its own:
+[`packages/theme/README.md` § Fonts](../../../packages/theme/README.md#fonts).

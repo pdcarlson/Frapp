@@ -119,7 +119,7 @@ API-only PR skips it.
 > against a committed PNG and was advisory, because baselines pinned to CI's
 > Chromium build drift with it. The job, its spec, its sixteen baselines and the
 > `test:visual` script were deleted together — see
-> [`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md). Nothing to regenerate; if a
+> [`quality-gates.md`](../../ci-cd/quality-gates.md). Nothing to regenerate; if a
 > UI change looks wrong, look at it.
 
 `apps/web/proxy.ts` (Next.js 16 middleware) reads Supabase env per request and

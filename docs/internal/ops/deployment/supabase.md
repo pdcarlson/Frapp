@@ -159,6 +159,7 @@ personal token that can write; no stored CI token can.
 | Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) |
 | Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
+| Leaked password protection ("Prevent use of leaked passwords", Authentication → Sign In / Providers → Email; Pro plan and up) | **on** (owner 2026-09-29; security advisor clear at 21:14Z; asserted daily as `auth-leaked-password`) | **on** (owner 2026-09-29; security advisor clear at 21:31Z; asserted daily as `auth-leaked-password`) |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
 
 **`frapp://**` was added to both allow lists on 2026-09-06.** The mobile app's magic-link
@@ -214,12 +215,11 @@ subject and `token_hash` href daily (`auth-magic-link`) so a dashboard reset to
 `{{ .ConfirmationURL }}` cannot sit green, and fails any `mailer_subjects_*` or a Magic
 Link body that still says Signet.
 
-Because production SMTP is now on, the 07:45 `production-auth-conformance.yml`
-watchdog no longer skip-asserts an empty host. Empty SMTP is still SKIPPED *if* the
-host is empty; with SMTP on, the same check requires
-`Frapp <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
-Link is the same: ConfirmationURL is SKIPPED only while SMTP is unset; with SMTP on,
-the href must carry `token_hash` + `type=magiclink` or the 07:45 job fails. The
+Production SMTP is on, so the 07:45 `production-auth-conformance.yml` watchdog
+fails an empty host, as staging does. It requires `Frapp <no-reply@mail.frapp.live>`
+at ≥300/hour and fails a burned apex From. The Magic Link href must carry
+`token_hash` + `type=magiclink`, whatever the SMTP state, or the 07:45 job fails.
+Both used to be skipped while the host was empty (#2349). The
 Magic Link body is now on prod; confirm and invite were intentionally left uncopied.
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
@@ -274,7 +274,7 @@ Migration drift for `20260924190000` if production hasn't deployed by the 07:00 
 more than 24 hours after 2026-09-24 19:00 UTC. *Corrected 2026-09-28: that last alert no
 longer fires. Production is now judged against its latest `v*` tag, not `main`, so a
 migration merged and not yet shipped reads as unreleased
-([`AGENT_INFRA.md` § Schema drift detection](../../ci-cd/AGENT_INFRA.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
+([`agent-infra.md` § Schema drift detection](../../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
 `20260924190000` shipped in v1.3.0.*
 
 1. **Staging.** Once the merge's staging deploy is live, in `frapp-staging` →

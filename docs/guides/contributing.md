@@ -73,7 +73,7 @@ PR targets:
 - Production: no PR. Dispatch **Deploy production** with a SHA that is already on `main`.
 - **Never** another feature branch. `pull_request.branches` is only `[main]`, so a
   stacked PR skips CI and a squash-merge can show MERGED while `origin/main` never receives the
-  work. Playbook: [`docs/internal/ci-cd/pr-babysitting.md`](../internal/ci-cd/pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch)
+  work. Playbook: [`docs/ci-cd/pr-babysitting.md`](../ci-cd/pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch)
   (incidents #1120, #1123–#1125). Re-land by cherry-pick onto `origin/main`.
 
 ## 5. Linting, types, and tests
@@ -119,7 +119,7 @@ before reaching for the `-w` form.
 Type-checking runs TypeScript 7's native `tsc`. The package named `typescript` is the TypeScript
 6 compiler API (`npm:@typescript/typescript6`), which Nest, `typescript-eslint`, and `ts-jest`
 still import. Do not replace that alias with `typescript@7` — see
-[`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md) § TypeScript 7.
+[`docs/ci-cd/agent-infra.md`](../ci-cd/agent-infra.md) § TypeScript 7.
 
 `npm run lint` is **read-only** in every workspace — it reports violations and never edits your
 files, so it is safe in CI and in read-only audits. To apply ESLint's auto-fixes in `apps/api`, run
@@ -136,7 +136,7 @@ Shared React lint (`@repo/eslint-config/next-js` and `react-internal`) takes an 
 from `eslint-plugin-react-hooks` v7 `recommended` (core Rules of Hooks plus every
 compiler rule in that preset). New compiler rules that appear in a later plugin
 bump stay `"off"` until a dedicated cleanup — see
-[`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md) § eslint-plugin-react-hooks 7.
+[`docs/ci-cd/agent-infra.md`](../ci-cd/agent-infra.md) § eslint-plugin-react-hooks 7.
 
 Keep `--fix` out of any `lint` script. Under `apps/api`'s config `prettier/prettier` is an
 **error**, and every Prettier violation is auto-fixable — so a `lint` script carrying `--fix`
@@ -159,6 +159,6 @@ Whether a change owes a doc edit: [`AGENTS.md` § Documentation discipline](../.
 
 ### What CI checks
 
-No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is narrow: [`DOCS_CI.md` § What runs](../internal/ci-cd/DOCS_CI.md#what-runs). Whether a doc's claims are *true* is reviewed, not gated — by the docs angle in [`diff-review`](../../.claude/skills/diff-review/angles.md), against the standard.
+No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is narrow: [`docs-ci.md` § What runs](../ci-cd/docs-ci.md#what-runs). Whether a doc's claims are *true* is reviewed, not gated — by the docs angle in [`diff-review`](../../.claude/skills/diff-review/angles.md), against the standard.
 
-See [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
+See [`docs/ci-cd/docs-ci.md`](../ci-cd/docs-ci.md).

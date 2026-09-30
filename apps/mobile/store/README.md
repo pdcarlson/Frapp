@@ -24,6 +24,23 @@ Google Play can't take that size, so `--google-play` writes the same seven scree
 1242 × 2208 to `screenshots/google-play/`
 ([`mobile.md` § 6.5](../../../docs/internal/ops/deployment/mobile.md#65-google-play-screenshots)).
 
+**Graphics: rendered by a script, committed, uploaded by the owner.** Google Play's listing
+needs a 512 × 512 icon and a 1024 × 500 feature graphic, and Play Console won't publish the
+listing without the feature graphic. `npm run rasterize:brand-assets` renders both from the
+emblem B vector, with every other brand raster, into [`graphics/`](graphics/):
+`play-icon-512.png` and `play-feature-graphic-1024x500.png`. Unlike the screenshots they are
+committed, because they render without the app or its data, and `check:brand-assets` fails
+CI when they stop matching the mark, the renderer, or the shape Play takes. What the feature
+graphic shows, and why, is in [`store-graphics.mjs`](../../../scripts/lib/store-graphics.mjs).
+Upload them in Play Console under **Grow users → Store presence → Main store listing →
+Graphics** *(path from Play Console Help search snippets; support.google.com is blocked from
+the sandbox)*. Whether they have been uploaded is recorded on
+[#2122](https://github.com/pdcarlson/Frapp/issues/2122), not here. App Store Connect has no
+icon field: the iOS icon ships in the binary from `apps/mobile/app.json` and changes only
+with a new build
+([App Store Connect Help, "Add an app icon"](https://developer.apple.com/help/app-store-connect/manage-app-information/add-an-app-icon);
+dark and tinted variants: [`spec/ui/assets.md` § 7](../../../spec/ui/assets.md#7-mobile-expo-rasters)).
+
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
 owner claimed it in App Store Connect on 2026-09-23, replacing `Signet: Chapter
@@ -711,13 +728,13 @@ so CI holds each pull request to the contract of every build that has shipped (#
 `api-contract-check` job fails any PR whose `apps/api/openapi.json` breaks the contract at a listed
 commit (`npm run check:api-breaking:shipped`). While the list is empty the check passes and says it
 compared against nothing. Why it blocks, and how it fails:
-[`QUALITY_GATES.md` § Two comparisons, two postures](../../../docs/internal/ci-cd/QUALITY_GATES.md#two-comparisons-two-postures).
+[`quality-gates.md` § Two comparisons, two postures](../../../docs/ci-cd/quality-gates.md#two-comparisons-two-postures).
 
 **Record a build when it is first uploaded to TestFlight or a Play track**, before any tester can
 install it, in a PR that adds one entry per build:
 
 ```json
-{ "platform": "ios", "version": "1.0.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
+{ "platform": "ios", "version": "0.9.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
 ```
 
 - `platform` is `ios` or `android`. `version` is the store version and `build` the native build

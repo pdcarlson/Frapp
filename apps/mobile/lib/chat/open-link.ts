@@ -14,8 +14,8 @@ export const LINK_OPEN_FAILED_BODY =
  * A web page opens in the in-app browser, the same way an attachment does, so
  * the member comes back to the thread with one swipe. A `mailto:` goes to the
  * OS, which hands it to the mail app. The href is re-checked here even though
- * `linkSegments` only emits openable ones, because this is the call that hands
- * a member-typed string to the OS. A failure gets an alert: a tap that does
+ * `MessageMarkdown` only draws openable ones as links, because this is the call
+ * that hands a member-typed string to the OS. A failure gets an alert: a tap that does
  * nothing reads as a dead link.
  */
 export async function openMessageLink(href: string): Promise<void> {

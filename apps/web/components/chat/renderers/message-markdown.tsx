@@ -4,25 +4,25 @@ import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
-import { opensTooManyContainers, remarkDepthCap } from "./remark-depth-cap";
+import {
+  MESSAGE_MARKDOWN_ELEMENTS,
+  opensTooManyContainers,
+  remarkDepthCap,
+} from "@repo/chat-core/markdown";
 import { remarkMentionChips } from "./remark-mention-chips";
 import { cn } from "@/lib/utils";
 
 /**
- * `spec/behavior/chat/README.md`'s "Text formatting" set, and nothing wider:
- * bold, italic, inline code, code blocks, links. Restricted to this element
- * list rather than CommonMark's full default — headings, lists, blockquotes,
- * images and tables aren't part of the spec'd set, and a message that opens
- * with `# ` shouldn't blow a chat bubble up into a heading. Disallowed
- * elements are unwrapped rather than dropped, so their text still shows.
+ * `spec/behavior/chat/README.md`'s "Text formatting" set, shared with mobile
+ * (`MESSAGE_MARKDOWN_ELEMENTS` says what it holds and why), plus `mark`.
  *
- * `mark` is on the list but is **not** part of that authored set: no CommonMark
- * syntax produces one and raw HTML is never parsed, so the only thing that can
- * emit a `mark` here is `remarkMentionChips` below. Leaving it off the list
- * would unwrap every mention chip back to plain text — the allowlist is applied
- * after the plugins run, not to the source.
+ * `mark` is **not** part of that authored set: no CommonMark syntax produces
+ * one and raw HTML is never parsed, so the only thing that can emit a `mark`
+ * here is `remarkMentionChips` below. Leaving it off the list would unwrap
+ * every mention chip back to plain text — the allowlist is applied after the
+ * plugins run, not to the source.
  */
-const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br", "mark"];
+const ALLOWED_ELEMENTS = [...MESSAGE_MARKDOWN_ELEMENTS, "mark"];
 
 /**
  * The shared safe renderer for `message.content` — a fenced-off subset of
@@ -49,7 +49,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({ content }: { cont
     <ReactMarkdown
       // The depth cap goes first: every pass after it recurses once per
       // nesting level, so it has to see the tree before any of them do. See
-      // `remark-depth-cap.ts` (#2209).
+      // `markdown-depth-cap.ts` in `@repo/chat-core` (#2209).
       //
       // The mention plugin needs the RAW body, not the decoded text remark
       // hands it — `&#64;Jane` is a mention to the renderer and to nobody

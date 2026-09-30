@@ -63,7 +63,7 @@ echo 'GITHUB_PAT=<token>' >> .env
 > `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
 > `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
 > rule and its measurements live in
-> [`AGENT_INFRA.md` — the `api.github.com` route rule](../ci-cd/AGENT_INFRA.md#work-status); this
+> [`agent-infra.md` — the `api.github.com` route rule](../../ci-cd/agent-infra.md#work-status); this
 > runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
 > `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
 > proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
@@ -77,7 +77,7 @@ echo 'GITHUB_PAT=<token>' >> .env
 > PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
 > appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
 > headers: only a 403 on the direct route is a permission answer about the PAT (why:
-> [`AGENT_INFRA.md` → Work status](../ci-cd/AGENT_INFRA.md#work-status)). And **do not set
+> [`agent-infra.md` → Work status](../../ci-cd/agent-infra.md#work-status)). And **do not set
 > `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
 > `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
 > read is refused — see `--verify` below for the dated result.
@@ -224,7 +224,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests; the Supabase Edge Functions' Deno fmt, lint, check and tests (`npm run check:edge-functions`) |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
-| `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`QUALITY_GATES.md` § Two comparisons, two postures](../ci-cd/QUALITY_GATES.md#two-comparisons-two-postures)) |
+| `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`quality-gates.md` § Two comparisons, two postures](../../ci-cd/quality-gates.md#two-comparisons-two-postures)) |
 | `migration-safety`   | Migration filename + docs validation                                                            |
 | `mobile-validate`    | Mobile iOS production bundle (`expo export`, no prebuilt packages) + Expo SDK-line check (`check:expo-sdk-line`) + lint + typecheck + Vitest unit tests + `expo prebuild` |
 | `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`), covering the gate and deploy scripts under both `scripts/` and `scripts/ci/` |
@@ -235,16 +235,16 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`, `packages/chat-integrations`) |
 | `changes`            | Path filter deciding whether `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run; required only because they need it |
 | `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/check-pglite-migrations.mjs`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
-| `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md) |
-| `web-production-build` | Builds web and landing on a devDependency-pruned tree, matching the Vercel production install — [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) |
+| `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`quality-gates.md`](../../ci-cd/quality-gates.md) |
+| `web-production-build` | Builds web and landing on a devDependency-pruned tree, matching the Vercel production install — [`agent-infra.md`](../../ci-cd/agent-infra.md) |
 | `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px ([`responsive-floor.spec.ts`](../../../apps/web/tests/visual/responsive-floor.spec.ts)). Playwright, but no baseline and no pixel comparison |
 | `landing-fold` | The landing's fold holds the reskin boards' geometry at 1440x900 and 390x844 ([`fold.spec.ts`](../../../apps/landing/tests/visual/fold.spec.ts)). Playwright, same no-baseline lane as the row above; serves a production build, because `next dev` never arms the page's reveals — added by [#2368](https://github.com/pdcarlson/Frapp/issues/2368) |
 
 **A path-gated job can still be required.** `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run only when their `changes` filter matches (for the first three `apps/web/**` or `apps/landing/**`, plus `packages/**`, the lockfile, `turbo.json`; for `pglite-migrations`, `supabase/migrations/**` and every other file the check reads, listed in `ci.yml`'s `changes.pglite`), and that is compatible with being required: GitHub reports a job skipped by a **job-level** conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. The blocking case is a whole **workflow** skipped by path or branch filtering, whose checks never report at all — `ci.yml` has no workflow-level `paths:` filter, so it cannot happen here. See [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).
 
-**Not required on branches (informational):** `duplicate-detection` is advisory, for the reason in [`QUALITY_GATES.md` § The gates, and why each has the posture it does](../ci-cd/QUALITY_GATES.md#the-gates-and-why-each-has-the-posture-it-does). It is intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
+**Not required on branches (informational):** `duplicate-detection` is advisory, for the reason in [`quality-gates.md` § The gates, and why each has the posture it does](../../ci-cd/quality-gates.md#the-gates-and-why-each-has-the-posture-it-does). It is intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
 
-> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
+> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`quality-gates.md`](../../ci-cd/quality-gates.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
 
 > **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then added `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order`. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — every roster context present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, exited 0; see the `--verify` section above), or use the `gh api` call below from a laptop or Actions.
 >
@@ -260,7 +260,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 
 | Check name   | Workflow                      | What it validates                                                     |
 | ------------ | ----------------------------- | --------------------------------------------------------------------- |
-| `env-slugs`  | `.github/workflows/docs.yml`  | An Infisical environment slug is one that exists, wherever [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) looks and in the syntaxes it matches. Not a documentation gate — [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| `env-slugs`  | `.github/workflows/docs.yml`  | An Infisical environment slug is one that exists, wherever [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) looks and in the syntaxes it matches. Not a documentation gate — [`docs-ci.md`](../../ci-cd/docs-ci.md) |
 | `link-check` | `.github/workflows/links.yml` | lychee, offline: markdown links and heading anchors resolve across the paths that workflow passes it. External URLs are never fetched |
 
 > **Do not promote either of these, and do not re-add a deleted one.** `DOCS_CHECKS` in
@@ -273,7 +273,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 > What replaced the gates is the standard in
 > [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) plus the docs angle in
 > [`diff-review`](../../../.claude/skills/diff-review/angles.md); the reasoning, and what is now
-> checked by nothing, are in [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
+> checked by nothing, are in [`docs-ci.md`](../../ci-cd/docs-ci.md).
 
 **Migration checks (from `.github/workflows/migration-drift-gate.yml`):**
 
@@ -283,7 +283,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `migration-drift`  | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`). **Reports only — deliberately NOT required**, see the note below. Still runs on every PR and every push to `main` |
 | `migration-replay` | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at **production's** currently-applied state (`check-migration-replay.mjs`). Rehearses the incremental apply that `deploy-production.yml` is about to perform for real. The check holds no credential: production's applied state comes from the snapshot [`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml) publishes from `main` (#2518), and production itself is never touched. The deploy workflow runs the same gate again at deploy time, against production's state as of that moment |
 
-> **`migration-drift` was demoted from the required set — don't put it back without reading this.** It compares `origin/main` against staging, so it asserts something about two things the PR in front of it neither contains nor can change. As a required check that makes it a repo-wide merge-freeze switch rather than a gate, and #1373 used it as one: one back-dated migration filename halted staging's apply and every open PR in the repository became unmergeable until a human intervened. Its own escape hatch — dropping the context by hand for the duration — is an admin edit to branch protection made under outage pressure, which is the worst moment to be making one. Detection is not lost: the scheduled [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml) checks staging and production daily ([what each is judged against](../ci-cd/AGENT_INFRA.md#schema-drift-detection-scriptscicheck-migration-driftmjs)) and files a self-closing P1 issue, and the PR job still reports. `migration-order` replaced it as the gate, asking the same failure class scoped to what the change introduces — which a PR can answer, and which a PR that *fixes* an ordering fault turns green.
+> **`migration-drift` was demoted from the required set — don't put it back without reading this.** It compares `origin/main` against staging, so it asserts something about two things the PR in front of it neither contains nor can change. As a required check that makes it a repo-wide merge-freeze switch rather than a gate, and #1373 used it as one: one back-dated migration filename halted staging's apply and every open PR in the repository became unmergeable until a human intervened. Its own escape hatch — dropping the context by hand for the duration — is an admin edit to branch protection made under outage pressure, which is the worst moment to be making one. Detection is not lost: the scheduled [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml) checks staging and production daily ([what each is judged against](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)) and files a self-closing P1 issue, and the PR job still reports. `migration-order` replaced it as the gate, asking the same failure class scoped to what the change introduces — which a PR can answer, and which a PR that *fixes* an ordering fault turns green.
 
 **`migration-drift` (reporting only).** It compares `origin/main` against staging's applied migration history, **not** the PR head, and tolerates a migration for 30 minutes from the moment it landed on `main` — the window the **Deploy staging** run needs to apply it. It is the check that would have caught two migrations merging to `main` and never reaching staging, and it still detects exactly that; it simply no longer blocks the merge. A red `migration-drift` on your PR means staging is out of sync for everyone and the schema your tests ran against is not the schema on staging. Worth fixing, no longer worth freezing the repository over.
 
@@ -341,7 +341,7 @@ blocking `main` churn.
 
 There is **no AI-review required check.** Code review is a **repository-managed Git pre-push gate**
 ([`.githooks/pre-push`](../../../.githooks/pre-push), installed by the root `prepare` script; requires
-exact-pushed-commit evidence from `/diff-review` before it publishes unreviewed work) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+exact-pushed-commit evidence from `/diff-review` before it publishes unreviewed work) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`ai-code-review-runbook.md`](../../ci-cd/ai-code-review-runbook.md).
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
@@ -432,7 +432,7 @@ That is the whole list, and it is short on purpose. It used to carry three more 
 it was the drift engine rather than a safety net: `CONTRIBUTING.md` and `spec/environments/README.md`
 each restated the whole roster by hand, and `@repo/theme` (#1153) and `packages/chat-integrations`
 (#1114) went missing from every table at once. Both now hold a pointer to this section instead, and a step
-pointing at a docs-gate roster table in [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) went when that table did.
+pointing at a docs-gate roster table in [`docs-ci.md`](../../ci-cd/docs-ci.md) went when that table did.
 
 **Step 2 is now asserted by nothing.** The gate that used to compare this file's tables against
 `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` was deleted with the rest of the docs gates, so the tables

@@ -13,7 +13,7 @@ description: >
 When work surfaces that doesn't belong in the current PR, file it as a GitHub issue (`issue_write`
 create) written so a fresh agent can execute it cold. Cloud VMs are ephemeral, so anything left only
 in chat or in the next session's memory is lost. Policy on labels, states, Agent briefs, and
-ownership lives in [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md); this is the agent
+ownership lives in [`github-pm.md`](../../../docs/ci-cd/github-pm.md); this is the agent
 playbook.
 
 ## When to file
@@ -34,14 +34,14 @@ closed, including `[human]` titles) and refresh a near-match rather than duplica
 
 Labels: `triage`, exactly one `area:<x>`, and a priority (`P1` urgent, `P2` high, `P3` medium, `P4`
 low). The `area:` roster lives in
-[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
+[`routines.md` → Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines).
 
 Body:
 
 - **Meta block:** `Blocked by #N` lines where relevant (dependencies are body lines, not labels),
   the originating PR, and an `### Agent brief` (`depth:` / `model:` / `ultracode:`; lean toward
   `depth:deep`; syntax in
-  [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)).
+  [`github-pm.md`](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)).
 - **Problem/context:** what's wrong and why it matters, with exact file paths and line refs.
 - **Acceptance criteria:** objectively verifiable checkboxes.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
@@ -111,7 +111,7 @@ above.
 ## Filing from a routine
 
 Routines file through this skill under their own limits: the
-[shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+[shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
 plus their own skill's rules ([`docs-upkeep`](../docs-upkeep/SKILL.md) files only human-only
 blockers; [`hygiene-scan`](../hygiene-scan/SKILL.md) adds a visible `fp=hygiene/…` marker and a
 per-run cap). Those limits bind the routines, not feature work that uses this skill.

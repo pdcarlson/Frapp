@@ -36,14 +36,19 @@ is the stylesheet, not the token module.
 
 ## Fonts
 
-**Figtree** is the Signet typeface. The variable font (400–700) lives at
+**Figtree** is the Signet typeface. The variable font (a `wght` axis of 300–900, of which Signet uses 400/600/700) lives at
 `fonts/FigtreeVF.woff2` (OFL license alongside as `fonts/OFL-Figtree.txt`);
 `apps/web` loads it with `next/font/local` from `app/layout.tsx` as
 `--font-figtree`, and the shared Tailwind preset in this package sets it as
 `fontFamily.sans` for both Next surfaces.
 `apps/mobile` instead loads Figtree from `@expo-google-fonts/figtree` (one
 static TTF per locked weight — 400/600/700 — registered under per-weight family
-names, which Android requires). The `typography.family.mono` token is a CSS
+names, which Android requires), plus the 400 and 700 italic faces for chat
+(#2861). An italic has to be a face of its own on mobile: `fontStyle: "italic"`
+over an upright family stays upright on iOS and falls back to the system sans on
+Android. `FIGTREE_FACES` in `apps/mobile/lib/theme.tsx` is the full list, and
+the root layout loads exactly that. The web and landing variable font is
+upright only, so a browser slants it for an `em`. The `typography.family.mono` token is a CSS
 variable and RN-invalid; mobile maps mono to the system stack via
 `MONO_FONT_FAMILY` in `apps/mobile/lib/theme.tsx`.
 
@@ -54,13 +59,17 @@ own `app/layout.tsx` and `app/global-error.tsx`, since its token cutover
 **Two static instances sit beside the variable font, and they are not a second
 source.** `fonts/Figtree-Regular.ttf` and `fonts/Figtree-Bold.ttf` are the same
 upstream Figtree 2.002 release, vendored by
-[#2368](https://github.com/pdcarlson/Frapp/issues/2368) for exactly one consumer:
+[#2368](https://github.com/pdcarlson/Frapp/issues/2368) for
 `apps/landing/app/opengraph-image.tsx`, which renders through Satori
 (`next/og`). Satori cannot parse the variable `.woff2` — it throws
 `Unsupported OpenType signature wOF2`, and a variable TTF fails in its own way —
 so a card set in the house typeface needs static instances or it is not set in
-the house typeface. Only 400 and 700 are vendored, because only those two are
-used; add a weight when something uses it, not before.
+the house typeface. They have a second consumer: the Google Play feature graphic
+(`scripts/lib/store-graphics.mjs`), whose renderer registers them by path and
+whose gate, `check:brand-assets`, fails if either file is missing or is not the
+Figtree 400 or 700 face it is named for. Only 400 and 700 are vendored, because
+only those two are used; add a weight when something uses it, not before, and
+don't move or rename these two without updating both consumers.
 
 **So: one typeface, three containers, each for a renderer that needs it.** The
 browser gets the variable `.woff2` through `next/font/local`, React Native gets

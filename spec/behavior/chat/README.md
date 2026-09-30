@@ -90,10 +90,12 @@ Each member arranges their own channel list (#2877, owner decision 2026-09-29). 
 **Text formatting:** Messages support Markdown-like formatting — bold (`**text**`), italic (`*text*`), inline code (`` `code` ``), code blocks, and links. The client renders this; the server stores raw text.
 
 - **Links on both clients go through one safety rule**, `isSafeHref` in `packages/chat-core/src/links.ts`: an `http`, `https` or `mailto` link, or a relative one, and never a protocol-relative `//host`. A link whose target fails it shows its text with no link.
-- **Mobile renders links only, not the rest of the set** (#2775). Bare `http(s)` URLs, `<url>` autolinks and `[text](url)` links are tappable (`linkSegments` in the same file), and a URL inside inline or fenced code stays code. Bold, italic and code show as the characters that were typed: a markdown renderer is a new dependency in mobile's frozen `package.json` ([#2861](https://github.com/pdcarlson/Frapp/issues/2861)). A phone has no page to resolve a relative link against, so mobile also requires a scheme (`isOpenableHref`).
-- **Web does not link a bare URL yet**, only `[text](url)` and `<url>` ([#2862](https://github.com/pdcarlson/Frapp/issues/2862)).
+- **Both clients render the set with one parser** (#2861): react-markdown with `remark-breaks`, web in `apps/web/components/chat/renderers/message-markdown.tsx` and mobile in `apps/mobile/components/chat/message-markdown.tsx`. What they must agree on lives in `packages/chat-core/src/markdown.ts`: the element allowlist (bold, italic, inline code, code blocks, links and line breaks, nothing wider) and the depth cap below. A heading, list or block quote shows its text without its formatting, and an image or a divider shows nothing. Raw HTML shows as the characters typed.
+- **Line breaks show as typed.** One newline is one line break, and a blank line (or several) is one blank line. A code block and each item of an unwrapped list or quote take their own lines. Web double-spaces a single newline and opens a list or quote with an empty line ([#2934](https://github.com/pdcarlson/Frapp/issues/2934)). Mobile draws a body as one `Text`, so it lays these out as line breaks.
+- **Mobile also links a bare `http(s)` URL**, by `bareUrls` in `packages/chat-core/src/links.ts` through `remarkBareUrls` (#2775). A URL in code, or in a link's own label, stays as it is. A URL is measured on the body as typed, so one holding a `__` or `*` pair (`…/__init__.py`) links as far as it runs, though the parser read the pair as emphasis; what follows it reads as typed, as in plain text. The measurement runs through prose and emphasis only, and stops before code, a link or an image. A phone has no page to resolve a relative link against, so mobile also requires a scheme (`isOpenableHref`), and each link is also a named accessibility action on the message.
+- **Web does not link a bare URL yet**, only `[text](url)` and `<url>` ([#2862](https://github.com/pdcarlson/Frapp/issues/2862)). `remarkBareUrls` is the shared rule it can adopt.
 
-A message whose formatting nests too deep renders as its raw text, exactly as typed, with no formatting. The limit is 32 levels of the parsed message, counting the paragraph and its text: about 30 block quotes inside one another, or 15 nested list levels, since each list level takes two. A line that opens more than 32 block quotes or list items is treated the same way before it is parsed, even when it sits inside a code block (a line of only `-` or only `*` markers is a divider and is exempt). Message bodies are capped by length, not by depth, and a renderer that recursed through thousands of levels would crash for everyone who opens the channel ([#2209](https://github.com/pdcarlson/Frapp/issues/2209)). The web renderer applies this cap. Mobile parses no nesting, only links, so it has nothing to cap; `linkSegments` is linear in the body instead.
+A message whose formatting nests too deep renders as its raw text, exactly as typed, with no formatting. The limit is 32 levels of the parsed message, counting the paragraph and its text: about 30 block quotes inside one another, or 15 nested list levels, since each list level takes two. A line that opens more than 32 block quotes or list items is treated the same way before it is parsed, even when it sits inside a code block (a line of only `-` or only `*` markers is a divider and is exempt). Message bodies are capped by length, not by depth, and a renderer that recursed through thousands of levels would crash for everyone who opens the channel ([#2209](https://github.com/pdcarlson/Frapp/issues/2209)). Both renderers apply this cap, from `packages/chat-core/src/markdown-depth-cap.ts`. Some bodies within the length cap still take over a second to parse, on either client ([#2664](https://github.com/pdcarlson/Frapp/issues/2664)).
 
 **Reactions:**
 
@@ -577,9 +579,13 @@ channel that reports a different one fails the import rather than being skipped.
   in one is a thread, and they inherit the forum's choice.
 - **A bot that cannot read message content fails loudly.** Without Discord's
   Message Content Intent the API gets HTTP 200 with empty content on every
-  message. The import counts authored messages with nothing in them and stops
-  with an error naming the fix, rather than writing a chapter's whole history as
-  empty bubbles — which would look like success.
+  message. Before it writes anything, the import asks Discord whether the intent
+  is on and stops with an error naming the fix if it isn't, rather than writing a
+  chapter's whole history as empty bubbles, which would look like success. When
+  Discord can't answer that, a count of blank messages is the only guard: it
+  stops an archive that comes back blank at scale, not a small one, and its error
+  says how many messages it had already written. What each check covers is in
+  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md) § 7A.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.
@@ -786,8 +792,37 @@ channel that reports a different one fails the import rather than being skipped.
   attachments and reactions, and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a
   live channel leaves that channel's live messages — and any *other* import's
-  messages — untouched. This is currently the only deletion path that reaps the
-  `chat-archive` bucket; there is no chapter-deletion path in the product.
+  messages — untouched. It then deletes each channel the import **created**
+  (#2905) that is left holding nothing:
+  - no message of any kind (live, deleted, a tombstone, or another import's);
+  - no attachment;
+  - no points-ledger row pointing at it;
+  - no import merged into it (a `use_existing` mapping row).
+
+  The worker records each channel it creates, so this holds even after a
+  failed import was remapped through the API, which rewrites the mapping rows
+  without their targets. For an import from before that record existed, a
+  `create_new` row's target counts only if the channel is no older than the
+  import and still carries the description the worker gives the channels it
+  creates. An upload mapped before #2859 could name an existing channel there.
+
+  A channel the import merged into is never deleted, and neither is a created
+  channel that still holds something. **Known gap:** a created channel that an
+  import merged into stays, even after that import is deleted too (#2922),
+  because `discord_import_channels_target_present` won't let the merging row
+  lose its target. That covers another import's merge, and this import's own if
+  it was remapped through the API into a channel its first run made.
+
+  Before #2905 every created channel stayed. A bot re-import then merged a
+  public leftover by default (#2856). A channel private in Discord, or any
+  channel in an upload (which says nothing about privacy), was flagged as a
+  name clash to resolve by hand. The clash reached the chapter as a duplicate
+  only when the leftover was hidden from the admin (#2799), which #2905 does
+  not change.
+
+  The roles the import created stay either way, as the role mapping above
+  says. This is currently the only deletion path that reaps the `chat-archive`
+  bucket; there is no chapter-deletion path in the product.
 
 What follows is the behaviour the archive has once it is in.
 

@@ -29,6 +29,7 @@ describe('DiscordBotGatewayService.fetchApplication', () => {
     await expect(gateway().fetchApplication()).resolves.toEqual({
       id: '1541430523090698250',
       redirectUris: ['https://api.example.test/v1/discord/connect/callback'],
+      messageContentIntent: null,
     });
     expect(get).toHaveBeenCalledWith(
       '/applications/@me',
@@ -42,7 +43,48 @@ describe('DiscordBotGatewayService.fetchApplication', () => {
     await expect(gateway().fetchApplication()).resolves.toEqual({
       id: '1541430523090698250',
       redirectUris: null,
+      messageContentIntent: null,
     });
+  });
+
+  // The importer's pre-flight (#2317). Values from discord-api-types'
+  // ApplicationFlags: GatewayMessageContent 1<<18, GatewayMessageContentLimited 1<<19.
+  it.each([
+    [
+      'the self-serve toggle (GatewayMessageContentLimited)',
+      1 << 19,
+      'enabled',
+    ],
+    [
+      'a verified bot’s approved intent (GatewayMessageContent)',
+      1 << 18,
+      'enabled',
+    ],
+    [
+      'both, beside unrelated flags',
+      (1 << 18) | (1 << 19) | (1 << 23),
+      'enabled',
+    ],
+    ['neither, beside unrelated flags', (1 << 12) | (1 << 23), 'disabled'],
+    ['no flags at all', 0, 'disabled'],
+  ])(
+    'reads the Message Content Intent from flags: %s',
+    async (_label, flags, expected) => {
+      get.mockResolvedValue({ id: '1541430523090698250', flags });
+      await expect(gateway().fetchApplication()).resolves.toMatchObject({
+        messageContentIntent: expected,
+      });
+    },
+  );
+
+  it('reads absent or non-numeric flags as unknown, never as off', async () => {
+    // Off would fail every import on a setup that may be fine.
+    for (const flags of [undefined, null, '524288', 1.5]) {
+      get.mockResolvedValue({ id: '1541430523090698250', flags });
+      await expect(gateway().fetchApplication()).resolves.toMatchObject({
+        messageContentIntent: null,
+      });
+    }
   });
 
   it('drops non-string entries rather than trusting the shape', async () => {

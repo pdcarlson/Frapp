@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Scheduled conformance check for frapp-prod Auth hook, redirect allow list,
-// Auth SMTP (skip-until-on), and Magic Link template (skip until SMTP is on).
+// Auth SMTP, the Magic Link template, and leaked-password protection.
 //
 // Staging-conformance.yml watches these on frapp-staging. Production first
 // users hit frapp-prod (`unttyvyfezddlyafcydh` in .github/environments.json).
@@ -10,12 +10,11 @@
 //
 // This is a sibling, not an extension of staging-conformance.yml: a shared
 // alert title would let a recovered staging close a live production incident.
-// Production SMTP is skip-until-on: empty host (hosted 2/hour cap) is
-// SKIPPED so the 07:45 watchdog stays green until #1824. The moment SMTP
-// is on, the same check FAILs a burned apex From (`invites@frapp.live`)
-// and requires `Frapp <no-reply@mail.frapp.live>` at >=300/hour. Staging already
-// FAILs on empty SMTP. Magic Link is the same gate: ConfirmationURL is
-// SKIPPED while SMTP is unset; SMTP on FAILs a hosted default href.
+// Production SMTP is on (#1824), so an empty host FAILs, as on staging: the
+// check requires `Frapp <no-reply@mail.frapp.live>` at >=300/hour and FAILs a
+// burned apex From (`invites@frapp.live`). Magic Link FAILs a hosted default
+// (ConfirmationURL) href. Both used to SKIP while SMTP was unset, which left a
+// switched-off mailer reading as a healthy run (#2349).
 //
 // ── Why this job does NOT say `environment: production` ─────────────────────
 // ADR-19 put Required reviewers on the `production` GitHub environment. A
@@ -56,6 +55,7 @@ import {
   buildRunSummary as buildStagingRunSummary,
   canResolveAlert,
   checkAuthHook,
+  checkAuthLeakedPassword,
   checkAuthRedirects,
   checkAuthMagicLink,
   checkAuthSmtp,
@@ -76,6 +76,7 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
   "auth-redirects",
   "auth-smtp",
   "auth-magic-link",
+  "auth-leaked-password",
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
@@ -176,26 +177,29 @@ function defaultChecks({ accessToken, projectRef, fetchImpl }) {
     },
     {
       id: "auth-smtp",
-      label: "Custom SMTP is Resend at no-reply@mail.frapp.live (skip while unset)",
+      label: "Custom SMTP is Resend at no-reply@mail.frapp.live",
       run: () =>
         checkAuthSmtp({
           accessToken,
           projectRef,
           fetchImpl,
           expectedAdminEmail: PRODUCTION_AUTH_SMTP_ADMIN_EMAIL,
-          whenUnset: "skip",
         }),
     },
     {
       id: "auth-magic-link",
-      label: "Magic Link template uses token_hash (skip while SMTP unset)",
+      label: "Magic Link template uses token_hash",
       run: () =>
         checkAuthMagicLink({
           accessToken,
           projectRef,
           fetchImpl,
-          whenSmtpUnset: "skip",
         }),
+    },
+    {
+      id: "auth-leaked-password",
+      label: "Leaked-password protection is on",
+      run: () => checkAuthLeakedPassword({ accessToken, projectRef, fetchImpl }),
     },
   ];
 }

@@ -50,7 +50,7 @@
 // that the app's own native code and config plugins do. It asserts SDK-line
 // coherence and nothing more.
 //
-// See docs/internal/ci-cd/AGENT_INFRA.md § The ignore list is a runtime
+// See docs/ci-cd/agent-infra.md § The ignore list is a runtime
 // constraint, not a preference.
 
 import { existsSync, readFileSync } from "node:fs";
@@ -340,7 +340,7 @@ if (isInvokedDirectly(import.meta.url)) {
   for (const v of violations) console.error(`  ${v}`);
   console.error(
     "\n  Expo client packages move only as a set, with a planned SDK upgrade (#2329).\n" +
-      "  Target versions: node_modules/expo/bundledNativeModules.json. Why: docs/internal/ci-cd/AGENT_INFRA.md\n" +
+      "  Target versions: node_modules/expo/bundledNativeModules.json. Why: docs/ci-cd/agent-infra.md\n" +
       "  § The ignore list is a runtime constraint, not a preference.\n",
   );
   process.exit(1);

@@ -11,18 +11,17 @@ name: Staging conformance
 # Unit tests: scripts/ci/__tests__/staging-conformance.test.mjs (`npm run test:ci-scripts`).
 #
 # Scope is frapp-staging ONLY. Production Auth hook, redirect allow list,
-# ACTIVE_HEALTHY, skip-until-on SMTP, and skip-until-SMTP-on Magic Link are
-# a sibling: production-auth-conformance.yml, own alert title, 07:45 UTC.
-# Empty production SMTP is SKIPPED there (hosted 2/hour cap) so the
-# sibling stays green until #1824; SMTP on with the burned apex From fails,
-# and SMTP on without token_hash in the Magic Link template fails. Infisical /
+# ACTIVE_HEALTHY, SMTP, the Magic Link template, and leaked-password
+# protection are a sibling: production-auth-conformance.yml, own alert
+# title, 07:45 UTC. Empty production SMTP fails there as it does here, and so
+# do the burned apex From and a Magic Link template without token_hash. Infisical /
 # smoke stay production-unwatched. Remaining parity moved from #1384 to #2505.
 # Render `frapp-api-staging` `healthCheckPath` `/health`, and auto-deploy OFF
 # while tracking `main`, are asserted here (empty path is TCP-only; since #2505
 # `deploy-staging.yml` deploys staging by commit, and auto-deploy would build every
 # push before CI and race it). Production's copy of the auto-deploy assertion
 # lives in production-guardrails.yml. Doc pointer:
-# docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+# docs/ci-cd/agent-infra.md § Scheduled conformance.
 
 on:
   schedule:
@@ -35,12 +34,12 @@ on:
     # (06:30) — so this workflow's Management API reads never overlap another
     # daily watchdog's own reads or the backup. `production-uptime.yml` probes live
     # `/health/ready` on its own cadence and does not share this stagger. Full schedule:
-    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
     #
     # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
     # 60 days, notifying the repo owner by email only. That ceiling is backwards
     # for every `schedule:` watchdog. If the repo goes dormant, re-enable them
-    # from the Actions tab. Tracked in AGENT_INFRA.md § "Scheduled conformance".
+    # from the Actions tab. Tracked in agent-infra.md § "Scheduled conformance".
     - cron: "30 7 * * *"
   workflow_dispatch:
 
@@ -66,7 +65,7 @@ jobs:
     # Secrets belong to the `staging` environment, `main` only (#2518, #2583).
     # `deployment: false`: a
     # check, not a deploy, so no deployment record. See
-    # docs/internal/ci-cd/AGENT_INFRA.md § GitHub environments and bootstrap secrets.
+    # docs/ci-cd/agent-infra.md § GitHub environments and bootstrap secrets.
     environment:
       name: staging
       deployment: false

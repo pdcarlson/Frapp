@@ -19,8 +19,8 @@ Backlog promotion to it.
 ## Ownership boundary
 
 The shared contract is
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
-and [→ Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines):
+[`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
+and [→ Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines):
 GitHub MCP only (stop and report if it's unavailable), Linear is retired, no product code, comment
 once. On top of that:
 
@@ -40,14 +40,14 @@ once. On top of that:
 ## Phase 1 — Maintenance
 
 Start with the marker-count guard in
-[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
+[`github-pm.md`](../../../docs/ci-cd/github-pm.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
 Then list the open `suggestion` issues and give each exactly one action, grounded in current code
 and `spec/`. Two groups are different:
 
 - Skip issues whose marker starts `fp=pr-followup/` or `fp=human/` entirely. The weekly
   [`pr-followups`](../pr-followups/SKILL.md) routine owns them, and a human action can't be
   proven done from code.
-- `scope:production` issues are parked by owner decision (see the roster in ROUTINES.md), not
+- `scope:production` issues are parked by owner decision (see the roster in routines.md), not
   aging. Never mark them `stale`, raise their priority for age, or file duplicates of them.
 
 | What you can prove from code or spec | Action |
@@ -68,7 +68,7 @@ already cite.
 
 **Body rewrites.** Whether an MCP read is safe to rewrite from is a measurement that has flipped
 before. The table, the probe, and the fallback when it's red live in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+[`github-pm.md` → Reading a body you intend to rewrite](../../../docs/ci-cd/github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 This routine refreshes and splits bodies, so it's the most exposed to a regression: re-run the
 probe against fixture #1736 before a refresh pass, and say in the run report that you did.
 
@@ -178,7 +178,7 @@ Every issue this routine creates has:
 - Title `[suggestion] <imperative title>`.
 - Labels: `triage` (the inbox), `suggestion` (the ownership and dedup anchor), exactly one
   `area:<x>` from the roster in
-  [`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines),
+  [`routines.md` → Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines),
   and a priority `P1`–`P4`. Read the roster itself rather than a remembered list, since several
   entries carry scope notes and some overlap. A routine suggestion is usually `P3` or `P4`; keep
   `P1`/`P2` for security, data loss, and broken core flows, because `/next` ranks by priority.
@@ -208,7 +208,7 @@ and the search index alike.
 
 The brief tells the executing agent how hard to dig. Field meanings and how `/next` honors them
 are in
-[`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode),
+[`github-pm.md` → Agent briefs](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode),
 which wins where the two disagree.
 
 ```markdown
@@ -261,10 +261,10 @@ and it must stay a visible line (an HTML comment has repeatedly been invisible t
 ## Self-maintenance (update yourself)
 
 At the end of the run, check this file against the repo: the label roster in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md), the engineering-gap commands in
+[`routines.md`](../../../docs/ci-cd/routines.md), the engineering-gap commands in
 `package.json`, the paths and links named here, and any new epic, label, spec area, or MCP tool
 that discovery should use. Act on drift at most once per run, under the contract in
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+[`routines.md` → Self-maintenance](../../../docs/ci-cd/routines.md#self-maintenance-the-update-themselves-contract),
 which sets the allowed paths and limits: mechanical drift gets the docs-only PR, and
 judgment-laden drift gets a `suggestion` (`area:docs`, usually `depth:standard`).
 
