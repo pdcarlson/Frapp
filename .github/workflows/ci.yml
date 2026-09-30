@@ -874,6 +874,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # An Expo client package's major version is its SDK line, and nothing here
+      # compiles Swift, so a package bumped off the line passes every other step
+      # and first fails in `eas build -p ios` (#2218 did exactly that). This
+      # checks, offline, the installed Expo packages against the installed
+      # expo's bundledNativeModules.json and Dependabot's ignore list against
+      # apps/mobile (#2330; what exactly: docs/ci-cd/agent-infra.md § The
+      # ignore list is a runtime constraint, not a preference). It runs before
+      # `expo export` because it reads files and builds nothing, so its
+      # one-line diagnosis prints even when an off-line bump also breaks the
+      # bundle.
+      - name: Expo packages on the installed SDK line
+        run: npm run check:expo-sdk-line
+
       # Nothing else in CI hands the module graph to Metro; EAS's "Bundle
       # JavaScript" phase was the first place that did (#2388). That is how
       # #2347 shipped: a spec under app/ became a route, Metro followed its
