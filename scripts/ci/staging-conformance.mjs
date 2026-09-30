@@ -473,8 +473,8 @@ export async function checkAuthRedirects({
  * Staging Auth SMTP is proven (Resend, From `no-reply@mail.staging.frapp.live`, 300/hour).
  * Those are dashboard settings no migration performs. If they revert, magic
  * link / confirm-signup / recovery fall back to the hosted mailer and the
- * third member in an hour gets "email rate limit exceeded" — the production
- * first-user gate, on the only host Paul can prove mail before flipping prod.
+ * third member in an hour gets "email rate limit exceeded". Production has
+ * the same settings and the same failure, watched by production-auth-conformance.
  * Same GET `checkAuthHook` makes. Never put `smtp_pass` in the detail string.
  *
  * `expectedAdminEmail` is the From this check requires (staging vs production

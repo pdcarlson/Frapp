@@ -357,7 +357,7 @@ test("auth SMTP check skips without credentials and fails on a non-200", async (
   assert.equal(failed.status, FAIL);
 });
 
-test("empty smtp_host FAILs, at the production From too", async () => {
+test("empty smtp_host FAILs and names the host, sender and the From it was given", async () => {
   const result = await checkAuthSmtp({
     accessToken: "t",
     projectRef: "ref",
@@ -365,7 +365,11 @@ test("empty smtp_host FAILs, at the production From too", async () => {
     fetchImpl: async () => smtpConfig({ smtp_host: "" }),
   });
   assert.equal(result.status, FAIL);
-  assert.match(result.detail, /2 messages\/hour/);
+  assert.match(
+    result.detail,
+    /smtp_host=smtp\.resend\.com, smtp_sender_name=Frapp and smtp_admin_email=no-reply@mail\.frapp\.live\./,
+  );
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
 });
 
 test("expectedAdminEmail is the From this check compares", async () => {
