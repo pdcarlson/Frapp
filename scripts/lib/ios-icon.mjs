@@ -1,8 +1,8 @@
 /**
  * The iOS app icon: an Apple Icon Composer bundle, `apps/mobile/assets/frapp.icon`,
  * which `expo.ios.icon` names. `rasterize-brand-assets.mjs` writes it from the
- * glyph vector; `check-brand-assets.mjs` and `brand-pixels.test.mjs` hold the
- * committed bundle to exactly what these functions produce.
+ * glyph vector; `check-brand-assets.mjs` and `scripts/ci/__tests__/ios-icon.test.mjs`
+ * hold the committed bundle to exactly what these functions produce.
  *
  * WHY A BUNDLE AND NOT PNG VARIANTS (owner, 2026-09-30). iOS 18+ shows icons in
  * default, dark, clear and tinted appearances, and iOS 26 renders them in
@@ -17,8 +17,8 @@
  * in this repo can compile the bundle: `actool` runs only in Xcode 26+, so the
  * first EAS build is its first real test.
  *
- * This file imports nothing that needs `npm ci`: the `ci-scripts-tests` job
- * runs without it, and `brand-pixels.test.mjs` imports this.
+ * This file imports nothing that needs `npm ci`: `ios-icon.test.mjs` imports
+ * it, and the `ci-scripts-tests` job runs without `npm ci`.
  */
 import { FIELD, GOLD_HEX } from "./brand-pixels.mjs";
 
@@ -76,9 +76,10 @@ export function iconJson() {
 }
 
 /**
- * The one path's `d` in a brand SVG, verbatim. Every brand SVG shares the
- * crest's path string byte for byte (`brand-pixels.test.mjs`), so the bundle's
- * copy is held to the same rule.
+ * The one path's `d` in a brand SVG, verbatim. The four package SVGs share
+ * the crest's path (`brand-pixels.test.mjs` compares them with whitespace
+ * normalised); the bundle's copy is held tighter, to the glyph's exact string,
+ * by `check-brand-assets.mjs` and `ios-icon.test.mjs`.
  */
 export function glyphPath(svg, label) {
   const paths = [...svg.matchAll(/<path\b[^>]*?\bd="([^"]+)"/g)];

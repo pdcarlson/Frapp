@@ -95,7 +95,7 @@ async function renderVector(path) {
     .toBuffer();
 }
 
-/** Opaque RGB. Apple rejects an alpha channel on a store icon. */
+/** Opaque RGB: the full-bleed tile, with nothing behind it to show through. */
 async function opaque(source, size) {
   return sharp(source)
     .resize(size, size, { fit: "fill" })
@@ -111,7 +111,7 @@ async function opaque(source, size) {
  * Only the favicon container wants this. Next builds `app/favicon.ico` through
  * Turbopack, whose ICO decoder refuses a non-RGBA PNG payload and fails the
  * production build, while `spec/ui/assets.md` §7 requires the canonical rasters
- * to stay opaque RGB for the store icon. The two constraints are both real, so
+ * to stay opaque RGB, the full-bleed tile. The two constraints are both real, so
  * the container gets its own render rather than either one bending.
  */
 async function opaqueRgba(source, size) {
@@ -230,7 +230,7 @@ async function audit(buffer, label, kind) {
   if (kind === "opaque") {
     if (meta.channels !== 3) {
       throw new Error(
-        `${label}: has ${meta.channels} channels — must be opaque RGB, Apple rejects an alpha channel on a store icon (spec/ui/assets.md §7)`,
+        `${label}: has ${meta.channels} channels — must be opaque RGB, the full-bleed tile (spec/ui/assets.md §7)`,
       );
     }
     assertLockedPair(stats, label, { edge: info.width });

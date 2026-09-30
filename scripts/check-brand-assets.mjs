@@ -103,7 +103,7 @@ const vectors = SHIPPED_VECTORS.map(({ name, requireField }) => ({
 /**
  * Opaque RGB rasters. All of them, not a sample: the 16px favicon is the one
  * most likely to lose the mark to antialiasing, and the mobile `icon.png` is
- * the one that reaches an app store.
+ * the full-bleed tile Expo uses wherever no platform-specific icon is set.
  */
 const opaqueRasters = [
   "packages/brand-assets/assets/signet-emblem-B-16.png",
@@ -190,7 +190,7 @@ for (const rel of opaqueRasters) {
     const { data, info, meta } = await decode(rel);
     if (meta.channels !== 3) {
       throw new Error(
-        `${rel}: has ${meta.channels} channels — must be opaque RGB, Apple rejects an alpha channel on a store icon (spec/ui/assets.md §7)`,
+        `${rel}: has ${meta.channels} channels — must be opaque RGB, the full-bleed tile (spec/ui/assets.md §7)`,
       );
     }
     assertLockedPair(
@@ -275,7 +275,7 @@ if (existsSync(repo(MASTER_SVG)) && existsSync(repo(MASTER_RASTER))) {
 // Two properties, because the container cannot simply re-use the canonical
 // buffers. Turbopack's ICO decoder requires RGBA payloads and fails the web
 // production build on anything else, while the canonical rasters must stay
-// opaque RGB for the store icon. So the payloads carry the same paint with an
+// opaque RGB, the full-bleed tile. So the payloads carry the same paint with an
 // opaque alpha channel, and this asserts exactly that: the RGBA SHAPE the
 // toolchain needs, and RGB PLANE equality with the canonical raster of the same
 // size — which is what a census alone can never prove, since the locked pair

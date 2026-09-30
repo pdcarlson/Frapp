@@ -384,7 +384,7 @@ export function coverageMask(data, channels, width, height) {
 // payload outright — "Format error decoding Ico: The PNG is not in RGBA
 // format!" — and that is a failed production build, not a degraded icon. The
 // canonical 16/32/48 rasters are deliberately opaque RGB, because
-// `spec/ui/assets.md` §7 needs them that way for the store icon, so the
+// `spec/ui/assets.md` §7 needs them that way as the full-bleed tile, so the
 // container cannot simply carry those buffers.
 //
 // It carries the same artwork with an opaque alpha channel instead, and the

@@ -124,8 +124,9 @@ test("the committed bundle is exactly what the generator writes", () => {
   const appJson = JSON.parse(
     readFileSync(repo("apps/mobile/app.json"), "utf8"),
   );
-  // A `.icon` must be a plain string on `ios.icon` (Expo warns and ignores it
-  // inside the light/dark/tinted object, and on the top-level `icon`).
+  // A `.icon` must be a plain string on `ios.icon`. Expo 57 warns about one
+  // anywhere else: as the top-level `icon` it still uses it, and inside the
+  // light/dark/tinted object it treats the directory as an image.
   assert.equal(
     appJson.expo.ios.icon,
     `./${IOS_ICON_DIR.replace("apps/mobile/", "")}`,
