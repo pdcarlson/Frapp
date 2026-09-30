@@ -18,13 +18,13 @@
 -- small instead of growing one row per chat message. The foreign key drops a
 -- claim with its message on a hard delete, and turns a claim for a message
 -- deleted before its push into a failed insert, which skips the push.
-create table public.chat_push_dispatches (
+create table if not exists public.chat_push_dispatches (
   message_id uuid primary key references public.chat_messages(id) on delete cascade,
   dispatched_at timestamptz not null default now()
 );
 
 -- Serves the hourly purge, `delete ... where dispatched_at < now() - 1 day`.
-create index idx_chat_push_dispatches_dispatched_at
+create index if not exists idx_chat_push_dispatches_dispatched_at
   on public.chat_push_dispatches (dispatched_at);
 
 alter table public.chat_push_dispatches enable row level security;

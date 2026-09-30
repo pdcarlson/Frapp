@@ -85,7 +85,7 @@ describe('ChatPushWorkerService', () => {
    * behind one claim store are two API processes behind one database.
    */
   async function compileWorker(dispatches: {
-    claim: jest.Mock | ((messageId: string) => Promise<string>);
+    claim: (messageId: string) => Promise<string>;
     purgeBefore?: jest.Mock;
   }): Promise<ChatPushWorkerService> {
     const mod = await Test.createTestingModule({
@@ -710,10 +710,7 @@ describe('ChatPushWorkerService', () => {
       ]);
 
       expect(store).toHaveBeenCalledTimes(2);
-      expect(notifyUser.mock.calls.map((c) => c[0]).sort()).toEqual([
-        'a',
-        'b',
-      ]);
+      expect(notifyUser.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b']);
       // The loser stopped at the claim: one roster load, not two.
       expect(findByChapter).toHaveBeenCalledTimes(1);
     });
