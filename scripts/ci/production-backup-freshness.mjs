@@ -35,7 +35,7 @@ import {
   verdictLogLine,
 } from "./lib/backup-job-freshness.mjs";
 import { requireEnv } from "./lib/env.mjs";
-import { ghRequest } from "./lib/github.mjs";
+import { ghGetWithFallback } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const WORKFLOW_FILE = "db-backup.yml";
@@ -69,23 +69,6 @@ export function resolveActionsFallbackToken(env = process.env) {
   return "";
 }
 
-function isAuthish(status) {
-  return status === 401 || status === 403;
-}
-
-async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
-  const first = await ghRequest({ token, fetchImpl, path });
-  if (
-    isAuthish(first.status) &&
-    typeof fallbackToken === "string" &&
-    fallbackToken &&
-    fallbackToken !== token
-  ) {
-    return ghRequest({ token: fallbackToken, fetchImpl, path });
-  }
-  return first;
-}
-
 function runsPath(repo) {
   return (
     `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs` +
@@ -103,7 +86,8 @@ function jobsPath(repo, runId) {
  * A feature-branch dispatch is not the production dump. Schedule and
  * workflow_dispatch on `main` both count: a failed dump on `main` is a
  * failed dump. Retry with the fallback token only on 401/403, and only
- * when the fallback token is different. Never PUT.
+ * when the fallback token is different. A transport failure is retried on
+ * the same token first (`ghGetWithFallback` in `lib/github.mjs`). Never PUT.
  */
 export async function readDumpFreshness({
   token,
@@ -111,6 +95,8 @@ export async function readDumpFreshness({
   fetchImpl,
   fallbackToken,
   now = Date.now(),
+  // Passed to `ghGetWithFallback` (backoff, sleep, timeout) so tests stay offline.
+  retryOptions,
 }) {
   return readJobFreshness({
     jobName: PRODUCTION_JOB_NAME,
@@ -120,7 +106,7 @@ export async function readDumpFreshness({
     timeoutMs: JOB_TIMEOUT_MS,
     runsPath: runsPath(repo),
     jobsPath: (runId) => jobsPath(repo, runId),
-    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path }),
+    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path, retryOptions }),
     now,
   });
 }

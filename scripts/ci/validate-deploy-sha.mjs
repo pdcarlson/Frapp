@@ -53,7 +53,6 @@ import { execFileSync } from "node:child_process";
 
 import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
-import { resilientFetch } from "./lib/http.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
@@ -336,11 +335,23 @@ export function jobIdsAtRef({ ref, git = defaultGit }) {
  * truncated page would silently classify the overflow as `missing`, turning a
  * green commit into a refused deploy (and, if the defaults were ever inverted,
  * the reverse).
+ *
+ * Each page retries through `ghRequest`'s own `retry`, which gives every
+ * attempt its own timeout. Passing `resilientFetch` as `fetchImpl` instead
+ * would nest two retry loops, and since #2333 `ghRequest` bounds every call
+ * itself, the inner loop's attempts would all share one 15s deadline: one
+ * stalled page would refuse a green commit. `retryOptions` keeps tests offline.
  */
-export async function fetchCheckRuns({ repo, sha, token, fetchImpl = resilientFetch, maxPages = 10 }) {
+export async function fetchCheckRuns({ repo, sha, token, fetchImpl = fetch, maxPages = 10, retryOptions }) {
   const runs = [];
   for (let page = 1; page <= maxPages; page += 1) {
-    const result = await ghRequest({ token, fetchImpl, path: CHECK_RUNS_PATH(repo, sha, page) });
+    const result = await ghRequest({
+      token,
+      fetchImpl,
+      path: CHECK_RUNS_PATH(repo, sha, page),
+      retry: true,
+      retryOptions,
+    });
     if (!result.ok) {
       const detail = result.data ? `: ${result.data}` : "";
       throw new Error(`GitHub checks API returned HTTP ${result.status} for ${sha}${detail}`);
@@ -371,7 +382,8 @@ export async function validateDeploySha({
   mainRef = "origin/main",
   required = ALL_REQUIRED_CHECKS,
   git = defaultGit,
-  fetchImpl = resilientFetch,
+  fetchImpl = fetch,
+  retryOptions,
   logger = console,
 }) {
   const normalized = normalizeSha(sha);
@@ -389,7 +401,7 @@ export async function validateDeploySha({
 
   let checkRuns;
   try {
-    checkRuns = await fetchCheckRuns({ repo, sha, token, fetchImpl });
+    checkRuns = await fetchCheckRuns({ repo, sha, token, fetchImpl, retryOptions });
   } catch (error) {
     // Deliberately not a pass. An unreadable checks API means we do not know
     // whether CI was green, and "unknown" must not deploy.

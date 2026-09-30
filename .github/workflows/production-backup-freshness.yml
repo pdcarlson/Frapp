@@ -30,6 +30,12 @@ on:
     # 13:15 UTC daily, after the observed ~11:30 dump window. One of the
     # daily staggered watchdogs. Full schedule:
     # docs/ci-cd/agent-infra.md § Scheduled conformance.
+    #
+    # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
+    # 60 days, notifying the repo owner by email only. This watch then stops
+    # with no alert, which reads exactly like a healthy backup. If the repo goes
+    # dormant, re-enable it from the Actions tab. What watches the watchdogs:
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
     - cron: "15 13 * * *"
   workflow_dispatch:
 
