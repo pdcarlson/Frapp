@@ -530,6 +530,24 @@ export function workflowFiles(dir = WORKFLOW_DIR) {
 }
 
 /**
+ * Every step, across every workflow in `dir`, that runs `script` (a repo path
+ * such as `scripts/ci/deploy-alert.mjs`), for the per-call-site env guards.
+ *
+ * Matched on the script's FILE NAME as a whole token, not its repo path: a step
+ * with `working-directory: scripts/ci` runs `node deploy-alert.mjs`, and a
+ * path match would never see it, so its guard would pass over the one caller
+ * it was written for. Comment lines never reach a step's body, so prose that
+ * names the script isn't a call site.
+ */
+export function stepsRunning(script, dir = WORKFLOW_DIR) {
+  const name = basename(script).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const token = new RegExp(String.raw`(?<![\w.-])${name}(?![\w.-])`);
+  return workflowFiles(dir)
+    .flatMap((file) => workflowSteps(join(dir, file)))
+    .filter((step) => token.test(step.body));
+}
+
+/**
  * Every step in a workflow file, with the environment Actions would actually
  * give it.
  *

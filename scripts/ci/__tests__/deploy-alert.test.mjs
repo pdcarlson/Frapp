@@ -28,7 +28,7 @@ import {
   runDeployAlert,
 } from "../deploy-alert.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL, defineAlert, isDefinedAlert } from "../lib/alert-issue.mjs";
-import { WORKFLOW_DIR, workflowFiles, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { WORKFLOW_DIR, stepsRunning } from "./helpers/workflow-yaml.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Two kinds of config are used here, and they must not be confused.
@@ -1326,11 +1326,9 @@ test("the recovery comment names its own config, never another", async () => {
 
 const ALERT_SCRIPT = "scripts/ci/deploy-alert.mjs";
 
-/** Every step, across every workflow in `dir`, whose body runs deploy-alert.mjs. */
+/** Every step, across every workflow in `dir`, that runs deploy-alert.mjs. */
 function alertCallSites(dir = WORKFLOW_DIR) {
-  return workflowFiles(dir)
-    .flatMap((file) => workflowSteps(join(dir, file)))
-    .filter((step) => step.body.includes(ALERT_SCRIPT));
+  return stepsRunning(ALERT_SCRIPT, dir);
 }
 
 /**
@@ -1408,6 +1406,46 @@ test("the call-site guard fails a second reporting step that omits ALERT_CONFIG"
     const { problems } = callSiteProblems(sites);
     assert.equal(problems.length, 1, problems.join("\n"));
     assert.match(problems[0], /"Report the outcome again" .* without ALERT_CONFIG$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the call-site guard finds a caller that runs the script by its file name alone", () => {
+  // A step under `working-directory: scripts/ci` runs `node deploy-alert.mjs`.
+  // Matching the repo path missed it, so a new workflow wired that way, with
+  // no ALERT_CONFIG, passed the roster and the env check and failed only at
+  // deploy time. A file that merely shares the suffix is not a caller.
+  const dir = mkdtempSync(join(tmpdir(), "deploy-alert-callers-"));
+  try {
+    writeFileSync(
+      join(dir, "deploy-mobile.yml"),
+      [
+        "name: Deploy mobile",
+        "on: workflow_dispatch",
+        "jobs:",
+        "  deploy-outcome:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - name: Report deploy outcome",
+        "        working-directory: scripts/ci",
+        "        env:",
+        "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+        "          DEPLOY_NEEDS: ${{ toJSON(needs) }}",
+        "        run: node deploy-alert.mjs",
+        "      - name: Not a caller",
+        "        run: node scripts/ci/pre-deploy-alert.mjs",
+        "",
+      ].join("\n"),
+    );
+    const sites = alertCallSites(dir);
+    assert.deepEqual(
+      sites.map((site) => site.name),
+      ["Report deploy outcome"],
+    );
+    assert.deepEqual(callSiteProblems(sites).problems, [
+      `deploy-mobile.yml step "Report deploy outcome" (job deploy-outcome) runs ${ALERT_SCRIPT} without ALERT_CONFIG`,
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

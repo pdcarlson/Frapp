@@ -828,7 +828,7 @@ drift this layer exists to stop (stage 4 of the CI/CD redesign, [#1382](https://
 | `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: <message> }`, where the message folds in the error's `cause` (undici leaves `message` as the bare "fetch failed" and hangs the real diagnosis there). `data` is `null` only when a real HTTP response carried an empty body, so a truthy `data` is **not** evidence a response was received — check `status !== 0` for that. |
 | `scripts/ci/lib/providers.mjs` | `fetchJson`, `fetchRenderDeploys`, `fetchVercelDeployments`, `findVercelDeploymentBySha`, `vercelDeploymentCreatedAt` | `fetchJson` is the shared ok-check-throw-json wrapper (was three near-identical copies, #1351); `fetchRenderDeploys` / `fetchVercelDeployments` list one page through it. `findVercelDeploymentBySha` pages back through the Vercel listing, bounded, looking for a SHA — use it rather than the single-page fetcher when matching against a specific commit, since a page holds only the newest slice and an older SHA can fall off it (#1377). |
 | `scripts/ci/lib/polling.mjs` | `createClock`, `pollUntilTerminal` | `createClock` is an injectable clock, so a poll loop's tests run without sleeping. `pollUntilTerminal` is the shared "fetch, classify, sleep, repeat until terminal or timeout" loop behind the pollers (`verify-vercel-deploy.mjs`, `deploy-render-production.mjs`, `deploy-vercel.mjs`, `verify-served-commit.mjs`; #1351, #2505) — it owns only the loop mechanics; each caller's `classify` closure keeps its own terminal-state judgment (the deploy-path pollers treat a cancel as failure where `verify-vercel-deploy.mjs`'s classifier treats it as neutral, deliberately not unified). |
-| `scripts/ci/lib/alert-issue.mjs` | `ALERT_LOOKUP_LABEL`, `ALERT_ASSIGNEE`, `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert` | The create/reopen/comment/close upsert contract for `incident` alert issues, and the one place their label and assignee are set. |
+| `scripts/ci/lib/alert-issue.mjs` | `defineAlert`, `isDefinedAlert`, `selectAlertConfig`, `findAlertIssues`, `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert`, `withAgentNote`, `ALERT_LOOKUP_LABEL`, `ALERT_ASSIGNEE` | The create/reopen/comment/close upsert contract for `incident` alert issues, and the one place their label and assignee are set. An alert's identity is declared once with `defineAlert({ title, labels })`, and the find, raise and resolve functions take that value as `alert`, refusing anything else (#1731). `selectAlertConfig` picks a script's config by name and throws on a missing or unknown one. |
 
 Every one of these takes an injectable `fetchImpl` (or clock), which is what keeps the suites offline.
 
@@ -945,7 +945,8 @@ Consequences worth knowing before editing the script:
 - **Each config owns its alert title, and no two may match.** The title is the lookup key, so
   a shared one would let one workflow's recovery close another's live alert. A test pins their
   uniqueness. Renaming a title orphans whatever alert is open under the old one, which can then
-  never be found or self-closed, unless the config lists the old title in `retiredAlertTitles`.
+  never be found or self-closed, unless the config lists the old identity in `retiredAlerts`
+  (`defineAlert({ title })` with the old title, byte for byte).
   A run that closes the new alert closes an issue still open under a retired title too.
   `deploy-staging` lists the Deploy API and Deploy Vercel staging titles (#2803).
 - **`gateJob` may be null.** `deploy-staging.yml` and `deploy-production.yml` each have one deploy
