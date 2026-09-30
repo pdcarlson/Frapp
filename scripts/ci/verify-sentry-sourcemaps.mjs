@@ -22,6 +22,23 @@
 // release: the API passes `--release` = `RENDER_GIT_COMMIT`, and web and
 // landing pass `release.name` = `VERCEL_GIT_COMMIT_SHA`, both the deployed SHA.
 //
+// ── Whose bundle counts ─────────────────────────────────────────────────────
+// Staging and production upload to the same Sentry projects under the same
+// release name, so a bundle for the SHA may be the other environment's.
+//   * Web and landing: only a bundle uploaded since this run's builds began
+//     (`SOURCEMAPS_SINCE`, noted by the step before them) counts. Their builds
+//     inline each environment's `NEXT_PUBLIC_*` values, so staging's chunks,
+//     and the debug IDs derived from them, are not production's, and
+//     staging's maps can't symbolicate a production frame. Known limit: a
+//     staging deploy of the same commit that uploads while this run builds
+//     would still count.
+//   * The API: any bundle for the release counts. Its image is the same bytes
+//     in both environments (nothing is inlined at build time), and
+//     `sentry-cli sourcemaps inject` derives each debug ID from the file's
+//     contents, so either environment's bundle symbolicates both. Filtering by
+//     time would instead cry wolf on a same-commit redeploy, where Render
+//     reuses the cached upload layer and uploads nothing new.
+//
 // ── The question it asks ────────────────────────────────────────────────────
 //   GET <SENTRY_URL>/api/0/projects/<org>/<project>/files/artifact-bundles/?query=<sha>
 // Debug-ID uploads (`sentry-cli sourcemaps upload`, and the Next plugin's) are
@@ -35,9 +52,9 @@
 // than an array of bundles is `unverifiable`, never a verdict about the maps.
 //
 // ── Verdicts, one per project ───────────────────────────────────────────────
-//   present      — a bundle is associated with the deployed SHA
-//   missing      — Sentry answered, and no bundle is (re-asked for a while
-//                  first, because Sentry assembles an upload after it lands)
+//   present      — a bundle that counts (above) is associated with the SHA
+//   missing      — Sentry answered, and none is (re-asked for a minute first,
+//                  because Sentry assembles an upload after it lands)
 //   no-token     — this job has no SENTRY_AUTH_TOKEN, so the build it ran, or
 //                  the Render build synced from the same Infisical environment,
 //                  uploaded nothing
@@ -48,28 +65,49 @@
 //   no-project   — 404: no such Sentry project (renamed, deleted, or never
 //                  created: `frapp-landing` until #2071)
 //   unverifiable — no answer to judge: the network, a 5xx after retries, a
-//                  429, or a body that isn't the expected list
-// `sentry-sourcemaps-alert.mjs` turns these into alert issues in the caller's
-// `deploy-outcome` job, which holds `issues: write`. This job holds the Sentry
-// token and no write scope; that one holds the write scope and no token.
+//                  429, a body that isn't the expected list, or a bundle
+//                  whose upload time can't be read where that time decides
+//   unbuilt      — this run didn't build the project; nothing was asked
 //
-// ── It never fails the deploy ───────────────────────────────────────────────
+// ── Why the output is only words ────────────────────────────────────────────
+// The verdicts leave this job as the output `verdicts`: one word per project,
+// in `SOURCEMAP_PROJECTS` order, e.g. `present missing unbuilt`. Nothing else
+// may go in it. The Infisical injection registers every value it sets as a
+// masked secret, and those include `NODE_ENV` (`staging`, `production`) and a
+// `PORT` a SHA can contain. The runner drops any job output that contains a
+// masked value ("Skip output … since it may contain secret"), so an output
+// carrying the environment name, the SHA or free text would reach
+// `deploy-outcome` empty, and read as "nothing built" (#2489 review). The
+// words above contain none of those. The details go to the annotations and
+// the step summary instead, where masking only blanks a word; this script
+// never names the environment, which reaches `deploy-outcome` another way.
+//
+// `sentry-sourcemaps-alert.mjs` turns the words into alert issues in the
+// caller's `deploy-outcome` job, which holds `issues: write`. This job holds
+// the Sentry token and no write scope; that one holds the write scope and no
+// token.
+//
+// ── It never fails the deploy, and it is bounded ────────────────────────────
 // Every verdict, and every error in here, exits 0 with an annotation. The maps
 // are best effort, so the check on them is too: a deploy that shipped must not
 // go red, and raise the deploy alert, because Sentry was slow. `_deploy.yml`
 // sets no `continue-on-error` (its tests forbid it), so this file's own
-// catch-all is what holds that line.
+// catch-all is what holds that line. The projects are asked concurrently, and
+// each stops re-asking after `MISSING_WINDOW_MS`, so the step takes that
+// window plus one read (a read is at most ~51 s: `resilientFetch`'s three
+// 15 s attempts and their backoff), about two minutes at worst.
 //
 // Env inputs:
-//   TARGET_ENVIRONMENT — required: staging or production
 //   DEPLOY_SHA         — required: the full commit SHA the run deployed
 //   API_BUILT          — `true` when this run built the API image on Render
 //   FRONTENDS_BUILT    — `true` when this run built web and landing
+//   SOURCEMAPS_SINCE   — ISO time the run's builds began; required for web and
+//                        landing to be judged at all
 //   SENTRY_AUTH_TOKEN  — from the Infisical injection; absent → `no-token`
 //   SENTRY_URL         — optional, default https://sentry.io (sentry-cli's
 //                        default, which the uploads use)
-//   GITHUB_OUTPUT      — `verdicts=<json>` is written here
-//   GITHUB_STEP_SUMMARY — a table of the verdicts is appended here
+//   GITHUB_OUTPUT      — `verdicts=<words>` is written here
+//   GITHUB_STEP_SUMMARY — a table of the verdicts and their details
 //
 // Unit tests: `scripts/ci/__tests__/verify-sentry-sourcemaps.test.mjs`.
 
@@ -77,13 +115,15 @@ import { appendFileSync } from "node:fs";
 
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { createClock } from "./lib/polling.mjs";
+import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 
 export const SENTRY_ORG = "frapp-live";
 export const DEFAULT_SENTRY_URL = "https://sentry.io";
 
 /**
- * The Sentry projects a deploy uploads to, and which build uploads each.
+ * The Sentry projects a deploy uploads to, in the order the output lists
+ * them. `builtBy` says which build uploads each; `sinceThisRun` that only a
+ * bundle uploaded by this run counts (see "Whose bundle counts").
  *
  * `awaitingProject` names the issue that creates a project that does not
  * exist yet. Until it does, only a verdict proving the project exists
@@ -91,17 +131,12 @@ export const DEFAULT_SENTRY_URL = "https://sentry.io";
  * `sentry-sourcemaps-alert.mjs`. Delete the key once #2071 is done.
  */
 export const SOURCEMAP_PROJECTS = Object.freeze({
-  "frapp-api": Object.freeze({ builtBy: "api" }),
-  "frapp-web": Object.freeze({ builtBy: "frontends" }),
-  "frapp-landing": Object.freeze({ builtBy: "frontends", awaitingProject: 2071 }),
+  "frapp-api": Object.freeze({ builtBy: "api", sinceThisRun: false }),
+  "frapp-web": Object.freeze({ builtBy: "frontends", sinceThisRun: true }),
+  "frapp-landing": Object.freeze({ builtBy: "frontends", sinceThisRun: true, awaitingProject: 2071 }),
 });
 
-export const ENVIRONMENTS = Object.freeze(["staging", "production"]);
-
-// The Infisical slug each environment's secrets come from: production's is
-// `prod`, not `production`.
-const INFISICAL_SLUGS = Object.freeze({ staging: "staging", production: "prod" });
-
+/** Every word the output may hold. None contains a masked value (see above). */
 export const VERDICTS = Object.freeze([
   "present",
   "missing",
@@ -109,13 +144,21 @@ export const VERDICTS = Object.freeze([
   "rejected",
   "no-project",
   "unverifiable",
+  "unbuilt",
 ]);
 
-/** How often, and how long, a `missing` answer is re-asked. */
+/** How often, and for how long, a `missing` answer is re-asked. */
 export const MISSING_RETRY_INTERVAL_MS = 15 * 1000;
-export const MISSING_ATTEMPTS = 5;
+export const MISSING_WINDOW_MS = 60 * 1000;
 
-const SHA_PATTERN = /^[0-9a-f]{40}$/;
+/**
+ * Slack for the runner's clock against Sentry's, when a bundle's upload time
+ * is compared with `SOURCEMAPS_SINCE`. Far below the minutes between a run's
+ * builds starting and any other run's upload of the same commit.
+ */
+export const CLOCK_SKEW_MS = 60 * 1000;
+
+const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /** The projects a run built, in `SOURCEMAP_PROJECTS` order. */
 export function projectsToCheck({ apiBuilt, frontendsBuilt }) {
@@ -124,10 +167,13 @@ export function projectsToCheck({ apiBuilt, frontendsBuilt }) {
     .map(([project]) => project);
 }
 
+function apiBase(baseUrl) {
+  return `${baseUrl.replace(/\/+$/, "")}/api/0`;
+}
+
 export function artifactBundlesUrl({ baseUrl = DEFAULT_SENTRY_URL, org = SENTRY_ORG, project, release }) {
-  const base = baseUrl.replace(/\/+$/, "");
   return (
-    `${base}/api/0/projects/${encodeURIComponent(org)}/${encodeURIComponent(project)}` +
+    `${apiBase(baseUrl)}/projects/${encodeURIComponent(org)}/${encodeURIComponent(project)}` +
     `/files/artifact-bundles/?query=${encodeURIComponent(release)}`
   );
 }
@@ -140,65 +186,64 @@ export function artifactBundlesUrl({ baseUrl = DEFAULT_SENTRY_URL, org = SENTRY_
  * be fine, so that is no verdict on the maps).
  */
 export function releasesProbeUrl({ baseUrl = DEFAULT_SENTRY_URL, org = SENTRY_ORG, release }) {
-  const base = baseUrl.replace(/\/+$/, "");
-  return `${base}/api/0/organizations/${encodeURIComponent(org)}/releases/?per_page=1&query=${encodeURIComponent(release)}`;
+  return `${apiBase(baseUrl)}/organizations/${encodeURIComponent(org)}/releases/?per_page=1&query=${encodeURIComponent(release)}`;
+}
+
+/** A bundle's latest upload time in ms, or null when Sentry sent none readable. */
+function uploadedAt(bundle) {
+  const times = [bundle.date, bundle.dateModified]
+    .map((value) => (typeof value === "string" ? Date.parse(value) : Number.NaN))
+    .filter((ms) => Number.isFinite(ms));
+  return times.length > 0 ? Math.max(...times) : null;
 }
 
 /**
- * `present` when a bundle with files is associated with `release`, `missing`
- * when the list holds none, `unverifiable` when the body is not a list of
- * bundles at all. A bundle's `associations` is its `[{ release, dist }]`.
+ * `present` when a bundle with files is associated with `release` (and, when
+ * `sinceMs` is given, was uploaded at or after it), `missing` when none is,
+ * `unverifiable` when the body is not a list of bundles, or when `sinceMs`
+ * decides and a matching bundle's upload time can't be read. A bundle's
+ * `associations` is its `[{ release, dist }]`.
  */
-export function classifyBundles(data, release) {
+export function classifyBundles(data, release, { sinceMs = null } = {}) {
   if (!Array.isArray(data)) {
     return { verdict: "unverifiable", detail: "Sentry answered 200 with something other than a list of artifact bundles" };
   }
   if (data.some((bundle) => !Array.isArray(bundle?.associations))) {
     return { verdict: "unverifiable", detail: "Sentry listed artifact bundles without `associations`, so their releases can't be read" };
   }
-  const matching = data.filter(
+  const forRelease = data.filter(
     (bundle) =>
       bundle.associations.some((association) => association?.release === release) &&
       // `fileCount` is read only when Sentry sends it; an empty bundle is no maps.
       !(typeof bundle.fileCount === "number" && bundle.fileCount <= 0),
   );
-  if (matching.length > 0) {
-    const files = matching.reduce((sum, bundle) => sum + (typeof bundle.fileCount === "number" ? bundle.fileCount : 0), 0);
+  let counted = forRelease;
+  if (sinceMs !== null) {
+    if (forRelease.some((bundle) => uploadedAt(bundle) === null)) {
+      return {
+        verdict: "unverifiable",
+        detail: "a bundle for this release has no readable upload time, so whether this run uploaded it can't be told",
+      };
+    }
+    counted = forRelease.filter((bundle) => uploadedAt(bundle) >= sinceMs - CLOCK_SKEW_MS);
+  }
+  if (counted.length > 0) {
+    const files = counted.reduce((sum, bundle) => sum + (typeof bundle.fileCount === "number" ? bundle.fileCount : 0), 0);
     return {
       verdict: "present",
-      detail: `${matching.length} artifact bundle(s)${files > 0 ? `, ${files} file(s),` : ""} for this release`,
+      detail: `${counted.length} artifact bundle(s)${files > 0 ? ` with ${files} file(s)` : ""} for this release${sinceMs !== null ? ", uploaded by this run" : ""}`,
+    };
+  }
+  if (forRelease.length > 0) {
+    return {
+      verdict: "missing",
+      detail: `no artifact bundle for this release was uploaded by this run; the ${forRelease.length} older one(s) are another build's, whose debug IDs this deploy's chunks don't share`,
     };
   }
   return { verdict: "missing", detail: "no artifact bundle is associated with this release" };
 }
 
-/** One project's verdict: one read, re-asked only while the answer is `missing`. */
-export async function checkProject({
-  project,
-  release,
-  token,
-  baseUrl = DEFAULT_SENTRY_URL,
-  fetchImpl = resilientFetch,
-  clock = createClock(),
-  attempts = MISSING_ATTEMPTS,
-  intervalMs = MISSING_RETRY_INTERVAL_MS,
-}) {
-  const url = artifactBundlesUrl({ baseUrl, project, release });
-  let result;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    result = await readOnce({ url, baseUrl, release, token, fetchImpl });
-    if (result.verdict !== "missing" || attempt === attempts) break;
-    await clock.sleep(intervalMs);
-  }
-  if (result.verdict === "missing" && attempts > 1) {
-    const waitedS = Math.round(((attempts - 1) * intervalMs) / 1000);
-    return { ...result, detail: `${result.detail}, after asking ${attempts} times over ${waitedS}s` };
-  }
-  return result;
-}
-
-const REFUSED =
-  "the upload uses the same token, so it can't have uploaded either";
+const REFUSED = "the upload uses the same token, so it can't have uploaded either";
 
 async function get(url, token, fetchImpl) {
   try {
@@ -214,8 +259,8 @@ async function get(url, token, fetchImpl) {
   }
 }
 
-async function readOnce({ url, baseUrl, release, token, fetchImpl }) {
-  const { response, failure } = await get(url, token, fetchImpl);
+async function readOnce({ project, release, sinceMs, token, baseUrl, fetchImpl }) {
+  const { response, failure } = await get(artifactBundlesUrl({ baseUrl, project, release }), token, fetchImpl);
   if (failure) return failure;
   if (response.status === 401) {
     return { verdict: "rejected", detail: `Sentry refused the token (HTTP 401); ${REFUSED}` };
@@ -250,81 +295,124 @@ async function readOnce({ url, baseUrl, release, token, fetchImpl }) {
   } catch (error) {
     return { verdict: "unverifiable", detail: `Sentry's answer was not JSON (${error?.message ?? error})` };
   }
-  return classifyBundles(data, release);
+  return classifyBundles(data, release, { sinceMs });
 }
 
 /**
- * Every project this run built, each with a verdict, or `null` with a reason
- * when the inputs don't describe a deploy to check.
+ * One project's verdict: read, and re-ask only while the answer is `missing`,
+ * until `windowMs` has passed. The loop is `pollUntilTerminal`'s, so the
+ * window is a deadline, and the detail reports the time actually waited.
+ */
+export async function checkProject({
+  project,
+  release,
+  sinceMs = null,
+  token,
+  baseUrl = DEFAULT_SENTRY_URL,
+  fetchImpl = resilientFetch,
+  clock = createClock(),
+  windowMs = MISSING_WINDOW_MS,
+  intervalMs = MISSING_RETRY_INTERVAL_MS,
+}) {
+  return pollUntilTerminal({
+    fetchOne: () => readOnce({ project, release, sinceMs, token, baseUrl, fetchImpl }),
+    classify: (result) => (result.verdict === "missing" ? null : result),
+    onTimeout: (last, elapsedMs) =>
+      last
+        ? { ...last, detail: `${last.detail} (asked for ${Math.round(elapsedMs / 1000)}s)` }
+        : { verdict: "unverifiable", detail: "no read finished inside the window" },
+    clock,
+    pollIntervalMs: intervalMs,
+    overallTimeoutMs: windowMs,
+    logger: { log: () => {} },
+  });
+}
+
+/**
+ * A verdict for every project in `SOURCEMAP_PROJECTS` (`unbuilt` for those
+ * this run didn't build), or `null` with a reason when the inputs don't
+ * describe a deploy to check.
  */
 export async function verifySentrySourcemaps({
   env = process.env,
   fetchImpl = resilientFetch,
   clock = createClock(),
-  attempts,
+  windowMs,
   intervalMs,
 } = {}) {
-  const environment = env.TARGET_ENVIRONMENT;
   const sha = env.DEPLOY_SHA;
-  if (!ENVIRONMENTS.includes(environment)) {
-    return { report: null, reason: `TARGET_ENVIRONMENT is ${JSON.stringify(environment ?? null)}, not one of ${ENVIRONMENTS.join(", ")}` };
+  if (!FULL_SHA.test(sha ?? "")) {
+    return { report: null, reason: "DEPLOY_SHA is not a full lowercase commit SHA" };
   }
-  if (!SHA_PATTERN.test(sha ?? "")) {
-    return { report: null, reason: `DEPLOY_SHA is ${JSON.stringify(sha ?? null)}, not a full lowercase commit SHA` };
-  }
-  const projects = projectsToCheck({
+  const built = projectsToCheck({
     apiBuilt: env.API_BUILT === "true",
     frontendsBuilt: env.FRONTENDS_BUILT === "true",
   });
-  if (projects.length === 0) {
+  if (built.length === 0) {
     return { report: null, reason: "this run built nothing that uploads source maps" };
   }
+  const since = env.SOURCEMAPS_SINCE ? Date.parse(env.SOURCEMAPS_SINCE) : Number.NaN;
   const token = env.SENTRY_AUTH_TOKEN?.trim();
   const baseUrl = env.SENTRY_URL?.trim() || DEFAULT_SENTRY_URL;
-  const results = {};
-  for (const project of projects) {
-    results[project] = token
-      ? await checkProject({ project, release: sha, token, baseUrl, fetchImpl, clock, attempts, intervalMs })
-      : {
-          verdict: "no-token",
-          detail:
-            `this job got no SENTRY_AUTH_TOKEN from Infisical \`${INFISICAL_SLUGS[environment]}\`, and the builds read the ` +
-            "same environment (web and landing in this job, the API through Render's sync), so they uploaded nothing",
-        };
-  }
-  return { report: { environment, sha, projects: results } };
+  const judge = async (project) => {
+    if (!built.includes(project)) return { verdict: "unbuilt", detail: "this run didn't build it" };
+    if (!token) {
+      return {
+        verdict: "no-token",
+        detail:
+          "this job got no SENTRY_AUTH_TOKEN from its Infisical injection, and the builds read the same Infisical " +
+          "environment (web and landing in this job, the API through Render's sync), so they uploaded nothing",
+      };
+    }
+    const { sinceThisRun } = SOURCEMAP_PROJECTS[project];
+    if (sinceThisRun && !Number.isFinite(since)) {
+      return { verdict: "unverifiable", detail: "SOURCEMAPS_SINCE is missing or unreadable, so this run's uploads can't be told from another build's" };
+    }
+    return checkProject({
+      project,
+      release: sha,
+      sinceMs: sinceThisRun ? since : null,
+      token,
+      baseUrl,
+      fetchImpl,
+      clock,
+      windowMs,
+      intervalMs,
+    });
+  };
+  const projects = Object.keys(SOURCEMAP_PROJECTS);
+  // Concurrently: each project's re-asking window runs at the same time.
+  const results = await Promise.all(projects.map(judge));
+  return { report: Object.fromEntries(projects.map((project, i) => [project, results[i]])) };
 }
 
-const ANNOTATION = {
-  present: null,
-  missing: "warning",
-  "no-token": "warning",
-  rejected: "warning",
-  "no-project": "warning",
-  unverifiable: "warning",
-};
+/** The job output: one verdict word per project, in `SOURCEMAP_PROJECTS` order. */
+export function outputWords(report) {
+  return Object.keys(SOURCEMAP_PROJECTS)
+    .map((project) => report[project].verdict)
+    .join(" ");
+}
+
+const WARN = new Set(["missing", "no-token", "rejected", "no-project", "unverifiable"]);
 
 export function annotationsFor(report) {
-  return Object.entries(report.projects)
-    .filter(([, { verdict }]) => ANNOTATION[verdict])
-    .map(
-      ([project, { verdict, detail }]) =>
-        `::${ANNOTATION[verdict]}::Sentry source maps for ${project} on ${report.environment}: ${verdict} — ${detail}`,
-    );
+  return Object.entries(report)
+    .filter(([, { verdict }]) => WARN.has(verdict))
+    .map(([project, { verdict, detail }]) => `::warning::Sentry source maps for ${project}: ${verdict} — ${detail}`);
 }
 
-export function buildSummary(report) {
-  const rows = Object.entries(report.projects).map(
+export function buildSummary(report, sha) {
+  const rows = Object.entries(report).map(
     ([project, { verdict, detail }]) => `| \`${project}\` | \`${verdict}\` | ${detail.replace(/\|/g, "\\|")} |`,
   );
   return [
-    `### Sentry source maps — ${report.environment} — \`${report.sha}\``,
+    `### Sentry source maps for \`${sha}\``,
     "",
     "| Project | Verdict | Detail |",
     "| --- | --- | --- |",
     ...rows,
     "",
-    "The deploy's outcome does not depend on this table: maps are best effort (#2431). The `deploy-outcome` job raises or closes one alert per project from it (#2489).",
+    "The deploy's outcome does not depend on this table: maps are best effort (#2431). The `deploy-outcome` job raises or closes one alert per project from the verdicts (#2489).",
     "",
   ].join("\n");
 }
@@ -336,14 +424,14 @@ async function main() {
     return;
   }
   for (const line of annotationsFor(report)) console.log(line);
-  for (const [project, { verdict, detail }] of Object.entries(report.projects)) {
+  for (const [project, { verdict, detail }] of Object.entries(report)) {
     console.log(`${project}: ${verdict} — ${detail}`);
   }
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `verdicts=${JSON.stringify(report)}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `verdicts=${outputWords(report)}\n`);
   }
   if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, buildSummary(report));
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, buildSummary(report, process.env.DEPLOY_SHA));
   }
 }
 

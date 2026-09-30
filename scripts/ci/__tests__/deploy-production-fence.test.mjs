@@ -660,7 +660,8 @@ describe("installs run before any secret, and the trust split holds", () => {
     }
     const production = checks[1];
     assert.equal(production.if, "${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}");
-    assert.equal(production.env.get("TARGET_ENVIRONMENT"), "production");
+    assert.equal(production.env.has("TARGET_ENVIRONMENT"), false, "the script never names the environment");
+    assert.equal(production.env.get("SOURCEMAPS_SINCE"), "${{ steps.builds-start.outputs.at }}");
     assert.equal(production.env.get("API_BUILT"), "true");
     assert.equal(production.env.get("FRONTENDS_BUILT"), "true");
     assert.match(production.body, /^\s*id: sourcemaps-production$/m);
@@ -941,7 +942,10 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     );
     assert.match(sourcemaps.body, /run:\s*node scripts\/ci\/sentry-sourcemaps-alert\.mjs/);
     assert.equal(sourcemaps.env.get("SOURCEMAPS"), "${{ needs.deploy.outputs.sourcemaps }}");
+    assert.equal(sourcemaps.env.get("SOURCEMAPS_CHECKED"), "${{ needs.deploy.outputs.sourcemaps-checked }}");
     assert.equal(sourcemaps.env.get("GITHUB_TOKEN"), "${{ secrets.GITHUB_TOKEN }}");
+    assert.equal(sourcemaps.env.get("TARGET_ENVIRONMENT"), "production");
+    assert.equal(sourcemaps.env.get("DEPLOY_SHA"), VALIDATED_SHA);
   });
 
   it("matches the alert config it selects, and the roster lists its title", () => {

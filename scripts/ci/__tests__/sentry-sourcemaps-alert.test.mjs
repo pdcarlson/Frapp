@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,21 +10,20 @@ import {
   ALERTS,
   alertFor,
   buildIssueBody,
-  parseReport,
+  checkRan,
+  parseVerdicts,
   reportSourcemaps,
 } from "../sentry-sourcemaps-alert.mjs";
-import { ENVIRONMENTS, SOURCEMAP_PROJECTS, VERDICTS } from "../verify-sentry-sourcemaps.mjs";
+import { ENVIRONMENTS } from "../lib/environments.mjs";
+import { SOURCEMAP_PROJECTS, VERDICTS } from "../verify-sentry-sourcemaps.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const silent = { log: () => {} };
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "sentry-sourcemaps-alert.mjs");
+const REPO_ROOT = join(dirname(SCRIPT), "..", "..");
 
-const report = (projects, environment = "staging") => ({ environment, sha: SHA, projects });
-const verdict = (v, detail = "detail") => ({ verdict: v, detail });
-
-/** GitHub with the given issues open under the alert label; records every call. */
+/** GitHub with the given issues under the alert label; records every call. */
 function github(issues = []) {
   return makeFetchMock([
     { method: "GET", path: "/issues?state=all", body: issues },
@@ -34,8 +34,23 @@ function github(issues = []) {
 }
 
 const writes = (calls) => calls.filter((c) => c.method !== "GET");
-const run = (r, mock) =>
-  reportSourcemaps({ report: r, token: "t", repo: "o/r", runUrl: "https://run", fetchImpl: mock.fetchImpl, logger: silent });
+
+function run(verdicts, mock, { environment = "staging", checked = "successskipped" } = {}) {
+  const lines = [];
+  return reportSourcemaps({
+    environment,
+    sha: SHA,
+    verdicts,
+    checked,
+    token: "t",
+    repo: "o/r",
+    runUrl: "https://run",
+    fetchImpl: mock.fetchImpl,
+    logger: { log: (line) => lines.push(line) },
+  }).then((outcomes) => ({ outcomes, lines }));
+}
+
+const all = (api, web, landing) => ({ "frapp-api": api, "frapp-web": web, "frapp-landing": landing });
 
 describe("the alert identities", () => {
   it("are one per project and environment, P2, each a distinct title", () => {
@@ -61,12 +76,13 @@ describe("the alert identities", () => {
 });
 
 describe("what each verdict does", () => {
-  it("closes on present, raises on the four failing verdicts, and only notes unverifiable", () => {
+  it("closes on present, raises on the four failing verdicts, notes unverifiable, skips unbuilt", () => {
     assert.equal(actionFor("frapp-web", "present"), "resolve");
     for (const v of ["missing", "no-token", "rejected", "no-project"]) assert.equal(actionFor("frapp-web", v), "raise", v);
     assert.equal(actionFor("frapp-web", "unverifiable"), "notice");
+    assert.equal(actionFor("frapp-web", "unbuilt"), "none");
     // Every verdict the check can write has an action.
-    for (const v of VERDICTS) assert.ok(["resolve", "raise", "notice"].includes(actionFor("frapp-api", v)), v);
+    for (const v of VERDICTS) assert.ok(["resolve", "raise", "notice", "none"].includes(actionFor("frapp-api", v)), v);
   });
 
   it("raises a project still waiting for its Sentry project only on proof that it exists", () => {
@@ -82,10 +98,7 @@ describe("what each verdict does", () => {
 describe("filing", () => {
   it("files one new alert per failing project, assigned, with the fix for its verdict", async () => {
     const mock = github([]);
-    const outcomes = await run(
-      report({ "frapp-api": verdict("rejected", "Sentry refused the token (HTTP 401)"), "frapp-web": verdict("present") }),
-      mock,
-    );
+    const { outcomes } = await run(all("rejected", "present", "unbuilt"), mock);
     assert.deepEqual(outcomes, [
       { project: "frapp-api", verdict: "rejected", action: "created" },
       { project: "frapp-web", verdict: "present", action: "none" },
@@ -101,21 +114,29 @@ describe("filing", () => {
     assert.match(issue.body, /Run: https:\/\/run/);
   });
 
+  it("names production's Infisical slug, prod, in the no-token fix", async () => {
+    const mock = github([]);
+    await run(all("no-token", "unbuilt", "unbuilt"), mock, { environment: "production", checked: "skippedsuccess" });
+    const issue = JSON.parse(writes(mock.calls).find((c) => c.url.endsWith("/issues")).body);
+    assert.equal(issue.title, alertFor("production", "frapp-api").title);
+    assert.match(issue.body, /Infisical `prod`/);
+  });
+
   it("comments on an open alert instead of filing a second one", async () => {
     const open = [{ number: 42, state: "open", title: alertFor("production", "frapp-web").title }];
     const mock = github(open);
-    const [outcome] = await run(report({ "frapp-web": verdict("no-token") }, "production"), mock);
-    assert.deepEqual(outcome, { project: "frapp-web", verdict: "no-token", action: "commented" });
+    const { outcomes } = await run(all("unbuilt", "missing", "unbuilt"), mock, { environment: "production" });
+    assert.deepEqual(outcomes, [{ project: "frapp-web", verdict: "missing", action: "commented" }]);
     assert.equal(writes(mock.calls).filter((c) => c.url.endsWith("/issues")).length, 0);
     const comment = JSON.parse(writes(mock.calls).find((c) => c.url.endsWith("/comments")).body).body;
-    assert.match(comment, /Add `SENTRY_AUTH_TOKEN`/);
+    assert.match(comment, /Build the Vercel … bundles/);
   });
 
   it("closes an open alert when the maps are back", async () => {
     const open = [{ number: 42, state: "open", title: alertFor("staging", "frapp-api").title }];
     const mock = github(open);
-    const [outcome] = await run(report({ "frapp-api": verdict("present", "1 artifact bundle(s)") }), mock);
-    assert.equal(outcome.action, "closed");
+    const { outcomes } = await run(all("present", "unbuilt", "unbuilt"), mock);
+    assert.equal(outcomes[0].action, "closed");
     const close = writes(mock.calls).find((c) => c.method === "PATCH");
     assert.deepEqual(JSON.parse(close.body), { state: "closed", state_reason: "completed" });
   });
@@ -124,65 +145,108 @@ describe("filing", () => {
     // A run that proved the API says nothing about web's maps.
     const open = [{ number: 43, state: "open", title: alertFor("staging", "frapp-web").title }];
     const mock = github(open);
-    await run(report({ "frapp-api": verdict("present") }), mock);
+    await run(all("present", "unbuilt", "unbuilt"), mock);
     assert.deepEqual(writes(mock.calls), []);
   });
 
   it("changes nothing on unverifiable, or on landing's known missing project", async () => {
     const mock = github([]);
-    const outcomes = await run(
-      report({ "frapp-api": verdict("unverifiable"), "frapp-landing": verdict("no-project") }),
-      mock,
-    );
+    const { outcomes } = await run(all("unverifiable", "unbuilt", "no-project"), mock);
     assert.deepEqual(outcomes.map((o) => o.action), ["none", "none"]);
     assert.equal(mock.calls.length, 0, "not even a lookup");
-  });
-
-  it("does nothing for a run that built nothing", async () => {
-    const mock = github([]);
-    assert.deepEqual(await run(null, mock), []);
-    assert.equal(mock.calls.length, 0);
   });
 
   it("keeps one environment's alert out of the other's", async () => {
     const open = [{ number: 44, state: "open", title: alertFor("staging", "frapp-web").title }];
     const mock = github(open);
-    const [outcome] = await run(report({ "frapp-web": verdict("missing") }, "production"), mock);
-    assert.equal(outcome.action, "created", "production files its own alert");
+    const { outcomes } = await run(all("unbuilt", "missing", "unbuilt"), mock, { environment: "production" });
+    assert.equal(outcomes[0].action, "created", "production files its own alert");
   });
 });
 
-describe("reading the deploy job's report", () => {
-  it("is null for an empty output: the run built nothing", () => {
-    for (const raw of [undefined, "", "  "]) assert.equal(parseReport(raw), null);
+describe("an empty report", () => {
+  it("is 'nothing built' when neither check step ran", async () => {
+    const mock = github([]);
+    const { outcomes, lines } = await run(null, mock, { checked: "skippedskipped" });
+    assert.deepEqual(outcomes, []);
+    assert.equal(mock.calls.length, 0);
+    assert.match(lines[0], /built nothing/);
   });
 
-  it("round-trips what the check writes", () => {
-    const r = report({ "frapp-api": verdict("present") });
-    assert.deepEqual(parseReport(JSON.stringify(r)), r);
+  it("is a warning, never 'nothing built', when a check ran and its verdicts didn't arrive", async () => {
+    // The runner drops a job output containing a masked value.
+    for (const checked of ["successskipped", "skippedsuccess"]) {
+      const mock = github([]);
+      const { outcomes, lines } = await run(null, mock, { checked });
+      assert.deepEqual(outcomes, []);
+      assert.equal(mock.calls.length, 0);
+      assert.match(lines[0], /^::warning::The source-map check ran, but its verdicts didn't reach this job/);
+    }
+    assert.equal(checkRan(""), false);
+    assert.equal(checkRan(undefined), false);
+  });
+});
+
+describe("reading the deploy job's words", () => {
+  it("is null for an empty output", () => {
+    for (const raw of [undefined, "", "  "]) assert.equal(parseVerdicts(raw), null);
   });
 
-  it("refuses a report the check could not have written", () => {
-    assert.throws(() => parseReport("{"));
-    assert.throws(() => parseReport(JSON.stringify({ ...report({}), environment: "preview" })));
-    assert.throws(() => parseReport(JSON.stringify(report({ "frapp-mobile": verdict("present") }))));
-    assert.throws(() => parseReport(JSON.stringify(report({ "frapp-api": verdict("fine") }))));
-    assert.throws(() => parseReport(JSON.stringify({ environment: "staging" })));
+  it("maps one word per project, in order", () => {
+    assert.deepEqual(parseVerdicts("present missing unbuilt\n"), all("present", "missing", "unbuilt"));
+  });
+
+  it("refuses words the check could not have written", () => {
+    assert.throws(() => parseVerdicts("present missing"));
+    assert.throws(() => parseVerdicts("present missing unbuilt present"));
+    assert.throws(() => parseVerdicts("present fine unbuilt"));
+    assert.throws(() => parseVerdicts('{"environment":"staging"}'));
   });
 });
 
 describe("the issue body", () => {
-  it("says the deploy shipped, what failed, and when it closes", () => {
-    const body = buildIssueBody({
-      project: "frapp-web",
-      environment: "staging",
-      sha: SHA,
-      verdict: "missing",
-      detail: "no artifact bundle is associated with this release",
-      runUrl: "https://run",
-    });
+  it("says the deploy shipped, what the verdict means, where the details are, and when it closes", () => {
+    const body = buildIssueBody({ project: "frapp-web", environment: "staging", sha: SHA, verdict: "missing", runUrl: "https://run" });
     assert.match(body, /The deploy itself shipped/);
-    assert.match(body, /no artifact bundle is associated with this release/);
+    assert.match(body, /holds no artifact bundle for this release that this deploy's build uploaded/);
+    assert.match(body, /step summary/);
     assert.match(body, /Closes itself when a later deploy that builds frapp-web finds its maps/);
+  });
+});
+
+describe("the script keeps deploy-outcome green", () => {
+  const spawn = (env) =>
+    spawnSync(process.execPath, [SCRIPT], {
+      env: {
+        PATH: process.env.PATH,
+        GITHUB_TOKEN: "t",
+        GITHUB_REPOSITORY: "o/r",
+        RUN_URL: "https://run",
+        TARGET_ENVIRONMENT: "staging",
+        DEPLOY_SHA: SHA,
+        ...env,
+      },
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+
+  it("exits 0 with a warning on output it can't read, touching no alert", () => {
+    const result = spawn({ SOURCEMAPS: "present fine unbuilt" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::warning::The deploy job's source-map verdicts could not be read/);
+  });
+
+  it("exits 0 with a warning when it crashes", () => {
+    // An environment it has no alerts for throws inside main(); only the
+    // catch-all stands between that and exit 1.
+    const result = spawn({ TARGET_ENVIRONMENT: "preview", SOURCEMAPS: "present present present" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::warning::Source-map alerting crashed/);
+  });
+
+  it("exits 0 with nothing to do when nothing was built", () => {
+    const result = spawn({ SOURCEMAPS: "", SOURCEMAPS_CHECKED: "skippedskipped" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /built nothing/);
   });
 });

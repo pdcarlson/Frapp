@@ -12,20 +12,30 @@ import {
   buildSummary,
   checkProject,
   classifyBundles,
+  CLOCK_SKEW_MS,
+  outputWords,
   projectsToCheck,
   SOURCEMAP_PROJECTS,
+  VERDICTS,
   verifySentrySourcemaps,
 } from "../verify-sentry-sourcemaps.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const OTHER_SHA = "fedcba9876543210fedcba9876543210fedcba98";
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "verify-sentry-sourcemaps.mjs");
+const REPO_ROOT = join(dirname(SCRIPT), "..", "..");
 
-const bundle = (release, fileCount = 12) => ({
+const SINCE = "2026-09-30T12:00:00Z";
+const SINCE_MS = Date.parse(SINCE);
+const AFTER = "2026-09-30T12:05:00Z";
+const BEFORE = "2026-09-30T11:00:00Z";
+
+const bundle = (release, { fileCount = 12, date = AFTER, dateModified } = {}) => ({
   bundleId: "b-1",
   associations: [{ release, dist: null }],
   fileCount,
-  date: "2026-09-30T00:00:00Z",
+  date,
+  ...(dateModified ? { dateModified } : {}),
 });
 
 function response(status, body) {
@@ -53,13 +63,25 @@ function makeFetch(handlers) {
   return { fetchImpl, calls };
 }
 
-const noSleep = { now: () => 0, sleep: async () => {} };
+/** A clock that only moves when slept on, and records the sleeps. */
+function fakeClock() {
+  let now = 0;
+  const sleeps = [];
+  return {
+    now: () => now,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      now += ms;
+    },
+    sleeps,
+  };
+}
 
 const ENV = {
-  TARGET_ENVIRONMENT: "staging",
   DEPLOY_SHA: SHA,
   API_BUILT: "true",
   FRONTENDS_BUILT: "true",
+  SOURCEMAPS_SINCE: SINCE,
   SENTRY_AUTH_TOKEN: "sntrys_test",
 };
 
@@ -73,14 +95,22 @@ describe("which projects a run checks", () => {
 
   it("names the projects the builds upload to", () => {
     // The API's upload script and both next.config.js files name these.
-    const api = readFileSync(join(dirname(SCRIPT), "..", "..", "apps", "api", "src", "infrastructure", "observability", "upload-sentry-sourcemaps.ts"), "utf8");
+    const api = readFileSync(join(REPO_ROOT, "apps", "api", "src", "infrastructure", "observability", "upload-sentry-sourcemaps.ts"), "utf8");
     assert.match(api, /API_SENTRY_PROJECT = 'frapp-api'/);
     assert.match(api, /API_SENTRY_ORG = 'frapp-live'/);
     for (const [app, project] of [["web", "frapp-web"], ["landing", "frapp-landing"]]) {
-      const config = readFileSync(join(dirname(SCRIPT), "..", "..", "apps", app, "next.config.js"), "utf8");
+      const config = readFileSync(join(REPO_ROOT, "apps", app, "next.config.js"), "utf8");
       assert.match(config, new RegExp(`project: "${project}"`), `${app} uploads to ${project}`);
     }
     assert.deepEqual(Object.keys(SOURCEMAP_PROJECTS), ["frapp-api", "frapp-web", "frapp-landing"]);
+  });
+
+  it("counts only this run's uploads for the builds that differ by environment", () => {
+    // Web and landing inline each environment's NEXT_PUBLIC_* values; the API
+    // image is the same bytes in both.
+    assert.equal(SOURCEMAP_PROJECTS["frapp-api"].sinceThisRun, false);
+    assert.equal(SOURCEMAP_PROJECTS["frapp-web"].sinceThisRun, true);
+    assert.equal(SOURCEMAP_PROJECTS["frapp-landing"].sinceThisRun, true);
   });
 });
 
@@ -98,7 +128,7 @@ describe("the question it asks Sentry", () => {
 
   it("sends the token as a bearer, and never in the URL", async () => {
     const { fetchImpl, calls } = makeFetch([response(200, [bundle(SHA)])]);
-    await checkProject({ project: "frapp-api", release: SHA, token: "sntrys_secret", fetchImpl, clock: noSleep });
+    await checkProject({ project: "frapp-api", release: SHA, token: "sntrys_secret", fetchImpl, clock: fakeClock() });
     assert.equal(calls[0].init.headers.Authorization, "Bearer sntrys_secret");
     assert.doesNotMatch(calls[0].url, /sntrys_secret/);
   });
@@ -112,7 +142,7 @@ describe("reading the answer", () => {
   });
 
   it("does not count a bundle Sentry says holds no files", () => {
-    assert.equal(classifyBundles([bundle(SHA, 0)], SHA).verdict, "missing");
+    assert.equal(classifyBundles([bundle(SHA, { fileCount: 0 })], SHA).verdict, "missing");
     const withoutCount = { ...bundle(SHA), fileCount: undefined };
     assert.equal(classifyBundles([withoutCount], SHA).verdict, "present", "an absent count isn't evidence of an empty bundle");
   });
@@ -123,14 +153,46 @@ describe("reading the answer", () => {
     assert.equal(classifyBundles(null, SHA).verdict, "unverifiable");
     assert.equal(classifyBundles([{ bundleId: "b" }], SHA).verdict, "unverifiable");
   });
+
+  describe("when only this run's uploads count", () => {
+    const since = { sinceMs: SINCE_MS };
+
+    it("does not count another build's bundle for the same release", () => {
+      // Staging uploaded this commit's web maps an hour before production's
+      // builds began; production's own upload failed.
+      const result = classifyBundles([bundle(SHA, { date: BEFORE })], SHA, since);
+      assert.equal(result.verdict, "missing");
+      assert.match(result.detail, /another build's/);
+      assert.equal(classifyBundles([bundle(SHA, { date: BEFORE })], SHA).verdict, "present", "without the filter it would have counted");
+    });
+
+    it("counts a bundle uploaded after the builds began, or re-uploaded since", () => {
+      assert.equal(classifyBundles([bundle(SHA, { date: AFTER })], SHA, since).verdict, "present");
+      assert.equal(classifyBundles([bundle(SHA, { date: BEFORE, dateModified: AFTER })], SHA, since).verdict, "present");
+      assert.equal(classifyBundles([bundle(SHA, { date: BEFORE }), bundle(SHA, { date: AFTER })], SHA, since).verdict, "present");
+    });
+
+    it("allows for the runner's clock running ahead of Sentry's", () => {
+      const justBefore = new Date(SINCE_MS - CLOCK_SKEW_MS + 1000).toISOString();
+      assert.equal(classifyBundles([bundle(SHA, { date: justBefore })], SHA, since).verdict, "present");
+    });
+
+    it("is unverifiable when a matching bundle's upload time can't be read", () => {
+      assert.equal(classifyBundles([bundle(SHA, { date: "yesterday" })], SHA, since).verdict, "unverifiable");
+      assert.equal(classifyBundles([{ ...bundle(SHA), date: undefined }], SHA, since).verdict, "unverifiable");
+    });
+  });
 });
 
 describe("one project's verdict", () => {
   const check = (handlers, extra = {}) => {
     const { fetchImpl, calls } = makeFetch(handlers);
-    return checkProject({ project: "frapp-web", release: SHA, token: "t", fetchImpl, clock: noSleep, ...extra }).then(
-      (result) => ({ result, calls }),
-    );
+    const clock = extra.clock ?? fakeClock();
+    return checkProject({ project: "frapp-web", release: SHA, token: "t", fetchImpl, clock, ...extra }).then((result) => ({
+      result,
+      calls,
+      clock,
+    }));
   };
 
   it("is present on the first answer that holds the release", async () => {
@@ -145,14 +207,24 @@ describe("one project's verdict", () => {
     assert.equal(calls.length, 3);
   });
 
-  it("is missing once every attempt said so, and says how long it waited", async () => {
-    const sleeps = [];
-    const clock = { now: () => 0, sleep: async (ms) => sleeps.push(ms) };
-    const { result, calls } = await check([response(200, [])], { attempts: 3, intervalMs: 10_000, clock });
+  it("stops re-asking at the window's end, and reports the time it actually waited", async () => {
+    const { result, calls, clock } = await check([response(200, [])], { windowMs: 60_000, intervalMs: 15_000 });
     assert.equal(result.verdict, "missing");
-    assert.equal(calls.length, 3);
-    assert.deepEqual(sleeps, [10_000, 10_000]);
-    assert.match(result.detail, /asking 3 times over 20s/);
+    assert.equal(calls.length, 4, "reads at 0, 15, 30 and 45 s");
+    assert.deepEqual(clock.sleeps, [15_000, 15_000, 15_000, 15_000]);
+    assert.match(result.detail, /\(asked for 60s\)/);
+  });
+
+  it("counts a slow read against the window, so it can't run five reads long", async () => {
+    // Each read takes 40 s on the fake clock: only two start inside a minute.
+    const clock = fakeClock();
+    const slow = async () => {
+      await clock.sleep(40_000);
+      return response(200, []);
+    };
+    const { result, calls } = await check([slow], { clock, windowMs: 60_000, intervalMs: 15_000 });
+    assert.equal(result.verdict, "missing");
+    assert.equal(calls.length, 2);
   });
 
   it("is rejected on 401: the token that uploads can't read either", async () => {
@@ -204,109 +276,147 @@ describe("one project's verdict", () => {
 });
 
 describe("a deploy's report", () => {
-  it("checks every project the run built, one verdict each", async () => {
-    const { fetchImpl, calls } = makeFetch([(url) => response(200, url.includes("frapp-landing") ? [] : [bundle(SHA)])]);
-    const { report } = await verifySentrySourcemaps({ env: ENV, fetchImpl, clock: noSleep, attempts: 1 });
-    assert.equal(report.environment, "staging");
-    assert.equal(report.sha, SHA);
+  it("judges every project, unbuilt ones included, asking only about what the run built", async () => {
+    const { fetchImpl, calls } = makeFetch([response(200, [bundle(SHA)])]);
+    const { report } = await verifySentrySourcemaps({
+      env: { ...ENV, FRONTENDS_BUILT: "false" },
+      fetchImpl,
+      clock: fakeClock(),
+    });
     assert.deepEqual(
-      Object.fromEntries(Object.entries(report.projects).map(([project, { verdict }]) => [project, verdict])),
-      { "frapp-api": "present", "frapp-web": "present", "frapp-landing": "missing" },
+      Object.fromEntries(Object.entries(report).map(([project, { verdict }]) => [project, verdict])),
+      { "frapp-api": "present", "frapp-web": "unbuilt", "frapp-landing": "unbuilt" },
     );
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 1);
+    assert.equal(outputWords(report), "present unbuilt unbuilt");
+  });
+
+  it("asks all three at once", async () => {
+    // The fetch answers only once all three requests are in flight.
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    let inFlight = 0;
+    const fetchImpl = async (url) => {
+      inFlight += 1;
+      if (inFlight === 3) release();
+      await gate;
+      return response(200, url.includes("frapp-landing") ? [] : [bundle(SHA)]);
+    };
+    const { report } = await verifySentrySourcemaps({ env: ENV, fetchImpl, clock: fakeClock(), windowMs: 1 });
+    assert.equal(outputWords(report), "present present missing");
+  });
+
+  it("filters web and landing by SOURCEMAPS_SINCE, and not the API", async () => {
+    const { fetchImpl } = makeFetch([response(200, [bundle(SHA, { date: BEFORE })])]);
+    const { report } = await verifySentrySourcemaps({ env: ENV, fetchImpl, clock: fakeClock(), windowMs: 1 });
+    assert.equal(outputWords(report), "present missing missing");
+  });
+
+  it("won't judge web and landing without SOURCEMAPS_SINCE", async () => {
+    const { fetchImpl } = makeFetch([response(200, [bundle(SHA)])]);
+    const { report } = await verifySentrySourcemaps({ env: { ...ENV, SOURCEMAPS_SINCE: "" }, fetchImpl, clock: fakeClock() });
+    assert.equal(outputWords(report), "present unverifiable unverifiable");
   });
 
   it("asks nothing without a token: every build that read the same Infisical environment uploaded nothing", async () => {
     const { fetchImpl, calls } = makeFetch([response(200, [])]);
-    const { report } = await verifySentrySourcemaps({
-      env: { ...ENV, TARGET_ENVIRONMENT: "production", SENTRY_AUTH_TOKEN: "" },
-      fetchImpl,
-      clock: noSleep,
-    });
+    const { report } = await verifySentrySourcemaps({ env: { ...ENV, SENTRY_AUTH_TOKEN: "" }, fetchImpl, clock: fakeClock() });
     assert.equal(calls.length, 0);
-    for (const { verdict, detail } of Object.values(report.projects)) {
-      assert.equal(verdict, "no-token");
-      assert.match(detail, /Infisical `prod`/, "production's slug is prod");
-    }
+    assert.equal(outputWords(report), "no-token no-token no-token");
   });
 
   it("uses SENTRY_URL when it is set, as sentry-cli does", async () => {
     const { fetchImpl, calls } = makeFetch([response(200, [bundle(SHA)])]);
     await verifySentrySourcemaps({
-      env: { ...ENV, API_BUILT: "false", SENTRY_URL: "https://de.sentry.io" },
+      env: { ...ENV, FRONTENDS_BUILT: "false", SENTRY_URL: "https://de.sentry.io" },
       fetchImpl,
-      clock: noSleep,
+      clock: fakeClock(),
     });
     assert.ok(calls.every((c) => c.url.startsWith("https://de.sentry.io/api/0/")));
   });
 
   it("reports nothing, with a reason, for inputs that don't describe a deploy to check", async () => {
     const cases = [
-      { ...ENV, TARGET_ENVIRONMENT: "preview" },
       { ...ENV, DEPLOY_SHA: "main" },
       { ...ENV, DEPLOY_SHA: SHA.toUpperCase() },
       { ...ENV, API_BUILT: "false", FRONTENDS_BUILT: "" },
     ];
     for (const env of cases) {
       const { fetchImpl, calls } = makeFetch([response(200, [])]);
-      const { report, reason } = await verifySentrySourcemaps({ env, fetchImpl, clock: noSleep });
+      const { report, reason } = await verifySentrySourcemaps({ env, fetchImpl, clock: fakeClock() });
       assert.equal(report, null);
       assert.ok(reason);
       assert.equal(calls.length, 0);
     }
   });
 
-  it("annotates every verdict but present, and summarises all of them", () => {
+  it("annotates every failing verdict, summarises all of them, and never names the environment", () => {
     const report = {
-      environment: "staging",
-      sha: SHA,
-      projects: {
-        "frapp-api": { verdict: "present", detail: "1 artifact bundle(s)" },
-        "frapp-web": { verdict: "missing", detail: "no bundle | none" },
-      },
+      "frapp-api": { verdict: "present", detail: "1 artifact bundle(s)" },
+      "frapp-web": { verdict: "missing", detail: "no bundle | none" },
+      "frapp-landing": { verdict: "unbuilt", detail: "this run didn't build it" },
     };
     const annotations = annotationsFor(report);
-    assert.equal(annotations.length, 1);
-    assert.match(annotations[0], /^::warning::Sentry source maps for frapp-web on staging: missing/);
-    const summary = buildSummary(report);
+    assert.deepEqual(annotations, ["::warning::Sentry source maps for frapp-web: missing — no bundle | none"]);
+    const summary = buildSummary(report, SHA);
     assert.match(summary, /\| `frapp-api` \| `present` \|/);
     assert.match(summary, /no bundle \\\| none/, "a pipe in a detail doesn't break the table");
+    assert.doesNotMatch(annotations.join("\n") + summary, /staging|production/);
+  });
+});
+
+describe("the output", () => {
+  it("is words that no masked value can be inside: no environment, SHA, digit or free text", () => {
+    // The runner drops a job output containing a value the Infisical injection
+    // masked: NODE_ENV (staging, production), PORT (digits a SHA can hold).
+    for (const word of VERDICTS) {
+      assert.match(word, /^[a-z-]+$/, word);
+      assert.doesNotMatch(word, /staging|production/);
+    }
+    const report = Object.fromEntries(Object.keys(SOURCEMAP_PROJECTS).map((p) => [p, { verdict: "missing", detail: `${SHA} staging` }]));
+    assert.equal(outputWords(report), "missing missing missing");
   });
 });
 
 describe("the script never fails the deploy", () => {
-  it("exits 0 and writes no output when its inputs are wrong", () => {
-    const dir = mkdtempSync(join(tmpdir(), "sourcemaps-"));
-    const output = join(dir, "output");
-    const result = spawnSync(process.execPath, [SCRIPT], {
-      env: { PATH: process.env.PATH, TARGET_ENVIRONMENT: "nowhere", GITHUB_OUTPUT: output },
-      encoding: "utf8",
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /::warning::Sentry source-map check did not run: TARGET_ENVIRONMENT/);
-  });
-
-  it("exits 0 with a warning when Sentry can't be reached, and still writes its report", () => {
-    const dir = mkdtempSync(join(tmpdir(), "sourcemaps-"));
-    const output = join(dir, "output");
-    const result = spawnSync(process.execPath, [SCRIPT], {
-      env: {
-        PATH: process.env.PATH,
-        ...ENV,
-        API_BUILT: "true",
-        FRONTENDS_BUILT: "false",
-        // Nothing listens here, so the request fails fast.
-        SENTRY_URL: "http://127.0.0.1:9",
-        GITHUB_OUTPUT: output,
-      },
+  const spawn = (env, output) =>
+    spawnSync(process.execPath, [SCRIPT], {
+      env: { PATH: process.env.PATH, ...env, ...(output ? { GITHUB_OUTPUT: output } : {}) },
       encoding: "utf8",
       timeout: 60_000,
     });
+
+  it("exits 0 with a warning when its inputs are wrong", () => {
+    const result = spawn({ DEPLOY_SHA: "main", API_BUILT: "true" });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /::warning::Sentry source maps for frapp-api on staging: unverifiable/);
-    const written = readFileSync(output, "utf8");
-    assert.match(written, /^verdicts=\{/);
-    assert.equal(JSON.parse(written.slice("verdicts=".length)).projects["frapp-api"].verdict, "unverifiable");
-    assert.doesNotMatch(result.stdout + written, /sntrys_test/, "the token is never printed");
+    assert.match(result.stdout, /::warning::Sentry source-map check did not run: DEPLOY_SHA/);
+  });
+
+  it("exits 0 with a warning when it crashes", () => {
+    // GITHUB_OUTPUT is a directory, so writing the verdicts throws EISDIR
+    // inside main(); only the catch-all stands between that and exit 1.
+    const dir = mkdtempSync(join(tmpdir(), "sourcemaps-"));
+    const result = spawn({ ...ENV, SENTRY_AUTH_TOKEN: "" }, dir);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::warning::Sentry source-map check crashed/);
+    assert.match(result.stdout, /EISDIR/);
+  });
+
+  it("exits 0 when Sentry can't be reached, writing only verdict words, never the token", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sourcemaps-"));
+    const output = join(dir, "output");
+    const result = spawn(
+      {
+        ...ENV,
+        FRONTENDS_BUILT: "false",
+        // Nothing listens here, so the request fails fast.
+        SENTRY_URL: "http://127.0.0.1:9",
+      },
+      output,
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /::warning::Sentry source maps for frapp-api: unverifiable/);
+    assert.equal(readFileSync(output, "utf8"), "verdicts=unverifiable unbuilt unbuilt\n");
+    assert.doesNotMatch(result.stdout, /sntrys_test/, "the token is never printed");
   });
 });

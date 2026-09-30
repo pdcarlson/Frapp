@@ -135,7 +135,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # From this job's context, not the deploy job's output, which may
+          # carry neither (see the verifier's header).
+          TARGET_ENVIRONMENT: staging
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
           SOURCEMAPS: ${{ needs.deploy.outputs.sourcemaps }}
+          SOURCEMAPS_CHECKED: ${{ needs.deploy.outputs.sourcemaps-checked }}
         run: node scripts/ci/sentry-sourcemaps-alert.mjs
 
   # ── Keep a fixed number of staging deployments (#2865) ─────────────────────
