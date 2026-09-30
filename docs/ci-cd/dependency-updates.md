@@ -232,10 +232,12 @@ Two traps for whoever edits that list next:
 assertion, and a bad bump fails `npm run check-types` in CI — which is precisely the safety net that
 makes auto-updates tolerable.
 
-**Dependabot does not manage the root `overrides` block.** Those entries (`handlebars`, `undici`,
-`path-to-regexp`, … — added by #861 to force patched versions of *transitive* dependencies) are
-invisible to it, so they neither get bumped nor get cleaned up as the direct dependencies that pulled
-them in move on. Reviewing that block is a manual job; `npm run check:npm-audit` is what tells you an
+**Dependabot does not manage root `overrides` for transitive dependencies.** Those entries
+(`handlebars`, `undici`, `path-to-regexp`, … — added by #861 to force patched versions of
+*transitive* dependencies) are invisible to it, so they neither get bumped nor get cleaned up as the
+direct dependencies that pulled them in move on. An override that shares its name with a direct
+dependency is the exception: #2963 bumped the exact root `sharp` devDependency and `overrides.sharp`
+together (2026-09-30). Reviewing that block is a manual job; `npm run check:npm-audit` is what tells you an
 override is no longer doing its work.
 
 ## Dependabot PRs need no docs exemption
