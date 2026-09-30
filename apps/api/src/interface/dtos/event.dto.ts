@@ -1,7 +1,6 @@
 import {
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsISO8601,
   IsIn,
   IsInt,
@@ -13,6 +12,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX, RECURRENCE_RULES } from '@repo/validation';
@@ -63,7 +63,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_mandatory?: boolean;
 
   @ApiPropertyOptional({
@@ -251,7 +251,7 @@ export class UpdateEventDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_mandatory?: boolean;
 
   @ApiPropertyOptional({

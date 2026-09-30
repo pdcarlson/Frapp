@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -10,6 +9,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -74,7 +74,7 @@ export class CreateCustomFieldDto {
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   required?: boolean;
 
   @ApiPropertyOptional({ enum: FIELD_VISIBILITIES, default: 'chapter' })
@@ -84,7 +84,7 @@ export class CreateCustomFieldDto {
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   sensitive?: boolean;
 
   @ApiPropertyOptional({ type: () => CustomFieldOptionsDto })
@@ -110,7 +110,7 @@ export class UpdateCustomFieldDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   required?: boolean;
 
   @ApiPropertyOptional({ enum: FIELD_VISIBILITIES })
@@ -120,7 +120,7 @@ export class UpdateCustomFieldDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   sensitive?: boolean;
 
   @ApiPropertyOptional({ type: () => CustomFieldOptionsDto, nullable: true })

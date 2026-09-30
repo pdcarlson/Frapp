@@ -362,15 +362,21 @@ export class ActivityFeedService {
         timestamp: message.created_at,
         title: `New in #${announcementChannel.name}`,
         body: message.content,
-        actor: message.sender_id
-          ? actorFromRoster(message.sender_id, roster)
-          : message.author_name
-            ? {
-                user_id: '',
-                display_name: message.author_name,
-                avatar_url: null,
-              }
-            : null,
+        // A roster member first. An imported row whose author linked their
+        // Discord account (#2878) has a sender too, and when that member has
+        // left the chapter it falls back to its Discord name, as every client
+        // does (`resolveAuthorName`), rather than to an unnamed actor.
+        actor:
+          message.sender_id &&
+          (roster.has(message.sender_id) || !message.author_name)
+            ? actorFromRoster(message.sender_id, roster)
+            : message.author_name
+              ? {
+                  user_id: '',
+                  display_name: message.author_name,
+                  avatar_url: null,
+                }
+              : null,
         target_id: announcementChannel.id,
       }));
   }

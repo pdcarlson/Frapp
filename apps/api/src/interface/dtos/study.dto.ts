@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsBoolean,
   IsInt,
   IsNumber,
   IsOptional,
@@ -10,6 +9,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
@@ -37,7 +37,7 @@ export class CreateGeofenceDto {
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_active?: boolean;
 
   @ApiPropertyOptional({ default: 30 })
@@ -89,7 +89,7 @@ export class UpdateGeofenceDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_active?: boolean;
 
   @ApiPropertyOptional()

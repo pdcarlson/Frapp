@@ -2321,10 +2321,10 @@ Two new per-member tables (#2877), `chat_sidebar_preferences` and `chat_sidebar_
 
 **Once a store build that calls `/v1/chat-sidebar` is listed in `apps/mobile/store/shipped-builds.json`, keep the routes.** Removing a route a shipped binary calls fails the required `check:api-breaking:shipped` gate, and its waiver covers only routes no shipped binary calls. Revert the web rail and mobile s04 to the default arrangement instead, and leave the controller answering; an installed build then keeps working until it is retired.
 
-Leaving the tables in place after the code is reverted is safe: nothing reads them, and `anonymize_user` keeps purging them. To remove them, write a new forward migration, not hand DDL, which would leave the ledger recording `20260929213000` as applied. That migration must first restore `anonymize_user` to the `20260915210100` body, because the current body deletes from both tables and would fail once they are gone:
+Leaving the tables in place after the code is reverted is safe: nothing reads them, and `anonymize_user` keeps purging them. To remove them, write a new forward migration, not hand DDL, which would leave the ledger recording `20260929213000` as applied. That migration must first restore `anonymize_user` without the two sidebar deletes, because the current body deletes from both tables and would fail once they are gone. The body to restore is the current one minus those two lines: since `20260929230000_discord_author_links.sql` (#2878) redefines `anonymize_user` on top of this one, restoring the `20260915210100` body would also drop the #2878 Discord-link scrub, unless #2878 was rolled back first (added 2026-09-29):
 
 ```sql
--- 1. create or replace function anonymize_user(...) with the 20260915210100 body.
+-- 1. create or replace function anonymize_user(...) with the current body, minus the chat_sidebar_* deletes.
 -- 2. Then:
 drop function if exists public.set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean);
 drop table if exists public.chat_sidebar_pins;
@@ -2332,3 +2332,50 @@ drop table if exists public.chat_sidebar_preferences;
 ```
 
 Dropping the tables loses every member's pins, folds and filters. Each member's sidebar returns to the default, and no channel, message or read state is affected.
+
+## Rollback Discord author links (20260929230000)
+
+* **Migration**: `20260929230000_discord_author_links.sql`
+
+A new table, a column and CHECK on `discord_oauth_states`, three functions, an insert trigger on `chat_messages`, and a redefined `anonymize_user` (#2878). Linking has rewritten `chat_messages.sender_id` on the imported rows of every member who linked. That is the part a rollback has to undo deliberately. (It also pointed reports about those rows that named nobody at the member; those stay.)
+
+**Revert the API and web code forward, and keep the migration file.** Revert the #2878 code on `main` and ship that, but keep `supabase/migrations/20260929230000_discord_author_links.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+
+Then undo it in two new forward migrations, not by hand. A deploy applies migrations before it ships the API, so the first migration, steps 1 to 3, ships with the code revert: the detach cannot wait for a later deploy (step 1). Until the reverted API is live, the #2878 author-link routes answer 500 because their table is gone; that is the feature being withdrawn. The bot connect flow keeps working, because `purpose` stays. The second migration, step 4, ships in a later deploy.
+
+1. **Detach every link.** This is not optional. The server-side refusal to edit an imported message ships with the #2878 API, so after the revert a member still attributed as the sender of an imported row could rewrite it through the API. Detaching returns rows to their Discord name. It leaves rows the member deleted deleted. It cannot restore the Discord snapshot that account deletion already cleared; those rows keep the tombstone as sender, like the member's live messages.
+
+   Leave `chat_message_reports` as it is. A report that names a member who linked stays naming them, as it does when they unlink, so it stays out of their own officer queue.
+
+   ```sql
+   update public.chat_messages m
+      set sender_id = null
+     from public.discord_author_links l, public.chat_channels c
+    where m.kind = 'imported'
+      and m.channel_id = c.id
+      and c.chapter_id = l.chapter_id
+      and m.sender_id = l.user_id
+      and m.author_external_id = l.discord_user_id;
+   ```
+
+2. **Put `anonymize_user` back before dropping the table.** The #2878 body reads and deletes from `discord_author_links`, so dropping the table under it makes every account deletion fail with `relation "discord_author_links" does not exist`. Copy the `create or replace function anonymize_user(...)` definition from `20260929213000_chat_sidebar_preferences.sql` into this migration verbatim, with its grants block.
+
+3. **Remove the objects.**
+
+   ```sql
+   drop trigger if exists trg_chat_messages_attach_linked_author on public.chat_messages;
+   drop function if exists public.chat_messages_attach_linked_author();
+   drop function if exists public.link_discord_author(uuid, uuid, text, text);
+   drop function if exists public.unlink_discord_author(uuid, uuid);
+   drop function if exists public.discord_author_detach(uuid, uuid, text);
+   drop function if exists public.discord_author_link_lock_key(uuid);
+   drop table if exists public.discord_author_links;
+   ```
+
+4. **Drop `purpose`, in the second migration, once the reverted API is live.** The #2878 API writes `purpose` on every handshake and filters every confirm on it, so dropping it any earlier breaks the bot connect flow until the revert deploys. The reverted API ignores the column; its `not null default 'connect'` keeps its inserts valid.
+
+   ```sql
+   alter table public.discord_oauth_states
+     drop constraint if exists discord_oauth_states_purpose_check;
+   alter table public.discord_oauth_states drop column if exists purpose;
+   ```

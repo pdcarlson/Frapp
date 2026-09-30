@@ -268,6 +268,56 @@ describe('ActivityFeedService', () => {
     expect(announcementIds).toEqual(['announcement:msg-live']);
   });
 
+  // #2878: a linked imported announcement has the member as its sender. Once
+  // they leave, it reads as its Discord name, like every client shows it,
+  // rather than as an actor with no name.
+  it('names a departed linked author by their Discord name', async () => {
+    mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+    mockMemberService.findRosterWithJoinDates.mockResolvedValue([]);
+    mockChatService.getMessages.mockResolvedValue([
+      messageFixture({
+        id: 'msg-imported',
+        kind: 'imported',
+        sender_id: 'user-gone',
+        author_name: 'jkslayer',
+      }),
+    ]);
+
+    const result = await service.getFeed(CHAPTER_ID, USER_ID);
+    const item = result.find(
+      (entry) => entry.id === 'announcement:msg-imported',
+    );
+
+    expect(item?.actor).toEqual({
+      user_id: '',
+      display_name: 'jkslayer',
+      avatar_url: null,
+    });
+  });
+
+  it('names a linked author on the roster by their member name', async () => {
+    mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+    mockMemberService.findRosterWithJoinDates.mockResolvedValue([
+      joinFixture({ user_id: 'user-jake', display_name: 'Jake Kim' }),
+    ]);
+    mockChatService.getMessages.mockResolvedValue([
+      messageFixture({
+        id: 'msg-imported',
+        kind: 'imported',
+        sender_id: 'user-jake',
+        author_name: 'jkslayer',
+      }),
+    ]);
+
+    const result = await service.getFeed(CHAPTER_ID, USER_ID);
+    const item = result.find(
+      (entry) => entry.id === 'announcement:msg-imported',
+    );
+
+    expect(item?.actor?.display_name).toBe('Jake Kim');
+    expect(item?.actor?.user_id).toBe('user-jake');
+  });
+
   it('leaves out an announcement whose author the caller has blocked, reading as the caller', async () => {
     // The feed keeps no block list of its own (#2324): it drops the rows
     // `ChatService.getMessages` flagged `sender_blocked` for the viewer it was

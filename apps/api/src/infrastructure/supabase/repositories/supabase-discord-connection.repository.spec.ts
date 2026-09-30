@@ -75,8 +75,18 @@ describe('SupabaseDiscordConnectionRepository — tenant scope', () => {
           }),
         ],
         discord_oauth_states: [
-          inA({ id: STATE_A, expires_at: LATER, consumed_at: null }),
-          inB({ id: STATE_B, expires_at: LATER, consumed_at: null }),
+          inA({
+            id: STATE_A,
+            purpose: 'connect',
+            expires_at: LATER,
+            consumed_at: null,
+          }),
+          inB({
+            id: STATE_B,
+            purpose: 'connect',
+            expires_at: LATER,
+            consumed_at: null,
+          }),
         ],
       },
     });
@@ -140,12 +150,14 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
         discord_oauth_states: [
           inA({
             id: STATE_A,
+            purpose: 'connect',
             expires_at: expiry.a ?? LATER,
             consumed_at: null,
             return_path: '/discord-import',
           }),
           inB({
             id: STATE_B,
+            purpose: 'connect',
             expires_at: expiry.b ?? LATER,
             consumed_at: null,
             return_path: '/discord-import',
@@ -199,6 +211,7 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
     const { repo } = build();
     const created = await repo.createState({
       chapter_id: CHAPTER_B,
+      purpose: 'connect',
       created_by: 'user-1',
       return_path: '/discord-import',
       expires_at: LATER,
@@ -225,6 +238,7 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
         discord_oauth_states: [
           inA({
             id: STATE_A,
+            purpose: 'connect',
             expires_at: LATER,
             confirm_token: token,
             confirm_expires_at: LATER,
@@ -233,6 +247,7 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
           }),
           inB({
             id: STATE_B,
+            purpose: 'connect',
             expires_at: LATER,
             confirm_token: '0b000000-0000-4000-8000-0000000002ff',
             confirm_expires_at: LATER,
@@ -263,6 +278,7 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
           discord_oauth_states: [
             inA({
               id: STATE_A,
+              purpose: 'connect',
               expires_at: LATER,
               confirm_token: token,
               confirm_expires_at: confirmExpiry,
@@ -271,6 +287,7 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
             }),
             inB({
               id: STATE_B,
+              purpose: 'connect',
               expires_at: LATER,
               confirm_token: '0b000000-0000-4000-8000-0000000002ff',
               confirm_expires_at: LATER,
@@ -291,11 +308,169 @@ describe('SupabaseDiscordConnectionRepository — the OAuth state', () => {
     expect(await stale.consumeConfirmToken(token, CHAPTER_A, NOW)).toBeNull();
   });
 
+  it('findStateReturnPath reads where a spent handshake was going, without consuming anything', async () => {
+    const { harness, repo } = build({ a: EARLIER });
+    expect(await repo.findStateReturnPath(STATE_A)).toBe('/discord-import');
+    expect(
+      await repo.findStateReturnPath('0c000000-0000-4000-8000-00000000ffff'),
+    ).toBeNull();
+    const row = harness
+      .rows('discord_oauth_states')
+      .find((entry) => entry.id === STATE_A);
+    expect(row?.consumed_at).toBeNull();
+  });
+
   it('deleteExpiredStates reaps only what is past its expiry', async () => {
     const { harness, repo } = build({ a: EARLIER });
     expect(await repo.deleteExpiredStates(NOW)).toBe(1);
     expect(harness.rows('discord_oauth_states').map((row) => row.id)).toEqual([
       STATE_B,
     ]);
+  });
+});
+
+describe('SupabaseDiscordConnectionRepository — the member link handshake (#2878)', () => {
+  const TOKEN_A = '0a000000-0000-4000-8000-0000000003ff';
+  const TOKEN_B = '0b000000-0000-4000-8000-0000000003ff';
+  const MEMBER = '0a000000-0000-4000-8000-0000000003aa';
+  const OTHER_MEMBER = '0a000000-0000-4000-8000-0000000003bb';
+
+  function seed(purpose: 'connect' | 'author_link' = 'author_link') {
+    const harness = createTenantHarness({
+      collisionExempt: {
+        discord_oauth_states: ['confirm_token', 'pending_discord_user_id'],
+      },
+      tables: {
+        discord_oauth_states: [
+          inA({
+            id: STATE_A,
+            purpose,
+            created_by: MEMBER,
+            expires_at: LATER,
+            consumed_at: NOW.toISOString(),
+            confirm_token: TOKEN_A,
+            confirm_expires_at: LATER,
+            confirmed_at: null,
+            pending_discord_user_id: '3000000000000000001',
+          }),
+          inB({
+            id: STATE_B,
+            purpose,
+            created_by: MEMBER,
+            expires_at: LATER,
+            consumed_at: NOW.toISOString(),
+            confirm_token: TOKEN_B,
+            confirm_expires_at: LATER,
+            confirmed_at: null,
+            pending_discord_user_id: '3000000000000000002',
+          }),
+        ],
+      },
+    });
+    return {
+      harness,
+      repo: new SupabaseDiscordConnectionRepository(harness.client),
+    };
+  }
+
+  it('consumeAuthorLinkConfirmToken spends only the starter’s token, in its own chapter', async () => {
+    const { harness, repo } = seed();
+
+    // Another chapter: refused.
+    expect(
+      await repo.consumeAuthorLinkConfirmToken(TOKEN_A, CHAPTER_B, MEMBER, NOW),
+    ).toBeNull();
+    // Another member holding the token (it reached their browser): refused.
+    // This is the confused-deputy control for the link flow.
+    expect(
+      await repo.consumeAuthorLinkConfirmToken(
+        TOKEN_A,
+        CHAPTER_A,
+        OTHER_MEMBER,
+        NOW,
+      ),
+    ).toBeNull();
+    // The member who started it, in its chapter: accepted, once.
+    const ok = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.consumeAuthorLinkConfirmToken(TOKEN_A, CHAPTER_A, MEMBER, NOW),
+    );
+    expect(ok?.pending_discord_user_id).toBe('3000000000000000001');
+    expect(
+      await repo.consumeAuthorLinkConfirmToken(TOKEN_A, CHAPTER_A, MEMBER, NOW),
+    ).toBeNull();
+  });
+
+  it('a link token never activates a guild, and a guild token never links an account', async () => {
+    const link = seed('author_link');
+    expect(
+      await link.repo.consumeConfirmToken(TOKEN_A, CHAPTER_A, NOW),
+    ).toBeNull();
+
+    const connect = seed('connect');
+    expect(
+      await connect.repo.consumeAuthorLinkConfirmToken(
+        TOKEN_A,
+        CHAPTER_A,
+        MEMBER,
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it('parks an account only on a link handshake, and a guild only on a connect one', async () => {
+    const pendingInput = {
+      discord_user_id: '3000000000000000009',
+      discord_username: 'jkslayer',
+      scopes: 'identify',
+      confirm_token: '0a000000-0000-4000-8000-0000000004ff',
+      confirm_expires_at: LATER,
+    };
+    const fresh = (purpose: 'connect' | 'author_link') => {
+      const harness = createTenantHarness({
+        tables: {
+          discord_oauth_states: [
+            inA({
+              id: STATE_A,
+              purpose,
+              expires_at: LATER,
+              consumed_at: NOW.toISOString(),
+              confirm_token: null,
+            }),
+            inB({
+              id: STATE_B,
+              purpose,
+              expires_at: LATER,
+              consumed_at: NOW.toISOString(),
+              confirm_token: null,
+            }),
+          ],
+        },
+      });
+      return new SupabaseDiscordConnectionRepository(harness.client);
+    };
+
+    expect(
+      await fresh('connect').attachPendingAuthorLink(STATE_A, pendingInput),
+    ).toBeNull();
+    expect(
+      await fresh('author_link').attachPendingConnection(STATE_A, {
+        guild_id: GUILD_A,
+        guild_name: null,
+        guild_icon: null,
+        discord_user_id: '3000000000000000009',
+        discord_username: null,
+        permissions: '32',
+        scopes: 'bot identify guilds',
+        confirm_token: '0a000000-0000-4000-8000-0000000004fe',
+        confirm_expires_at: LATER,
+      }),
+    ).toBeNull();
+
+    const parked = await fresh('author_link').attachPendingAuthorLink(
+      STATE_A,
+      pendingInput,
+    );
+    expect(parked?.pending_discord_user_id).toBe('3000000000000000009');
+    expect(parked?.pending_guild_id ?? null).toBeNull();
   });
 });

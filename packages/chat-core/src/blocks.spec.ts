@@ -302,6 +302,17 @@ describe("classifyMessage", () => {
     });
   });
 
+  describe("a linked imported row (#2878)", () => {
+    it("is its member's message, so a block hides it and a hold holds it", () => {
+      const linked = one(echoRow("m3", BLOCKED, { kind: "imported" }));
+      expect(classifyMessage(linked, ready([BLOCKED]), VIEWER)).toBe(
+        "tombstone",
+      );
+      expect(classifyMessage(linked, unavailable(), VIEWER)).toBe("held");
+      expect(isBlockableSender(linked.sender_id)).toBe(true);
+    });
+  });
+
   describe("senders nobody can block", () => {
     it("never hides the system actor or an imported row", () => {
       const system = one(echoRow("m1", SYSTEM_SENDER_ID));

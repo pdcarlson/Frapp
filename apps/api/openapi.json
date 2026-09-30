@@ -7714,6 +7714,125 @@
         ]
       }
     },
+    "/v1/discord/author-link": {
+      "get": {
+        "operationId": "DiscordAuthorLinkController_getMine_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordAuthorLinkDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Your linked Discord account in this chapter, if any",
+        "tags": [
+          "Discord Author Links"
+        ]
+      },
+      "delete": {
+        "description": "Your imported messages here go back to their Discord name. Messages you deleted stay deleted.",
+        "operationId": "DiscordAuthorLinkController_unlink_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnlinkDiscordAuthorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unlink your Discord account in this chapter",
+        "tags": [
+          "Discord Author Links"
+        ]
+      }
+    },
+    "/v1/discord/author-link/start": {
+      "post": {
+        "description": "Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.",
+        "operationId": "DiscordAuthorLinkController_begin_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeginDiscordAuthorLinkResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start linking your Discord account",
+        "tags": [
+          "Discord Author Links"
+        ]
+      }
+    },
+    "/v1/discord/author-link/confirm": {
+      "post": {
+        "description": "Links the account only for the member who started the handshake, in this chapter, and attributes that Discord author’s imported messages here to them. 409 when the account is already linked to another member of the chapter. Linking a different account replaces your previous link.",
+        "operationId": "DiscordAuthorLinkController_confirm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmDiscordAuthorLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmDiscordAuthorLinkResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Link the Discord account the callback parked",
+        "tags": [
+          "Discord Author Links"
+        ]
+      }
+    },
     "/v1/client-policy": {
       "get": {
         "operationId": "ClientPolicyController_get_v1",
@@ -12411,6 +12530,113 @@
         },
         "required": [
           "handshake"
+        ]
+      },
+      "DiscordAuthorLinkDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether linking can be started in this environment: a Discord application is configured and Discord has not reported it misconfigured. The same answer as `GET /v1/discord/availability`, without its officer gate."
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
+          },
+          "discord_username": {
+            "type": "string",
+            "nullable": true,
+            "description": "What Discord called the linked account when it was linked. Display only."
+          },
+          "linked_at": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "linked",
+          "discord_username",
+          "linked_at"
+        ]
+      },
+      "BeginDiscordAuthorLinkResponseDto": {
+        "type": "object",
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "description": "Send the member here. Asks Discord for the `identify` scope only, with a single-use state bound to this member and chapter."
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "When the handshake stops being redeemable."
+          }
+        },
+        "required": [
+          "authorize_url",
+          "expires_at"
+        ]
+      },
+      "ConfirmDiscordAuthorLinkDto": {
+        "type": "object",
+        "properties": {
+          "handshake": {
+            "type": "string",
+            "description": "The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in."
+          }
+        },
+        "required": [
+          "handshake"
+        ]
+      },
+      "ConfirmDiscordAuthorLinkResponseDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether linking can be started in this environment: a Discord application is configured and Discord has not reported it misconfigured. The same answer as `GET /v1/discord/availability`, without its officer gate."
+          },
+          "linked": {
+            "type": "boolean",
+            "description": "Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them."
+          },
+          "discord_username": {
+            "type": "string",
+            "nullable": true,
+            "description": "What Discord called the linked account when it was linked. Display only."
+          },
+          "linked_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "messages_linked": {
+            "type": "number",
+            "description": "How many imported messages in this chapter the link attributed to the caller. Zero when none were imported under that account yet; later imports attach as they land."
+          }
+        },
+        "required": [
+          "available",
+          "linked",
+          "discord_username",
+          "linked_at",
+          "messages_linked"
+        ]
+      },
+      "UnlinkDiscordAuthorResponseDto": {
+        "type": "object",
+        "properties": {
+          "unlinked": {
+            "type": "boolean",
+            "description": "False when there was no link to remove."
+          },
+          "messages_restored": {
+            "type": "number",
+            "description": "How many imported messages went back to their Discord name. Messages the caller deleted stay deleted."
+          }
+        },
+        "required": [
+          "unlinked",
+          "messages_restored"
         ]
       },
       "ClientPolicyDto": {

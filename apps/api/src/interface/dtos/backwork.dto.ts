@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -9,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const SEMESTERS = ['Spring', 'Summer', 'Fall', 'Winter'] as const;
@@ -131,7 +131,7 @@ export class ConfirmBackworkUploadDto {
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_redacted?: boolean;
 }
 

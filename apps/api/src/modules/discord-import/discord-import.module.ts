@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { DiscordImportController } from '../../interface/controllers/discord-import.controller';
 import { DiscordConnectionController } from '../../interface/controllers/discord-connection.controller';
+import { DiscordAuthorLinkController } from '../../interface/controllers/discord-author-link.controller';
 import { DiscordImportService } from '../../application/services/discord-import.service';
 import { DiscordOAuthService } from '../../application/services/discord-oauth.service';
+import { DiscordAuthorLinkService } from '../../application/services/discord-author-link.service';
 import { DiscordImportWorkerService } from '../discord-import-worker/discord-import-worker.service';
 import { DiscordExportWorkerService } from '../discord-import-worker/discord-export-worker.service';
 import { SupabaseDiscordImportRepository } from '../../infrastructure/supabase/repositories/supabase-discord-import.repository';
 import { SupabaseDiscordConnectionRepository } from '../../infrastructure/supabase/repositories/supabase-discord-connection.repository';
+import { SupabaseDiscordAuthorLinkRepository } from '../../infrastructure/supabase/repositories/supabase-discord-author-link.repository';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { SupabaseArchiveMediaCopier } from '../../infrastructure/storage/supabase-archive-media-copier.service';
@@ -15,6 +18,7 @@ import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-
 import { RbacModule } from '../rbac/rbac.module';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
+import { DISCORD_AUTHOR_LINK_REPOSITORY } from '#domain/repositories/discord-author-link.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { ARCHIVE_MEDIA_COPIER } from '#domain/adapters/archive-media-copier.interface';
@@ -24,7 +28,9 @@ import {
 } from '#domain/adapters/discord.interface';
 
 /**
- * The Discord archive importer: admin routes, the connect flow, and the worker.
+ * The Discord archive importer: admin routes, the connect flow, the worker,
+ * and members linking their own Discord account to their imported history
+ * (#2878), which shares the connect flow's one registered callback URL.
  *
  * Registers `STORAGE_PROVIDER` itself, as every storage-using module here does
  * — there is no central storage module in this repo.
@@ -50,10 +56,15 @@ import {
   // and starting an import creates roles and grants their read permissions
   // through the same service Settings → Roles uses (#2818).
   imports: [RbacModule],
-  controllers: [DiscordImportController, DiscordConnectionController],
+  controllers: [
+    DiscordImportController,
+    DiscordConnectionController,
+    DiscordAuthorLinkController,
+  ],
   providers: [
     DiscordImportService,
     DiscordOAuthService,
+    DiscordAuthorLinkService,
     DiscordImportWorkerService,
     DiscordExportWorkerService,
     {
@@ -63,6 +74,10 @@ import {
     {
       provide: DISCORD_CONNECTION_REPOSITORY,
       useClass: SupabaseDiscordConnectionRepository,
+    },
+    {
+      provide: DISCORD_AUTHOR_LINK_REPOSITORY,
+      useClass: SupabaseDiscordAuthorLinkRepository,
     },
     {
       provide: CHAT_CHANNEL_REPOSITORY,

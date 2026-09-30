@@ -1,8 +1,7 @@
 import 'reflect-metadata';
-import { readdirSync } from 'fs';
-import { join } from 'path';
 import { getMetadataStorage, validate, ValidationTypes } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { loadDtoClasses, type DtoClass } from '#test/helpers/dto-corpus';
 
 /**
  * Criterion 1 of #849 asked for "a DTO audit table (or lint rule) showing every
@@ -26,47 +25,6 @@ const GATE_ONLY: readonly string[] = [
   ValidationTypes.CONDITIONAL_VALIDATION, // @IsOptional, @ValidateIf
   ValidationTypes.WHITELIST, // @Allow
 ];
-
-interface DtoClass {
-  new (...args: never[]): object;
-  name: string;
-}
-
-/**
- * Discovered from disk rather than listed by hand: a new `*.dto.ts` is covered
- * the moment it lands, which is the whole point of preferring this to a table.
- */
-function loadDtoClasses(): DtoClass[] {
-  const dir = __dirname;
-  const classes: DtoClass[] = [];
-
-  // Recursive so a reorganisation into `dtos/<domain>/` subfolders keeps every
-  // DTO audited. A flat read would quietly stop covering the moved files while
-  // still finding enough classes to clear the floor below.
-  for (const file of readdirSync(dir, { recursive: true }).map(String).sort()) {
-    if (!file.endsWith('.dto.ts')) continue;
-    // Synchronous require, as in test/ai-evals/harness/registry.ts. `import()`
-    // stays a true dynamic import under ts-jest; that used to mean paying for
-    // --experimental-vm-modules on the whole runner for this one file, but the
-    // flag is on every jest script now (see docs/guides/testing.md § 2a), so
-    // the only remaining reason for `require` here is that it is simpler.
-    // Extension stripped so Jest's resolver picks the module up normally.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require(join(dir, file.replace(/\.ts$/, ''))) as Record<
-      string,
-      unknown
-    >;
-    for (const exported of Object.values(mod)) {
-      if (
-        typeof exported === 'function' &&
-        /^\s*class\s/.test(exported.toString())
-      ) {
-        classes.push(exported as DtoClass);
-      }
-    }
-  }
-  return classes;
-}
 
 /**
  * Property -> the validators registered on it, for one class.
