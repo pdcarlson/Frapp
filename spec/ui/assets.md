@@ -101,7 +101,7 @@ No transactional email templates exist in-repo yet; this binds the first ones bu
 
 ## 7. Mobile (Expo) rasters
 
-Android and the web take **raster** icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png`). iOS takes the Icon Composer bundle described below instead, and none of these PNGs reaches it.
+Android and the web take **raster** icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png`). iOS takes its app icon from the Icon Composer bundle described below instead; of these PNGs, only the splash image reaches iOS.
 
 Shapes: `icon.png` 1024² opaque RGB, the full-bleed tile, which Expo uses wherever no platform-specific icon is set; `adaptive-icon.png`, `adaptive-icon-monochrome.png` and `splash-icon.png` 1024² **glyph-only on transparent** — the crest alone, inset 17% so the 66% launcher safe zone clips nothing (the monochrome layer is white, for Android themed icons). These composited an opaque charcoal tile until [#2153](https://github.com/pdcarlson/Frapp/issues/2153); that square showed as a hard edge on the splash background and made the layer uncheckable, since its alpha measured the same whether the crest was there or not; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#1A1A1A`, the mark's field.
 
