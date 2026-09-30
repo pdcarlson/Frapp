@@ -112,13 +112,16 @@ export async function vectorMask(input, size) {
 //     search-result snippets: support.google.com is blocked from the cloud
 //     sandbox), so the crest appears once, small, inside the lockup, and never
 //     as the tile.
-//   - The lockup is the landing header's (`apps/landing/components/frapp-lockup.tsx`):
-//     a 28px crest box, a 12px gap, and "Frapp" at the 18px title size, in
-//     `--foreground`, scaled up whole by `SCALE`. The word is set in Figtree
-//     Bold, the weight `frapp-lockup.svg` and the social card use: the header's
-//     600 is a weight of the variable woff2, and the repo vendors static
-//     instances only at 400 and 700. If the header's numbers change, change
-//     `HEADER` with them; nothing checks the two agree.
+//   - The lockup takes its sizes from the landing header
+//     (`apps/landing/components/frapp-lockup.tsx`: a 28px crest box and "Frapp"
+//     at the 18px title size, in `--foreground`) and its spacing from
+//     `packages/brand-assets/assets/frapp-lockup.svg`, where the word starts
+//     where the crest's frame ends. The header's own 12px gap reads wide at
+//     banner scale (owner, 2026-09-30). Scaled up whole by `SCALE`. The word is
+//     set in Figtree Bold, the weight `frapp-lockup.svg` and the social card
+//     use: the header's 600 is a weight of the variable woff2, and the repo
+//     vendors static instances only at 400 and 700. If the header's sizes
+//     change, change `HEADER` with them; nothing checks the two agree.
 //   - The line beneath is the listing's own short description, "Your chapter,
 //     in one place" (`apps/mobile/store/README.md` § Identity), in
 //     `--muted-foreground`. Not the brand tagline "Ask your chapter anything":
@@ -137,8 +140,12 @@ const TEXT_WORKER = join(
 
 const TAGLINE = "Your chapter, in one place";
 
-/** The landing header lockup's px values, multiplied by `SCALE`. */
-const HEADER = { crest: 28, gap: 12, word: 18 };
+/**
+ * The landing header's crest box and word size, multiplied by `SCALE`, and
+ * `frapp-lockup.svg`'s spacing: the word begins at the crest frame's edge.
+ */
+const HEADER = { crest: 28, word: 18 };
+const LOCKUP_GAP = 0;
 const SCALE = 6.5;
 /** The line's size as a share of the word's, the social card's 34 / 88. */
 const TAGLINE_RATIO = 34 / 88;
@@ -304,7 +311,7 @@ export async function renderFeatureGraphic({
   const mutedForeground = cssColour(css, "--muted-foreground");
 
   const crestBox = Math.round(HEADER.crest * SCALE);
-  const gap = Math.round(HEADER.gap * SCALE);
+  const gap = Math.round(LOCKUP_GAP * SCALE);
   const wordPx = Math.round(HEADER.word * SCALE);
   const taglinePx = Math.round(wordPx * TAGLINE_RATIO);
 
@@ -348,9 +355,9 @@ export async function renderFeatureGraphic({
   assertFacesDiffer(probeRegular, probeBold);
   const capHeight = cap.height;
 
-  // Horizontal: crest box, the header's gap, then the word, centred as a unit
-  // on its ink. The crest box keeps its transparent margins, so the gap is the
-  // header's.
+  // Horizontal: crest box, then the word from the box's edge, centred as a
+  // unit on its ink. The crest box keeps its transparent margins, which are the
+  // space `frapp-lockup.svg` leaves between the crest and the word.
   const wordLeftInBox = crestBox + gap;
   const lockupWidth = wordLeftInBox + word.width - crestInk.left;
   const originX = Math.round((FEATURE_WIDTH - lockupWidth) / 2) - crestInk.left;
