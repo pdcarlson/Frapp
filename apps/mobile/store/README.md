@@ -717,7 +717,7 @@ compared against nothing. Why it blocks, and how it fails:
 install it, in a PR that adds one entry per build:
 
 ```json
-{ "platform": "ios", "version": "1.0.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
+{ "platform": "ios", "version": "0.9.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
 ```
 
 - `platform` is `ios` or `android`. `version` is the store version and `build` the native build
