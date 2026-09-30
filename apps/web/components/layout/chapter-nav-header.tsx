@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, ChevronDown, Loader2 } from "lucide-react";
-import { useAccessibleChapters, useCurrentChapter } from "@repo/hooks";
+import {
+  useAccessibleChapters,
+  useCurrentChapter,
+  useMyPermissions,
+} from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
 import {
   CurrentChapterPayloadSchema,
@@ -22,6 +26,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
+import { hasSettingsDestination } from "@/components/settings/settings-access";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
@@ -39,8 +45,8 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
  * - **The row always renders.** The old switcher returned `null` for the
  *   single-chapter case that describes nearly every user. Here the row *is* the
  *   chapter's identity, so it renders regardless; only the menu's contents
- *   change. A member with one chapter still gets "Join another chapter" and
- *   chapter settings.
+ *   change. A member with one chapter still gets "Join another chapter", and
+ *   "Chapter settings" whenever Settings holds something for them.
  * - **Switching still goes through `useSelectChapter`**, never the chapter
  *   store directly. The `active_chapter_id` JWT claim outranks the
  *   `x-chapter-id` header, so writing the store alone puts the two in
@@ -72,6 +78,18 @@ export function ChapterNavHeader({
     enabled: !!activeChapterId,
   });
   const { data: membershipData, isSuccess } = useAccessibleChapters();
+  // The menu's "Chapter settings" link is the second door into Settings, so it
+  // asks the nav's Settings row's question: is there anything there for this
+  // viewer? Without it a member followed the link to a page with nothing they
+  // could use (#2946).
+  const { data: permissionsPayload } = useMyPermissions({
+    enabled: !!activeChapterId,
+  });
+  const isModuleEnabled = useChapterModuleGate();
+  const showSettingsLink = hasSettingsDestination(
+    permissionsPayload?.permissions,
+    isModuleEnabled,
+  );
   const selectChapter = useSelectChapter();
   const { toast } = useToast();
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
@@ -305,11 +323,13 @@ export function ChapterNavHeader({
             Join another chapter
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings" onClick={onNavigate}>
-            Chapter settings
-          </Link>
-        </DropdownMenuItem>
+        {showSettingsLink ? (
+          <DropdownMenuItem asChild>
+            <Link href="/settings" onClick={onNavigate}>
+              Chapter settings
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

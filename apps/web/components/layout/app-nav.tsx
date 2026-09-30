@@ -3,7 +3,7 @@
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
-import { DASHBOARD_NAV } from "@/components/layout/nav-config";
+import { DASHBOARD_NAV, type NavItem } from "@/components/layout/nav-config";
 import {
   isNavItemVisible,
   ProtectedNavItem,
@@ -23,8 +23,8 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
  * change; letting a desktop user narrow their own nav is not.
  *
  * Section headings are derived, never declared — a heading renders only when at
- * least one of its items survives both the permission and module gates, so the
- * Admin group takes its heading with it for an ordinary member. In the rail
+ * least one of its items survives both the permission and module gates, so a
+ * heading never announces a group the viewer cannot open. In the rail
  * there is no room for a heading at all, so grouping falls back to the hairline
  * dividers the board draws between rail groups (`1c` pin 1).
  */
@@ -47,6 +47,17 @@ type AppNavProps = {
 
 /** 18px duotone glyph, per `1b` pin 2. */
 const navIconClassName = "h-[18px] w-[18px]";
+
+/**
+ * A row is the current page when its own route is open, and the current
+ * section when a route it owns is (`activeFor`: the Settings tools, which keep
+ * their own pages but sit under the Settings row).
+ */
+function currentFor(item: NavItem, pathname: string): "page" | "true" | undefined {
+  if (item.href === pathname) return "page";
+  if (item.activeFor?.includes(pathname)) return "true";
+  return undefined;
+}
 
 export function AppNav({
   collapsed,
@@ -99,7 +110,7 @@ export function AppNav({
           <ProtectedNavItem
             key={item.id}
             item={item}
-            isActive={item.href === pathname}
+            current={currentFor(item, pathname)}
             permissions={permissions}
             iconClassName={navIconClassName}
             onNavigate={onNavigate}

@@ -38,7 +38,6 @@ function renderItem(item: NavItem, isModuleEnabled?: (key: string) => boolean) {
   return render(
     <ProtectedNavItem
       item={item}
-      isActive={false}
       permissions={["*"]}
       iconClassName="h-4 w-4"
       focusClassName=""
@@ -72,7 +71,6 @@ describe("ProtectedNavItem module gating", () => {
     render(
       <ProtectedNavItem
         item={{ ...moduleItem, requirePermission: "events:manage" }}
-        isActive={false}
         permissions={["members:view"]}
         iconClassName="h-4 w-4"
         focusClassName=""
@@ -83,11 +81,10 @@ describe("ProtectedNavItem module gating", () => {
   });
 });
 
-// `isNavItemVisible` is the predicate the sidebar, the mobile drawer, and the
-// ⌘K palette all share. It is exported specifically so a *section* can ask the
-// same question its items do — the Admin group is role-gated entirely through
-// its items' permissions, and a heading that outlived them would announce a
-// group an ordinary member cannot open.
+// `isNavItemVisible` is the predicate the sidebar and the mobile drawer share.
+// It is exported specifically so a *section* can ask the same question its
+// items do — a heading that outlived its rows would announce a group the
+// viewer cannot open.
 describe("isNavItemVisible", () => {
   const permissionItem: NavItem = {
     id: "roles",
@@ -154,21 +151,33 @@ describe("isNavItemVisible", () => {
 // The restructure's whole point is that a member sees a short list of things
 // they can actually open. These pin the shape rather than the wording.
 describe("DASHBOARD_NAV structure", () => {
-  it("gates every Admin item, so the section disappears for ordinary members", async () => {
+  it("has no officer-only section: officer setup and tools sit behind one Settings row", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     const { isNavItemVisible } = await import("./protected-nav-item");
-
-    const admin = DASHBOARD_NAV.find((section) => section.id === "admin");
-    expect(admin).toBeDefined();
-    // An ungated item here would keep the heading alive for everyone and
-    // quietly undo the gating.
-    for (const item of admin!.items) {
-      expect(item.requirePermission ?? item.requireAnyOf).toBeDefined();
-    }
-    const visible = admin!.items.filter((item) =>
-      isNavItemVisible(item, ["members:view"]),
+    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOL_ROUTES } = await import(
+      "@/components/settings/settings-access"
     );
-    expect(visible).toEqual([]);
+
+    // The six-row Admin group is what pushed a President's nav past a 768px
+    // window (#2946). A section whose every row is officer-gated is that group
+    // coming back.
+    for (const section of DASHBOARD_NAV) {
+      const memberRows = section.items.filter((item) =>
+        isNavItemVisible(item, ["members:view"]),
+      );
+      expect(memberRows.length, section.id).toBeGreaterThan(0);
+    }
+
+    const items = DASHBOARD_NAV.flatMap((section) => section.items);
+    const settings = items.find((item) => item.id === "settings");
+    expect(settings?.requireAnyOf).toEqual(SETTINGS_ENTRY_PERMISSIONS);
+    expect(isNavItemVisible(settings!, ["members:view"])).toBe(false);
+    // Every officer tool route is owned by the Settings row, and none of them
+    // is a row of its own.
+    expect(settings?.activeFor).toEqual(SETTINGS_TOOL_ROUTES);
+    for (const route of SETTINGS_TOOL_ROUTES) {
+      expect(items.some((item) => item.href === route)).toBe(false);
+    }
   });
 
   it("leads with Chat as an anchor that renders no heading", async () => {

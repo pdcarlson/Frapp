@@ -110,9 +110,6 @@ describe("the Settings page gates profile and accent saves on CHAPTER_PROFILE_PE
       "the permissions the API admitted before #2575",
       ["chapter-config:view", "roles:manage", "billing:manage"],
     ],
-    // `manage` without `view`: the route needs both, like every other
-    // `chapter-config:manage` route.
-    ["chapter-config:manage alone", ["chapter-config:manage"]],
     ["chapter-config:view alone", ["chapter-config:view"]],
   ])("disables both for %s", async (_label, granted) => {
     permissions.current = granted;
@@ -120,5 +117,16 @@ describe("the Settings page gates profile and accent saves on CHAPTER_PROFILE_PE
       profileEnabled: false,
       accentEnabled: false,
     });
+  });
+
+  it("offers chapter-config:manage alone neither tab, since the config read needs view", () => {
+    // `manage` without `view` could never save here: the route needs both, like
+    // every other `chapter-config:manage` route, and the whole config
+    // controller is guarded on `view`. Since #2946 Settings hides tabs the
+    // viewer cannot use, so the saves are not reachable at all.
+    permissions.current = ["chapter-config:manage"];
+    render(<SettingsPage />);
+    expect(screen.queryByRole("tab", { name: /^chapter$/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /accent/i })).toBeNull();
   });
 });

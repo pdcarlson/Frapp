@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
+import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
 import { PlanMatrix } from "./plan-matrix";
 import { ProChip } from "./pro-chip";
 
@@ -17,6 +18,7 @@ import { ProChip } from "./pro-chip";
 
 const SHIPPED = new Set<string>([
   ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
+  ...SETTINGS_TOOLS.flatMap((tool) => (tool.module ? [tool.module] : [])),
   "dues",
 ]);
 const PAID = MODULE_CATALOG.filter(
@@ -36,6 +38,23 @@ const UNBUILT = [
 ] as const;
 
 describe("PlanMatrix", () => {
+  it("lists the paid modules that ship web surfaces, by name", () => {
+    // Not derived from the same lists as the component, so losing a surface
+    // the derivation used to see turns this red. It did once: Reports and
+    // Study Zones left the nav for the Settings rail (#2946) and dropped out of
+    // a derivation that read only nav rows.
+    render(<PlanMatrix />);
+    for (const key of ["events", "tasks", "points", "hours", "polls", "documents", "backwork", "reports", "geofences", "dues"]) {
+      const entry = MODULE_CATALOG.find((m) => m.key === key);
+      expect(entry, `${key} is not in the catalog`).toBeDefined();
+      if (entry?.tier !== "paid") continue;
+      expect(
+        screen.getByText(entry.label),
+        `${key} is missing from the matrix`,
+      ).toBeInTheDocument();
+    }
+  });
+
   it("lists every paid module from the catalog, by its catalog label", () => {
     render(<PlanMatrix />);
 

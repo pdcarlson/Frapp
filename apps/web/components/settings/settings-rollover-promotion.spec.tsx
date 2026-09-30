@@ -233,6 +233,28 @@ describe("semester rollover — New Member promotion (#285)", () => {
     expect(dialog).not.toHaveTextContent(/new member/i);
   });
 
+  // #2946: the Semester tab also opens to a `semester:rollover` holder without
+  // `chapter-config:view`, whose config read is refused. The promotion copy
+  // must still name the chapter's own role, read from the member view.
+  it("names the chapter's own role when the config read is refused", () => {
+    permissions = ["semester:rollover", "roles:manage"];
+    mockOrgConfig.mockReturnValue(undefined as unknown as Record<string, unknown>);
+    const base = mockCurrentChapter() as { data: Record<string, unknown> };
+    mockCurrentChapter.mockReturnValue({
+      ...base,
+      data: {
+        ...base.data,
+        org_archetype: "nphc",
+        vocabulary: { pledge: "Aspirant" },
+      },
+    });
+    render(<SettingsPage />);
+
+    expect(
+      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+    ).toBeInTheDocument();
+  });
+
   // #351 diff-review finding: naive `${pledgeTerm}s` concatenation broke for
   // an officer-typed override that is already plural or ends in "s" — the
   // vocab field is free text (settings-org-tab.tsx), not an enum.

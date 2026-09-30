@@ -142,28 +142,6 @@ export function DocumentsGlyph({ className, active }: NavGlyphProps) {
   );
 }
 
-/**
- * Discord import — a box with an arrow coming down into it.
- *
- * Drawn fresh rather than transcribed: the reference boards predate this
- * surface, and §6.2 allows a new glyph in the same recipe where they do not
- * draw the shape. Deliberately not a Discord logo — this is the intent
- * "bring an archive in", and the nav does not carry third-party marks.
- */
-export function ImportGlyph({ className, active }: NavGlyphProps) {
-  return (
-    <Svg className={className}>
-      <path
-        d="M4 13.5V19a1.5 1.5 0 001.5 1.5h13A1.5 1.5 0 0020 19v-5.5"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M12 3.5v10" {...detail} />
-      <path d="M8.5 10L12 13.5 15.5 10" {...detail} />
-    </Svg>
-  );
-}
-
 export function BackworkGlyph({ className, active }: NavGlyphProps) {
   return (
     <Svg className={className}>
@@ -257,31 +235,6 @@ export function SettingsGlyph({ className, active }: NavGlyphProps) {
         {...fillProps(active)}
       />
       <circle cx="12" cy="12" r="2.7" {...detail} />
-    </Svg>
-  );
-}
-
-/**
- * Not drawn on any reference board — Chat Admin is an #920-era Admin-section
- * addition, not a screen the s04/s09 boards depict. Drawn fresh in the
- * recipe: a plaque (matches `ReportsGlyph`'s outer rounded-rect) with a `#`
- * detail, the same channel sigil `iconography.md` §6.2.2 names as a brand
- * carve-out elsewhere — used here as an ordinary duotone detail, not that
- * composition.
- */
-export function ChannelsGlyph({ className, active }: NavGlyphProps) {
-  return (
-    <Svg className={className}>
-      <rect
-        x="4"
-        y="4"
-        width="16"
-        height="16"
-        rx="3.5"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M9.5 8v8M14.5 8v8M7 11h10M7 13.5h10" {...detail} />
     </Svg>
   );
 }

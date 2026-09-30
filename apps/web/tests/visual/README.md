@@ -1,16 +1,19 @@
 # Dashboard browser suite
 
-Playwright tests that drive the app's routes against a real `next dev`. Two
-suites, both in the **required** `web-responsive-floor` job:
+Playwright tests that drive the app's routes against a real `next dev`. Three
+suites, all in the **required** `web-responsive-floor` job:
 
 | Suite | Covers |
 | --- | --- |
 | `responsive-floor.spec.ts` | every `DASHBOARD_ROUTES` entry at 375px |
 | `pre-auth-floor.spec.ts` | every `PRE_AUTH_ROUTES` entry at 375px, plus one guard |
+| `nav-fit.spec.ts` | the sidebar fits a 1024×768 window with every row showing (#2946) |
 
-Both read `routes.ts`. Add a screen there and the matching spec picks it up.
+The two floor suites read `routes.ts`. Add a screen there and the matching spec
+picks it up. `nav-fit.spec.ts` measures one route, because the sidebar is the
+same on every route.
 
-**Why two suites and not one list.** The dashboard suite asserts each route did
+**Why two floor suites and not one list.** The dashboard suite asserts each route did
 *not* end up on `/sign-in` — the guard that stops a regressed
 `SUPABASE_AUTH_BYPASS` from turning every one of those tests into green measurements
 of the sign-in card. For a pre-auth route that assertion is backwards, so those

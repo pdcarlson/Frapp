@@ -101,10 +101,11 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
  *
  * `chapter-config:manage`, because the profile is chapter configuration; and
  * with `chapter-config:view`, like every other route that permission gates,
- * because the Settings screen these edits live on needs `view` to open at all
- * (its nav entry, and the `GET /chapters/:id/config` read its tabs wait on). A
- * role holding `manage` alone could otherwise save through the API from a page
- * it cannot reach. `spec/behavior/rbac.md` records the rule.
+ * because the Settings tabs these edits live on need `view` to show at all
+ * (`isSettingsTabVisible` in `apps/web`, and the `GET /chapters/:id/config`
+ * read they wait on). A role holding `manage` alone could otherwise save
+ * through the API from tabs it is never shown. `spec/behavior/rbac.md` records
+ * the rule.
  *
  * Until #2575 the API admitted `roles:manage` or `billing:manage` while the
  * Settings page gated on `chapter-config:manage`, so the default Treasurer could

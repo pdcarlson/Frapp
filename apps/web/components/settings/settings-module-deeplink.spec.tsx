@@ -11,7 +11,7 @@ let searchParams = new URLSearchParams();
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["chapter-config:manage"] },
+    data: { permissions: ["chapter-config:view", "chapter-config:manage"] },
     isPending: false,
     isError: false,
   }),
