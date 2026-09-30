@@ -956,6 +956,13 @@ export class DiscordImportWorkerService {
     // Rows first, objects second. An object with no row pointing at it is
     // invisible and recoverable by re-importing; a row pointing at a deleted
     // object keeps minting signed URLs for bytes that are not there.
+    //
+    // `purged_messages` is the admin's progress bar (#2944). It is recorded with
+    // each lease renewal rather than counted on read: counting the rows left
+    // would scan up to the whole import on every poll. The total starts from
+    // the claimed row, so a purge resumed across slices, or re-requested after
+    // one failed, keeps counting from where it stopped; only the lease holder
+    // writes it, so no other writer races the read-then-add.
     let deleted = 0;
     for (;;) {
       if (Date.now() >= deadline) {
@@ -981,6 +988,7 @@ export class DiscordImportWorkerService {
         lockToken,
         new Date(),
         LEASE_MS,
+        { purged_messages: job.purged_messages + deleted },
       );
       if (!held) return { claimed: true, importId: job.id, finished: false };
     }

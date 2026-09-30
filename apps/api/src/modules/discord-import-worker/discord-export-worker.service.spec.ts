@@ -87,6 +87,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: NOW.toISOString(),
     completed_at: null,
     purged_at: null,
+    purged_messages: 0,
     cleared_at: null,
     ...overrides,
   };

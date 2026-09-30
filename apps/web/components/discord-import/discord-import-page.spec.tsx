@@ -19,6 +19,8 @@ import {
 const { hooks } = vi.hoisted(() => ({
   hooks: {
     rows: [] as unknown[],
+    // A failed list poll: the page swaps the list for its error state.
+    listError: false,
     clear: vi.fn(),
     remove: vi.fn(),
     progress: vi.fn(),
@@ -39,7 +41,7 @@ vi.mock("@repo/hooks", () => ({
     data: hooks.rows,
     isPending: false,
     isLoading: false,
-    isError: false,
+    isError: hooks.listError,
     fetchStatus: "idle",
     refetch: vi.fn(),
   }),
@@ -96,6 +98,7 @@ const rowOf = (guild: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  hooks.listError = false;
   hooks.clear.mockResolvedValue(undefined);
   hooks.remove.mockResolvedValue(undefined);
   hooks.rows = [
@@ -127,6 +130,120 @@ describe("DiscordImportPage — row actions", () => {
     await waitFor(() =>
       expect(hooks.clear).toHaveBeenCalledWith({ id: "gone" }),
     );
+  });
+});
+
+describe("DiscordImportPage — deleting an import (#2944)", () => {
+  // Staging's import, 2026-09-30: the one whose one-click delete filed this.
+  const large = {
+    ...row("big", "completed", "Tau Nu Discord"),
+    imported_messages: 145574,
+    attachments_imported: 11612,
+  };
+  const n = (count: number) => count.toLocaleString();
+
+  beforeEach(() => {
+    hooks.rows = [large];
+  });
+
+  it("asks first, naming what goes and what stays, and Cancel sends nothing", async () => {
+    render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
+    );
+
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(
+      dialog.getByText("Delete the import from Tau Nu Discord?"),
+    ).toBeInTheDocument();
+    const description = dialog.getByText(/This deletes/).textContent ?? "";
+    expect(description).toContain(
+      `the ${n(145574)} messages and ${n(11612)} attachments it brought in`,
+    );
+    expect(description).toContain(
+      "each channel it created that is left holding nothing",
+    );
+    expect(description).toContain(
+      "The roles and read permissions it created stay.",
+    );
+    expect(description).toContain("This cannot be undone.");
+
+    fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(hooks.remove).not.toHaveBeenCalled();
+  });
+
+  it("deletes the row it was confirmed for", async () => {
+    render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
+    );
+    const dialog = within(await screen.findByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));
+    await waitFor(() =>
+      expect(hooks.remove).toHaveBeenCalledWith({ id: "big" }),
+    );
+  });
+
+  // The list polls while a row is deleting, and a failed poll swaps it for the
+  // error state. A dialog inside the list would go with it and settle as a
+  // cancel, dropping the admin's confirmation.
+  it("keeps an open confirmation through a failed list poll", async () => {
+    const { rerender } = render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
+    );
+    await screen.findByRole("dialog");
+
+    hooks.listError = true;
+    rerender(<DiscordImportPage />);
+    expect(screen.queryByText("Tau Nu Discord")).toBeNull();
+
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));
+    await waitFor(() =>
+      expect(hooks.remove).toHaveBeenCalledWith({ id: "big" }),
+    );
+  });
+
+  it("counts a deleting import's messages down from the API's count", () => {
+    hooks.rows = [
+      {
+        ...large,
+        status: "purging",
+        purged_messages: 5874,
+      },
+    ];
+    render(<DiscordImportPage />);
+    const deleting = rowOf("Tau Nu Discord");
+    expect(
+      deleting.getByText(
+        `Deleting: ${n(139700)} of ${n(145574)} messages left`,
+      ),
+    ).toBeInTheDocument();
+    expect(deleting.getByText("4%")).toBeInTheDocument();
+    expect(
+      deleting.queryByRole("button", { name: "Delete import" }),
+    ).toBeNull();
+  });
+
+  it("says what it is still doing once the messages are gone, and plainly when it is done", () => {
+    hooks.rows = [
+      { ...large, status: "purging", purged_messages: 145574 },
+      { ...row("done", "purged", "Deleted server"), purged_messages: 5307 },
+    ];
+    render(<DiscordImportPage />);
+    expect(
+      rowOf("Tau Nu Discord").getByText(
+        "Messages deleted. Removing the channels it emptied and its archive files.",
+      ),
+    ).toBeInTheDocument();
+    expect(rowOf("Tau Nu Discord").queryByText(/%$/)).toBeNull();
+    expect(
+      rowOf("Deleted server").getByText(
+        "Deleted. The messages, attachments and archive files it brought in are gone.",
+      ),
+    ).toBeInTheDocument();
   });
 });
 

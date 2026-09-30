@@ -25,6 +25,11 @@ import {
 } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import {
+  useConfirmDialog,
+  type ConfirmRequest,
+  type ConfirmResult,
+} from "@/components/shared/confirm-dialog";
+import {
   meterFillClassName,
   meterTrackClassName,
 } from "@/components/shared/meter";
@@ -33,7 +38,16 @@ import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
 import { ImportWatchPanel } from "./import-watch-panel";
-import { importPercent, type ImportRow } from "./import-progress";
+import {
+  importPercent,
+  purgeProgress,
+  type ImportRow,
+} from "./import-progress";
+import {
+  DELETE_IMPORT_STARTED,
+  deleteImportConfirmation,
+  purgeLine,
+} from "./delete-import-copy";
 import type { ImportSource } from "./source-step";
 
 const STATUS_VARIANT: Record<
@@ -173,16 +187,7 @@ export function DiscordImportPage() {
   );
 }
 
-function DiscordImportBody({
-  wizardOpen,
-  setWizardOpen,
-  activeId,
-  setActiveId,
-  openId,
-  setOpenId,
-  resumingBotWizard,
-  handshake,
-}: {
+type BodyProps = {
   wizardOpen: boolean;
   setWizardOpen: (open: boolean) => void;
   activeId: string | null;
@@ -191,6 +196,37 @@ function DiscordImportBody({
   setOpenId: (id: string | null) => void;
   resumingBotWizard: boolean;
   handshake: string | null;
+};
+
+/**
+ * The confirmation lives above the list's loading, offline and error branches
+ * (#2944). The list polls every few seconds while a row is deleting, and one
+ * failed poll swaps the list for its error state; a dialog rendered inside the
+ * list would unmount with it and settle as a cancel, so the admin's click on
+ * Delete import would vanish. Same shape as the Settings pages.
+ */
+function DiscordImportBody(props: BodyProps) {
+  const { confirm, confirmDialog } = useConfirmDialog();
+  return (
+    <>
+      {confirmDialog}
+      <DiscordImportList {...props} confirm={confirm} />
+    </>
+  );
+}
+
+function DiscordImportList({
+  wizardOpen,
+  setWizardOpen,
+  activeId,
+  setActiveId,
+  openId,
+  setOpenId,
+  resumingBotWizard,
+  handshake,
+  confirm,
+}: BodyProps & {
+  confirm: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
 }) {
   const { isOffline } = useNetwork();
   const imports = useDiscordImports();
@@ -238,12 +274,13 @@ function DiscordImportBody({
     }
   }
 
-  async function purge(id: string) {
+  // One click used to start an irreversible purge (#2944); the dialog names
+  // what goes, from the row as it reads now.
+  async function purge(row: ImportRow) {
+    if (!(await confirm(deleteImportConfirmation(row)))) return;
     try {
-      await deleteImport.mutateAsync({ id });
-      toast({
-        description: "Deleting the import and everything it brought in.",
-      });
+      await deleteImport.mutateAsync({ id: row.id });
+      toast({ description: DELETE_IMPORT_STARTED });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -296,7 +333,13 @@ function DiscordImportBody({
             <ul className="space-y-3">
               {rows.map((row) => {
                 const live = activeRow?.id === row.id ? activeRow : row;
-                const percent = importPercent(live);
+                // A deleting row counts its messages down (#2944); the meter
+                // then shows how much is gone rather than how much came in.
+                const deletion = purgeLine(live);
+                const deleting = purgeProgress(live);
+                const percent =
+                  importPercent(live) ??
+                  (deleting && deleting.left > 0 ? deleting.percent : null);
                 const watchable =
                   live.source === "bot" && WATCHABLE.has(live.status);
                 // Open only while it is also the polled import: a panel on a
@@ -328,16 +371,20 @@ function DiscordImportBody({
 
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {live.imported_messages} messages
-                          {live.attachments_imported > 0
-                            ? ` · ${live.attachments_imported} attachments`
-                            : ""}
-                          {typeof live.channels_total === "number" &&
-                          live.channels_total > 0
-                            ? ` · ${live.channels_done ?? 0} of ${live.channels_total} channels and threads`
-                            : ""}
-                        </span>
+                        {deletion !== null ? (
+                          <span>{deletion}</span>
+                        ) : (
+                          <span>
+                            {live.imported_messages} messages
+                            {live.attachments_imported > 0
+                              ? ` · ${live.attachments_imported} attachments`
+                              : ""}
+                            {typeof live.channels_total === "number" &&
+                            live.channels_total > 0
+                              ? ` · ${live.channels_done ?? 0} of ${live.channels_total} channels and threads`
+                              : ""}
+                          </span>
+                        )}
                         {/* The bar is aria-hidden; this is the accessible signal. */}
                         {percent !== null ? <span>{percent}%</span> : null}
                       </div>
@@ -444,7 +491,7 @@ function DiscordImportBody({
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => void purge(row.id)}
+                          onClick={() => void purge(live)}
                           disabled={deleteImport.isPending}
                         >
                           Delete import

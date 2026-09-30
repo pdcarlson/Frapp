@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { importPercent, type ImportRow } from "./import-progress";
+import {
+  importPercent,
+  purgeProgress,
+  type ImportRow,
+} from "./import-progress";
 
 const row = (overrides: Partial<ImportRow>): ImportRow => ({
   id: "i1",
@@ -79,5 +83,42 @@ describe("importPercent", () => {
       importPercent(row({ total_messages: 400, imported_messages: 100 })),
     ).toBe(25);
     expect(importPercent(row({ total_messages: 0 }))).toBe(0);
+  });
+});
+
+describe("purgeProgress (#2944)", () => {
+  it("counts a deletion down from the import's own total", () => {
+    // Staging, 2026-09-30: 145,574 imported, about 5,874 deleted.
+    expect(
+      purgeProgress(
+        row({
+          status: "purging",
+          imported_messages: 145574,
+          purged_messages: 5874,
+        }),
+      ),
+    ).toEqual({ left: 139700, total: 145574, percent: 4 });
+  });
+
+  it("reads nothing deleted yet from an API that sends no count", () => {
+    expect(
+      purgeProgress(row({ status: "purging", imported_messages: 10 })),
+    ).toEqual({ left: 10, total: 10, percent: 0 });
+  });
+
+  it("never reads below zero left or 100%, since only the status says done", () => {
+    // A slice that died between inserting and its checkpoint left rows the
+    // import never counted, so the purge can delete more than the total.
+    expect(
+      purgeProgress(
+        row({ status: "purging", imported_messages: 10, purged_messages: 12 }),
+      ),
+    ).toEqual({ left: 0, total: 10, percent: 99 });
+  });
+
+  it("is null for an import that is not deleting", () => {
+    for (const status of ["completed", "purged", "failed", "running"]) {
+      expect(purgeProgress(row({ status, purged_messages: 3 }))).toBeNull();
+    }
   });
 });

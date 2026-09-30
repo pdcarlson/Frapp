@@ -572,6 +572,17 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-30: A Discord import's deletion shows how far it has got (#2944)
+
+### 20260930133000_discord_import_purged_messages.sql
+
+- **Purpose**: Adds `purged_messages integer not null default 0` to `public.discord_imports`: how many imported messages the purge has deleted so far. The purge worker writes it with each lease renewal, and the web's import list shows it as a countdown out of `imported_messages` while an import is `purging`. Every existing row takes 0. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'purged_messages';` returns one row: `purged_messages | integer | NO | 0`.
+- **Promoter notes**: Ship it before, or with, the API that writes it. A deploy applies migrations first, so the worker never sees a database without it. Against an unmigrated database the newer worker's lease renewal names an unknown column, so every purge slice fails after its first round and marks the import `failed`; deleting it again once the migration is in finishes it. An older API ignores the column, and an older web client never reads it. On Postgres 11 and later, adding a column with a constant default rewrites no rows, so the table is locked only briefly. An import already mid-purge when this lands counts from 0, so its row shows more messages left than there are until it finishes (on staging, import `0e4c41e5` was mid-purge on 2026-09-30). Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-purge-progress-20260930133000) § Rollback Discord import purge progress.
+
 ## 2026-09-30: A deleted Discord import takes the channels it left empty (#2905)
 
 ### 20260930030000_discord_import_purge_channels.sql

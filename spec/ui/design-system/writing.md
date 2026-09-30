@@ -510,6 +510,22 @@ The confirmation says the conversation stays closed because that is the rule an 
 
 Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 
+### Discord Import (dashboard)
+
+Deleting an import from `/discord-import` ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
+
+| State | Title | Description |
+|---|---|---|
+| Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes each channel it created that is left holding nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` · confirm `Delete import` |
+| Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
+| Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Removing the channels it emptied and its archive files.` |
+| Deleted (row) | — | `Deleted. The messages, attachments and archive files it brought in are gone.` |
+| Delete refused (toast) | — | The API's own message (`Cancel the running import before deleting it.`), or `Could not delete the import.` |
+
+The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
+
+Implementation: `apps/web/components/discord-import/delete-import-copy.ts`.
+
 ### Billing (dashboard)
 
 | State | Title | Description |
