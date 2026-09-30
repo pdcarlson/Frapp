@@ -1,10 +1,10 @@
 # Chat Integrations — Slash Commands, Renderers, and System Channel
 
-Chat is the spine; every ops module is a **chat integration** (see [README.md](./README.md) → *Chat is the spine*). This file specifies the slash-command catalog, the dispatch path, the rich-message renderer registry, and the `#chapter-audit` system-channel bridge. Push-notification rules for chat live in [../notifications.md](../notifications.md).
+Chat is the spine; an ops module with a message-shaped action is a **chat integration** (see [README.md](./README.md) → *Chat is the spine*; which modules have none, by design: [`../integrations.md` § Integration Pattern](../integrations.md#integration-pattern)). This file specifies the slash-command catalog, the dispatch path, the rich-message renderer registry, and the `#chapter-audit` system-channel bridge. Push-notification rules for chat live in [../notifications.md](../notifications.md).
 
 ## Slash command catalog
 
-Slash commands turn chat into the dispatcher for every ops module. The catalog is filtered by the chapter's `enabled_modules` so disabling a paid module hides its command from the palette without UI churn. Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast as modules ship. **Server-side authorization is independent of the client gate** — the server re-checks permission for every send; the client gate is UX only, the server is the trust boundary.
+Slash commands turn chat into the dispatcher for the ops modules that have a message-shaped action. The catalog is filtered by the chapter's `enabled_modules` so disabling a paid module hides its command from the palette without UI churn. Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast as modules ship. **Server-side authorization is independent of the client gate** — the server re-checks permission for every send; the client gate is UX only, the server is the trust boundary.
 
 | Command | Implemented | Required module | Server gate | Posted to |
 | --- | --- | --- | --- | --- |
