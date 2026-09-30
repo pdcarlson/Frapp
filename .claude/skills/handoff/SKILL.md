@@ -108,8 +108,8 @@ nothing the session needs lives only there.
 fields, and the prompt can't set it either: in a test on 2026-09-30, an `/effort medium` line at the
 top of a card's prompt arrived as plain text, and the card session ran at `xhigh`, as did a second
 card with no such line (both started in the cloud). The card's prompt is the session's first turn,
-where a `/next` run does most of its work, so that turn runs at the level it launched with. In the
-cloud that's the launcher's `--effort` flag, not this repo's `high` default, which it outranks
+where a `/next` run does most of its work, so that turn runs at the level it launched with, which
+a cloud launch has set above this repo's `high` default
 ([`multi-agent` § Effort](../multi-agent/SKILL.md#effort)); `/effort <level>` afterwards changes
 only later turns. Paul's rule (2026-09-30): `high` by default, and
 `medium` only when the task is simple and bounded (one surface, a known fix, little judgment).
