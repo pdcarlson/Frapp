@@ -285,10 +285,12 @@ describe('UserService', () => {
     }
 
     beforeEach(() => {
-      mockRepo.update.mockImplementation(async (_id, data) => ({
-        ...userWith(null),
-        ...data,
-      }));
+      // Like the table: a read after the write sees it.
+      mockRepo.update.mockImplementation(async (_id, data) => {
+        const row = { ...userWith(null), ...data };
+        mockRepo.findById.mockResolvedValue(row);
+        return row;
+      });
       mockStorageProvider.getSignedDownloadUrls.mockImplementation(
         async (_bucket, paths) =>
           Object.fromEntries(paths.map((path) => [path, `signed:${path}`])),
@@ -354,6 +356,46 @@ describe('UserService', () => {
       expect(result.avatar_url).toBe(`signed:${NEW_PATH}`);
     });
 
+    it('spares the photo a racing confirm made current again', async () => {
+      // A retried confirm of `current` reads it, another device confirms
+      // NEW_PATH, then the retry's write sets the column back to `current`.
+      // Deleting `current` as "replaced" would leave the member pointing at a
+      // deleted object.
+      const current = `${FOLDER}/current.jpg`;
+      mockRepo.findById.mockResolvedValue(userWith(current));
+      mockStorageProvider.listObjects.mockResolvedValue(
+        stored([current, 30], [NEW_PATH, 0]),
+      );
+      mockRepo.update.mockImplementation(async (_id, data) => {
+        mockRepo.findById.mockResolvedValue(userWith(current));
+        return { ...userWith(null), ...data };
+      });
+
+      await service.confirmAvatarUpload('ch-1', 'user-1', NEW_PATH);
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    it('deletes nothing when it cannot re-read which photo is current', async () => {
+      mockRepo.findById.mockResolvedValue(userWith(`${FOLDER}/old.jpg`));
+      mockStorageProvider.listObjects.mockResolvedValue(
+        stored([`${FOLDER}/old.jpg`, 30], [NEW_PATH, 0]),
+      );
+      mockRepo.update.mockImplementation(async (_id, data) => {
+        mockRepo.findById.mockRejectedValue(new Error('connection reset'));
+        return { ...userWith(null), ...data };
+      });
+
+      const result = await service.confirmAvatarUpload(
+        'ch-1',
+        'user-1',
+        NEW_PATH,
+      );
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      expect(result.avatar_url).toBe(`signed:${NEW_PATH}`);
+    });
+
     it('never deletes an object whose age storage did not report', async () => {
       mockRepo.findById.mockResolvedValue(userWith(null));
       mockStorageProvider.listObjects.mockResolvedValue([
@@ -386,10 +428,14 @@ describe('UserService', () => {
       ['a URL', `https://evil.example/${NEW_PATH}`],
     ])('refuses a path into %s without writing', async (_label, path) => {
       mockRepo.findById.mockResolvedValue(userWith(null));
+      // Storage holds the object, so only the folder check can refuse it.
+      mockStorageProvider.listObjects.mockResolvedValue(stored([path, 30]));
 
       await expect(
         service.confirmAvatarUpload('ch-1', 'user-1', path),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        'storage_path must be a photo in your own profile folder',
+      );
       expect(mockRepo.update).not.toHaveBeenCalled();
       expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
     });

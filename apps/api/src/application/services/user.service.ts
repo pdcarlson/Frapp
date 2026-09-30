@@ -129,9 +129,17 @@ export class UserService {
    * Deleting it would fail that confirm, and when two confirms race, each
    * deleting the other's object would leave the photo pointing at nothing.
    *
+   * Nothing serializes two confirms either, so the sweep never trusts the
+   * `avatar_url` it read before writing. It re-reads the column after its own
+   * write and spares whatever that holds: a retried confirm of the current
+   * photo can land after another device's confirm and set the column back,
+   * and deleting the "replaced" photo then would leave the member pointing at
+   * a deleted object. `ChapterService` sweeps the logo folder the same way.
+   *
    * The member's photo has already changed by the time the deletes run.
    * Whatever a failed delete leaves is still under the member's own folders,
-   * which a chapter departure and an account deletion purge in full (#711).
+   * which a chapter departure and an account deletion purge (#711); an upload
+   * that lands after its member left the chapter is not yet covered (#2911).
    */
   async confirmAvatarUpload(
     chapterId: string,
@@ -161,19 +169,32 @@ export class UserService {
       avatar_url: storagePath,
     });
 
+    let current: string | null;
+    try {
+      current = (await this.userRepo.findById(userId))?.avatar_url ?? null;
+    } catch (error) {
+      // Without knowing what is current, deleting anything could delete it.
+      this.logger.warn(
+        `Skipped the profile photo sweep for user ${userId}: could not re-read avatar_url: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return this.withSignedPhoto(user);
+    }
+    const keep = new Set([storagePath, current]);
     const staleBefore = Date.now() - STRAY_UPLOAD_AGE_MS;
     const doomed = new Set(
       stored
         .filter(
           (object) =>
-            object.path !== storagePath &&
+            !keep.has(object.path) &&
             object.createdAt !== null &&
             object.createdAt.getTime() < staleBefore,
         )
         .map((object) => object.path),
     );
     const previous = ownProfilePhotoPath(existing.avatar_url, userId);
-    if (previous && previous !== storagePath) doomed.add(previous);
+    if (previous && !keep.has(previous)) doomed.add(previous);
     await this.deletePhotosQuietly(userId, [...doomed]);
 
     return this.withSignedPhoto(user);

@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ProfilePhotoUrlService } from '../../application/services/profile-photo-url.service';
 import { MemberService } from '../../application/services/member.service';
 import { MemberController } from '../../interface/controllers/member.controller';
 import { AlumniController } from '../../interface/controllers/alumni.controller';
@@ -12,6 +11,7 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
+import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
 
 @Module({
   imports: [
@@ -21,11 +21,11 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
     RbacModule,
     // `MemberService.remove` evicts the channels it prunes (#1302).
     ChannelCacheModule,
+    ProfilePhotoModule,
   ],
   controllers: [MemberController, AlumniController],
   providers: [
     MemberService,
-    ProfilePhotoUrlService,
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     // `MemberService.remove` takes a departing member off the chapter's
     // PRIVATE channels (#1302).
