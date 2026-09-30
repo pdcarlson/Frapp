@@ -26,7 +26,7 @@
  * This package's `engines` has to be checked against the repo's Node floor
  * before any major bump — 18.x raised its floor and failed only on the runner,
  * never locally. That story, and the three places the Node version lives, are
- * in `docs/internal/ci-cd/QUALITY_GATES.md` § "On 18.x — check `engines`
+ * in `docs/ci-cd/quality-gates.md` § "On 18.x — check `engines`
  * before bumping". Deliberately not restated here: this comment carried a copy
  * that went false the moment the repo moved to Node 24, which is the whole
  * argument for one home and a link.
@@ -36,7 +36,7 @@
  * Hard gate from day one, made survivable by a committed baseline:
  * `scripts/dependency-cruiser-known-violations.json` grandfathers every violation that
  * existed when the gate landed, and any NEW violation fails.
- * See `docs/internal/ci-cd/QUALITY_GATES.md`.
+ * See `docs/ci-cd/quality-gates.md`.
  *
  * Run: `npm run check:dep-cruiser`
  */

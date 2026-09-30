@@ -9,8 +9,8 @@
 ## What gates a push
 
 Review is a **repository-managed Git `pre-push` gate**, not a CI job or an agent-provider hook.
-[`.githooks/pre-push`](../../../.githooks/pre-push) is enabled by the root `prepare` script through
-[`scripts/setup-git-hooks.mjs`](../../../scripts/setup-git-hooks.mjs), alongside the existing secret
+[`.githooks/pre-push`](../../.githooks/pre-push) is enabled by the root `prepare` script through
+[`scripts/setup-git-hooks.mjs`](../../scripts/setup-git-hooks.mjs), alongside the existing secret
 scan. Once installed, the same Git hook runs for local Codex, cloud agents, and humans.
 
 Git gives the hook every proposed ref update. Each non-deletion update must have evidence at
@@ -40,7 +40,7 @@ Only `/diff-review` satisfies this gate; `/code-review` can add coverage on top 
 
 | Skill | Who can run it | Notes |
 |---|---|---|
-| [**`/diff-review`**](../../../.claude/skills/diff-review/SKILL.md) | **agent or human, always** | The project's own skill. An agent runs it unprompted when the gate fires. |
+| [**`/diff-review`**](../../.claude/skills/diff-review/SKILL.md) | **agent or human, always** | The project's own skill. An agent runs it unprompted when the gate fires. |
 | **`/code-review`** | human always; **agent only when the turn's prompt contains the token `/code-review`** | The bundled command: per-model-tuned effort cells, cloud `ultra` mode, `--fix`, `--comment`. Extra coverage, not a replacement for the gate ([below](#code-review-doesnt-replace-the-gate)). |
 
 ### The `/code-review` invocation rule
@@ -132,7 +132,7 @@ independent verifier per flagged line, plus a second only when the first refutes
 `ReportFindings` call, through the saved workflow `frapp-review`. Later rounds review only the
 commits since, inline, unless they are large enough to count as new work (`INLINE_MAX_LINES` in
 `scripts/diff-review-scope.mjs`; shape and reasons:
-[ADR-23](../../../spec/architecture/adr/adr-23.md)). It also encodes Frapp's own invariants as
+[ADR-23](../../spec/architecture/adr/adr-23.md)). It also encodes Frapp's own invariants as
 review angles: `chapter_id` scoping and chapter-scoped role lookups, permission decorators, the
 PGlite migration gate, broken doc pointers, the tracker rule (GitHub Issues), and verification
 honesty. The first round's per-candidate verifier pass is what makes an agent-run review
@@ -240,4 +240,4 @@ post a `CHANGES_REQUESTED` or `APPROVED` review. The first blocks squash on gree
 way for an agent to clear it ([#1875](https://github.com/pdcarlson/Frapp/pull/1875)); the second
 would satisfy a human-review requirement nothing human looked at. A `COMMENT` review blocks and
 satisfies nothing, which is the only safe shape. Any such reviewer must also stay out of
-[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs).
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).

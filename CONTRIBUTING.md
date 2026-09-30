@@ -85,7 +85,7 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
   merges `main` into reviewed work); `/diff-review` writes that evidence. Retrying never releases a denied push. Git's
   explicit `--no-verify` option and an uninstalled/changed hooks path remain bypasses, so this is not
   described as an unconditional server-side gate. Details:
-  [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+  [`ai-code-review-runbook.md`](docs/ci-cd/ai-code-review-runbook.md).
 
 ### PR review requirement policy
 
@@ -135,7 +135,7 @@ divergent lists until #1635.
   `/diff-review` pass, which writes the evidence marker itself. `git push --no-verify` is for
   emergencies only — never as the routine path after a review you did run, because it leaves that push
   indistinguishable from one that skipped review. Procedure:
-  [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § How the gate enforces.
+  [`ai-code-review-runbook.md`](docs/ci-cd/ai-code-review-runbook.md) § How the gate enforces.
 
 ### 4. Address feedback
 
@@ -165,7 +165,7 @@ descriptions live only in `openapi.json`).
 
 The same job also fails a change that breaks the contract a shipped mobile build
 was made from, such as removing a route it may call:
-[`QUALITY_GATES.md` § Two comparisons, two postures](docs/internal/ci-cd/QUALITY_GATES.md#two-comparisons-two-postures).
+[`quality-gates.md` § Two comparisons, two postures](docs/ci-cd/quality-gates.md#two-comparisons-two-postures).
 
 ---
 

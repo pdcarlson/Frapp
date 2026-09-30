@@ -1,7 +1,7 @@
 # GitHub Issues as the canonical PM system
 
 Canonical, version-controlled design + policy for Frapp's project management on **GitHub Issues**
-(`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment ([`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md)).
+(`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment ([`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md)).
 GitHub Issues is the source of truth for planning and work status. Linear is **retired** — the
 decision record, viability probes, and the FRA-→#N migration mapping live in
 [issue #680](https://github.com/pdcarlson/Frapp/issues/680).
@@ -41,7 +41,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
   - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
     by CI and assigned to the owner. `/next` never claims one, in any mode, because it closes itself
     when the fault is fixed. What agents may do with one:
-    [`ALERT_ROUTING.md` § Escalation](../ops/ALERT_ROUTING.md#escalation).
+    [`ALERT_ROUTING.md` § Escalation](../internal/ops/ALERT_ROUTING.md#escalation).
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
   *title*, so the body is load-bearing). GitHub matches the closing keywords (`close` /
@@ -72,9 +72,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
 
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
-| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` depends on the route: the direct one returns 200 from GitHub, and what the proxied one passes varies (rule and measurements: [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)). **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
-| **Claude Code Routines** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
-| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it works on the direct route, and a 403 on the proxied route says nothing about it ([`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)). That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
+| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` depends on the route: the direct one returns 200 from GitHub, and what the proxied one passes varies (rule and measurements: [`agent-infra.md` → Work status](agent-infra.md#work-status)). **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
+| **Claude Code Routines** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`routines.md`](routines.md). |
+| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it works on the direct route, and a 403 on the proxied route says nothing about it ([`agent-infra.md` → Work status](agent-infra.md#work-status)). That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`agent-infra.md`](agent-infra.md). |
 
 ---
 
@@ -87,8 +87,8 @@ open/closed + `state_reason` fields:
 | --- | --- |
 | **Triage** (intake) | open + **`triage`** label |
 | **Backlog** (accepted, ready) | open, no state label. A priority label is the *expected* state (promotion requires setting one), but unprioritized Backlog issues exist (e.g. migrated ones) — `/next` ranks them last and the triage routine's grooming pass is what fixes them; never "fix" one by re-adding `triage` |
-| **In Progress** | open + **`in-progress`** label — a projection of a live `AGENT-CLAIM` comment (the claim protocol in [`next.md`](../../../.claude/commands/next.md) is authoritative) |
-| **In Review** | open + **`in-review`** label + a linked open PR that **closes** it. A parent whose open PR only says `Part of #N` stays in Backlog: `/next` releases its claim when that PR opens, and the open PR keeps other sessions off it ([`next.md`](../../../.claude/commands/next.md) Phase 4, #2663) |
+| **In Progress** | open + **`in-progress`** label — a projection of a live `AGENT-CLAIM` comment (the claim protocol in [`next.md`](../../.claude/commands/next.md) is authoritative) |
+| **In Review** | open + **`in-review`** label + a linked open PR that **closes** it. A parent whose open PR only says `Part of #N` stays in Backlog: `/next` releases its claim when that PR opens, and the open PR keeps other sessions off it ([`next.md`](../../.claude/commands/next.md) Phase 4, #2663) |
 | **Done** | closed as **`completed`** (usually by `Fixes #N` on merge) |
 | **Canceled** | closed as **`not_planned`** |
 | **Duplicate** | closed as **`duplicate`** with `duplicate_of` naming the canonical issue |
@@ -99,7 +99,7 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
 ## Labels and priority (lean taxonomy)
 
 The label roster, with what each label means and the caveats on it, is in
-[`ROUTINES.md` → Label roster](ROUTINES.md#label-roster). This file links to it rather than
+[`routines.md` → Label roster](routines.md#label-roster). This file links to it rather than
 holding a second copy, because duplicated rosters drift: the two `area:*` lists had drifted apart
 (#1077), and the `scope:production` caveat reached only one of the two copies. The rules below are
 the tracker behaviour built on those labels.
@@ -174,7 +174,7 @@ scaling verification and review (never skipping steps, never shrinking `/diff-re
 
 ## `/next` (the work-selection command)
 
-[`.claude/commands/next.md`](../../../.claude/commands/next.md) is the canonical **procedure**:
+[`.claude/commands/next.md`](../../.claude/commands/next.md) is the canonical **procedure**:
 pull the **Backlog** (open, non-`triage`, unclaimed) ranked by **priority label** (P1→P4; unlabeled
 last), tie-break by lower issue number, drop anything with a live `Blocked by #N` (verified against
 the repo), never auto-start `triage` items, and **stop if the GitHub MCP is unavailable**. It keeps
@@ -240,7 +240,7 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   open item on the weekly Human Action List and closes them on proof (which is why `suggestion`
   is mandatory). Dedup for any filing path must also search `[human]` titles so a held blocker
   doesn't get a promotable twin. Full playbook:
-  [`.claude/skills/file-follow-up/SKILL.md`](../../../.claude/skills/file-follow-up/SKILL.md).
+  [`.claude/skills/file-follow-up/SKILL.md`](../../.claude/skills/file-follow-up/SKILL.md).
 - **Sourcing a body rewrite from an MCP read is permitted while the fidelity table is green and
   current** — all three read paths were measured faithful 2026-09-05, and a rewrite you authored
   yourself was always safe. Re-run the probe before a bulk pass. See
@@ -250,7 +250,7 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
 ### Clearing human-action items (the owner's side)
 
 Filing and publishing are only half the loop: a `[human]` item is done when the owner acts, and
-until then everything queued behind it waits. [`/needs-me`](../../../.claude/skills/needs-me/SKILL.md)
+until then everything queued behind it waits. [`/needs-me`](../../.claude/skills/needs-me/SKILL.md)
 is the consumer of that output — it sweeps the Human Action List, open `fp=human/` and `[human]`
 `fp=pr-followup/` issues, the `triage` inbox, and open PRs, ranks the candidates by what clearing
 each one releases, and walks **exactly one** to done, closing it on proof.
@@ -480,7 +480,7 @@ GitHub itself** (`server: github.com`, `x-github-request-id`); `curl --noproxy '
 same. Requests that honour `HTTPS_PROXY` — `curl` as configured in the sandbox — take the proxy
 route instead, where what passes varies by session and path and a 403 says nothing about the PAT;
 the rule and its measurements are in
-[`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status).
+[`agent-infra.md` → Work status](agent-infra.md#work-status).
 
 **Scope, before the recipe.** This is a **verification read** and nothing more. It is not a tracker
 path and not an MCP fallback: **if the GitHub MCP is unavailable, tracker work stops and reports —

@@ -26,7 +26,7 @@ on:
     # 06:15 UTC daily, fifteen minutes before db-backup.yml (06:30) so a
     # reviewer gate is reported before the dump tries to start. One of the
     # daily staggered watchdogs. Full schedule:
-    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
     - cron: "15 6 * * *"
   workflow_dispatch:
 

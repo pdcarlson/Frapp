@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Operating guide for agents and developers in this repo. Machines, Infisical and ports: [`LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md). CI, deploys, PAT policy and Infisical syncs: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). Task playbooks: [Skills and subagents](#skills-and-subagents).
+Operating guide for agents and developers in this repo. Machines, Infisical and ports: [`LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md). CI, deploys, PAT policy and Infisical syncs: [`agent-infra.md`](docs/ci-cd/agent-infra.md). Task playbooks: [Skills and subagents](#skills-and-subagents).
 
 ## Operating mindset
 
@@ -10,6 +10,7 @@ Operating guide for agents and developers in this repo. Machines, Infisical and 
 - Paul follows change best through visual pages, not diagrams in PR bodies (tried and dropped, 2026-09-28). When an interactive session asks him to decide something with moving parts, or walks him through one (a flow, an architecture, a before/after), it publishes a page with real diagrams as a private Claude artifact (the Artifact tool; only Paul can open it, so it needs no confirmation) and links it in chat, and in the PR when there is one. A plain pick between options needs no page. An unattended run doesn't publish pages.
 - A question for Paul goes last, after any status and after the "debt spotted" note. Ask it with AskUserQuestion, your recommended option first; an unattended run carries it to its end-of-run report instead of blocking.
 - Delegate sizeable, independent, reading-heavy work (a broad search, a separate research thread, a self-contained chunk) to parallel subagents, which keeps it out of your context. Do small lookups, and checks of your own work, yourself. The exception is an independent role from `.claude/agents/` where a procedure calls for one (see [Skills and subagents](#skills-and-subagents)).
+- Paul likes follow-ups and walkthroughs handed to him as suggested tasks (2026-09-30): where the session has the suggested-task tool, a card he starts as its own chat with one click. Whether, when and how many to queue is your call. Weigh what this chat is for (one supervising a track spends its context coordinating and delegates the doing as cards; one building a change stays on it and cards what surfaces outside it), how much context it has left (a walkthrough's step-by-step back-and-forth, or a side investigation, can crowd out its own job), whether the work is separable from this branch and actionable yet, and whether it's small enough to just do here. A card never replaces filing: follow-up work is filed per [Work tracking](#work-tracking) whether or not a card points at it. How to write, time and withdraw one: [`handoff`](.claude/skills/handoff/SKILL.md). Without the tool, offer `/handoff`; an unattended run queues none.
 - Size every fan-out and set every subagent's effort by the [`multi-agent`](.claude/skills/multi-agent/SKILL.md) skill, ultracode included: `/diff-review` is the only review allowed to be big, and nothing else is allowed to inherit ultracode's effort.
 - If the cloud-sandbox stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, a Docker Hub rate limit, a missing env var), stop and tell the user exactly what to change in this session's Claude Code web environment settings. That config can't be fixed from inside the session, and a workaround hides it. Trust the sentinel over the log; symptom-to-fix map: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). The exception: a sentinel reading `(dependencies)` means only `node_modules` is unusable and the stack is up, so run `npm ci` yourself, then `npx turbo run build --filter='./packages/*'` (bringup skips the package build when turbo does not run), and report only if `npm ci` can't reach the registry.
 
@@ -36,7 +37,7 @@ No gate requires a doc edit. The one that used to could only see that some doc m
 - Most changes touch no documented fact and need no doc edit.
 - Never add a stray file, or a section to a doc whose subject it doesn't match, to make a change look documented. An unowned claim in a canonical doc is worse than none, because the next reader believes it.
 
-The doc CI checks block no merge, and nothing checks that a claim is true: [`DOCS_CI.md` § What runs](docs/internal/ci-cd/DOCS_CI.md#what-runs).
+The doc CI checks block no merge, and nothing checks that a claim is true: [`docs-ci.md` § What runs](docs/ci-cd/docs-ci.md#what-runs).
 
 ## Work tracking
 
@@ -44,7 +45,7 @@ Work lives in GitHub Issues on this repo, never in a scratch file. Linear is ret
 
 - The GitHub MCP is the only sanctioned tracker path in cloud sandboxes, for reads and writes. If it's unavailable, stop tracker work and report; don't fall back to `gh` or raw REST. `issue_write` replaces the whole label set, so read-modify-write it.
 - Close through the PR that does the work (`Fixes #N`), or directly when an issue is done, obsolete, or a duplicate (`issue_write` with `state_reason`).
-- Board: `triage` → Backlog (no state label; priority expected) → `in-progress` → `in-review` → closed. Epics are parent issues with native sub-issues. Start work with `/next` ([`.claude/commands/next.md`](.claude/commands/next.md)). Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md).
+- Board: `triage` → Backlog (no state label; priority expected) → `in-progress` → `in-review` → closed. Epics are parent issues with native sub-issues. Start work with `/next` ([`.claude/commands/next.md`](.claude/commands/next.md)). Policy: [`github-pm.md`](docs/ci-cd/github-pm.md).
 - Follow-up outside the current PR is filed per [`file-follow-up`](.claude/skills/file-follow-up/SKILL.md). A human-only blocker is filed and also asked ([§ Filing is necessary but not sufficient](.claude/skills/file-follow-up/SKILL.md#filing-is-necessary-but-not-sufficient--end-the-run-by-asking)), because an issue alone reaches no one.
 
 ## Tech debt protocol
@@ -85,24 +86,24 @@ Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture
 | API contract | `npm run check:api-contract` |
 | Doc links | `npm run check:links` (links and heading anchors); run `npm run install:lychee` first |
 | Migrations | `npm run check:migration-safety` |
-| Boundaries | `npm run check:dep-cruiser`, a required gate. `scripts/dependency-cruiser-known-violations.json` grandfathers pre-existing violations and only shrinks: read it to tell whether a violation is yours, and don't re-record it to pass ([why](docs/internal/ci-cd/QUALITY_GATES.md#the-baseline)) |
+| Boundaries | `npm run check:dep-cruiser`, a required gate. `scripts/dependency-cruiser-known-violations.json` grandfathers pre-existing violations and only shrinks: read it to tell whether a violation is yours, and don't re-record it to pass ([why](docs/ci-cd/quality-gates.md#the-baseline)) |
 | Duplication | `npm run check:duplication`, advisory; the threshold only ratchets down |
 | API breaking changes | `npm run check:api-breaking:shipped` blocks against every shipped mobile build; `npm run check:api-breaking -- --base origin/main` is advisory. Run `bash scripts/install-oasdiff.sh` first |
 | Coverage | `npm run test:cov`, a measurement, not a gate |
 
-Gate postures: [`QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md). Testing detail: the `testing` skill.
+Gate postures: [`quality-gates.md`](docs/ci-cd/quality-gates.md). Testing detail: the `testing` skill.
 
 ## Skills and subagents
 
 Read the matching skill before deep work. Skills live in [`.claude/skills/`](.claude/skills/), each at `<name>/SKILL.md` with its own trigger description.
 
 - Building: `api-development`, `ui-development`, `signet-cutover`, `realtime-resilience`, `testing`.
-- Reviewing and verifying: `diff-review` (the pre-push gate; [runbook](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md)), `audit`, `infrastructure-research`, `live-verification` (deployed staging only, never production).
+- Reviewing and verifying: `diff-review` (the pre-push gate; [runbook](docs/ci-cd/ai-code-review-runbook.md)), `audit`, `infrastructure-research`, `live-verification` (deployed staging only, never production).
 - Tracker and sessions: `file-follow-up`, `needs-me`, `handoff`.
 - Multi-agent work: `multi-agent` (budget, effort and mechanics for any Workflow or subagent fan-out).
-- The five scheduled routines, 1 to 5: `issue-curator`, `issue-triage`, `pr-followups`, `docs-upkeep`, `hygiene-scan` ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)).
+- The five scheduled routines, 1 to 5: `issue-curator`, `issue-triage`, `pr-followups`, `docs-upkeep`, `hygiene-scan` ([`routines.md`](docs/ci-cd/routines.md)).
 
-Long sessions degrade. Offer `/handoff` when context is filling or a task is ending, written as orientation for the next session, not instructions.
+Long sessions degrade. Offer `/handoff` when context is filling or a task is ending, written as orientation for the next session, not instructions. Where the session has the suggested-task tool, the offer can be a card ([Operating mindset](#operating-mindset)).
 
 Subagent roles in [`.claude/agents/`](.claude/agents/), both read-only, each with its effort pinned in frontmatter. Where the agent type isn't available, run a general-purpose agent with the agent file's body as its prompt.
 
@@ -118,10 +119,10 @@ When the user gives you a durable environment hint or tool workaround not docume
 - After a controller or DTO change, regenerate the contract: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`.
 - Mobile runs in Expo Go, which a headless VM can't host.
 - React is pinned to exactly `19.2.3` at five sites: `apps/landing`, `apps/mobile`, `apps/web`, `packages/hooks`, and the root `overrides`. Never widen it to a caret. React Native 0.86.2 bundles `react-native-renderer` 19.2.3, which requires exact equality with `react` at runtime, but its caret peer range lets npm hoist a newer React silently; `apps/mobile` then dies on first render ("Invalid hook call" / "Incompatible React versions"), and CI doesn't catch it. Move the pin in lockstep across all five sites with each Expo SDK bump (target in `expo/bundledNativeModules.json`).
-- TypeScript 7 is two packages. `@typescript/native` is `npm:typescript@7.0.2` and provides `tsc`. `typescript` is `npm:@typescript/typescript6@6.0.2`, a wrapper whose compiler API (`tsc6`, `createProgram`) reports 6.0.3 via `@typescript/old`, pinned in root `overrides`. Flattening `typescript` to 7 breaks `nest build`, `typescript-eslint` (peer `<6.1.0`), and `ts-jest` (peer `<7`). Details: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § TypeScript 7.
+- TypeScript 7 is two packages. `@typescript/native` is `npm:typescript@7.0.2` and provides `tsc`. `typescript` is `npm:@typescript/typescript6@6.0.2`, a wrapper whose compiler API (`tsc6`, `createProgram`) reports 6.0.3 via `@typescript/old`, pinned in root `overrides`. Flattening `typescript` to 7 breaks `nest build`, `typescript-eslint` (peer `<6.1.0`), and `ts-jest` (peer `<7`). Details: [`agent-infra.md`](docs/ci-cd/agent-infra.md) § TypeScript 7.
 - An Expo SDK bump needs the lockfile re-resolved narrowly. Peer-only deps like `@expo/vector-icons` (`expo-font: ">=14.0.4"`) stay satisfied by the old versions, so a plain `npm install` leaves the previous SDK chain hoisted beside the new one. Prune and re-resolve just the Expo, React and Metro entries, then confirm `node_modules/expo` is the only copy and is the new version. Never `rm -rf node_modules package-lock.json && npm install`: it breaks every other platform's install while CI stays green. Mechanism: [`security-fixes.md` § Do not "fix" this with a full lockfile rebuild](docs/security/security-fixes.md#do-not-fix-this-with-a-full-lockfile-rebuild), and [§ Expo SDK 57 upgrade](docs/security/security-fixes.md#expo-sdk-57-upgrade-289).
 - `jsdom` lives in the root `devDependencies`. Vitest resolves its `jsdom` environment from its own hoisted root install, so a workspace-level `jsdom` is invisible to it, and vitest marks the peer optional, so npm never installs it for you. Without the root copy, every `environment: "jsdom"` config and `@vitest-environment jsdom` spec fails with `Cannot find package 'jsdom' imported from .../node_modules/vitest/...`. Likewise, a workspace declares what it imports (renderers declare `@testing-library/react` and `react-dom`), because a package found only through hoisting gets nested by the next re-resolution.
-- `Skill(skill: "code-review")` is invocable only when this turn's prompt carries `/code-review` as a whitespace-delimited token; backticks, quotes and trailing punctuation defeat it. `/diff-review` is always invocable and is the pre-push gate. Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+- `Skill(skill: "code-review")` is invocable only when this turn's prompt carries `/code-review` as a whitespace-delimited token; backticks, quotes and trailing punctuation defeat it. `/diff-review` is always invocable and is the pre-push gate. Mechanics: [`ai-code-review-runbook.md`](docs/ci-cd/ai-code-review-runbook.md).
 - Branch protection sets `enforce_admins: true`, so admin credentials don't bypass it.
 - Never `pkill -f` or `pgrep -f` a pattern from Bash: it also matches the calling shell's own command line, so the kill takes out the shell running it. Kill by explicit PID.
 
@@ -131,19 +132,19 @@ Claude Code (web and CLI) is the agent harness this repo configures. Bringup is 
 
 - **Review gate:** `/diff-review`. [`.githooks/pre-push`](.githooks/pre-push), installed by the root `prepare` script, requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for each pushed ref's tip that adds unreviewed work (a clean merge of `main` adds none), whoever pushes it; retrying doesn't release it. Never push with `--no-verify`: the hook is local, so nothing server-side catches the bypass.
 - **Tracker and PRs:** GitHub Issues through the GitHub MCP, `mcp__github__*` ([Work tracking](#work-tracking)). PRs go against `main` with `create_pull_request` / `update_pull_request`, never `gh`. `.claude/settings.json` sets `doneMeansMerged: true`.
-- **Scheduled agents:** Claude Code Routines ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)).
+- **Scheduled agents:** Claude Code Routines ([`routines.md`](docs/ci-cd/routines.md)).
 - **Branch protection:** agent sessions run only `npm run configure:branch-protection:verify`, never a live apply.
 
 ## Autonomous PR lifecycle (cloud sessions)
 
-A task is done when its PR is green and review-clean, not when the code is pushed. Wake-path facts: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
+A task is done when its PR is green and review-clean, not when the code is pushed. Wake-path facts: [`pr-babysitting.md`](docs/ci-cd/pr-babysitting.md).
 
-Scheduled routines are exempt and follow their own skill's PR rules ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)): they don't subscribe, because a run ends when its report is written and a human merges every routine PR. Before ending, a routine waits for its PR's checks to finish and fixes a failure its own change caused; steps 3–4 below still describe how to handle a PR it services.
+Scheduled routines are exempt and follow their own skill's PR rules ([`routines.md`](docs/ci-cd/routines.md)): they don't subscribe, because a run ends when its report is written and a human merges every routine PR. Before ending, a routine waits for its PR's checks to finish and fixes a failure its own change caused; steps 3–4 below still describe how to handle a PR it services.
 
 1. Open a PR against `main`, the only legal base, without being asked.
-2. Subscribe with `subscribe_pr_activity`. Don't call `send_later` or add it to `permissions.allow`: it prompts the owner, so it can't run unattended. The PR-activity webhook plus the repo's `CI wake` and `PR base sync` comments cover wakes ([wake coverage](docs/internal/ci-cd/pr-babysitting.md#wake-coverage)).
+2. Subscribe with `subscribe_pr_activity`. Don't call `send_later` or add it to `permissions.allow`: it prompts the owner, so it can't run unattended. The PR-activity webhook plus the repo's `CI wake` and `PR base sync` comments cover wakes ([wake coverage](docs/ci-cd/pr-babysitting.md#wake-coverage)).
 3. Triage a CI failure before fixing it. A job that died before its first repo step is Actions infra: re-run it, don't patch. `CI wake` comments only on a deliberate cancellation or an infra failure its auto-requeue couldn't absorb, so its silence doesn't mean green; an ordinary red run arrives through the webhook for you to diagnose.
-4. Babysit until green: fix real CI failures, and address and resolve review threads. A `PR base sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main`, or do what it says. When the base-sync App token is available, a clean behind-PR is updated silently, so judge by the PR's mergeability, never by the absence of a comment ([base-branch sync](docs/internal/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs)).
+4. Babysit until green: fix real CI failures, and address and resolve review threads. A `PR base sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main`, or do what it says. When the base-sync App token is available, a clean behind-PR is updated silently, so judge by the PR's mergeability, never by the absence of a comment ([base-branch sync](docs/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs)).
 5. Stop when the PR is green and review-clean, when what's left is out of scope (file an issue, report, stop), or when the user says to stop.
 
 A `/next` session may hold up to two open PRs ([`next.md`](.claude/commands/next.md) Phase 4 pipelining); every obligation above applies to each.

@@ -8,8 +8,8 @@ batch), ship it as one PR, and leave the tracker cleaner than you found it. Seve
 this at once. The Phase 0 claim protocol keeps them off each other's work, so it runs before
 anything expensive.
 
-Policy lives in [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md); this file is the
-procedure. Where they disagree, `GITHUB_PM.md` wins and this file is the bug. A rule that every
+Policy lives in [`github-pm.md`](../../docs/ci-cd/github-pm.md); this file is the
+procedure. Where they disagree, `github-pm.md` wins and this file is the bug. A rule that every
 `/next` run and other skills both need belongs there, linked from here.
 
 ## Invariants
@@ -25,7 +25,7 @@ is demanded, the §1.2 verification comment on the issue is the plan. Plan mode 
 **The GitHub MCP is the only tracker path.** If any `mcp__github__*` tracker call fails, stop and
 report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes. REST's
 narrow carve-outs
-([`GITHUB_PM.md` → How agents reach the tracker](../../docs/internal/ci-cd/GITHUB_PM.md#how-agents-reach-the-tracker))
+([`github-pm.md` → How agents reach the tracker](../../docs/ci-cd/github-pm.md#how-agents-reach-the-tracker))
 never cover listing, searching, filing, labeling, closing, or commenting. Load schemas first:
 `ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
@@ -72,7 +72,7 @@ context-heavy reading; don't spawn subagents to re-check your own work.
 
 **Honor the issue's Agent brief**, an `### Agent brief` section in the description or in a triage
 comment (`` `depth:<skim|standard|deep>` · `model:<fable|any>` · `ultracode:<yes|no>` ``; policy in
-[`GITHUB_PM.md` → Agent briefs](../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)).
+[`github-pm.md` → Agent briefs](../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)).
 `depth` sets how hard to dig, never which steps run, and `/diff-review` is never reduced. An absent
 brief or `depth:` field means `deep`, the widest verification and review you can run; `skim` means
 each step's floor suffices. `model:` and `ultracode:` are spin-up hints for whoever launches
@@ -153,7 +153,7 @@ when all hold:
 
 1. No state label (`triage`, `in-progress`, `in-review`), and no `routine-state` or `incident`
    label. `triage` items need promotion and a priority first (who may promote them:
-   [`GITHUB_PM.md` → Ownership boundary](../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly));
+   [`github-pm.md` → Ownership boundary](../../docs/ci-cd/github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly));
    `in-review` means a PR is waiting on a human; `routine-state` issues are routine infrastructure,
    never work; `incident` issues are live watchdog alerts that close themselves once the fault is
    fixed, so the work is the fault, filed as its own issue.
@@ -167,7 +167,7 @@ when all hold:
    - **A merged PR that closes the issue** (it appears in `closed_by_pull_requests`, or its body
      uses a closing keyword for it) **and landed on `main`:** it already shipped. Report it and
      change nothing. A PR merged into another branch shows MERGED but shipped nothing
-     ([`pr-babysitting.md`](../../docs/internal/ci-cd/pr-babysitting.md)), so report that one as
+     ([`pr-babysitting.md`](../../docs/ci-cd/pr-babysitting.md)), so report that one as
      drift instead.
 
    Any other PR doesn't disqualify. That covers a merged `Part of #N` slice, a PR that only
@@ -178,7 +178,7 @@ when all hold:
 5. No human-action hold: no `[human]` tag anywhere in the title's leading run of `[...]` tags,
    matched case-insensitively (`[pr-followup][human] …` is held), and no body opening
    `**Human action required — hold in triage`. No agent session can do these. The forms are defined
-   in [`GITHUB_PM.md` → Labels and priority](../../docs/internal/ci-cd/GITHUB_PM.md#labels-and-priority-lean-taxonomy).
+   in [`github-pm.md` → Labels and priority](../../docs/ci-cd/github-pm.md#labels-and-priority-lean-taxonomy).
 
 Epics are candidates like anything else. The hazard is closing one early, which Phase 4 guards, so
 don't add an epic filter here. Surface each candidate's `Estimate:` line and Agent brief in the
@@ -435,7 +435,7 @@ If the unit changed a fact a doc asserts, update that doc in this same PR; the �
 the minimum list, per member. Put files in their canonical home per
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md). Never drop a
 stray file or append an unrelated note to make a change look documented; if the unit changed nothing
-a doc describes, change no doc ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)).
+a doc describes, change no doc ([`docs-ci.md`](../../docs/ci-cd/docs-ci.md)).
 
 Push and open the PR with one `Fixes #N` line per member in the PR body. GitHub ignores closing
 keywords in the title, and a prose mention doesn't close. The body follows
