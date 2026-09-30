@@ -627,6 +627,9 @@ describe("installs run before any secret, and the trust split holds", () => {
   it("starts the rehearsal stack from the trusted copy, never the deployed tree", () => {
     const copy = sharedSteps()[at("Keep a trusted copy of the served-commit check")];
     const start = sharedSteps()[at("Start disposable Supabase stack")];
+    // The stack starts on every production run, migrations-only included, so
+    // a copy that skipped any run would leave it a missing file.
+    assert.equal(copy.if ?? null, null, "the trusted copy became conditional");
     assert.equal(start.env.get("TRUSTED_CI"), copy.env.get("TRUSTED_CI"), "the stack start reads another copy");
     assert.match(start.body, /run: bash "\$TRUSTED_CI\/supabase-start-disposable\.sh"/);
     assert.doesNotMatch(start.body, /scripts\/ci\/supabase-start-disposable/, "the stack start runs the deployed tree's copy");

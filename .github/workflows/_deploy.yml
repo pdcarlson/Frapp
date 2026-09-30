@@ -374,8 +374,11 @@ jobs:
       # script existed (#2505) could ship its API and then fail here. The script
       # and its `lib/` imports are Node built-ins only, so the copy needs no
       # install. The source-map check at the end of the job (#2489) runs from
-      # this copy for the same reasons; the step keeps its name, which the
-      # deploy tests pin.
+      # this copy for the same reasons, and so does production's rehearsal
+      # stack start (`supabase-start-disposable.sh`, bash, #2609), which runs on
+      # every production run, migrations-only included. So the copy takes all
+      # of `scripts/ci` and has no condition. The step keeps its name, which
+      # the deploy tests pin.
       - name: Keep a trusted copy of the served-commit check
         env:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci

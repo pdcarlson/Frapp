@@ -34,7 +34,10 @@ for attempt in $(seq 1 "$attempts"); do
   if supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit 2>&1 | tee "$log"; then
     exit 0
   fi
-  if ! tail -n 3 "$log" | grep -q 'toomanyrequests'; then
+  # A herestring, not `tail | grep -q`: under pipefail, grep -q exiting on
+  # its match can SIGPIPE a tail still writing and read as "no match"
+  # (scripts/lib/cloud-sandbox-common.sh bans the pipe for the same reason).
+  if ! grep -q 'toomanyrequests' <<<"$(tail -n 3 "$log")"; then
     echo "::error::supabase start failed (attempt ${attempt}/${attempts}), not on a registry rate limit; not retrying."
     exit 1
   fi
