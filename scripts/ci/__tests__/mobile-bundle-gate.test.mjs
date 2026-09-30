@@ -39,6 +39,8 @@ const ALLOWED_BEFORE = [
   /^\s*-?\s*uses:\s*["']?actions\/checkout@/m,
   /^\s*-?\s*uses:\s*["']?actions\/setup-node@/m,
   /^\s*-?\s*run:\s*npm\s+ci\s*$/m,
+  // Reads package.json, package-lock.json and dependabot.yml; builds nothing.
+  /^\s*-?\s*run:\s*npm\s+run\s+check:expo-sdk-line\s*$/m,
 ];
 
 /** The step's text without its `name:` line, so a name can't stand in for the command. */
@@ -84,7 +86,7 @@ describe(`${JOB}: the mobile bundle step (#2388)`, () => {
     for (const step of steps.slice(0, exportIndexes[0])) {
       assert.ok(
         ALLOWED_BEFORE.some((re) => re.test(withoutName(step))),
-        `"${step.name}" runs before \`expo export\`; only checkout, setup-node and \`npm ci\` may, ` +
+        `"${step.name}" runs before \`expo export\`; only checkout, setup-node, \`npm ci\` and the read-only SDK-line check may, ` +
           "because the EAS worker never builds the shared packages",
       );
     }
