@@ -5,9 +5,11 @@
  *   - the channel topic is exactly `chat:channel:<id>`, with the exact
  *     channel config
  *     `{ private: true, broadcast: { self: false }, presence: { key: "" } }`
- *     (the worker joins the same topic with a byte-identical config to read
- *     presence; `private` is load-bearing since #1552 because private and
- *     public are separate rooms), and
+ *     (the worker joins the same topic with the same config plus
+ *     `presence.enabled: true`, which only a reader needs (#2974): this
+ *     manager only `track()`s, and asking for the roster would ship every
+ *     member's joins and leaves to every open tab. `private` is load-bearing
+ *     since #1552 because private and public are separate rooms), and
  *   - the presence payload is exactly `{ userId, ts }` — the worker reads
  *     `userId` (string) to skip recipients already in the channel; `ts` is
  *     written but unconsumed.
@@ -112,8 +114,9 @@ describe("ADR-10 presence contract (read by the push worker)", () => {
     const call = channelCalls.find((c) => c.topic.startsWith("chat:channel:"));
     expect(call).toBeDefined();
     expect(call!.topic).toBe("chat:channel:channel-1");
-    // Byte-identical to chat-push-worker.service.ts's `ensurePresenceChannel`.
-    // `private: true` is part of the contract since #1552: private and public
+    // chat-push-worker.service.ts's `ensurePresenceChannel` uses this plus
+    // `presence.enabled: true` (#2974), which it needs as the reader and this
+    // manager doesn't. `private: true` is part of the contract since #1552: private and public
     // are separate rooms, so a worker and a client that disagree on it never
     // see each other's presence — and push suppression silently stops.
     expect(call!.opts).toEqual({

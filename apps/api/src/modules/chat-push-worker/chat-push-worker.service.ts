@@ -6,6 +6,7 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import * as Sentry from '@sentry/nestjs';
 import type {
   RealtimeChannel,
   RealtimePostgresInsertPayload,
@@ -55,6 +56,14 @@ interface ChatMessageRow {
 /** Alias kept local so the rest of this file reads in its own domain terms. */
 type ChannelRow = CachedChannelRow;
 
+/** What one message's fan-out did, for its span. */
+interface FanOutOutcome {
+  /** Members left after the read and block filters. */
+  recipients: number;
+  /** `notifyUser` calls that resolved. */
+  sent: number;
+}
+
 /**
  * How long a dispatch claim is kept. It only has to outlive Realtime's delivery
  * of the same INSERT to every other instance, which is seconds; a day leaves
@@ -64,6 +73,45 @@ export const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /** The placeholder `ChatService.createGroupDm` names a group DM given no name. */
 const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
+
+/**
+ * Most presence channels one process keeps open (#2507).
+ *
+ * Every Realtime channel a process opens rides its one Supabase client, and
+ * Supabase refuses a join past 100 channels per client. Two of them are the
+ * workers' own subscriptions (`chat-push-worker:messages` here,
+ * `chat-bridge-worker:audit-log`). The rest were one presence channel per chat
+ * channel ever messaged, opened for the life of the process, so somewhere near
+ * 98 active chat channels (roughly 8 to 12 chapters) every further join was
+ * refused. `subscribe()` had no status callback, so nothing said so, and people
+ * reading those channels were pushed their own conversation. 80 leaves room for
+ * both worker channels and a third without re-deriving this number.
+ */
+export const MAX_PRESENCE_CHANNELS = 80;
+
+/**
+ * Longest gap between a message's `created_at` and this worker seeing it that
+ * the fan-out span still measures from `created_at`. Beyond it (a redelivery
+ * after a long reconnect, or a clock far off) the span starts on arrival
+ * instead, so one stale row can't stretch ADR-09's p99.
+ */
+const FANOUT_START_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** Sentry reports for a refused or timed-out presence join, at most one per window. */
+const PRESENCE_REPORT_INTERVAL_MS = 10 * 60 * 1000;
+
+/**
+ * Where a fan-out span starts: the message's insert, unless that is unreadable,
+ * in the future (a clock ahead of this one) or older than
+ * {@link FANOUT_START_MAX_AGE_MS}, in which case it starts now.
+ */
+export function fanOutStartTime(createdAt: string, now: number): Date {
+  const inserted = Date.parse(createdAt);
+  const age = now - inserted;
+  return age >= 0 && age <= FANOUT_START_MAX_AGE_MS
+    ? new Date(inserted)
+    : new Date(now);
+}
 
 /**
  * Push worker (ADR-09).
@@ -106,7 +154,19 @@ export class ChatPushWorkerService
 {
   private readonly logger = new Logger(ChatPushWorkerService.name);
   private messagesChannel: RealtimeChannel | null = null;
+  /**
+   * Open presence channels by chat channel id, least recently used first:
+   * `ensurePresenceChannel` re-inserts on every use, so eviction takes the
+   * front.
+   */
   private readonly presenceChannels = new Map<string, RealtimeChannel>();
+  /**
+   * Chat channel ids whose presence topic is still being freed. Until the
+   * teardown lands, `supabase.channel()` would hand back the leaving instance
+   * (`realtime-resilience` rule 1), so the topic isn't reopened meanwhile.
+   */
+  private readonly releasingPresence = new Set<string>();
+  private lastPresenceReportAt = Number.NEGATIVE_INFINITY;
   private readonly bundler = new BurstBundler();
 
   constructor(
@@ -187,7 +247,12 @@ export class ChatPushWorkerService
       }
       this.messagesChannel = null;
     }
-    for (const ch of this.presenceChannels.values()) {
+    // Let go of every presence channel before removing any, so each leave's
+    // `CLOSED` echo reads as this worker's own (see `onPresenceStatus`), not a
+    // server close to log and release a second time.
+    const presence = [...this.presenceChannels.values()];
+    this.presenceChannels.clear();
+    for (const ch of presence) {
       try {
         await this.supabase.removeChannel(ch);
       } catch (err) {
@@ -199,7 +264,6 @@ export class ChatPushWorkerService
         );
       }
     }
-    this.presenceChannels.clear();
   }
 
   /**
@@ -272,124 +336,7 @@ export class ChatPushWorkerService
       const claim = await this.dispatches.claim(row.id);
       if (claim !== 'claimed') return;
 
-      const channel = await this.resolveChannel(row.channel_id);
-      if (!channel) return;
-
-      const members = await this.memberRepo.findByChapter(channel.chapter_id);
-      const candidateIds = members
-        .map((m) => m.user_id)
-        .filter((uid): uid is string => !!uid && uid !== row.sender_id);
-      if (candidateIds.length === 0) return;
-
-      // Narrow the chapter roster to people who may actually READ this channel.
-      //
-      // This is a disclosure boundary, not an optimisation. The push payload
-      // carries a 200-character preview of the body and `notifyUser` also
-      // persists a notification row, so notifying a non-member hands them the
-      // content of a channel they cannot open. It matters most for a mention:
-      // `decidePush` returns 'send' on `hasMention` *before* the level check
-      // (`push-rules.ts`), so a mention overrides even an explicit `off`.
-      //
-      // Until C1 this was inert rather than safe — `hasMention` was always
-      // false because the worker read a `mentions` field that did not exist —
-      // so resolving mentions for real is exactly what would have turned a
-      // latent chapter-wide fan-out into a real one.
-      const readerIds = await this.filterCanReadChannel(channel, candidateIds);
-      if (readerIds.length === 0) return;
-
-      // Then drop anyone who has blocked the sender (#2257,
-      // `spec/behavior/chat/README.md` § Report and block).
-      //
-      // **At the audience level, not by blanking the preview.** A push is the
-      // one delivery that reaches past every client-side list: it lands on a
-      // lock screen and `notifyUser` persists a notification row, so masking
-      // the body would still buzz the blocker's phone every time the member
-      // they blocked posts, and still leave a row in their notification list.
-      // Removing them here means neither exists.
-      //
-      // It has to be here and not inside the loop below, because a mention is
-      // the sharpest case: `decidePush` returns 'send' on `hasMention` BEFORE
-      // the level check, so a blocked member can force a push through a channel
-      // the blocker deliberately muted. The block has to win over that, and the
-      // only way it can is by the recipient not being in the audience at all.
-      //
-      // **Fails closed by throwing.** This sits inside `handleMessage`'s
-      // try/catch, so an unreadable block list costs this message its
-      // notifications for everybody — the conservative side. Degrading to the
-      // unfiltered audience would deliver a blocked member's content to the
-      // blocker for as long as the table was unreachable, silently.
-      const recipientIds = await this.chatBlocks.filterOutBlockers(
-        channel.chapter_id,
-        row.sender_id,
-        readerIds,
-      );
-      if (recipientIds.length === 0) return;
-
-      const presenceMap = this.readPresence(channel.id);
-      const senderPreview = row.content?.slice(0, 200) ?? '';
-      // `chat_messages.mentions` is a `users.id[]` resolved by the API at send
-      // time. Until C1 this read went through a structural cast over a column
-      // that had never existed and was typed as a map, so it resolved to `{}`
-      // on every message and the mentions tier had never fired for anyone.
-      // A missing array still means "no mentions". The column is NOT NULL with
-      // a default, so this guards a malformed payload, not a historical row.
-      const mentions = row.mentions ?? [];
-
-      // One batched read for the whole audience, not one per recipient. This
-      // loop used to `await` a preference lookup per member, so a 150-member
-      // channel issued ~150 queries per message on a path with no
-      // backpressure. A user with no stored preferences is simply absent from
-      // the map, which is what the per-user read's empty array meant.
-      const prefsByUser = await this.prefRepo.findForUsers(
-        recipientIds,
-        channel.chapter_id,
-      );
-
-      // Read once, and only once a recipient is actually getting a push: most
-      // messages in a `mentions` channel push nobody.
-      let senderName: Promise<string | null> | null = null;
-
-      for (const recipientId of recipientIds) {
-        const prefs = prefsByUser.get(recipientId) ?? [];
-        const decision = decidePush({
-          channel,
-          messageKind: row.kind,
-          recipientIsPresent: presenceMap.has(recipientId),
-          hasMention: mentions.includes(recipientId),
-          preferences: prefs,
-        });
-        if (decision !== 'send') continue;
-
-        // `sender_id` may be null; `String()` keeps the key well-formed rather than
-        // interpolating `undefined`. Imported rows never get this far (see the
-        // early exit in `handleMessage`), so the null arm is only reachable for a
-        // future null-sender kind.
-        const bundleKey = `${row.sender_id ?? 'none'}:${channel.id}:${recipientId}`;
-        const burst = this.bundler.record(bundleKey);
-        if (burst.action === 'skip') continue;
-
-        senderName ??= this.resolveSenderName(row.sender_id);
-        const payload = this.buildPayload(
-          channel,
-          senderPreview,
-          burst,
-          await senderName,
-        );
-        try {
-          await this.notificationService.notifyUser(
-            recipientId,
-            channel.chapter_id,
-            payload,
-          );
-        } catch (err) {
-          logThrowable(
-            this.logger,
-            'warn',
-            `chat-push: notify failed for recipient ${recipientId}`,
-            err,
-          );
-        }
-      }
+      await this.traceFanOut(row, () => this.fanOut(row));
     } catch (err) {
       logThrowable(
         this.logger,
@@ -398,6 +345,177 @@ export class ChatPushWorkerService
         err,
       );
     }
+  }
+
+  /**
+   * One claimed message's fan-out as its own Sentry transaction (#2507).
+   *
+   * ADR-09's scaling watermark is p99 fan-out above one second, and nothing
+   * measured it. The span runs from the row's `created_at`, the insert, to the
+   * last `notifyUser`, so it includes Realtime's delivery lag and the claim as
+   * well as the work here. `startNewTrace` gives each message its own trace:
+   * this runs in the Realtime socket's callback, outside any request, and would
+   * otherwise inherit whichever trace was current when the socket was opened.
+   *
+   * The attributes are counts only, and each is on the scrubber's span
+   * allowlist (`@repo/observability`), which drops any key it doesn't name.
+   * `chat.push.presence_channels` is the open presence-channel gauge, sampled
+   * with every traced fan-out rather than sent through `Sentry.metrics`, whose
+   * pipeline no allowlist scrubber here covers.
+   */
+  private traceFanOut(
+    row: ChatMessageRow,
+    fanOut: () => Promise<FanOutOutcome>,
+  ): Promise<void> {
+    return Sentry.startNewTrace(() =>
+      Sentry.startSpan(
+        {
+          name: 'chat.push.fanout',
+          op: 'chat.push',
+          forceTransaction: true,
+          startTime: fanOutStartTime(row.created_at, Date.now()),
+          attributes: {
+            'chat.push.presence_channels': this.presenceChannels.size,
+          },
+        },
+        async (span) => {
+          const outcome = await fanOut();
+          span.setAttributes({
+            'chat.push.recipients': outcome.recipients,
+            'chat.push.sent': outcome.sent,
+          });
+        },
+      ),
+    );
+  }
+
+  /**
+   * Everything after the claim: resolve the audience, decide per recipient,
+   * send. Returns how many were in the audience and how many were pushed.
+   */
+  private async fanOut(row: ChatMessageRow): Promise<FanOutOutcome> {
+    const outcome = { recipients: 0, sent: 0 };
+    const channel = await this.resolveChannel(row.channel_id);
+    if (!channel) return outcome;
+
+    const members = await this.memberRepo.findByChapter(channel.chapter_id);
+    const candidateIds = members
+      .map((m) => m.user_id)
+      .filter((uid): uid is string => !!uid && uid !== row.sender_id);
+    if (candidateIds.length === 0) return outcome;
+
+    // Narrow the chapter roster to people who may actually READ this channel.
+    //
+    // This is a disclosure boundary, not an optimisation. The push payload
+    // carries a 200-character preview of the body and `notifyUser` also
+    // persists a notification row, so notifying a non-member hands them the
+    // content of a channel they cannot open. It matters most for a mention:
+    // `decidePush` returns 'send' on `hasMention` *before* the level check
+    // (`push-rules.ts`), so a mention overrides even an explicit `off`.
+    //
+    // Until C1 this was inert rather than safe — `hasMention` was always
+    // false because the worker read a `mentions` field that did not exist —
+    // so resolving mentions for real is exactly what would have turned a
+    // latent chapter-wide fan-out into a real one.
+    const readerIds = await this.filterCanReadChannel(channel, candidateIds);
+    if (readerIds.length === 0) return outcome;
+
+    // Then drop anyone who has blocked the sender (#2257,
+    // `spec/behavior/chat/README.md` § Report and block).
+    //
+    // **At the audience level, not by blanking the preview.** A push is the
+    // one delivery that reaches past every client-side list: it lands on a
+    // lock screen and `notifyUser` persists a notification row, so masking
+    // the body would still buzz the blocker's phone every time the member
+    // they blocked posts, and still leave a row in their notification list.
+    // Removing them here means neither exists.
+    //
+    // It has to be here and not inside the loop below, because a mention is
+    // the sharpest case: `decidePush` returns 'send' on `hasMention` BEFORE
+    // the level check, so a blocked member can force a push through a channel
+    // the blocker deliberately muted. The block has to win over that, and the
+    // only way it can is by the recipient not being in the audience at all.
+    //
+    // **Fails closed by throwing.** This sits inside `handleMessage`'s
+    // try/catch, so an unreadable block list costs this message its
+    // notifications for everybody — the conservative side. Degrading to the
+    // unfiltered audience would deliver a blocked member's content to the
+    // blocker for as long as the table was unreachable, silently.
+    const recipientIds = await this.chatBlocks.filterOutBlockers(
+      channel.chapter_id,
+      row.sender_id,
+      readerIds,
+    );
+    outcome.recipients = recipientIds.length;
+    if (recipientIds.length === 0) return outcome;
+
+    const presenceMap = this.readPresence(channel.id);
+    const senderPreview = row.content?.slice(0, 200) ?? '';
+    // `chat_messages.mentions` is a `users.id[]` resolved by the API at send
+    // time. Until C1 this read went through a structural cast over a column
+    // that had never existed and was typed as a map, so it resolved to `{}`
+    // on every message and the mentions tier had never fired for anyone.
+    // A missing array still means "no mentions". The column is NOT NULL with
+    // a default, so this guards a malformed payload, not a historical row.
+    const mentions = row.mentions ?? [];
+
+    // One batched read for the whole audience, not one per recipient. This
+    // loop used to `await` a preference lookup per member, so a 150-member
+    // channel issued ~150 queries per message on a path with no
+    // backpressure. A user with no stored preferences is simply absent from
+    // the map, which is what the per-user read's empty array meant.
+    const prefsByUser = await this.prefRepo.findForUsers(
+      recipientIds,
+      channel.chapter_id,
+    );
+
+    // Read once, and only once a recipient is actually getting a push: most
+    // messages in a `mentions` channel push nobody.
+    let senderName: Promise<string | null> | null = null;
+
+    for (const recipientId of recipientIds) {
+      const prefs = prefsByUser.get(recipientId) ?? [];
+      const decision = decidePush({
+        channel,
+        messageKind: row.kind,
+        recipientIsPresent: presenceMap.has(recipientId),
+        hasMention: mentions.includes(recipientId),
+        preferences: prefs,
+      });
+      if (decision !== 'send') continue;
+
+      // `sender_id` may be null; `String()` keeps the key well-formed rather than
+      // interpolating `undefined`. Imported rows never get this far (see the
+      // early exit in `handleMessage`), so the null arm is only reachable for a
+      // future null-sender kind.
+      const bundleKey = `${row.sender_id ?? 'none'}:${channel.id}:${recipientId}`;
+      const burst = this.bundler.record(bundleKey);
+      if (burst.action === 'skip') continue;
+
+      senderName ??= this.resolveSenderName(row.sender_id);
+      const payload = this.buildPayload(
+        channel,
+        senderPreview,
+        burst,
+        await senderName,
+      );
+      try {
+        await this.notificationService.notifyUser(
+          recipientId,
+          channel.chapter_id,
+          payload,
+        );
+        outcome.sent += 1;
+      } catch (err) {
+        logThrowable(
+          this.logger,
+          'warn',
+          `chat-push: notify failed for recipient ${recipientId}`,
+          err,
+        );
+      }
+    }
+    return outcome;
   }
 
   /**
@@ -510,26 +628,64 @@ export class ChatPushWorkerService
   /**
    * Open a presence subscription on the same `chat:channel:<id>` topic the web
    * client uses (ADR-10), so `readPresence` can tell who is in the channel.
-   * Once per channel per instance; `handleMessage` calls it for every message,
-   * won or not (#2846).
+   * Once per channel per instance while it stays open; `handleMessage` calls it
+   * for every message, won or not (#2846).
+   *
+   * At most {@link MAX_PRESENCE_CHANNELS} stay open. Opening one more closes
+   * the channel whose last message is oldest. A message in a channel that was
+   * closed that way reopens it, and that one message reads an empty roster
+   * (its first message always did), so the cost of an eviction is at most one
+   * extra push per person reading, never a missed one.
    */
   private ensurePresenceChannel(channelId: string): void {
-    if (this.presenceChannels.has(channelId)) return;
+    const open = this.presenceChannels.get(channelId);
+    if (open) {
+      this.presenceChannels.delete(channelId);
+      this.presenceChannels.set(channelId, open);
+      return;
+    }
+    // Still being freed after an eviction or a close: reopening now would get
+    // the leaving instance back. This message goes without a roster, like a
+    // first message; the next one opens a fresh channel.
+    if (this.releasingPresence.has(channelId)) return;
+
+    while (this.presenceChannels.size >= MAX_PRESENCE_CHANNELS) {
+      const [oldestId, oldest] = this.presenceChannels.entries().next()
+        .value as [string, RealtimeChannel];
+      this.dropPresenceChannel(oldestId, oldest);
+    }
+
+    let ch: RealtimeChannel | undefined;
     try {
-      // Same config as chat-core's realtime-manager, `private: true` included
+      // chat-core's realtime-manager config, `private: true` included
       // (#1552): the service-role client bypasses realtime.messages RLS so the
       // join always succeeds, but private and public are separate rooms — a
       // worker on the public room sees an empty roster while every client is
       // private, and suppresses nothing.
-      const ch = this.supabase.channel(`chat:channel:${channelId}`, {
+      //
+      // Plus `presence.enabled`, which only this side needs (#2974).
+      // realtime-js asks the server for the roster only when the channel has
+      // a presence listener or sets `enabled: true`. The clients have neither
+      // and don't need to: `track()` publishes their own presence regardless.
+      // The worker is the one reader, and without the flag it joined with
+      // presence off, `presenceState()` stayed `{}`, and nobody reading a
+      // channel was spared a push. Checked against local Realtime on
+      // 2026-09-30 (realtime-js 2.117): `{}` without the flag, the tracked
+      // member with it.
+      const opened = this.supabase.channel(`chat:channel:${channelId}`, {
         config: {
           private: true,
           broadcast: { self: false },
-          presence: { key: '' },
+          presence: { key: '', enabled: true },
         },
       });
-      ch.subscribe();
-      this.presenceChannels.set(channelId, ch);
+      ch = opened;
+      // Registered before `subscribe()`, so a status that arrives at once
+      // finds it.
+      this.presenceChannels.set(channelId, opened);
+      opened.subscribe((status: string, err?: Error) =>
+        this.onPresenceStatus(channelId, opened, status, err),
+      );
     } catch (err) {
       logThrowable(
         this.logger,
@@ -537,7 +693,102 @@ export class ChatPushWorkerService
         `chat-push: failed to open presence channel for ${channelId}`,
         err,
       );
+      if (ch) this.dropPresenceChannel(channelId, ch);
     }
+  }
+
+  /**
+   * A presence channel's subscribe status (#2507).
+   *
+   * `CHANNEL_ERROR` and `TIMED_OUT` are the join being refused or never
+   * answered: a channel over Supabase's per-client limit is refused that way,
+   * and so is every channel while the socket is down. Both are logged and
+   * reported, and the channel is kept: `realtime-js` retries the join itself
+   * and the roster reads empty until it lands, which costs extra pushes, never
+   * a missed one. `CLOSED` on a channel this worker still holds is the server
+   * ending it, which nothing retries, so it is dropped and the channel's next
+   * message reopens it.
+   *
+   * A status from a channel this worker already let go of (evicted, dropped,
+   * shut down) is its own teardown echoing back, and is ignored.
+   */
+  private onPresenceStatus(
+    channelId: string,
+    ch: RealtimeChannel,
+    status: string,
+    err?: Error,
+  ): void {
+    if (status === 'SUBSCRIBED') return;
+    if (this.presenceChannels.get(channelId) !== ch) return;
+    if (status === 'CLOSED') {
+      this.logger.warn(
+        `chat-push: presence channel for ${channelId} was closed; its next message reopens it`,
+      );
+      this.dropPresenceChannel(channelId, ch);
+      return;
+    }
+    this.logger.warn(
+      `chat-push: presence join ${status} for ${channelId} (${this.presenceChannels.size} open); pushes there ignore who is reading until it joins${err ? `: ${err.message}` : ''}`,
+    );
+    this.reportPresenceRefusal(status);
+  }
+
+  /**
+   * Sentry hears about a refused or timed-out join at most once per
+   * {@link PRESENCE_REPORT_INTERVAL_MS}: a dropped socket fails every open
+   * channel at once, and one event says as much as eighty.
+   */
+  private reportPresenceRefusal(status: string): void {
+    const now = Date.now();
+    if (now - this.lastPresenceReportAt < PRESENCE_REPORT_INTERVAL_MS) return;
+    this.lastPresenceReportAt = now;
+    try {
+      Sentry.captureMessage('chat-push presence join failed', {
+        level: 'warning',
+        tags: {
+          realtime_status: status,
+          presence_channels: String(this.presenceChannels.size),
+        },
+        fingerprint: ['chat-push-presence-join', status],
+      });
+    } catch (error) {
+      // The warning above already carries it.
+      logThrowable(
+        this.logger,
+        'warn',
+        'chat-push: Sentry report failed for a presence join',
+        error,
+      );
+    }
+  }
+
+  /**
+   * Forget a presence channel and free its topic.
+   *
+   * `unsubscribe()` and then an unconditional `teardown()`: `removeChannel()`
+   * only tears down when the leave is acknowledged `ok`, and a channel left
+   * registered hands itself back to the next `supabase.channel()` on its topic
+   * (`realtime-resilience` rule 1). That is chat-core's `releaseTopic`, which
+   * this process can't import: chat-core ships TypeScript source for the
+   * bundler-built clients, and the API's compiled output can't load it.
+   */
+  private dropPresenceChannel(channelId: string, ch: RealtimeChannel): void {
+    if (this.presenceChannels.get(channelId) === ch) {
+      this.presenceChannels.delete(channelId);
+    }
+    this.releasingPresence.add(channelId);
+    void (async () => {
+      try {
+        await ch.unsubscribe();
+      } catch {
+        // Already gone, or the socket is down; the teardown is what counts.
+      }
+      try {
+        ch.teardown();
+      } catch {
+        // Already torn down.
+      }
+    })().finally(() => this.releasingPresence.delete(channelId));
   }
 
   /**

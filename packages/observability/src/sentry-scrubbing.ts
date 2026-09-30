@@ -1096,12 +1096,19 @@ const SPAN_FIELD_ALLOWLIST = new Set([
  * `sentry.op` and `sentry.origin` are deliberately absent: `spanToJSON` derives
  * the top-level `op` and `origin` from them and leaves the copies in `data`, so
  * allowlisting them here would ship each value twice per span.
+ *
+ * The `chat.push.*` keys are the API push worker's fan-out span (#2507): three
+ * counts it sets itself (audience size, pushes sent, open presence channels),
+ * never an id or a message.
  */
 const SPAN_DATA_KEY_ALLOWLIST = new Set([
   'http.request.method',
   'http.response.status_code',
   'db.system',
   'sentry.source',
+  'chat.push.recipients',
+  'chat.push.sent',
+  'chat.push.presence_channels',
 ]);
 
 /**
