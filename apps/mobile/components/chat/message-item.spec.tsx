@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
+import { drawnText } from "@/test/screen-text";
 
 const attachmentHook = vi.hoisted(() => ({
   calls: [] as Array<{ enabled: boolean }>,
@@ -320,7 +321,7 @@ describe("compact layout (#2873)", () => {
     const tree = renderItem(message(), undefined, { startsRun: false });
     const drawn = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
-      .map((node) => JSON.stringify(node.props.children));
+      .map(drawnText);
     expect(drawn.some((text) => text.includes("CA"))).toBe(false);
     expect(drawn.some((text) => text.includes("Casey"))).toBe(false);
     expect(drawn.some((text) => text.includes(":09"))).toBe(false);
@@ -462,7 +463,7 @@ describe("compact layout (#2873)", () => {
       (node) =>
         (node.type as unknown) === "Text" &&
         Array.isArray(node.props.style) &&
-        JSON.stringify(node.props.children).includes("hello"),
+        drawnText(node).includes("hello"),
     );
     expect(JSON.stringify(body.props.style)).toContain(
       `"color":"${signetDarkTokens.color.text.mutedForeground}"`,

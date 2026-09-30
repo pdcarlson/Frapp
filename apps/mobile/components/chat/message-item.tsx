@@ -10,7 +10,6 @@ import {
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
-import { linkSegments, type LinkSegment } from "@repo/chat-core/links";
 import {
   EDITED_MARKER,
   isOwnMessage,
@@ -39,9 +38,11 @@ import { initialsFor } from "@/lib/chat/display-name";
 import { MessageAttachments } from "./message-attachments";
 import {
   linkA11yActions,
-  MessageText,
+  MessageMarkdown,
+  parseMessageMarkdown,
   runLinkA11yAction,
-} from "./message-text";
+  type MessageLink,
+} from "./message-markdown";
 import { ReplyQuote } from "./reply-quote";
 
 /**
@@ -166,7 +167,7 @@ type MessageActionsA11yProps =
  */
 export function messageActionsA11yProps(
   onOpenActions: (() => void) | undefined,
-  body: { links?: LinkSegment[]; onJumpToParent?: () => void } = {},
+  body: { links?: MessageLink[]; onJumpToParent?: () => void } = {},
 ): MessageActionsA11yProps {
   const links = body.links ?? [];
   const actions = [
@@ -421,10 +422,6 @@ export function MessageItem({
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const segments = useMemo(
-    () => linkSegments(message.content),
-    [message.content],
-  );
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
@@ -456,8 +453,14 @@ export function MessageItem({
   // An attachment-only message has no text, and draws no text row at all: the
   // bubble it replaced painted an empty box above the photo.
   const hasText = !message.is_deleted && message.content.trim().length > 0;
+  // Parsed once per content, for the body and for its links' accessibility
+  // actions, so the actions name exactly the links drawn.
+  const parsed = useMemo(
+    () => (hasText ? parseMessageMarkdown(message.content) : null),
+    [hasText, message.content],
+  );
   const bodyA11y = messageActionsA11yProps(onOpenActions, {
-    links: hasText ? segments : [],
+    links: parsed?.links ?? [],
     onJumpToParent: quoteJump(message, onJumpToParent),
   });
 
@@ -489,9 +492,9 @@ export function MessageItem({
 
   const text = message.is_deleted ? (
     <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
-  ) : hasText ? (
-    <MessageText
-      segments={segments}
+  ) : parsed ? (
+    <MessageMarkdown
+      parsed={parsed}
       style={[styles.body, muted ? styles.bodyMuted : null]}
       trailing={trailing}
       onLongPress={onOpenActions}

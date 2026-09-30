@@ -7,6 +7,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
+import { drawnText } from "@/test/screen-text";
 import {
   HELD_QUOTE_TEXT,
   TOMBSTONE_STALE_TEXT,
@@ -721,10 +722,10 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
     message: m,
     visibility: "visible",
   });
-  const drawnText = (tree: ReactTestRenderer) =>
+  const allDrawnText = (tree: ReactTestRenderer) =>
     tree.root
       .findAll((node) => (node.type as unknown) === "Text")
-      .map((node) => JSON.stringify(node.props.children))
+      .map(drawnText)
       .join(" ");
 
   it("draws a day divider above the first row of a day, and only there", () => {
@@ -742,16 +743,16 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
           node.props.accessibilityRole === "header",
       ),
     ).toHaveLength(1);
-    expect(drawnText(first)).toContain("Today");
+    expect(allDrawnText(first)).toContain("Today");
 
     const later = renderRow(row, { startsDay: false });
-    expect(drawnText(later)).not.toContain("Today");
+    expect(allDrawnText(later)).not.toContain("Today");
   });
 
   it("draws the author line only on a row that starts a run", () => {
     const row = visible(message({ sender_id: FRIEND, content: "second" }));
-    expect(drawnText(renderRow(row, { startsRun: true }))).toContain("Casey");
-    expect(drawnText(renderRow(row, { startsRun: false }))).not.toContain(
+    expect(allDrawnText(renderRow(row, { startsRun: true }))).toContain("Casey");
+    expect(allDrawnText(renderRow(row, { startsRun: false }))).not.toContain(
       "Casey",
     );
   });
@@ -771,7 +772,7 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
         },
       }),
     );
-    const text = drawnText(renderRow(poll, { startsRun: true }));
+    const text = allDrawnText(renderRow(poll, { startsRun: true }));
     expect(text).toContain("Casey");
     expect(text).toContain("Formal theme?");
   });
