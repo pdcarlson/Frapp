@@ -77,6 +77,12 @@ export interface IChatChannelRepository {
     chapterId: string,
   ): Promise<{ id: string; required_permissions: string[] }[]>;
   findDm(chapterId: string, memberIds: string[]): Promise<ChatChannel | null>;
+  /**
+   * Insert the 1:1 DM for a pair, or return the one a concurrent call inserted
+   * first. The database holds one DM per chapter and pair (#2788), so two
+   * racing calls for one pair resolve to the same channel.
+   */
+  createDm(chapterId: string, memberIds: string[]): Promise<ChatChannel>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
   update(
     id: string,
