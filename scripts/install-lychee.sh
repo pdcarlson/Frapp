@@ -19,7 +19,7 @@
 # worse than a known quantity — and check-links.mjs prints the version and flags
 # it used, so a disagreement with CI is visible rather than mysterious.
 #
-# Docs: docs/internal/ci-cd/DOCS_CI.md
+# Docs: docs/ci-cd/docs-ci.md
 set -euo pipefail
 
 LYCHEE_VERSION="${LYCHEE_VERSION:-0.24.2}"

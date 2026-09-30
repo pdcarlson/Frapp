@@ -10,7 +10,7 @@
 - **The risk that materialised:** the decision recorded MCP availability as its main risk and mitigated it by keeping GitHub Issues as a synced always-available surface. That mitigation is what made the 2026-08-08 retirement cheap — Linear's MCP write tools requiring a manual permission step per call is what finally forced it.
 - **Dated measurements the deleted amendments carried**, kept because they are evidence rather than narration. Amendment 3's cap finding, verified via `/next` on **2026-06-03**: the workspace held **276 non-archived issues — 260 Backlog, ~2 active** — and issue creation still succeeded at 276, which is how the 250 cap was established as binding on *active* (Started + Unstarted) rather than on the Backlog. Amendment 2's probe established that a headless Cursor background agent had **no Linear MCP and no injected credentials**, which is the only reason a `LINEAR_API_KEY` (a Cursor cloud-agent secret, used against `https://api.linear.app/graphql`) was ever minted — it is dead and marked for revocation in [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Amendment 1 also recorded a non-Linear fact: `/triage`, `/status` and `/next-task` were deleted and replaced by `/next`.
 
-Work tracking today is **GitHub Issues** — see amendment 5 and [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md).
+Work tracking today is **GitHub Issues** — see amendment 5 and [`github-pm.md`](../../../docs/ci-cd/github-pm.md).
 
 **Read amendments 4–10 below with one caveat.** Amendments **5–7 and 10 are current**; amendments 8 and 9 are removed (see the note in their place). Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — was reversed by **amendment 8**. **Corrected 2026-09-10:** amendment 8 then ranked Cursor primary and scheduled Claude teardown; **amendment 9** reverses that ranking. **Corrected 2026-09-22:** amendment 10 retired Cursor again, so that claim holds once more; amendments 8–9 are removed. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (the scheduled path today). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
 
@@ -35,13 +35,13 @@ staggered daily cadence.
 - **Behavior contracts moved into the repo's skill layer:** `.claude/skills/linear-curator/SKILL.md`
   and `.claude/skills/linear-triage/SKILL.md`; the `.cursor/` tree is deleted and the task playbooks
   it held migrated to `.claude/skills/` as well. Runbook + paste-ready Routine prompts:
-  [`docs/internal/ci-cd/ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) (formerly
+  [`docs/ci-cd/routines.md`](../../../docs/ci-cd/routines.md) (formerly
   `CURSOR_AUTOMATIONS.md`; amendment 1–2 links repoint there).
 - **Amplified in the move:** a fourth curator discovery lens (live runtime signals — Sentry, Supabase
   advisors, CI — through the MCPs the environment injects); a per-issue **Agent brief**
   (`depth:` / `model:` / `ultracode:`, defaulting to `depth:deep`) that the curator writes, triage
   backfills, and `/next` honors when scaling verification and review depth (policy:
-  `LINEAR_PM.md`, now [`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode));
+  `LINEAR_PM.md`, now [`github-pm.md` → Agent briefs](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode));
   a triage board-health report each run; and a bounded **self-maintenance contract** — each routine
   verifies its own config against the live workspace and may open a **docs-only PR restricted to its
   own skill files and runbook**, the routines' only permitted repo write.
@@ -55,8 +55,8 @@ staggered daily cadence.
   comments — hiding the marker from the search index too. That has since recovered (2026-09-05) but
   the visible-line form stays, because the defect has flipped four times and a visible line costs
   nothing. The `fp=` grammar and the dedup rule are unchanged, and comment-form markers remain
-  valid. See [`GITHUB_PM.md` → Reading a body you
-  intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).)*
+  valid. See [`github-pm.md` → Reading a body you
+  intend to rewrite](../../../docs/ci-cd/github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).)*
 
 #### ADR-16 amendment 5 — Linear retired; GitHub Issues becomes canonical (2026-08-08)
 
@@ -84,8 +84,8 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
   `.claude/skills/issue-curator/`, `.claude/skills/issue-triage/`), and the `/next` claim
   protocol (claims are still comments; GitHub comments are append-only and server-timestamped).
   Amendment 3's 250-active cap accounting is moot — GitHub has no cap.
-- Policy doc: [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md) (replaces `LINEAR_PM.md`);
-  runbook: [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+- Policy doc: [`github-pm.md`](../../../docs/ci-cd/github-pm.md) (replaces `LINEAR_PM.md`);
+  runbook: [`routines.md`](../../../docs/ci-cd/routines.md).
 
 #### ADR-16 amendment 6 — a fourth Routine, and the first that fixes instead of files (2026-08-21)
 
@@ -117,7 +117,7 @@ stay append-only — the routine may not rewrite one to match today's code." Tha
 revoked (ADR-18); ADRs are ordinary docs, and this routine corrects a wrong one in place like any
 other.
 
-- Runbook: [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+- Runbook: [`routines.md`](../../../docs/ci-cd/routines.md).
 
 #### ADR-16 amendment 7 — a fifth Routine, and the first that edits product code (2026-09-02)
 
@@ -128,7 +128,7 @@ tooling at all; its anti-pattern catalogue (the rule sections of `spec/engineeri
 enforced only by whoever happens to be reading; `dependency-cruiser` carries seven grandfathered
 violations that "exist to shrink"; and `jscpd` is a repo-wide percentage that only ratchets down
 when someone consolidates. A first scheduled sweep landed with #1539 as a skill plus eight fixes,
-without a runbook entry or an ADR, so the docs contradicted the repo: `ROUTINES.md` still said
+without a runbook entry or an ADR, so the docs contradicted the repo: `routines.md` still said
 four routines under a product-code ban that the fifth skill on `main` broke. Its fixes also showed
 what an ungrounded sweep does: it traded one domain-layer import for a try/catch at four sites,
 three of them byte-identical (then filed #1538 to dedupe those three), restyled a line of the
@@ -155,11 +155,11 @@ test and called out on its own. It also makes the first exception to the 2026-08
 the tier" model convention: this daily routine runs on the top tier because editing product code
 unattended is where a weaker judgement is most expensive.
 
-- Runbook: [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+- Runbook: [`routines.md`](../../../docs/ci-cd/routines.md).
 
 **Corrected 2026-09-22:** the owner decided to run all five Routines, Hygiene Scan included, on
 Opus 5.5, and Hygiene Scan runs at 23:00 ET (03:00 UTC during EDT), not 06:00. The Settings table in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) is canonical for routine models and
+[`routines.md`](../../../docs/ci-cd/routines.md) is canonical for routine models and
 schedules.
 
 #### ADR-16 amendments 8–9 — removed 2026-09-22
@@ -202,7 +202,7 @@ Amendments 8–9 remain the history of making Cursor and Claude independent firs
 but their review-adapter details are superseded. Both now share the repository-managed
 [Git pre-push hook](../../../.githooks/pre-push), installed by the root `prepare` script, with exact
 pushed-commit evidence at `.cache/diff-review/<PUSHED_COMMIT_SHA>`. Cursor and Claude project hooks
-no longer intercept pushes. See the [review runbook](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+no longer intercept pushes. See the [review runbook](../../../docs/ci-cd/ai-code-review-runbook.md).
 
 **Corrected 2026-09-22:** amendments 8–9 are removed and Cursor is retired (amendment 10). #2322,
 the change behind this correction, emptied `.cursor/hooks.json` and deleted the Cursor pre-push
@@ -226,7 +226,7 @@ restore `LINEAR_API_KEY`.
   and `.cursor/commands/next.md`.
 - The Cursor scripts: `scripts/cursor-agent-install.sh`, `scripts/cursor-agent-prepull.sh`,
   `scripts/cursor-cloud-up.sh`, `scripts/cursor-cloud-terminal.sh`, and `scripts/cursor-node.sh`.
-- The paste-ready Cursor Automation specs in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+- The paste-ready Cursor Automation specs in [`routines.md`](../../../docs/ci-cd/routines.md).
 - The Cursor review-gate test. Its Cursor case is gone, and what remained of
   `scripts/ci/__tests__/cursor-review-gate.test.mjs` is now
   [`review-gate-hooks.test.mjs`](../../../scripts/ci/__tests__/review-gate-hooks.test.mjs), which checks
@@ -236,7 +236,7 @@ restore `LINEAR_API_KEY`.
 SessionStart ([`.claude/hooks/session-start.sh`](../../../.claude/hooks/session-start.sh)), and the
 bringup in `scripts/cloud-sandbox-up.sh`, which was shared and is now Claude Code web's alone. Skills
 stay under `.claude/skills/`. Claude Code Routines are the scheduled path; their prompts live in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md). The review gate is the Git pre-push hook
+[`routines.md`](../../../docs/ci-cd/routines.md). The review gate is the Git pre-push hook
 from the 2026-09-16 correction above, satisfied by `/diff-review`.
 
 **Outside the repo:** the owner confirmed on 2026-09-22 that no Cursor Automations remain, and the

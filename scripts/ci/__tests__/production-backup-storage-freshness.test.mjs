@@ -26,7 +26,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-backup-storage-freshness.yml");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "production-backup-storage-freshness.mjs");
 const ALERT_ROUTING = join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md");
-const AGENT_INFRA = join(REPO_ROOT, "docs", "internal", "ci-cd", "AGENT_INFRA.md");
+const AGENT_INFRA = join(REPO_ROOT, "docs", "ci-cd", "agent-infra.md");
 const REQUIRED_CHECKS = join(REPO_ROOT, "scripts", "ci", "lib", "required-checks.mjs");
 const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
 
@@ -760,7 +760,7 @@ describe("workflow wiring", () => {
     );
   });
 
-  it("AGENT_INFRA.md roster and scheduled table name this job", () => {
+  it("agent-infra.md roster and scheduled table name this job", () => {
     assert.match(infra, /production-backup-storage-freshness\.yml/);
     assert.match(infra, /14:00/);
   });

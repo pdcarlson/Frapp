@@ -20,15 +20,15 @@ created"). A Routine created in the UI, which is all
 five, can only be edited there, so hand the owner the new text. Whenever the live Routine isn't
 updated in the same session, which includes every scheduled run, file a `[human]` issue carrying
 the new prompt text or setting and the PR it waits on. Decision record: ADR-16 amendments 4–10 in
-[`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
+[`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md).
 
 | # | Routine | Skill (behavior contract) | When (ET) | What it does |
 | --- | --- | --- | --- | --- |
-| 1 | **Issue Curator** | [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) | weekly Fri 08:07 | Maintains the agent-owned `suggestion` issues; files a few new ones into `triage` |
-| 2 | **Issue Triage** | [`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:07, an hour after #1 on Fridays | Works the `triage` inbox and a Backlog batch: priorities (what [`/next`](../../../.claude/commands/next.md) ranks by), briefs, dedup, promotion |
-| 3 | **PR Follow-ups** | [`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:07, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
-| 4 | **Docs Upkeep** | [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:07 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
-| 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 23:07, the evening before, so it runs first each day | Fixes one bounded hygiene theme in one product-code PR; files the rest |
+| 1 | **Issue Curator** | [`issue-curator`](../../.claude/skills/issue-curator/SKILL.md) | weekly Fri 08:07 | Maintains the agent-owned `suggestion` issues; files a few new ones into `triage` |
+| 2 | **Issue Triage** | [`issue-triage`](../../.claude/skills/issue-triage/SKILL.md) | daily 09:07, an hour after #1 on Fridays | Works the `triage` inbox and a Backlog batch: priorities (what [`/next`](../../.claude/commands/next.md) ranks by), briefs, dedup, promotion |
+| 3 | **PR Follow-ups** | [`pr-followups`](../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:07, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
+| 4 | **Docs Upkeep** | [`docs-upkeep`](../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:07 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
+| 5 | **Hygiene Scan** | [`hygiene-scan`](../../.claude/skills/hygiene-scan/SKILL.md) | daily 23:07, the evening before, so it runs first each day | Fixes one bounded hygiene theme in one product-code PR; files the rest |
 
 The personal account also held a sixth Routine, "Next steps" (hourly `/next`), disabled since
 2026-09-05 and deliberately not recreated on 2026-09-30. Don't bring it back: it would claim and
@@ -36,9 +36,9 @@ ship backlog work, product code included, which is outside the ownership boundar
 
 ## Shared ownership boundary (all routines)
 
-The routine skills and the tracker angle of [`diff-review`](../../../.claude/skills/diff-review/angles.md)
+The routine skills and the tracker angle of [`diff-review`](../../.claude/skills/diff-review/angles.md)
 point here instead of restating these rules. Policy detail:
-[`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
+[`github-pm.md` → Ownership boundary](github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly).
 
 1. **Issues live on GitHub Issues** (this repository). Open every issue with the `triage` label;
    close work through a PR (`Fixes #N`) or an explicit `issue_write` close with the right
@@ -66,7 +66,7 @@ point here instead of restating these rules. Policy detail:
    stop, not a prompt to find another route. REST is allowed for two reads only, neither of them
    tracker work: provider settings the MCP has no tool for (branch protection, environments,
    rulesets, repo visibility, vulnerability alerts), and the body-fidelity verification read that
-   [`GITHUB_PM.md`](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity) licenses.
+   [`github-pm.md`](github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity) licenses.
    Neither lifts the stop rule. Routines 4 and 5 write a PR rather than issues, so a missing MCP
    doesn't block their sweep or scan: push the branch, report its name, and stop. They stop and
    report if `git push` fails.
@@ -78,9 +78,9 @@ point here instead of restating these rules. Policy detail:
    silent and put it in the run report. Post again only with genuinely new information, leading
    with the new part and referencing the standing comment. This binds every comment a routine
    writes. Triage's procedure:
-   [`issue-triage` → Comment once](../../../.claude/skills/issue-triage/SKILL.md#comment-once-not-once-per-run).
+   [`issue-triage` → Comment once](../../.claude/skills/issue-triage/SKILL.md#comment-once-not-once-per-run).
 7. **A `Blocked by #N` comment doesn't gate `/next`.** The blocker filter in
-   [`next.md`](../../../.claude/commands/next.md) §0.2 reads `Blocked by #N` body lines only (an
+   [`next.md`](../../.claude/commands/next.md) §0.2 reads `Blocked by #N` body lines only (an
    Agent brief, by contrast, is read from comments too). So on an issue rule 2 won't let you
    re-body, a blocker can be reported but not enforced: comment it, then list the issue in the run
    report as needing an owner body edit.
@@ -97,12 +97,12 @@ path `/next` uses, with no keys to manage. Start each run by loading the GitHub 
 tracker. Routines 4 and 5 are the exception in rule 4.
 
 Direct REST to `api.github.com` is reachable from these sandboxes (a 403 on a proxied `curl` says
-nothing about the PAT; see [`AGENT_INFRA.md` → Work status](AGENT_INFRA.md#work-status)),
+nothing about the PAT; see [`agent-infra.md` → Work status](agent-infra.md#work-status)),
 and rule 4 limits it to the two reads it names.
 
 Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped
 several times, so read the current table in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+[`github-pm.md` → Reading a body you intend to rewrite](github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
 rather than remembering it, and re-run its probe against fixture #1736 before any bulk rewrite. Two
 things hold whatever it says: the `fp=` marker you write is a visible line, not an HTML comment, and
 `search_issues` finds fingerprints reliably but matches semantically, so confirm the returned
@@ -114,7 +114,7 @@ Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); write
 
 ### Label roster
 
-This is the only copy; [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) links here
+This is the only copy; [`github-pm.md`](github-pm.md#labels-and-priority-lean-taxonomy) links here
 and keeps only the tracker rules built on these labels. Labels auto-create on first use (verified
 2026-08-08), so a typo'd label is a real label; if one looks off, check it with
 `issue_read get_labels` on a labeled issue.
@@ -128,7 +128,7 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   can't be proven resolved; it stays open. `human` (in use on #1146) is
   decorative, not a hold mechanism. The human-action hold is the `[human]` /
   `[pr-followup][human]` title prefix or the `**Human action required — hold in triage` body
-  opener, per [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy), and `/next` §0.2
+  opener, per [`github-pm.md`](github-pm.md#labels-and-priority-lean-taxonomy), and `/next` §0.2
   checks those, not labels. So a `human`-labelled issue with no prefix is held by its `triage`
   label alone, and promoting it exposes it to `/next`. Whether `human` should become a fourth
   recognised hold form is the owner's call, not a routine's.
@@ -162,17 +162,17 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   lives in that comment, not #814's rebuilt-each-run body). Parked by choice, not blocked
   and not stale: don't mark these `stale`, raise their priority for age, or re-file duplicates.
   Since 2026-08-30 the premise no longer holds: production is live (`frapp-prod`, deployed by
-  `deploy-production.yml`; [ADR-20](../../../spec/architecture/adr/adr-20.md)), so don't read the
+  `deploy-production.yml`; [ADR-20](../../spec/architecture/adr/adr-20.md)), so don't read the
   label as evidence that a production-shaped risk is theoretical. Redefining its scope is the
   owner's call, tracked in #2542.
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work; `/next` and the
   routines skip them)
 - **Live alerts:** `incident` (filed and closed by the CI watchdogs, assigned to the owner; never
-  claimed as work, see [`GITHUB_PM.md` → The model](GITHUB_PM.md#the-model))
+  claimed as work, see [`github-pm.md` → The model](github-pm.md#the-model))
 - **Legacy:** `bug`, `Improvement` and `release:*` persist on old issues; don't add them to new
   issues. On PRs, `release:*` is live: every PR should carry one (Dependabot's carry none), and a
   PR with no label counts as `release:patch` in the production version bump
-  ([`AGENT_INFRA.md` → Release labels](AGENT_INFRA.md#release-labels)).
+  ([`agent-infra.md` → Release labels](agent-infra.md#release-labels)).
 
 ## Settings (per routine, set in the Routines UI)
 
@@ -192,7 +192,7 @@ because a run scheduled on the hour can start several minutes late.
 | Model | All five: Opus 5.5 (`claude-opus-5-5`) | Owner decision, 2026-09-22. |
 | Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
 | Session | Fresh session per run | Each run re-reads its skill from `main`. |
-| Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. Routines run in the same Frapp environment as interactive sessions, so they carry its variables and allowlist ([`AGENT_CREDENTIALS.md`](../environment/AGENT_CREDENTIALS.md), [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui)). |
+| Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. Routines run in the same Frapp environment as interactive sessions, so they carry its variables and allowlist ([`AGENT_CREDENTIALS.md`](../internal/environment/AGENT_CREDENTIALS.md), [`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui)). |
 | Connectors | Issue Curator, PR Follow-ups and Docs Upkeep: Sentry, Supabase, Vercel, Render, PostHog. Issue Triage and Hygiene Scan: none. | These three read provider state: the Curator's runtime-signals and `/audit` lenses, PR Follow-ups' close-on-proof audit of `[human]` items (Sentry and PostHog settings among them), and `infrastructure-research`. A run missing one reports that source as unavailable. Attach nothing else: a connector is standing access for an unattended run, write tools included (the Supabase connector can run SQL against production). The form attaches every connector on the account by default, so remove the rest when creating a Routine; on the work account that means Stripe, Resend, Claude Docs and `visualize` everywhere, and all of them for Triage and Hygiene Scan. The repository is public, so a run reads text strangers wrote (PR comments, and production error text via Sentry); every write-capable connector attached is a tool that text could try to steer. GitHub is the MCP and the repository attachment, not a connector. |
 | Completion notification | No push (owner decision, 2026-09-30); PR Follow-ups emails | Each run ends with a report meant for the owner, read in the run's session. |
 
@@ -396,9 +396,9 @@ removed in #1597. Update this file alongside a skill only when the rule lives in
   change, then update the live Routine as the top of this file describes, since nothing reads this
   file at run time.
 - Keep the [label roster](#label-roster) current. It is the only copy:
-  [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy),
-  [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and
-  [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) link here instead of restating
+  [`github-pm.md`](github-pm.md#labels-and-priority-lean-taxonomy),
+  [`file-follow-up`](../../.claude/skills/file-follow-up/SKILL.md) and
+  [`issue-curator`](../../.claude/skills/issue-curator/SKILL.md) link here instead of restating
   it, because a duplicated roster drifts and can't carry the scope caveats the entries have.
   Adding a label is a one-place edit; renaming or redefining one also touches the skills that use
   it by name.
@@ -406,4 +406,4 @@ removed in #1597. Update this file alongside a skill only when the rule lives in
   files issues from a check's output, so a command that reports more than the gate blocks on turns
   accepted decisions back into new issues: use `npm run check:npm-audit` (the `dependency-audit`
   job's gate, which honours `scripts/npm-audit-allowlist.json`), not bare `npm audit`.
-- Environment notes: [`spec/environments/README.md`](../../../spec/environments/README.md#scheduled-backlog-agents).
+- Environment notes: [`spec/environments/README.md`](../../spec/environments/README.md#scheduled-backlog-agents).

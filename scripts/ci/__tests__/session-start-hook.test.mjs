@@ -150,7 +150,7 @@ test("a cloud session points a hooksPath naming another directory back at .githo
 });
 
 test("a laptop session leaves the hooks path alone, unset or custom", (t) => {
-  // SECRET_SCANNING.md's opt-out (`git config --unset core.hooksPath`) and a developer's own
+  // secret-scanning.md's opt-out (`git config --unset core.hooksPath`) and a developer's own
   // hooks directory must survive session start; only `npm install` resets them on a laptop.
   const unset = scratch(t, { bringup: false });
   runHook(unset, { cloud: false });

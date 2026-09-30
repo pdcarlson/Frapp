@@ -413,7 +413,7 @@ function mainBase(base) {
     "change, so confirm it was updated in this change set. Shipped mobile builds are checked",
   );
   console.log(
-    "separately, and that check blocks. See docs/internal/ci-cd/QUALITY_GATES.md.",
+    "separately, and that check blocks. See docs/ci-cd/quality-gates.md.",
   );
 
   return 0;
