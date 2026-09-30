@@ -11,7 +11,7 @@ import {
   looksLikeVercelProject,
   readHealthCheckPath,
   syncGuardrailsAlert,
-  ALERT_ISSUE_TITLE,
+  ALERT,
 } from "../production-guardrails.mjs";
 import { quiet } from "./helpers.mjs";
 
@@ -382,7 +382,7 @@ describe("syncGuardrailsAlert — a clean run whose alert can't be read or close
     return { fetchImpl, calls };
   }
   const base = { summary: "all hold", token: "t", repo: "o/r" };
-  const openAlert = [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }];
+  const openAlert = [{ number: 42, state: "open", title: ALERT.title }];
 
   it("exits 0 and closes the alert on a clean run", async () => {
     const { fetchImpl } = issuesFetch({ lookup: openAlert });

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
+import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
 // the Infisical preamble+injection (14 call sites across 6 workflows since #2805;
@@ -55,8 +56,7 @@ const infisicalAction = readFileSync(INFISICAL_ACTION, "utf8");
 const supabaseAction = readFileSync(SUPABASE_ACTION, "utf8");
 
 /** `{ name, text }` for every workflow file. */
-const workflows = readdirSync(WORKFLOWS)
-  .filter((f) => /\.ya?ml$/.test(f))
+const workflows = workflowFiles()
   .map((name) => ({ name, text: readFileSync(join(WORKFLOWS, name), "utf8") }));
 
 /** Every composite action's YAML, so a copy cannot hide in a sibling action. */

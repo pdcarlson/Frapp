@@ -7,7 +7,7 @@
 // now.** That only holds if raising is idempotent (comment on the existing issue,
 // never file a second one) and recovery closes every match. Both live here.
 //
-// The identity of an alert is its exact `title` within `lookupLabel`. Title is
+// The identity of an alert is its exact `title` within the lookup label. Title is
 // the primary key, so it must stay stable across releases — renaming one in the
 // GitHub UI detaches it and the next failure files a fresh issue rather than
 // silently writing to a human-renamed thread.
@@ -26,11 +26,81 @@
 //   participating notification, so it reaches the owner under every
 //   repo-watch setting except Ignore; an unassigned issue reached them only if
 //   their watch setting happened to cover new issues.
+//
+// An alert's identity is declared once, with `defineAlert`, and every function
+// here takes that value rather than a loose title and labels (#1731). There is
+// no lookup-label parameter anywhere: a watchdog cannot look its alert up, or
+// file it, under any label but this module's.
 
 import { ghRequest } from "./github.mjs";
 
 export const ALERT_LOOKUP_LABEL = "incident";
 export const ALERT_ASSIGNEE = "pdcarlson";
+
+// Every identity `defineAlert` made. The functions below refuse anything else,
+// so an identity can't be assembled by hand with a label of its own or without
+// the lookup label, the half-copy #1731 was filed to prevent.
+const DEFINED_ALERTS = new WeakSet();
+
+/**
+ * One alert's identity: its exact `title`, the lookup key, and the `labels` a
+ * new issue is filed with. The lookup label is forced in first, whatever the
+ * caller passes, because the issue this files has to be found by it again.
+ *
+ * The title is checked for the mistakes that would orphan an issue quietly:
+ * empty, or with surrounding whitespace GitHub trims from what it stores, so
+ * the exact-match lookup would never find the issue it filed.
+ */
+export function defineAlert({ title, labels = [] }) {
+  if (typeof title !== "string" || title === "" || title !== title.trim()) {
+    throw new TypeError(`defineAlert needs a non-empty, trimmed title; got ${JSON.stringify(title)}`);
+  }
+  if (!Array.isArray(labels) || labels.some((label) => typeof label !== "string" || label === "")) {
+    throw new TypeError(`defineAlert labels must be non-empty strings; got ${JSON.stringify(labels)}`);
+  }
+  const alert = Object.freeze({
+    title,
+    labels: Object.freeze([...new Set([ALERT_LOOKUP_LABEL, ...labels])]),
+  });
+  DEFINED_ALERTS.add(alert);
+  return alert;
+}
+
+/** Did `defineAlert` make this value? */
+export function isDefinedAlert(alert) {
+  return typeof alert === "object" && alert !== null && DEFINED_ALERTS.has(alert);
+}
+
+function assertDefinedAlert(alert, caller) {
+  if (!isDefinedAlert(alert)) {
+    throw new TypeError(`${caller} needs an alert made by defineAlert; got ${JSON.stringify(alert)}`);
+  }
+}
+
+/**
+ * The config named `name` in `table`, for a script that serves several alerts
+ * and is told which one at runtime (deploy-alert.mjs's `ALERT_CONFIG`).
+ *
+ * Throws on a missing OR unknown name, and there is no default. An absent name
+ * is the likelier mistake: a workflow copying another's reporting step and
+ * dropping the variable would otherwise resolve to some other alert's config
+ * and comment on, or close, that alert's live issue. `Object.hasOwn`, not a
+ * truthiness check, so an inherited key (`toString`) is unknown too.
+ *
+ * Every entry must carry its identity as `alert`, made by `defineAlert`, which
+ * is what keeps a table from growing a shape of its own.
+ */
+export function selectAlertConfig(table, name, variable) {
+  if (!name || !Object.hasOwn(table, name)) {
+    throw new Error(
+      `Unknown or missing ${variable} ${JSON.stringify(name ?? null)}. ` +
+        `Known configurations: ${Object.keys(table).join(", ")}.`,
+    );
+  }
+  const config = table[name];
+  assertDefinedAlert(config?.alert, `${variable} ${JSON.stringify(name)}`);
+  return config;
+}
 
 // Pages of issues to scan when locating an alert.
 const MAX_ISSUE_PAGES = 5;
@@ -117,13 +187,8 @@ export async function findAlertIssues(options) {
  * and reports a failed lookup as `unread`; a caller reads it directly only when
  * it needs the issues themselves (a body marker, or whether one is already open).
  */
-export async function findAlertIssuesDetailed({
-  token,
-  repo,
-  fetchImpl,
-  title,
-  lookupLabel = ALERT_LOOKUP_LABEL,
-}) {
+export async function findAlertIssuesDetailed({ token, repo, fetchImpl, alert }) {
+  assertDefinedAlert(alert, "findAlertIssues");
   const found = [];
   let lookupOk = true;
   for (let page = 1; page <= MAX_ISSUE_PAGES; page += 1) {
@@ -134,7 +199,7 @@ export async function findAlertIssuesDetailed({
       // as the most recent one to reopen, and that must not depend on an
       // unstated API default.
       path:
-        `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(lookupLabel)}` +
+        `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(ALERT_LOOKUP_LABEL)}` +
         `&sort=created&direction=desc&per_page=100&page=${page}`,
     });
     if (!ok || !Array.isArray(data)) {
@@ -143,7 +208,7 @@ export async function findAlertIssuesDetailed({
     }
     for (const issue of data) {
       // The issues endpoint returns PRs too; they are never an alert.
-      if (!issue.pull_request && issue.title === title) found.push(issue);
+      if (!issue.pull_request && issue.title === alert.title) found.push(issue);
     }
     if (data.length < 100) break;
   }
@@ -161,9 +226,7 @@ export async function raiseAlert({
   token,
   repo,
   fetchImpl,
-  title,
-  labels,
-  lookupLabel = ALERT_LOOKUP_LABEL,
+  alert,
   buildIssueBody,
   buildCommentBody,
   // When true, an existing alert's BODY is rewritten to `buildIssueBody()` on
@@ -173,7 +236,8 @@ export async function raiseAlert({
   // the current failure set; deploy-alert.mjs does not and leaves this off.
   refreshBodyOnRaise = false,
 }) {
-  const existing = await findAlertIssues({ token, repo, fetchImpl, title, lookupLabel });
+  assertDefinedAlert(alert, "raiseAlert");
+  const existing = await findAlertIssues({ token, repo, fetchImpl, alert });
   // Prefer an open one; otherwise reopen the most recent closed one.
   const open = existing.find((issue) => issue.state === "open");
   const target = open ?? existing[0];
@@ -185,18 +249,13 @@ export async function raiseAlert({
       method: "POST",
       path: `/repos/${repo}/issues`,
       body: {
-        title,
+        title: alert.title,
         assignees: [ALERT_ASSIGNEE],
-        // Labels that do not exist yet are created by this call.
-        //
-        // `lookupLabel` is forced in rather than trusted from `labels`: this
-        // function creates the issue and `findAlertIssues` looks it up by that
-        // label, so a caller passing labels that omit it would file an issue
-        // its own lookup can never find — a fresh duplicate every run, and
-        // never closed on recovery. Before the extraction that was
-        // unrepresentable (one hard-coded constant served both roles); keeping
-        // it unrepresentable is the point.
-        labels: [...new Set([lookupLabel, ...(labels ?? [])])],
+        // Labels that do not exist yet are created by this call. They always
+        // include the lookup label, because `defineAlert` forces it in: an
+        // issue filed without it could never be found by `findAlertIssues`,
+        // so every run would file a fresh duplicate and none would close.
+        labels: [...alert.labels],
         body: withAgentNote(buildIssueBody(null), repo),
       },
     });
@@ -287,21 +346,9 @@ export async function raiseAlert({
  *   noise and the dailies catch a lasting break. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
  *   must never say an alert "is still open" when it could not look.
  */
-export async function resolveAlert({
-  token,
-  repo,
-  fetchImpl,
-  title,
-  lookupLabel = ALERT_LOOKUP_LABEL,
-  buildRecoveryBody,
-}) {
-  const { issues, lookupOk } = await findAlertIssuesDetailed({
-    token,
-    repo,
-    fetchImpl,
-    title,
-    lookupLabel,
-  });
+export async function resolveAlert({ token, repo, fetchImpl, alert, buildRecoveryBody }) {
+  assertDefinedAlert(alert, "resolveAlert");
+  const { issues, lookupOk } = await findAlertIssuesDetailed({ token, repo, fetchImpl, alert });
   if (!lookupOk) return { action: "unread", closed: [] };
   const openIssues = issues.filter((issue) => issue.state === "open");
   if (openIssues.length === 0) return { action: "none", closed: [] };

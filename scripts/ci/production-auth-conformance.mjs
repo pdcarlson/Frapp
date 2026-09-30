@@ -37,7 +37,7 @@
 import { appendFileSync } from "node:fs";
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
@@ -80,9 +80,10 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
-export const ALERT_ISSUE_TITLE = "Production Auth settings have drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Production Auth settings have drifted",
+  labels: ["area:ci", "P1"],
+});
 
 const result = (id, label, status, detail) => ({ id, label, status, detail });
 
@@ -254,9 +255,7 @@ export async function runProductionAuthConformance({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: (previousBody) =>
         buildAlertIssueBody({ results, runUrl, previousBody }),
       buildCommentBody: ({ reopened }) =>
@@ -290,8 +289,7 @@ export async function runProductionAuthConformance({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
   });
 
   // A failed lookup must not fall through to a close (see staging-conformance),
@@ -351,8 +349,7 @@ export async function runProductionAuthConformance({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
   });
   if (alert.action === "closed") {

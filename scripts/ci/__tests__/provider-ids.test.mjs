@@ -24,7 +24,7 @@ import {
   providerIdsFor,
 } from "../lib/environments.mjs";
 import { PROVIDER_ID_OUTPUTS, formatProviderOutputs } from "../provider-ids.mjs";
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW_DIR = join(REPO_ROOT, ".github", "workflows");
@@ -187,7 +187,7 @@ describe("every consumer reads the ids step of its own job", () => {
 
   it("has an ids step, earlier in the job, for the environment the job is about", () => {
     const seen = new Set();
-    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f))) {
+    for (const file of workflowFiles()) {
       const steps = workflowSteps(join(WORKFLOW_DIR, file));
       steps.forEach((step, i) => {
         for (const [name, output] of NAMES) {

@@ -143,8 +143,9 @@ Until [#2505](https://github.com/pdcarlson/Frapp/issues/2505)'s first slice the 
 The table below is the roster. It carries no count on purpose: it previously said "four" while the
 tree held five, because a count is a second copy of a fact the rows already state
 (`DOCUMENTATION_CONVENTIONS.md` § one canonical place per fact). The authoritative list is every
-`scripts/ci/*.mjs` that exports an `ALERT_ISSUE_TITLE` or declares one in an `ALERT_CONFIGS` entry —
-`grep -rn "ALERT_ISSUE_TITLE\|alertTitle:" scripts/ci/*.mjs` enumerates them.
+alert identity declared with `lib/alert-issue.mjs`'s `defineAlert` — `grep -n -A1 "defineAlert(" scripts/ci/*.mjs`
+enumerates them. The `retiredAlerts` in `deploy-alert.mjs` are only ever closed, never raised, so they
+have no row.
 
 | Alert issue title | Raised by | Means | Clears when |
 | --- | --- | --- | --- |
