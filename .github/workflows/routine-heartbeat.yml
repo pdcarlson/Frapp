@@ -11,8 +11,8 @@ name: Routine heartbeat
 # `done`.
 #
 # 19:20 UTC is after the last routine of the day (Issue Triage, 13:07 UTC) has
-# had its schedule slack and four-hour allowance (18:37), so a run judges the
-# same day's fires.
+# had its daylight-saving hour and run allowance (the script's DST_SHIFT_MS and
+# RUN_ALLOWANCE_MS), so a run judges the same day's fires.
 #
 # Rules: scripts/ci/routine-heartbeat.mjs (tests:
 # scripts/ci/__tests__/routine-heartbeat.test.mjs, `npm run test:ci-scripts`).

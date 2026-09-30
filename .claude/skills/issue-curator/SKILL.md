@@ -275,7 +275,9 @@ offer options, and put any status note in the same message as your next tool cal
 when every in-scope suggestion has its action and discovery has used or declined its budget, or
 when nothing more can move (the GitHub MCP is unavailable, or the marker-count guard failed and
 body writes are off). Your last tracker write is the [run record](../../../docs/ci-cd/routines.md#run-record-all-routines),
-`routine=issue-curator`: `stopped` when the guard turned body writes off, `done` otherwise. The final message is the run report:
+`routine=issue-curator`, with the outcome that section defines (a guard that turned body writes
+off makes it `stopped`). With the MCP unavailable there is no record to post, and none is posted
+any other way. The final message is the run report:
 
 - Marker-count guard result, and whether you ran the fidelity probe before body writes.
 - Maintenance: each issue touched, with its action (closed `completed` / `not_planned` /

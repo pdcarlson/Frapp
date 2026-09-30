@@ -197,12 +197,14 @@ whatever its outcome, ends with one record the repository can see:
    an empty inbox, no PR because nothing was worth fixing. A single check you couldn't run is
    still `done`; name it on the second line.
 3. **`stopped`** means the run ended before doing its job: the sandbox failed to come up, a
-   protected resource blocked it, the skill couldn't be loaded, or a guard turned the run's main
+   protected resource blocked it, or a guard turned the run's main
    writes off. Post the record before your run report.
 4. **One record per run**, manual runs included. It is exempt from rule 6's comment-once, because
    each run is new information. Never post one for a run you didn't make, or to clear an alert.
 
-Without the GitHub MCP no record can be posted, and the missing record is the signal. The daily
+Without the GitHub MCP, or in a session that couldn't load its skill (and so never read this
+rule), no record is posted, and the missing record is the signal. Never post one any other way:
+`gh` or REST under the owner's token would read as a real record. The daily
 **Routine heartbeat** workflow reads these comments and raises an `incident` alert when a routine's
 latest scheduled run has no record or a `stopped` one; the rules are in
 [`scripts/ci/routine-heartbeat.mjs`](../../scripts/ci/routine-heartbeat.mjs), and the alert's row is
@@ -223,7 +225,7 @@ because a run scheduled on the hour can start several minutes late.
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | The Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
-| Schedule | Curator weekly Fri 08:07; Triage daily 09:07; PR Follow-ups weekly Mon 07:07; Docs Upkeep weekly Wed 07:07; Hygiene Scan daily 23:07 (all ET) | The Curator went from daily to weekly on 2026-09-30 (owner decision): its discovery output had thinned, the inbox was mostly `[human]` items, and the account's usage is better spent on coding sessions. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. The heartbeat watchdog keeps its own copy of each schedule as `list_triggers` stores it (UTC), in the `ROUTINES` table of [`routine-heartbeat.mjs`](../../scripts/ci/routine-heartbeat.mjs), with an hour's slack either side for daylight saving; a schedule change, or a Routine switched off, moves that table too, or the heartbeat alerts. If a PR Follow-ups batch runs long, split it across two weekly Routines rather than one custom schedule. |
+| Schedule | Curator weekly Fri 08:07; Triage daily 09:07; PR Follow-ups weekly Mon 07:07; Docs Upkeep weekly Wed 07:07; Hygiene Scan daily 23:07 (all ET) | The Curator went from daily to weekly on 2026-09-30 (owner decision): its discovery output had thinned, the inbox was mostly `[human]` items, and the account's usage is better spent on coding sessions. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. The heartbeat watchdog keeps its own copy of each schedule as `list_triggers` stores it (UTC), in the `ROUTINES` table of [`routine-heartbeat.mjs`](../../scripts/ci/routine-heartbeat.mjs), entered as the EDT times' UTC so that daylight saving can only make a fire later, which the watchdog allows for; a schedule change, or a Routine switched off, moves that table too, or the heartbeat alerts. If a PR Follow-ups batch runs long, split it across two weekly Routines rather than one custom schedule. |
 | Model | All five: Opus 5.5 (`claude-opus-5-5`) | Owner decision, 2026-09-22. |
 | Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
 | Session | Fresh session per run | Each run re-reads its skill from `main`. |

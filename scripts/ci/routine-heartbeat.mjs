@@ -46,10 +46,13 @@ export const HEARTBEAT_ISSUE = 2966;
 const HOUR = 60 * 60 * 1000;
 
 /**
- * Each routine's schedule as `list_triggers` stores it: UTC, from the ET times
- * entered in the Routines UI. `weekday` is 0 (Sunday) to 6, or absent for a
- * daily routine. routines.md § Settings links here; a schedule change there
- * moves this row too.
+ * Each routine's schedule as `list_triggers` stored it on 2026-09-30: UTC, from
+ * the ET times entered in the Routines UI during daylight saving (EDT). That
+ * is the earliest UTC time a fire can have: in EST a fire either stays put or
+ * moves an hour later (routines.md § Settings says the docs don't say which),
+ * never earlier. So re-enter a changed schedule here as its EDT-time UTC.
+ * `weekday` is 0 (Sunday) to 6, or absent for a daily routine. routines.md
+ * § Settings links here; a schedule change there moves this row too.
  */
 export const ROUTINES = [
   {
@@ -71,21 +74,28 @@ export const ROUTINES = [
   { slug: "hygiene-scan", name: "Hygiene Scan", minute: 7, hour: 3 },
 ];
 
-// A stored schedule may or may not follow daylight saving (routines.md
-// § Settings says the docs don't say), so a real fire can land an hour either
-// side of the one computed from the stored cron. The half hour on top covers a
-// late start.
-export const SCHEDULE_SLACK_MS = 1.5 * HOUR;
-// How long a run gets to finish and post its record before its fire is judged.
-// Hygiene Scan, the longest, has taken about an hour.
+// How much later than the computed fire a real one can land: the hour a
+// schedule that follows daylight saving moves in EST. A record counts for a
+// fire only once the fire's computed time has passed, never before it, so a
+// manual run earlier that day can't stand in for a scheduled run that died.
+export const DST_SHIFT_MS = HOUR;
+// How long a run gets to start late, finish and post its record before its
+// fire is judged. Hygiene Scan, the longest, has taken about an hour.
 export const RUN_ALLOWANCE_MS = 4 * HOUR;
 
 export const RECORD_PATTERN =
   /^routine-run: v1 routine=([a-z-]+) outcome=(done|stopped)\b/;
+// Markdown a model may wrap the record line in: a quote, a bullet, inline code
+// or bold. Stripped before matching, so a record isn't dropped for its markup.
+const LEADING_MARKUP = /^(?:[>*_`-]+\s*)+/;
 
 // Pages of heartbeat comments to read. Five routines post about nine records a
-// week, so a hundred-comment page covers months; the cap only bounds a runaway.
+// week, so a hundred-comment page covers months. The issue is public, so a
+// flood of other comments could push the records past the cap; a read that
+// hits it is reported unreadable rather than judged on part of the list.
 const MAX_COMMENT_PAGES = 10;
+// GitHub serves at most this many results from a filtered workflow-runs list.
+const MAX_LISTED_RUNS = 1000;
 
 export const ALERT_ISSUE_TITLE =
   "A scheduled routine missed or stopped its run — the board is grooming itself less than it looks";
@@ -115,10 +125,10 @@ export function lastScheduledFire(routine, at) {
 
 /**
  * The fire this run judges: the latest one old enough to have finished, given
- * the schedule slack and the run allowance.
+ * the daylight-saving shift and the run allowance.
  */
 export function dueFire(routine, now) {
-  return lastScheduledFire(routine, now - SCHEDULE_SLACK_MS - RUN_ALLOWANCE_MS);
+  return lastScheduledFire(routine, now - DST_SHIFT_MS - RUN_ALLOWANCE_MS);
 }
 
 /**
@@ -135,11 +145,20 @@ export function parseRecords(comments) {
     if (!Number.isFinite(createdAt) || typeof comment.body !== "string")
       continue;
     const lines = comment.body.split("\n").map((line) => line.trim());
-    const at = lines.findIndex((line) => RECORD_PATTERN.test(line));
+    const at = lines.findIndex((line) =>
+      RECORD_PATTERN.test(line.replace(LEADING_MARKUP, "")),
+    );
     if (at === -1) continue;
-    const [, routine, outcome] = lines[at].match(RECORD_PATTERN);
+    const [, routine, outcome] = lines[at]
+      .replace(LEADING_MARKUP, "")
+      .match(RECORD_PATTERN);
+    // The reason is the next line of prose, before the attribution footer's rule.
+    const rest = lines.slice(at + 1);
+    const footer = rest.indexOf("---");
     const reason =
-      lines.slice(at + 1).find((line) => line && !line.startsWith("```")) ?? "";
+      (footer === -1 ? rest : rest.slice(0, footer)).find(
+        (line) => line && !line.startsWith("```"),
+      ) ?? "";
     records.push({
       routine,
       outcome,
@@ -155,7 +174,7 @@ export function parseRecords(comments) {
  * Each routine's verdict for its due fire.
  *
  * - `not-judged`: the fire is before `judgeFrom`, the watch's first run.
- * - `missing`: no record since the fire (less the schedule slack).
+ * - `missing`: no record since the fire's computed time.
  * - `stopped` / `done`: the newest record since then says so.
  *
  * `ok` is false when any routine is `missing` or `stopped`.
@@ -165,9 +184,8 @@ export function evaluateHeartbeat({ records, now, judgeFrom }) {
     const fire = dueFire(routine, now);
     const base = { slug: routine.slug, name: routine.name, fire };
     if (fire < judgeFrom) return { ...base, status: "not-judged" };
-    const since = fire - SCHEDULE_SLACK_MS;
     const latest = records
-      .filter((r) => r.routine === routine.slug && r.createdAt >= since)
+      .filter((r) => r.routine === routine.slug && r.createdAt >= fire)
       .at(-1);
     if (!latest) return { ...base, status: "missing" };
     return {
@@ -212,7 +230,9 @@ function unreadable(reason) {
 /**
  * When judging starts: the created_at of this workflow's oldest run on `main`,
  * or null when it can't be read. The list is newest first, so the oldest is the
- * last page at one run per page.
+ * last page at one run per page. Past GitHub's 1,000-result limit the last page
+ * it serves is the 1,000th-newest run, years before any fire this judges, so
+ * that stands in for the oldest.
  */
 export async function readJudgeFrom({ token, repo, fetchImpl }) {
   const base = `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=1`;
@@ -224,12 +244,19 @@ export async function readJudgeFrom({ token, repo, fetchImpl }) {
   const last =
     total === 1
       ? first
-      : await ghRequest({ token, fetchImpl, path: `${base}&page=${total}` });
+      : await ghRequest({
+          token,
+          fetchImpl,
+          path: `${base}&page=${Math.min(total, MAX_LISTED_RUNS)}`,
+        });
   const createdAt = Date.parse(last.data?.workflow_runs?.[0]?.created_at ?? "");
   return last.ok && Number.isFinite(createdAt) ? createdAt : null;
 }
 
-/** Every heartbeat comment updated since `since`, or null when a page can't be read. */
+/**
+ * Every heartbeat comment updated since `since`, or null when a page can't be
+ * read or the last page the cap allows is full, since more may follow it.
+ */
 export async function readHeartbeatComments({ token, repo, fetchImpl, since }) {
   const comments = [];
   for (let page = 1; page <= MAX_COMMENT_PAGES; page += 1) {
@@ -244,7 +271,7 @@ export async function readHeartbeatComments({ token, repo, fetchImpl, since }) {
     comments.push(...data);
     if (data.length < 100) return comments;
   }
-  return comments;
+  return null;
 }
 
 export async function readHeartbeat({
@@ -259,10 +286,8 @@ export async function readHeartbeat({
       `could not read ${WORKFLOW_FILE}'s runs on ${DEFAULT_BRANCH}, so the watch can't tell which runs to judge`,
     );
   }
-  // A week back from the oldest fire judged covers every routine's due fire.
-  const since =
-    Math.min(...ROUTINES.map((routine) => dueFire(routine, now))) -
-    SCHEDULE_SLACK_MS;
+  // From the oldest due fire, which covers every routine's.
+  const since = Math.min(...ROUTINES.map((routine) => dueFire(routine, now)));
   const comments = await readHeartbeatComments({
     token,
     repo,
@@ -270,7 +295,9 @@ export async function readHeartbeat({
     since,
   });
   if (comments === null) {
-    return unreadable(`could not read the run records on #${HEARTBEAT_ISSUE}`);
+    return unreadable(
+      `could not read every run record on #${HEARTBEAT_ISSUE} (a page failed, or more than ${MAX_COMMENT_PAGES * 100} comments since the oldest due fire)`,
+    );
   }
   return evaluateHeartbeat({ records: parseRecords(comments), now, judgeFrom });
 }

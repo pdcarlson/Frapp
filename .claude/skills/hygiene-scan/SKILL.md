@@ -343,7 +343,8 @@ reason to stop. A summary announcing the next step, an offer to continue, or a l
 non-blocking decisions is not an ending. Your last tracker write, after the ledger comment, is the
 [run record](../../../docs/ci-cd/routines.md#run-record-all-routines), `routine=hygiene-scan`: `stopped` when a
 protected resource ended the run early (a failed sandbox bringup among them), `done` otherwise,
-including a run that decided on no PR. The final message is the run report.
+including a run that decided on no PR. With the MCP unavailable there is no record to post, and
+none is posted any other way. The final message is the run report.
 
 ## Run report
 

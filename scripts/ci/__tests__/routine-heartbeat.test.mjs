@@ -8,9 +8,10 @@ import {
   ALERT_ISSUE_LABELS,
   ALERT_ISSUE_TITLE,
   HEARTBEAT_ISSUE,
+  RECORD_PATTERN,
   ROUTINES,
   RUN_ALLOWANCE_MS,
-  SCHEDULE_SLACK_MS,
+  DST_SHIFT_MS,
   WORKFLOW_FILE,
   buildAlertIssueBody,
   dueFire,
@@ -121,9 +122,9 @@ describe("the schedule", () => {
 
   it("judges the latest fire that has had its slack and run allowance", () => {
     const triage = bySlug["issue-triage"];
-    // 13:07 + 1.5h + 4h = 18:37: before it, a run judges yesterday's triage.
+    // 13:07 + 1h + 4h = 18:07: before it, a run judges yesterday's triage.
     assert.equal(
-      dueFire(triage, Date.parse("2026-10-07T18:30:00Z")),
+      dueFire(triage, Date.parse("2026-10-07T18:00:00Z")),
       Date.parse("2026-10-06T13:07:00Z"),
     );
     assert.equal(dueFire(triage, NOW), Date.parse("2026-10-07T13:07:00Z"));
@@ -194,6 +195,34 @@ describe("parseRecords", () => {
       ]),
       [],
     );
+  });
+
+  it("reads a record wrapped in inline code, a quote, a bullet or bold", () => {
+    const comment = (body) => ({
+      author_association: "OWNER",
+      created_at: new Date(NOW).toISOString(),
+      body,
+    });
+    const line = "routine-run: v1 routine=issue-triage outcome=done";
+    for (const body of [
+      `\`${line}\``,
+      `> ${line}`,
+      `- ${line}`,
+      `* ${line}`,
+      `**${line}**`,
+      `> \`${line}\``,
+    ]) {
+      const parsed = parseRecords([comment(body)]);
+      assert.equal(parsed.length, 1, body);
+      assert.equal(parsed[0].outcome, "done", body);
+    }
+  });
+
+  it("takes no reason from the attribution footer", () => {
+    const [parsed] = parseRecords([
+      record("issue-triage", "done", NOW, { fenced: true }),
+    ]);
+    assert.equal(parsed.reason, "");
   });
 
   it("returns records oldest first", () => {
@@ -289,17 +318,30 @@ describe("evaluateHeartbeat", () => {
     );
   });
 
-  it("accepts a fire an hour either side of the stored schedule, for daylight saving", () => {
-    for (const shift of [-HOUR, HOUR]) {
-      const comments = ROUTINES.map((routine) =>
-        record(
-          routine.slug,
-          "done",
-          dueFire(routine, NOW) + shift + 10 * 60 * 1000,
-        ),
-      );
-      assert.equal(evaluate(comments).ok, true, `shifted ${shift / HOUR}h`);
-    }
+  it("accepts a fire up to an hour late, for daylight saving", () => {
+    const comments = ROUTINES.map((routine) =>
+      record(
+        routine.slug,
+        "done",
+        dueFire(routine, NOW) + DST_SHIFT_MS + 10 * 60 * 1000,
+      ),
+    );
+    assert.equal(evaluate(comments).ok, true);
+  });
+
+  it("doesn't let a manual run before the fire stand in for it", () => {
+    // Issue Triage run by hand at 12:00, then its 13:07 fire dies at startup.
+    const triage = bySlug["issue-triage"];
+    const comments = allDone().filter(
+      (c) => !c.body.includes("routine=issue-triage"),
+    );
+    comments.push(
+      record("issue-triage", "done", dueFire(triage, NOW) - 67 * 60 * 1000),
+    );
+    assert.deepEqual(
+      evaluate(comments).failing.map((r) => r.slug),
+      ["issue-triage"],
+    );
   });
 
   it("judges nothing whose fire predates the watch's first run", () => {
@@ -377,6 +419,20 @@ describe("readJudgeFrom", () => {
     assert.equal(calls.length, 1);
   });
 
+  it("stays inside GitHub's 1,000-result limit on a long history", async () => {
+    const { fetchImpl, calls } = makeFetchMock([
+      runsRoute({
+        total_count: 2500,
+        workflow_runs: [{ created_at: "2019-01-01T19:20:00Z" }],
+      }),
+    ]);
+    assert.equal(
+      await readJudgeFrom({ token: "t", repo: "o/r", fetchImpl }),
+      Date.parse("2019-01-01T19:20:00Z"),
+    );
+    assert.match(calls.at(-1).url, /&page=1000$/);
+  });
+
   it("returns null when the runs can't be read, or read as none", async () => {
     for (const route of [
       runsRoute({}, 403),
@@ -422,10 +478,7 @@ describe("readHeartbeat", () => {
     const since = Date.parse(
       new URL(commentsCall.url).searchParams.get("since"),
     );
-    assert.equal(
-      since,
-      dueFire(bySlug["issue-curator"], NOW) - SCHEDULE_SLACK_MS,
-    );
+    assert.equal(since, dueFire(bySlug["issue-curator"], NOW));
   });
 
   it("pages through a full page of comments", async () => {
@@ -451,6 +504,32 @@ describe("readHeartbeat", () => {
     });
     assert.equal(verdict.ok, true);
     assert.equal(calls.filter((c) => c.url.includes("/comments")).length, 2);
+  });
+
+  it("fails, unreadable, when the last page the cap allows is full", async () => {
+    const full = Array.from({ length: 100 }, () => ({
+      author_association: "NONE",
+      created_at: new Date(NOW).toISOString(),
+      body: "spam",
+    }));
+    const { fetchImpl, calls } = makeFetchMock([
+      judgeFromRoute,
+      {
+        method: "GET",
+        path: `/issues/${HEARTBEAT_ISSUE}/comments`,
+        body: full,
+      },
+    ]);
+    const verdict = await readHeartbeat({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      now: NOW,
+    });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.readable, false);
+    assert.match(verdict.reason, /more than 1000 comments/);
+    assert.equal(calls.filter((c) => c.url.includes("/comments")).length, 10);
   });
 
   it("fails, unreadable, when the comments or the runs can't be read", async () => {
@@ -578,6 +657,25 @@ describe("runWatchdog", () => {
     );
   });
 
+  it("goes red when every routine is done but the alert won't close", async () => {
+    const { fetchImpl } = makeFetchMock([
+      {
+        method: "GET",
+        path: "/issues?state=all",
+        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+      },
+      { method: "POST", path: "/comments", body: {} },
+      { method: "PATCH", path: "/issues/42", status: 502, body: {} },
+    ]);
+    const out = await runWatchdog({
+      verdict: passing,
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+    });
+    assert.deepEqual(out, { outcome: "fail", resolved: false, lookupOk: true });
+  });
+
   it("goes red, closing nothing, when the alert lookup fails", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       { method: "GET", path: "/issues?state=all", status: 500, body: {} },
@@ -627,7 +725,7 @@ describe("wiring", () => {
     const latest = Math.max(...ROUTINES.map((r) => r.hour * 60 + r.minute));
     // So each run judges the same day's fires, and a miss alerts that evening.
     assert.ok(
-      slot >= latest + (SCHEDULE_SLACK_MS + RUN_ALLOWANCE_MS) / 60000,
+      slot >= latest + (DST_SHIFT_MS + RUN_ALLOWANCE_MS) / 60000,
       `${hour}:${minute}`,
     );
     assert.match(workflow, new RegExp(`# ${hour}:${minute} UTC is after`));
@@ -656,6 +754,39 @@ describe("wiring", () => {
       assert.match(
         readFileSync(skill, "utf8"),
         /routines\.md#run-record-all-routines/,
+        `${routine.slug} skill`,
+      );
+    }
+  });
+
+  it("the record format routines copy is the one the parser reads, and each skill names its own slug", () => {
+    const doc = readFileSync(ROUTINES_DOC, "utf8");
+    const format = doc.match(/^\s*(routine-run: .*)$/m)?.[1];
+    assert.equal(
+      format,
+      "routine-run: v1 routine=<slug> outcome=<done|stopped>",
+      "routines.md § Run record",
+    );
+    for (const slug of ROUTINES.map((r) => r.slug)) {
+      for (const outcome of ["done", "stopped"]) {
+        const line = format
+          .replace("<slug>", slug)
+          .replace("<done|stopped>", outcome);
+        assert.match(line, RECORD_PATTERN, line);
+      }
+      assert.ok(doc.includes(`\`${slug}\``), `routines.md lists ${slug}`);
+    }
+    for (const routine of ROUTINES) {
+      const skill = readFileSync(
+        join(REPO_ROOT, ".claude", "skills", routine.slug, "SKILL.md"),
+        "utf8",
+      );
+      const named = [...skill.matchAll(/`routine=([a-z-]+)`/g)].map(
+        (m) => m[1],
+      );
+      assert.deepEqual(
+        [...new Set(named)],
+        [routine.slug],
         `${routine.slug} skill`,
       );
     }
