@@ -109,6 +109,8 @@ The tokens above are fixed; the accent family — `--primary`, `--primary-hover`
 
 **Family: Figtree** — weights **400 / 600 / 700 only**. (Panel 4b shows three candidates and panel 4h says "candidate pending pick"; the pick is locked: Figtree.)
 
+Italic is a style, not a fourth weight, and it appears in chat only: markdown emphasis (`*italic*`, `***bold italic***`) and the italic placeholders, such as a deleted message's. Which font files carry it on each platform: [`packages/theme/README.md` § Fonts](../../../packages/theme/README.md#fonts).
+
 | Style | Size / line | Weight |
 |-------|-------------|--------|
 | display | 32 | 700 |

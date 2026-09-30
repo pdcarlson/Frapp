@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Scheduled conformance check for frapp-prod Auth hook, redirect allow list,
-// Auth SMTP (skip-until-on), and Magic Link template (skip until SMTP is on).
+// Auth SMTP (skip-until-on), Magic Link template (skip until SMTP is on), and
+// leaked-password protection.
 //
 // Staging-conformance.yml watches these on frapp-staging. Production first
 // users hit frapp-prod (`unttyvyfezddlyafcydh` in .github/environments.json).
@@ -56,6 +57,7 @@ import {
   buildRunSummary as buildStagingRunSummary,
   canResolveAlert,
   checkAuthHook,
+  checkAuthLeakedPassword,
   checkAuthRedirects,
   checkAuthMagicLink,
   checkAuthSmtp,
@@ -76,6 +78,7 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
   "auth-redirects",
   "auth-smtp",
   "auth-magic-link",
+  "auth-leaked-password",
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
@@ -196,6 +199,11 @@ function defaultChecks({ accessToken, projectRef, fetchImpl }) {
           fetchImpl,
           whenSmtpUnset: "skip",
         }),
+    },
+    {
+      id: "auth-leaked-password",
+      label: "Leaked-password protection is on",
+      run: () => checkAuthLeakedPassword({ accessToken, projectRef, fetchImpl }),
     },
   ];
 }
