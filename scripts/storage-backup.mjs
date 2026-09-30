@@ -107,10 +107,11 @@ export const DEFAULT_RETENTION_DAYS = 30;
 // listed is not a failure at all: it was deleted after the listing, which is
 // ordinary on a live corpus, so the run skips it and the next listing records
 // the deletion (`stillListed`). Storage answers a missing object with HTTP 400
-// and "404" only in the body, so the status can't be what decides it. The budget is counted from
-// process start, because listing Storage and R2 spends the same job timeout. It
-// sits well inside `timeout-minutes: 60` (db-backup.yml), so the manifest write
-// and the offsite check always get to run.
+// and "404" only in the body, so the status can't be what decides it. The
+// budget is counted from process start, because listing Storage and R2 spends
+// the same job timeout. It sits well inside `timeout-minutes: 60`
+// (db-backup.yml), so the manifest write and the offsite check always get to
+// run.
 export const TRANSFER_CONCURRENCY = 8;
 export const DEFAULT_BUDGET_MINUTES = 40;
 export const MAX_TRANSFER_FAILURES = 10;
@@ -829,7 +830,7 @@ export async function listBuckets({ supabaseUrl, serviceKey, fetchImpl = fetch }
  * `prefix` starts the walk at one folder (no trailing slash) instead of the
  * bucket root: scripts/demo/seed-demo.mjs lists a demo chapter's folder this way.
  */
-export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: start = "", recursive = true, fetchImpl = fetch }) {
+export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: start = "", fetchImpl = fetch }) {
   const out = [];
   const queue = [start];
 
@@ -855,7 +856,7 @@ export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefi
       const rows = await res.json();
       const { files, folders } = parseObjectPage(rows, bucket, prefix);
       out.push(...files);
-      if (recursive) queue.push(...folders);
+      queue.push(...folders);
 
       if (rows.length < LIST_PAGE_SIZE) break;
       offset += LIST_PAGE_SIZE;
@@ -868,13 +869,27 @@ export async function listBucketObjects({ supabaseUrl, serviceKey, bucket, prefi
 /**
  * Does Storage still list this object? Asked after a download fails: gone means
  * it was deleted after the listing, and still there means the download really
- * failed. Lists only the object's own folder, one level deep.
+ * failed. It asks for its own folder, filtered to its name (storage-api's
+ * `search`), rather than walking the folder: when an import is deleted
+ * mid-backup every one of its downloads fails, and a full listing per failure
+ * would page through the whole import each time.
  */
 export async function stillListed({ supabaseUrl, serviceKey, bucket, path, fetchImpl = fetch }) {
   const cut = path.lastIndexOf("/");
   const folder = cut === -1 ? "" : path.slice(0, cut);
-  const files = await listBucketObjects({ supabaseUrl, serviceKey, bucket, prefix: folder, recursive: false, fetchImpl });
-  return files.some((f) => f.path === path);
+  const name = path.slice(cut + 1);
+  // `search` narrows by name; it is not an exact match, so compare after.
+  for (let offset = 0; ; offset += LIST_PAGE_SIZE) {
+    const res = await fetchImpl(`${supabaseUrl}/storage/v1/object/list/${bucket}`, {
+      method: "POST",
+      headers: { ...storageHeaders(serviceKey), "Content-Type": "application/json" },
+      body: JSON.stringify({ prefix: folder, search: name, limit: LIST_PAGE_SIZE, offset, sortBy: { column: "name", order: "asc" } }),
+    });
+    if (!res.ok) throw new Error(`Listing ${bucket}/${folder} failed: HTTP ${res.status}`);
+    const rows = await res.json();
+    if (parseObjectPage(rows, bucket, folder).files.some((f) => f.path === path)) return true;
+    if (rows.length < LIST_PAGE_SIZE) return false;
+  }
 }
 
 export async function downloadObject({ supabaseUrl, serviceKey, bucket, path, fetchImpl = fetch }) {

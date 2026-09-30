@@ -34,6 +34,7 @@ import {
   projectRefFromSupabaseUrl,
   runPool,
   settleManifest,
+  stillListed,
   TRANSFER_CONCURRENCY,
   uploadOrder,
   verifyOffsiteMirror,
@@ -325,6 +326,22 @@ test("listing recurses into folders", async () => {
   });
 
   assert.deepEqual(out.map((o) => o.path), ["nested/deep.pdf"]);
+});
+
+test("stillListed asks for the object's folder filtered to its name, and matches the name exactly", async () => {
+  const bodies = [];
+  const fetchImpl = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return { ok: true, json: async () => [{ name: "a.txt.bak", id: "1", metadata: {} }] };
+  };
+  assert.equal(await stillListed({ supabaseUrl: "https://x.supabase.co", serviceKey: "k", bucket: "chat-archive", path: "ch/1/a.txt", fetchImpl }), false);
+  assert.equal(bodies.length, 1, "one request, not a walk of the folder");
+  assert.equal(bodies[0].prefix, "ch/1");
+  assert.equal(bodies[0].search, "a.txt");
+  const hit = async () => ({ ok: true, json: async () => [{ name: "a.txt", id: "1", metadata: {} }] });
+  assert.equal(await stillListed({ supabaseUrl: "https://x.supabase.co", serviceKey: "k", bucket: "b", path: "a.txt", fetchImpl: hit }), true);
+  const denied = async () => ({ ok: false, status: 403 });
+  await assert.rejects(stillListed({ supabaseUrl: "https://x.supabase.co", serviceKey: "k", bucket: "b", path: "a.txt", fetchImpl: denied }), /HTTP 403/);
 });
 
 test("a failed listing throws rather than reporting an empty bucket", async () => {
