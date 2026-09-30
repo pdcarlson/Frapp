@@ -30,6 +30,7 @@ export * from './chapter-service-config.entity';
 export * from './chapter-points-config.entity';
 export * from './chat-notification-preference.entity';
 export * from './chat-sidebar.entity';
+export * from './chat-push-dispatch.entity';
 export * from './scheduled-notification-dispatch.entity';
 export * from './chapter-activation-milestone.entity';
 export * from './discord-connection.entity';

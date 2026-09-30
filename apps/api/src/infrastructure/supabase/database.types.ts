@@ -26,6 +26,7 @@ import type {
   ChatMessageBookmark,
   ChatMessageReport,
   ChatNotificationPreference,
+  ChatPushDispatch,
   ChatSidebarPin,
   ChatSidebarPreferences,
   DiscordConnection,
@@ -158,6 +159,7 @@ export interface Database {
       chapter_directory: TableDefinition<ChapterDirectoryEntry>;
       chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
+      chat_push_dispatches: TableDefinition<ChatPushDispatch>;
       chat_sidebar_preferences: TableDefinition<ChatSidebarPreferences>;
       chat_sidebar_pins: TableDefinition<ChatSidebarPin>;
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;

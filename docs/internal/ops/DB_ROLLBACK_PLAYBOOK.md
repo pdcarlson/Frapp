@@ -2383,6 +2383,22 @@ Then undo it in two new forward migrations, not by hand. A deploy applies migrat
    alter table public.discord_oauth_states drop column if exists purpose;
    ```
 
+## Rollback chat push dispatch claims (20260930020000)
+
+* **Migration**: `20260930020000_chat_push_dispatches.sql`
+
+One new API-only table, `chat_push_dispatches`, and its `dispatched_at` index (#2846). No existing table or row changes. The audit bridge's half of #2846 needs no schema: it reuses `idx_chat_messages_dedupe` through `client_message_id`.
+
+**Revert the API forward first, and keep the migration file.** Revert the #2846 code on `main` and ship that, but keep `supabase/migrations/20260930020000_chat_push_dispatches.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API runs one instance's worth of pushes again, so hold every API service at one instance until it is re-landed.
+
+**Never drop the table under the #2846 API.** The push worker claims every message before sending, and treats a failed claim as "not claimed", so with the table gone every chat push stops. It fails safe (no crash, no double-send) but quietly: the only signal is a `chat-push: dispatch claim failed` error line per message.
+
+Leaving the table after the revert is harmless: nothing writes it, and nothing purges it either, so it keeps the last day of claims. To remove it once the reverted API is live, use a new forward migration, not hand DDL, which would leave the ledger recording `20260930020000` as applied:
+
+```sql
+drop table if exists public.chat_push_dispatches;
+```
+
 ## Rollback emptied import channels (20260930030000)
 
 * **Migration**: `20260930030000_discord_import_purge_channels.sql`

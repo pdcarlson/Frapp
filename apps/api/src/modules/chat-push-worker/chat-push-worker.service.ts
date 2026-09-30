@@ -5,6 +5,7 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import type {
   RealtimeChannel,
   RealtimePostgresInsertPayload,
@@ -17,6 +18,7 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { NotificationService } from '../../application/services/notification.service';
 import { BurstBundler } from './burst-bundler';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
+import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
 import { decidePush } from './push-rules';
 import {
   canAccessChannel,
@@ -53,6 +55,13 @@ interface ChatMessageRow {
 /** Alias kept local so the rest of this file reads in its own domain terms. */
 type ChannelRow = CachedChannelRow;
 
+/**
+ * How long a dispatch claim is kept. It only has to outlive Realtime's delivery
+ * of the same INSERT to every other instance, which is seconds; a day leaves
+ * room for an instance whose socket reconnected late.
+ */
+export const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 /** The placeholder `ChatService.createGroupDm` names a group DM given no name. */
 const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
 
@@ -73,10 +82,19 @@ const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
  * level rather than by blanking the preview, so no push is sent and no
  * notification row is persisted.
  *
+ * **One instance per message (#2846).** Realtime delivers every INSERT to every
+ * API process, so each message is claimed in `chat_push_dispatches` before
+ * anything is read, and only the instance whose insert wins fans it out. Two
+ * instances (a scaled service, or a deploy's overlap) no longer send every
+ * push, and persist every notification row, twice.
+ *
  * Burst-bundling: 3+ messages from the same sender within 60s collapse
  * into a single bundled push per recipient. The bundler key is
  * `${senderId}:${channelId}:${recipientId}` so bursts in different channels
- * (and to different recipients) don't interact.
+ * (and to different recipients) don't interact. The bundler is in-process, so
+ * with more than one instance a burst's messages can be claimed by different
+ * instances and bundle less. That costs extra pushes in a burst, never a
+ * duplicate of one message.
  *
  * Sandbox note: the realtime subscription is opened on
  * `OnApplicationBootstrap`. Unit tests invoke `handleMessage` directly with
@@ -97,6 +115,7 @@ export class ChatPushWorkerService
     private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
     private readonly prefRepo: ChatNotificationPreferenceRepository,
+    private readonly dispatches: ChatPushDispatchRepository,
     private readonly rbac: RbacService,
     /**
      * Channel rows, cached to keep a hot channel from re-querying per message.
@@ -184,6 +203,37 @@ export class ChatPushWorkerService
   }
 
   /**
+   * Drop dispatch claims older than {@link CHAT_PUSH_CLAIM_RETENTION_MS}.
+   *
+   * Hourly, on every instance: a delete is idempotent, so the instance that
+   * runs second finds nothing. Caught here because an unhandled rejection out
+   * of a `@Cron` takes the process down; a failed purge costs one tick.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleDispatchClaimPurge(): Promise<void> {
+    await this.purgeDispatchClaims(new Date());
+  }
+
+  /** The purge with an injectable clock. Exposed for unit tests. */
+  async purgeDispatchClaims(now: Date): Promise<void> {
+    try {
+      const purged = await this.dispatches.purgeBefore(
+        new Date(now.getTime() - CHAT_PUSH_CLAIM_RETENTION_MS),
+      );
+      if (purged > 0) {
+        this.logger.log(`chat-push: purged ${purged} expired dispatch claims`);
+      }
+    } catch (err) {
+      logThrowable(
+        this.logger,
+        'error',
+        'chat-push: dispatch claim purge failed; retrying next hour',
+        err,
+      );
+    }
+  }
+
+  /**
    * Process a single inserted message. Exposed for unit tests.
    */
   async handleMessage(row: ChatMessageRow): Promise<void> {
@@ -206,6 +256,22 @@ export class ChatPushWorkerService
     if (row.kind === 'imported') return;
 
     try {
+      // Join the channel's presence before the claim, on every instance.
+      // Presence is what suppresses a push to someone already reading the
+      // channel, and a subscription only knows the roster once it has synced.
+      // Opened only by the instance that wins, each instance's first win in a
+      // channel would read an empty roster and push people who are looking at
+      // it; opened here, every instance is warm from the channel's first
+      // message, as it was when every instance sent everything.
+      this.ensurePresenceChannel(row.channel_id);
+
+      // Claimed before any read, so the instance that loses spends one insert
+      // on the message rather than a roster load. Only `claimed` sends:
+      // `taken` is another instance's, `gone` was deleted before its push, and
+      // `failed` is logged in the repository and skipped rather than risked.
+      const claim = await this.dispatches.claim(row.id);
+      if (claim !== 'claimed') return;
+
       const channel = await this.resolveChannel(row.channel_id);
       if (!channel) return;
 
@@ -438,12 +504,15 @@ export class ChatPushWorkerService
     }
     const row: ChannelRow = data;
     this.channelCache.set(channelId, row, epoch);
-    // Open a presence subscription on the same `chat:channel:<id>` topic the
-    // web client uses (ADR-10) so we can read who's currently in the channel.
-    this.ensurePresenceChannel(row.id);
     return row;
   }
 
+  /**
+   * Open a presence subscription on the same `chat:channel:<id>` topic the web
+   * client uses (ADR-10), so `readPresence` can tell who is in the channel.
+   * Once per channel per instance; `handleMessage` calls it for every message,
+   * won or not (#2846).
+   */
   private ensurePresenceChannel(channelId: string): void {
     if (this.presenceChannels.has(channelId)) return;
     try {
