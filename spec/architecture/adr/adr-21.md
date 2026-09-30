@@ -131,6 +131,10 @@ describe current state:
   by no workflow, for **#1578** to re-wire against a deployment CI creates; the alias script
   mitigates a real Vercel behaviour (the staging hostname lagging a READY deployment) that returns
   with it. Re-add the jobs keyed on the deployment id that workflow creates, not on the pushed SHA.
+  *(Corrected 2026-09-30 (#1778): #1578 re-wired only the alias script, which the deploy job runs
+  with the deployment id it created. The verify jobs were never re-added, because that job verifies
+  each deployment it creates by id itself. `verify-vercel-deploy.mjs` sat unrun until #1778 moved
+  its terminal-state sets to `scripts/ci/lib/providers.mjs` and deleted it.)*
 
 The other two bullets are unchanged and still live: `deploy-vercel-production.mjs`'s `gitSource` call
 remains **presumed broken** (#1579 removed the preflight that blocked it, so it is now reachable and
@@ -172,7 +176,9 @@ Two consequences this ADR's own requirements produce, recorded here because this
   `--prebuilt` upload carries no git metadata at all, and three things read it back: ADR-19's
   named-commit guarantee, `ensure-vercel-staging-alias.mjs`'s lookup, and
   `verify-vercel-deploy.mjs`'s per-branch supersession test. Without the flag the alias step would
-  silently find nothing and skip.
+  silently find nothing and skip. *(Corrected 2026-09-30 (#1778): the supersession test went with
+  its script, so nothing reads `githubCommitRef` now. The SHA's two readers stand, and the ref is
+  still stamped.)*
 - **`git.deploymentEnabled` and `ignoreCommand: "exit 1"` remain in both `vercel.json` files and are
   now inert**, exactly as this ADR requires. The CLI path does not consult either: `ignoreCommand` is
   the Git integration's Ignored Build Step, and `--prebuilt` has already built. They stay because

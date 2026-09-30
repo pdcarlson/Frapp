@@ -46,12 +46,11 @@
 // returned deployment's `target` below is what proves it actually did.
 //
 // ── Why `CANCELED` is a FAILURE here ───────────────────────────────────────
-// This is the subtle one, and it is the reason this file exists rather than a
-// second call to `verify-vercel-deploy.mjs`.
-//
-// That verifier calls `CANCELED` neutral when a LATER deployment on the same
-// branch overtook it — the signature of Vercel auto-cancelling a build that a
-// newer push superseded. That test cannot hold here, in either channel:
+// This is the subtle one. The push-triggered observer this path replaced
+// (`verify-vercel-deploy.mjs`, deleted in #1778 with no runner left) called
+// `CANCELED` neutral when a LATER deployment on the same branch overtook it —
+// the signature of Vercel auto-cancelling a build that a newer push
+// superseded. That test cannot hold here, in either channel:
 //
 //   * Production deploys run from `main`, which has many deployments, so a
 //     "was it overtaken" test is always true and every cancelled production
@@ -108,9 +107,8 @@
 //   DEPLOY_REF                — optional, the BRANCH stamped as
 //                               `meta.githubCommitRef` (default `main`). Both
 //                               current callers deploy `main` and leave it
-//                               unset; `wasSupersededByLaterDeployment` scopes
-//                               supersession on this field, so a caller
-//                               deploying some other branch must set it
+//                               unset; a caller deploying some other branch
+//                               sets it so the deployment names its branch
 //
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-vercel.test.mjs`.
@@ -120,11 +118,10 @@ import path from "node:path";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import {
   VERCEL_NEUTRAL_TERMINAL_STATES,
-  VERCEL_OVERALL_TIMEOUT_MS,
-  VERCEL_POLL_INTERVAL_MS,
   VERCEL_TERMINAL_FAILURE_STATES,
   VERCEL_TERMINAL_SUCCESS_STATES,
-} from "./verify-vercel-deploy.mjs";
+  vercelDeploymentState,
+} from "./lib/providers.mjs";
 import {
   VERCEL_TARGET_PREVIEW,
   VERCEL_TARGET_PRODUCTION,
@@ -136,28 +133,21 @@ import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
-// Imported from the observer rather than re-declared, and re-exported so this
-// file's own callers still see them. They were duplicated here with a comment
-// claiming this path needed "longer than the observer's 15 minutes" — which had
-// stopped being true: the observer was itself raised to 30 minutes, and its
-// comment now reads "matching the production deploy path". Two files asserting
-// opposite facts about each other's budgets is how someone tuning one of them
-// silently breaks the other, so there is now one number.
-//
-// Imported AND re-exported, not `export … from`: a bare re-export does not bind
-// the names in this module's scope, and the poll defaults below reference them.
-export { VERCEL_POLL_INTERVAL_MS, VERCEL_OVERALL_TIMEOUT_MS };
+// The poll budget for a deployment this script created. 30 minutes because the
+// account is on a Hobby plan with limited build concurrency, so a burst of
+// deploys can leave one QUEUED well past a tighter budget, and timing out here
+// is a failure. These lived in the retired observer (`verify-vercel-deploy.mjs`,
+// #1778) and were imported from it so the two paths could not drift apart; this
+// is now their only consumer.
+export const VERCEL_POLL_INTERVAL_MS = 20 * 1000;
+export const VERCEL_OVERALL_TIMEOUT_MS = 30 * 60 * 1000;
 
 const GET_DEPLOYMENT_URL = (deploymentId, teamId) =>
   `https://api.vercel.com/v13/deployments/${deploymentId}${teamId ? `?teamId=${teamId}` : ""}`;
 
-function deploymentState(deployment) {
-  return deployment?.state ?? deployment?.readyState;
-}
-
 /**
- * Classify a Vercel deployment state for the STRICT CI-created path. Unlike
- * the observer there is no neutral outcome — see the header on CANCELED.
+ * Classify a Vercel deployment state for the STRICT CI-created path. There is
+ * no neutral outcome — see the header on CANCELED.
  */
 export function classifyVercelState(state) {
   if (VERCEL_TERMINAL_SUCCESS_STATES.has(state)) return "success";
@@ -371,9 +361,8 @@ export async function pollVercelDeployment({
     overallTimeoutMs,
     logger,
     fetchOne: async () => {
-      // Wrapped, exactly as `verify-vercel-deploy.mjs` wraps its own fetchOne.
-      // `pollUntilTerminal` does not catch, so a throw here escapes all the way
-      // out of `deployVercel`'s `Promise.all` and rejects it — and the create
+      // Wrapped: `pollUntilTerminal` does not catch, so a throw here escapes
+      // all the way out of `deployVercel`'s `Promise.all` and rejects it — and the create
       // loop's careful per-project error reporting never runs. Two things
       // throw: `resilientFetch` rethrows after its attempts are exhausted (a
       // DNS blip during a 30-minute poll is ~90 requests' worth of chances),
@@ -389,7 +378,7 @@ export async function pollVercelDeployment({
           return { httpStatus: response.status };
         }
         const deployment = await response.json();
-        return { state: deploymentState(deployment) };
+        return { state: vercelDeploymentState(deployment) };
       } catch (error) {
         return { error };
       }
