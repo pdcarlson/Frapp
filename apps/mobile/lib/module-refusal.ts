@@ -5,8 +5,8 @@
  * switched off, with a message addressed to that officer: "Re-enable it in
  * Settings → Modules to make changes." A member can't do that, so a member
  * surface that relays the server's 403 message has to catch this one first
- * and say it in the member's terms (`writing.md` § Study session (mobile,
- * s10), "Module off").
+ * and say it in the member's terms (`writing.md` § Module off (mobile,
+ * cross-surface), which holds each surface's row and the two rules they obey).
  *
  * The same two-condition shape as `subscriptionRefusalOf`, for the same
  * reasons:

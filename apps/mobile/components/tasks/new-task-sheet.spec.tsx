@@ -168,3 +168,56 @@ describe("New task on a module-off refusal (#2718)", () => {
     act(() => tree.unmount());
   });
 });
+
+/** The create sheet itself: the modal that carries `onDismiss`, not the picker. */
+const sheetModal = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("BottomSheetModal" as never) &&
+      typeof node.props.onDismiss === "function",
+  );
+
+describe("New task after a gate refusal", () => {
+  const REFUSALS = [
+    ["a subscription refusal", REFUSED, SUBSCRIPTION_REFUSAL_COPY.task],
+    ["a module-off refusal", MODULE_OFF, MODULE_REFUSAL_COPY.task],
+  ] as const;
+
+  it.each(REFUSALS)(
+    "posts nothing more when Create is pressed anyway after %s",
+    (_label, error) => {
+      // The disabled button is one guard; `submit` checking `canSubmit` is the
+      // other, so a press that gets through anyway still can't re-post.
+      failure = error;
+      const tree = render();
+      submitTask(tree);
+      expect(createButton(tree).props.disabled).toBe(true);
+
+      act(() => createButton(tree).props.onPress());
+
+      expect(mutate).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    },
+  );
+
+  it.each(REFUSALS)(
+    "offers Create again once the sheet is dismissed after %s",
+    (_label, error, copy) => {
+      // The sheet lives in a tab that is never unmounted, so without the
+      // reset an officer who sorted the gate out would find Create dead until
+      // a force-quit.
+      failure = error;
+      const tree = render();
+      submitTask(tree);
+      expect(screenText(tree)).toContain(copy);
+
+      act(() => sheetModal(tree).props.onDismiss());
+
+      expect(screenText(tree)).not.toContain(copy);
+      // `submitTask` asserts Create is enabled again before pressing it.
+      submitTask(tree);
+      expect(mutate).toHaveBeenCalledTimes(2);
+      act(() => tree.unmount());
+    },
+  );
+});

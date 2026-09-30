@@ -715,16 +715,14 @@ export default function StudyScreen() {
   // switched off.
   const hoursEnabled = isModuleEnabled(enabledModules, "hours");
   /**
-   * The module-off empty state replaces the screen only when there is no
-   * session to show. A session already running when an officer switches
-   * `hours` off is still ACTIVE server-side, and turning the module back on
-   * before it goes stale credits it in full. So its card stays, and a refused
-   * pause, heartbeat or End explains itself with `MODULE_OFF_COPY.session`,
-   * the way a subscription refusal mid-session already does. Hiding the card
-   * instead left that sentence above "Study hours are turned off" with no
-   * session under either (#2718).
+   * The module-off screen says why nothing here works, so a refused write's
+   * module-off line above it would only say it again (#2718): the start copy
+   * is its body word for word, and the in-session copy's "that didn't save"
+   * names a write under a card this screen no longer draws.
    */
-  const moduleOffState = !hoursEnabled && !session;
+  const moduleOffCopyShown =
+    !hoursEnabled &&
+    (failure === MODULE_OFF_COPY.start || failure === MODULE_OFF_COPY.session);
 
   function renderBody() {
     // No `NoChapterState` branch. `GET /v1/study-sessions` resolves a sole
@@ -732,12 +730,23 @@ export default function StudyScreen() {
     // and `chapterId` is null whenever that claim is absent, so any such
     // branch would swallow every genuine fetch failure into "No chapter
     // selected", which carries no retry control.
-    if (moduleOffState) {
+    //
+    // A switched-off module hides its surface (`spec/ui/design-system/README.md`
+    // § What "fail fast" means concretely, rule 4), and that includes a session
+    // still running under it: End, pause and heartbeat are all refused while
+    // the module is off, and nothing sweeps a stale session, so its card would
+    // tick a clamped timer beside an End that can't work, for as long as the
+    // module stays off. The body names the session instead. The heartbeat
+    // keeps probing underneath, so a module turned back on before this
+    // payload refreshes still banks the session while it can be credited.
+    if (!hoursEnabled) {
       return (
         <EmptyState
           glyph="◷"
           title="Study hours are turned off"
-          body={MODULE_OFF_COPY.start}
+          body={
+            session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start
+          }
         />
       );
     }
@@ -832,9 +841,7 @@ export default function StudyScreen() {
       subtitle="Tracked sessions inside your chapter's study zones."
     >
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {/* A refused Start's copy is the module-off empty state's body word for
-          word, so it isn't said twice once the chapter payload catches up. */}
-      {failure && !(moduleOffState && failure === MODULE_OFF_COPY.start) ? (
+      {failure && !moduleOffCopyShown ? (
         <Text style={styles.failure}>{failure}</Text>
       ) : null}
 

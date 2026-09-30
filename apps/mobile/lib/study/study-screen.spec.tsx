@@ -425,17 +425,20 @@ describe("Study with hours switched off (#2718)", () => {
       vi.useRealTimers();
     });
 
-    it("keeps the session's card and End instead of the empty state", () => {
-      // Still ACTIVE server-side, and credited in full if an officer turns
-      // hours back on before it goes stale.
+    it("replaces the session's card with the module-off screen, which names the session", () => {
+      // Every write on the card is refused while hours is off, and nothing
+      // expires a stale session meanwhile, so the card would be a clamped
+      // timer beside an End that can't work.
       const tree = render();
 
-      expect(endButton(tree)).toHaveLength(1);
-      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      expect(endButton(tree)).toHaveLength(0);
+      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.start);
       act(() => tree.unmount());
     });
 
-    it("explains a refused heartbeat beside the session, not above an empty state", async () => {
+    it("keeps probing, but doesn't stack a refused heartbeat's line above the screen", async () => {
       api.heartbeat.mockRejectedValue(MODULE_OFF);
       const tree = render();
       await act(async () => {
@@ -443,13 +446,36 @@ describe("Study with hours switched off (#2718)", () => {
       });
 
       expect(api.heartbeat).toHaveBeenCalled();
-      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      expect(occurrences(tree, MODULE_OFF_COPY.runningSession)).toBe(1);
+      act(() => tree.unmount());
+    });
+
+    it("brings the card back, with the refused write's line, once the payload says hours is on", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      chapter = HOURS_ON;
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <StudyScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+
+      // The last beat really was refused, so the line is true again once the
+      // card it describes is back.
       expect(endButton(tree)).toHaveLength(1);
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
       expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
       act(() => tree.unmount());
     });
 
-    it("falls back to the empty state once the server says the session is gone", async () => {
+    it("says the plain module-off line once the server says the session is gone", async () => {
       api.heartbeat
         .mockRejectedValueOnce(MODULE_OFF)
         .mockRejectedValue({ statusCode: 404, error: "Not Found" });
@@ -463,10 +489,8 @@ describe("Study with hours switched off (#2718)", () => {
         await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
       });
 
-      expect(endButton(tree)).toHaveLength(0);
-      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
-      // The in-session sentence went with the session it described.
-      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.start);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.runningSession);
       act(() => tree.unmount());
     });
   });
