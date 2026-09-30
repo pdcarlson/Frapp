@@ -23,6 +23,7 @@ import {
   IncompleteActionsError,
   hasOlderHistory,
   OLDER_PAGE_LIMIT,
+  olderHistoryView,
   readNewestPage,
   readOlderPage,
   type FetchHistoryPage,
@@ -356,6 +357,55 @@ describe("hasOlderHistory", () => {
     expect(hasOlderHistory(cache, "m10")).toBe(false);
     expect(hasOlderHistory(cache, "m1")).toBe(true);
     expect(hasOlderHistory(emptyCache(), null)).toBe(false);
+  });
+});
+
+describe("olderHistoryView", () => {
+  const cache = mergeServerRows(emptyCache(), rows(10, 20));
+  const idle = { starts: new Map(), older: new Map() } as const;
+
+  test("with no channel open, says nothing is older, loading or failed", () => {
+    expect(
+      olderHistoryView(
+        { starts: new Map([["c1", "m1"]]), older: new Map([["c1", "error"]]) },
+        null,
+        cache,
+      ),
+    ).toEqual({ hasOlder: false, isLoadingOlder: false, olderError: false });
+  });
+
+  test("reads hasOlder off the cache and the recorded start", () => {
+    expect(olderHistoryView(idle, "c1", cache).hasOlder).toBe(true);
+    expect(
+      olderHistoryView(
+        { starts: new Map([["c1", "m10"]]), older: new Map() },
+        "c1",
+        cache,
+      ).hasOlder,
+    ).toBe(false);
+    expect(olderHistoryView(idle, "c1", undefined).hasOlder).toBe(false);
+  });
+
+  test("reports only this channel's read status", () => {
+    const state = {
+      starts: new Map(),
+      older: new Map<string, "loading" | "error">([
+        ["c1", "loading"],
+        ["c2", "error"],
+      ]),
+    };
+    expect(olderHistoryView(state, "c1", cache)).toMatchObject({
+      isLoadingOlder: true,
+      olderError: false,
+    });
+    expect(olderHistoryView(state, "c2", cache)).toMatchObject({
+      isLoadingOlder: false,
+      olderError: true,
+    });
+    expect(olderHistoryView(state, "c3", cache)).toMatchObject({
+      isLoadingOlder: false,
+      olderError: false,
+    });
   });
 });
 
