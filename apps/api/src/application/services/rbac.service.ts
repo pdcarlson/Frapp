@@ -68,7 +68,8 @@ export class RbacService {
    * written, for a caller that must record the new id whatever the audit write
    * then does. The audit write can fail after the role exists (#1599), and a
    * Discord import that had not recorded the id by then would refuse its own
-   * retry over the role it just made.
+   * retry over the role it just made. The role exists whether or not
+   * `onCreated` succeeds, so its audit row is written either way.
    */
   async create(
     chapterId: string,
@@ -102,15 +103,18 @@ export class RbacService {
       // carry a key.
       system_key: null,
     });
-    await onCreated?.(role);
-    await this.chapterAuditLogService.record({
-      chapterId,
-      actorUserId,
-      action: 'role_created',
-      targetType: AUDIT_TARGET_TYPE,
-      targetId: role.id,
-      diff: { role: { from: null, to: role } } satisfies AuditDiff,
-    });
+    try {
+      await onCreated?.(role);
+    } finally {
+      await this.chapterAuditLogService.record({
+        chapterId,
+        actorUserId,
+        action: 'role_created',
+        targetType: AUDIT_TARGET_TYPE,
+        targetId: role.id,
+        diff: { role: { from: null, to: role } } satisfies AuditDiff,
+      });
+    }
     return role;
   }
 

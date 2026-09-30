@@ -206,7 +206,10 @@ describe('RbacService', () => {
       order.push('audit');
       throw new Error('audit insert failed');
     });
+    // Settles before it records, so a `create` that stopped awaiting it
+    // would log the audit write first.
     const onCreated = jest.fn(async () => {
+      await Promise.resolve();
       order.push('onCreated');
     });
 
@@ -220,6 +223,35 @@ describe('RbacService', () => {
     ).rejects.toThrow('audit insert failed');
     expect(onCreated).toHaveBeenCalledWith(role);
     expect(order).toEqual(['insert', 'onCreated', 'audit']);
+  });
+
+  it('still writes role_created when onCreated fails, and surfaces its error', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.create.mockResolvedValue(role);
+
+    await expect(
+      service.create(
+        'ch-1',
+        ACTOR,
+        { name: 'Custom', permissions: [] },
+        async () => {
+          throw new Error('mapping write failed');
+        },
+      ),
+    ).rejects.toThrow('mapping write failed');
+    expect(mockChapterAuditLogService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'role_created', targetId: 'role-1' }),
+    );
   });
 
   it('surfaces a failed audit write after the role is updated or deleted (#1599)', async () => {

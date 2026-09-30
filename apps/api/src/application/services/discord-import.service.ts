@@ -1397,8 +1397,10 @@ export class DiscordImportService {
    * A new role is created with only the read permissions that gate an
    * imported channel, and nothing else (owner's decision on #2818). Its id is
    * recorded on the import as soon as it exists, so a start that fails part
-   * way leaves a mapping that points at it, and re-running skips it. A role
-   * someone else added under a new role's name since is refused, not
+   * way leaves a mapping that points at it, and re-running skips it. The
+   * exception is a failure of that recording write itself: the role exists
+   * with no id on the import, and the retry refuses it as a clash (#2986).
+   * A role someone else added under a new role's name since is refused, not
    * adopted, and a permission a role already holds is not added twice.
    *
    * Both writes go through `RbacService`, so each role created and each
