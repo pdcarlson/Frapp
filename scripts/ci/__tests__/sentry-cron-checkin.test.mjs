@@ -1,12 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   MONITORS,
   checkInPayload,
+  checkInQuery,
   checkInUrlFor,
   sendCheckIn,
 } from "../sentry-cron-checkin.mjs";
@@ -63,17 +66,25 @@ describe("checkInUrlFor", () => {
   });
 });
 
+describe("checkInQuery", () => {
+  it("carries status, check_in_id and environment, the fields the endpoint defines in the query", () => {
+    const query = new URLSearchParams(checkInQuery({ status: "ok", checkInId: CHECK_IN_ID }));
+    assert.deepEqual(Object.fromEntries(query), {
+      status: "ok",
+      check_in_id: CHECK_IN_ID,
+      environment: "production",
+    });
+  });
+});
+
 describe("checkInPayload", () => {
   it("carries the monitor's schedule as an upsert, in UTC", () => {
     const payload = checkInPayload({
       monitor: MONITORS["production-db-backup"],
       status: "in_progress",
-      checkInId: CHECK_IN_ID,
     });
     assert.deepEqual(payload, {
-      check_in_id: CHECK_IN_ID,
       status: "in_progress",
-      environment: "production",
       monitor_config: {
         schedule: { type: "crontab", value: "30 6 * * *" },
         timezone: "UTC",
@@ -103,8 +114,15 @@ describe("sendCheckIn", () => {
     assert.deepEqual(result, { sent: true, checkInId: CHECK_IN_ID });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].init.method, "POST");
+    const sent = new URL(calls[0].url);
+    assert.equal(
+      `${sent.origin}${sent.pathname}`,
+      "https://o4509000000000000.ingest.us.sentry.io/api/4509111111111111/cron/production-db-backup/abc123publickey/",
+    );
+    assert.equal(sent.searchParams.get("status"), "ok");
+    assert.equal(sent.searchParams.get("check_in_id"), CHECK_IN_ID);
+    assert.equal(sent.searchParams.get("environment"), "production");
     assert.equal(JSON.parse(calls[0].init.body).status, "ok");
-    assert.equal(JSON.parse(calls[0].init.body).check_in_id, CHECK_IN_ID);
     assert.equal(logger.warnings.length, 0);
   });
 
@@ -148,6 +166,7 @@ describe("sendCheckIn", () => {
     });
     assert.equal(result.sent, true);
     assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, calls[1].url);
     assert.equal(calls[0].init.body, calls[1].init.body);
   });
 
@@ -196,12 +215,64 @@ describe("sendCheckIn", () => {
   });
 });
 
+describe("the CLI", () => {
+  const script = path.join(repoRoot, "scripts/ci/sentry-cron-checkin.mjs");
+
+  function run(args) {
+    const dir = mkdtempSync(path.join(tmpdir(), "sentry-cron-checkin-"));
+    const output = path.join(dir, "github-output");
+    writeFileSync(output, "");
+    const env = { ...process.env, GITHUB_OUTPUT: output };
+    delete env.SENTRY_DSN;
+    const result = spawnSync(process.execPath, [script, ...args], { env, encoding: "utf8" });
+    return { ...result, output: readFileSync(output, "utf8") };
+  }
+
+  it("hands the check-in id to the finish step through GITHUB_OUTPUT, and exits 0 without a DSN", () => {
+    const result = run(["--monitor", "production-db-backup", "--status", "in_progress"]);
+    assert.equal(result.status, 0);
+    assert.match(result.output, /^check_in_id=[0-9a-f-]{36}\n$/);
+    assert.match(result.stderr, /::warning::.*SENTRY_DSN is not set/);
+  });
+
+  it("keeps a given check-in id", () => {
+    const result = run(["--monitor", "production-db-backup", "--status", "ok", "--check-in-id", CHECK_IN_ID]);
+    assert.equal(result.status, 0);
+    assert.equal(result.output, `check_in_id=${CHECK_IN_ID}\n`);
+  });
+
+  it("opens a fresh check-in when the start step left the id empty", () => {
+    const result = run(["--monitor", "production-db-backup", "--status", "error", "--check-in-id", ""]);
+    assert.equal(result.status, 0);
+    assert.match(result.output, /^check_in_id=[0-9a-f-]{36}\n$/);
+  });
+
+  it("exits 0 even on arguments it does not understand", () => {
+    const result = run(["--bogus"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stderr, /::warning::Sentry cron check-in crashed/);
+  });
+});
+
 describe("MONITORS match the workflows they watch", () => {
-  // A monitor on the wrong schedule pages every night for a job that ran fine,
-  // and a max_runtime shorter than the job's timeout fails a backup that is
-  // still running. Both copies are restated in MONITORS, so pin them.
+  // A monitor on the wrong schedule pages every night for a job that ran fine.
+  // max_runtime must not be shorter than the job's timeout-minutes, or Sentry
+  // marks a run that is still going as timed out and pages for it. (It never
+  // stops the job: the job's own timeout does, and the finish step then reports
+  // `error`. max_runtime only decides a run whose closing check-in never lands.)
+  // Both values are restated in MONITORS, so pin them to the workflow.
+  function jobBlock(yaml, job) {
+    return yaml.split(new RegExp(`^  ${job}:\\n`, "m"))[1]?.split(/^  [a-z][\w-]*:\n/m)[0];
+  }
+
+  /** The job's steps, each as its own block of text, in order. */
+  function stepsOf(block) {
+    return block.split(/^      - /m).slice(1);
+  }
+
   for (const [slug, monitor] of Object.entries(MONITORS)) {
     const yaml = readFileSync(path.join(repoRoot, monitor.workflow), "utf8");
+    const block = jobBlock(yaml, monitor.job);
 
     it(`${slug}: the workflow's schedule is the monitor's`, () => {
       const crons = [...yaml.matchAll(/cron:\s*"([^"]+)"/g)].map((match) => match[1]);
@@ -209,17 +280,31 @@ describe("MONITORS match the workflows they watch", () => {
     });
 
     it(`${slug}: max_runtime equals the job's timeout-minutes`, () => {
-      const jobBlock = yaml.split(new RegExp(`^  ${monitor.job}:\\n`, "m"))[1]?.split(/^  [a-z][\w-]*:\n/m)[0];
-      assert.ok(jobBlock, `job ${monitor.job} not found in ${monitor.workflow}`);
-      assert.equal(Number(jobBlock.match(/timeout-minutes:\s*(\d+)/)?.[1]), monitor.maxRuntimeMinutes);
+      assert.ok(block, `job ${monitor.job} not found in ${monitor.workflow}`);
+      assert.equal(Number(block.match(/timeout-minutes:\s*(\d+)/)?.[1]), monitor.maxRuntimeMinutes);
     });
 
-    it(`${slug}: the job opens and closes the check-in, the close under if: always()`, () => {
-      const jobBlock = yaml.split(new RegExp(`^  ${monitor.job}:\\n`, "m"))[1]?.split(/^  [a-z][\w-]*:\n/m)[0];
-      const invocations = [...jobBlock.matchAll(/sentry-cron-checkin\.mjs --monitor (\S+)/g)].map((m) => m[1]);
-      assert.deepEqual(invocations, [slug, slug]);
-      assert.match(jobBlock, /if: always\(\)\n\s+run: >-\n\s+node scripts\/ci\/sentry-cron-checkin\.mjs/);
-      assert.match(jobBlock, /--check-in-id "\$\{\{ steps\.cron-start\.outputs\.check_in_id \}\}"/);
+    it(`${slug}: in_progress before the job's work, the outcome after it under if: always()`, () => {
+      const steps = stepsOf(block);
+      const checkIns = steps
+        .map((step, index) => ({ step, index }))
+        .filter(({ step }) => step.includes(`sentry-cron-checkin.mjs --monitor ${slug}`));
+      assert.equal(checkIns.length, 2, "exactly one opening and one closing check-in");
+      const [start, finish] = checkIns;
+
+      // Every step between them is the job's work, and there is some.
+      assert.ok(finish.index - start.index > 1, "the job's work runs between the two check-ins");
+      assert.equal(start.index, steps.findIndex((step) => step.includes("--status in_progress")));
+      assert.match(start.step, /id: cron-start\n/);
+      assert.doesNotMatch(start.step, /\n\s+if:/, "the opening check-in runs whenever the job does");
+
+      assert.match(finish.step, /\n\s+if: always\(\)\n/);
+      assert.match(finish.step, /--status "\$\{\{ job\.status == 'success' && 'ok' \|\| 'error' \}\}"/);
+      assert.match(finish.step, /--check-in-id "\$\{\{ steps\.cron-start\.outputs\.check_in_id \}\}"/);
+
+      // A check-in must never fail or skip the backup, even if the script
+      // cannot start at all.
+      for (const { step } of checkIns) assert.match(step, /\n\s+continue-on-error: true\n/);
     });
   }
 });

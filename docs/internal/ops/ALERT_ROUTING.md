@@ -45,8 +45,9 @@
 > errors"; for a `production` build it no longer does, and silence there is worth
 > investigating as ingest or source-map upload rather than shrugging at.
 >
-> Environment tagging is per build profile in the committed `eas.json`
-> (`development` / `staging` / `production`), not a dashboard value — an EAS profile exposes no
+> Environment tagging is per build profile in the committed `eas.json`: the `development` /
+> `preview` / `production` profiles set `EXPO_PUBLIC_SENTRY_ENVIRONMENT` to `development` /
+> `staging` / `production`. It is not a dashboard value — an EAS profile exposes no
 > `VERCEL_ENV` equivalent to the bundle.
 
 > **As of 2026-09-09: Sentry *issue-alert* read works; *metric-alert* read 410s; *create* is human-only.** The 2026-09-23 update below supersedes part of this.
@@ -83,26 +84,6 @@
 >   rules. Creating a monitor stays an owner step (quota; the header of
 >   `scripts/ci/production-uptime.mjs`).
 > - `find_uptime_monitors` and `find_monitors` both returned `[]`: no uptime or cron monitors exist.
-
-> **Cron monitor `production-db-backup`** (`frapp-api`, [#2505](https://github.com/pdcarlson/Frapp/issues/2505)).
-> `db-backup.yml`'s `backup-production` job, the nightly production dump, checks in through
-> [`scripts/ci/sentry-cron-checkin.mjs`](../../../scripts/ci/sentry-cron-checkin.mjs): `in_progress`
-> before the dump and `ok` or `error` after it, with `environment: production`. The first check-in
-> creates the monitor (a check-in upserts it), so nothing is set up by hand. The script's `MONITORS`
-> entry holds its schedule and limits, and a test pins them to the workflow. The monitor raises an
-> issue when a run fails, runs past the job's 30-minute timeout, or hasn't started 3 hours after
-> 06:30 UTC; the margin is wide because GitHub starts scheduled runs late. The check-in never fails
-> the backup: if it can't be sent (no `SENTRY_DSN`, Sentry down), the step warns and the monitor
-> reports the run missed. Until the Discord pager lands, that issue reaches the owner the way every
-> `frapp-api` issue does, through rule `3133192`'s email. It is the single cron monitor #2505
-> budgets for Sentry's free plan; the Storage mirror and the other scheduled jobs get theirs in its
-> Team slice.
->
-> **Staging is tagged `staging` on every surface.** Web and landing derive the tag from
-> `VERCEL_ENV`, and staging is Vercel's `preview` build, so they map `preview` to `staging`
-> ([`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md), `NEXT_PUBLIC_SENTRY_ENVIRONMENT`). The API
-> tags its `NODE_ENV` (`staging` on Render) and mobile its `eas.json` profile. An environment filter on
-> a Sentry rule or digest can therefore say `staging` once.
 >
 > **PostHog project settings** (org Signet, project `569878`), live-verified **2026-09-09
 > ~21:32Z** via PostHog MCP `project-get` (`updated_at` 2026-09-09T21:32:34Z):
@@ -113,6 +94,35 @@
 > [`observability.md` § Privacy and replay](../../../spec/behavior/observability.md#privacy-and-replay)
 > (and a production PostHog project exists — #1173). Do not claim production replay is
 > on from the project-level flag.
+
+> **Cron monitor `production-db-backup`** (added 2026-09-30, [#2505](https://github.com/pdcarlson/Frapp/issues/2505); project `frapp-api`).
+> `db-backup.yml`'s `backup-production` job, the nightly production dump, checks in through
+> [`scripts/ci/sentry-cron-checkin.mjs`](../../../scripts/ci/sentry-cron-checkin.mjs): `in_progress`
+> before the dump and `ok` or `error` after it, tagged `environment: production`. The first check-in
+> that lands creates the monitor (each check-in upserts it), so nothing is set up by hand. **Until one
+> lands, the monitor doesn't exist**, and nothing in Sentry notices a failed or missing run. Confirm
+> it after the first nightly run that follows the merge: the Sentry MCP's `find_monitors` (org
+> `frapp-live`) lists `production-db-backup`.
+>
+> Once it exists, it raises an issue when a run reports `error` (the job's 30-minute
+> `timeout-minutes` included: the finish step then reports `error`), when no check-in arrives within
+> 3 hours of 06:30 UTC (the margin is wide because GitHub starts scheduled runs late), and when a
+> run's closing check-in never arrives (Sentry marks it timed out after `max_runtime`). A check-in that
+> can't be sent never fails or skips the backup; it warns. The script's `MONITORS` entry holds the
+> schedule and limits, and a test pins them to the workflow.
+>
+> **Whether its issue reaches the owner is unproven.** The only rule is `3133192`, which sends for
+> **high-priority** issues, and how Sentry classes a cron failure hasn't been observed here. The
+> first real failure, or #2505's test firing, settles it. The monitor sits beside the 13:15 freshness
+> watch below, which it doesn't replace, so one failed night raises both (see the `production-backup`
+> cluster under [Automated GitHub-issue alerts](#automated-github-issue-alerts)). It is the single
+> cron monitor #2505 budgets for Sentry's free plan; the Storage mirror and the other scheduled
+> jobs get theirs in its Team slice.
+
+> **The staging Sentry environment is `staging` on every surface** (2026-09-30). Web and landing
+> map Vercel's `preview` build, which is what staging is, to `staging`. The per-surface mapping is
+> owned by [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) (`NEXT_PUBLIC_SENTRY_ENVIRONMENT`,
+> `EXPO_PUBLIC_SENTRY_ENVIRONMENT`, and the API's `NODE_ENV`).
 
 ## Automated GitHub-issue alerts
 
@@ -190,7 +200,9 @@ alerts; a reviewer gate on `production-backup` opens the 06:15 alert *and* suspe
 freshness watches see the suspended jobs as in flight: each opens the same day if the suspended run
 is more than 3h old at its probe (hung), and otherwise passes that day on the previous night's
 success, as a warning, and opens the next day, once that success is older than 36h. Three P1s,
-one fix. Outside that
+one fix. The Sentry cron monitor `production-db-backup` ([Primary channels](#primary-channels))
+watches the same `backup-production` job, so a failed or missing dump also raises a Sentry issue
+that morning, hours before the 13:15 freshness alert: two signals, one cause. Outside that
 `production-backup` cluster the pairs are genuinely disjoint: if several of *those* alerts are open
 at once they are telling you about different problems. The staggering has more than one reason — the full schedule and its rationale are
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.

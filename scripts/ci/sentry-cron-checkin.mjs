@@ -3,34 +3,43 @@
 // Report one scheduled job's run to a Sentry cron monitor, so a nightly job
 // that fails, overruns or never starts pages someone (#2505).
 //
-// ── Why a monitor, when the job already fails red ───────────────────────────
-// A red scheduled run reaches nobody: GitHub mails the workflow's last editor,
-// if anyone, and a run that never STARTS (a disabled workflow, a schedule that
-// GitHub dropped, a job stuck behind the `db-backup` concurrency group) is not
-// red at all. It is simply absent. Sentry's cron monitor is the one check
-// here that notices absence: it expects a check-in on the job's schedule, and
-// raises an issue when one is missed, fails, or runs past `max_runtime`.
+// ── What this adds to the watch that already exists ─────────────────────────
+// `production-backup-freshness.yml` already raises an owner-assigned P1
+// `incident` when `backup-production` failed, hung, or has no success within
+// 36 hours, checked once a day at 13:15 UTC. That watch stays; this does not
+// replace it. The monitor adds a same-morning signal in Sentry, where the
+// ADR-24 pager (Discord, #2505) is wired: `error` lands the moment the job
+// ends, a run that never starts is reported missed once `checkin_margin`
+// passes, and a run whose closing check-in never arrives (a lost runner) is
+// reported timed out after `max_runtime`. One failed night therefore raises
+// both, and docs/internal/ops/ALERT_ROUTING.md says so.
 //
 // ── The protocol ────────────────────────────────────────────────────────────
 // Sentry's HTTP check-in endpoint, derived from the project's DSN
 // (docs.sentry.io/product/monitors-and-alerts/monitors/crons/getting-started/http):
 //
 //   POST https://<ingest host>/api/<project id>/cron/<monitor slug>/<public key>/
-//   { "status": "in_progress" | "ok" | "error", "check_in_id": "<uuid>",
-//     "environment": "production", "monitor_config": { … } }
+//        ?status=in_progress|ok|error&check_in_id=<uuid>&environment=production
+//   { "status": "…", "monitor_config": { … } }
 //
-// `monitor_config` makes each check-in an upsert: the first one creates the
-// monitor, so no dashboard step is needed, and the schedule below stays the one
-// place it is written. `check_in_id` ties a run's start and end together, and
-// it is also what makes a re-sent POST safe to retry: a second POST with the
-// same id updates that check-in instead of adding one.
+// `status`, `check_in_id` and `environment` ride the query string, where the
+// docs define them. `monitor_config` in the body makes each check-in an upsert:
+// the first one that lands creates the monitor, so no dashboard step is needed
+// and the schedule below stays the one place it is written. `check_in_id` ties
+// a run's start and end together, and it is also what makes a re-sent POST
+// safe to retry: a second POST with the same id updates that check-in instead
+// of adding one.
 //
 // ── A check-in never fails the job it reports on ────────────────────────────
 // Every failure here (no DSN, an unparsable one, Sentry down) is a warning and
-// exit 0. The job's own work is the backup; failing it because Sentry did not
-// answer would trade a real backup for a monitoring blip. The miss is still
-// loud, just later: a run whose check-in never lands is reported missed by the
-// monitor once `checkin_margin` passes.
+// exit 0, and both workflow steps also set `continue-on-error`, so even a crash
+// before this code runs cannot skip the backup. The backup is the job's work;
+// failing it because Sentry did not answer would trade a real backup for a
+// monitoring blip. What a lost check-in costs depends on whether the monitor
+// exists yet. Once one check-in has landed, a night whose check-ins never
+// arrive is reported missed. Before that, nothing in Sentry notices, and only
+// the freshness watch above covers the job; ALERT_ROUTING.md records how to
+// confirm the monitor exists.
 //
 // Usage:
 //   node scripts/ci/sentry-cron-checkin.mjs --monitor <slug> --status in_progress
@@ -98,12 +107,15 @@ export function checkInUrlFor(dsn, monitorSlug) {
   );
 }
 
-/** The check-in body, including the upsert config for the monitor. */
-export function checkInPayload({ monitor, status, checkInId, environment = "production" }) {
+/** The query string for one check-in: the fields the endpoint defines there. */
+export function checkInQuery({ status, checkInId, environment = "production" }) {
+  return new URLSearchParams({ status, check_in_id: checkInId, environment }).toString();
+}
+
+/** The check-in body: its status again, and the upsert config for the monitor. */
+export function checkInPayload({ monitor, status }) {
   return {
-    check_in_id: checkInId,
     status,
-    environment,
     monitor_config: {
       schedule: { type: "crontab", value: monitor.schedule },
       timezone: "UTC",
@@ -137,17 +149,17 @@ export async function sendCheckIn({
 
   if (!monitor) return skip(`no monitor named "${monitorSlug}" in MONITORS`);
   if (!STATUSES.has(status)) return skip(`status "${status}" is not one of ${[...STATUSES].join(", ")}`);
-  if (!dsn) return skip("SENTRY_DSN is not set, so the monitor will report this run as missed");
+  if (!dsn) return skip("SENTRY_DSN is not set, so Sentry never hears of this run");
   const url = checkInUrlFor(dsn, monitorSlug);
   if (!url) return skip("SENTRY_DSN is not a DSN (https://<key>@<host>/<project id>)");
 
   try {
     const response = await fetchWithRetry(
-      url,
+      `${url}?${checkInQuery({ status, checkInId })}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(checkInPayload({ monitor, status, checkInId })),
+        body: JSON.stringify(checkInPayload({ monitor, status })),
       },
       // The stable check_in_id makes a re-sent POST an update, not a second
       // check-in, so this POST may retry like a GET.
