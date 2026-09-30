@@ -956,11 +956,11 @@ jobs:
       # string, a vendor option spelled some other way, or a new pod using an
       # undeclared API (an ITMS-91053 rejection). `expo config --type
       # introspect` writes nothing and needs no native toolchain; the whole
-      # step took about three seconds locally. It runs
-      # before prebuild on purpose: introspection reads apps/mobile/ios and
-      # android when they exist, so it must see the checkout's templates, which
-      # is what EAS starts from. The roster and its reasons:
-      # scripts/check-mobile-native-declarations.mjs.
+      # step took about three seconds locally. It runs before prebuild on
+      # purpose: introspection reads apps/mobile/ios and android when they
+      # exist, so it must run on a checkout with no generated tree, where it
+      # starts from Expo's base config the way a clean EAS build does. The
+      # roster and its reasons: scripts/check-mobile-native-declarations.mjs.
       - name: Native declarations match the roster (expo config --type introspect)
         run: npm run check:mobile-native-declarations
 

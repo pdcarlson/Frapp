@@ -181,9 +181,20 @@ test("a requester call that survives only in a comment fails", () => {
   }
 });
 
-test("withoutComments keeps code and URLs", () => {
-  assert.equal(withoutComments('const u = "https://frapp.live"; useCameraPermissions();'), 'const u = "https://frapp.live"; useCameraPermissions();');
-  assert.equal(withoutComments("a(); // b()\n/* c() */d();").trim(), "a(); \nd();".trim());
+test("withoutComments drops comments and empties strings, and keeps the code around them", () => {
+  assert.equal(withoutComments("a(); // b()\n/* c() */d();"), "a(); \nd();");
+  assert.equal(withoutComments('const u = "https://frapp.live"; useCameraPermissions();'), 'const u = ""; useCameraPermissions();');
+  // A call quoted in a string isn't a live one either.
+  assert.equal(withoutComments("log('useCameraPermissions(');"), "log('');");
+  assert.equal(withoutComments('a("x\\"y"); b(`t ${c} \\` d`);'), 'a(""); b(``);');
+});
+
+test("a /* or // inside a string or a line comment can't swallow a live requester call", () => {
+  // Each once opened a fake comment running to the next */ or line end.
+  for (const before of ['const ACCEPT = ["image/*"];', 'const cdn = "//cdn.frapp.live/x";', "// see lib/*.ts"]) {
+    const source = `/** Picks a photo. */\n${before}\nexport async function pick() {\n  await requestMediaLibraryPermissionsAsync();\n}\n/** Next helper. */\n`;
+    assert.ok(withoutComments(source).includes("requestMediaLibraryPermissionsAsync("), before);
+  }
 });
 
 test("a deleted requester file fails", () => {
@@ -513,7 +524,26 @@ test("linkedIosPods scans a directory once, however many reports or pods name it
 // ── main ─────────────────────────────────────────────────────────────────────
 
 /** A repo root whose requesters exist, one pod dir, and a runner faking the Expo CLI. */
-function fixture({ infoPlist = rosterInfoPlist(), manifest = currentManifest(), declared = DECLARED, podSource = "UserDefaults.standard", modules, checkIn = "useCameraPermissions();" } = {}) {
+const AGGREGATION_RB = `
+    def self.get_core_accessed_apis()
+        a = { "NSPrivacyAccessedAPIType" => "${FT}" }
+        b = { "NSPrivacyAccessedAPIType" => "${UD}" }
+        c = { "NSPrivacyAccessedAPIType" => "${BOOT}" }
+        return [a, b, c]
+    end
+`;
+
+function fixture({
+  infoPlist = rosterInfoPlist(),
+  manifest = currentManifest(),
+  declared = DECLARED,
+  podSource = "UserDefaults.standard",
+  modules,
+  checkIn = "useCameraPermissions();",
+  reactNativeSource = "[[NSUserDefaults standardUserDefaults] boolForKey:k]; mach_absolute_time();",
+  aggregation = AGGREGATION_RB,
+  reactNativePath = true,
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), "native-declarations-"));
   const put = (rel, text) => {
     mkdirSync(dirname(join(root, rel)), { recursive: true });
@@ -527,6 +557,8 @@ function fixture({ infoPlist = rosterInfoPlist(), manifest = currentManifest(), 
     podDirs[name] = join(root, "node_modules", name, "ios");
     put(`node_modules/${name}/ios/Module.swift`, podSource);
   }
+  put("node_modules/react-native/React/Base/RCTThing.mm", reactNativeSource);
+  if (aggregation !== null) put("node_modules/react-native/scripts/cocoapods/privacy_manifest_utils.rb", aggregation);
   const outputs = {
     config: {
       ios: { privacyManifests: { NSPrivacyAccessedAPITypes: declared.map((c) => ({ NSPrivacyAccessedAPIType: c })) } },
@@ -535,7 +567,7 @@ function fixture({ infoPlist = rosterInfoPlist(), manifest = currentManifest(), 
     resolve: modules ?? {
       modules: Object.entries(podDirs).map(([packageName, podspecDir]) => ({ packageName, pods: [{ podName: packageName, podspecDir }] })),
     },
-    rnConfig: { dependencies: {} },
+    rnConfig: { dependencies: {}, ...(reactNativePath ? { reactNativePath: join(root, "node_modules/react-native") } : {}) },
   };
   const calls = [];
   const run = (bin, args) => {
@@ -551,7 +583,7 @@ test("main passes a coherent project, and asks the CLI for iOS introspection and
   try {
     const { checked, violations } = main(f.root, f.run);
     assert.deepEqual(violations, []);
-    assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size);
+    assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size + 1, "the roster's pods plus react-native");
     assert.deepEqual(f.calls, [
       "cli config --type introspect --json",
       "autolinking react-native-config --platform ios --json",
@@ -583,6 +615,38 @@ test("main reports a purpose string whose requester is gone", () => {
   try {
     const { violations } = main(f.root, f.run);
     assert.deepEqual(violations.map((v) => v.split(":")[0]), ["NSCameraUsageDescription", "android.permission.CAMERA"]);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main checks react-native's pods against the core list it reads from react-native itself", () => {
+  // DiskSpace is declared by the app, but it isn't on react-native's core list.
+  const f = fixture({ reactNativeSource: "[attrs objectForKey:NSFileSystemFreeSize];" });
+  try {
+    const { violations } = main(f.root, f.run);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /^react-native uses NSPrivacyAccessedAPICategoryDiskSpace beyond the core list/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main fails when react-native's aggregation file is gone, rather than excusing its pods", () => {
+  const f = fixture({ aggregation: null });
+  try {
+    assert.match(main(f.root, f.run).violations.join("\n"), /core required-reason list .* couldn't be read/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main fails when autolinking stops naming react-native's root", () => {
+  const f = fixture({ reactNativePath: false });
+  try {
+    const { violations } = main(f.root, f.run);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /names no reactNativePath, so react-native's own pods went unscanned/);
   } finally {
     f.cleanup();
   }
@@ -623,7 +687,7 @@ test("main refuses to read a generated native tree, which can hide a plugin defa
 });
 
 test("main fails when autolinking lists no pods or nothing is declared", () => {
-  const f = fixture({ modules: { modules: [] }, declared: [] });
+  const f = fixture({ modules: { modules: [] }, declared: [], reactNativePath: false });
   try {
     const { violations } = main(f.root, f.run);
     assert.ok(violations.includes("autolinking listed no iOS pods, so the required-reason scan read nothing"), violations.join("\n"));

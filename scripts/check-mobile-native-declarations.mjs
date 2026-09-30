@@ -66,6 +66,10 @@
 //     which introspection doesn't run. So check 2 covers what the template and
 //     config plugins declare. POST_NOTIFICATIONS, which expo-notifications' own
 //     manifest adds, is protected only by check 3.
+//   - Introspection starts from `@expo/config-plugins`' inline copy of Expo's
+//     base Android manifest; prebuild and EAS start from the template bundled
+//     as `expo/template.tgz`. They matched on SDK 57, but an SDK bump could
+//     change one without the other, and nothing here compares them.
 //   - The scan reads pod sources in node_modules. Native code the build fetches
 //     from elsewhere isn't there: pods a podspec depends on (sentry-cocoa,
 //     SDWebImage, ReachabilitySwift, react-native's third-party pods and
@@ -149,18 +153,20 @@ export const ANDROID_RUNTIME_PERMISSIONS = new Map([
 ]);
 
 /**
- * The rest of what the app manifest declares: the base manifest prebuild and
- * introspection both start from (`@expo/config-plugins`' withAndroidBaseMods).
+ * The rest of what the app manifest declares: Expo's base manifest. The gate
+ * reads introspection's inline copy of it (`@expo/config-plugins`'
+ * withAndroidBaseMods); prebuild and EAS copy the template bundled as
+ * `expo/template.tgz`. The two declared these same five on SDK 57.
  */
 export const ANDROID_TEMPLATE_PERMISSIONS = new Map([
   ["android.permission.INTERNET", "the app talks to the API and Supabase"],
   ["android.permission.VIBRATE", "notifications vibrate"],
   ["android.permission.SYSTEM_ALERT_WINDOW", "the template's; nothing in the app draws over other apps"],
-  [
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "capped at SDK 32; expo-image-picker's requestMediaLibraryPermissionsAsync asks for it on Android 12 and below",
-  ],
-  ["android.permission.WRITE_EXTERNAL_STORAGE", "capped at SDK 32; nothing writes shared storage"],
+  // Both capped at SDK 32. expo-image-picker's requestMediaLibraryPermissionsAsync
+  // asks for both on Android 12 and below, and reports refused if either is
+  // undeclared, so neither can be removed while chat photos and s15 pick.
+  ["android.permission.READ_EXTERNAL_STORAGE", "the media-library request on Android 12 and below"],
+  ["android.permission.WRITE_EXTERNAL_STORAGE", "the media-library request on Android 12 and below"],
 ]);
 
 /**
@@ -271,11 +277,35 @@ export function backgroundModeProblems(infoPlist, modes = IOS_BACKGROUND_MODES) 
 }
 
 /**
- * Source text with its JS comments removed, so a call left in a comment isn't
- * read as a live one. A `//` after a colon is a URL, not a comment.
+ * Source text with its JS comments dropped and its string literals emptied, so
+ * a call left in a comment or a string isn't read as a live one, and a `/*` or
+ * `//` inside a string (`"image/*"`, `"//cdn…"`) can't swallow the code after
+ * it. A lexer, not a parser: a regex literal holding `//` or `/*` still reads
+ * as a comment, which can only hide a call on that line and fail the gate.
  */
 export function withoutComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/gm, "$1");
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const pair = source.slice(i, i + 2);
+    if (pair === "//") {
+      const end = source.indexOf("\n", i);
+      i = end === -1 ? source.length : end;
+    } else if (pair === "/*") {
+      const end = source.indexOf("*/", i + 2);
+      i = end === -1 ? source.length : end + 2;
+    } else if (source[i] === '"' || source[i] === "'" || source[i] === "`") {
+      const quote = source[i];
+      let j = i + 1;
+      while (j < source.length && source[j] !== quote) j += source[j] === "\\" ? 2 : 1;
+      out += quote + quote;
+      i = j + 1;
+    } else {
+      out += source[i];
+      i += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -578,6 +608,11 @@ export function main(root = process.cwd(), run = expoCli(root)) {
   const setupProblems = [];
   if (pods.length === 0) setupProblems.push("autolinking listed no iOS pods, so the required-reason scan read nothing");
   if (declared.length === 0) setupProblems.push("ios.privacyManifests declares no required-reason categories");
+  if (!reactNativeConfig?.reactNativePath) {
+    setupProblems.push(
+      "autolinking's react-native-config report names no reactNativePath, so react-native's own pods went unscanned. Has the Expo CLI output changed shape?",
+    );
+  }
 
   const readSource = (file) => {
     const path = join(root, file);

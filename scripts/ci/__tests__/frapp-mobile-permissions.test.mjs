@@ -206,6 +206,15 @@ test("putting Signet in a camera permission string fails", () => {
   );
 });
 
+test("each half of the naming rule fails on its own", () => {
+  // Swapping Frapp for Signet trips both halves at once, so pin each alone.
+  const rel = "apps/mobile/app.config.js";
+  for (const value of ["Frapp (formerly Signet) uses the camera.", "Allow the app to use the camera."]) {
+    const source = `module.exports = { cameraPermission: "${value}" };\n`;
+    assert.deepEqual(walkedPermissionCopyProblems([{ rel, source }]), [`${rel}:cameraPermission`], value);
+  }
+});
+
 test("a third JS-style *Permission site fails the walk", () => {
   const rel = "apps/mobile/app.config.js";
   const source =
