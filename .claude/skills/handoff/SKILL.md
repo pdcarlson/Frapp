@@ -57,7 +57,7 @@ Default to `next` if the user didn't say and the current task looks complete, `c
 ## Multi-stage programs
 
 When the work is one stage of a program with a tracker (a GitHub `[Epic]` with sub-issues; see
-[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md)), link the tracker and hand over the
+[`github-pm.md`](../../../docs/ci-cd/github-pm.md)), link the tracker and hand over the
 current stage only: its live state and traps. Don't restate the plan. A second copy drifts from the
 issue, and the fresh session can't tell which is current.
 

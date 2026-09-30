@@ -29,7 +29,7 @@ on:
   schedule:
     # 13:15 UTC daily, after the observed ~11:30 dump window. One of the
     # daily staggered watchdogs. Full schedule:
-    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
     - cron: "15 13 * * *"
   workflow_dispatch:
 

@@ -92,7 +92,7 @@ dispatches queue instead of interleaving two `db push` runs against one database
 >
 > The evidence that environment protection really does pause jobs (and the one
 > thing that was _not_ verified directly) is in
-> `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap
+> `docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap
 > secrets — read that rather than trusting a restatement here.
 
 > **✅ Production is reconciled and current (verified 2026-08-29).** The
@@ -191,7 +191,7 @@ dispatch on a branch), when the snapshot predates the latest deploy,
 `migration-order` and `migration-replay` wait for the next publish (the
 budget is set in [`download-migration-snapshot`'s header](../../../.github/actions/download-migration-snapshot/action.yml)),
 then fail and name the publisher
-([`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../../internal/ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets)).
+([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
 `migration-drift` never waits: it judges the newest snapshot as it is, and says
 when a `Deploy staging` run has overtaken that snapshot (below).
 
@@ -1637,7 +1637,7 @@ Postgres stores the executed SQL, so a migration absent from git is still fully 
 **This class of drift now has a detector.** `.github/workflows/check-migration-drift.yml` runs
 daily (07:00 UTC) and compares `supabase_migrations.schema_migrations` on each deployed database
 against what it should hold. What each is judged against, what it classifies and when it
-tolerates a pending row: [`AGENT_INFRA.md` § Schema drift detection](../ci-cd/AGENT_INFRA.md#schema-drift-detection-scriptscicheck-migration-driftmjs). A failure upserts one `incident` tracking issue and closes it once every
+tolerates a pending row: [`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs). A failure upserts one `incident` tracking issue and closes it once every
 environment is back in sync, so "alert issue open" means "a deployed database is drifting right
 now". Semantics in `scripts/ci/check-migration-drift.mjs`; run it by hand from the Actions tab
 (`workflow_dispatch`, with an adjustable grace window) or via `npm run check:migration-drift`.

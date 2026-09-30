@@ -122,7 +122,7 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | *Deploy production failed — production may be partly deployed* | `deploy-outcome` job, `deploy-production.yml` (since [#2805](https://github.com/pdcarlson/Frapp/issues/2805)) | a real (not dry-run) `Deploy production` run whose `deploy` job ran and did not succeed. That job is `_deploy.yml`'s, and it stops at the first failure; what production is left in depends on where, and the run log names the step: the inputs guard, the installs, the provider preflight, the Infisical injection, the rehearsal, the fence or the production build (nothing applied, production unchanged); the migration apply or the `config.toml` assert (the database may be migrated, or partly, under the previous API and frontends); the Supabase Edge Functions deploy (the database migrated, the API and frontends unchanged, and some functions may already be the new version under the previous API that calls them); Render not taking the commit's deploy `live` (the database migrated, the API may be on either commit); `frapp-api-prod` not serving the commit as ready, or on a `migrations-only` run not staying ready on the commit it already served (the API may be new, the frontends are not uploaded); the Vercel upload (web first, then landing, so web may be new and landing not). A dry run, a cancelled run, a run whose `deploy` job ran no step, such as a declined approval (read from that attempt's jobs, where such a job lists no steps), and a failed `validate` (a mistyped confirmation or a red-CI SHA, before anyone approves) never raise it. A failed tag after a live ship is not this alert: the run's summary goes red, and *Production hosts are not on the same tagged commit* catches it the next morning. Recovery: [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **P1** | a later real `full` `Deploy production` run ships successfully (a green `migrations-only` run does not close it: the code did not ship) |
 | *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:30 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, Auth SMTP reverted to the hosted 2/hour cap or a sender name other than `Frapp`, Magic Link template lost `token_hash`, a Magic Link subject other than exactly `Sign in to Frapp`, or a sibling subject or Magic Link body that still says Signet, empty or non-`/health` `healthCheckPath` on `frapp-api-staging`, auto-deploy on or not tracking `main` on `frapp-api-staging`, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 | *Production Auth settings have drifted* | `production-auth-conformance.yml` (daily 07:45 UTC) | at least one assertion about live `frapp-prod` Auth **failed** — paused project, disabled auth hook, missing `https://app.frapp.live/**` / `frapp://**`, Site URL pointed at the staging origin, or Auth SMTP on with a From other than `Frapp <no-reply@mail.frapp.live>` / send cap under 300/hour, or SMTP on with a Magic Link template that still uses ConfirmationURL, a Magic Link subject other than exactly `Sign in to Frapp`, or a sibling subject or Magic Link body that still says Signet. Empty SMTP is SKIPPED, not a fail (hosted 2/hour cap until [#1824](https://github.com/[REDACTED]/Frapp/issues/1824)). **P1.** Does not name `environment: production` (#1435) | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
-| *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match what it should hold ([what each is judged against](../ci-cd/AGENT_INFRA.md#schema-drift-detection-scriptscicheck-migration-driftmjs)) — behind, or carrying a version `main` does not hold | every environment is back in sync |
+| *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match what it should hold ([what each is judged against](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)) — behind, or carrying a version `main` does not hold | every environment is back in sync |
 | *PR base sync cannot auto-update PR branches* | `pr-base-sync.yml` (every push to `main`) | at least one open PR was behind `main` and none could be updated automatically — no App token minted, the token rejected, or the update-branch API failing. **P2, not P1:** PRs still merge, they just need `Update branch` by hand, so this is degraded rather than down | a later sweep updates a branch, or runs with a working token and blocks on nothing |
 | *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily 07:15 UTC) | a provider-side production setting no longer matches what the guardrails assert — auto-deploy on, wrong branch, empty or non-`/health` `healthCheckPath`, or a Vercel Git link. **P1.** The title is the lookup key and was not renamed when `healthCheckPath` was added. Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
 | *Production /health/ready is failing* | `production-uptime.yml` (scheduled every 15 minutes; [far less often in practice](../../../spec/architecture/adr/adr-24.md)) | live `GET https://api.frapp.live/health/ready` was not HTTP 200 with JSON `status: "ok"`. **P1.** Watches `/health/ready`, not `/health` ([why](../../../spec/behavior/observability.md#health-check)). Does not name `environment: production` (#1435). Not a Sentry 60s monitor | a later probe returns 200 `status: "ok"` |
@@ -144,7 +144,7 @@ error rather than a silent fallback to the default. Today two workflows have one
 successful staging run also closes an issue still open under a title that alert replaced in #2803
 (Deploy API's or Deploy Vercel staging's). How the script works, titles and retired titles
 included, is in
-[`AGENT_INFRA.md` § Deploy visibility](../ci-cd/AGENT_INFRA.md#deploy-visibility-scriptscideploy-alertmjs).
+[`agent-infra.md` § Deploy visibility](../../ci-cd/agent-infra.md#deploy-visibility-scriptscideploy-alertmjs).
 
 `production-guardrails.mjs` is also production's deploy preflight (a step of `_deploy.yml`, the job
 `deploy-production.yml` calls), but that invocation
@@ -173,7 +173,7 @@ success, as a warning, and opens the next day, once that success is older than 3
 one fix. Outside that
 `production-backup` cluster the pairs are genuinely disjoint: if several of *those* alerts are open
 at once they are telling you about different problems. The staggering has more than one reason — the full schedule and its rationale are
-[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.
+[`agent-infra.md`](../../ci-cd/agent-infra.md) § Scheduled conformance, which owns that fact.
 
 **Read the conformance alert's clearing condition literally — an open issue does not always mean
 "broken right now."** It closes only when the specific assertions it names pass, not merely when
@@ -188,13 +188,13 @@ One conformance assertion is **not runnable** as of this workflow's merge: the e
 needs a smoke credential that is not provisioned (#893), so it reports SKIPPED and a broken sign-in
 chain is **not** currently detected by it. A half-set `SUPABASE_URL` / `SUPABASE_ANON_KEY` pair is
 a different outcome (FAIL, not SKIPPED) — owned by
-[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md#scheduled-conformance-scriptscistaging-conformancemjs)
+[`agent-infra.md`](../../ci-cd/agent-infra.md#scheduled-conformance-scriptscistaging-conformancemjs)
 (#1767). Migration parity is not missing — it is covered by the
 migration-drift row above.
 
 No watchdog closes on a run that proved nothing: a no-op deploy run and an all-skipped
 conformance run both leave an open alert open. Mechanics and rationale:
-[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § "Deploy visibility" and § "Scheduled conformance".
+[`agent-infra.md`](../../ci-cd/agent-infra.md) § "Deploy visibility" and § "Scheduled conformance".
 
 ## Critical alerts
 

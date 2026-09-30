@@ -2,7 +2,7 @@ title = "Frapp gitleaks config"
 
 # Inherit gitleaks' maintained default ruleset; add only Frapp-specific allowlists
 # below. Keep the allowlist tight — prefer an inline `gitleaks:allow` comment for a
-# one-off false positive over broad path globs. See docs/internal/ci-cd/SECRET_SCANNING.md.
+# one-off false positive over broad path globs. See docs/ci-cd/secret-scanning.md.
 [extend]
 useDefault = true
 

@@ -701,7 +701,7 @@ so CI holds each pull request to the contract of every build that has shipped (#
 `api-contract-check` job fails any PR whose `apps/api/openapi.json` breaks the contract at a listed
 commit (`npm run check:api-breaking:shipped`). While the list is empty the check passes and says it
 compared against nothing. Why it blocks, and how it fails:
-[`QUALITY_GATES.md` § Two comparisons, two postures](../../../docs/internal/ci-cd/QUALITY_GATES.md#two-comparisons-two-postures).
+[`quality-gates.md` § Two comparisons, two postures](../../../docs/ci-cd/quality-gates.md#two-comparisons-two-postures).
 
 **Record a build when it is first uploaded to TestFlight or a Play track**, before any tester can
 install it, in a PR that adds one entry per build:

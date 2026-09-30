@@ -3,12 +3,12 @@
 Local **pre-commit** + **CI** secret scanning with [gitleaks](https://github.com/gitleaks/gitleaks).
 This began as the ADR-13 mitigation for the GitHub-native secret scanning and **push protection** lost
 when `pdcarlson/Frapp` went private — see ADR-13 / ADR-17 in
-[`spec/architecture/adr/adr-13.md`](../../../spec/architecture/adr/adr-13.md) / [`adr-17.md`](../../../spec/architecture/adr/adr-17.md).
+[`spec/architecture/adr/adr-13.md`](../../spec/architecture/adr/adr-13.md) / [`adr-17.md`](../../spec/architecture/adr/adr-17.md).
 
 **That premise no longer holds, and this gate is not waiting on it.** The repo is **public** again
 (confirmed 2026-08-21 by fetching the README over `raw.githubusercontent.com` with no credentials:
 HTTP 200 against a 404 control — the method and evidence table are in
-[`AGENT_INFRA.md`](AGENT_INFRA.md) § GitHub environments and bootstrap secrets), so GitHub-native
+[`agent-infra.md`](agent-infra.md) § GitHub environments and bootstrap secrets), so GitHub-native
 secret scanning and push protection are available to it. What is unchanged is what this doc
 describes: the `secret-scan` CI job is still a **required** check on every PR and push to `main`, so
 the enforcement below is live and nothing here is a stopgap waiting to be replaced. **Whether to
@@ -38,7 +38,7 @@ The pre-commit hook installs itself: the root `package.json` `prepare` script
 supersedes any other local `.git/hooks` you have configured; undo it with `git config --unset core.hooksPath`.
 In a Claude Code cloud session the SessionStart hook runs the same script at every session start, so
 there an undo lasts only until the next session; laptop sessions are left alone
-([review runbook § How the gate enforces](AI_CODE_REVIEW_RUNBOOK.md#how-the-gate-enforces)).
+([review runbook § How the gate enforces](ai-code-review-runbook.md#how-the-gate-enforces)).
 
 The pinned gitleaks binary is the source of truth: `scripts/scan-secrets.mjs` ensures it on every run
 (idempotent, checksum-verified) in the gitignored `.cache/gitleaks/`. A compatible `gitleaks` on PATH is
@@ -258,7 +258,7 @@ the intended required set. Whether it is live on a given branch depends on when 
 `GITHUB_PAT=… npm run configure:branch-protection`. That apply is a human step with an admin PAT:
 the bare command is a live `PUT` of the whole protection payload, and an agent session runs
 `npm run configure:branch-protection:verify` (which writes nothing) and nothing else. Read live state
-per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
 rather than from this page.
 
 ## Bumping the pinned version

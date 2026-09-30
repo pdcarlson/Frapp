@@ -20,7 +20,7 @@ lives in a scratch file.
 
 - Ownership, the product-code ban and the docs-only self-maintenance PR are shared by every
   routine:
-  [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
+  [`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines).
   Destructive writes only on `suggestion`-labeled issues; never write to Linear.
 - GitHub MCP only. If it is unavailable, stop and report; REST and `gh` are not a fallback for
   tracker work (rule 4 there has the narrow settings-read carve-out).
@@ -42,13 +42,13 @@ items.
 Load the `mcp__github__` tool schemas you need (`list_issues`, `issue_read`, `issue_write`,
 `add_issue_comment`, `search_issues`, `list_pull_requests`, `pull_request_read`) and confirm access
 with an `issue_read` on a known issue. Label roster:
-[`ROUTINES.md` → Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines).
+[`routines.md` → Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines).
 
 Then run the
-[marker-count guard](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run):
+[marker-count guard](../../../docs/ci-cd/github-pm.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run):
 two calls that fail closed if the read or index path has regressed. Read fidelity has flipped
 before; the current measurement is in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+[`github-pm.md` → Reading a body you intend to rewrite](../../../docs/ci-cd/github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 
 ## State: the tracking issue
 
@@ -122,7 +122,7 @@ anything already tracked. If the thread shows Paul already decided, it's settled
    decision) or `agent-doable` (an agent could ship it as a PR).
 2. **Research** before filing: the files and config it touches, the runbooks
    ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md),
-   [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md), `docs/internal/ops/`), and
+   [`agent-infra.md`](../../../docs/ci-cd/agent-infra.md), `docs/internal/ops/`), and
    [`/infrastructure-research`](../infrastructure-research/SKILL.md) for provider state. Write a
    **How to do it** section: numbered steps, exact setting, secret and file names, and what proves
    it done. If it turns out to be done already, don't file.
@@ -137,7 +137,7 @@ anything already tracked. If the thread shows Paul already decided, it's settled
      pipelines or security).
    - Body: summary, source (PR link and quoted text), classification, **How to do it**, acceptance
      criteria, an
-     [Agent brief](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)
+     [Agent brief](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)
      for agent-doable items, an optional `Estimate:` line, and last the visible marker line
      `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` ``. Keep it a visible line, not an
      HTML comment, so a lossy read can't hide it from dedup.
@@ -161,7 +161,7 @@ Rebuild the tracking issue body with `issue_write` update:
    watermarks and `last-run`.
 
 Comment on an issue only when you have something it doesn't already say
-([`ROUTINES.md` rule 6](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)).
+([`routines.md` rule 6](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)).
 
 ## How the run ends
 
@@ -179,7 +179,7 @@ Then: audit outcomes (closed, staled, left open), PRs scanned forward and backwa
 ## Self-maintenance
 
 Per
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+[`routines.md` → Self-maintenance](../../../docs/ci-cd/routines.md#self-maintenance-the-update-themselves-contract),
 check this file's tool names, links and state-marker format against reality. Mechanical drift goes
 in one docs-only PR (`.claude/skills/pr-followups/` is on the allowlist); judgment-laden drift
 becomes a `suggestion` issue (`area:docs`).
