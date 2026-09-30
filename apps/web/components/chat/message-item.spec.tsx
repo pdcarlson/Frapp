@@ -7,11 +7,18 @@ import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { reducer } from "@/hooks/use-toast";
 import { NOBODY_BLOCKED } from "@/tests/block-list";
 
+// The real list resolves signed URLs through `useFrappClient`, a provider this
+// suite does not stand up; a stand-in is enough to say where the list sits.
+vi.mock("./message-attachments", () => ({
+  MessageAttachments: () => <ul data-testid="attachments" />,
+}));
+
 /**
- * `spec/ui/design-system/components.md` specifies the incoming meta line as
- * `Name · time` with an initials avatar. Until display-name resolution landed
- * this row rendered `Member 2f4a1c` with a uuid-derived avatar, so these assert
- * the resolved rendering and keep the truncated id as the degraded case only.
+ * `spec/ui/design-system/components.md` §11 specifies the author line as the
+ * name then the time, beside an initials avatar. Until display-name resolution
+ * landed this row rendered `Member 2f4a1c` with a uuid-derived avatar, so these
+ * assert the resolved rendering and keep the truncated id as the degraded case
+ * only.
  */
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -676,6 +683,28 @@ describe("MessageItem edited marker", () => {
     expect(
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
+  });
+
+  it("marks a photo-only message on a line of its own under the photo", () => {
+    const { container } = renderItem(
+      message({
+        ...edited,
+        content: "",
+        attachment_count: 1,
+        is_pinned: true,
+      }),
+    );
+    // No text row above the photo (§11): the markers follow the attachment.
+    expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
+    const markers = container.querySelector('[data-slot="message-trailing"]')!;
+    expect(markers).toHaveTextContent("(edited)Pinned");
+    expect(
+      screen
+        .getByTestId("attachments")
+        .compareDocumentPosition(markers) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // Flush with the column, not indented as if it trailed text.
+    expect(markers.parentElement).toHaveClass("[&>span]:ml-0");
   });
 
   it("marks no pin on a deleted message", () => {

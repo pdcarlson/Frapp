@@ -201,7 +201,8 @@ export interface MessageItemProps {
  * follow-on row draws only its body, with its own time held in the avatar
  * gutter until the row is hovered, focused or tapped. The viewer's own name
  * reads "You" in `--accent-text`, which replaced the self bubble's accent fill
- * as the one place a message row takes the chapter accent.
+ * as the way a member spots their own run. (The Pinned marker and the viewer's
+ * reacted chip take the accent too, on anyone's row.)
  *
  * It replaced two §11 bubble shapes, self (right, accent fill, caption below)
  * and incoming (left, card fill, caption above). Everything those carried has a
@@ -522,9 +523,12 @@ export function MessageItem({
         ) : null}
       </span>
     ) : null;
-  // A card draws its own frame, so its markers go on a line under it rather
-  // than into the renderer.
-  const trailingUnderCard = isCardMessage(message) && !message.is_deleted;
+  // A card draws its own frame, and an attachment-only message has no text
+  // line (§11 § What rides the row), so their markers go on a line of their
+  // own under the card or the attachment rather than into the renderer.
+  const trailingOnOwnLine =
+    !message.is_deleted &&
+    (isCardMessage(message) || message.content.trim().length === 0);
 
   const body = (
     <MessageRenderer
@@ -532,7 +536,7 @@ export function MessageItem({
       viewerId={viewerId}
       isConfirmed={isConfirmed}
       onAct={onAct ?? (() => {})}
-      trailing={trailingUnderCard ? undefined : trailing}
+      trailing={trailingOnOwnLine ? undefined : trailing}
       muted={isPending || isFailed}
     />
   );
@@ -896,10 +900,10 @@ export function MessageItem({
             </div>
           ) : null}
           {isEditing ? editForm : body}
-          {trailingUnderCard && trailing ? (
+          {attachments}
+          {trailingOnOwnLine && trailing && !isEditing ? (
             <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
           ) : null}
-          {attachments}
           {reactions}
           {/*
             The delivery state, under the body. Only this line is a live region,

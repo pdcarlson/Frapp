@@ -48,8 +48,8 @@ import { ReplyQuote } from "./reply-quote";
  * follow-on row draws only its body. The runs are decided once, for web and
  * mobile alike, by `@repo/chat-core/grouping`; the thread passes the answer in
  * as `startsRun`. The viewer's own name reads "You" in the chapter's accent
- * text, which replaced the self bubble's accent fill as the one place a
- * message row takes the chapter accent.
+ * text, which replaced the self bubble's accent fill as the way a member spots
+ * their own run. (The Pinned marker takes the accent too, on anyone's row.)
  *
  * A phone has no hover, so a follow-on row shows no time. Long-press opens the
  * actions sheet, whose header says who sent it and when, and a screen reader
@@ -331,8 +331,9 @@ export function MessageRowFrame({
 /**
  * The viewer's own name in the chapter's accent text (`--signet-accent-text`,
  * step 11, the engine's text role). Split out so `useChapterBranding()` is only
- * called for a row the viewer sent: the hook reaches for `FrappClientProvider`,
- * which a row by anyone else has never needed (#1007).
+ * called where the accent is drawn: the hook reaches for `FrappClientProvider`
+ * (#1007), which a row by anyone else needs only when it is pinned
+ * (`PinnedMarker`).
  */
 function SelfName({
   label,
@@ -371,18 +372,19 @@ export function PinnedMarker({
 }
 
 /**
- * The trailing markers under a card, where web draws them too: a card has no
- * text line of its own to trail. Nothing on a deleted card, or one never
- * edited or pinned.
+ * The trailing markers on a line of their own, where web draws them too: under
+ * a card, or under an attachment-only message's photos, since neither has a
+ * text line to trail (§11 § What rides the row). Nothing on a deleted message,
+ * or one never edited or pinned.
  */
-export function CardMarkers({ message }: { message: ChatMessage }) {
+export function OwnLineMarkers({ message }: { message: ChatMessage }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   if (message.is_deleted) return null;
   const edited = showsEditedMarker(message);
   if (!edited && !message.is_pinned) return null;
   return (
-    <Text style={[styles.trailing, styles.cardMarkers]}>
+    <Text style={[styles.trailing, styles.ownLineMarkers]}>
       {edited ? EDITED_MARKER : ""}
       {message.is_pinned ? (
         <PinnedMarker style={styles.trailing} lead={edited} />
@@ -461,11 +463,12 @@ export function MessageItem({
     ) : null;
 
   // `(edited)` and Pinned ride the body's last line on every row, grouped or
-  // not (§11 § What rides the row), and never on a deleted message.
+  // not (§11 § What rides the row), and never on a deleted message. Without a
+  // text line they go on their own line under the photos (`OwnLineMarkers`).
   const edited = showsEditedMarker(message);
   const pinned = message.is_pinned && !message.is_deleted;
   const trailing =
-    edited || pinned ? (
+    hasText && (edited || pinned) ? (
       <Text style={styles.trailing}>
         {edited ? ` ${EDITED_MARKER}` : ""}
         {pinned ? <PinnedMarker style={styles.trailing} /> : null}
@@ -481,8 +484,6 @@ export function MessageItem({
       trailing={trailing}
       onLongPress={onOpenActions}
     />
-  ) : trailing ? (
-    <Text style={styles.body}>{trailing}</Text>
   ) : null;
 
   return (
@@ -503,6 +504,7 @@ export function MessageItem({
         </View>
       ) : null}
       {attachments}
+      {text ? null : <OwnLineMarkers message={message} />}
       <DeliveryLine
         chrome={chrome}
         styles={styles}
@@ -764,7 +766,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    cardMarkers: { marginTop: tokens.spacing.xs },
+    ownLineMarkers: { marginTop: tokens.spacing.xs },
     deleted: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,

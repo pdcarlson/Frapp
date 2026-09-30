@@ -363,6 +363,38 @@ describe("compact layout (#2873)", () => {
     expect(JSON.stringify(pinned.props.style)).toContain('"color":"#C49A3A"');
   });
 
+  it("marks a photo-only message on a line of its own, with no stray separator", () => {
+    const tree = renderItem(
+      message({
+        content: "",
+        attachment_count: 1,
+        is_pinned: true,
+        edited_at: "2026-09-29T17:20:00.000Z",
+      }),
+      undefined,
+      { onOpenActions: vi.fn() },
+    );
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    // `(edited)` leads its own line, and Pinned follows it with the separator.
+    expect(texts).toContainEqual([EDITED_MARKER, expect.anything()]);
+    expect(texts).toContain(" · Pinned");
+    // Still no text row above the photo: only the author line is an action host.
+    expect(actionHosts(tree)).toHaveLength(1);
+  });
+
+  it("marks a pinned photo-only message without a leading separator", () => {
+    const tree = renderItem(
+      message({ content: "", attachment_count: 1, is_pinned: true }),
+    );
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    expect(texts).toContain("Pinned");
+    expect(texts).not.toContain(" · Pinned");
+  });
+
   it("offers no reactions on a deleted message, not even the add chip", () => {
     const flat = JSON.stringify(
       renderItem(

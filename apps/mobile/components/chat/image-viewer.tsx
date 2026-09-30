@@ -53,7 +53,7 @@ import { shareAttachment } from "@/lib/chat/share-attachment";
  * {@link ImageViewer} as the last child of the container it covers, and hides
  * that container from accessibility while it is open. The rows under it reach
  * it through {@link ImageViewerContext} rather than a prop threaded through
- * the row and the bubble.
+ * the row and its body.
  */
 export interface ViewerImage {
   id: string;

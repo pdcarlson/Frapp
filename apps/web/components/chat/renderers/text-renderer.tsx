@@ -32,8 +32,8 @@ interface TextRendererProps {
  * its own line under it, rather than breaking the block.
  *
  * **An attachment-only message draws no body.** Its content is empty, and the
- * old bubble painted an empty rounded box above the image. Only a trailing
- * marker, if the row has one, is left to draw.
+ * old bubble painted an empty rounded box above the image. Its trailing
+ * markers are `MessageItem`'s to draw, on a line under the attachment.
  *
  * Deleted messages render an explicit placeholder so the timeline never shows
  * stale content.
@@ -50,9 +50,7 @@ export function TextRenderer({ message, trailing, muted }: TextRendererProps) {
     );
   }
 
-  if (message.content.trim().length === 0) {
-    return trailing ? <div className="leading-[25px]">{trailing}</div> : null;
-  }
+  if (message.content.trim().length === 0) return null;
 
   return (
     <div

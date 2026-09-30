@@ -112,8 +112,12 @@ export { EYEBROW } from "@/components/ui/typography";
  * Composed with `<Card>` rather than instead of it: `card.tsx` owns the fill,
  * the hairline and the shadow ban, and a message card that hand-rolls them is a
  * card that silently stops following §8 the next time §8 moves.
+ *
+ * `w-fit max-w-full`: a card sizes to its content inside the body column, as
+ * it did in the bubble layout's column, rather than stretching across the
+ * whole thread.
  */
-export const MESSAGE_CARD = "mt-1 rounded-lg p-4";
+export const MESSAGE_CARD = "mt-1 w-fit max-w-full rounded-lg p-4";
 
 /**
  * One icon in the per-message action bar (`components.md` §11 § Per-message

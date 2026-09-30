@@ -220,8 +220,10 @@ count, not a cache count** — the cache holds up to 30 rows
 ([`FIRST_CHUNK_MESSAGE_LIMIT`](../../../apps/web/lib/chat/first-chunk-cache.ts)) and the virtualiser
 renders what fits the default headless window; the network-served warm arm reports the same six. *(Corrected
 2026-09-29: the slot is `[data-slot="message-body"]` since the compact chat layout
-([#2873](https://github.com/pdcarlson/Frapp/issues/2873)), and a compact row is about half a bubble
-row's height, so a re-run under this method counts more rows per viewport than six. The table
+([#2873](https://github.com/pdcarlson/Frapp/issues/2873)), and a compact row is shorter than a bubble
+row: about two-thirds of its height for this method's alternating-sender seed, where every row starts
+a run (derived from the row classes, not measured), so a re-run counts about nine rows per viewport
+rather than six. The table
 records what was measured then.)*
 
 Both arms run in the **same signed-in browser context**, and the cold arm deletes

@@ -276,7 +276,7 @@ export function authorInitialsFallback(author: MessageAuthor): string {
 }
 
 /**
- * The author label on a message's meta line.
+ * The author label on a message's author line.
  *
  * One definition for both platforms and all three surfaces (timeline, thread
  * panel, pins), because the fallback chain is where the null-sender bugs lived:

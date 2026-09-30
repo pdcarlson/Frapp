@@ -79,7 +79,7 @@ export function canActOnMessage(
 
 /**
  * Edit: your own message only, with no `channels:manage` override (unlike
- * delete), and only a plain-text bubble. A card has nothing to edit, and an
+ * delete), and only a plain-text message. A card has nothing to edit, and an
  * imported row is the archive's record of what someone said on Discord.
  *
  * Status is left to `canActOnMessage`, so web's inline editor can keep
@@ -156,7 +156,7 @@ export function channelAllowsReplies(channel: {
   return channel.can_post !== false && !channel.is_read_only;
 }
 
-/** The meta line's marker for a message edited since it was sent. */
+/** The marker trailing a message edited since it was sent (§11 § What rides the row). */
 export const EDITED_MARKER = "(edited)";
 
 /**

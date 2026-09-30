@@ -14,7 +14,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@/lib/chat/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
-import { CardMarkers, MessageItem, MessageRowFrame } from "./message-item";
+import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 
@@ -186,7 +186,7 @@ function ThreadMessageRowBody({
           onOpenActions={openActions}
           onJumpToParent={quote ? onJumpToParent : undefined}
         />
-        <CardMarkers message={message} />
+        <OwnLineMarkers message={message} />
       </MessageRowFrame>
     );
   }

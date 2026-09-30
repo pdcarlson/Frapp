@@ -854,7 +854,7 @@ export default function ChatThreadScreen() {
             </View>
           ) : (
             // The rows reach the image viewer through this, not through a
-            // prop threaded down the row and the bubble.
+            // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
               <FlatList
                 ref={listRef}
@@ -886,7 +886,7 @@ export default function ChatThreadScreen() {
 
           {/*
           react/unreact and inline card actions (poll votes, #528) have no
-          failed-bubble equivalent to render inline — chat-core's rollback of
+          failed-row equivalent to render inline — chat-core's rollback of
           the optimistic state is silent — so this banner is the only report
           of a rejected reaction or vote (#999). `reactionError` takes
           priority since the two can't fire from the same tap; dismissible
@@ -928,7 +928,7 @@ export default function ChatThreadScreen() {
             canSend={canSend && channelCanPost && !staging.isSavingEdit}
             context={staging.context}
             placeholder="Message"
-            // A send that never reached the outbox has no failed bubble to show
+            // A send that never reached the outbox has no failed row to show
             // (nothing was queued), so this line is the only report of it.
             //
             // The offline label is #501's "blocked **or clearly labeled**" half:

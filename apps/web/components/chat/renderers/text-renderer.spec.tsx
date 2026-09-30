@@ -360,11 +360,12 @@ describe("TextRenderer compact body", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("still draws a marker on an attachment-only message that has one", () => {
-    render(
+  it("leaves an attachment-only message's marker to the row", () => {
+    // `MessageItem` draws it on a line under the attachment instead.
+    const { container } = render(
       <TextRenderer message={message("")} trailing={<span>Pinned</span>} />,
     );
-    expect(screen.getByText("Pinned")).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("puts the trailing marker inside the body, after the text", () => {
