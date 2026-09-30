@@ -29,9 +29,9 @@ Interface → Application → Infrastructure → Domain.
 dependency-cruiser enforces this (`npm run check:dep-cruiser -- --workspace apps/api`, rules in
 `scripts/dependency-cruiser.cjs`, required CI check `dependency-cruiser`). It also requires code
 outside `domain/` to import the domain through the `#domain/*` subpath (declared in
-`apps/api/package.json` `imports`), never by a relative `../../domain/...` path. The
-pre-existing violations are grandfathered in `scripts/dependency-cruiser-known-violations.json`.
-That file only shrinks, so any new violation fails.
+`apps/api/package.json` `imports`), never by a relative `../../domain/...` path. Grandfathered
+violations, if any, are recorded in `scripts/dependency-cruiser-known-violations.json` (currently an
+empty list). That file only shrinks, so any new violation fails.
 
 ## Adding a new endpoint
 
