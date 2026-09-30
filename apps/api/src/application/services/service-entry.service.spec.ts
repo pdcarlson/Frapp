@@ -9,6 +9,7 @@ import { ServiceEntryService } from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
+import type { User } from '#domain/entities/user.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -489,7 +490,10 @@ describe('ServiceEntryService', () => {
     it('posts a server-originated hours card when channel + client_message_id are set', async () => {
       mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
       mockUserRepo.findByIds.mockResolvedValue([
-        { id: 'user-1', display_name: 'Alice Member' },
+        {
+          id: 'user-1',
+          display_name: 'Alice Member',
+        } as User,
       ]);
 
       await service.create({
@@ -569,7 +573,10 @@ describe('ServiceEntryService', () => {
       it('reports card_posted: true when the card posts', async () => {
         mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
         mockUserRepo.findByIds.mockResolvedValue([
-          { id: 'user-1', display_name: 'Alice Member' },
+          {
+            id: 'user-1',
+            display_name: 'Alice Member',
+          } as User,
         ]);
 
         const result = await service.create(chatInput);

@@ -49,7 +49,10 @@ import {
   ChannelAccessService,
   ReportedMessageGrant,
 } from './channel-access.service';
-import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
+import type {
+  ChatMessageReportView,
+  ReportedAttachment,
+} from '#domain/entities/chat-moderation.entity';
 import { ChatBlockService } from './chat-block.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
@@ -105,6 +108,7 @@ describe('ChatService', () => {
     chapter_id: 'ch-1',
     role_ids: ['role-1'],
     has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   };
@@ -151,6 +155,8 @@ describe('ChatService', () => {
       leaveGroupDm: jest.fn(),
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
+      findRoleGates: jest.fn(),
+      removeUserFromPrivateChannels: jest.fn(),
     };
 
     mockCategoryRepo = {
@@ -399,7 +405,7 @@ describe('ChatService', () => {
     // asserting the insert shape alone would not prove the channel is readable.
     it('should produce a PRIVATE row its creator can actually read', async () => {
       mockChannelRepo.create.mockImplementation((data) =>
-        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+        Promise.resolve({ ...baseChannel, ...data }),
       );
 
       const created = await service.createChannel(
@@ -425,7 +431,7 @@ describe('ChatService', () => {
     // it readable by another chapter member.
     it('should not make a seeded PRIVATE channel readable by anyone else', async () => {
       mockChannelRepo.create.mockImplementation((data) =>
-        Promise.resolve({ ...baseChannel, ...data } as ChatChannel),
+        Promise.resolve({ ...baseChannel, ...data }),
       );
 
       const created = await service.createChannel(
@@ -2856,14 +2862,15 @@ describe('ChatService', () => {
       external_url: null,
       created_at: '2026-01-01T00:00:00.000Z',
     };
-    const held = {
+    const held: ReportedAttachment = {
       bucket: 'chat',
       storage_path: row.storage_path,
       filename: 'photo.png',
       content_type: 'image/png',
       byte_size: 4096,
     };
-    const archived = {
+    // A backfilled row knows only a path and a filename.
+    const archived: ReportedAttachment = {
       bucket: 'chat-archive',
       storage_path: 'chapters/ch-1/archive/imp/media/a.gif',
       filename: 'a.gif',
@@ -2899,12 +2906,12 @@ describe('ChatService', () => {
       const WINDOW_START = new Date('2026-09-30T11:45:00.000Z');
       const RECENT = '2026-09-30T11:55:00.000Z';
       const STALE = '2026-09-30T09:00:00.000Z';
-      const report = (id: string, ...objects: (typeof held)[]) => ({
+      const report = (id: string, ...objects: ReportedAttachment[]) => ({
         id,
         reported_attachments: objects,
       });
       const holder = (
-        object: typeof held,
+        object: ReportedAttachment,
         heldOpen: boolean,
         pendingSince: string | null,
       ) => ({
@@ -3644,6 +3651,7 @@ describe('ChatService', () => {
       created_at: '2026-01-01T12:05:00.000Z',
       resolved_at: null,
       resolved_by: null,
+      reported_attachments: [],
     };
     const grantFor = (report: ChatMessageReportView = openReport) =>
       ReportedMessageGrant.fromOpenReport(report);
@@ -4059,6 +4067,7 @@ describe('ChatService', () => {
         channel_id: 'ch-chan-1',
         user_id: 'user-1',
         last_read_at: '2026-01-01T12:00:00.000Z',
+        hidden_at: null,
         updated_at: '2026-01-01T12:00:00.000Z',
       });
 
@@ -4482,8 +4491,9 @@ describe('ChatService', () => {
         'user-1',
       );
 
-      expect(result.some((r) => r.kind === 'imported')).toBe(false);
-      expect(result.some((r) => r.kind === 'loading')).toBe(false);
+      const kinds = result.map((r) => r.kind);
+      expect(kinds).not.toContain('imported');
+      expect(kinds).not.toContain('loading');
       expect(result).not.toHaveLength(0);
     });
 
@@ -5008,7 +5018,7 @@ describe('ChatService', () => {
     describe('poll-card vote validation (#871)', () => {
       // The card payload the composer writes (@repo/chat-core/dispatch):
       // options carry ids, and the deadline is `closes_at`.
-      const pollMessage = {
+      const pollMessage: ChatMessage = {
         ...baseMessage,
         kind: 'poll',
         payload: {

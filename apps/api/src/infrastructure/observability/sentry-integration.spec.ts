@@ -4,6 +4,7 @@ import type { ErrorEvent } from '@sentry/nestjs';
 import Stripe from 'stripe';
 import { buildSentryOptions } from './sentry-options';
 import { scrubSentryEvent } from './sentry-scrubbing';
+import { reportSwallowed } from './report-swallowed';
 
 /**
  * End-to-end wiring test for the **real** Sentry SDK (issue #682).
@@ -130,7 +131,8 @@ describe('Sentry SDK integration', () => {
    * Only `event`-type items carry the error payloads this file asserts on.
    */
   function eventsFromEnvelope(envelope: unknown): ErrorEvent[] {
-    return itemsFromEnvelope(envelope, 'event') as ErrorEvent[];
+    // Parsed JSON: the SDK's own serialised events.
+    return itemsFromEnvelope(envelope, 'event') as unknown as ErrorEvent[];
   }
 
   function itemsFromEnvelope(
@@ -307,32 +309,46 @@ describe('Sentry SDK integration', () => {
     });
   });
 
-  it('ships captureException through beforeSend with scope tags applied', async () => {
-    Sentry.withScope((scope) => {
-      scope.setTag('request_id', 'req-integration-1');
-      scope.setTag('status_code', '500');
-      Sentry.captureException(new Error('integration failure'));
-    });
+  // Through `reportSwallowed`, the one shape every API report takes (#1739):
+  // a single capture call carrying its level, tags, user and fingerprint as a
+  // `ScopeContext`, not a `withScope` fork. These prove the SDK applies that
+  // context to the event and `beforeSend` lets each part through.
+  const silent = { error: () => undefined, warn: () => undefined };
+
+  it('ships a reported exception through beforeSend with its tags and fingerprint applied', async () => {
+    reportSwallowed(silent, 'a 500', () => ({
+      error: { code: 'PGRST205', message: 'integration failure' },
+      level: 'error',
+      tags: { request_id: 'req-integration-1', status_code: '500' },
+    }));
     await Sentry.flush(2000);
 
     expect(sent).toHaveLength(1);
     const [event] = sent;
-    expect(event.exception?.values?.[0]?.value).toBe('integration failure');
+    expect(event.exception?.values?.[0]?.value).toBe(
+      'PGRST205: integration failure',
+    );
+    expect(event.level).toBe('error');
     expect(event.tags).toMatchObject({
       request_id: 'req-integration-1',
       status_code: '500',
     });
+    expect(event.fingerprint).toEqual([
+      '{{ default }}',
+      'NonErrorThrowable:PGRST205',
+    ]);
   });
 
-  it('ships captureMessage with its text, level and user intact', async () => {
+  it('ships a reported message with its text, level, user and fingerprint intact', async () => {
     const pseudonym = 'a'.repeat(64);
     const text = 'Auth failure spike: 12 failures from one origin';
-    Sentry.withScope((scope) => {
-      scope.setLevel('warning');
-      scope.setTag('security_event', 'auth_failure_spike');
-      scope.setUser({ id: pseudonym });
-      Sentry.captureMessage(text);
-    });
+    reportSwallowed(silent, 'the spike', () => ({
+      message: text,
+      level: 'warning',
+      tags: { security_event: 'auth_failure_spike' },
+      user: { id: pseudonym },
+      fingerprint: ['auth-failure-spike'],
+    }));
     await Sentry.flush(2000);
 
     // Length matters as much as content: a scrubber that returns `null` for
@@ -346,6 +362,7 @@ describe('Sentry SDK integration', () => {
     expect(event.level).toBe('warning');
     expect(event.tags).toMatchObject({ security_event: 'auth_failure_spike' });
     expect(event.user?.id).toBe(pseudonym);
+    expect(event.fingerprint).toEqual(['auth-failure-spike']);
   });
 
   it('ships no cookie, secret header, query string or body from the request', async () => {

@@ -1,4 +1,5 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, type RawBodyRequest } from '@nestjs/common';
+import type { NextFunction, Request, Response } from 'express';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -38,10 +39,12 @@ describe('Billing webhook (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
-    app.use((req, _res, next) => {
-      req.rawBody = Buffer.from(JSON.stringify(req.body ?? {}));
-      next();
-    });
+    app.use(
+      (req: RawBodyRequest<Request>, _res: Response, next: NextFunction) => {
+        req.rawBody = Buffer.from(JSON.stringify(req.body ?? {}));
+        next();
+      },
+    );
     await app.init();
   });
 

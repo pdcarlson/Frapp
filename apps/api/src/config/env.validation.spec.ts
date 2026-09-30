@@ -61,7 +61,7 @@ describe('validateEnv', () => {
     'STRIPE_SECRET_KEY',
     'STRIPE_WEBHOOK_SECRET',
     'STRIPE_PRICE_ID',
-  ])('throws naming %s when it is absent', (name) => {
+  ] as const)('throws naming %s when it is absent', (name) => {
     const { [name]: _omitted, ...missing } = complete;
     expect(() => validateEnv(missing)).toThrow(
       `Missing required environment variables: ${name}`,
