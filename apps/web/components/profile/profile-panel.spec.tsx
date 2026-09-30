@@ -25,12 +25,17 @@ const mocks = vi.hoisted(() => {
     settingsData: undefined as Record<string, unknown> | undefined,
     updateSettingsMutateAsync: vi.fn(),
     toast: vi.fn(),
+    photoControl: vi.fn<
+      (props: { hasPhoto: boolean; disabled?: boolean }) => null
+    >(() => null),
     // `fetchStatus` and `isLoading` are read by the state branches the #920
     // Profile & pre-auth slice added; the fixtures below drive them per test.
     userQuery: {
-      data: { id: "u-1", email: "member@example.com", display_name: "Member" } as
-        | Record<string, unknown>
-        | undefined,
+      data: {
+        id: "u-1",
+        email: "member@example.com",
+        display_name: "Member",
+      } as Record<string, unknown> | undefined,
       isPending: false,
       isLoading: false,
       isError: false,
@@ -86,6 +91,12 @@ vi.mock("@/components/profile/blocked-members-card", () => ({
 // (`discord-history-card.spec.tsx`) and reads hooks this file does not mock.
 vi.mock("@/components/profile/discord-history-card", () => ({
   DiscordHistoryCard: () => null,
+}));
+// Likewise the photo control (`profile-photo-control.spec.tsx`), though it
+// records its props: whether the panel disables it offline is the panel's job.
+vi.mock("@/components/profile/profile-photo-control", () => ({
+  ProfilePhotoControl: (props: { hasPhoto: boolean; disabled?: boolean }) =>
+    mocks.photoControl(props),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -289,7 +300,9 @@ describe("ProfilePanel — draft survives an optimistic rollback (#312)", () => 
   });
 
   it("keeps the member's edits when a failed save rolls the cache back", async () => {
-    mocks.updateSettingsMutateAsync.mockRejectedValue(new Error("Network down"));
+    mocks.updateSettingsMutateAsync.mockRejectedValue(
+      new Error("Network down"),
+    );
     const { rerender } = render(<ProfilePanel />);
 
     const start = await screen.findByDisplayValue("22:00");
@@ -392,6 +405,20 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
     expect(screen.getByDisplayValue("22:00")).toBeInTheDocument();
   });
 
+  it("disables the photo control offline, and only offline", () => {
+    mockOffline.value = true;
+    const { rerender } = render(<ProfilePanel />);
+    expect(mocks.photoControl).toHaveBeenLastCalledWith(
+      expect.objectContaining({ disabled: true }),
+    );
+
+    mockOffline.value = false;
+    rerender(<ProfilePanel />);
+    expect(mocks.photoControl).toHaveBeenLastCalledWith(
+      expect.objectContaining({ disabled: false }),
+    );
+  });
+
   it("keeps the drafts when a BACKGROUND refetch fails", async () => {
     /*
      * The defect this branch replaces, and the reason it is not a style
@@ -421,8 +448,30 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
     // The data is still there — that is what a background failure looks like.
     rerender(<ProfilePanel />);
 
-    expect(screen.queryByText(/couldn't load your profile/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't load your profile/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByDisplayValue("Half-typed name")).toBeInTheDocument();
+  });
+
+  it("keeps an unsaved edit when a photo change refetches the profile (#732)", async () => {
+    const { rerender } = render(<ProfilePanel />);
+    const name = screen.getByLabelText("Display name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Half-typed name");
+
+    // What `useConfirmAvatar`'s invalidation lands: a new payload whose only
+    // change is the photo, while the member is mid-edit.
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      bio: "Set elsewhere",
+      avatar_url: "https://signed/photo",
+    };
+    rerender(<ProfilePanel />);
+
+    expect(screen.getByDisplayValue("Half-typed name")).toBeInTheDocument();
+    // A field the member never touched still follows the server.
+    expect(screen.getByDisplayValue("Set elsewhere")).toBeInTheDocument();
   });
 
   it("still fails closed when the fetch failed and nothing is cached", () => {
@@ -448,7 +497,9 @@ describe("ProfilePanel — the Preferences card has its own states", () => {
     mocks.settingsQuery.isError = true;
     render(<ProfilePanel />);
 
-    expect(screen.getByText(/couldn't load your preferences/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/couldn't load your preferences/i),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /save preferences/i }),
     ).not.toBeInTheDocument();
@@ -463,8 +514,12 @@ describe("ProfilePanel — the Preferences card has its own states", () => {
     mocks.settingsQuery.fetchStatus = "paused";
     render(<ProfilePanel />);
 
-    expect(screen.getByText(/quiet hours unavailable offline/i)).toBeInTheDocument();
-    expect(screen.queryByText(/couldn't load your preferences/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/quiet hours unavailable offline/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't load your preferences/i),
+    ).not.toBeInTheDocument();
   });
 
   it("leaves the screen-scale announcement to the top-level state", () => {
@@ -824,7 +879,9 @@ describe("ProfilePanel — notification categories (#564)", () => {
     await waitFor(() => {
       expect(mocks.toast).toHaveBeenCalledTimes(2);
     });
-    const titles = mocks.toast.mock.calls.map((call) => call[0].title).join("\n");
+    const titles = mocks.toast.mock.calls
+      .map((call) => call[0].title)
+      .join("\n");
     expect(titles).toMatch(/points/i);
     expect(titles).toMatch(/billing/i);
   });
@@ -954,9 +1011,9 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.preferencesQuery.data = [];
     render(<ProfilePanel />);
 
-    expect(
-      categorySwitch(/^chat$/i).getAttribute("aria-describedby"),
-    ).toBe("notification-category-chat-description");
+    expect(categorySwitch(/^chat$/i).getAttribute("aria-describedby")).toBe(
+      "notification-category-chat-description",
+    );
   });
 
   // The store initialises to `activeChapterId: null`, so before rehydration —

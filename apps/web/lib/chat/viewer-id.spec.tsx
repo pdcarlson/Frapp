@@ -72,6 +72,7 @@ const VIEWER = "11111111-1111-4111-8111-111111111111";
 const ALICE = "22222222-2222-4222-8222-222222222222";
 
 const nameFor = (id: string) => (id === ALICE ? "Alice Chen" : null);
+const avatarFor = (): string | null => null;
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -184,6 +185,7 @@ describe("a warm timeline painted from the cached id alone", () => {
         viewerId={viewerId}
         {...timelineBlockProps(messages, viewerId)}
         nameFor={nameFor}
+        avatarFor={avatarFor}
         isLoading={false}
         loadError={null}
         onReact={vi.fn()}

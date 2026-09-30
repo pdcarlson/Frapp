@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { MemberService } from './member.service';
+import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
@@ -41,7 +42,11 @@ describe('MemberService', () => {
     getAlumniRoleId: jest.Mock;
   };
   let mockAuditLogService: AuditLogServiceMock;
-  let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
+  let mockStorageProvider: {
+    listFiles: jest.Mock;
+    deleteFiles: jest.Mock;
+    getSignedDownloadUrls: jest.Mock;
+  };
   let mockChannelRepo: { removeUserFromPrivateChannels: jest.Mock };
   let mockChannelCache: { invalidate: jest.Mock };
 
@@ -101,6 +106,9 @@ describe('MemberService', () => {
     mockStorageProvider = {
       listFiles: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn().mockResolvedValue(undefined),
+      getSignedDownloadUrls: jest.fn(async (_bucket: string, paths: string[]) =>
+        Object.fromEntries(paths.map((path) => [path, `signed:${path}`])),
+      ),
     };
     mockChannelRepo = {
       removeUserFromPrivateChannels: jest.fn().mockResolvedValue([]),
@@ -110,6 +118,9 @@ describe('MemberService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MemberService,
+        // Real, over the storage mock, so the read tests pin what a client
+        // actually receives in `avatar_url`.
+        ProfilePhotoUrlService,
         { provide: MEMBER_REPOSITORY, useValue: mockRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
@@ -230,7 +241,7 @@ describe('MemberService', () => {
         {
           id: 'user-2',
           display_name: 'Dana Lowe',
-          avatar_url: 'https://example.test/a.png',
+          avatar_url: 'chapters/chapter-1/profiles/user-2/a.png',
         },
       ]);
 
@@ -241,9 +252,31 @@ describe('MemberService', () => {
         {
           user_id: 'user-2',
           display_name: 'Dana Lowe',
-          avatar_url: 'https://example.test/a.png',
+          avatar_url: 'signed:chapters/chapter-1/profiles/user-2/a.png',
         },
       ]);
+    });
+
+    it("signs each member's own uploaded photo and drops a path into someone else's folder (#732)", async () => {
+      const own = 'chapters/chapter-1/profiles/user-1/p.jpg';
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1'),
+        memberRow('user-2'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: own },
+        { id: 'user-2', display_name: 'Dana Lowe', avatar_url: own },
+      ]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result.map((entry) => entry.avatar_url)).toEqual([
+        `signed:${own}`,
+        null,
+      ]);
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
+        1,
+      );
     });
 
     it('reads through the narrow projection, never the full user row', async () => {
@@ -1098,6 +1131,34 @@ describe('MemberService', () => {
       });
     });
 
+    it("serves the member's uploaded photo as a signed URL (#732)", async () => {
+      const path = 'chapters/chapter-1/profiles/user-1/p.png';
+      mockRepo.findById.mockResolvedValue({
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'chapter-1',
+        role_ids: [],
+        custom_role_ids: [],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@b.c',
+        display_name: 'A',
+        avatar_url: path,
+      });
+
+      const result = await service.findProfileById(
+        'member-1',
+        'chapter-1',
+        'viewer-1',
+      );
+
+      expect(result.avatar_url).toBe(`signed:${path}`);
+    });
+
     it('passes the viewer-allowed visibility set to the custom-field lookup', async () => {
       const member = {
         id: 'member-1',
@@ -1474,6 +1535,77 @@ describe('MemberService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('member-1');
+    });
+  });
+
+  // #732: every public member read hands clients a signed URL, never the bare
+  // private-bucket path, which renders nothing. One case per read, so dropping
+  // the signing from any one of them fails here.
+  describe('every member read signs the stored photo path', () => {
+    const PHOTO = 'chapters/chapter-1/profiles/user-1/p.jpg';
+    const member = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'chapter-1',
+      role_ids: ['role-alumni'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    const user = {
+      id: 'user-1',
+      supabase_auth_id: 'auth-1',
+      email: 'ann@example.com',
+      display_name: 'Ann Lee',
+      avatar_url: PHOTO,
+      bio: null,
+      graduation_year: 2020,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+
+    beforeEach(() => {
+      mockRepo.findByChapter.mockResolvedValue([member]);
+      mockUserRepo.findByIds.mockResolvedValue([user]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Ann Lee', avatar_url: PHOTO },
+      ]);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
+        id: 'role-alumni',
+        chapter_id: 'chapter-1',
+        name: 'Alumni',
+        permissions: [],
+        is_system: true,
+        display_order: 5,
+        color: null,
+        created_at: '2024-01-01',
+      });
+    });
+
+    it.each([
+      [
+        'the directory (findByChapter)',
+        () => service.findByChapter('chapter-1'),
+      ],
+      [
+        'the activity feed roster (findRosterWithJoinDates)',
+        () => service.findRosterWithJoinDates('chapter-1'),
+      ],
+      [
+        'search (searchByChapterAndName)',
+        () => service.searchByChapterAndName('chapter-1', 'ann', 'viewer-1'),
+      ],
+      [
+        'the alumni directory (findAlumniByChapter)',
+        () => service.findAlumniByChapter('chapter-1'),
+      ],
+    ])('%s', async (_label, read) => {
+      const rows = await read();
+
+      expect(rows.map((row) => row.avatar_url)).toEqual([`signed:${PHOTO}`]);
     });
   });
 

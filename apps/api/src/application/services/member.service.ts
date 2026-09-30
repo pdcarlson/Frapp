@@ -22,6 +22,7 @@ import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { allowedVisibilities } from './custom-field-visibility';
 import type { MemberCustomFieldValue } from '#domain/entities/chapter-custom-field.entity';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
@@ -107,6 +108,7 @@ export class MemberService {
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
     private readonly channelCache: ChannelCacheService,
+    private readonly photoUrls: ProfilePhotoUrlService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<MemberSummary[]> {
@@ -120,7 +122,7 @@ export class MemberService {
     ]);
     const userMap = new Map(users.map((user) => [user.id, user]));
 
-    return members.map((member) => {
+    const profiles = members.map((member) => {
       const user = userMap.get(member.user_id);
       if (!user) {
         throw new NotFoundException(
@@ -129,6 +131,7 @@ export class MemberService {
       }
       return this.mergeMemberWithUser(member, user, alumniRoleId);
     });
+    return this.photoUrls.signRows(profiles, (profile) => profile.user_id);
   }
 
   async findProfilesByChapter(chapterId: string): Promise<MemberProfile[]> {
@@ -173,7 +176,7 @@ export class MemberService {
         avatar_url: user.avatar_url,
       });
     }
-    return roster;
+    return this.photoUrls.signRows(roster, (entry) => entry.user_id);
   }
 
   /**
@@ -211,7 +214,7 @@ export class MemberService {
         joined_at: member.created_at,
       });
     }
-    return roster;
+    return this.photoUrls.signRows(roster, (entry) => entry.user_id);
   }
 
   async findByUserAndChapter(
@@ -511,10 +514,13 @@ export class MemberService {
         allowed,
       );
 
-    return {
-      ...this.mergeMemberWithUser(member, user, alumniRoleId),
-      custom_fields: customFields,
-    };
+    return this.photoUrls.signRow(
+      {
+        ...this.mergeMemberWithUser(member, user, alumniRoleId),
+        custom_fields: customFields,
+      },
+      member.user_id,
+    );
   }
 
   /**
@@ -568,7 +574,7 @@ export class MemberService {
         results.push(this.mergeMemberWithUser(member, user, alumniRoleId));
       }
     }
-    return results;
+    return this.photoUrls.signRows(results, (profile) => profile.user_id);
   }
 
   /**
@@ -655,7 +661,7 @@ export class MemberService {
         results.push(this.mergeMemberWithUser(member, user, alumniRoleId));
       }
     }
-    return results;
+    return this.photoUrls.signRows(results, (profile) => profile.user_id);
   }
 
   private matchesUserFilter(user: User, filter?: AlumniFilter): boolean {
@@ -681,6 +687,11 @@ export class MemberService {
     return true;
   }
 
+  /**
+   * Carries the stored `avatar_url` through unsigned. Every public read above
+   * passes its result through `photoUrls` before returning it, because the
+   * `profiles` bucket is private and a bare path renders nothing.
+   */
   private mergeMemberWithUser(
     member: Member,
     user: User,
