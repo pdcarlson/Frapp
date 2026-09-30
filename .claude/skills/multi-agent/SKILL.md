@@ -66,15 +66,6 @@ from the `"effort"` field in subagent transcripts:
   gain, because at those levels Opus 5.5 thinks more per turn and runs long turns. To get less
   thinking, lower the level rather than prompting for it. `/effort <level>` can also save the level
   as the default for new sessions, and its reply says whether it did.
-- **This repo's default is `high`** for any session launched without an effort of its own, set in
-  `.claude/settings.json` (Paul, 2026-09-30; the key and what outranks it:
-  [`agent-infra.md` § Claude Code project settings](../../../docs/ci-cd/agent-infra.md#claude-code-project-settings)).
-  Cloud launches can carry their own. Observed on 2026-09-30: this repo's resumed cloud session
-  was started with `--effort xhigh`, and a card launched in the cloud on a checkout already
-  carrying the `high` key ran at `xhigh` (its launch arguments weren't inspected). Where the cloud
-  launcher's level comes from, and whether every cloud launch passes one, isn't known. The CLI's
-  `CLAUDE_EFFORT` variable only reports the level of the agent whose shell reads it; it sets
-  nothing. How a suggested-task card picks a level: [`handoff`](../handoff/SKILL.md).
 - **To check what ran**, read the transcripts. They live in
   `~/.claude/projects/<cwd-slug>/<session-id>/subagents/`, with workflow agents under
   `workflows/<runId>/`: `grep -o '"effort":"[a-z]*"' agent-*.jsonl | sort | uniq -c`.
