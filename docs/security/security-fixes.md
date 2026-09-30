@@ -520,7 +520,10 @@ CORS** — a second review pass caught that this would have silently broken ever
 to this API even with a matching `Access-Control-Allow-Origin`, because `app.frapp.live` and
 `api.frapp.live` are different origins (`CORS_OPTIONS` / `enableCors()` in
 `configureApp()`, which allowlists `*.frapp.live` plus the local dev ports with
-`credentials: true` — this API is cross-origin by design, not by accident). `supertest` never enforces
+`credentials: true` — this API is cross-origin by design, not by accident). **Correction
+(2026-09-30):** the allowlist is now exact origins per deployment (`corsOptionsFor` in
+`cors.options.ts`): production admits only `https://app.frapp.live`, so it no longer trusts the
+staging dashboard or any other `*.frapp.live` host (#2507). `supertest` never enforces
 CORP, so nothing in the test suite would have caught this before a real browser did. `HELMET_OPTIONS`
 sets `crossOriginResourcePolicy: { policy: 'cross-origin' }`; the actual authorization boundary stays
 CORS plus bearer auth, which this header does not touch. Every other Helmet default (frameguard,

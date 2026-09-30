@@ -196,7 +196,9 @@ describe('configureApp', () => {
     });
 
     afterAll(async () => {
-      await Promise.all([...apps.values()].map((configured) => configured.close()));
+      await Promise.all(
+        [...apps.values()].map((configured) => configured.close()),
+      );
     });
 
     const allowOrigin = async (
@@ -358,9 +360,7 @@ describe('configureApp', () => {
         )
         .expect(200);
 
-      expect(res.headers['access-control-allow-origin']).toBe(
-        DASHBOARD_ORIGIN,
-      );
+      expect(res.headers['access-control-allow-origin']).toBe(DASHBOARD_ORIGIN);
       expect(res.headers['x-request-id']).toMatch(/^req_[0-9a-f-]{36}$/);
       expect(res.headers['x-request-id']).not.toContain('cccccccc');
     });

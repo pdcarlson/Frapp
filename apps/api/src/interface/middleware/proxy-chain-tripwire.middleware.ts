@@ -40,14 +40,17 @@ export function createProxyChainTripwire(trustedHops: number) {
         const message = `trust proxy is ${trustedHops} hops, but a request arrived with a ${xffCount}-entry X-Forwarded-For chain. req.ip is client-controlled until the hop count is re-measured (#2972).`;
         logger.error(message);
         try {
-          Sentry.captureMessage('trust proxy hop count exceeds the forwarded chain', {
-            level: 'error',
-            tags: {
-              trust_proxy_hops: String(trustedHops),
-              xff_count: String(xffCount),
+          Sentry.captureMessage(
+            'trust proxy hop count exceeds the forwarded chain',
+            {
+              level: 'error',
+              tags: {
+                trust_proxy_hops: String(trustedHops),
+                xff_count: String(xffCount),
+              },
+              fingerprint: ['trust-proxy-hop-count'],
             },
-            fingerprint: ['trust-proxy-hop-count'],
-          });
+          );
         } catch (error) {
           // The log line above already carries the finding.
           logger.warn(

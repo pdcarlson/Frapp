@@ -110,7 +110,9 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
         { provide: SUPABASE_CLIENT, useValue: { channel: realtime.channel } },
         {
           provide: USER_REPOSITORY,
-          useValue: { findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]) },
+          useValue: {
+            findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]),
+          },
         },
         { provide: MEMBER_REPOSITORY, useValue: { findByChapter } },
         { provide: NotificationService, useValue: { notifyUser } },
@@ -121,7 +123,9 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
         { provide: ChatPushDispatchRepository, useValue: { claim } },
         {
           provide: RbacService,
-          useValue: { getEffectivePermissions: jest.fn().mockResolvedValue([]) },
+          useValue: {
+            getEffectivePermissions: jest.fn().mockResolvedValue([]),
+          },
         },
         {
           provide: ChatBlockService,
@@ -328,14 +332,18 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
 
     beforeEach(() => {
       spans = [];
-      jest.mocked(Sentry.startSpan).mockImplementation(((
-        options: Record<string, unknown>,
-        callback: (span: { setAttributes: jest.Mock }) => unknown,
-      ) => {
-        const span = { setAttributes: jest.fn() };
-        spans.push({ options, setAttributes: span.setAttributes });
-        return callback(span);
-      }) as unknown as typeof Sentry.startSpan);
+      jest
+        .mocked(Sentry.startSpan)
+        .mockImplementation(
+          (
+            options: Record<string, unknown>,
+            callback: (span: { setAttributes: jest.Mock }) => unknown,
+          ) => {
+            const span = { setAttributes: jest.fn() };
+            spans.push({ options, setAttributes: span.setAttributes });
+            return callback(span);
+          },
+        );
       claim.mockResolvedValue('claimed');
       worker.__setChannelForTest(CHANNEL);
       findByChapter.mockResolvedValue(

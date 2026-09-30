@@ -117,12 +117,17 @@ digest 07).
   a fan-out latency span that makes ADR-09's watermark measurable. *(Updated 2026-09-30: the first
   two shipped with #2846. The push worker claims each message in `chat_push_dispatches`, and the
   bridge posts each mirror under a `client_message_id` unique per audit row. The presence cap and
-  the fan-out span are still open under #2507.)* The full stateless refactor, with
+  the fan-out span are still open under #2507.)* *(2026-09-30: both shipped under #2507. Each
+  replica keeps at most 80 presence channels, and each claimed fan-out is a `chat.push.fanout`
+  Sentry transaction.)* The full stateless refactor, with
   scheduler-triggered sweeps, enqueued push and runtime web config, waits for #2524. It will amend
   ADR-08, ADR-09 and ADR-10 when it lands.
 - **Moving hosts later means re-measuring proxy hops.** `TRUST_PROXY_HOPS = 3` in
   `apps/api/src/bootstrap.ts` was measured for Render's proxy chain, so any new ingress (Cloud Run, a
-  Cloudflare proxy) must re-measure it. The in-memory throttler and auth-failure counters divide by
+  Cloudflare proxy) must re-measure it. *(2026-09-30: it was measured on staging only, and
+  production's Render chain turned out one hop shorter. The count is now per deployment, 2 in
+  production and 3 on staging, and a deployed process reports a chain shorter than its count
+  (#2972). A plan change on the same host can move it too.)* The in-memory throttler and auth-failure counters divide by
   the number of instances.
 - **The lockstep release pin goes** (#2506). The ledger and a compatibility matrix replace
   `production-release-pin.yml`, so mixed SHAs across surfaces become normal.
