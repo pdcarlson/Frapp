@@ -38,8 +38,9 @@ const REFUSED = {
 };
 
 /**
- * What `ChapterGuard` throws when an officer has switched `hours` off, as the
- * filter sends it: no `code` (#1020), so only the message identifies it.
+ * What `ChapterGuard` throws when an officer has switched `hours` off, without
+ * its `code`, so only the message identifies it: the path installed builds and
+ * an API older than #1020 rely on.
  */
 const MODULE_OFF = {
   statusCode: 403,

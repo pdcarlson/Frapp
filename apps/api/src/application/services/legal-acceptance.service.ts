@@ -101,8 +101,8 @@ export class LegalAcceptanceService {
     if (accepting) return this.accept(userId);
     const status = toStatus(await this.load(userId));
     if (status.required) {
-      // Both keys, but only the message reaches a client today: the global
-      // filter drops `code` (#1020), so clients match the shared message.
+      // Both reach the client (#1020). `isTermsRequiredError` checks the code
+      // first and keeps the shared message as its fallback.
       throw new ForbiddenException({
         code: LEGAL_ACCEPTANCE_REQUIRED_CODE,
         message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,

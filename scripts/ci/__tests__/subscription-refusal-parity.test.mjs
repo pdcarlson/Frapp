@@ -11,10 +11,10 @@
 //
 // WHY THE DISCRIMINATOR IS PROSE, AND WHY THAT NEEDS A LOCK.
 // `ChapterGuard.enforceSubscription` throws `ForbiddenException({code, message})`,
-// but `AllExceptionsFilter` serialises exactly `{statusCode, error, message,
-// requestId}` — `code` is dropped on every response (#1020). So `codeOf` is
-// `null` in production and the message is the only discriminator that reaches
-// a client. That makes the client's behaviour depend on four English strings
+// but until #1020 `AllExceptionsFilter` dropped `code`, so the message was the
+// only discriminator that reached a client. The code arrives now, and reading it
+// first is #2995, but installed builds and an API that predates #1020 still
+// depend on the message. That makes the client's behaviour depend on four English strings
 // living in two files, with nothing previously asserting they match. Reword
 // one side and the refusal silently stops being recognised — the member gets
 // the retry-forever bug back, and every unit test still passes because they
@@ -427,13 +427,9 @@ test("the mobile detector requires both the 403 and an exact message", () => {
     /subscriptionRefusalFromServerMessage\(serverMessageOf\(error\)\)/,
     "the detector no longer reads the server message",
   );
-  // `codeOf` is `null` on every real response. A detector using it typechecks,
-  // returns null forever, and silently reopens #2297.
-  assert.doesNotMatch(
-    detector,
-    /codeOf/,
-    `${DETECTOR} must not branch on codeOf — AllExceptionsFilter drops it (#1020)`,
-  );
+  // Reading `codeOf` first is fine since #1020 (#2995), but a detector keyed on
+  // it alone meets an API that predates #1020, returns null, and reopens #2297.
+  // The message match asserted above is what keeps the fallback in place.
 });
 
 test("the study refusal branch sits above the arms that relay the server string", () => {

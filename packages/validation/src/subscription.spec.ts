@@ -139,12 +139,13 @@ describe("subscriptionWriteState", () => {
 
 describe("subscriptionRefusalFromServerMessage", () => {
   /**
-   * The messages this matches are the only thing that survives the wire.
-   * `AllExceptionsFilter` serialises `{statusCode, error, message, requestId}`
-   * and drops the `code` the guard throws (#1020), so a client branching on
-   * `codeOf` gets `null` for every real response. #2297 is the bug that
-   * caused: three mobile write surfaces read a permanent subscription refusal
-   * as an ordinary save failure and invited a retry that cannot win.
+   * Until #1020 these messages were the only thing that survived the wire:
+   * `AllExceptionsFilter` dropped the `code` the guard throws, so a client
+   * branching on `codeOf` got `null` for every real response. #2297 is the bug
+   * that caused: three mobile write surfaces read a permanent subscription
+   * refusal as an ordinary save failure and invited a retry that cannot win.
+   * Installed builds still match these messages, so they stay the fallback
+   * when clients move to the code first (#2995).
    */
   it("recognises all four refusals the guard can throw", () => {
     const messages = [
