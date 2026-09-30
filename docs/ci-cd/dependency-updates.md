@@ -1,6 +1,6 @@
 # Dependency updates (Dependabot)
 
-Facts for Dependabot's schedule and grouping, the rule behind its ignore list, the write-ups behind several ignore entries, and the dependency-tree traps they guard against. The full ignore list is [`.github/dependabot.yml`](../../.github/dependabot.yml), where every entry sits under a comment giving its reason; an entry with no section here (the NestJS 12 hold, the `postcss` pin) is explained only there. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
+Facts for Dependabot's schedule and grouping, the npm it resolves the lockfile with, the rule behind its ignore list, the write-ups behind several ignore entries, and the dependency-tree traps they guard against. The full ignore list is [`.github/dependabot.yml`](../../.github/dependabot.yml), where every entry sits under a comment giving its reason; an entry with no section here (the NestJS 12 hold, the `postcss` pin) is explained only there. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
 
 Config: [`.github/dependabot.yml`](../../.github/dependabot.yml). This is the automated half of
 the supply-chain story; the blocking half is `npm run check:npm-audit` ([`agent-infra.md` → Lint, test, build](agent-infra.md#lint-test-build-repo-root)), which fails CI on any
@@ -68,7 +68,7 @@ with. On 2026-09-30 that was npm 11.19.0 with Node 24.21.0 (the "Environment det
 `setup-node` in CI run 36733233631). The pin is fixed and CI's Node floats, so the two drift apart
 whenever the runner's Node 24 moves to a newer npm, and nothing flags it.
 `scripts/ci/__tests__/package-manager-pin.test.mjs` fails only a pin that isn't an exact `npm@x.y.z`
-or is below 11.19.0.
+(corepack's `+sha512.<hex>` suffix allowed) or is below the test's `FLOOR`.
 
 Before moving the pin, replay a bump from `main` with `npx npm@<candidate> install <pkg>@<version>
 --workspace=<ws> --force --ignore-scripts --package-lock-only`. The lockfile diff must be that bump

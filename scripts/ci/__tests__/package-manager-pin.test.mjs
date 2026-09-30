@@ -21,7 +21,7 @@ import test from "node:test";
  * caused. The floor is the lowest npm checked by replaying Dependabot's own commands.
  * Move it up when the pin moves, and don't lower it without that replay.
  *
- * Docs: `docs/ci-cd/agent-infra.md` § Dependabot resolves with the root
+ * Docs: `docs/ci-cd/dependency-updates.md` § Dependabot resolves with the root
  * `packageManager` npm.
  */
 
@@ -35,6 +35,9 @@ function pin() {
   return packageManager;
 }
 
+// corepack also accepts, and `corepack use` writes, a `+sha512.<hex>` integrity suffix.
+const PIN = /^npm@(\d+)\.(\d+)\.(\d+)(?:\+sha\d+\.[0-9a-f]+)?$/;
+
 function compare(a, b) {
   for (let i = 0; i < 3; i++) {
     if (a[i] !== b[i]) return a[i] - b[i];
@@ -46,20 +49,23 @@ test("packageManager names an exact npm version, the form corepack installs", ()
   const value = pin();
   assert.match(
     String(value),
-    /^npm@\d+\.\d+\.\d+$/,
+    PIN,
     `root package.json packageManager is ${JSON.stringify(value)}; Dependabot runs ` +
-      "`corepack npm@<pin>`, which needs an exact `npm@x.y.z`.",
+      "`corepack npm@<pin>`, and turbo can't parse a range or tag, so it must be " +
+      "an exact `npm@x.y.z`, optionally with corepack's `+sha512.<hex>` suffix.",
   );
 });
 
 test("packageManager is not below the npm verified to keep the lockfile intact", () => {
   const value = String(pin());
-  const version = value.replace(/^npm@/, "").split(".").map(Number);
+  const match = PIN.exec(value);
+  assert.ok(match, `root package.json packageManager is ${JSON.stringify(value)}`);
+  const version = match.slice(1, 4).map(Number);
   assert.ok(
     compare(version, FLOOR) >= 0,
     `root package.json pins ${value}, below npm@${FLOOR.join(".")}. Dependabot ` +
       "re-resolves with this npm; older npm 11 releases drop @emnapi/* entries or " +
-      "libc fields and break `npm ci`. See docs/ci-cd/agent-infra.md § Dependabot " +
-      "resolves with the root `packageManager` npm.",
+      "libc fields and break `npm ci`. See docs/ci-cd/dependency-updates.md § " +
+      "Dependabot resolves with the root `packageManager` npm.",
   );
 });
