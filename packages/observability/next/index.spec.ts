@@ -8,6 +8,7 @@ describe("@repo/observability/next public API", () => {
   it("exports anonymous builders and no identity APIs", () => {
     expect(typeof next.buildAnonymousBrowserSentryOptions).toBe("function");
     expect(typeof next.buildAnonymousServerSentryOptions).toBe("function");
+    expect(typeof next.sentryEnvelopeScrubIntegration).toBe("function");
     expect(typeof next.buildAnonymousPostHogBrowserOptions).toBe("function");
     expect(typeof next.attachAnonymousPostHogCorrelation).toBe("function");
     expect(typeof next.withAnonymousPostHogSentryCorrelation).toBe(
