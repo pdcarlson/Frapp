@@ -92,6 +92,12 @@ export const POLL_DEGRADE_AFTER_MS = 10_000;
 /** Poll cadence once degraded — Receiving messages: "Poll every 5s for new messages". */
 export const POLL_INTERVAL_MS = 5_000;
 
+/**
+ * Nobody typing: what `getTypingUsers` returns for a channel nobody holds, and
+ * what a hook shows with no channel open. One identity, never mutated.
+ */
+export const NO_TYPING_USERS: readonly string[] = Object.freeze([]);
+
 export interface BackfillFetcher {
   (channelId: string, sinceMessageId: string | null): Promise<RawChatMessage[]>;
 }
@@ -145,6 +151,11 @@ interface PerChannelState {
   backoffStep: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
   typingUsers: Map<string, number>; // userId → expires-at ms
+  /**
+   * The list `getTypingUsers` last returned for this channel, handed back
+   * again while the membership is unchanged. See `getTypingUsers`.
+   */
+  typingSnapshot: readonly string[];
   typingLastEmit: number;
   /**
    * Ticket for the in-flight attach. Freeing an occupied topic is async, so two
@@ -173,7 +184,13 @@ class ChatRealtimeManager {
   /** Guards against overlapping poll passes on a slow connection. */
   private pollInFlight = false;
 
+  /**
+   * Binds the manager to a client, and may be called again without `destroy()`
+   * to rebind it: both clients re-configure when the viewer resolves or
+   * changes, and neither tears the manager down to do it (#3002).
+   */
   configure(ctx: ManagerContext): void {
+    const previous = this.ctx;
     this.ctx = ctx;
     this.ensureActionsChannel();
     this.ensureTypingTick();
@@ -187,6 +204,46 @@ class ChatRealtimeManager {
     this.netUnsub = net.subscribe((online) =>
       online ? this.handleOnline() : this.handleOffline(),
     );
+
+    /*
+      What a (re)configure owes the channels already subscribed (#3002):
+
+      - One subscribed while the manager had no `ctx`, before the first
+        `configure` or since a `destroy()`, gets its attach. `attachChannel`
+        returned at its `ctx` guard before taking a ticket, so `attachSeq` is
+        still 0 and the channel sat in `joining` with nothing scheduled. React
+        runs a child's effects before its parent's, so a thread's `subscribe`
+        runs before the provider's `configure` on any mount where the channel
+        is already known.
+      - A viewer that has only just resolved is told to presence. Nothing
+        else changed: the session that joined is this viewer's own, and web
+        joins before `GET /v1/users/me` answers on most cold loads. A joined
+        channel tracks them now (ADR-10: the push worker reads presence to
+        skip members reading the thread); one still joining reads the viewer
+        when its SUBSCRIBED lands (`trackViewer`).
+      - A different viewer gets every channel rejoined. A private channel's
+        join was authorised for the session that made it
+        (`can_read_chat_channel`), so re-tracking presence on it would keep
+        another member's authorisation behind this one's identity.
+
+      `reopenChannel` takes a fresh ticket, so an attach already in flight
+      for the same channel installs nothing.
+    */
+    const before = previous ? (previous.viewerId ?? null) : null;
+    const after = ctx.viewerId ?? null;
+    for (const state of this.channels.values()) {
+      if (state.attachSeq === 0) {
+        this.reopenChannel(state);
+      } else if (previous === null || before === after) {
+        continue;
+      } else if (before === null) {
+        if (state.status === "live" && state.channel) {
+          this.trackViewer(state.channel);
+        }
+      } else {
+        this.reopenChannel(state);
+      }
+    }
   }
 
   destroy(): void {
@@ -226,6 +283,7 @@ class ChatRealtimeManager {
       backoffStep: 0,
       retryTimer: null,
       typingUsers: new Map(),
+      typingSnapshot: NO_TYPING_USERS,
       typingLastEmit: 0,
       attachSeq: 0,
     };
@@ -274,15 +332,36 @@ class ChatRealtimeManager {
     });
   }
 
-  getTypingUsers(channelId: string): string[] {
+  /**
+   * Who is typing in `channelId` now, in the order they started.
+   *
+   * The same array comes back for as long as that list is unchanged, so a
+   * client holding it in React state bails out of the re-render (`Object.is`)
+   * on every status ping that carries no typing change for this channel:
+   * another channel's typing broadcast, a typist re-announcing, an expiry
+   * sweep elsewhere, an attach or a connection transition. The typing line
+   * rides the status listeners (`emitStatus`), so without this every one of
+   * those re-rendered each client's whole thread. Mobile's hook used to
+   * compare membership itself and web's never did (#1004); here it holds for
+   * every caller.
+   */
+  getTypingUsers(channelId: string): readonly string[] {
     const state = this.channels.get(channelId);
-    if (!state) return [];
+    if (!state) return NO_TYPING_USERS;
     const now = Date.now();
-    const out: string[] = [];
+    const live: string[] = [];
     for (const [user, expires] of state.typingUsers) {
-      if (expires > now) out.push(user);
+      if (expires > now) live.push(user);
     }
-    return out;
+    const previous = state.typingSnapshot;
+    if (
+      live.length === previous.length &&
+      live.every((userId, index) => userId === previous[index])
+    ) {
+      return previous;
+    }
+    state.typingSnapshot = live.length === 0 ? NO_TYPING_USERS : live;
+    return state.typingSnapshot;
   }
 
   // ─── internals ──────────────────────────────────────────────────────────
@@ -537,7 +616,6 @@ class ChatRealtimeManager {
     });
 
     state.channel = channel;
-    const viewerId = this.ctx?.viewerId ?? null;
     channel.subscribe((subscribeStatus) => {
       // A channel we have since replaced can still deliver a late status —
       // notably `CLOSED` from its own teardown, which would otherwise book a
@@ -550,13 +628,7 @@ class ChatRealtimeManager {
           clearTimeout(state.retryTimer);
           state.retryTimer = null;
         }
-        // ADR-10: track the viewer in this channel's presence map so the
-        // push worker can skip them on the same topic. `track` is fire-and
-        // -forget; a failure here is harmless (worst case is one extra
-        // push) so we intentionally swallow.
-        if (viewerId) {
-          void channel.track({ userId: viewerId, ts: Date.now() });
-        }
+        this.trackViewer(channel);
         // Single gate for backfill — runs on both the initial join's first
         // SUBSCRIBED and every subsequent SUBSCRIBED after reconnect.
         void this.runBackfill(state.channelId);
@@ -571,6 +643,18 @@ class ChatRealtimeManager {
         this.emitStatus();
       }
     });
+  }
+
+  /**
+   * ADR-10: puts the viewer in this channel's presence map so the push worker
+   * can skip them on the same topic. The viewer is read now, not when the
+   * channel was installed, so a join that lands after the viewer resolved
+   * tracks them (#3002). `track` is fire-and-forget; a failure here is
+   * harmless (worst case is one extra push), so it is not awaited.
+   */
+  private trackViewer(channel: RealtimeChannel): void {
+    const viewerId = this.ctx?.viewerId ?? null;
+    if (viewerId) void channel.track({ userId: viewerId, ts: Date.now() });
   }
 
   private reopenChannel(state: PerChannelState): void {
@@ -598,8 +682,9 @@ class ChatRealtimeManager {
   /**
    * `destroy()` removes the actions channel fire-and-forget and `configure()`
    * re-creates it on the same topic immediately after, so a remount races its
-   * own teardown exactly like `openChannel` did. `ChatProvider`'s effect deps
-   * include `apiClient`/`userId`, so this re-fires on ordinary re-auth.
+   * own teardown exactly like `openChannel` did. Every `ChatProvider` remount
+   * does this, StrictMode's simulated one included; a re-auth re-configures
+   * without a `destroy()` since #3002, and keeps the channel it has.
    */
   private ensureActionsChannel(): void {
     if (!this.ctx) return;

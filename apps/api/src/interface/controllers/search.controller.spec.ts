@@ -2,13 +2,17 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import type { Response } from 'express';
 import { SearchController } from './search.controller';
-import { SearchService } from '../../application/services/search.service';
+import {
+  SearchService,
+  type SearchResult,
+} from '../../application/services/search.service';
+import type { Event } from '#domain/entities/event.entity';
 
 describe('SearchController', () => {
   let controller: SearchController;
   let searchService: jest.Mocked<Pick<SearchService, 'searchWithinBudget'>>;
 
-  const emptyResult = {
+  const emptyResult: SearchResult = {
     backwork: [],
     events: [],
     members: [],
@@ -34,7 +38,7 @@ describe('SearchController', () => {
   });
 
   it('returns the service results and does not set the header on a normal search', async () => {
-    const results = { ...emptyResult, events: [{ id: 'ev-1' }] };
+    const results = { ...emptyResult, events: [{ id: 'ev-1' } as Event] };
     searchService.searchWithinBudget.mockResolvedValue({
       results,
       timedOut: false,

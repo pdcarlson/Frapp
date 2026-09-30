@@ -45,11 +45,8 @@ describe('buildSentryOptions — Node tracer ownership', () => {
 
   it('does not collect incoming request bodies on HTTP spans', () => {
     expect(SENTRY_HTTP_INTEGRATION_OPTIONS.maxRequestBodySize).toBe('none');
-    expect(
-      SENTRY_HTTP_INTEGRATION_OPTIONS.ignoreRequestBody('/health', {
-        method: 'GET',
-      }),
-    ).toBe(true);
+    // It takes no arguments, so it ignores every request the SDK asks about.
+    expect(SENTRY_HTTP_INTEGRATION_OPTIONS.ignoreRequestBody()).toBe(true);
   });
 
   it('does not copy headers onto fetch span attributes', () => {
@@ -92,7 +89,7 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     // `withSafeSentryIntegrations` matches nothing and the unconfigured
     // default ships silently. This is the test that notices. The synthetic
     // list above cannot, because it spells the names itself.
-    const defaults = Sentry.getDefaultIntegrations({});
+    const defaults = Sentry.getDefaultIntegrations({})!;
     const out = withSafeSentryIntegrations(defaults);
     const names = defaults.map((integration) => integration.name);
     for (const name of SENTRY_REPLACED_INTEGRATION_NAMES) {
@@ -112,7 +109,7 @@ describe('buildSentryOptions — Node tracer ownership', () => {
     // the integration that ships it (#2131). `sentry-integration.spec.ts`
     // proves what it ships; this proves production still installs it.
     const names = withSafeSentryIntegrations(
-      Sentry.getDefaultIntegrations({}),
+      Sentry.getDefaultIntegrations({})!,
     ).map((integration) => integration.name);
     expect(names).toContain('LinkedErrors');
   });

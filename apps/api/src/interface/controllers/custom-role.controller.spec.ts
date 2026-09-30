@@ -11,7 +11,9 @@ import {
 
 describe('CustomRoleController', () => {
   let controller: CustomRoleController;
-  let service: jest.Mocked<CustomRoleService>;
+  let service: jest.Mocked<
+    Pick<CustomRoleService, 'findByChapter' | 'create' | 'update' | 'remove'>
+  >;
 
   beforeEach(async () => {
     service = {

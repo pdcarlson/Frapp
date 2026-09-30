@@ -386,9 +386,9 @@ describe('DiscordImportService — upload URLs', () => {
       ),
     );
 
-    const caught = await service
+    const caught = (await service
       .requestUploadUrls(IMPORT_ID, CHAPTER, [file()])
-      .catch((error: Error) => error);
+      .catch((error: unknown) => error)) as Error;
 
     expect(caught.message).toMatch(/limit for one import/);
     expect(caught.message).not.toMatch(/--media/);
@@ -747,7 +747,7 @@ describe('DiscordImportService — lifecycle guards', () => {
   it('refuses to change a running import', async () => {
     await build(job({ status: 'running' }));
     await expect(
-      service.setRoleMapping(IMPORT_ID, CHAPTER, []),
+      service.setRoleMapping(IMPORT_ID, CHAPTER, [], true),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 

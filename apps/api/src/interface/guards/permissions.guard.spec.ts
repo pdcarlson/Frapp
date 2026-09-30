@@ -57,7 +57,7 @@ describe('PermissionsGuard', () => {
     mockFrom.mockImplementation((table: string) => {
       let matched: Array<RoleRow | CustomRoleRow> =
         table === 'chapter_custom_roles' ? customRows : rows;
-      const chain = {
+      const chain: Record<string, unknown> = {
         select: jest.fn(() => chain),
         in: jest.fn((column: 'id', values: string[]) => {
           matched = matched.filter((row) => values.includes(row[column]));
@@ -374,7 +374,7 @@ describe('PermissionsGuard', () => {
       // terminal 403 — that would present an outage as an authorization state.
       mockPermissionMetadata({ handlerRequire: ['events:create'] });
       mockFrom.mockImplementation((table: string) => {
-        const chain = {
+        const chain: Record<string, unknown> = {
           select: jest.fn(() => chain),
           in: jest.fn(() => chain),
           eq: jest.fn(() => chain),

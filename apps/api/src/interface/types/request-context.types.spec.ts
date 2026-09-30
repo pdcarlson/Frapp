@@ -2,9 +2,25 @@ import {
   getOptionalChapterId,
   type RequestContext,
 } from './request-context.types';
+import type { JwtPayload } from '@supabase/supabase-js';
 
 const CHAPTER_A = '11111111-1111-4111-8111-111111111111';
 const CHAPTER_B = '22222222-2222-4222-8222-222222222222';
+
+/** A signed-in access token whose custom claim names `chapterId`. */
+function claims(chapterId: string): JwtPayload {
+  return {
+    iss: 'https://project.supabase.co/auth/v1',
+    sub: 'auth-user-1',
+    aud: 'authenticated',
+    exp: 2_000_000_000,
+    iat: 1_900_000_000,
+    role: 'authenticated',
+    aal: 'aal1',
+    session_id: 'session-1',
+    active_chapter_id: chapterId,
+  };
+}
 
 function request(
   overrides: Partial<
@@ -32,7 +48,7 @@ describe('getOptionalChapterId', () => {
     expect(
       getOptionalChapterId(
         request({
-          jwtClaims: { active_chapter_id: CHAPTER_A },
+          jwtClaims: claims(CHAPTER_A),
           headers: { 'x-chapter-id': CHAPTER_B },
         }),
       ),
@@ -44,7 +60,7 @@ describe('getOptionalChapterId', () => {
       getOptionalChapterId(
         request({
           chapterId: CHAPTER_A,
-          jwtClaims: { active_chapter_id: CHAPTER_B },
+          jwtClaims: claims(CHAPTER_B),
           headers: { 'x-chapter-id': CHAPTER_B },
         }),
       ),
@@ -55,7 +71,7 @@ describe('getOptionalChapterId', () => {
     expect(() =>
       getOptionalChapterId(
         request({
-          jwtClaims: { active_chapter_id: CHAPTER_A },
+          jwtClaims: claims(CHAPTER_A),
           headers: { 'x-chapter-id': CHAPTER_B },
         }),
       ),

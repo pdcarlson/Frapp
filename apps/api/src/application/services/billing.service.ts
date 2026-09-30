@@ -6,7 +6,6 @@ import {
   BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import * as Sentry from '@sentry/nestjs';
 import {
   BILLING_PROVIDER,
   chargeIdFromLatestCharge,
@@ -43,6 +42,7 @@ import { ActivationService } from './activation.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { pseudonymizeChapterId } from '../../infrastructure/observability/pseudonyms';
+import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 
 export interface CreateCheckoutInput {
   chapterId: string;
@@ -583,9 +583,8 @@ export class BillingService {
    * **Why it is louder than the `warn` it replaces.** Acking is right; being
    * *quiet* about it was the defect. The same branch also covers "a paid
    * checkout completed and the chapter was never activated", and at `warn` that
-   * was indistinguishable from the benign cross-environment case. This follows
-   * `discord-oauth.service.ts`'s `captureSwallowed`: *"a swallowed failure has
-   * to report itself."*
+   * was indistinguishable from the benign cross-environment case. A swallowed
+   * failure has to report itself, which is what `reportSwallowed` is for.
    */
   private reportUnknownChapterCheckout(
     event: WebhookEvent,
@@ -674,28 +673,20 @@ export class BillingService {
     if (!this.shouldReportUnknownRef(refKey)) return;
 
     // Never let a reporting failure change the webhook's outcome: the ack is
-    // the correct result with or without Sentry. Same posture as the
-    // security-event emitter in AllExceptionsFilter.
-    try {
-      const tags: Record<string, string> = {
-        billing_event: kind,
-        stripe_event_type: event.type,
-        stripe_event_id: event.id,
-      };
+    // the correct result with or without Sentry.
+    reportSwallowed(this.logger, `${kind} ${event.id}`, () => {
       const chapterHash = pseudonymizeChapterId(chapterId);
-      if (chapterHash) tags.chapter = chapterHash;
-
-      Sentry.captureMessage(
-        `${event.type} for a chapter this database does not have`,
-        { level: 'error', tags },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Sentry report failed for ${kind} ${event.id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+      return {
+        message: `${event.type} for a chapter this database does not have`,
+        level: 'error',
+        tags: {
+          billing_event: kind,
+          stripe_event_type: event.type,
+          stripe_event_id: event.id,
+          ...(chapterHash ? { chapter: chapterHash } : {}),
+        },
+      };
+    });
   }
 
   /** True when this reference has not been reported inside the cooldown. */
