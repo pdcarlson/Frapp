@@ -577,9 +577,13 @@ channel that reports a different one fails the import rather than being skipped.
   in one is a thread, and they inherit the forum's choice.
 - **A bot that cannot read message content fails loudly.** Without Discord's
   Message Content Intent the API gets HTTP 200 with empty content on every
-  message. The import counts authored messages with nothing in them and stops
-  with an error naming the fix, rather than writing a chapter's whole history as
-  empty bubbles — which would look like success.
+  message. Before it writes anything, the import asks Discord whether the intent
+  is on and stops with an error naming the fix if it isn't, rather than writing a
+  chapter's whole history as empty bubbles, which would look like success. When
+  Discord can't answer that, a count of blank messages is the only guard: it
+  stops an archive that comes back blank at scale, not a small one, and its error
+  says how many messages it had already written. What each check covers is in
+  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md) § 7A.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.
