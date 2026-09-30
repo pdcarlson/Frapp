@@ -26,7 +26,7 @@ import {
   resolveAlertConfig,
   runDeployAlert,
 } from "../deploy-alert.mjs";
-import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL, defineAlert, isDefinedAlert } from "../lib/alert-issue.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Two kinds of config are used here, and they must not be confused.
@@ -49,7 +49,7 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
  *
  * Its title is deliberately NOT one of `DEPLOY_STAGING_CONFIG`'s retired
  * titles, so it can stand for "another watchdog's live alert" in the isolation
- * tests. It declares no `retiredAlertTitles` on purpose: a config without one
+ * tests. It declares no `retiredAlerts` on purpose: a config without one
  * must still resolve.
  */
 const API_SHAPED_CONFIG = {
@@ -61,8 +61,10 @@ const API_SHAPED_CONFIG = {
   gateOutputRows: [],
   planOutput: { job: "deploy-staging", output: "plan" },
   closesOn: "a later stand-in run for `main`'s tip deploys successfully",
-  alertTitle: "API-shaped stand-in is failing — test fixture only",
-  alertLabels: [ALERT_LOOKUP_LABEL, "area:ci", "P3"],
+  alert: defineAlert({
+    title: "API-shaped stand-in is failing — test fixture only",
+    labels: ["area:ci", "P3"],
+  }),
   noOpReason: "no migrate or deploy job ran",
   noOpIsUnexpected: true,
   noOpNote: "Neither `migrate-staging` nor `deploy-staging` ran. (Stand-in note.)",
@@ -81,7 +83,7 @@ const GATED_CONFIG = {
   name: "gated-stand-in",
   workflowLabel: "Gated stand-in",
   workflowFile: ".github/workflows/gated-stand-in.yml",
-  alertTitle: "Gated stand-in is failing — test fixture only",
+  alert: defineAlert({ title: "Gated stand-in is failing — test fixture only", labels: ["area:ci", "P3"] }),
   noOpIsUnexpected: false,
   noOpReason: "the changed-path gate skipped every migrate and deploy job",
   noOpNote: "The changed-path gate found nothing to deploy. See issue #763.",
@@ -162,8 +164,8 @@ function alertIssue(number, title, state = "open") {
   return { number, title, state };
 }
 
-const OPEN_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alertTitle);
-const CLOSED_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alertTitle, "closed");
+const OPEN_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alert.title);
+const CLOSED_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alert.title, "closed");
 
 /**
  * Minimal GitHub API stub. Every issues lookup answers with `issues` (the
@@ -241,16 +243,16 @@ test("the staging alert's title and priority are pinned, and the titles it repla
   // old titles stay listed so a successful run still closes an issue left open
   // under either; dropping or editing one strands that issue for good.
   assert.equal(
-    DEPLOY_STAGING_CONFIG.alertTitle,
+    DEPLOY_STAGING_CONFIG.alert.title,
     "Deploy staging is failing — merges are not reaching staging",
   );
-  assert.deepEqual(DEPLOY_STAGING_CONFIG.retiredAlertTitles, [
+  assert.deepEqual(DEPLOY_STAGING_CONFIG.retiredAlerts.map((alert) => alert.title), [
     "Deploy API is failing — pushes are not reaching the environment",
     "Deploy Vercel staging is failing — web and landing are not reaching staging",
   ]);
   // P1, the level Deploy API used (owner decision on #2803): the frontends
   // ship only behind a verified API, so a failure anywhere stops staging.
-  assert.deepEqual(DEPLOY_STAGING_CONFIG.alertLabels, [ALERT_LOOKUP_LABEL, "area:ci", "P1"]);
+  assert.deepEqual(DEPLOY_STAGING_CONFIG.alert.labels, [ALERT_LOOKUP_LABEL, "area:ci", "P1"]);
 });
 
 // ── readJobResults ──────────────────────────────────────────────────────────
@@ -439,7 +441,7 @@ test("findAlertIssues ignores pull requests and foreign titles, retired ones inc
   // or reopen an issue that watched a workflow that no longer exists.
   const { fetchImpl } = makeFetchStub({
     issues: [
-      { number: 1, title: DEPLOY_STAGING_CONFIG.alertTitle, state: "open", pull_request: {} },
+      { number: 1, title: DEPLOY_STAGING_CONFIG.alert.title, state: "open", pull_request: {} },
       { number: 2, title: "Something else", state: "open" },
       alertIssue(3, RETIRED_API_TITLE),
       OPEN_ALERT,
@@ -475,8 +477,8 @@ test("raiseAlert creates the issue when none exists, with the incident label and
 
   assert.deepEqual(result, { action: "created", issueNumber: 901 });
   const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
-  assert.deepEqual(create.body.labels, DEPLOY_STAGING_CONFIG.alertLabels);
+  assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alert.title);
+  assert.deepEqual(create.body.labels, DEPLOY_STAGING_CONFIG.alert.labels);
   // The lookup label is what keeps /next from claiming this as backlog work.
   assert.ok(create.body.labels.includes(ALERT_LOOKUP_LABEL));
   assert.deepEqual(create.body.assignees, [ALERT_ASSIGNEE]);
@@ -595,7 +597,7 @@ test("a successful run closes an issue still open under a retired title, as repl
     assert.match(comment, /^\*\*Replaced by Deploy staging, which succeeded\.\*\* Closing\./);
     assert.doesNotMatch(comment, /recovered/i);
     assert.ok(comment.includes("`.github/workflows/deploy-staging.yml`"), title);
-    assert.ok(comment.includes(DEPLOY_STAGING_CONFIG.alertTitle), title);
+    assert.ok(comment.includes(DEPLOY_STAGING_CONFIG.alert.title), title);
   }
 });
 
@@ -710,7 +712,7 @@ test("a failed run never touches a retired-title issue", async () => {
     assert.equal(result.outcome, "failed");
     assert.deepEqual(result.alert, { action: "created", issueNumber: 901 });
     const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-    assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
+    assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alert.title);
     assert.ok(
       !calls.some((c) => /\/issues\/96[01](\/|$)/.test(c.path)),
       "no call may touch a retired-title issue",
@@ -784,7 +786,7 @@ test("a no-op run never closes an open alert", async () => {
   // deploys work, so closing here would silence a live outage. Under a path
   // gate, no-op runs were the MAJORITY (46 of 90 in #763).
   const { fetchImpl, calls } = makeFetchStub({
-    issues: [alertIssue(900, GATED_CONFIG.alertTitle)],
+    issues: [alertIssue(900, GATED_CONFIG.alert.title)],
   });
   const { logger, lines } = capturingLogger();
   let summary = "";
@@ -922,32 +924,35 @@ test("the retired config names are refused, not resolved to their replacement", 
 test("no two configurations share an alert issue identity", () => {
   // Title is the lookup key. If any two ever matched, one watchdog's green run
   // would close the other's live outage alert.
-  const titles = Object.values(ALERT_CONFIGS).map((config) => config.alertTitle);
+  const titles = Object.values(ALERT_CONFIGS).map((config) => config.alert.title);
   assert.equal(new Set(titles).size, titles.length);
 
   // Nor may a live title also be a retired one, a config's own or another's.
   // resolveAlert closes every retired title's open issue on success, so a
   // config retiring a title another config still raises would close that
   // watchdog's open incident with a "replaced" comment.
-  const retired = Object.values(ALERT_CONFIGS).flatMap((config) => config.retiredAlertTitles ?? []);
+  const retired = Object.values(ALERT_CONFIGS).flatMap((config) =>
+    (config.retiredAlerts ?? []).map((alert) => alert.title),
+  );
   for (const title of titles) {
     assert.ok(!retired.includes(title), `live title is also retired: ${title}`);
   }
 
-  // Every config declares the lookup label. This asserts CONFIG SHAPE, not
-  // findability: `lib/alert-issue.mjs` forces `lookupLabel` into the created
-  // label set precisely so a caller cannot omit it, and that forcing — not
-  // this assertion — is what guarantees an alert can be found again. Do not
-  // read this test as making that belt-and-braces redundant.
+  // Every identity, live or retired, was made by `defineAlert`, which is what
+  // puts the lookup label on it: the lib refuses any other shape, so a config
+  // can't carry a hand-built identity that files an issue its lookup misses.
   for (const config of Object.values(ALERT_CONFIGS)) {
-    assert.ok(config.alertLabels.includes(ALERT_LOOKUP_LABEL), `${config.name} lookup label`);
+    for (const alert of [config.alert, ...config.retiredAlerts]) {
+      assert.ok(isDefinedAlert(alert), `${config.name}: ${alert?.title}`);
+    }
+    assert.ok(config.alert.labels.includes(ALERT_LOOKUP_LABEL), `${config.name} lookup label`);
   }
 
   // The stand-ins' titles are neither a live nor a retired title, or the
   // isolation tests below, which use them as "another watchdog's alert",
   // would pass vacuously.
   for (const standIn of [API_SHAPED_CONFIG, GATED_CONFIG]) {
-    assert.ok(![...titles, ...retired].includes(standIn.alertTitle), standIn.name);
+    assert.ok(![...titles, ...retired].includes(standIn.alert.title), standIn.name);
   }
 });
 
@@ -1095,14 +1100,14 @@ test("runDeployAlert files each config's alert under its own title, labels and b
     assert.equal(result.alert.action, "created", config.name);
 
     const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
-    assert.equal(created.body.title, config.alertTitle);
-    assert.notEqual(created.body.title, other.alertTitle);
-    assert.deepEqual(created.body.labels, config.alertLabels, config.name);
+    assert.equal(created.body.title, config.alert.title);
+    assert.notEqual(created.body.title, other.alert.title);
+    assert.deepEqual(created.body.labels, config.alert.labels, config.name);
     assert.ok(created.body.labels.includes(ALERT_LOOKUP_LABEL), config.name);
     assert.ok(created.body.labels.includes(priority), `${config.name} is ${priority}`);
     assert.ok(summary.startsWith(`## ${config.workflowLabel} outcome`), config.name);
 
-    // The BODY too, not just the title. `raiseAlert` passes `config.alertTitle`
+    // The BODY too, not just the title. `raiseAlert` passes `config.alert.title`
     // to the library directly but builds the body through a closure, so those
     // two can disagree: dropping `config` from the closure yields an issue
     // titled for one config whose body opens "## Deploy staging is failing" and
@@ -1120,9 +1125,9 @@ test("a recovered run closes only its own alert, never another config's", async 
   // stand-in retires nothing, so it must leave that issue alone as well: a
   // retired title belongs to the config that replaced it, not to every config.
   const issues = [
-    alertIssue(950, DEPLOY_STAGING_CONFIG.alertTitle),
-    alertIssue(951, API_SHAPED_CONFIG.alertTitle),
-    alertIssue(952, DEPLOY_PRODUCTION_CONFIG.alertTitle),
+    alertIssue(950, DEPLOY_STAGING_CONFIG.alert.title),
+    alertIssue(951, API_SHAPED_CONFIG.alert.title),
+    alertIssue(952, DEPLOY_PRODUCTION_CONFIG.alert.title),
     alertIssue(960, RETIRED_API_TITLE),
   ];
   const cases = [
@@ -1181,7 +1186,7 @@ test("a gateless config escalates 'nothing ran' to a failure, not a benign no-op
   });
   assert.equal(result.alert.action, "created");
   const created = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(created.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
+  assert.equal(created.body.title, DEPLOY_STAGING_CONFIG.alert.title);
 });
 
 test("the gated config keeps a no-op benign, and never closes an open alert", async () => {
@@ -1194,7 +1199,7 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
   assert.equal(classify(apiShapedNoOpNeeds(), GATED_CONFIG).outcome, "no-op");
 
   const { fetchImpl, calls } = makeFetchStub({
-    issues: [alertIssue(900, GATED_CONFIG.alertTitle)],
+    issues: [alertIssue(900, GATED_CONFIG.alert.title)],
   });
   const result = await runDeployAlert({
     ...RUN,
@@ -1224,7 +1229,7 @@ test("a SECOND failure comments as its own config, never as another", async () =
     { config: API_SHAPED_CONFIG, needs: apiShapedFailedNeeds(), other: DEPLOY_STAGING_CONFIG },
   ];
   for (const { config, needs, other } of cases) {
-    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alertTitle)] });
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alert.title)] });
 
     const result = await runDeployAlert({
       ...RUN,
@@ -1251,7 +1256,7 @@ test("a reopened alert names its own config in the reopen comment", async () => 
   ];
   for (const { config, needs, other } of cases) {
     const { fetchImpl, calls } = makeFetchStub({
-      issues: [alertIssue(950, config.alertTitle, "closed")],
+      issues: [alertIssue(950, config.alert.title, "closed")],
     });
 
     const result = await runDeployAlert({
@@ -1284,7 +1289,7 @@ test("the recovery comment names its own config, never another", async () => {
     { config: API_SHAPED_CONFIG, needs: apiShapedDeployedNeeds(), other: DEPLOY_STAGING_CONFIG },
   ];
   for (const { config, needs, other } of cases) {
-    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alertTitle)] });
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alert.title)] });
 
     await runDeployAlert({
       ...RUN,
@@ -1628,7 +1633,7 @@ test("a stale plan on one of several jobs is superseded even with a sibling job 
   // API shape, where #2505 found it): `migrate-staging` succeeding must not
   // turn a `stale` run into a deploy that closes the alert.
   const { fetchImpl, calls } = makeFetchStub({
-    issues: [alertIssue(951, API_SHAPED_CONFIG.alertTitle)],
+    issues: [alertIssue(951, API_SHAPED_CONFIG.alert.title)],
   });
   const result = await runDeployAlert({
     ...RUN,

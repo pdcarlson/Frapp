@@ -85,30 +85,28 @@ import { appendFileSync } from "node:fs";
 
 import {
   ALERT_LOOKUP_LABEL,
-  findAlertIssues as findAlertIssuesByTitle,
+  defineAlert,
+  findAlertIssues as findAlertIssuesByIdentity,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
+  selectAlertConfig,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-
-// ── Alert issue identity ────────────────────────────────────────────────────
-// Title is the primary key: it is looked up by exact match, so it must stay
-// stable across releases. The lookup label comes from lib/alert-issue.mjs,
-// which owns it for every watchdog and says what it does.
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 
 // ── Alert configurations ────────────────────────────────────────────────────
 // One entry per watched deploy workflow. A config is the complete answer to
 // "which jobs am I reading, and which alert issue am I upserting" — everything
 // workflow-specific in this file reads from here, and nothing else does.
 //
-// ⚠️ `alertTitle` is the issue LOOKUP KEY, matched by exact string. Renaming
-// one orphans whatever alert issue is currently open under the old title: it
-// could never be found again, and so would never self-close. So a config that
-// replaces another lists the old title in `retiredAlertTitles`, and a
-// successful run closes an issue still open under it (#2803).
+// Each config's `alert` is its issue identity, made by lib/alert-issue.mjs's
+// `defineAlert`, which also supplies the lookup label. ⚠️ Its title is the
+// issue LOOKUP KEY, matched by exact string. Renaming one orphans whatever
+// alert issue is currently open under the old title: it could never be found
+// again, and so would never self-close. So a config that replaces another
+// lists the old identity in `retiredAlerts`, and a successful run closes an
+// issue still open under it (#2803).
 
 /**
  * `.github/workflows/deploy-staging.yml`, the one staging deploy since #2803:
@@ -140,7 +138,7 @@ export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
  *             is about a non-tip commit, so a green one neither raises nor
  *             closes the alert; a failed one raises it like any failure.
  *
- * `retiredAlertTitles` are the two old configs' titles. A successful run
+ * `retiredAlerts` are the two old configs' identities. A successful run
  * closes an issue still open under either, so neither is orphaned by the
  * rename (titles are lookup keys; see the note above `DEPLOY_STAGING_CONFIG`).
  */
@@ -155,11 +153,15 @@ export const DEPLOY_STAGING_CONFIG = {
   // What the alert issue tells its reader closes it. Not "a later successful
   // deploy": a `forward` deploy succeeds without closing it.
   closesOn: "a later run for `main`'s tip deploys successfully or finds the API up to date",
-  alertTitle: "Deploy staging is failing — merges are not reaching staging",
-  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
-  retiredAlertTitles: [
-    "Deploy API is failing — pushes are not reaching the environment",
-    "Deploy Vercel staging is failing — web and landing are not reaching staging",
+  alert: defineAlert({
+    title: "Deploy staging is failing — merges are not reaching staging",
+    labels: ["area:ci", "P1"],
+  }),
+  retiredAlerts: [
+    defineAlert({ title: "Deploy API is failing — pushes are not reaching the environment" }),
+    defineAlert({
+      title: "Deploy Vercel staging is failing — web and landing are not reaching staging",
+    }),
   ],
   noOpReason: "the deploy job did not run",
   // The `deploy-outcome` job carries the same conditions as `deploy`, so
@@ -216,9 +218,11 @@ export const DEPLOY_PRODUCTION_CONFIG = {
   gateOutputRows: [],
   planOutput: null,
   closesOn: "a later real `full` Deploy production run ships successfully",
-  alertTitle: "Deploy production failed — production may be partly deployed",
-  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
-  retiredAlertTitles: [],
+  alert: defineAlert({
+    title: "Deploy production failed — production may be partly deployed",
+    labels: ["area:ci", "P1"],
+  }),
+  retiredAlerts: [],
   // A deploy job that never ran a step changed nothing, so it isn't an
   // outage. Its display name as the jobs API lists it: the caller job's
   // `name:`, then ` / deploy` once the call to `_deploy.yml` expands.
@@ -280,28 +284,16 @@ export const OUTCOME_COPY = {
 export const DEFAULT_ALERT_CONFIG = DEPLOY_STAGING_CONFIG;
 
 /**
- * Throws on a missing OR unknown name. A mis-wired workflow must be loud.
- *
- * An ABSENT name throws for the same reason an unknown one does, and this is
- * the more likely mistake: another deploy workflow copying a `deploy-outcome`
+ * Throws on a missing OR unknown name, through lib/alert-issue.mjs's
+ * `selectAlertConfig`. A mis-wired workflow must be loud, and an ABSENT name is
+ * the likelier mistake: another deploy workflow copying a `deploy-outcome`
  * block and dropping the `ALERT_CONFIG:` line would otherwise silently resolve
  * to the staging config, read its own `deploy` job as staging's, and reopen
  * and comment on the live P1 staging alert from an unrelated failure. Every
  * call site names itself; there is no default.
- *
- * `Object.hasOwn` rather than a truthiness check on the lookup: a bare object
- * literal inherits `constructor`, `toString` and friends, so `ALERT_CONFIG:
- * toString` would otherwise pass the guard and die later inside
- * `alertJobNames` without ever printing the known-configurations list.
  */
 export function resolveAlertConfig(name) {
-  if (!name || !Object.hasOwn(ALERT_CONFIGS, name)) {
-    throw new Error(
-      `Unknown or missing ALERT_CONFIG ${JSON.stringify(name ?? null)}. ` +
-        `Known configurations: ${Object.keys(ALERT_CONFIGS).join(", ")}.`,
-    );
-  }
-  return ALERT_CONFIGS[name];
+  return selectAlertConfig(ALERT_CONFIGS, name, "ALERT_CONFIG");
 }
 
 /**
@@ -537,7 +529,7 @@ export function buildAlertIssueBody({
         ]
       : OUTCOME_COPY.brokenLines(config.workflowLabel, config.closesOn)),
     "",
-    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state,`,
+    `Do not claim this issue as backlog work — it carries \`${ALERT_LOOKUP_LABEL}\` and tracks live state,`,
     "not a unit of work. Fix the underlying failure and it resolves on its own.",
     "",
     "### Latest failure",
@@ -597,13 +589,13 @@ export function buildRecoveryCommentBody({
   headSha,
   runUrl,
   config = DEFAULT_ALERT_CONFIG,
-  // Set when closing an issue under one of `retiredAlertTitles`: the workflow
+  // Set when closing an issue under one of `retiredAlerts`: the workflow
   // it watched is gone, and this config's workflow replaced it.
   retiredTitle = null,
 }) {
   const lines = [
     retiredTitle
-      ? `**Replaced by ${config.workflowLabel}, which succeeded.** Closing. The workflow this alert watched no longer exists; \`${config.workflowFile}\` does its work, and its own alert is *${config.alertTitle}*.`
+      ? `**Replaced by ${config.workflowLabel}, which succeeded.** Closing. The workflow this alert watched no longer exists; \`${config.workflowFile}\` does its work, and its own alert is *${config.alert.title}*.`
       : `**${config.workflowLabel} recovered.** Closing.`,
     "",
     `\`${deployed.join("`, `")}\` succeeded on \`${headBranch ?? "unknown"}\`.`,
@@ -633,13 +625,7 @@ export async function findAlertIssues({
   fetchImpl,
   config = DEFAULT_ALERT_CONFIG,
 }) {
-  return findAlertIssuesByTitle({
-    token,
-    repo,
-    fetchImpl,
-    title: config.alertTitle,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-  });
+  return findAlertIssuesByIdentity({ token, repo, fetchImpl, alert: config.alert });
 }
 
 /**
@@ -663,9 +649,7 @@ export async function raiseAlert({
     token,
     repo,
     fetchImpl,
-    title: config.alertTitle,
-    labels: config.alertLabels,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: config.alert,
     buildIssueBody: () =>
       buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl, escalated, config }),
     buildCommentBody: ({ reopened }) =>
@@ -685,7 +669,7 @@ export async function raiseAlert({
 /**
  * Closes every open alert issue after a successful deploy. Closing them all
  * (not just the first) is what makes a duplicate created during an API blip
- * self-heal. Issues still open under one of the config's `retiredAlertTitles`
+ * self-heal. Issues still open under one of the config's `retiredAlerts`
  * close too, so a workflow that replaced another does not orphan its alert.
  *
  * Returns lib/alert-issue.mjs's `resolveAlert` shape, "closed" | "none" |
@@ -704,14 +688,13 @@ export async function resolveAlert({
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const results = [];
-  for (const title of [config.alertTitle, ...(config.retiredAlertTitles ?? [])]) {
+  for (const alert of [config.alert, ...(config.retiredAlerts ?? [])]) {
     results.push(
       await resolveAlertIssue({
         token,
         repo,
         fetchImpl,
-        title,
-        lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+        alert,
         buildRecoveryBody: () =>
           buildRecoveryCommentBody({
             deployed,
@@ -719,7 +702,7 @@ export async function resolveAlert({
             headSha,
             runUrl,
             config,
-            retiredTitle: title === config.alertTitle ? null : title,
+            retiredTitle: alert === config.alert ? null : alert.title,
           }),
       }),
     );

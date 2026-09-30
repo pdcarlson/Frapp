@@ -6,8 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  ALERT_ISSUE_LABELS,
-  ALERT_ISSUE_TITLE,
+  ALERT,
   buildAlertIssueBody,
   classifyDrift,
   describeTarget,
@@ -422,7 +421,7 @@ test("a clean run exits 0 and closes an open alert issue", async () => {
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([
     supabaseRoute("stg", local),
-    ...githubRoutes({ issues: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] }),
+    ...githubRoutes({ issues: [{ number: 42, state: "open", title: ALERT.title }] }),
   ]);
 
   const result = await runMigrationDriftCheck({
@@ -516,8 +515,8 @@ test("drift creates the alert issue when none exists, and exits 1", async () => 
   assert.equal(result.alert.action, "created");
 
   const created = JSON.parse(calls.find((c) => c.method === "POST").body);
-  assert.equal(created.title, ALERT_ISSUE_TITLE);
-  assert.deepEqual(created.labels, ALERT_ISSUE_LABELS);
+  assert.equal(created.title, ALERT.title);
+  assert.deepEqual(created.labels, ALERT.labels);
   assert.ok(created.labels.includes(ALERT_LOOKUP_LABEL));
   assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);
   // The body must name both drift modes and warn off the destructive repair.
@@ -530,7 +529,7 @@ test("drift comments on an already-open alert rather than filing a second one", 
   const local = localFixture(38);
   const { fetchImpl, calls } = makeFetchMock([
     supabaseRoute("prod", [INITIAL, FOREIGN_FEB]),
-    ...githubRoutes({ issues: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] }),
+    ...githubRoutes({ issues: [{ number: 42, state: "open", title: ALERT.title }] }),
   ]);
 
   const result = await runMigrationDriftCheck({
@@ -551,7 +550,7 @@ test("drift reopens a closed alert", async () => {
   const local = localFixture(38);
   const { fetchImpl, calls } = makeFetchMock([
     supabaseRoute("prod", [INITIAL, FOREIGN_FEB]),
-    ...githubRoutes({ issues: [{ number: 42, state: "closed", title: ALERT_ISSUE_TITLE }] }),
+    ...githubRoutes({ issues: [{ number: 42, state: "closed", title: ALERT.title }] }),
   ]);
 
   const result = await runMigrationDriftCheck({
@@ -577,7 +576,7 @@ test("a FAILED reopen is reported as failed, not as reopened", async () => {
   const local = localFixture(38);
   const { fetchImpl } = makeFetchMock([
     supabaseRoute("prod", [INITIAL, FOREIGN_FEB]),
-    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "closed", title: ALERT_ISSUE_TITLE }] },
+    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "closed", title: ALERT.title }] },
     { method: "PATCH", path: "/issues/42", status: 502, body: {} },
     { method: "POST", path: "/comments", body: {} },
   ]);
@@ -599,7 +598,7 @@ test("a close that fails is reported as failed, never as closed-with-nothing", a
   const local = localFixture(3);
   const { fetchImpl } = makeFetchMock([
     supabaseRoute("stg", local),
-    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] },
+    { method: "GET", path: "issues?state=all", body: [{ number: 42, state: "open", title: ALERT.title }] },
     { method: "POST", path: "/comments", body: {} },
     { method: "PATCH", path: "/issues/42", status: 502, body: {} },
   ]);
@@ -627,8 +626,8 @@ test("a clean run that closes one open duplicate but not another still fails", a
       method: "GET",
       path: "issues?state=all",
       body: [
-        { number: 41, state: "open", title: ALERT_ISSUE_TITLE },
-        { number: 42, state: "open", title: ALERT_ISSUE_TITLE },
+        { number: 41, state: "open", title: ALERT.title },
+        { number: 42, state: "open", title: ALERT.title },
       ],
     },
     { method: "POST", path: "/comments", body: {} },
@@ -679,7 +678,7 @@ test("an unreadable target neither raises nor closes an alert, and exits 1", asy
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([
     supabaseRoute("stg", { message: "unauthorized" }, 401),
-    ...githubRoutes({ issues: [{ number: 42, state: "open", title: ALERT_ISSUE_TITLE }] }),
+    ...githubRoutes({ issues: [{ number: 42, state: "open", title: ALERT.title }] }),
   ]);
 
   const result = await runMigrationDriftCheck({
@@ -973,7 +972,7 @@ test("production judged against its release closes the alert while main is ahead
   const { fetchImpl } = makeFetchMock([
     supabaseRoute("stg", local),
     supabaseRoute("prod", released),
-    ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT_ISSUE_TITLE }] }),
+    ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT.title }] }),
   ]);
   let summary = "";
   const result = await runMigrationDriftCheck({
@@ -1003,7 +1002,7 @@ test("an unreadable release baseline leaves the target unverified, never judged 
   const local = localFixture(3);
   const { fetchImpl, calls } = makeFetchMock([
     supabaseRoute("prod", local.slice(0, 1)),
-    ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT_ISSUE_TITLE }] }),
+    ...githubRoutes({ issues: [{ number: 919, state: "open", title: ALERT.title }] }),
   ]);
   let summary = "";
   const result = await runMigrationDriftCheck({

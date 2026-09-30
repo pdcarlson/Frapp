@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   ENV_NAME,
   evaluateBackupEnv,
   readBackupEnv,
@@ -270,7 +270,7 @@ describe("runWatchdog", () => {
     assert.equal(created.outcome, "fail");
     assert.equal(created.alert.action, "created");
     const createdBody = JSON.parse(calls.find((c) => c.method === "POST").body);
-    assert.equal(createdBody.title, ALERT_ISSUE_TITLE);
+    assert.equal(createdBody.title, ALERT.title);
     assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
     assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
     assert.ok(createdBody.labels.includes("P1"));
@@ -282,7 +282,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -303,7 +303,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -340,7 +340,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/comments", body: {} },
       { method: "PATCH", path: "/issues/42", status: 502, body: {} },
@@ -408,7 +408,7 @@ describe("workflow wiring", () => {
 
   it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
-      routing.includes(ALERT_ISSUE_TITLE),
+      routing.includes(ALERT.title),
       "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });

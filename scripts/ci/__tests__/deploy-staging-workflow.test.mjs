@@ -511,7 +511,7 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
     // workflow's.
     assert.equal(job(config.planOutput.job).keys.get("uses"), "./.github/workflows/_deploy.yml");
     assert.ok(workflowCall().outputs.has(config.planOutput.output));
-    assert.ok(config.alertLabels.includes("P1"), "a failed staging deploy is P1 (owner decision on #2803)");
+    assert.ok(config.alert.labels.includes("P1"), "a failed staging deploy is P1 (owner decision on #2803)");
   });
 
   it("grants issues: write to the alert job only", () => {
