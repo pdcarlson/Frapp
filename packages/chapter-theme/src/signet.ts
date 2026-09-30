@@ -99,7 +99,7 @@ const MIN_TEXT_CONTRAST = AA_NORMAL;
  * WCAG 1.4.11 non-text contrast, the floor the `accent-primary` fill and its
  * `accent-hover` shade must clear (accent-engine.md §8). The fill is the only
  * cue for a state in several consumers — the switch track, the active tab
- * underline, the focus ring border, poll selection — so a legible label on a
+ * underline, poll selection — so a legible label on a
  * button is not enough. Hover is held too because pointing at a filled control
  * swaps its fill for the hover shade while the state still has to read: the
  * voted poll option is a `default` Button, whose hover is `accent-hover`.

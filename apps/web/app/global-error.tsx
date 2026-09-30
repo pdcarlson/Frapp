@@ -107,7 +107,7 @@ export default function GlobalError({
             <button
               type="button"
               onClick={() => reset()}
-              className="mt-1 inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/25"
+              className="mt-1 inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25"
             >
               Reload the dashboard
             </button>
