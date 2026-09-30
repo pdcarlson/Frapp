@@ -168,7 +168,10 @@ Comment on an issue only when you have something it doesn't already say
 Work through all three jobs without stopping to summarize; put any status note in the same message
 as your next tool call. Stop early only if the GitHub MCP is unavailable or the marker-count guard
 fails, and report that as the finding. Otherwise the run ends when the tracking issue is
-republished, and your final message is the run report.
+republished, and your final message is the run report. Your last tracker write is the
+[run record](../../../docs/ci-cd/routines.md#run-record-all-routines), `routine=pr-followups`, with the outcome
+that section defines (a failed guard makes it `stopped`). With the MCP unavailable there is no
+record to post, and none is posted any other way.
 
 ## Run report
 
