@@ -588,7 +588,7 @@ describe('DiscordImportService — channel mapping', () => {
 describe('DiscordImportService — starting', () => {
   it('refuses to start with no uploaded export', async () => {
     await build();
-    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       /Upload the exported JSON/,
     );
   });
@@ -599,7 +599,7 @@ describe('DiscordImportService — starting', () => {
       { kind: 'export', uploaded_at: '2026-08-24T12:00:00Z' },
       { kind: 'media', uploaded_at: null },
     ]);
-    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       /have not finished uploading/,
     );
   });
@@ -609,7 +609,7 @@ describe('DiscordImportService — starting', () => {
     repo.findFiles.mockResolvedValue([
       { kind: 'export', uploaded_at: '2026-08-24T12:00:00Z' },
     ]);
-    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       /Map the exported channels/,
     );
   });
@@ -639,7 +639,7 @@ describe('DiscordImportService — starting', () => {
       },
     ]);
 
-    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       'The Frapp channel chosen for #general was deleted. Pick another channel for it, or choose to create a new one.',
     );
     expect(repo.update).not.toHaveBeenCalled();
@@ -678,7 +678,7 @@ describe('DiscordImportService — starting', () => {
       },
     ]);
 
-    await service.start(IMPORT_ID, CHAPTER, true);
+    await service.start(IMPORT_ID, CHAPTER, USER, true);
 
     expect(repo.update).toHaveBeenCalledWith(
       IMPORT_ID,
@@ -710,7 +710,7 @@ describe('DiscordImportService — starting', () => {
       },
     ]);
 
-    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       "The Frapp channel chosen for #general was deleted, so this import can't carry on. To bring #general in, delete this import and import again.",
     );
     expect(repo.update).not.toHaveBeenCalled();
@@ -724,7 +724,7 @@ describe('DiscordImportService — starting', () => {
     ]);
     repo.findChannels.mockResolvedValue([{ id: 'map-1' }]);
 
-    await service.start(IMPORT_ID, CHAPTER, true);
+    await service.start(IMPORT_ID, CHAPTER, USER, true);
 
     expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
       status: 'ready',
@@ -903,7 +903,7 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     repo.findChannels.mockResolvedValue([
       { id: 'map-1', mapping_action: 'create_new' },
     ]);
-    await service.start(IMPORT_ID, CHAPTER, true);
+    await service.start(IMPORT_ID, CHAPTER, USER, true);
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 
@@ -960,7 +960,7 @@ describe('DiscordImportService — the date cutoff (#2858)', () => {
   it('sets it on the first start of a bot import', async () => {
     await build(botDraft());
     mapped();
-    await service.start(IMPORT_ID, CHAPTER, true, {
+    await service.start(IMPORT_ID, CHAPTER, USER, true, {
       messagesAfter: '2024-06-01T00:00:00Z',
     });
     expect(repo.update).toHaveBeenCalledWith(
@@ -974,23 +974,25 @@ describe('DiscordImportService — the date cutoff (#2858)', () => {
     // So a start without one works against a database without the column.
     await build(botDraft({ status: 'failed', messages_after: CUTOFF }));
     mapped();
-    await service.start(IMPORT_ID, CHAPTER, true);
+    await service.start(IMPORT_ID, CHAPTER, USER, true);
     expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
   });
 
   it('lets a restart repeat it, and refuses to change it once started', async () => {
     await build(botDraft({ status: 'failed', messages_after: CUTOFF }));
     mapped();
-    await service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: CUTOFF });
+    await service.start(IMPORT_ID, CHAPTER, USER, true, {
+      messagesAfter: CUTOFF,
+    });
     expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
 
     await expect(
-      service.start(IMPORT_ID, CHAPTER, true, {
+      service.start(IMPORT_ID, CHAPTER, USER, true, {
         messagesAfter: '2023-01-01T00:00:00Z',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
     await expect(
-      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: null }),
+      service.start(IMPORT_ID, CHAPTER, USER, true, { messagesAfter: null }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -998,7 +1000,7 @@ describe('DiscordImportService — the date cutoff (#2858)', () => {
     await build(botDraft());
     mapped();
     await expect(
-      service.start(IMPORT_ID, CHAPTER, true, {
+      service.start(IMPORT_ID, CHAPTER, USER, true, {
         messagesAfter: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     ).rejects.toThrow(/date in the past/);
@@ -1010,7 +1012,9 @@ describe('DiscordImportService — the date cutoff (#2858)', () => {
     await build(botDraft());
     mapped();
     await expect(
-      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: '2025-W01' }),
+      service.start(IMPORT_ID, CHAPTER, USER, true, {
+        messagesAfter: '2025-W01',
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -1020,14 +1024,16 @@ describe('DiscordImportService — the date cutoff (#2858)', () => {
     delete unmigrated.messages_after;
     await build(unmigrated as DiscordImport);
     mapped();
-    await service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: null });
+    await service.start(IMPORT_ID, CHAPTER, USER, true, {
+      messagesAfter: null,
+    });
     expect(repo.update.mock.calls[0][2]).not.toHaveProperty('messages_after');
   });
 
   it('refuses one on an upload, whose range is set when exporting', async () => {
     await build(job({ status: 'draft' }));
     await expect(
-      service.start(IMPORT_ID, CHAPTER, true, { messagesAfter: CUTOFF }),
+      service.start(IMPORT_ID, CHAPTER, USER, true, { messagesAfter: CUTOFF }),
     ).rejects.toThrow(/--after/);
   });
 });
@@ -1734,7 +1740,7 @@ describe('DiscordImportService — starting a bot import', () => {
       }),
     ]);
 
-    await svc.start(IMPORT_ID, CHAPTER, true);
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
 
     expect(repo.findFiles).not.toHaveBeenCalled();
     expect(oauthService.requireGuildId).toHaveBeenCalledWith(CHAPTER);
@@ -1752,7 +1758,7 @@ describe('DiscordImportService — starting a bot import', () => {
     const svc = await build(job({ source: 'bot', guild_id: GUILD }));
     repo.findChannels.mockResolvedValue([botChannel()]);
 
-    await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       /at least one Discord channel/,
     );
   });
@@ -1761,7 +1767,7 @@ describe('DiscordImportService — starting a bot import', () => {
     const svc = await build(job({ source: 'bot', guild_id: 'old-guild' }));
     repo.findChannels.mockResolvedValue([botChannel()]);
 
-    await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+    await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       /different Discord server/,
     );
   });
@@ -2187,19 +2193,19 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       );
       repo.findChannels.mockResolvedValue([gated()]);
       rbac.findByChapter.mockResolvedValue(chapterRoles());
-      rbac.create.mockImplementation(async (_chapter, data) => ({
+      rbac.create.mockImplementation(async (_chapter, _user, data) => ({
         ...role({ id: 'new-role-1' }),
         ...data,
       }));
-      rbac.update.mockImplementation(async (id, _chapter, data) => ({
+      rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
         ...role({ id }),
         ...data,
       }));
 
-      await svc.start(IMPORT_ID, CHAPTER, true);
+      await svc.start(IMPORT_ID, CHAPTER, USER, true);
 
       expect(rbac.create).toHaveBeenCalledTimes(1);
-      expect(rbac.create).toHaveBeenCalledWith(CHAPTER, {
+      expect(rbac.create).toHaveBeenCalledWith(CHAPTER, USER, {
         name: 'Rush Chair',
         permissions: ['channels:read:rush-chair'],
         // After every existing role, so it lists below the seeded ones.
@@ -2207,7 +2213,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         color: null,
       });
       expect(rbac.update).toHaveBeenCalledTimes(1);
-      expect(rbac.update).toHaveBeenCalledWith(EXEC_ROLE, CHAPTER, {
+      expect(rbac.update).toHaveBeenCalledWith(EXEC_ROLE, CHAPTER, USER, {
         permissions: ['members:view', 'channels:read:exec'],
       });
       const [, , patch] = repo.update.mock.calls.at(-1);
@@ -2231,19 +2237,20 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         }),
       ]);
       rbac.findByChapter.mockResolvedValue(chapterRoles());
-      rbac.create.mockImplementation(async (_chapter, data) => ({
+      rbac.create.mockImplementation(async (_chapter, _user, data) => ({
         ...role({ id: 'new-role-1' }),
         ...data,
       }));
-      rbac.update.mockImplementation(async (id, _chapter, data) => ({
+      rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
         ...role({ id }),
         ...data,
       }));
 
-      await svc.start(IMPORT_ID, CHAPTER, true);
+      await svc.start(IMPORT_ID, CHAPTER, USER, true);
 
       expect(rbac.create).toHaveBeenCalledWith(
         CHAPTER,
+        USER,
         expect.objectContaining({ name: 'Rush Chair', permissions: [] }),
       );
     });
@@ -2260,7 +2267,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         role({ id: 'someone-elses', name: 'rush chair', permissions: [] }),
       ]);
 
-      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
         /A role named "rush chair" was added since the roles were mapped/,
       );
       expect(rbac.create).not.toHaveBeenCalled();
@@ -2290,9 +2297,9 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       ]);
       rbac.findByChapter.mockResolvedValue(chapterRoles());
 
-      await expect(svc.start(IMPORT_ID, CHAPTER, false)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(
+        svc.start(IMPORT_ID, CHAPTER, USER, false),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(rbac.update).not.toHaveBeenCalled();
     });
 
@@ -2316,7 +2323,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         { id: 'board', required_permissions: ['channels:read:rush-chair'] },
       ]);
 
-      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
         /channels:read:rush-chair is already in use/,
       );
       expect(rbac.create).not.toHaveBeenCalled();
@@ -2339,7 +2346,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       );
       repo.findChannels.mockResolvedValue([gated()]);
 
-      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
         /role mapping changed after #exec was mapped/,
       );
       expect(rbac.create).not.toHaveBeenCalled();
@@ -2349,11 +2356,11 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
 
     const provisionable = () => {
       rbac.findByChapter.mockResolvedValue(chapterRoles());
-      rbac.create.mockImplementation(async (_chapter, data) => ({
+      rbac.create.mockImplementation(async (_chapter, _user, data) => ({
         ...role({ id: 'new-role-1' }),
         ...data,
       }));
-      rbac.update.mockImplementation(async (id, _chapter, data) => ({
+      rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
         ...role({ id }),
         ...data,
       }));
@@ -2373,7 +2380,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
           permissions: ['channels:read:exec'],
         }),
       ]);
-      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
         /channels:read:exec is already in use/,
       );
       expect(rbac.create).not.toHaveBeenCalled();
@@ -2390,7 +2397,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       channelRepo.findRoleGates.mockResolvedValue([
         { id: 'old-exec', required_permissions: ['channels:read:exec'] },
       ]);
-      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
         /channels:read:exec is already in use/,
       );
       expect(rbac.create).not.toHaveBeenCalled();
@@ -2420,7 +2427,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
           ],
         },
       ]);
-      await svc.start(IMPORT_ID, CHAPTER, true);
+      await svc.start(IMPORT_ID, CHAPTER, USER, true);
       expect(rbac.create).toHaveBeenCalledTimes(1);
     });
 
@@ -2430,9 +2437,9 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       );
       repo.findChannels.mockResolvedValue([gated()]);
       provisionable();
-      await expect(svc.start(IMPORT_ID, CHAPTER, false)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      await expect(
+        svc.start(IMPORT_ID, CHAPTER, USER, false),
+      ).rejects.toBeInstanceOf(ForbiddenException);
       expect(rbac.create).not.toHaveBeenCalled();
       expect(rbac.update).not.toHaveBeenCalled();
       expect(repo.update).not.toHaveBeenCalled();
@@ -2463,7 +2470,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
           permissions: ['channels:read:rush-chair'],
         }),
       ]);
-      await svc.start(IMPORT_ID, CHAPTER, false);
+      await svc.start(IMPORT_ID, CHAPTER, USER, false);
       expect(repo.update).toHaveBeenCalledWith(
         IMPORT_ID,
         CHAPTER,
@@ -2479,7 +2486,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       provisionable();
       rbac.update.mockRejectedValue(new Error('roles table unavailable'));
 
-      await expect(svc.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
         'roles table unavailable',
       );
       expect(repo.update).toHaveBeenCalledTimes(1);
@@ -2512,7 +2519,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         }),
       ]);
       provisionable();
-      await svc.start(IMPORT_ID, CHAPTER, true);
+      await svc.start(IMPORT_ID, CHAPTER, USER, true);
       expect(repo.update).toHaveBeenCalledWith(
         IMPORT_ID,
         CHAPTER,
@@ -2541,7 +2548,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         }),
       ]);
 
-      await svc.start(IMPORT_ID, CHAPTER, true);
+      await svc.start(IMPORT_ID, CHAPTER, USER, true);
 
       expect(rbac.findByChapter).not.toHaveBeenCalled();
       expect(rbac.create).not.toHaveBeenCalled();

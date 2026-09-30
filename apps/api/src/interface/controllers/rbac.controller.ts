@@ -23,6 +23,7 @@ import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentMember,
+  CurrentUser,
 } from '../decorators/current-user.decorator';
 import {
   CreateRoleDto,
@@ -58,9 +59,10 @@ export class RbacController {
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async create(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateRoleDto,
   ) {
-    return this.rbacService.create(chapterId, dto);
+    return this.rbacService.create(chapterId, userId, dto);
   }
 
   @Patch(':id')
@@ -69,16 +71,21 @@ export class RbacController {
   async update(
     @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    return this.rbacService.update(id, chapterId, dto);
+    return this.rbacService.update(id, chapterId, userId, dto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a custom role' })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
-  async delete(@Param('id') id: string, @CurrentChapterId() chapterId: string) {
-    await this.rbacService.delete(id, chapterId);
+  async delete(
+    @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    await this.rbacService.delete(id, chapterId, userId);
     return { success: true };
   }
 

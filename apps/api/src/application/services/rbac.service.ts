@@ -21,7 +21,22 @@ import {
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import { CustomRoleService } from './custom-role.service';
-import { ChapterAuditLogService } from './chapter-audit-log.service';
+import {
+  ChapterAuditLogService,
+  type AuditDiff,
+} from './chapter-audit-log.service';
+
+/** `target_type` of the rows the Roles tab's writers record (#2599). */
+const AUDIT_TARGET_TYPE = 'role';
+
+/**
+ * What a role edit records: one from/to pair per changed field, except
+ * `permissions`, which records what was added and what was removed. A matrix
+ * toggle changes one permission, and the whole array twice would bury it.
+ */
+type RoleUpdateDiff = Partial<
+  Record<'name' | 'color' | 'display_order', { from: unknown; to: unknown }>
+> & { permissions?: { added: string[]; removed: string[] } };
 
 /** The chapter's next-highest-ranked role that has at least one live holder,
  * once the (now-vacant) President role is excluded — the pool a presidency
@@ -48,7 +63,11 @@ export class RbacService {
     return this.roleRepo.findByChapter(chapterId);
   }
 
-  async create(chapterId: string, data: Partial<Role>): Promise<Role> {
+  async create(
+    chapterId: string,
+    actorUserId: string,
+    data: Partial<Role>,
+  ): Promise<Role> {
     // Only the seeded President role may carry the wildcard: letting
     // `roles:manage` mint a new `*` role would bypass the presidency-transfer
     // safeguard entirely (spec/behavior/rbac.md).
@@ -65,7 +84,7 @@ export class RbacService {
     if (existing)
       throw new ConflictException('Role name already exists in this chapter');
 
-    return this.roleRepo.create({
+    const role = await this.roleRepo.create({
       ...data,
       chapter_id: chapterId,
       is_system: false,
@@ -75,11 +94,26 @@ export class RbacService {
       // carry a key.
       system_key: null,
     });
+    await this.chapterAuditLogService.record({
+      chapterId,
+      actorUserId,
+      action: 'role_created',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: role.id,
+      diff: { role: { from: null, to: role } } satisfies AuditDiff,
+    });
+    return role;
   }
 
+  /**
+   * Writes one `role_updated` row naming the fields that changed, or none when
+   * the saved row matches the old one: a PATCH that re-sends what the role
+   * already holds changed nothing a member would want in `#chapter-audit`.
+   */
   async update(
     roleId: string,
     chapterId: string,
+    actorUserId: string,
     data: Partial<Role>,
   ): Promise<Role> {
     const role = await this.roleRepo.findById(roleId);
@@ -131,10 +165,26 @@ export class RbacService {
     const updatable = { ...data };
     delete updatable.system_key;
 
-    return this.roleRepo.update(roleId, updatable);
+    const updated = await this.roleRepo.update(roleId, updatable);
+    const diff = diffRole(role, updated);
+    if (Object.keys(diff).length > 0) {
+      await this.chapterAuditLogService.record({
+        chapterId,
+        actorUserId,
+        action: 'role_updated',
+        targetType: AUDIT_TARGET_TYPE,
+        targetId: roleId,
+        diff,
+      });
+    }
+    return updated;
   }
 
-  async delete(roleId: string, chapterId: string): Promise<void> {
+  async delete(
+    roleId: string,
+    chapterId: string,
+    actorUserId: string,
+  ): Promise<void> {
     const role = await this.roleRepo.findById(roleId);
     if (!role) throw new NotFoundException('Role not found');
     if (role.chapter_id !== chapterId)
@@ -143,6 +193,14 @@ export class RbacService {
       throw new ForbiddenException('Cannot delete system roles');
 
     await this.roleRepo.delete(roleId);
+    await this.chapterAuditLogService.record({
+      chapterId,
+      actorUserId,
+      action: 'role_deleted',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: roleId,
+      diff: { role: { from: role, to: null } } satisfies AuditDiff,
+    });
   }
 
   async transferPresidency(
@@ -208,6 +266,17 @@ export class RbacService {
         'Only the current President can transfer presidency',
       );
     }
+
+    await this.chapterAuditLogService.record({
+      chapterId,
+      actorUserId: currentMember.user_id,
+      action: 'presidency_transferred',
+      targetType: 'chapter',
+      targetId: chapterId,
+      diff: {
+        president_member_id: { from: currentMember.id, to: targetMember.id },
+      } satisfies AuditDiff,
+    });
   }
 
   /** Resolve the chapter's seeded President role by identity (wildcard-carrying
@@ -606,4 +675,26 @@ export class RbacService {
       customRoles.map((r) => r.capabilities),
     );
   }
+}
+
+/**
+ * The audited difference between a role before and after an update, compared
+ * on the saved row rather than the request so it records what persisted.
+ * Permissions compare as sets: reordering the array is not a change.
+ */
+function diffRole(before: Role, after: Role): RoleUpdateDiff {
+  const diff: RoleUpdateDiff = {};
+  for (const field of ['name', 'color', 'display_order'] as const) {
+    if (before[field] !== after[field]) {
+      diff[field] = { from: before[field], to: after[field] };
+    }
+  }
+  const was = new Set(before.permissions ?? []);
+  const now = new Set(after.permissions ?? []);
+  const added = [...now].filter((permission) => !was.has(permission)).sort();
+  const removed = [...was].filter((permission) => !now.has(permission)).sort();
+  if (added.length > 0 || removed.length > 0) {
+    diff.permissions = { added, removed };
+  }
+  return diff;
 }

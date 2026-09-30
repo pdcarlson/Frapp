@@ -1204,6 +1204,7 @@ export class DiscordImportService {
   async start(
     id: string,
     chapterId: string,
+    userId: string,
     canManageRoles: boolean,
     options: { messagesAfter?: string | null } = {},
   ): Promise<DiscordImport> {
@@ -1303,6 +1304,7 @@ export class DiscordImportService {
     const roleMapping = await this.provisionRoles(
       id,
       chapterId,
+      userId,
       channels,
       parseRoleMapping(job.role_mapping),
       canManageRoles,
@@ -1398,10 +1400,16 @@ export class DiscordImportService {
    * way leaves a mapping that points at it, and re-running skips it. A role
    * someone else added under a new role's name since is refused, not
    * adopted, and a permission a role already holds is not added twice.
+   *
+   * Both writes go through `RbacService`, so each role created and each
+   * permission granted writes its `chapter_audit_log` row as `userId`, the
+   * member who started the import, as the same change made on Settings →
+   * Roles would (#2599).
    */
   private async provisionRoles(
     importId: string,
     chapterId: string,
+    userId: string,
     channels: readonly DiscordImportChannel[],
     mapping: DiscordRoleMapping[],
     canManageRoles: boolean,
@@ -1543,7 +1551,7 @@ export class DiscordImportService {
     let order = Math.max(0, ...roles.map((role) => role.display_order));
     for (const [key, plan] of toCreate) {
       order += 1;
-      const role = await this.rbac.create(chapterId, {
+      const role = await this.rbac.create(chapterId, userId, {
         name: plan.name,
         permissions: plan.permissions,
         display_order: order,
@@ -1568,7 +1576,7 @@ export class DiscordImportService {
       if (!role || role.permissions.includes(grant.permission)) continue;
       byId.set(
         role.id,
-        await this.rbac.update(role.id, chapterId, {
+        await this.rbac.update(role.id, chapterId, userId, {
           permissions: [...role.permissions, grant.permission],
         }),
       );
