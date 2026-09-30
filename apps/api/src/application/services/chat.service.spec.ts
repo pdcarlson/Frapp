@@ -45,7 +45,10 @@ import {
   ChannelAccessService,
   ReportedMessageGrant,
 } from './channel-access.service';
-import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
+import type {
+  ChatMessageReportView,
+  ReportedAttachment,
+} from '#domain/entities/chat-moderation.entity';
 import { ChatBlockService } from './chat-block.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
@@ -2740,14 +2743,15 @@ describe('ChatService', () => {
       external_url: null,
       created_at: '2026-01-01T00:00:00.000Z',
     };
-    const held = {
+    const held: ReportedAttachment = {
       bucket: 'chat',
       storage_path: row.storage_path,
       filename: 'photo.png',
       content_type: 'image/png',
       byte_size: 4096,
     };
-    const archived = {
+    // A backfilled row knows only a path and a filename.
+    const archived: ReportedAttachment = {
       bucket: 'chat-archive',
       storage_path: 'chapters/ch-1/archive/imp/media/a.gif',
       filename: 'a.gif',
@@ -2783,12 +2787,12 @@ describe('ChatService', () => {
       const WINDOW_START = new Date('2026-09-30T11:45:00.000Z');
       const RECENT = '2026-09-30T11:55:00.000Z';
       const STALE = '2026-09-30T09:00:00.000Z';
-      const report = (id: string, ...objects: (typeof held)[]) => ({
+      const report = (id: string, ...objects: ReportedAttachment[]) => ({
         id,
         reported_attachments: objects,
       });
       const holder = (
-        object: typeof held,
+        object: ReportedAttachment,
         heldOpen: boolean,
         pendingSince: string | null,
       ) => ({
@@ -3528,6 +3532,7 @@ describe('ChatService', () => {
       created_at: '2026-01-01T12:05:00.000Z',
       resolved_at: null,
       resolved_by: null,
+      reported_attachments: [],
     };
     const grantFor = (report: ChatMessageReportView = openReport) =>
       ReportedMessageGrant.fromOpenReport(report);

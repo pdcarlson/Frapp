@@ -379,7 +379,9 @@ function makeStorage(partBytes: Uint8Array | null) {
     listFiles: jest.fn(
       async (_bucket: string, _prefix: string): Promise<string[]> => [],
     ),
-    deleteFiles: jest.fn(async () => undefined),
+    deleteFiles: jest.fn(
+      async (_bucket: string, _paths: string[]): Promise<void> => undefined,
+    ),
     getSignedUploadUrl: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
     uploadFile: jest.fn(),
@@ -1462,8 +1464,9 @@ describe('DiscordImportWorkerService — purging', () => {
   it('keeps the archive objects an open chat report holds, and deletes the rest', async () => {
     repoRef.deletedRounds = [0];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async (_bucket: string, prefix: string) =>
-      prefix.endsWith('/media') ? ['m/held.png', 'm/free.png'] : ['e/x.json'],
+    storage.listFiles.mockImplementation(
+      async (_bucket: string, prefix: string) =>
+        prefix.endsWith('/media') ? ['m/held.png', 'm/free.png'] : ['e/x.json'],
     );
     const reportRepo = {
       findHeldObjects: jest.fn(async () => [
@@ -1487,7 +1490,7 @@ describe('DiscordImportWorkerService — purging', () => {
   it('deletes no archive object and does not mark it purged when the report holds cannot be read', async () => {
     repoRef.deletedRounds = [0];
     const storage = makeStorage(null);
-    storage.listFiles = jest.fn(async () => ['m/one.png']);
+    storage.listFiles.mockImplementation(async () => ['m/one.png']);
     const reportRepo = {
       // A PostgREST error, which the repositories throw as a plain object.
       findHeldObjects: jest.fn(() =>

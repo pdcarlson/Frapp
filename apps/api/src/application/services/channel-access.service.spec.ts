@@ -461,6 +461,7 @@ describe('ChannelAccessService', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       resolved_at: null,
       resolved_by: null,
+      reported_attachments: [],
     };
     const grant = () => ReportedMessageGrant.fromOpenReport(openReport);
 
