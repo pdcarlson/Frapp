@@ -24,20 +24,22 @@
 //
 // ── Whose bundle counts ─────────────────────────────────────────────────────
 // Staging and production upload to the same Sentry projects under the same
-// release name, so a bundle for the SHA may be the other environment's.
-//   * Web and landing: only a bundle uploaded since this run's builds began
-//     (`SOURCEMAPS_SINCE`, noted by the step before them) counts. Their builds
-//     inline each environment's `NEXT_PUBLIC_*` values, so staging's chunks,
-//     and the debug IDs derived from them, are not production's, and
-//     staging's maps can't symbolicate a production frame. Known limit: a
-//     staging deploy of the same commit that uploads while this run builds
-//     would still count.
-//   * The API: any bundle for the release counts. Its image is the same bytes
-//     in both environments (nothing is inlined at build time), and
-//     `sentry-cli sourcemaps inject` derives each debug ID from the file's
-//     contents, so either environment's bundle symbolicates both. Filtering by
-//     time would instead cry wolf on a same-commit redeploy, where Render
-//     reuses the cached upload layer and uploads nothing new.
+// release name, so a bundle for the SHA may be the other environment's. Only
+// a bundle uploaded since this run's builds began (`SOURCEMAPS_SINCE`, noted
+// by the `builds-start` step before them) counts, for every project:
+//   * Web and landing inline each environment's `NEXT_PUBLIC_*` values, so
+//     staging's chunks, and the debug IDs derived from them, are not
+//     production's, and staging's maps can't symbolicate a production frame.
+//   * The API's dist is the same in both environments, but its debug IDs
+//     exist only if that environment's Render build ran `sentry-cli
+//     sourcemaps inject`. A build without the token (a lagging Infisical →
+//     Render sync) or with a failed inject ships JS with none, which no
+//     bundle can symbolicate, while staging's bundle for the same commit
+//     would still be there to count (#2489 review).
+// Known limits, both loud rather than silent: a same-commit redeploy where
+// Render reuses its cached upload layer uploads nothing new and reads
+// `missing` (the alert says to clear the build cache), and a staging deploy
+// of the same commit that uploads while this run builds would count.
 //
 // ── The question it asks ────────────────────────────────────────────────────
 //   GET <SENTRY_URL>/api/0/projects/<org>/<project>/files/artifact-bundles/?query=<sha>
@@ -53,8 +55,9 @@
 //
 // ── Verdicts, one per project ───────────────────────────────────────────────
 //   present      — a bundle that counts (above) is associated with the SHA
-//   missing      — Sentry answered, and none is (re-asked for a minute first,
-//                  because Sentry assembles an upload after it lands)
+//   missing      — Sentry answered, and none is (re-asked every 15 s for a
+//                  minute first, because Sentry assembles an upload after it
+//                  lands)
 //   no-token     — this job has no SENTRY_AUTH_TOKEN, so the build it ran, or
 //                  the Render build synced from the same Infisical environment,
 //                  uploaded nothing
@@ -93,16 +96,17 @@
 // go red, and raise the deploy alert, because Sentry was slow. `_deploy.yml`
 // sets no `continue-on-error` (its tests forbid it), so this file's own
 // catch-all is what holds that line. The projects are asked concurrently, and
-// each stops re-asking after `MISSING_WINDOW_MS`, so the step takes that
-// window plus one read (a read is at most ~51 s: `resilientFetch`'s three
+// each asks for the last time `MISSING_WINDOW_MS` in. The shared poll loop
+// sleeps once more before it gives up, so the step takes that window, one
+// interval and one read (a read is at most ~51 s: `resilientFetch`'s three
 // 15 s attempts and their backoff), about two minutes at worst.
 //
 // Env inputs:
 //   DEPLOY_SHA         — required: the full commit SHA the run deployed
 //   API_BUILT          — `true` when this run built the API image on Render
 //   FRONTENDS_BUILT    — `true` when this run built web and landing
-//   SOURCEMAPS_SINCE   — ISO time the run's builds began; required for web and
-//                        landing to be judged at all
+//   SOURCEMAPS_SINCE   — ISO time the run's builds began; required for any
+//                        project to be judged
 //   SENTRY_AUTH_TOKEN  — from the Infisical injection; absent → `no-token`
 //   SENTRY_URL         — optional, default https://sentry.io (sentry-cli's
 //                        default, which the uploads use)
@@ -122,8 +126,7 @@ export const DEFAULT_SENTRY_URL = "https://sentry.io";
 
 /**
  * The Sentry projects a deploy uploads to, in the order the output lists
- * them. `builtBy` says which build uploads each; `sinceThisRun` that only a
- * bundle uploaded by this run counts (see "Whose bundle counts").
+ * them. `builtBy` says which build uploads each.
  *
  * `awaitingProject` names the issue that creates a project that does not
  * exist yet. Until it does, only a verdict proving the project exists
@@ -131,9 +134,9 @@ export const DEFAULT_SENTRY_URL = "https://sentry.io";
  * `sentry-sourcemaps-alert.mjs`. Delete the key once #2071 is done.
  */
 export const SOURCEMAP_PROJECTS = Object.freeze({
-  "frapp-api": Object.freeze({ builtBy: "api", sinceThisRun: false }),
-  "frapp-web": Object.freeze({ builtBy: "frontends", sinceThisRun: true }),
-  "frapp-landing": Object.freeze({ builtBy: "frontends", sinceThisRun: true, awaitingProject: 2071 }),
+  "frapp-api": Object.freeze({ builtBy: "api" }),
+  "frapp-web": Object.freeze({ builtBy: "frontends" }),
+  "frapp-landing": Object.freeze({ builtBy: "frontends", awaitingProject: 2071 }),
 });
 
 /** Every word the output may hold. None contains a masked value (see above). */
@@ -147,7 +150,7 @@ export const VERDICTS = Object.freeze([
   "unbuilt",
 ]);
 
-/** How often, and for how long, a `missing` answer is re-asked. */
+/** How often a `missing` answer is re-asked, and when it is asked for the last time. */
 export const MISSING_RETRY_INTERVAL_MS = 15 * 1000;
 export const MISSING_WINDOW_MS = 60 * 1000;
 
@@ -198,13 +201,12 @@ function uploadedAt(bundle) {
 }
 
 /**
- * `present` when a bundle with files is associated with `release` (and, when
- * `sinceMs` is given, was uploaded at or after it), `missing` when none is,
- * `unverifiable` when the body is not a list of bundles, or when `sinceMs`
- * decides and a matching bundle's upload time can't be read. A bundle's
- * `associations` is its `[{ release, dist }]`.
+ * `present` when a bundle with files is associated with `release` and was
+ * uploaded at or after `sinceMs`, `missing` when none is, `unverifiable` when
+ * the body is not a list of bundles, or when a matching bundle's upload time
+ * can't be read. A bundle's `associations` is its `[{ release, dist }]`.
  */
-export function classifyBundles(data, release, { sinceMs = null } = {}) {
+export function classifyBundles(data, release, { sinceMs }) {
   if (!Array.isArray(data)) {
     return { verdict: "unverifiable", detail: "Sentry answered 200 with something other than a list of artifact bundles" };
   }
@@ -217,27 +219,26 @@ export function classifyBundles(data, release, { sinceMs = null } = {}) {
       // `fileCount` is read only when Sentry sends it; an empty bundle is no maps.
       !(typeof bundle.fileCount === "number" && bundle.fileCount <= 0),
   );
-  let counted = forRelease;
-  if (sinceMs !== null) {
-    if (forRelease.some((bundle) => uploadedAt(bundle) === null)) {
-      return {
-        verdict: "unverifiable",
-        detail: "a bundle for this release has no readable upload time, so whether this run uploaded it can't be told",
-      };
-    }
-    counted = forRelease.filter((bundle) => uploadedAt(bundle) >= sinceMs - CLOCK_SKEW_MS);
+  if (forRelease.some((bundle) => uploadedAt(bundle) === null)) {
+    return {
+      verdict: "unverifiable",
+      detail: "a bundle for this release has no readable upload time, so whether this run uploaded it can't be told",
+    };
   }
+  const counted = forRelease.filter((bundle) => uploadedAt(bundle) >= sinceMs - CLOCK_SKEW_MS);
   if (counted.length > 0) {
     const files = counted.reduce((sum, bundle) => sum + (typeof bundle.fileCount === "number" ? bundle.fileCount : 0), 0);
     return {
       verdict: "present",
-      detail: `${counted.length} artifact bundle(s)${files > 0 ? ` with ${files} file(s)` : ""} for this release${sinceMs !== null ? ", uploaded by this run" : ""}`,
+      detail: `${counted.length} artifact bundle(s)${files > 0 ? ` with ${files} file(s)` : ""} for this release, uploaded by this run`,
     };
   }
   if (forRelease.length > 0) {
     return {
       verdict: "missing",
-      detail: `no artifact bundle for this release was uploaded by this run; the ${forRelease.length} older one(s) are another build's, whose debug IDs this deploy's chunks don't share`,
+      detail:
+        `no artifact bundle for this release was uploaded by this run; the ${forRelease.length} older one(s) are an earlier ` +
+        "build's (another environment's, or, on a same-commit redeploy, one whose cached upload this build reused)",
     };
   }
   return { verdict: "missing", detail: "no artifact bundle is associated with this release" };
@@ -299,14 +300,16 @@ async function readOnce({ project, release, sinceMs, token, baseUrl, fetchImpl }
 }
 
 /**
- * One project's verdict: read, and re-ask only while the answer is `missing`,
- * until `windowMs` has passed. The loop is `pollUntilTerminal`'s, so the
- * window is a deadline, and the detail reports the time actually waited.
+ * One project's verdict: read, and re-ask every `intervalMs` while the answer
+ * is `missing`, the last time `windowMs` after the first. The loop is
+ * `pollUntilTerminal`'s, whose deadline is checked before each read, so it is
+ * set one interval past the window to let the read at `windowMs` happen. The
+ * detail reports the asks actually made, from the clock.
  */
 export async function checkProject({
   project,
   release,
-  sinceMs = null,
+  sinceMs,
   token,
   baseUrl = DEFAULT_SENTRY_URL,
   fetchImpl = resilientFetch,
@@ -314,16 +317,23 @@ export async function checkProject({
   windowMs = MISSING_WINDOW_MS,
   intervalMs = MISSING_RETRY_INTERVAL_MS,
 }) {
+  const startedAt = clock.now();
+  let asks = 0;
+  let lastAskAt = 0;
   return pollUntilTerminal({
-    fetchOne: () => readOnce({ project, release, sinceMs, token, baseUrl, fetchImpl }),
+    fetchOne: () => {
+      asks += 1;
+      lastAskAt = clock.now() - startedAt;
+      return readOnce({ project, release, sinceMs, token, baseUrl, fetchImpl });
+    },
     classify: (result) => (result.verdict === "missing" ? null : result),
-    onTimeout: (last, elapsedMs) =>
+    onTimeout: (last) =>
       last
-        ? { ...last, detail: `${last.detail} (asked for ${Math.round(elapsedMs / 1000)}s)` }
+        ? { ...last, detail: `${last.detail} (asked ${asks} time(s), the last ${Math.round(lastAskAt / 1000)}s after the first)` }
         : { verdict: "unverifiable", detail: "no read finished inside the window" },
     clock,
     pollIntervalMs: intervalMs,
-    overallTimeoutMs: windowMs,
+    overallTimeoutMs: windowMs + intervalMs,
     logger: { log: () => {} },
   });
 }
@@ -364,14 +374,13 @@ export async function verifySentrySourcemaps({
           "environment (web and landing in this job, the API through Render's sync), so they uploaded nothing",
       };
     }
-    const { sinceThisRun } = SOURCEMAP_PROJECTS[project];
-    if (sinceThisRun && !Number.isFinite(since)) {
+    if (!Number.isFinite(since)) {
       return { verdict: "unverifiable", detail: "SOURCEMAPS_SINCE is missing or unreadable, so this run's uploads can't be told from another build's" };
     }
     return checkProject({
       project,
       release: sha,
-      sinceMs: sinceThisRun ? since : null,
+      sinceMs: since,
       token,
       baseUrl,
       fetchImpl,

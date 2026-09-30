@@ -39,7 +39,9 @@
 //
 // A report that should have arrived and didn't (the check step ran, per
 // SOURCEMAPS_CHECKED, but SOURCEMAPS is empty) is a warning, never "nothing
-// built": the runner dropped it, and no alert can be judged from it.
+// built". Either the verifier wrote nothing (it crashed, and says so in the
+// deploy job's log) or the runner dropped the output as masked; no alert can
+// be judged from it either way.
 //
 // **P2, not P1:** stack traces arrive minified, nothing is down.
 //
@@ -219,7 +221,8 @@ export async function reportSourcemaps({
   if (!verdicts) {
     logger.log(
       checkRan(checked)
-        ? "::warning::The source-map check ran, but its verdicts didn't reach this job (the runner drops a job output that contains a masked value), so no alert changes."
+        ? "::warning::The source-map check ran, but no verdicts reached this job, so no alert changes. Either the check wrote none " +
+            "(look for its `crashed` warning in the deploy job) or the runner dropped the output as containing a masked value."
         : "No source-map verdicts: this run built nothing that uploads source maps, so no alert changes.",
     );
     return [];

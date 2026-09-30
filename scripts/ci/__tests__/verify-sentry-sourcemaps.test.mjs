@@ -105,13 +105,6 @@ describe("which projects a run checks", () => {
     assert.deepEqual(Object.keys(SOURCEMAP_PROJECTS), ["frapp-api", "frapp-web", "frapp-landing"]);
   });
 
-  it("counts only this run's uploads for the builds that differ by environment", () => {
-    // Web and landing inline each environment's NEXT_PUBLIC_* values; the API
-    // image is the same bytes in both.
-    assert.equal(SOURCEMAP_PROJECTS["frapp-api"].sinceThisRun, false);
-    assert.equal(SOURCEMAP_PROJECTS["frapp-web"].sinceThisRun, true);
-    assert.equal(SOURCEMAP_PROJECTS["frapp-landing"].sinceThisRun, true);
-  });
 });
 
 describe("the question it asks Sentry", () => {
@@ -128,42 +121,43 @@ describe("the question it asks Sentry", () => {
 
   it("sends the token as a bearer, and never in the URL", async () => {
     const { fetchImpl, calls } = makeFetch([response(200, [bundle(SHA)])]);
-    await checkProject({ project: "frapp-api", release: SHA, token: "sntrys_secret", fetchImpl, clock: fakeClock() });
+    await checkProject({ project: "frapp-api", release: SHA, sinceMs: SINCE_MS, token: "sntrys_secret", fetchImpl, clock: fakeClock() });
     assert.equal(calls[0].init.headers.Authorization, "Bearer sntrys_secret");
     assert.doesNotMatch(calls[0].url, /sntrys_secret/);
   });
 });
 
 describe("reading the answer", () => {
+  const since = { sinceMs: SINCE_MS };
+
   it("is present only for a bundle associated with this release", () => {
-    assert.equal(classifyBundles([bundle(SHA)], SHA).verdict, "present");
-    assert.equal(classifyBundles([bundle(OTHER_SHA)], SHA).verdict, "missing");
-    assert.equal(classifyBundles([], SHA).verdict, "missing");
+    assert.equal(classifyBundles([bundle(SHA)], SHA, since).verdict, "present");
+    assert.equal(classifyBundles([bundle(OTHER_SHA)], SHA, since).verdict, "missing");
+    assert.equal(classifyBundles([], SHA, since).verdict, "missing");
   });
 
   it("does not count a bundle Sentry says holds no files", () => {
-    assert.equal(classifyBundles([bundle(SHA, { fileCount: 0 })], SHA).verdict, "missing");
+    assert.equal(classifyBundles([bundle(SHA, { fileCount: 0 })], SHA, since).verdict, "missing");
     const withoutCount = { ...bundle(SHA), fileCount: undefined };
-    assert.equal(classifyBundles([withoutCount], SHA).verdict, "present", "an absent count isn't evidence of an empty bundle");
+    assert.equal(classifyBundles([withoutCount], SHA, since).verdict, "present", "an absent count isn't evidence of an empty bundle");
   });
 
   it("reads anything but a list of bundles as unverifiable, never as missing", () => {
     // The endpoint is undocumented: a changed shape must not raise an alert.
-    assert.equal(classifyBundles({ detail: "x" }, SHA).verdict, "unverifiable");
-    assert.equal(classifyBundles(null, SHA).verdict, "unverifiable");
-    assert.equal(classifyBundles([{ bundleId: "b" }], SHA).verdict, "unverifiable");
+    assert.equal(classifyBundles({ detail: "x" }, SHA, since).verdict, "unverifiable");
+    assert.equal(classifyBundles(null, SHA, since).verdict, "unverifiable");
+    assert.equal(classifyBundles([{ bundleId: "b" }], SHA, since).verdict, "unverifiable");
   });
 
-  describe("when only this run's uploads count", () => {
-    const since = { sinceMs: SINCE_MS };
-
+  describe("only this run's uploads count", () => {
     it("does not count another build's bundle for the same release", () => {
-      // Staging uploaded this commit's web maps an hour before production's
-      // builds began; production's own upload failed.
+      // Staging uploaded this commit's maps an hour before production's builds
+      // began; production's own build uploaded nothing (web: its chunks differ;
+      // API: a build without the token injects no debug IDs).
       const result = classifyBundles([bundle(SHA, { date: BEFORE })], SHA, since);
       assert.equal(result.verdict, "missing");
-      assert.match(result.detail, /another build's/);
-      assert.equal(classifyBundles([bundle(SHA, { date: BEFORE })], SHA).verdict, "present", "without the filter it would have counted");
+      assert.match(result.detail, /earlier build's/);
+      assert.match(result.detail, /cached upload/, "the cached-layer case is named");
     });
 
     it("counts a bundle uploaded after the builds began, or re-uploaded since", () => {
@@ -188,7 +182,7 @@ describe("one project's verdict", () => {
   const check = (handlers, extra = {}) => {
     const { fetchImpl, calls } = makeFetch(handlers);
     const clock = extra.clock ?? fakeClock();
-    return checkProject({ project: "frapp-web", release: SHA, token: "t", fetchImpl, clock, ...extra }).then((result) => ({
+    return checkProject({ project: "frapp-web", release: SHA, sinceMs: SINCE_MS, token: "t", fetchImpl, clock, ...extra }).then((result) => ({
       result,
       calls,
       clock,
@@ -207,16 +201,17 @@ describe("one project's verdict", () => {
     assert.equal(calls.length, 3);
   });
 
-  it("stops re-asking at the window's end, and reports the time it actually waited", async () => {
+  it("asks for the last time a full window after the first, and says so", async () => {
     const { result, calls, clock } = await check([response(200, [])], { windowMs: 60_000, intervalMs: 15_000 });
     assert.equal(result.verdict, "missing");
-    assert.equal(calls.length, 4, "reads at 0, 15, 30 and 45 s");
-    assert.deepEqual(clock.sleeps, [15_000, 15_000, 15_000, 15_000]);
-    assert.match(result.detail, /\(asked for 60s\)/);
+    assert.equal(calls.length, 5, "reads at 0, 15, 30, 45 and 60 s");
+    assert.deepEqual(clock.sleeps, [15_000, 15_000, 15_000, 15_000, 15_000]);
+    assert.match(result.detail, /\(asked 5 time\(s\), the last 60s after the first\)/);
   });
 
-  it("counts a slow read against the window, so it can't run five reads long", async () => {
-    // Each read takes 40 s on the fake clock: only two start inside a minute.
+  it("counts a slow read against the window, and reports the asks it actually made", async () => {
+    // Each read takes 40 s on the fake clock: the second starts at 55 s, and
+    // the loop gives up once that one and its interval end past 75 s.
     const clock = fakeClock();
     const slow = async () => {
       await clock.sleep(40_000);
@@ -225,6 +220,7 @@ describe("one project's verdict", () => {
     const { result, calls } = await check([slow], { clock, windowMs: 60_000, intervalMs: 15_000 });
     assert.equal(result.verdict, "missing");
     assert.equal(calls.length, 2);
+    assert.match(result.detail, /\(asked 2 time\(s\), the last 55s after the first\)/, "measured, not the window");
   });
 
   it("is rejected on 401: the token that uploads can't read either", async () => {
@@ -292,30 +288,42 @@ describe("a deploy's report", () => {
   });
 
   it("asks all three at once", async () => {
-    // The fetch answers only once all three requests are in flight.
+    // Every fetch waits until all three are in flight, or 2 s pass. Sequential
+    // checks never have more than one in flight, so they fail the assertion
+    // after the timer instead of hanging.
     let release;
-    const gate = new Promise((resolve) => (release = resolve));
+    const gate = new Promise((resolve) => {
+      release = resolve;
+      setTimeout(resolve, 2000).unref();
+    });
     let inFlight = 0;
+    let most = 0;
     const fetchImpl = async (url) => {
       inFlight += 1;
+      most = Math.max(most, inFlight);
       if (inFlight === 3) release();
       await gate;
+      inFlight -= 1;
       return response(200, url.includes("frapp-landing") ? [] : [bundle(SHA)]);
     };
     const { report } = await verifySentrySourcemaps({ env: ENV, fetchImpl, clock: fakeClock(), windowMs: 1 });
+    assert.equal(most, 3, "all three projects were asked at the same time");
     assert.equal(outputWords(report), "present present missing");
   });
 
-  it("filters web and landing by SOURCEMAPS_SINCE, and not the API", async () => {
+  it("filters every project by SOURCEMAPS_SINCE", async () => {
+    // Staging's bundles for this commit don't count for this run, the API's
+    // included.
     const { fetchImpl } = makeFetch([response(200, [bundle(SHA, { date: BEFORE })])]);
     const { report } = await verifySentrySourcemaps({ env: ENV, fetchImpl, clock: fakeClock(), windowMs: 1 });
-    assert.equal(outputWords(report), "present missing missing");
+    assert.equal(outputWords(report), "missing missing missing");
   });
 
-  it("won't judge web and landing without SOURCEMAPS_SINCE", async () => {
-    const { fetchImpl } = makeFetch([response(200, [bundle(SHA)])]);
+  it("won't judge any project without SOURCEMAPS_SINCE", async () => {
+    const { fetchImpl, calls } = makeFetch([response(200, [bundle(SHA)])]);
     const { report } = await verifySentrySourcemaps({ env: { ...ENV, SOURCEMAPS_SINCE: "" }, fetchImpl, clock: fakeClock() });
-    assert.equal(outputWords(report), "present unverifiable unverifiable");
+    assert.equal(outputWords(report), "unverifiable unverifiable unverifiable");
+    assert.equal(calls.length, 0);
   });
 
   it("asks nothing without a token: every build that read the same Infisical environment uploaded nothing", async () => {

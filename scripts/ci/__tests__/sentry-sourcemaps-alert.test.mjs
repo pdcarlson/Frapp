@@ -173,14 +173,17 @@ describe("an empty report", () => {
     assert.match(lines[0], /built nothing/);
   });
 
-  it("is a warning, never 'nothing built', when a check ran and its verdicts didn't arrive", async () => {
-    // The runner drops a job output containing a masked value.
+  it("is a warning naming both causes, never 'nothing built', when a check ran and no verdicts arrived", async () => {
+    // Either the verifier crashed before writing (its exit-0 catch-all), or
+    // the runner dropped a job output containing a masked value.
     for (const checked of ["successskipped", "skippedsuccess"]) {
       const mock = github([]);
       const { outcomes, lines } = await run(null, mock, { checked });
       assert.deepEqual(outcomes, []);
       assert.equal(mock.calls.length, 0);
-      assert.match(lines[0], /^::warning::The source-map check ran, but its verdicts didn't reach this job/);
+      assert.match(lines[0], /^::warning::The source-map check ran, but no verdicts reached this job/);
+      assert.match(lines[0], /crashed/);
+      assert.match(lines[0], /masked value/);
     }
     assert.equal(checkRan(""), false);
     assert.equal(checkRan(undefined), false);

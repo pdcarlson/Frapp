@@ -143,7 +143,8 @@ jobs:
     environment: ${{ inputs.environment }}
     # The steps' own ceilings: the Render poll 20 minutes, the served-commit
     # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), the
-    # source-map check about 2 (`MISSING_WINDOW_MS` plus one read), on top
+    # source-map check about 2 (a minute of re-asking, one interval and one
+    # read), on top
     # of installs, two builds, production's rehearsal stack and the
     # migrations. 75 bounds the job past all of them.
     timeout-minutes: 75
@@ -573,10 +574,10 @@ jobs:
         run: node scripts/run-migration.mjs --env "$TARGET_ENVIRONMENT" --dry-run
 
       # The time this run's builds begin, for the source-map check at the end
-      # (#2489): staging and production upload web and landing to the same
-      # Sentry projects under the same release, and only a bundle uploaded
-      # after this counts as this run's. Before both environments' builds, and
-      # before the Render deploy that builds the API.
+      # (#2489): staging and production upload to the same Sentry projects
+      # under the same release, and only a bundle uploaded after this counts
+      # as this run's. Before both environments' builds, and before the Render
+      # deploy that builds the API.
       - name: Note when this run's builds begin
         id: builds-start
         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
@@ -915,8 +916,8 @@ jobs:
       # copy, like the served-commit check: it is a verdict on the deploy.
       #
       # It never fails the job. The script exits 0 on every verdict and every
-      # error of its own, asks the projects concurrently and stops re-asking
-      # after a minute, and writes one verdict word per project as the
+      # error of its own, asks the projects concurrently and re-asks for a
+      # minute at most, and writes one verdict word per project as the
       # `sourcemaps` output, which each caller's `deploy-outcome` job turns
       # into alerts (`sentry-sourcemaps-alert.mjs`). This job holds the Sentry
       # token and no write scope; that one holds `issues: write` and no token.
@@ -924,9 +925,8 @@ jobs:
       # Staging: the API when this run deployed it, web and landing when it
       # uploaded them. Production: all three on a real `full` run; a dry run
       # withholds the token on purpose and uploads nothing, and a
-      # `migrations-only` run builds nothing. Web and landing count only a
-      # bundle uploaded since `builds-start`; the script header says why the
-      # API's doesn't need to be.
+      # `migrations-only` run builds nothing. Only a bundle uploaded since
+      # `builds-start` counts; the script header says why.
       - name: Check Sentry has this commit's source maps (staging)
         id: sourcemaps-staging
         if: inputs.environment == 'staging' && (steps.plan.outputs.deploy == 'true' || steps.plan.outputs.upload == 'true')
