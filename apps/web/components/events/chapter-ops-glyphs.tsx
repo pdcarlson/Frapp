@@ -10,7 +10,8 @@
  * One file for five screens rather than five files, because the five share
  * their intents rather than partitioning them: the map pin marks an event's
  * location, a study session's zone and a zone row alike, and every one of these
- * screens is reached from the nav's Chapter and Admin sections. Splitting it
+ * screens is reached from the nav's Chapter section or from Settings (Study
+ * zones, since the Admin section folded into Settings in #2946). Splitting it
  * would put the same re-export in five places, which is the drift
  * `ui/typography.ts` was hoisted to stop.
  *

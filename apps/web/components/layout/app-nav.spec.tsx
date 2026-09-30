@@ -19,7 +19,7 @@ import { AppNav } from "./app-nav";
 
 /** Permissions for a member who holds nothing role-gated. */
 const ORDINARY_MEMBER: readonly string[] = [];
-/** Enough to see the whole Admin group and both Directory/Billing rows. */
+/** Enough to see every row, including Directory, Billing and Settings. */
 const OFFICER: readonly string[] = [
   "members:view",
   "billing:view",
@@ -55,8 +55,9 @@ describe("AppNav", () => {
     );
     // Directory and Finance were two one-item sections whose headings each
     // restated the row beneath them; the board merges them into one unlabeled
-    // group, so neither word may appear as a heading.
-    expect(headings).toEqual(["Chapter", "Resources", "Admin"]);
+    // group, so neither word may appear as a heading. The Admin group folded
+    // into the Settings row (#2946), so its heading is gone too.
+    expect(headings).toEqual(["Chapter", "Resources"]);
   });
 
   it("keeps Chat ungrouped and first", () => {
@@ -76,16 +77,37 @@ describe("AppNav", () => {
     expect(screen.getByRole("link", { name: "Billing" })).toBeInTheDocument();
   });
 
-  it("takes the Admin heading away with its rows for an ordinary member", () => {
-    renderNav({ permissions: ORDINARY_MEMBER });
-    // A heading is a promise that something sits under it.
-    const headings = Array.from(document.querySelectorAll("nav p")).map(
+  it("keeps officer rows to a single Settings row, last in the list", () => {
+    renderNav();
+    const rows = Array.from(document.querySelectorAll("nav a")).map(
       (el) => el.textContent,
     );
-    expect(headings).not.toContain("Admin");
+    expect(rows.at(-1)).toBe("Settings");
+    for (const gone of ["Roles", "Study Zones", "Reports", "Chat Admin", "Discord Import"]) {
+      expect(rows).not.toContain(gone);
+    }
+  });
+
+  it("hides Settings from an ordinary member", () => {
+    renderNav({ permissions: ORDINARY_MEMBER });
     expect(
       screen.queryByRole("link", { name: "Settings" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows Settings to an officer who holds only one tool's permission", () => {
+    // A treasurer's reports:export was a Reports row of its own; now it is the
+    // reason the Settings row shows at all.
+    renderNav({ permissions: ["members:view", "reports:export"] });
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("marks Settings as the current section while one of its tools is open", () => {
+    renderNav({ pathname: "/reports" });
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   });
 
   it("fails open while permissions are unresolved", () => {

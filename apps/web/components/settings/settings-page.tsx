@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useId, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
@@ -67,7 +68,15 @@ import {
   isOpsNudgeModuleKey,
 } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { EYEBROW } from "@/components/ui/typography";
+import { FOCUS_RING } from "@/components/ui/focus";
+import {
+  isSettingsTabVisible,
+  visibleSettingsTools,
+  type SettingsTool,
+} from "@/components/settings/settings-access";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
@@ -135,18 +144,29 @@ const RAIL_DANGER_TRIGGER_CLASS =
 // `beta` and `audit` are gone rather than reordered. They rendered
 // `SettingsComingSoon` stubs naming "Chunk 08" — generated chrome advertising
 // unbuilt work, which is exactly what this epic deletes.
-const SETTINGS_TAB_VALUES: readonly string[] = [
-  "org",
-  "theme",
-  "modules",
-  "roles",
-  "semester",
-  "fields",
-  "dues",
-  "workflows",
-  "privacy",
-  "danger",
+const SETTINGS_TABS: readonly { value: string; label: string }[] = [
+  { value: "org", label: "Chapter" },
+  { value: "theme", label: "Accent" },
+  { value: "modules", label: "Modules" },
+  { value: "roles", label: "Roles" },
+  { value: "semester", label: "Semester" },
+  { value: "fields", label: "Fields" },
+  { value: "dues", label: "Dues" },
+  { value: "workflows", label: "Workflows" },
+  { value: "privacy", label: "Privacy" },
+  { value: "danger", label: "Danger zone" },
 ];
+const SETTINGS_TAB_VALUES: readonly string[] = SETTINGS_TABS.map(
+  (tab) => tab.value,
+);
+
+// The officer tools (`settings-access.ts`) are links, not tabs: each keeps its
+// own full-width page. Same row geometry as a rail trigger, with the nav's
+// hover step, since clicking one leaves this page rather than switching a tab.
+const RAIL_LINK_CLASS = cn(
+  "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground lg:w-full",
+  FOCUS_RING,
+);
 
 // Fallback shown before the config query resolves. Mirrors the API's
 // chapter_dues_config defaults for an unconfigured chapter.
@@ -219,6 +239,7 @@ function SettingsPageContent() {
   const { data: permissionsPayload } = useMyPermissions({
     enabled: !!activeChapterId,
   });
+  const isModuleEnabled = useChapterModuleGate();
   const catalogQuery = usePermissionsCatalog();
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
@@ -712,6 +733,34 @@ function SettingsPageContent() {
     return node;
   }
 
+  /*
+    Settings shows each viewer only what they can use (#2946). The nav's
+    Settings row admits anyone holding chapter-config:view, roles:manage, or an
+    officer tool's permission, so a treasurer who holds only reports:export
+    arrives here too. Before, every setup tab rendered for everyone and the
+    config-gated ones answered a non-holder with "Couldn't load chapter
+    configuration".
+  */
+  const permissions = permissionsPayload?.permissions;
+  const tools = visibleSettingsTools(permissions, isModuleEnabled);
+  const visibleTabs = SETTINGS_TABS.filter((tab) =>
+    isSettingsTabVisible(tab.value, permissions),
+  );
+  // A `?tab=` deep link to a tab this viewer does not get, or the default
+  // `org` for someone with no setup tabs, lands on the first tab they do get.
+  const shownTab = visibleTabs.some((tab) => tab.value === activeTab)
+    ? activeTab
+    : (visibleTabs[0]?.value ?? "");
+
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="space-y-6">
+        {confirmDialog}
+        <SettingsToolsOnly tools={tools} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/*
@@ -729,7 +778,7 @@ function SettingsPageContent() {
         deleted the same sentence off four other routes.
       */}
       <Tabs
-        value={activeTab}
+        value={shownTab}
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
@@ -737,39 +786,48 @@ function SettingsPageContent() {
           Board `4d`: `width:200px`, `padding:12px 8px`, `gap:2px`, a right
           hairline. `lg:w-[200px]` is that width exactly rather than the `w-56`
           (224px) this rail used to take.
+
+          The officer tools sit above the tabs (#2946). They were the nav's
+          Admin group until it folded into Settings, and they are what an
+          officer comes here for most often; setup is occasional.
         */}
-        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:w-[200px] lg:flex-col lg:flex-nowrap lg:items-stretch lg:self-stretch lg:border-r lg:border-border lg:px-2 lg:py-3">
-          <TabsTrigger value="org" className={RAIL_TRIGGER_CLASS}>
-            Chapter
-          </TabsTrigger>
-          <TabsTrigger value="theme" className={RAIL_TRIGGER_CLASS}>
-            Accent
-          </TabsTrigger>
-          <TabsTrigger value="modules" className={RAIL_TRIGGER_CLASS}>
-            Modules
-          </TabsTrigger>
-          <TabsTrigger value="roles" className={RAIL_TRIGGER_CLASS}>
-            Roles
-          </TabsTrigger>
-          <TabsTrigger value="semester" className={RAIL_TRIGGER_CLASS}>
-            Semester
-          </TabsTrigger>
-          <TabsTrigger value="fields" className={RAIL_TRIGGER_CLASS}>
-            Fields
-          </TabsTrigger>
-          <TabsTrigger value="dues" className={RAIL_TRIGGER_CLASS}>
-            Dues
-          </TabsTrigger>
-          <TabsTrigger value="workflows" className={RAIL_TRIGGER_CLASS}>
-            Workflows
-          </TabsTrigger>
-          <TabsTrigger value="privacy" className={RAIL_TRIGGER_CLASS}>
-            Privacy
-          </TabsTrigger>
-          <TabsTrigger value="danger" className={RAIL_DANGER_TRIGGER_CLASS}>
-            Danger zone
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex w-full flex-col gap-3 lg:w-[200px] lg:self-stretch lg:border-r lg:border-border lg:px-2 lg:py-3">
+          {tools.length > 0 ? (
+            <nav aria-label="Officer tools" className="flex flex-col gap-0.5">
+              <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}>Tools</p>
+              <div className="flex flex-row flex-wrap gap-0.5 lg:flex-col">
+                {tools.map((tool) => (
+                  <Link key={tool.id} href={tool.href} className={RAIL_LINK_CLASS}>
+                    {tool.label}
+                  </Link>
+                ))}
+              </div>
+            </nav>
+          ) : null}
+          {tools.length > 0 ? (
+            <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted lg:mt-2")}>
+              Chapter setup
+            </p>
+          ) : null}
+          <TabsList
+            aria-label="Chapter setup"
+            className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-stretch"
+          >
+            {visibleTabs.map((tab) => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className={
+                  tab.value === "danger"
+                    ? RAIL_DANGER_TRIGGER_CLASS
+                    : RAIL_TRIGGER_CLASS
+                }
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         <div className="min-w-0 flex-1">
           <TabsContent value="org" className="mt-0 space-y-6">
@@ -1330,6 +1388,49 @@ function SettingsPageContent() {
         </div>
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * Settings for a viewer who holds officer tools but no setup tabs, such as a
+ * treasurer with `reports:export`. A rail of one link beside an empty panel
+ * would be a page that says nothing, so the tools are listed as the page
+ * itself. With no tools either, the viewer reached this URL with nothing to do
+ * here, and the empty state says who can change that.
+ */
+function SettingsToolsOnly({ tools }: { tools: readonly SettingsTool[] }) {
+  if (tools.length === 0) {
+    return (
+      <EmptyState
+        title="Nothing in Settings for your role"
+        description="Chapter setup and officer tools come with an officer role. Ask your chapter president if you need one."
+      />
+    );
+  }
+  return (
+    <nav aria-label="Officer tools" className="space-y-2">
+      <p className={cn(EYEBROW, "text-muted")}>Tools</p>
+      <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
+        {tools.map((tool) => (
+          <li key={tool.id}>
+            <Link
+              href={tool.href}
+              className={cn(
+                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent",
+                FOCUS_RING,
+              )}
+            >
+              <span className="text-sm font-semibold text-foreground">
+                {tool.label}
+              </span>
+              <span className="text-[13px] text-muted-foreground">
+                {tool.description}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 

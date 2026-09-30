@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 /*
  * The assembled shell had no unit coverage at all before this lane — the
@@ -12,18 +12,26 @@ import { render, screen } from "@testing-library/react";
  *   3. titles are not in the top bar
  */
 
-const { mockPathname } = vi.hoisted(() => ({ mockPathname: { value: "/events" } }));
+const { mockPathname, mockChapter, mockPermissions } = vi.hoisted(() => ({
+  mockPathname: { value: "/events" },
+  // `undefined` is a chapter read still in flight, which every test but the
+  // module-gating one wants: nothing is gated until it resolves.
+  mockChapter: { value: undefined as unknown },
+  mockPermissions: { value: [] as string[] },
+}));
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname.value,
   useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("@repo/hooks", () => ({
-  useMyPermissions: () => ({ data: { permissions: [] } }),
+  useMyPermissions: () => ({ data: { permissions: mockPermissions.value } }),
   useNotifications: () => ({ data: [] }),
-  useOrgConfig: () => ({ data: undefined }),
+  // What an ordinary member's config read looks like: `GET /chapters/:id/config`
+  // needs `chapter-config:view`, so it errors and never yields data.
+  useOrgConfig: () => ({ data: undefined, isError: true }),
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
-  useCurrentChapter: () => ({ data: undefined, isError: false }),
+  useCurrentChapter: () => ({ data: mockChapter.value, isError: false }),
   useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
   useSearch: () => ({ data: undefined, isFetching: false }),
   useChannels: () => ({ data: [] }),
@@ -57,6 +65,34 @@ import { DashboardShell } from "./dashboard-shell";
 import { DASHBOARD_SHELL_ATTR } from "@/components/shared/offline-banner-focus";
 
 describe("DashboardShell", () => {
+  it("hides a switched-off module's row from a member who cannot read chapter config", () => {
+    // #1982: the gate used to come from the config read, which errors for
+    // every seeded role below President, so the sidebar kept offering members
+    // modules their chapter had turned off. It reads the member view now.
+    mockPermissions.value = ["members:view", "backwork:upload"];
+    mockChapter.value = {
+      name: "Alpha Beta Gamma",
+      enabled_modules: { backwork: false },
+    };
+    try {
+      render(
+        <DashboardShell>
+          <p>route content</p>
+        </DashboardShell>,
+      );
+      const nav = screen.getByRole("navigation", { name: "Primary" });
+      expect(
+        within(nav).queryByRole("link", { name: "Backwork" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(nav).getByRole("link", { name: "Documents" }),
+      ).toBeInTheDocument();
+    } finally {
+      mockPermissions.value = [];
+      mockChapter.value = undefined;
+    }
+  });
+
   it("renders the route inside a main landmark", () => {
     // The floor gate measures `main`'s computed padding, so its presence is a
     // contract, not an implementation detail.
