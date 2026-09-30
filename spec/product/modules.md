@@ -199,15 +199,15 @@ The module catalog governs which features chapters can enable.
 
 ## Modules are chat integrations, not nav tabs
 
-Chat is the spine of the app (see [`spec/product/positioning.md`](./positioning.md)), so an ops module does not primarily get a top-level nav tab. When a module is enabled it gets:
+Chat is the spine of the app (see [`spec/product/positioning.md`](./positioning.md)), so an ops module does not primarily get a top-level nav tab. When a module is enabled it gets, where they fit its work:
 
-1. **A slash command** in chat (`/event`, `/task`, `/poll`, `/dues`, `/points`, `/hours`).
+1. **A slash command** in chat. The commands, and the module each one needs, are `SLASH_COMMANDS` in `packages/chat-integrations/src/index.ts`.
 2. **A rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit).
 3. **Optionally, a dashboard page** for the longer-form view (calendar, ledger, kanban). The dashboard page is secondary to the chat experience, not primary.
 
 Example: a treasurer types `/dues remind overdue` in `#general`; a rich card summarizes overdue members with a per-row "Send DM reminder" button that DMs each member a templated message with a Pay button — no tab-switching, no separate workflow.
 
-Every paid module ships with slash command(s), a rich renderer, and an optional dashboard surface. It gets no system channel of its own ([`spec/behavior/integrations.md`](../behavior/integrations.md#integration-pattern)).
+Not every paid module has a slash command: Backwork, Documents, Reports, Onboarding, Geofences and the archetype extras have none, by design, because none produces an artifact that belongs in a message (#2468). No module gets a system channel of its own. Both rules: [`spec/behavior/integrations.md` § Integration Pattern](../behavior/integrations.md#integration-pattern).
 
 ## Tiers
 
@@ -241,6 +241,8 @@ Every paid module ships with slash command(s), a rich renderer, and an optional 
 | Vault | `vault` | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md)) |
 | AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements ([`spec/behavior/ai.md`](../behavior/ai.md)) |
 
+The shipped roster is `MODULE_CATALOG` in `packages/org-archetypes/src/index.ts`, which Settings → Modules renders. Meetings, Vault and AI Q&A are specified here but aren't in it yet, so a chapter can't toggle them.
+
 ## Archetype-specific extras (prototype extras carried forward)
 
 `billing`, `academics`, `philanthropy`, `risk`, `lines`, `networking`, `standards`, `serviceFirst` — these are in the catalog for archetype presets and future feature scoping. They are paid-tier and opt-in.
@@ -253,7 +255,7 @@ Enabling paid ops modules is never a gate — it is surfaced as a dismissible in
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
-Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), and hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`; on web the palette still reads its gate from the officer-only config, so members below President get no commands at all, #2957), and hides its dashboard nav item (module-gated `ProtectedNavItem`, fed by `useChapterModuleGate()`, which reads `enabled_modules` from the member-readable `GET /v1/chapters/current`, #1982). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
 
 **Server-side enforcement.** Hiding a surface is not the same as closing it: a direct API call bypasses every client-side gate above. Controllers for paid modules therefore carry `@RequireModule(key)` (`apps/api/src/interface/decorators/module.decorator.ts`), and `ChapterGuard` rejects **writes** to a disabled module with `403 chapter.module.disabled`. Two rules follow from the guarantee that data is preserved:
 
