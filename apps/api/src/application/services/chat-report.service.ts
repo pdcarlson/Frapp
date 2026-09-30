@@ -217,14 +217,7 @@ export class ChatReportService {
     });
     if (!created) return report;
 
-    if (
-      await this.closeIfMessageGone(
-        report.id,
-        input.message_id,
-        chapterId,
-        'filed on a message deleted as it landed',
-      )
-    ) {
+    if (await this.closeIfMessageGone(report.id, input.message_id, chapterId)) {
       throw messageDeletedConflict();
     }
 
@@ -233,34 +226,27 @@ export class ChatReportService {
   }
 
   /**
-   * The re-check after a report has just been made `open` — written by
-   * {@link fileReport}, or put back by a withdrawn removal claim
-   * ({@link settleFailedRemoval}): if its message is gone by now (soft- or
-   * hard-deleted), close the report as `actioned` (no reviewer — nobody decided
-   * it) and answer `true`. `context` says which, for the log.
+   * The re-check after a new report is written: if its message was removed in
+   * the meantime, close the report as `actioned` (no reviewer — nobody decided
+   * it) and answer `true`.
    *
-   * **A read after the write**, so it cannot miss a removal that raced it: a
-   * removal's sibling sweep runs after its delete, so either the sweep ran
-   * after this report was open and closed it, or the delete committed before
-   * this read and the read sees it.
-   *
-   * **Never fails the caller.** The row is committed, and a 500 here would
+   * **Never fails the report.** The row is committed, and a 500 here would
    * invite a retry that the idempotent path answers silently — so if the read
-   * itself fails, the message is taken to be live, which is the ordinary
-   * outcome. A close that fails is logged; the report then sits `open` over a
-   * deleted message until an officer's Remove closes it (idempotently).
+   * itself fails, the message is taken to be live and the officers are told,
+   * which is the ordinary outcome. A close that fails is logged; the report
+   * then sits `open` over a deleted message until an officer's Remove closes
+   * it (idempotently), and nobody was paged about it.
    *
-   * One window stays open by construction for a new report: a removal that has
-   * claimed its report but not yet deleted the message. A report written then
-   * reads the message live and notifies; the removal's sweep, which runs after
-   * its delete, then closes it. The officers were paged about a report that is
+   * One window stays open by construction: a removal that has claimed its
+   * report but not yet deleted the message. A report written then reads the
+   * message live and notifies; the removal's sweep, which runs after its
+   * delete, then closes it. The officers were paged about a report that is
    * already `actioned` when they open the queue — noise, not a lost report.
    */
   private async closeIfMessageGone(
     reportId: string,
     messageId: string,
     chapterId: string,
-    context: string,
   ): Promise<boolean> {
     let state: ReportedMessageState | null;
     try {
@@ -269,7 +255,7 @@ export class ChatReportService {
       logThrowable(
         this.logger,
         'warn',
-        `Could not re-check the message of chat report ${reportId}, ${context}`,
+        `Could not re-check the message of new chat report ${reportId}`,
         error,
       );
       return false;
@@ -286,7 +272,7 @@ export class ChatReportService {
       logThrowable(
         this.logger,
         'warn',
-        `Could not close chat report ${reportId}, ${context}`,
+        `Could not close chat report ${reportId}, filed on a message deleted as it landed`,
         error,
       );
     }
@@ -427,14 +413,25 @@ export class ChatReportService {
    *      client says the outcome is unknown and refetches, and a retry gets
    *      the report-level replay's 200.
    *
-   *    **A withdrawn claim never leaves the report open over a message that is
-   *    gone** (#2748). While the claim stood, the report was `actioned`, so
-   *    another officer's removal through a sibling report swept past it, and
-   *    the sender or a channel delete may have removed the message too. So
-   *    once the claim is withdrawn the message is read again
-   *    ({@link closeIfMessageGone}), and if it is gone the report closes as
-   *    `actioned` with no officer stamp — nobody's removal of it succeeded —
-   *    instead of going back to the queue with nothing to act on.
+   *    **A withdrawn claim is checked against what happened while it stood**
+   *    (#2748), by reads made *after* the withdrawal, so a removal racing it
+   *    is always seen (its sweep runs after its delete: either the sweep runs
+   *    after the withdrawal and closes the report, or the delete and the
+   *    removal's stamp are already visible to the reads):
+   *    - **After a 4xx**, if the message has been soft-deleted and another
+   *      report on it carries an officer's `actioned` stamp, that officer's
+   *      removal swept past this report while the claim made it `actioned`.
+   *      The report closes with *that* stamp, as the sweep would have closed
+   *      it ({@link closeIfSweptPast}), instead of returning to the queue with
+   *      nothing to act on. Anything else leaves it as it was before the
+   *      claim: open over a message its sender deleted (an officer still
+   *      judges that one), or open with `message_id` NULL over a hard-deleted
+   *      one (closed explicitly, below).
+   *    - **After anything else**, a message found deleted only on the second
+   *      read may be this request's own tombstone committing late, so it is
+   *      treated like the first read finding it gone: the report is claimed
+   *      again with this request's stamp and the removal is finished
+   *      ({@link reclaimLandedRemoval}).
    * 3. **Sweep.** Every other open report on the message closes, in one
    *    conditional `UPDATE` stamped with this officer and the claim's
    *    timestamp. It runs *after* the delete so it also catches a report filed
@@ -590,30 +587,56 @@ export class ChatReportService {
     claimedAt: string,
     error: unknown,
   ): Promise<void> {
-    const state = decidedBeforeWrite(error)
-      ? null
-      : await this.messageStateAfterFailedRemoval(
-          reportId,
-          messageId,
-          chapterId,
-        );
-    if (!state?.isDeleted) {
-      const released = await this.releaseClaim(
+    if (decidedBeforeWrite(error)) {
+      if (
+        await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt)
+      ) {
+        await this.closeIfSweptPast(reportId, messageId, chapterId);
+      }
+      return;
+    }
+
+    const state = await this.messageStateAfterFailedRemoval(
+      reportId,
+      messageId,
+      chapterId,
+    );
+    if (state?.isDeleted) {
+      await this.finishLandedRemoval(
         reportId,
+        messageId,
         chapterId,
         officerUserId,
         claimedAt,
       );
-      if (released) {
-        await this.closeIfMessageGone(
-          reportId,
-          messageId,
-          chapterId,
-          'reopened by a failed removal over a message that is gone',
-        );
-      }
       return;
     }
+    if (
+      !(await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt))
+    ) {
+      return;
+    }
+    await this.reclaimLandedRemoval(
+      reportId,
+      messageId,
+      chapterId,
+      officerUserId,
+      claimedAt,
+    );
+  }
+
+  /**
+   * The removal's own tombstone landed (or may have): the claim stands, the
+   * attachment purge the failed call never reached runs, and the sibling sweep
+   * runs, so no report reopens over a removed message.
+   */
+  private async finishLandedRemoval(
+    reportId: string,
+    messageId: string,
+    chapterId: string,
+    officerUserId: string,
+    claimedAt: string,
+  ): Promise<void> {
     await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
     try {
       await this.reportRepo.resolveOpenForMessage(
@@ -636,14 +659,121 @@ export class ChatReportService {
   }
 
   /**
+   * After a 5xx or a lost answer whose first re-read did not find the message
+   * gone, and whose claim is now withdrawn: read it once more. A tombstone that
+   * commits late — or a first read that failed — is only visible now, and this
+   * request may be what wrote it, so a deleted message is handled as the first
+   * read would have handled it: the report is claimed again with the same
+   * stamp (a compare-and-set on `open`, so a sibling's sweep that got there
+   * first keeps its own) and the removal is finished.
+   *
+   * Still there, hard-deleted (`null`), or unreadable: the report stays open
+   * for a retry, as before this check existed.
+   */
+  private async reclaimLandedRemoval(
+    reportId: string,
+    messageId: string,
+    chapterId: string,
+    officerUserId: string,
+    claimedAt: string,
+  ): Promise<void> {
+    const state = await this.messageStateAfterFailedRemoval(
+      reportId,
+      messageId,
+      chapterId,
+    );
+    if (!state?.isDeleted) return;
+    try {
+      const reclaimed = await this.reportRepo.resolve(
+        reportId,
+        chapterId,
+        'actioned',
+        officerUserId,
+        claimedAt,
+      );
+      if (!reclaimed) return;
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not close chat report ${reportId}, reopened by a failed removal whose message was then found deleted`,
+        error,
+      );
+      return;
+    }
+    await this.finishLandedRemoval(
+      reportId,
+      messageId,
+      chapterId,
+      officerUserId,
+      claimedAt,
+    );
+  }
+
+  /**
+   * After a 4xx whose claim is now withdrawn: if another officer's removal took
+   * the message while the claim stood, close this report the way that
+   * removal's sweep would have — `actioned`, with that removal's own stamp.
+   *
+   * The sweep skipped this report because the claim had made it `actioned`.
+   * Evidence that it happened is both halves of a removal: the message is
+   * soft-deleted, and another report on it carries an officer's `actioned`
+   * stamp ({@link IChatMessageReportRepository.findActionedStamp}). The close
+   * is {@link IChatMessageReportRepository.resolve} with that stamp, so it is
+   * conditional on `open` and leaves out a report about that officer, exactly
+   * as their sweep does.
+   *
+   * Nothing else closes it. A message its sender deleted with no officer's
+   * removal is left open, as it was before the claim: the evidence snapshot
+   * exists so an officer can still judge it. A hard-deleted message (`null`)
+   * is left open with `message_id` NULL for an explicit Mark actioned, like
+   * its siblings. A read or write that fails is logged and leaves the report
+   * open — the state a retry expects.
+   */
+  private async closeIfSweptPast(
+    reportId: string,
+    messageId: string,
+    chapterId: string,
+  ): Promise<void> {
+    try {
+      const state = await this.chatService.reportedMessageState(
+        messageId,
+        chapterId,
+      );
+      if (!state?.isDeleted) return;
+      const stamp = await this.reportRepo.findActionedStamp(
+        chapterId,
+        messageId,
+      );
+      if (!stamp) return;
+      await this.reportRepo.resolve(
+        reportId,
+        chapterId,
+        'actioned',
+        stamp.resolved_by,
+        stamp.resolved_at,
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check chat report ${reportId} against a removal that raced its refused one; it stays open`,
+        error,
+      );
+    }
+  }
+
+  /**
    * The message as it stands after its removal reported a failure, read
    * chapter-scoped and without content ({@link ChatService.reportedMessageState}).
    *
    * Null when it cannot say the message is gone: the row no longer exists, or
-   * the read itself failed. The caller then withdraws the claim, as it did
-   * before this check existed — a report left `actioned` over a message still
-   * in place would refuse the retry (409), where a reopened one over a message
-   * already removed is closed by it.
+   * the read itself failed. Read twice on the failure path: once before the
+   * claim is withdrawn ({@link settleFailedRemoval}) and once after
+   * ({@link reclaimLandedRemoval}). When neither finds it deleted, the report
+   * is left open — a report left `actioned` over a message still in place
+   * would refuse the retry (409), where a reopened one over a message already
+   * removed is closed by it.
    */
   private async messageStateAfterFailedRemoval(
     reportId: string,
@@ -809,9 +939,10 @@ export class ChatReportService {
  * the question, not `content`), then one `- label` line per option. The web
  * queue renders the snapshot with its line breaks.
  *
- * Polls come in two shapes, and both are read: today's clients post
- * `kind: 'poll'` with `payload.options: [{ id, label }]` (chat-core's
- * `dispatchPoll`), and the older `POST /v1/channels/:id/polls` writes
+ * Polls come in two shapes, and both are read: the web client's `/poll`
+ * posts `kind: 'poll'` with `payload.options: [{ id, label }]` (chat-core's
+ * `dispatchPoll`; mobile creates no polls), and the older
+ * `POST /v1/channels/:id/polls` writes
  * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
  * A malformed card falls back to `content`, the same as any other message:
  * this runs on the filing path and must not fail it.

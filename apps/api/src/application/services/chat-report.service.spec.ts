@@ -93,6 +93,7 @@ describe('ChatReportService', () => {
       findOwnOpenReport: jest.fn().mockResolvedValue(null),
       releaseClaim: jest.fn().mockResolvedValue(true),
       closeForDeletedMessage: jest.fn().mockResolvedValue(true),
+      findActionedStamp: jest.fn().mockResolvedValue(null),
     };
     channelAccess = {
       assertMessageAccess: jest.fn().mockResolvedValue(baseMessage),
@@ -389,16 +390,15 @@ describe('ChatReportService', () => {
         );
       });
 
-      it('keeps the option text after the author deletes the poll', async () => {
-        // The failure #2724 names: the author's own delete tombstones
-        // `content` and wipes the card, and the officer queue reads only the
-        // report's snapshot. The store below is the report table: the
-        // snapshot is written once, at file time, and nothing rewrites it.
-        let message: ChatMessage = pollMessage;
+      it('serves the option text from the report itself, never from the poll, so a later delete cannot change it', async () => {
+        // The failure #2724 names: the author deletes the poll after it is
+        // reported. The queue reads only the report row, so what the officer
+        // sees is the snapshot written at file time, whatever happens to the
+        // message afterwards (a delete tombstones `content` and wipes
+        // `metadata`; #1575 tracks `payload`). The store below stands in for
+        // the report table.
         const stored: ChatMessageReportView[] = [];
-        channelAccess.assertMessageAccess.mockImplementation(
-          async () => message,
-        );
+        channelAccess.assertMessageAccess.mockResolvedValue(pollMessage);
         reportRepo.create.mockImplementation(async (input) => {
           const row: ChatMessageReportView = {
             ...baseReport,
@@ -416,17 +416,15 @@ describe('ChatReportService', () => {
           message_id: MESSAGE_ID,
           reason: 'harassment',
         });
-        message = {
-          ...pollMessage,
-          content: '[message deleted]',
-          is_deleted: true,
-          metadata: {},
-          payload: null,
-        };
+        channelAccess.assertMessageAccess.mockClear();
+        chatService.reportedMessageState.mockClear();
 
         const [report] = await service.listReports(CHAPTER, OFFICER);
         expect(report.reported_content).toContain('something harassing');
         expect(report.reported_content).toContain('Where should we eat?');
+        // Reading the queue never goes back to the message.
+        expect(channelAccess.assertMessageAccess).not.toHaveBeenCalled();
+        expect(chatService.reportedMessageState).not.toHaveBeenCalled();
       });
 
       it('reads the older `type: POLL` shape, whose options are strings in metadata', async () => {
@@ -863,12 +861,12 @@ describe('ChatReportService', () => {
       expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
-    it('rethrows a 4xx refusal even when the message is gone, withdrawing the claim and then closing the report unstamped', async () => {
+    it('rethrows a 4xx refusal even when the message is gone, and withdraws the claim', async () => {
       // A 4xx is the access check refusing this caller before anything was
       // written — here, an officer removed from the chapter after the guard
       // admitted the request. It is not an answer about the message, so the
       // sender having deleted it already must not turn it into a 200, and the
-      // refused call must not be recorded as the removal (#2748).
+      // refused call must not be recorded as the removal.
       const refusal = new ForbiddenException(
         'You do not have access to this channel',
       );
@@ -882,22 +880,18 @@ describe('ChatReportService', () => {
         service.removeReportedMessage('report-1', CHAPTER, OFFICER),
       ).rejects.toBe(refusal);
 
-      // Withdrawn first, then read — after the write, so a removal racing it
-      // cannot slip between the two.
       expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
-      expect(chatService.reportedMessageState).toHaveBeenCalledWith(
-        MESSAGE_ID,
-        CHAPTER,
-      );
+      // Checked against a racing removal only after the withdrawal, so one
+      // cannot slip between the two (#2748). None stamped the message here.
       expect(reportRepo.releaseClaim.mock.invocationCallOrder[0]).toBeLessThan(
         chatService.reportedMessageState.mock.invocationCallOrder[0],
       );
-      // Gone, so closed with no officer's stamp rather than left open.
-      expect(reportRepo.closeForDeletedMessage).toHaveBeenCalledWith(
-        'report-1',
+      expect(reportRepo.findActionedStamp).toHaveBeenCalledWith(
         CHAPTER,
-        expect.any(String),
+        MESSAGE_ID,
       );
+      expect(reportRepo.resolve).toHaveBeenCalledTimes(1); // the claim only
+      expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
       expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
@@ -919,7 +913,7 @@ describe('ChatReportService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(chatService.reportedMessageState).not.toHaveBeenCalled();
-      expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
+      expect(reportRepo.findActionedStamp).not.toHaveBeenCalled();
     });
 
     it("keeps the removal's own error, and logs, when the claim cannot be withdrawn either", async () => {
@@ -1173,6 +1167,28 @@ describe('ChatReportService', () => {
           return true;
         },
       );
+      reportRepo.findActionedStamp.mockImplementation(
+        async (chapterId, messageId) => {
+          const stamped = [...rows.values()]
+            .filter(
+              (row) =>
+                visible(row, chapterId) &&
+                row.message_id === messageId &&
+                row.status === 'actioned' &&
+                row.resolved_by !== null,
+            )
+            .sort((a, b) =>
+              (b.resolved_at ?? '').localeCompare(a.resolved_at ?? ''),
+            );
+          const newest = stamped[0];
+          return newest
+            ? {
+                resolved_by: newest.resolved_by!,
+                resolved_at: newest.resolved_at!,
+              }
+            : null;
+        },
+      );
       chatService.reportedMessageState.mockImplementation(async () =>
         messageRowGone
           ? null
@@ -1318,54 +1334,63 @@ describe('ChatReportService', () => {
       expect(chatService.deleteReportedMessage).toHaveBeenCalledTimes(1);
     });
 
-    describe('a removal refused while another takes the message (#2748)', () => {
+    describe('a failed removal while another takes the message (#2748)', () => {
       const refusal = new ForbiddenException(
         'You do not have access to this channel',
       );
 
-      /**
-       * OFFICER's removal of report-1 has claimed it, and while it is in
-       * flight OTHER_OFFICER removes the message through report-2. That sweep
-       * skips report-1, which the claim has made `actioned`. Then OFFICER's own
-       * delete is refused.
-       */
-      function refuseAfterSiblingRemoval(error: Error) {
+      it("a 403 closes the report with the other officer's stamp, as their sweep would have", async () => {
+        // OFFICER's removal of report-1 has claimed it, and while it is in
+        // flight OTHER_OFFICER removes the message through report-2. That
+        // sweep skips report-1, which the claim has made `actioned`. Then
+        // OFFICER's own delete is refused.
         chatService.deleteReportedMessage.mockImplementationOnce(async () => {
           await service.removeReportedMessage(
             'report-2',
             CHAPTER,
             OTHER_OFFICER,
           );
-          throw error;
+          throw refusal;
         });
-      }
-
-      it("a 403 leaves the report closed with no officer's stamp, not back in the open queue", async () => {
-        refuseAfterSiblingRemoval(refusal);
 
         // The refused officer still gets the refusal, never "already removed".
         await expect(
           service.removeReportedMessage('report-1', CHAPTER, OFFICER),
         ).rejects.toBe(refusal);
 
-        // Withdrawn — the refused call removed nothing — and then closed,
-        // because the message is gone: nobody's removal of it succeeded.
+        // Withdrawn (the refused call removed nothing), then closed as the
+        // other officer's removal rather than left open with nothing to act on.
         expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
         expect(current('report-1')).toMatchObject({
           status: 'actioned',
-          resolved_by: null,
-        });
-        expect(current('report-1').resolved_at).not.toBeNull();
-        expect(current('report-2')).toMatchObject({
-          status: 'actioned',
           resolved_by: OTHER_OFFICER,
+          resolved_at: current('report-2').resolved_at,
         });
         expect(
           [...rows.values()].filter((row) => row.status === 'open'),
         ).toEqual([]);
+        expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
       });
 
-      it('a 404 for a row hard-deleted mid-removal closes the report the same way', async () => {
+      it('a 403 over a message its sender deleted, with no removal, leaves the report open as before the claim', async () => {
+        // A report left open over an author-deleted message is an ordinary
+        // state an officer still judges; a refused request must not close it.
+        messageDeleted = true;
+        chatService.deleteReportedMessage.mockRejectedValueOnce(refusal);
+
+        await expect(
+          service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+        ).rejects.toBe(refusal);
+
+        expect(current('report-1')).toMatchObject({
+          status: 'open',
+          resolved_by: null,
+          resolved_at: null,
+        });
+        expect(current('report-2').status).toBe('open');
+      });
+
+      it('a 404 for a row hard-deleted mid-removal reopens the report for an explicit Mark actioned, like its siblings', async () => {
         const gone = new NotFoundException('Message not found');
         chatService.deleteReportedMessage.mockImplementationOnce(async () => {
           messageRowGone = true;
@@ -1376,37 +1401,44 @@ describe('ChatReportService', () => {
           service.removeReportedMessage('report-1', CHAPTER, OFFICER),
         ).rejects.toBe(gone);
 
-        expect(current('report-1')).toMatchObject({
-          status: 'actioned',
-          resolved_by: null,
-        });
+        expect(current('report-1').status).toBe('open');
+        expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
       });
 
-      it('a failure whose re-read saw the message, which then went before the release, still closes', async () => {
-        // The 5xx branch reads the message (still there), and the sibling's
-        // removal lands between that read and the release. Only a read after
-        // the release can see it.
+      it('a lost answer whose tombstone commits after the first re-read is still finished as this removal', async () => {
+        // The first re-read sees the message; the tombstone lands just after
+        // it. Without the second read the report would reopen over a message
+        // this request's own delete removed.
         chatService.deleteReportedMessage.mockRejectedValueOnce(
-          new Error('db down'),
+          new Error('fetch failed'),
         );
         chatService.reportedMessageState.mockImplementationOnce(async () => {
           const before = { channelId: 'chan-1', isDeleted: false };
-          await service.removeReportedMessage(
-            'report-2',
-            CHAPTER,
-            OTHER_OFFICER,
-          );
+          messageDeleted = true;
           return before;
         });
 
         await expect(
           service.removeReportedMessage('report-1', CHAPTER, OFFICER),
-        ).rejects.toThrow('db down');
+        ).rejects.toThrow('fetch failed');
 
+        const claimedAt = reportRepo.resolve.mock.calls[0][4];
         expect(current('report-1')).toMatchObject({
           status: 'actioned',
-          resolved_by: null,
+          resolved_by: OFFICER,
+          resolved_at: claimedAt,
         });
+        // The sibling closes with it, and the purge the failed call never
+        // reached runs.
+        expect(current('report-2')).toMatchObject({
+          status: 'actioned',
+          resolved_by: OFFICER,
+        });
+        expect(chatService.purgeRemovedMessageAttachments).toHaveBeenCalledWith(
+          MESSAGE_ID,
+          CHAPTER,
+        );
+        expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
       });
 
       it('a refusal over a message still in place reopens the report for a retry, as before', async () => {
@@ -1421,7 +1453,7 @@ describe('ChatReportService', () => {
           resolved_by: null,
           resolved_at: null,
         });
-        expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
+        expect(reportRepo.findActionedStamp).not.toHaveBeenCalled();
       });
     });
 
