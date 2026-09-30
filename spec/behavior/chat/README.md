@@ -786,8 +786,17 @@ channel that reports a different one fails the import rather than being skipped.
   attachments and reactions, and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a
   live channel leaves that channel's live messages — and any *other* import's
-  messages — untouched. This is currently the only deletion path that reaps the
-  `chat-archive` bucket; there is no chapter-deletion path in the product.
+  messages — untouched. It then deletes each channel the import **created** that
+  is left holding nothing: no message of any kind (live, deleted, a tombstone,
+  or another import's), no attachment, and no other import mapped into it
+  (#2905). A channel it merged into is never deleted, and neither is a created
+  channel that still holds something, so a re-import of the same server finds
+  no empty leftover to duplicate. Before #2905 every created channel stayed, and
+  a re-import minted a second, like-named one beside it, since `chat_channels`
+  has no unique name and a channel private in Discord never merges by default.
+  The roles the import created stay either way, as the role mapping above
+  says. This is currently the only deletion path that reaps the `chat-archive`
+  bucket; there is no chapter-deletion path in the product.
 
 What follows is the behaviour the archive has once it is in.
 

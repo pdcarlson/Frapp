@@ -289,4 +289,15 @@ export interface IDiscordImportRepository {
     chapterId: string,
     limit: number,
   ): Promise<number>;
+
+  /**
+   * Delete the channels this import created that now hold nothing: no message
+   * of any kind, no attachment, and no other import mapped into them (#2905).
+   * Runs only while the import is `purging`, after its messages are gone.
+   * Returns the ids of the channels it deleted.
+   */
+  deleteEmptyCreatedChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<string[]>;
 }

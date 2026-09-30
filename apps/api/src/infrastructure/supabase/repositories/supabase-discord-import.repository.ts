@@ -715,6 +715,21 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     }
     return ids.length;
   }
+
+  async deleteEmptyCreatedChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<string[]> {
+    // One function call, so each channel's emptiness check and its delete run
+    // under the row lock that keeps a send from landing in between
+    // (`20260930030000_discord_import_purge_channels.sql`).
+    const { data, error } = await this.supabase.rpc(
+      'delete_empty_discord_import_channels',
+      { p_import_id: importId, p_chapter_id: chapterId },
+    );
+    if (error) throw error;
+    return data ?? [];
+  }
 }
 
 /** Every channel status, in the order the Watch panel counts them (#2857). */

@@ -507,6 +507,15 @@ export interface Database {
         Returns: number | null;
       };
       /**
+       * `20260930030000` (#2905). Deletes the channels a `purging` import
+       * created that now hold nothing, and returns their ids. A no-op for any
+       * other status.
+       */
+      delete_empty_discord_import_channels: {
+        Args: { p_import_id: string; p_chapter_id: string };
+        Returns: string[];
+      };
+      /**
        * `20260805150000`. `claim_outcome` is `text` in SQL, narrowed here to
        * the three literals the function body can actually return.
        */

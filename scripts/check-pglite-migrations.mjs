@@ -4146,6 +4146,153 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
   }
 }
 
+// ─── Functional: a deleted import takes its emptied channels (#2905) ─────────
+//
+// The purge deletes an import's messages, then calls
+// `delete_empty_discord_import_channels` for the channels the import created.
+// A re-import of the same server used to mint a second, like-named channel
+// beside each one left behind. Proved against the real function:
+//
+//   - a channel the import created and left empty is deleted, once even when
+//     a thread's mapping row shares it;
+//   - a created channel that still holds anything (a live message, a deleted
+//     one) is kept;
+//   - a created channel another import merged into is kept, and deleting it
+//     would have failed `discord_import_channels_target_present` anyway;
+//   - a channel the import merged into, rather than created, is never touched;
+//   - chapter scope: a mapping row pointing into another chapter deletes
+//     nothing there, and the wrong chapter id deletes nothing at all;
+//   - an import that isn't `purging` loses nothing;
+//   - a signed-in client may not call it.
+//
+// Everything runs inside one transaction and is rolled back.
+console.log("\n=== Functional: a deleted import takes its emptied channels (#2905) ===");
+{
+  const A = "a2905000-0000-4000-8000-00000000000a";
+  const B = "b2905000-0000-4000-8000-00000000000b";
+  const U = "a2905000-0000-4000-8000-000000000001";
+  const PURGING = "a2905000-0000-4000-8000-0000000000d1";
+  const OTHER = "a2905000-0000-4000-8000-0000000000d2"; // merged into one of PURGING's channels
+  const RUNNING = "a2905000-0000-4000-8000-0000000000d3";
+  const EMPTY = "a2905000-0000-4000-8000-0000000000c1";
+  const THREADED = "a2905000-0000-4000-8000-0000000000c2";
+  const LIVE = "a2905000-0000-4000-8000-0000000000c3";
+  const DELETED_MSG = "a2905000-0000-4000-8000-0000000000c4";
+  const MERGED_INTO = "a2905000-0000-4000-8000-0000000000c5";
+  const EXISTING = "a2905000-0000-4000-8000-0000000000c6";
+  const RUNNING_CH = "a2905000-0000-4000-8000-0000000000c7";
+  const IN_B = "b2905000-0000-4000-8000-0000000000c1";
+
+  const results = [];
+  const check = (name, ok, detail) => results.push({ name, ok, detail });
+  const q = async (sql) => (await db.query(sql)).rows;
+  const channelsLeft = async () =>
+    (await q(`select id from chat_channels where id in ('${EMPTY}', '${THREADED}', '${LIVE}', '${DELETED_MSG}', '${MERGED_INTO}', '${EXISTING}', '${RUNNING_CH}', '${IN_B}') order by id`)).map((r) => r.id);
+
+  try {
+    await db.exec(`
+      begin;
+      insert into chapters (id, name, university) values ('${A}', 'A', 'U'), ('${B}', 'B', 'U');
+      insert into users (id, supabase_auth_id, email) values ('${U}', gen_random_uuid(), 'u@2905.test');
+      insert into chat_channels (id, chapter_id, name, type) values
+        ('${EMPTY}', '${A}', 'rush', 'PUBLIC'),
+        ('${THREADED}', '${A}', 'formal', 'PUBLIC'),
+        ('${LIVE}', '${A}', 'general', 'PUBLIC'),
+        ('${DELETED_MSG}', '${A}', 'memes', 'PUBLIC'),
+        ('${MERGED_INTO}', '${A}', 'exec', 'PUBLIC'),
+        ('${EXISTING}', '${A}', 'announcements', 'PUBLIC'),
+        ('${RUNNING_CH}', '${A}', 'sports', 'PUBLIC'),
+        ('${IN_B}', '${B}', 'rush', 'PUBLIC');
+      insert into discord_imports (id, chapter_id, status, consent_acknowledged_at) values
+        ('${PURGING}', '${A}', 'purging', now()),
+        ('${OTHER}', '${A}', 'completed', now()),
+        ('${RUNNING}', '${A}', 'running', now());
+      insert into discord_import_channels
+        (import_id, discord_channel_id, discord_channel_name, mapping_action, new_channel_name, target_channel_id) values
+        ('${PURGING}', 'd1', 'rush', 'create_new', 'rush', '${EMPTY}'),
+        ('${PURGING}', 'd2', 'formal', 'create_new', 'formal', '${THREADED}'),
+        ('${PURGING}', 'd2-thread', 'formal-thread', 'create_new', 'formal', '${THREADED}'),
+        ('${PURGING}', 'd3', 'general', 'create_new', 'general', '${LIVE}'),
+        ('${PURGING}', 'd4', 'memes', 'create_new', 'memes', '${DELETED_MSG}'),
+        ('${PURGING}', 'd5', 'exec', 'create_new', 'exec', '${MERGED_INTO}'),
+        ('${PURGING}', 'd6', 'announcements', 'use_existing', null, '${EXISTING}'),
+        ('${PURGING}', 'd7', 'rush', 'create_new', 'rush', '${IN_B}'),
+        ('${OTHER}', 'e5', 'exec', 'use_existing', null, '${MERGED_INTO}'),
+        ('${RUNNING}', 'f1', 'sports', 'create_new', 'sports', '${RUNNING_CH}');
+      -- What the purge leaves: a member's live message, and a deleted one.
+      insert into chat_messages (channel_id, sender_id, content) values
+        ('${LIVE}', '${U}', 'posted after the import'),
+        ('${DELETED_MSG}', '${U}', '[message deleted]');
+      update chat_messages set deleted_at = now() where channel_id = '${DELETED_MSG}';
+    `);
+
+    const wrongChapter = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${B}')`);
+    const notPurging = await q(`select * from delete_empty_discord_import_channels('${RUNNING}', '${A}')`);
+    check(
+      "the wrong chapter id, or an import that isn't purging, deletes nothing",
+      wrongChapter.length === 0 && notPurging.length === 0 && (await channelsLeft()).length === 8,
+      { wrongChapter, notPurging },
+    );
+
+    const deleted = (await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}') as id`))
+      .map((r) => r.id)
+      .sort();
+    const left = await channelsLeft();
+    check(
+      "deletes exactly the created channels left empty, once each, and returns them",
+      JSON.stringify(deleted) === JSON.stringify([EMPTY, THREADED].sort()) &&
+        !left.includes(EMPTY) &&
+        !left.includes(THREADED),
+      { deleted, left },
+    );
+    check(
+      "keeps a created channel holding a live or a deleted message",
+      left.includes(LIVE) && left.includes(DELETED_MSG),
+      { left },
+    );
+    check(
+      "keeps a created channel another import merged into, and a channel it merged into",
+      left.includes(MERGED_INTO) && left.includes(EXISTING),
+      { left },
+    );
+    check(
+      "keeps another chapter's channel a mapping row points at, and a running import's channel",
+      left.includes(IN_B) && left.includes(RUNNING_CH),
+      { left },
+    );
+    const targets = await q(
+      `select discord_channel_id, target_channel_id from discord_import_channels where import_id = '${PURGING}' and discord_channel_id in ('d1', 'd2', 'd2-thread') order by 1`,
+    );
+    check(
+      "the purged import's mapping rows keep their record with the target cleared",
+      targets.length === 3 && targets.every((r) => r.target_channel_id === null),
+      { targets },
+    );
+    const again = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}')`);
+    check("a second call deletes nothing more", again.length === 0, { again });
+
+    // This harness creates `authenticated` but no `anon` role; the revoke from
+    // PUBLIC is what keeps both out.
+    const grants = await q(`
+      select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as authed
+    `);
+    check("a signed-in client may not call it", grants[0]?.authed === false, grants[0]);
+  } catch (e) {
+    check("emptied import channels scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+  } finally {
+    await db.exec("rollback;").catch(() => {});
+  }
+
+  for (const r of results) {
+    if (r.ok) {
+      console.log(`OK    ${r.name}`);
+    } else {
+      missing += 1;
+      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+    }
+  }
+}
+
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
 );

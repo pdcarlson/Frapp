@@ -572,6 +572,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-30: A deleted Discord import takes the channels it left empty (#2905)
+
+### 20260930030000_discord_import_purge_channels.sql
+
+- **Purpose**: Adds `public.delete_empty_discord_import_channels(p_import_id uuid, p_chapter_id uuid) returns setof uuid` (service role only, `security invoker`). The purge worker calls it after deleting an import's messages. It does nothing unless the import is `purging` in that chapter. For each channel the import created (a `create_new` mapping row whose `target_channel_id` is set), it locks the channel row, then deletes the channel only if it holds no `chat_messages` row of any kind, no `chat_message_attachments` row, no other import's mapping row, and no `use_existing` row of any import pointing at it. It returns the deleted ids. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Checks**: After `db push`,
+  `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');` returns `f`, and
+  `select has_function_privilege('service_role', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API that calls it. Against an unmigrated database the newer worker fails every purge slice at this call, after the messages are gone and before the archive objects are swept, and marks the import `failed`; deleting it again after the migration lands finishes it. An older API never calls the function. Nothing runs at apply time: channels go only as imports are purged afterwards, so channels that earlier purges left behind stay until an officer deletes them. `create or replace function` and the grants are idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-emptied-import-channels-20260930030000) § Rollback emptied import channels.
+
 ## 2026-09-29: Members link their Discord history to themselves (#2878)
 
 ### 20260929230000_discord_author_links.sql
