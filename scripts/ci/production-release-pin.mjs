@@ -37,7 +37,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
-import { fetchJson, fetchRenderDeploys } from "./lib/providers.mjs";
+import { fetchJson, fetchRenderDeploys, vercelDeploymentState } from "./lib/providers.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
@@ -57,10 +57,6 @@ export function isFullSha(value) {
 
 export function tagNameFromRef(ref) {
   return typeof ref === "string" && ref.startsWith("refs/tags/") ? ref.slice("refs/tags/".length) : "";
-}
-
-function vercelReadyState(deployment) {
-  return deployment?.readyState ?? deployment?.state;
 }
 
 /**
@@ -94,7 +90,7 @@ export function readProductionVercelCommit(body, label) {
     return { ok: false, reason: `Vercel ${label} deployments list unreadable` };
   }
   const ready = body.deployments.find(
-    (deployment) => deployment?.target === "production" && vercelReadyState(deployment) === "READY",
+    (deployment) => deployment?.target === "production" && vercelDeploymentState(deployment) === "READY",
   );
   if (!ready) {
     return { ok: false, reason: `no READY production deployment for ${label}` };

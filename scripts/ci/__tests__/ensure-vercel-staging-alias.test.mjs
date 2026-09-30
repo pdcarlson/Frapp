@@ -234,6 +234,38 @@ describe("ensureVercelStagingAlias", () => {
     assert.equal(result.status, "skipped");
     assert.match(result.message, /CANCELED/);
   });
+
+  it("reads a row's `readyState` when it carries no `state`", async () => {
+    // Vercel's list schema requires `readyState` and makes `state` optional.
+    // Every fixture above spells it `state`, so this is the case that pins the
+    // row being read through `vercelDeploymentState` rather than `.state`.
+    const fetchImpl = async (url) => {
+      if (url.includes("/v6/deployments")) {
+        return okJson({
+          deployments: [
+            {
+              uid: "dpl_canceled",
+              readyState: "CANCELED",
+              createdAt: "2026-04-16T01:00:00Z",
+              meta: { githubCommitSha: SHA },
+            },
+          ],
+        });
+      }
+      assert.fail("should not list aliases");
+    };
+
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      projectId: PROJECT_ID,
+      sha: SHA,
+      stagingAlias: STAGING,
+      fetchImpl,
+    });
+
+    assert.equal(result.status, "skipped");
+    assert.match(result.message, /CANCELED/);
+  });
 });
 
 // ── The id path (#1578) ────────────────────────────────────────────────────
