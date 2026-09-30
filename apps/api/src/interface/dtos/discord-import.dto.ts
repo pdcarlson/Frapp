@@ -3,7 +3,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -14,9 +13,9 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
-import { RawValue } from './raw-value.transform';
 import { DISCORD_IMPORT_PROGRESS_LIMITS } from '#domain/entities/discord-import.entity';
 
 export class CreateDiscordImportDto {
@@ -24,8 +23,7 @@ export class CreateDiscordImportDto {
     description:
       'The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this.',
   })
-  @RawValue()
-  @IsBoolean()
+  @IsStrictBoolean()
   consent_acknowledged: boolean;
 
   @ApiPropertyOptional({
@@ -187,7 +185,7 @@ export class DiscordChannelMappingDto {
 
   @ApiPropertyOptional({ type: Boolean, default: true })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   new_channel_is_read_only?: boolean;
 
   @ApiPropertyOptional({
