@@ -8,6 +8,7 @@ import {
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
+import { ChannelCacheService } from '../chat-push-worker/channel-cache.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
@@ -241,6 +242,16 @@ function makeRepo(initial: DiscordImport) {
       const round = repoRef.deletedRounds.shift() ?? 0;
       return round;
     }),
+    deletedChannels: [] as string[],
+    createdChannels: [] as string[],
+    recordCreatedChannel: jest.fn(
+      async (_importId: string, channelId: string) => {
+        repoRef.createdChannels.push(channelId);
+      },
+    ),
+    deleteEmptyCreatedChannels: jest.fn(
+      async (): Promise<string[]> => repoRef.deletedChannels,
+    ),
     create: jest.fn(),
     findById: jest.fn(async () => current),
     findByChapter: jest.fn(async () => [current]),
@@ -299,6 +310,7 @@ async function buildWorker(
   const rbac = {
     findByChapter: jest.fn(async () => [{ id: 'role-1', name: 'Brothers' }]),
   };
+  const channelCache = { invalidate: jest.fn() };
   const moduleRef = await Test.createTestingModule({
     providers: [
       DiscordImportWorkerService,
@@ -312,11 +324,14 @@ async function buildWorker(
       // Only the hourly OAuth-state reaper touches this; no import slice does.
       { provide: DISCORD_CONNECTION_REPOSITORY, useValue: connectionRepo },
       { provide: RbacService, useValue: rbac },
+      // The purge evicts the channels it deletes (#2905).
+      { provide: ChannelCacheService, useValue: channelCache },
     ],
   }).compile();
   return {
     worker: moduleRef.get(DiscordImportWorkerService),
     channelRepo,
+    channelCache,
   };
 }
 
@@ -520,6 +535,55 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.channelUpdates[0]).toMatchObject({
       target_channel_id: 'created-channel-1',
     });
+  });
+
+  // The purge deletes what an import created once it is empty (#2905). It
+  // can't learn that from the mapping rows, which remapping a failed import
+  // rewrites without their targets, so the worker records it as it creates.
+  it('records a channel it creates for the purge, before the mapping row learns its target', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'discord-general',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.recordCreatedChannel).toHaveBeenCalledTimes(1);
+    expect(repoRef.recordCreatedChannel).toHaveBeenCalledWith(
+      job().id,
+      'created-channel-1',
+    );
+    expect(
+      repoRef.recordCreatedChannel.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(channelRepo.create.mock.invocationCallOrder[0]);
+    expect(
+      repoRef.recordCreatedChannel.mock.invocationCallOrder[0],
+    ).toBeLessThan(repoRef.updateChannel.mock.invocationCallOrder[0]);
+  });
+
+  it('records nothing for a channel it merges into', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'use_existing',
+        target_channel_id: SIGNET_CHANNEL,
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).not.toHaveBeenCalled();
+    expect(repoRef.recordCreatedChannel).not.toHaveBeenCalled();
   });
 
   it('creates a restricted channel ROLE_GATED, with the permissions the admin chose (#2787)', async () => {
@@ -1150,6 +1214,70 @@ describe('DiscordImportWorkerService — purging', () => {
     // Only after every row is gone may the objects go and the job be marked.
     expect(storage.deleteFiles).toHaveBeenCalled();
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
+  });
+
+  // A re-import of the same server used to mint a second, like-named channel
+  // beside each one a deleted import left behind (#2905).
+  it('deletes the channels it created and emptied after the rows, before the objects, and evicts them', async () => {
+    repoRef.deletedRounds = [12];
+    repoRef.deletedChannels = ['created-a', 'created-b'];
+    const storage = makeStorage(null);
+    storage.listFiles = jest.fn(async () => ['a/one.png']);
+    const { worker, channelCache } = await buildWorker(repoRef, storage);
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    expect(repoRef.deleteEmptyCreatedChannels).toHaveBeenCalledWith(
+      job().id,
+      CHAPTER,
+    );
+    const lastRowRound = Math.max(
+      ...repoRef.deleteImportedMessages.mock.invocationCallOrder,
+    );
+    const channels =
+      repoRef.deleteEmptyCreatedChannels.mock.invocationCallOrder[0];
+    expect(channels).toBeGreaterThan(lastRowRound);
+    expect(storage.deleteFiles.mock.invocationCallOrder[0]).toBeGreaterThan(
+      channels,
+    );
+    expect(channelCache.invalidate.mock.calls).toEqual([
+      ['created-a'],
+      ['created-b'],
+    ]);
+    expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
+  });
+
+  it('fails the slice, keeping the objects and not marking it purged, when the channels cannot be deleted', async () => {
+    repoRef.deletedRounds = [0];
+    repoRef.deleteEmptyCreatedChannels.mockRejectedValueOnce({
+      code: 'XX000',
+      message: 'boom',
+    });
+    const storage = makeStorage(null);
+    storage.listFiles = jest.fn(async () => ['a/one.png']);
+    const { worker, channelCache } = await buildWorker(repoRef, storage);
+
+    await worker.sweepImports(NOW);
+
+    expect(storage.deleteFiles).not.toHaveBeenCalled();
+    expect(channelCache.invalidate).not.toHaveBeenCalled();
+    expect(repoRef.updates.at(-1)).toMatchObject({ status: 'failed' });
+    expect(repoRef.updates).not.toContainEqual(
+      expect.objectContaining({ status: 'purged' }),
+    );
+  });
+
+  it('touches no channel while imported rows may remain (lease lost mid-purge)', async () => {
+    repoRef.deletedRounds = [PURGE_BATCH_SIZE, 12];
+    repoRef.leaseHeld = false;
+    const storage = makeStorage(null);
+    const { worker } = await buildWorker(repoRef, storage);
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(false);
+    expect(repoRef.deleteEmptyCreatedChannels).not.toHaveBeenCalled();
   });
 
   it('sweeps both the export and media prefixes', async () => {

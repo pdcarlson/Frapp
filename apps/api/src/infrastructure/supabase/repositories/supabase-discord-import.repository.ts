@@ -715,6 +715,37 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     }
     return ids.length;
   }
+
+  async recordCreatedChannel(
+    importId: string,
+    channelId: string,
+  ): Promise<void> {
+    // Idempotent: a slice that dies after this insert and before the mapping
+    // row learns its target mints a second channel on the retry, and each gets
+    // its own row; recording the same pair twice is a no-op.
+    const { error } = await this.supabase
+      .from('discord_import_created_channels')
+      .upsert(
+        { import_id: importId, channel_id: channelId },
+        { onConflict: 'import_id,channel_id', ignoreDuplicates: true },
+      );
+    if (error) throw error;
+  }
+
+  async deleteEmptyCreatedChannels(
+    importId: string,
+    chapterId: string,
+  ): Promise<string[]> {
+    // One function call, so each channel's emptiness check and its delete run
+    // under the row lock that keeps a send from landing in between
+    // (`20260930030000_discord_import_purge_channels.sql`).
+    const { data, error } = await this.supabase.rpc(
+      'delete_empty_discord_import_channels',
+      { p_import_id: importId, p_chapter_id: chapterId },
+    );
+    if (error) throw error;
+    return data ?? [];
+  }
 }
 
 /** Every channel status, in the order the Watch panel counts them (#2857). */

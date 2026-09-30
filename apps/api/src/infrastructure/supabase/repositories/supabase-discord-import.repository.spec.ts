@@ -796,3 +796,63 @@ describe('SupabaseDiscordImportRepository — registerFiles', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 });
+
+describe('SupabaseDiscordImportRepository.deleteEmptyCreatedChannels (#2905)', () => {
+  function repoWithRpc(result: {
+    data: unknown;
+    error: unknown;
+  }): [SupabaseDiscordImportRepository, jest.Mock] {
+    const rpc = jest.fn(async () => result);
+    const client = { rpc } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0];
+    return [new SupabaseDiscordImportRepository(client), rpc];
+  }
+
+  it('asks the function for this import in this chapter and returns what it deleted', async () => {
+    const [repo, rpc] = repoWithRpc({ data: ['ch-1', 'ch-2'], error: null });
+
+    await expect(
+      repo.deleteEmptyCreatedChannels(IMPORT_A, CHAPTER_A),
+    ).resolves.toEqual(['ch-1', 'ch-2']);
+    expect(rpc).toHaveBeenCalledWith('delete_empty_discord_import_channels', {
+      p_import_id: IMPORT_A,
+      p_chapter_id: CHAPTER_A,
+    });
+  });
+
+  it('records a created channel idempotently, keyed on the import and the channel', async () => {
+    const upsert = jest.fn(async () => ({ error: null }));
+    const from = jest.fn(() => ({ upsert }));
+    const repo = new SupabaseDiscordImportRepository({
+      from,
+    } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0]);
+
+    await repo.recordCreatedChannel(IMPORT_A, CHANNEL_A);
+
+    expect(from).toHaveBeenCalledWith('discord_import_created_channels');
+    expect(upsert).toHaveBeenCalledWith(
+      { import_id: IMPORT_A, channel_id: CHANNEL_A },
+      { onConflict: 'import_id,channel_id', ignoreDuplicates: true },
+    );
+  });
+
+  it('reads no rows as nothing deleted', async () => {
+    const [repo] = repoWithRpc({ data: null, error: null });
+
+    await expect(
+      repo.deleteEmptyCreatedChannels(IMPORT_A, CHAPTER_A),
+    ).resolves.toEqual([]);
+  });
+
+  it('throws the function error, so the purge slice fails rather than marking the import purged', async () => {
+    const failure = { message: 'boom', code: 'XX000' };
+    const [repo] = repoWithRpc({ data: null, error: failure });
+
+    await expect(
+      repo.deleteEmptyCreatedChannels(IMPORT_A, CHAPTER_A),
+    ).rejects.toBe(failure);
+  });
+});

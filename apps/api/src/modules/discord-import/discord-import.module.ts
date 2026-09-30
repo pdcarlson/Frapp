@@ -16,6 +16,7 @@ import { SupabaseArchiveMediaCopier } from '../../infrastructure/storage/supabas
 import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-bot-gateway.service';
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
 import { RbacModule } from '../rbac/rbac.module';
+import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { DISCORD_AUTHOR_LINK_REPOSITORY } from '#domain/repositories/discord-author-link.repository.interface';
@@ -55,7 +56,10 @@ import {
   // RbacModule → RbacService: the role step needs `roles:manage` resolved,
   // and starting an import creates roles and grants their read permissions
   // through the same service Settings → Roles uses (#2818).
-  imports: [RbacModule],
+  // ChannelCacheModule → ChannelCacheService: the purge deletes the channels
+  // an import created and left empty, and evicts them as `ChatService` does
+  // when an officer deletes one (#2905).
+  imports: [RbacModule, ChannelCacheModule],
   controllers: [
     DiscordImportController,
     DiscordConnectionController,
