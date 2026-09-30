@@ -289,6 +289,24 @@ describe('SupabaseChatMessageAttachmentRepository — findSharedObjects', () => 
     ]);
   });
 
+  it('with no message excluded, counts every undeleted reference (a report release, #2481)', async () => {
+    // A resolved report releases what it held, and the reported message itself
+    // must count while it is live: excluding it would purge a file the message
+    // still shows.
+    const shared = await repo.findSharedObjects(
+      [
+        { bucket: 'chat-archive', storage_path: SHARED_PATH },
+        { bucket: 'chat', storage_path: SOLE_PATH },
+      ],
+      null,
+    );
+
+    expect(shared).toEqual([
+      { bucket: 'chat-archive', storage_path: SHARED_PATH },
+      { bucket: 'chat', storage_path: SOLE_PATH },
+    ]);
+  });
+
   it('does not count a reference held by an already-deleted message', async () => {
     // Soft delete leaves attachment rows in place. Counting them would let two
     // deleted messages spare each other's object forever — nothing would ever

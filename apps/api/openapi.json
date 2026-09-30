@@ -4471,6 +4471,55 @@
         ]
       }
     },
+    "/v1/chat/reports/{id}/attachments": {
+      "get": {
+        "operationId": "ChatReportController_listReportAttachments_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatReportAttachmentDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attachments an open report holds, with signed download URLs",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/chat/reports/{id}/remove-message": {
       "post": {
         "operationId": "ChatReportController_removeReportedMessage_v1",
@@ -12653,6 +12702,27 @@
           "reason"
         ]
       },
+      "ChatReportAttachmentSummaryDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "byte_size": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "filename",
+          "content_type",
+          "byte_size"
+        ]
+      },
       "ChatReportDto": {
         "type": "object",
         "properties": {
@@ -12721,6 +12791,13 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "reported_attachments": {
+            "description": "The message's attachments when the report was filed. Until the report is resolved and its files released, no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatReportAttachmentSummaryDto"
+            }
           }
         },
         "required": [
@@ -12735,7 +12812,8 @@
           "status",
           "created_at",
           "resolved_at",
-          "resolved_by"
+          "resolved_by",
+          "reported_attachments"
         ]
       },
       "ResolveChatReportDto": {
@@ -12753,6 +12831,32 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "ChatReportAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "byte_size": {
+            "type": "number",
+            "nullable": true
+          },
+          "download_url": {
+            "type": "string",
+            "description": "Signed download URL, valid for an hour. It forces a download (Content-Disposition: attachment), so opening it saves the file; an <img> still renders an image from it."
+          }
+        },
+        "required": [
+          "filename",
+          "content_type",
+          "byte_size",
+          "download_url"
         ]
       },
       "ChatReportRemovalDto": {
@@ -12824,6 +12928,13 @@
             "format": "uuid",
             "nullable": true
           },
+          "reported_attachments": {
+            "description": "The message's attachments when the report was filed. Until the report is resolved and its files released, no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatReportAttachmentSummaryDto"
+            }
+          },
           "message_already_deleted": {
             "type": "boolean",
             "description": "True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way."
@@ -12848,6 +12959,7 @@
           "created_at",
           "resolved_at",
           "resolved_by",
+          "reported_attachments",
           "message_already_deleted",
           "channel_id"
         ]

@@ -10,13 +10,35 @@ import { escapeFilterValue } from '../supabase.utils';
 import type {
   CreateChatReportInput,
   CreateChatReportResult,
+  HeldObject,
   IChatMessageReportRepository,
+  ReportEvidence,
 } from '#domain/repositories/chat-moderation.repository.interface';
 import type {
+  ChatMessageReport,
   ChatMessageReportView,
   ChatReportResolutionStatus,
   ChatReportStatus,
+  ReportedAttachment,
 } from '#domain/entities/chat-moderation.entity';
+
+/**
+ * Rows per page of the hold lookup. A chapter's holding reports are few, so
+ * one page is the ordinary case; the loop exists so a long list is still read
+ * whole ({@link SupabaseChatMessageReportRepository.findHeldObjects}).
+ */
+export const HELD_OBJECTS_PAGE_SIZE = 500;
+
+/**
+ * `reported_attachments` of a report that holds nothing, as a filter value.
+ * Through `.filter()` because the typed `.neq()` wants the column's own type,
+ * and this is its JSON text; the database compares it as `jsonb`, which is the
+ * predicate `idx_chat_message_reports_evidence_unreleased` is built on.
+ */
+const HOLDS_NOTHING = '[]';
+
+/** The columns a release or the officer route reads; never the reporter. */
+const EVIDENCE_COLUMNS = 'id, chapter_id, status, reported_attachments';
 
 /**
  * Member-filed reports against chat messages (#2257).
@@ -75,6 +97,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       reported_content: input.reported_content,
       reported_sender_id: input.reported_sender_id,
       reported_author_name: input.reported_author_name,
+      reported_attachments: input.reported_attachments,
       reason: input.reason,
       details: input.details,
     };
@@ -216,7 +239,12 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
   ): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('chat_message_reports')
-      .update({ status: 'open', resolved_at: null, resolved_by: null })
+      .update({
+        status: 'open',
+        resolved_at: null,
+        resolved_by: null,
+        evidence_released_at: null,
+      })
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('status', 'actioned')
@@ -281,6 +309,180 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     if (error) throw error;
     return data ? stripReportRow(data) : null;
   }
+
+  /**
+   * Paged by `id` (`id > last`), read until a page comes back empty; the
+   * interface says why neither offsets nor a short page will do. Only reports
+   * holding something and not yet released are read, through
+   * `idx_chat_message_reports_evidence_held`.
+   */
+  async findHeldObjects(
+    chapterId: string,
+    excludingReportIds: readonly string[] = [],
+  ): Promise<HeldObject[]> {
+    const excluded = new Set(excludingReportIds);
+    const held = new Map<string, HeldObject>();
+    let after: string | null = null;
+    for (;;) {
+      let page = this.supabase
+        .from('chat_message_reports')
+        .select('id, status, resolved_at, reported_attachments')
+        .eq('chapter_id', chapterId)
+        .is('evidence_released_at', null)
+        .filter('reported_attachments', 'neq', HOLDS_NOTHING);
+      if (after !== null) page = page.gt('id', after);
+      const { data, error } = await page
+        .order('id', { ascending: true })
+        .limit(HELD_OBJECTS_PAGE_SIZE);
+      if (error) throw error;
+      const rows = data ?? [];
+      if (rows.length === 0) return [...held.values()];
+      for (const row of rows) {
+        if (excluded.has(row.id)) continue;
+        const open = row.status === 'open';
+        const pendingSince = open ? null : row.resolved_at;
+        for (const { bucket, storage_path } of readAttachments(
+          row.reported_attachments,
+        )) {
+          const key = `${bucket} ${storage_path}`;
+          const known = held.get(key);
+          if (!known) {
+            held.set(key, {
+              bucket,
+              storage_path,
+              heldOpen: open,
+              pendingSince,
+            });
+            continue;
+          }
+          known.heldOpen ||= open;
+          known.pendingSince = latest(known.pendingSince, pendingSince);
+        }
+      }
+      after = rows[rows.length - 1].id;
+    }
+  }
+
+  async findEvidence(
+    id: string,
+    chapterId: string,
+    reviewerUserId: string,
+  ): Promise<ReportEvidence | null> {
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .select(EVIDENCE_COLUMNS)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .or(notAbout(reviewerUserId))
+      .maybeSingle();
+    if (error) throw error;
+    return data ? toEvidence(data) : null;
+  }
+
+  async findPendingRelease(
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<ReportEvidence[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chat_message_reports')
+      .select(EVIDENCE_COLUMNS)
+      .eq('chapter_id', chapterId)
+      .in('id', [...ids])
+      .neq('status', 'open')
+      .is('evidence_released_at', null)
+      .filter('reported_attachments', 'neq', HOLDS_NOTHING);
+    if (error) throw error;
+    return (data ?? []).map(toEvidence);
+  }
+
+  /**
+   * Matches `idx_chat_message_reports_evidence_unreleased`, keyed and filtered
+   * the same way, so a page is as small as the backlog of releases that have
+   * not finished.
+   */
+  async listPendingRelease(
+    resolvedBefore: string,
+    limit: number,
+    afterId?: string,
+  ): Promise<ReportEvidence[]> {
+    let page = this.supabase
+      .from('chat_message_reports')
+      .select(EVIDENCE_COLUMNS)
+      .neq('status', 'open')
+      .is('evidence_released_at', null)
+      .filter('reported_attachments', 'neq', HOLDS_NOTHING)
+      .lt('resolved_at', resolvedBefore);
+    if (afterId !== undefined) page = page.gt('id', afterId);
+    const { data, error } = await page
+      .order('id', { ascending: true })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []).map(toEvidence);
+  }
+
+  async markEvidenceReleased(
+    id: string,
+    chapterId: string,
+    releasedAt: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('chat_message_reports')
+      .update({ evidence_released_at: releasedAt })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .neq('status', 'open');
+    if (error) throw error;
+  }
+}
+
+/**
+ * A report's `reported_attachments` as the API wrote it, read defensively: the
+ * CHECK guarantees an array, not its elements, and an element without a
+ * bucket and a path names no object. Dropping it is safe in both directions
+ * it is used — a hold that names nothing protects nothing, and a release or a
+ * signature has nothing to reach.
+ */
+function readAttachments(value: unknown): ReportedAttachment[] {
+  if (!Array.isArray(value)) return [];
+  const attachments: ReportedAttachment[] = [];
+  for (const item of value as unknown[]) {
+    if (!item || typeof item !== 'object') continue;
+    const { bucket, storage_path, filename, content_type, byte_size } =
+      item as Record<string, unknown>;
+    if (typeof bucket !== 'string' || typeof storage_path !== 'string') {
+      continue;
+    }
+    attachments.push({
+      bucket,
+      storage_path,
+      filename: typeof filename === 'string' ? filename : '',
+      content_type: typeof content_type === 'string' ? content_type : null,
+      byte_size: typeof byte_size === 'number' ? byte_size : null,
+    });
+  }
+  return attachments;
+}
+
+/** The later of two timestamps, either of which may be missing. */
+function latest(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Date.parse(b) > Date.parse(a) ? b : a;
+}
+
+function toEvidence(
+  row: Pick<
+    ChatMessageReport,
+    'id' | 'chapter_id' | 'status' | 'reported_attachments'
+  >,
+): ReportEvidence {
+  return {
+    id: row.id,
+    chapter_id: row.chapter_id,
+    status: row.status,
+    reported_attachments: readAttachments(row.reported_attachments),
+  };
 }
 
 /**
@@ -325,5 +527,18 @@ function stripReportRow(row: Record<string, unknown>): ChatMessageReportView {
   // unused `_reporterUserId` binding is a lint error here.
   const rest = { ...row };
   delete (rest as { reporter_user_id?: unknown }).reporter_user_id;
+  // The held attachments leave as summaries, without their storage location
+  // (#2481): the queue names the files, and an officer reaches the bytes only
+  // through the report's own signing route. The release stamp is the API's
+  // bookkeeping. The same boundary as the reporter: nothing here is filtered
+  // on the way out by anything else.
+  delete (rest as { evidence_released_at?: unknown }).evidence_released_at;
+  rest.reported_attachments = readAttachments(row.reported_attachments).map(
+    ({ filename, content_type, byte_size }) => ({
+      filename,
+      content_type,
+      byte_size,
+    }),
+  );
   return rest as unknown as ChatMessageReportView;
 }
