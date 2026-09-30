@@ -572,6 +572,33 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-30: A deleted Discord import takes the channels it left empty (#2905)
+
+### 20260930030000_discord_import_purge_channels.sql
+
+- **Purpose**: Adds two things; the rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+  - **The table** `public.discord_import_created_channels` has one row per channel the worker creates for an import, keyed on `(import_id, channel_id)`. Both columns cascade on delete, and RLS is on with no policies.
+  - **The function** `public.delete_empty_discord_import_channels(p_import_id uuid, p_chapter_id uuid) returns setof uuid` is service role only and `security invoker`. The purge worker calls it after deleting an import's messages, and it does nothing unless the import is `purging` in that chapter.
+    - Its candidates are the channels the table records for the import, plus each `create_new` mapping row's target that is no older than the import (for imports from before the table).
+    - It checks each candidate without a lock, then locks its row and checks again, deleting the channel only if it holds no `chat_messages` row of any kind, no `chat_message_attachments` row, no `point_transactions` row in the chapter, and no `use_existing` mapping row of any import. The check is `public.discord_import_channel_holds_anything(uuid, uuid)`, also service role only.
+    - It returns the deleted ids.
+  - **Two partial indexes** that the checks and the delete's `on delete set null` actions use: `idx_point_transactions_channel` on `point_transactions (channel_id)` and `idx_discord_import_channels_target` on `discord_import_channels (target_channel_id)`, each `where … is not null`. Both tables are small, so the build is brief. They're plain `create index`, since migrations run in a transaction.
+- **Checks**: After `db push`, these return `t`, `f` and `t`, and the last returns 2:
+  - `select relrowsecurity from pg_class where relname = 'discord_import_created_channels';`
+  - `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');`
+  - `select has_function_privilege('service_role', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');`
+  - `select count(*) from pg_indexes where indexname in ('idx_point_transactions_channel', 'idx_discord_import_channels_target');`
+- **Promoter notes**:
+  - **Order:** ship it before, or with, the API that uses it. A deploy applies migrations first, so the worker never sees a database without them.
+  - **Against an unmigrated database**, the newer worker fails at its first channel creation, and every purge slice fails at the call. The import is marked `failed`, and retrying once the migration is in finishes it. Each failed attempt still leaves the channel it created with no record and no mapping target: no purge finds it, and the retry creates another, so an officer deletes those by hand. The same happens if a transient error hits that one write.
+  - **An older API** never touches either object.
+  - **Nothing runs at apply time.** Channels go only as imports are purged afterwards. The table starts empty; a purge finds an older import's channels through its `create_new` mapping rows, when the channel is no older than the import and still has the worker's "Imported from Discord #…" description. It can't find the first-run channels of an older import that was remapped through the API after failing, since the remap cleared their targets. Channels that earlier purges left behind stay until an officer deletes them. On staging, all 59 channels import `0e4c41e5` created pass both checks (read 2026-09-30).
+  - **Idempotent:** `create table if not exists`, `create index if not exists`, `create or replace function` and the grants.
+  - **Locks:** building the two indexes briefly blocks writes to `point_transactions` and `discord_import_channels`.
+  - Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-emptied-import-channels-20260930030000) § Rollback emptied import channels.
+
 ## 2026-09-30: One chat push fan-out per message, whatever the API's instance count (#2846)
 
 ### 20260930020000_chat_push_dispatches.sql
@@ -1264,11 +1291,11 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
     worker deletes them. Both are in
     [`integrations.md`](deployment/integrations.md) § 7A.
   - The Message Content Intent must be ON for the app. Without it Discord answers
-    `200` with `content: ""` on every message. The importer detects this and
-    fails — but only once a slice has seen 25 authored messages with no content,
-    attachment or embed, so a small test server can import green with the intent
-    off and write those messages empty. Verify the toggle in the portal; a green
-    import on a scratch server does not prove it.
+    `200` with `content: ""` on every message. The importer checks the toggle
+    before it writes; what that check proves, and when a green import is not
+    proof, is in [`integrations.md`](deployment/integrations.md) § 7A (setup
+    step 5, and the caveat under that section's failure table). Confirm the
+    toggle in the portal too, as that caveat says.
 
 ## 2026-08-24: Discord archive importer — one migration
 

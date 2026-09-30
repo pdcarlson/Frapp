@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { REST, RESTEvents } from '@discordjs/rest';
-import { ChannelType, Routes } from 'discord-api-types/v10';
+import { ApplicationFlags, ChannelType, Routes } from 'discord-api-types/v10';
 import {
   DISCORD_MESSAGE_PAGE_LIMIT,
   DiscordApiError,
@@ -83,6 +83,24 @@ const MAX_ARCHIVED_THREAD_PAGES = 50;
 
 /** The setup check answers a wizard request; it gives up well before that does. */
 const APPLICATION_FETCH_TIMEOUT_MS = 5_000;
+
+/** Either flag means the Message Content Intent is on for this application. */
+const MESSAGE_CONTENT_INTENT_FLAGS =
+  ApplicationFlags.GatewayMessageContent |
+  ApplicationFlags.GatewayMessageContentLimited;
+
+/**
+ * The Message Content Intent, from the application object's `flags` bitfield.
+ * Null when Discord sent no numeric `flags`: an answer that omits the field
+ * says nothing about the toggle, and reading it as "off" would fail imports
+ * on a working setup.
+ */
+function messageContentIntentOf(
+  flags: unknown,
+): DiscordApplicationInfo['messageContentIntent'] {
+  if (typeof flags !== 'number' || !Number.isInteger(flags)) return null;
+  return (flags & MESSAGE_CONTENT_INTENT_FLAGS) !== 0 ? 'enabled' : 'disabled';
+}
 
 /** The HTTP status behind a `@discordjs/rest` rejection, when it carried one. */
 function statusOf(error: unknown): number | null {
@@ -227,6 +245,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       redirectUris: Array.isArray(redirectUris)
         ? redirectUris.filter((uri): uri is string => typeof uri === 'string')
         : null,
+      messageContentIntent: messageContentIntentOf(body?.flags),
     };
   }
 
