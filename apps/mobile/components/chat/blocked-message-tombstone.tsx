@@ -61,6 +61,8 @@ export interface BlockedMessageTombstoneProps {
    */
   reload?: MaskedRefreshState | null;
   onReload?: () => void;
+  /** Top spacing follows the thread's runs, like any other row. */
+  startsRun?: boolean;
 }
 
 export function BlockedMessageTombstone({
@@ -69,6 +71,7 @@ export function BlockedMessageTombstone({
   onUnblock,
   reload = null,
   onReload,
+  startsRun = true,
 }: BlockedMessageTombstoneProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -78,7 +81,12 @@ export function BlockedMessageTombstone({
     : "hidden messages";
 
   return (
-    <View style={styles.row}>
+    // One muted line in the body column, beside an empty 32pt gutter
+    // (`components.md` §11 § What rides the row). It used to sit in an
+    // incoming-bubble outline; the compact layout has no bubble to borrow, and
+    // a line that names no author needs no frame.
+    <View style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}>
+      <View style={styles.gutter} />
       <Text style={styles.text}>{text}</Text>
       {canUnblock ? (
         <Pressable
@@ -115,24 +123,21 @@ export function BlockedMessageTombstone({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // The metrics `MessageItem` rows use, so the line sits in the body column.
     row: {
       flexDirection: "row",
       alignItems: "center",
-      alignSelf: "flex-start",
-      maxWidth: "86%",
       gap: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing.md + 2,
-      // An outline with no fill: the same hairline an incoming bubble draws,
-      // without the card surface, so it reads as the absence of a message
-      // rather than as one.
-      borderRadius: tokens.radius.bubble,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingBottom: 2,
+      minHeight: 25,
     },
+    rowStartsRun: { paddingTop: tokens.spacing.lg },
+    rowFollows: { paddingTop: 2 },
+    gutter: { width: 32 },
     text: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+      color: tokens.color.text.mutedForeground,
       fontStyle: "italic",
       flexShrink: 1,
     },

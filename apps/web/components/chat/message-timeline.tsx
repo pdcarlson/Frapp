@@ -28,26 +28,21 @@ import { MessageItem } from "./message-item";
 import {
   tombstoneCanUnblock,
   type MaskedRefreshState,
+  type ThreadRow,
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
-import {
-  authorGroupingKey,
-  resolveAuthorAvatar,
-  useAuthorAvatars,
-} from "@repo/hooks";
-import { parseInstant } from "@repo/formatting";
-
-const GROUPING_GAP_MS = 5 * 60 * 1000;
+import { resolveAuthorAvatar, useAuthorAvatars } from "@repo/hooks";
+import { dayDividerLabel, decorateThread } from "@repo/chat-core/grouping";
 
 /**
  * Widths cycled rather than randomised, for the reason `channel-list.tsx`
  * records one column over: a skeleton that reshuffles on every render flickers,
  * and under Strict Mode it would differ between the two passes.
  *
- * The `false` entries are grouped rows — a run by the same author, which is
- * what a real channel mostly is. They carry no avatar and no header, so the
- * pattern reserves the gutter without drawing into it.
+ * The `false` entries are follow-on rows in a run, which is what a real
+ * channel mostly is. They carry no avatar and no author line, so the pattern
+ * reserves the gutter without drawing into it.
  */
 const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
   [true, "w-[62%]"],
@@ -77,10 +72,11 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
  * Three things make the geometry actually reserved rather than merely
  * skeleton-shaped:
  *
- * - **Same box metrics as `MessageItem`.** `px-5`, `pb-1`, `pt-4` on a row that
- *   shows a header and `pt-1` on a grouped one, a `w-8` avatar gutter and a
- *   `gap-2.5` beside it. Copied deliberately: a placeholder whose padding is
- *   "close enough" moves the first real row by the difference.
+ * - **Same box metrics as `MessageItem`.** `px-5`, `pb-0.5`, `pt-4` on a row
+ *   that starts a run and `pt-0.5` on a follow-on, a `w-8` avatar gutter and a
+ *   `gap-3` beside it, a 20px author line and a 25px body line. Copied
+ *   deliberately: a placeholder whose padding is "close enough" moves the
+ *   first real row by the difference.
  * - **Bottom-aligned.** The timeline opens at its end (`initialTopMostItemIndex`
  *   is the last row) with the composer pinned below it, so content arrives
  *   against the bottom edge. A top-aligned skeleton would reserve the right
@@ -99,37 +95,26 @@ export function MessageTimelineSkeleton() {
       aria-hidden="true"
       className="flex h-full flex-col justify-end overflow-hidden"
     >
-      {SKELETON_ROWS.map(([showHeader, width], index) => (
+      {SKELETON_ROWS.map(([startsRun, width], index) => (
         <div
           key={index}
           // The row metrics `MessageItem` draws, restated so the swap is a
           // repaint and not a reflow.
-          className={cn("flex gap-2.5 px-5 pb-1", showHeader ? "pt-4" : "pt-1")}
+          className={cn("flex gap-3 px-5 pb-0.5", startsRun ? "pt-4" : "pt-0.5")}
         >
           <div className="w-8 shrink-0">
-            {showHeader ? <Skeleton className="h-8 w-8 rounded-full" /> : null}
+            {startsRun ? <Skeleton className="h-8 w-8 rounded-full" /> : null}
           </div>
-          <div className="flex min-w-0 max-w-[86%] flex-col items-start">
-            {showHeader ? (
-              // `message-item.tsx`'s author line: `ml-1`, 12.5px, baseline-aligned.
-              <div className="ml-1 flex items-baseline gap-2 text-[12.5px]">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {startsRun ? (
+              // `message-item.tsx`'s author line: a 20px line box.
+              <div className="flex h-5 items-center">
                 <Skeleton className="h-[13px] w-24" />
               </div>
             ) : null}
-            {/*
-              The bubble, not a bare line — this is the half that decides whether
-              the geometry is actually reserved.
-
-              A message body is `TextRenderer`'s `mt-1 px-4 py-3
-              leading-[25px]` box with a hairline border: 4 + 1 + 12 + 25 + 12 + 1
-              = 55px for a single line. A 13px bar in its place reserved about a
-              quarter of that, so ten placeholder rows stood in for roughly half
-              the height they were replacing and the whole column jumped when the
-              real rows landed — the exact shift this component exists to prevent,
-              hidden inside a placeholder that looked right.
-            */}
-            <div className="mt-1 rounded-[18px] rounded-bl-[6px] border border-border px-4 py-3">
-              <Skeleton className={cn("h-[25px]", width)} />
+            {/* One 25px body line, the `body` role's line box. */}
+            <div className="flex h-[25px] items-center">
+              <Skeleton className={cn("h-4", width)} />
             </div>
           </div>
         </div>
@@ -250,7 +235,10 @@ interface TimelineHeaderContext {
 /**
  * The row above the oldest loaded message: the older-history read in flight,
  * or its failure with a Retry. Nothing otherwise — the day divider under it
- * already says where the history starts.
+ * already says where the history starts, and it also keeps the first row's
+ * action bar (centred on the row's top edge) inside the scroller: the oldest
+ * loaded row starts a day, and its divider renders in the same item. (A row
+ * whose timestamp cannot be read gets no divider, so there the bar clips.)
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
@@ -283,27 +271,6 @@ function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
     );
   }
   return null;
-}
-
-/** Local calendar day, so "yesterday" breaks where the reader's day breaks. */
-function dayKey(iso: string): string {
-  const at = parseInstant(iso);
-  if (!at) return "";
-  return `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}`;
-}
-
-function dayLabel(iso: string): string {
-  const at = new Date(iso);
-  const today = dayKey(new Date().toISOString());
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (dayKey(iso) === today) return "Today";
-  if (dayKey(iso) === dayKey(yesterday.toISOString())) return "Yesterday";
-  return at.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
 }
 
 /**
@@ -417,18 +384,11 @@ export interface MessageTimelineProps {
 }
 
 /**
- * Virtualized message timeline. Messages within 5 minutes from the same author
- * collapse their header (Slack-style grouping). Empty / loading / error all
- * render explicit states — never a blank pane.
- *
- * **Grouping survives the Signet cutover, deliberately.** `components.md` §11
- * carries a TODO-DESIGN saying consecutive messages from one sender are not
- * drawn, and that until they are, "every message renders that full chrome".
- * That is guidance for a surface with no answer, not a ban on one that already
- * shipped: the reference draws no grouped run to contradict, and a dashboard
- * feed that repeats an avatar and a name on every line of a burst is noisier,
- * not more correct. A grouped follow-on renders its bubble with the meta
- * chrome suppressed, which is the same shape mobile would take if it grouped.
+ * Virtualized message timeline in the compact layout (`components.md` §11,
+ * owner decision 2026-09-29, #2873). Rows group into runs and day dividers by
+ * `@repo/chat-core/grouping`, the rules mobile shares, so a run and a divider
+ * start in the same places on both surfaces. Empty / loading / error all render
+ * explicit states — never a blank pane.
  */
 export const MessageTimeline = forwardRef<
   MessageTimelineHandle,
@@ -554,42 +514,33 @@ export const MessageTimeline = forwardRef<
     return index;
   }, [messages]);
 
-  // Precompute "showHeader" so we don't recompute per render in the renderer.
-  // Over the rows the list lets through: a held row is not drawn, so it
-  // neither breaks nor joins a group.
+  // Where each run and each day starts. Over the rows the list lets through: a
+  // held row is not drawn, so it neither breaks nor joins a run. A tombstone is
+  // drawn and names no author, so the row after one always starts a run.
   const decorated = useMemo(() => {
-    return thread.rows.map(({ message, visibility }, index) => {
-      const prevRow = thread.rows[index - 1];
-      const prev = prevRow?.message;
-      // Keyed, not compared on `sender_id` directly: that column is nullable
-      // now, and `null === null` is true in JS — so an imported archive channel
-      // where twenty different Discord members spoke in turn would collapse into
-      // one group under one name. `authorGroupingKey` namespaces a Signet uuid
-      // apart from a source-system id.
-      //
-      // A tombstone draws no author line, so a row after one never groups
-      // under it: its header is what says whose message it is.
-      const sameAuthor =
-        !!prev &&
-        prevRow.visibility === "visible" &&
-        authorGroupingKey(prev) === authorGroupingKey(message) &&
-        !prev.is_deleted;
-      const within =
-        !!prev &&
-        new Date(message.created_at).getTime() -
-          new Date(prev.created_at).getTime() <
-          GROUPING_GAP_MS;
-      const startsDay =
-        !prev || dayKey(prev.created_at) !== dayKey(message.created_at);
-      return {
-        message,
-        visibility,
-        // A new day always restarts the chrome: a grouped follow-on under a
-        // divider would inherit the previous day's author line.
-        showHeader: startsDay || !(sameAuthor && within),
+    const rows = decorateThread(thread.rows);
+    const out: {
+      message: ChatMessage;
+      visibility: ThreadRow["visibility"];
+      showHeader: boolean;
+      startsDay: boolean;
+      runStartedAt: string;
+    }[] = [];
+    for (let index = 0; index < rows.length; index++) {
+      const { row, startsDay, startsRun } = rows[index]!;
+      out.push({
+        message: row.message,
+        visibility: row.visibility,
+        showHeader: startsRun,
         startsDay,
-      };
-    });
+        // The run's first message, whose author line a follow-on's gutter time
+        // is read against (it keeps AM/PM once the run has crossed noon).
+        runStartedAt: startsRun
+          ? row.message.created_at
+          : (out[index - 1]?.runStartedAt ?? row.message.created_at),
+      });
+    }
+    return out;
   }, [thread.rows]);
 
   const rowKeys = useMemo(
@@ -757,17 +708,18 @@ export const MessageTimeline = forwardRef<
   /*
     Identity gates the rows exactly as the messages themselves do (#2243).
 
-    `viewerId` decides which of the two shapes `components.md` §11 draws a bubble
-    in — self is right-aligned with no avatar, incoming is left with one — and
-    `null` is not a third shape to fall back to. It used to be treated as one by
+    `viewerId` decides whose message a row is — whether its author line says
+    "You" in the chapter accent, and whether it offers Edit and Delete — and
+    `null` is not a third answer to fall back to. It used to be treated as one by
     omission: `MessageItem` computed `!!viewerId && sender_id === viewerId`, so
     an unresolved viewer read as "not mine" and the member's own messages painted
-    as a stranger's — the incoming shape, with the first six hex of their own
-    uuid standing in for a name, because on this path the roster is still loading
-    beside the identity and `resolveAuthorLabel` had already skipped "You". The
-    resolve then repainted them, which is worse than it sounds on a virtualized
-    list — a self bubble drops its avatar and moves its caption below itself, so
-    every row it touched changed height and the thread reflowed under the member.
+    as a stranger's, with the first six hex of their own uuid standing in for a
+    name, because on this path the roster is still loading beside the identity
+    and `resolveAuthorLabel` had already skipped "You". The resolve then
+    repainted them. (Under the §11 bubble layout that repaint also moved every
+    self row to the other side and changed its height, so the thread reflowed
+    under the member; the compact layout keeps the geometry, but the rows would
+    still claim the wrong author for a moment.)
 
     So this is not a spinner in front of a correct render; the render is not
     available yet. The skeleton below already stands for "not readable", reserves
@@ -889,10 +841,16 @@ export const MessageTimeline = forwardRef<
           itemContent={(_, entry) => (
             <>
               {entry.startsDay ? (
-                // components.md §11: "Day divider: centered caption 12.5px / 600".
-                <p className="py-3 text-center text-[12.5px] font-semibold text-muted-foreground">
-                  {dayLabel(entry.message.created_at)}
-                </p>
+                // components.md §11 § Grouping: a hairline either side of a
+                // centred 12.5 / 600 caption, and the only date in the thread.
+                <div
+                  data-slot="day-divider"
+                  className="flex items-center gap-3 px-5 pb-1 pt-4 text-[12.5px] font-semibold text-muted-foreground"
+                >
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                  <span>{dayDividerLabel(entry.message.created_at)}</span>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                </div>
               ) : null}
               {entry.visibility === "tombstone" ? (
                 <BlockedMessageTombstone
@@ -933,6 +891,7 @@ export const MessageTimeline = forwardRef<
                   }
                   viewerId={viewerId}
                   showHeader={entry.showHeader}
+                  runStartedAt={entry.runStartedAt}
                   onReact={onReact}
                   onUnreact={onUnreact}
                   onReply={onReply}

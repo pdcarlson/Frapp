@@ -235,7 +235,7 @@ describe("seedFirstChunk", () => {
       `setQueryData`s the member's queued rows into this very key before the
       seed can get there. A "skip if anything is present" guard therefore
       refused to paint for exactly the member with unsent messages — they saw
-      their own pending bubble over a skeleton and nothing else. Presence is
+      their own pending row over a skeleton and nothing else. Presence is
       not the question; whether a *fetch* answered is.
     */
     const client = makeClient();

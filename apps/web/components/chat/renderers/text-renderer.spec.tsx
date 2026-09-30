@@ -38,7 +38,7 @@ function message(content: string, overrides: Partial<ChatMessage> = {}): ChatMes
 describe("TextRenderer formatting", () => {
   it("renders bold, italic and inline code instead of literal syntax", () => {
     const { container } = render(
-      <TextRenderer message={message("**bold** and *italic* and `code`")} isSelf={false} />,
+      <TextRenderer message={message("**bold** and *italic* and `code`")} />,
     );
     expect(container.querySelector("strong")).toHaveTextContent("bold");
     expect(container.querySelector("em")).toHaveTextContent("italic");
@@ -49,7 +49,7 @@ describe("TextRenderer formatting", () => {
 
   it("renders a fenced code block distinctly from inline code", () => {
     const { container } = render(
-      <TextRenderer message={message("```\nconst x = 1;\n```")} isSelf={false} />,
+      <TextRenderer message={message("```\nconst x = 1;\n```")} />,
     );
     const code = container.querySelector("code");
     expect(code).not.toBeNull();
@@ -61,7 +61,7 @@ describe("TextRenderer formatting", () => {
     render(
       <TextRenderer
         message={message("see [the docs](https://example.com/docs)")}
-        isSelf={false}
+       
       />,
     );
     const link = screen.getByRole("link", { name: "the docs" });
@@ -74,7 +74,7 @@ describe("TextRenderer formatting", () => {
     const { container } = render(
       <TextRenderer
         message={message("[click me](javascript:alert(1))")}
-        isSelf={false}
+       
       />,
     );
     expect(container.querySelector("a")).toBeNull();
@@ -85,7 +85,7 @@ describe("TextRenderer formatting", () => {
     const { container } = render(
       <TextRenderer
         message={message("[click me](jav\tascript:alert(1))")}
-        isSelf={false}
+       
       />,
     );
     expect(container.querySelector("a")).toBeNull();
@@ -95,7 +95,7 @@ describe("TextRenderer formatting", () => {
     const { container } = render(
       <TextRenderer
         message={message("[click me](//attacker.example/login)")}
-        isSelf={false}
+       
       />,
     );
     expect(container.querySelector("a")).toBeNull();
@@ -104,7 +104,7 @@ describe("TextRenderer formatting", () => {
 
   it("still links a normal relative path on this site", () => {
     render(
-      <TextRenderer message={message("see [settings](/settings)")} isSelf={false} />,
+      <TextRenderer message={message("see [settings](/settings)")} />,
     );
     const link = screen.getByRole("link", { name: "settings" });
     expect(link).toHaveAttribute("href", "/settings");
@@ -114,7 +114,7 @@ describe("TextRenderer formatting", () => {
     const { container } = render(
       <TextRenderer
         message={message('<img src=x onerror="alert(1)"> and <script>alert(2)</script>')}
-        isSelf={false}
+       
       />,
     );
     expect(container.querySelector("img")).toBeNull();
@@ -127,38 +127,37 @@ describe("TextRenderer formatting", () => {
 
   it("does not blow a leading '# ' up into a heading — outside the spec'd formatting set", () => {
     const { container } = render(
-      <TextRenderer message={message("# not a heading")} isSelf={false} />,
+      <TextRenderer message={message("# not a heading")} />,
     );
     expect(container.querySelector("h1")).toBeNull();
     expect(container.textContent).toContain("not a heading");
   });
 
   it("still shows the deleted-message tombstone unchanged", () => {
-    render(<TextRenderer message={message("**bold**", { is_deleted: true })} isSelf={false} />);
+    render(<TextRenderer message={message("**bold**", { is_deleted: true })} />);
     expect(screen.getByText("[message deleted]")).toBeInTheDocument();
   });
 });
 
 /**
- * The §11 in-bubble mention highlight — `components.md` carried it as a
- * TODO-DESIGN, and staging showed why it mattered: `@Name` rendered as plain
- * body text, so a message that addressed you looked exactly like one that did
- * not.
+ * The §11 in-body mention chip — `components.md` carried it as a TODO-DESIGN,
+ * and staging showed why it mattered: `@Name` rendered as plain body text, so a
+ * message that addressed you looked exactly like one that did not.
  *
  * Two rules these pin, both of which a "make mentions stand out" change is
- * likely to break in passing. The chip goes on the **handle only** — retinting
- * the bubble would overwrite the one thing a bubble's fill already says, whose
- * message this is — and the run it wraps is decided by the *server's*
- * tokenizer, so the UI never claims a mention the API did not see.
+ * likely to break in passing. The chip goes on the **handle only** — a message
+ * that mentions you is still the sender's message, so the row is never
+ * retinted — and the run it wraps is decided by the *server's* tokenizer, so
+ * the UI never claims a mention the API did not see.
  */
 describe("TextRenderer mention chips", () => {
   function chips(container: HTMLElement) {
     return Array.from(container.querySelectorAll("mark"));
   }
 
-  it("chips the handle in an incoming bubble", () => {
+  it("chips the handle", () => {
     const { container } = render(
-      <TextRenderer message={message("morning @Alice, agenda attached")} isSelf={false} />,
+      <TextRenderer message={message("morning @Alice, agenda attached")} />,
     );
 
     const [chip] = chips(container);
@@ -170,39 +169,18 @@ describe("TextRenderer mention chips", () => {
     expect(chip?.getAttribute("data-mention")).toBe("Alice");
   });
 
-  it("chips the handle in a self bubble too, with the same recipe", () => {
-    const { container } = render(
-      <TextRenderer message={message("thanks @Alice")} isSelf />,
-    );
-
-    const [chip] = chips(container);
-    expect(chip?.textContent).toBe("@Alice");
-    // Identical paint on both sides: the chip is opaque precisely so it does
-    // not have to know whether the chapter accent under it is light or dark.
-    expect(chip?.className).toContain("bg-mention-chip");
-    expect(chip?.className).toContain("text-mention-chip-text");
-  });
-
-  it("leaves the bubble's own fill alone on both sides", () => {
-    // "Don't retint the whole bubble." A mention is an address inside someone's
-    // message; the bubble still has to say whose message it is.
-    const incoming = render(
-      <TextRenderer message={message("ping @Alice")} isSelf={false} />,
-    );
-    const incomingBubble = incoming.container.querySelector('[class*="rounded-"]');
-    expect(incomingBubble?.className).toContain("bg-card");
-    expect(incomingBubble?.className).not.toContain("mention");
-    incoming.unmount();
-
-    const self = render(<TextRenderer message={message("ping @Alice")} isSelf />);
-    const selfBubble = self.container.querySelector('[class*="rounded-"]');
-    expect(selfBubble?.className).toContain("bg-primary");
-    expect(selfBubble?.className).not.toContain("mention");
+  it("leaves the body around the chip untinted", () => {
+    // "Don't retint the message." A mention is an address inside someone's
+    // message; the body keeps the plain foreground.
+    const { container } = render(<TextRenderer message={message("ping @Alice")} />);
+    const body = container.querySelector('[data-slot="message-body"]');
+    expect(body?.className).toContain("text-foreground");
+    expect(body?.className).not.toContain("mention");
   });
 
   it("chips every occurrence, not just the first", () => {
     const { container } = render(
-      <TextRenderer message={message("@Alice and @Bob and @Alice again")} isSelf={false} />,
+      <TextRenderer message={message("@Alice and @Bob and @Alice again")} />,
     );
 
     expect(chips(container).map((c) => c.textContent)).toEqual([
@@ -214,7 +192,7 @@ describe("TextRenderer mention chips", () => {
 
   it("reaches a handle inside bold and italic text", () => {
     const { container } = render(
-      <TextRenderer message={message("**ping @Alice** and *cc @Bob*")} isSelf={false} />,
+      <TextRenderer message={message("**ping @Alice** and *cc @Bob*")} />,
     );
 
     expect(chips(container).map((c) => c.textContent)).toEqual(["@Alice", "@Bob"]);
@@ -223,7 +201,7 @@ describe("TextRenderer mention chips", () => {
 
   it("leaves a handle inside code alone — that is documenting one, not making one", () => {
     const { container } = render(
-      <TextRenderer message={message("type `@channel` to address everyone")} isSelf={false} />,
+      <TextRenderer message={message("type `@channel` to address everyone")} />,
     );
 
     expect(chips(container)).toHaveLength(0);
@@ -239,7 +217,7 @@ describe("TextRenderer mention chips", () => {
     const { container } = render(
       <TextRenderer
         message={message("&#64;PresidentJane please approve the budget")}
-        isSelf={false}
+       
       />,
     );
 
@@ -253,7 +231,7 @@ describe("TextRenderer mention chips", () => {
     // The filter is per handle, not per message — one bad token must not
     // suppress the genuine mention beside it, or the fix would be a new bug.
     const { container } = render(
-      <TextRenderer message={message("@Bob and &#64;Alice")} isSelf={false} />,
+      <TextRenderer message={message("@Bob and &#64;Alice")} />,
     );
 
     expect(chips(container).map((c) => c.textContent)).toEqual(["@Bob"]);
@@ -264,7 +242,7 @@ describe("TextRenderer mention chips", () => {
     // The shared tokenizer's lookbehind is what stops this; asserting it here
     // is what catches a renderer that stops using the shared tokenizer.
     const { container } = render(
-      <TextRenderer message={message("mail alice@example.com about it")} isSelf={false} />,
+      <TextRenderer message={message("mail alice@example.com about it")} />,
     );
 
     expect(chips(container)).toHaveLength(0);
@@ -274,7 +252,7 @@ describe("TextRenderer mention chips", () => {
     // `@jane.` tokenises as `jane`, so the stop is prose and must stay prose —
     // chipping it would paint a run nobody was notified about.
     const { container } = render(
-      <TextRenderer message={message("over to @Alice.")} isSelf={false} />,
+      <TextRenderer message={message("over to @Alice.")} />,
     );
 
     const [chip] = chips(container);
@@ -288,7 +266,7 @@ describe("TextRenderer mention chips", () => {
     const { container } = render(
       <TextRenderer
         message={message('@Alice <img src=x onerror="alert(1)"> <mark>hi</mark>')}
-        isSelf={false}
+       
       />,
     );
 
@@ -321,20 +299,20 @@ describe("TextRenderer over-nested bodies", () => {
     expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
     expect(body.length).toBeGreaterThan(CHAT_MESSAGE_CONTENT_MAX_LENGTH - 2);
 
-    const { container } = render(<TextRenderer message={message(body)} isSelf={false} />);
+    const { container } = render(<TextRenderer message={message(body)} />);
 
-    const bubble = container.querySelector('[data-slot="bubble"]');
-    expect(bubble?.textContent).toBe(body);
+    const body_ = container.querySelector('[data-slot="message-body"]');
+    expect(body_?.textContent).toBe(body);
   });
 
   it("renders a deep emphasis run as its raw text instead of throwing", () => {
     const run = "*".repeat(4999);
     const body = `${run}a${run}`;
 
-    const { container } = render(<TextRenderer message={message(body)} isSelf={false} />);
+    const { container } = render(<TextRenderer message={message(body)} />);
 
     expect(container.querySelector("strong, em")).toBeNull();
-    expect(container.querySelector('[data-slot="bubble"]')?.textContent).toBe(body);
+    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
   });
 
   it("formats a body nested exactly to the cap, and flattens one level past it", () => {
@@ -342,12 +320,12 @@ describe("TextRenderer over-nested bodies", () => {
     const atCap = "> ".repeat(MAX_MESSAGE_MARKDOWN_DEPTH - 3) + "**bold**";
     const pastCap = "> " + atCap;
 
-    const formatted = render(<TextRenderer message={message(atCap)} isSelf={false} />);
+    const formatted = render(<TextRenderer message={message(atCap)} />);
     expect(formatted.container.querySelector("strong")).toHaveTextContent("bold");
     expect(formatted.container.textContent).not.toContain("**");
     formatted.unmount();
 
-    const flattened = render(<TextRenderer message={message(pastCap)} isSelf={false} />);
+    const flattened = render(<TextRenderer message={message(pastCap)} />);
     expect(flattened.container.querySelector("strong")).toBeNull();
     expect(flattened.container.textContent).toBe(pastCap);
   });
@@ -355,12 +333,58 @@ describe("TextRenderer over-nested bodies", () => {
   it("still chips a mention and renders no raw HTML in a flattened body", () => {
     const body = fillToCap("> ", '@Alice <img src=x onerror="alert(1)">');
 
-    const { container } = render(<TextRenderer message={message(body)} isSelf={false} />);
+    const { container } = render(<TextRenderer message={message(body)} />);
 
     expect(container.querySelector("img")).toBeNull();
     expect(Array.from(container.querySelectorAll("mark")).map((m) => m.textContent)).toEqual([
       "@Alice",
     ]);
     expect(container.textContent).toBe(body);
+  });
+});
+
+/**
+ * The compact layout's body (`components.md` §11, #2873): no bubble, markers
+ * inline after the last line, and nothing at all for an attachment-only
+ * message.
+ */
+describe("TextRenderer compact body", () => {
+  it("draws no text row for an attachment-only message (the empty bubble)", () => {
+    const { container } = render(<TextRenderer message={message("")} />);
+    // Nothing at all: an empty 25px line box is the regression, slot or not.
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("treats whitespace-only content as attachment-only too", () => {
+    const { container } = render(<TextRenderer message={message("  \n ")} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("leaves an attachment-only message's marker to the row", () => {
+    // `MessageItem` draws it on a line under the attachment instead.
+    const { container } = render(
+      <TextRenderer message={message("")} trailing={<span>Pinned</span>} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("puts the trailing marker inside the body, after the text", () => {
+    const { container } = render(
+      <TextRenderer
+        message={message("first\n\nsecond")}
+        trailing={<span>(edited)</span>}
+      />,
+    );
+    const body = container.querySelector('[data-slot="message-body"]')!;
+    expect(body.lastElementChild?.textContent).toBe("(edited)");
+    // The last paragraph goes inline, so the marker sits on its line.
+    expect(body.className).toContain("[&>p:last-of-type]:inline");
+  });
+
+  it("mutes a body still sending", () => {
+    const { container } = render(<TextRenderer message={message("hi")} muted />);
+    const body = container.querySelector('[data-slot="message-body"]');
+    expect(body?.className).toContain("text-muted-foreground");
+    expect(body?.className.split(" ")).not.toContain("text-foreground");
   });
 });

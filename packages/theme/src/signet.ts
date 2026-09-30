@@ -93,8 +93,6 @@ export type SignetTokens = {
     control: number;
     card: number;
     cardLarge: number;
-    bubble: number;
-    bubbleTail: number;
     sheet: number;
     chip: number;
     chipLarge: number;
@@ -187,8 +185,6 @@ const SIGNET_DARK: SignetTokens = {
     control: 12,
     card: 14,
     cardLarge: 16,
-    bubble: 18,
-    bubbleTail: 6,
     sheet: 20,
     chip: 8,
     chipLarge: 10,
