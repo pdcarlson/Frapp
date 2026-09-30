@@ -909,6 +909,15 @@ jobs:
           EXPO_NO_TELEMETRY: "1"
         run: npx expo export --platform ios --output-dir "$RUNNER_TEMP/mobile-bundle"
 
+      # An Expo client package's major version is its SDK line, and nothing here
+      # compiles Swift, so a package bumped off the line passes every other step
+      # and first fails in `eas build -p ios` (#2218 did exactly that). This
+      # reads the installed versions against the installed expo's
+      # bundledNativeModules.json, offline, and checks that Dependabot's ignore
+      # list names every expo-* dependency (#2330).
+      - name: Expo packages on the installed SDK line
+        run: npm run check:expo-sdk-line
+
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
 

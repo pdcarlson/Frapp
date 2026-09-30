@@ -166,12 +166,12 @@ updates:
     # surfaces loudly rather than silently.
     #
     # The set this gap covers GREW when the Expo client list below was
-    # completed to all 21 packages: it now also suppresses security PRs for
-    # expo-camera, expo-image-picker, expo-document-picker, expo-location and
-    # expo-notifications — the media, file, location and push surfaces. These
+    # completed to every Expo client package apps/mobile declares: it also
+    # suppresses security PRs for expo-camera, expo-image-picker, expo-location
+    # and expo-notifications — the media, location and push surfaces. These
     # entries carry no `update-types`, so in-SDK 57.0.x patches are frozen too,
     # not just the SDK-line majors that caused the break. Whether that is still
-    # the right trade at 21 packages is #2331; until it is decided, the blanket
+    # the right trade for the whole list is #2331; until it is decided, the blanket
     # ignore stands, because an isolated bump here is what broke the build.
     # When it does bite: `check:npm-audit` is a required check, so an advisory
     # here goes red on every open PR at once. The unblock path is an entry in
@@ -207,7 +207,9 @@ updates:
       # Swift, so the list is the only gate. Why the rule is mechanical and
       # what the break looks like: docs/internal/ci-cd/AGENT_INFRA.md
       # § The ignore list is a runtime constraint, not a preference.
-      # Nothing enforces this roster mechanically today — that is #2330.
+      # `npm run check:expo-sdk-line` (the mobile-validate CI job) enforces this
+      # roster both ways: an `expo-*` dependency missing here, or an `expo-*`
+      # entry here that apps/mobile no longer declares, fails it (#2330).
       #
       # These move only as a version-locked set via a planned SDK upgrade
       # (#2329), like the React family above.
@@ -217,7 +219,6 @@ updates:
       - dependency-name: "expo-constants"
       - dependency-name: "expo-crypto"
       - dependency-name: "expo-device"
-      - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
       - dependency-name: "expo-image-manipulator"
