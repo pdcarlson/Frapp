@@ -95,13 +95,10 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     notificationServiceMock.updateSettings.mockResolvedValue({
-      id: 'us-1',
-      user_id: 'user-1',
       quiet_hours_start: null,
       quiet_hours_end: null,
       quiet_hours_tz: null,
       theme: 'system',
-      updated_at: '2026-02-27T00:00:00.000Z',
     });
   });
 
