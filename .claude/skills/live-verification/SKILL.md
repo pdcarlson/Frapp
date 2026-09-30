@@ -247,8 +247,6 @@ session.
 - **Provider APIs (Render, Vercel, Sentry, PostHog, Supabase's Management API).** Direct `fetch` is
   blocked. Reach them through MCP, which bypasses the allowlist, per
   [`infrastructure-research`](../infrastructure-research/SKILL.md).
-  - The bare `vercel.com` allowlist line is unexplained drift, not a sanctioned path
-    ([`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui)).
   - Infisical is the exception. It has no MCP connector, so reach it by direct `fetch` to
     `app.infisical.com` ([#1279](https://github.com/pdcarlson/Frapp/issues/1279)). Without that
     allowlist line, report Infisical state as unverified.

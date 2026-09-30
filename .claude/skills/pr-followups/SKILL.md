@@ -28,7 +28,7 @@ lives in a scratch file.
 
 ## Your namespace
 
-You own `suggestion` issues whose marker starts `fp=pr-followup/` or `fp=human/`. The daily curator
+You own `suggestion` issues whose marker starts `fp=pr-followup/` or `fp=human/`. The curator
 skips them, because its close-on-code-proof and instant-`stale` rules don't fit human actions.
 Beyond dedup reads, you don't touch `suggestion` issues outside these namespaces.
 
