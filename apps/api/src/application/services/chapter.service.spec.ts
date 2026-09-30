@@ -216,18 +216,20 @@ describe('ChapterService', () => {
         updated_at: '2024-01-02',
       },
     ];
+    // A row that predates `dismissed_ops_nudges` (#492): the key is absent,
+    // not `[]`, which is what the `?? []` in `mapMembershipSummary` is for.
+    const legacyMember: Omit<Member, 'dismissed_ops_nudges'> = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'ch-1',
+      role_ids: ['role-president'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
     mockMemberRepo.findByUser.mockResolvedValue([
-      {
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'ch-1',
-        role_ids: ['role-president'],
-        custom_role_ids: [],
-        has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
+      legacyMember as Member,
       {
         id: 'member-2',
         user_id: 'user-1',
@@ -235,7 +237,7 @@ describe('ChapterService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
+        dismissed_ops_nudges: ['events'],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
       },
@@ -260,10 +262,10 @@ describe('ChapterService', () => {
         chapter_id: 'ch-1',
         role_ids: ['role-president'],
         has_completed_onboarding: true,
-        // `[]`, not absent: the member fixtures predate `dismissed_ops_nudges`
-        // (#492) and carry no such key, so this pins the `?? []` normalization
-        // in `mapMembershipSummary` — the web contract declares a plain array
-        // and `undefined` reaching `selectOpsNudge` would be a silent hole.
+        // `[]`, not absent: member-1 carries no such key, so this pins the
+        // `?? []` normalization in `mapMembershipSummary` — the web contract
+        // declares a plain array and `undefined` reaching `selectOpsNudge`
+        // would be a silent hole.
         dismissed_ops_nudges: [],
         chapter: toChapterMemberView(chapters[0]),
       },
@@ -272,7 +274,8 @@ describe('ChapterService', () => {
         chapter_id: 'ch-2',
         role_ids: ['role-member'],
         has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
+        // A stored list passes through untouched.
+        dismissed_ops_nudges: ['events'],
         chapter: toChapterMemberView(chapters[1]),
       },
     ]);

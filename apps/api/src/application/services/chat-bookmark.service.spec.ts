@@ -10,7 +10,7 @@ import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.repository.interface';
 import type {
-  BookmarkedMessage,
+  StoredBookmarkedMessage,
   ChatMessageBookmarkRef,
   StoredChatMessageBookmark,
 } from '#domain/entities/chat.entity';
@@ -20,11 +20,11 @@ const USER = 'user-1';
 const MESSAGE = 'msg-1';
 
 const message = (
-  overrides: Partial<BookmarkedMessage> = {},
-): BookmarkedMessage => ({
-  // Exactly the fields the endpoint serves — the nine-column projection plus
-  // the per-viewer `sender_blocked` the service computes. A wider fixture would
-  // let a test assert redaction of a field production never sends.
+  overrides: Partial<StoredBookmarkedMessage> = {},
+): StoredBookmarkedMessage => ({
+  // Exactly what the repository reads — the nine-column projection. The
+  // service adds the per-viewer `sender_blocked`; a wider fixture would let a
+  // test assert redaction of a field production never sends.
   id: MESSAGE,
   channel_id: 'ch-1',
   sender_id: 'user-2',
@@ -34,7 +34,6 @@ const message = (
   content: 'keep this',
   is_deleted: false,
   created_at: '2026-01-01T00:00:00.000Z',
-  sender_blocked: false,
   ...overrides,
 });
 
