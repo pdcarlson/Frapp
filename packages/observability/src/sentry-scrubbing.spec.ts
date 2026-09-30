@@ -1012,12 +1012,18 @@ describe("DOM selectors in breadcrumbs and names (#2736)", () => {
   });
 
   it("leaves other breadcrumb messages to the free-text sweep", () => {
+    // `ui.multiClick` is React Native's rage tap: a label, not a selector.
+    // How a label is scrubbed is #2982's to decide.
     const scrubbed = browser.scrubSentryEvent({
-      breadcrumbs: [{ category: "console", message: 'lookup [status="404"]' }],
+      breadcrumbs: [
+        { category: "console", message: 'lookup [status="404"]' },
+        { category: "ui.multiClick", message: "Save changes" },
+      ],
     });
 
     expect(scrubbed?.breadcrumbs).toEqual([
       { category: "console", message: 'lookup [status="404"]' },
+      { category: "ui.multiClick", message: "Save changes" },
     ]);
   });
 

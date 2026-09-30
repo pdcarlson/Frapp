@@ -153,7 +153,7 @@ initialization is skipped entirely without `NEXT_PUBLIC_SENTRY_DSN`, so these ar
 report nothing locally or in CI, by design. **Correction (2026-09-30, #2736):** from #2722 until
 #2736, `apps/web` replaced that integration with one that had INP off, because the INP span carried
 the clicked element's `aria-label`. INP is back on, with its selector scrubbed
-(`spec/behavior/observability.md` § Error Tracking).
+([`observability.md` § Error Tracking](../../behavior/observability.md#error-tracking)).
 
 **Locally**, they are visible in the Performance panel and readable directly:
 `performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration` — each name

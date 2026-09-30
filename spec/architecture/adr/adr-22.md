@@ -88,7 +88,8 @@ named after the clicked element's selector. INP was therefore off on both Next b
 (`docs/security/security-fixes.md` § v10 → v11).
 **Correction (2026-09-30, #2736):** INP is back on. The browser clients scrub every envelope in
 `beforeEnvelope` (`sentryEnvelopeScrubIntegration`), which does reach a standalone span and its
-header, and a selector keeps its structure but loses its attribute values wherever it leaves.
+header; the selector rule is in
+[`observability.md` § Error Tracking](../../behavior/observability.md#error-tracking).
 **Correction (2026-09-10):** API source maps are uploaded from `apps/api/Dockerfile` after
 `nest build`, not implied by `Sentry.init`. Live FRAPP-API-1 / FRAPP-API-3 showed
 `dist/*.js` ContextLines, not `.ts`. Upload targets `frapp-live` / `frapp-api` when

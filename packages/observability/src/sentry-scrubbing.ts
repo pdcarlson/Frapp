@@ -28,9 +28,12 @@
  *    {@link STREAMED_SPAN_ATTRIBUTE_RULES}.
  *  - **LCP and CLS:** under `traceLifecycle: 'static'` they ride the pageload
  *    transaction as `lcp.element` and `cls.source.N`, which
- *    {@link SPAN_DATA_KEY_ALLOWLIST} drops. Under span streaming they would be
- *    standalone spans named after the selector. Streaming is off, and turning
- *    it on means porting the transaction scrubber first (see
+ *    {@link SPAN_DATA_KEY_ALLOWLIST} drops. Under span streaming they become
+ *    spans of their own, named after the component (or a fixed fallback), with
+ *    the selector in `browser.web_vital.lcp.element` and
+ *    `browser.web_vital.cls.source.N`; {@link STREAMED_SPAN_ATTRIBUTE_RULES}
+ *    does not allowlist either. Streaming is off, and turning it on means
+ *    porting the transaction scrubber first (see
  *    `packages/observability/next/sentry-options.ts`).
  *  - **Interaction spans** (`interactionsIntegration`, not enabled): named
  *    after the selector, and reduced like any span name if it is ever
@@ -770,10 +773,13 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    * omitted rather than passed through — the same fail-open shape
    * {@link scrubMessageInto} already closed at the event top level.
    *
-   * A `ui.*` breadcrumb (`ui.click`, `ui.input`) is the browser SDK's record
-   * of a DOM interaction, and its `message` is the target's selector, with the
+   * A `ui.click` or `ui.input` breadcrumb is the browser SDK's record of a DOM
+   * interaction, and its `message` is the target's selector, with the
    * element's `aria-label` and `title` in it. It is reduced as a selector
-   * (#2736), whether or not it happens to carry an attribute.
+   * (#2736), whether or not it happens to carry an attribute. Only those two:
+   * React Native's `ui.multiClick` rage-tap crumb (and its `touch` crumb)
+   * carries a label or the touched text, not a selector, and needs its own
+   * rule (#2982).
    */
   function scrubBreadcrumb(
     crumb: unknown,
@@ -792,7 +798,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     }
     if (typeof source.message === 'string') {
       out.message =
-        typeof source.category === 'string' && source.category.startsWith('ui.')
+        source.category === 'ui.click' || source.category === 'ui.input'
           ? scrubSelector(source.message)
           : redactFreeText(source.message);
     }
