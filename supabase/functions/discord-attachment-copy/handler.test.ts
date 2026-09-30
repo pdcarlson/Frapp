@@ -1,6 +1,7 @@
 /**
  * `deno test` suite for the copy handler. No network: `fetch` is a fake that
- * plays both Discord's CDN and Supabase Storage, keyed on the URL it is given.
+ * plays Discord's CDN, Supabase Storage and Auth's admin API, keyed on the URL
+ * it is given.
  */
 import assert from "node:assert/strict";
 import {
@@ -17,6 +18,10 @@ const LEGACY_KEY = "eyJhbGciOiJIUzI1NiJ9.service-role.signature";
 const SECRET_KEY = "sb_secret_example";
 const SUPABASE_URL = "https://project.supabase.co";
 const STORAGE_PREFIX = `${SUPABASE_URL}/storage/v1/object/`;
+const AUTH_CHECK_URL = `${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=1`;
+/** A valid service JWT that differs byte for byte from the one the function holds. */
+const OTHER_SERVICE_KEY =
+  "eyJhbGciOiJIUzI1NiJ9.service-role-reissued.signature";
 const PATH = "chapters/c1/chat-archive/imports/i1/media/ab12-111_photo.png";
 const CDN_URL = "https://cdn.discordapp.com/attachments/1/111/photo.png?ex=1";
 
@@ -30,6 +35,8 @@ interface FakeOptions {
   cdn?: (url: string, init: RequestInit) => Response | Promise<Response>;
   /** Storage answer per upload; default 200. */
   storage?: (url: string, init: RequestInit) => Response | Promise<Response>;
+  /** Auth's answer to the caller check; default 401, as for an unknown key. */
+  auth?: (url: string, init: RequestInit) => Response | Promise<Response>;
   env?: Record<string, string>;
   now?: () => number;
   limits?: HandlerDeps["limits"];
@@ -47,6 +54,10 @@ function harness(options: FakeOptions = {}) {
   ): Promise<Response> => {
     const url = String(input instanceof Request ? input.url : input);
     calls.push({ url, init });
+    if (url.startsWith(`${SUPABASE_URL}/auth/v1/`)) {
+      return options.auth?.(url, init) ??
+        new Response('{"message":"Invalid API key"}', { status: 401 });
+    }
     if (url.startsWith(STORAGE_PREFIX)) {
       // Drain the body, as Storage would, so the CDN stream is consumed.
       if (init.body instanceof ReadableStream) {
@@ -172,21 +183,143 @@ Deno.test("a request without the service credential is refused before its body i
     );
     assert.equal(response.status, 401, JSON.stringify(headers));
   }
-  assert.equal(calls.length, 0);
+  // Every key was put to Auth, which refused it; the missing one never was.
+  // Nothing reached the CDN or Storage.
+  assert.deepEqual(
+    calls.map((call) => call.url),
+    [AUTH_CHECK_URL, AUTH_CHECK_URL, AUTH_CHECK_URL],
+  );
 });
 
-Deno.test("the legacy key is accepted on apikey or as a Bearer token", async () => {
+Deno.test("the legacy key is accepted on apikey or as a Bearer token, without asking Auth", async () => {
   const accepted: Record<string, string>[] = [
     { apikey: LEGACY_KEY },
     { authorization: `Bearer ${LEGACY_KEY}` },
   ];
   for (const headers of accepted) {
-    const { deps } = harness();
+    const { deps, calls } = harness();
     const [result] = await results(
       await handleCopyRequest(post({ items: [item()] }, headers), deps),
     );
     assert.equal(result.status, "stored");
+    assert.ok(!calls.some((call) => call.url === AUTH_CHECK_URL));
   }
+});
+
+// #2981: on staging the API's service key and the function's differed byte for
+// byte, and every copy got a 401.
+Deno.test("a service key the function doesn't hold byte for byte is accepted once Auth vouches for it", async () => {
+  const { deps, calls } = harness({
+    auth: (_url, init) => {
+      const headers = new Headers(init.headers);
+      return headers.get("apikey") === OTHER_SERVICE_KEY &&
+          headers.get("authorization") === `Bearer ${OTHER_SERVICE_KEY}`
+        ? new Response('{"users":[]}', { status: 200 })
+        : new Response("{}", { status: 401 });
+    },
+  });
+  const [result] = await results(
+    await handleCopyRequest(
+      post({ items: [item()] }, { apikey: OTHER_SERVICE_KEY }),
+      deps,
+    ),
+  );
+  assert.equal(result.status, "stored");
+  assert.equal(calls[0].url, AUTH_CHECK_URL);
+  // A redirect would carry the caller's key, in `apikey`, to another origin.
+  assert.equal(calls[0].init.redirect, "error");
+  // Storage still gets the function's own key, never the caller's.
+  const upload = calls.find((call) => call.url.startsWith(STORAGE_PREFIX))!;
+  const headers = new Headers(upload.init.headers);
+  assert.equal(headers.get("apikey"), LEGACY_KEY);
+  assert.equal(headers.get("authorization"), `Bearer ${LEGACY_KEY}`);
+});
+
+Deno.test("an unmatched sb_secret_ key is put to Auth on apikey alone", async () => {
+  const { deps, calls } = harness({
+    env: {
+      SUPABASE_URL,
+      SUPABASE_SECRET_KEYS: JSON.stringify({ default: SECRET_KEY }),
+    },
+    auth: () => new Response('{"users":[]}', { status: 200 }),
+  });
+  const [result] = await results(
+    await handleCopyRequest(
+      post({ items: [item()] }, { apikey: "sb_secret_other" }),
+      deps,
+    ),
+  );
+  assert.equal(result.status, "stored");
+  const check = new Headers(calls[0].init.headers);
+  assert.equal(calls[0].url, AUTH_CHECK_URL);
+  assert.equal(check.get("apikey"), "sb_secret_other");
+  assert.equal(check.get("authorization"), null);
+});
+
+Deno.test("Auth refusing the key is a 401, and nothing is fetched", async () => {
+  for (const status of [401, 403]) {
+    const { deps, calls } = harness({
+      auth: () => new Response("{}", { status }),
+    });
+    const response = await handleCopyRequest(
+      post({ items: [item()] }, { apikey: OTHER_SERVICE_KEY }),
+      deps,
+    );
+    assert.equal(response.status, 401, String(status));
+    assert.deepEqual(calls.map((call) => call.url), [AUTH_CHECK_URL]);
+  }
+});
+
+Deno.test("Auth failing to answer is a 503 the API retries, naming why, and nothing is fetched", async () => {
+  const answers: [FakeOptions["auth"], string][] = [
+    [() => new Response("{}", { status: 500 }), "it answered 500."],
+    [() => new Response("{}", { status: 429 }), "it answered 429."],
+    [() => {
+      throw new TypeError("connection reset");
+    }, "it failed: connection reset."],
+    // Never answers until the check's own timeout aborts it.
+    [
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+          );
+        }),
+      "it timed out.",
+    ],
+  ];
+  for (const [index, [auth, cause]] of answers.entries()) {
+    const { deps, calls } = harness({
+      auth,
+      limits: { authCheckTimeoutMs: 20 },
+    });
+    const response = await handleCopyRequest(
+      post({ items: [item()] }, { apikey: OTHER_SERVICE_KEY }),
+      deps,
+    );
+    assert.equal(response.status, 503, `answer ${index}`);
+    const body = await response.json() as {
+      error?: string;
+      retryable?: unknown;
+    };
+    assert.notEqual(body.retryable, false, `answer ${index}`);
+    // The API logs this body with each retry, so it must say what happened.
+    assert.ok(body.error?.endsWith(cause), `${index}: ${body.error}`);
+    assert.deepEqual(calls.map((call) => call.url), [AUTH_CHECK_URL]);
+  }
+});
+
+Deno.test("a key the function doesn't hold is refused when there is no Auth to ask", async () => {
+  const { deps, calls } = harness({
+    env: { SUPABASE_SERVICE_ROLE_KEY: LEGACY_KEY },
+  });
+  const response = await handleCopyRequest(
+    post({ items: [item()] }, { apikey: OTHER_SERVICE_KEY }),
+    deps,
+  );
+  assert.equal(response.status, 401);
+  assert.equal(calls.length, 0);
 });
 
 Deno.test("a new secret key is accepted, and Storage gets it on apikey alone", async () => {
