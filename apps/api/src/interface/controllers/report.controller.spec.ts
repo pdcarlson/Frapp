@@ -143,7 +143,7 @@ describe('ReportController', () => {
     const chapterId = 'chapter-123';
     const dto: PointsReportDto = {
       user_id: 'user-123',
-      window: 'Fall 2024',
+      window: 'semester',
     };
     const mockData = [
       {

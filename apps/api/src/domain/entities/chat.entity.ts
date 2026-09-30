@@ -450,3 +450,17 @@ export interface ChatMessageBookmarkWithMessage extends ChatMessageBookmarkRef {
    */
   message_available: boolean;
 }
+
+/** A bookmarked message as the repository reads it, before any viewer's block list. */
+export type StoredBookmarkedMessage = Omit<BookmarkedMessage, 'sender_blocked'>;
+
+/**
+ * A bookmark and its message as the repository reads them: without the two
+ * per-viewer fields `ChatBookmarkService` sets on every row before it leaves,
+ * `message_available` (the caller's current channel access) and
+ * `message.sender_blocked` (the caller's block list).
+ */
+export type StoredChatMessageBookmark = Omit<
+  ChatMessageBookmarkWithMessage,
+  'message_available' | 'message'
+> & { message: StoredBookmarkedMessage };

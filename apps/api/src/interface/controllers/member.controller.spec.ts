@@ -73,6 +73,7 @@ describe('MemberController', () => {
           chapter_id: chapterId,
           role_ids: ['role-president'],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
           display_name: 'Jordan M.',

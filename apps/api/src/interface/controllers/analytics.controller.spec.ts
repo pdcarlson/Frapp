@@ -27,7 +27,9 @@ describe('AnalyticsController', () => {
       getChapterGroupId: jest.fn(),
       trackFromClient: jest.fn(),
     };
-    controller = new AnalyticsController(analytics);
+    controller = new AnalyticsController(
+      analytics as unknown as AnalyticsService,
+    );
   });
 
   describe('getIdentity', () => {

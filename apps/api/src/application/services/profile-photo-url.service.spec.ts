@@ -10,13 +10,16 @@ describe('ProfilePhotoUrlService', () => {
   beforeEach(() => {
     jest.useFakeTimers({ now: new Date('2026-09-29T12:00:00Z') });
     storage = {
-      getSignedDownloadUrls: jest.fn(async (_bucket, paths) =>
+      getSignedDownloadUrls: jest.fn(async (_bucket: string, paths: string[]) =>
         Object.fromEntries(
           paths.map((path) => [path, `signed:${path}@${Date.now()}`]),
         ),
       ),
     };
-    service = new ProfilePhotoUrlService(storage);
+    // Batch signing is the only storage call it makes.
+    service = new ProfilePhotoUrlService(
+      storage as unknown as IStorageProvider,
+    );
   });
 
   afterEach(() => jest.useRealTimers());

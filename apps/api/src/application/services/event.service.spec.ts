@@ -83,6 +83,8 @@ describe('EventService', () => {
     parent_event_id: null,
     required_role_ids: null,
     notes: null,
+    check_in_zone: null,
+    check_in_zone_name: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 

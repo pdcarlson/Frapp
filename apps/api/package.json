@@ -21,7 +21,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "check-types": "tsc --noEmit -p tsconfig.build.json",
+    "check-types": "tsc --noEmit --incremental false -p tsconfig.build.json && tsc --noEmit --incremental false -p tsconfig.json",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

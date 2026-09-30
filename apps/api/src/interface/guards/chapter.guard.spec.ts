@@ -378,7 +378,10 @@ describe('ChapterGuard', () => {
     // grace-window boundaries are deterministic (no real clocks).
     const NOW = Date.parse('2026-06-02T12:00:00.000Z');
     const withPastDue = (daysAgo: number) => {
-      jest.spyOn(guard, 'currentTime').mockReturnValue(NOW);
+      // `currentTime` is the guard's protected clock seam.
+      jest
+        .spyOn(guard as unknown as { currentTime(): number }, 'currentTime')
+        .mockReturnValue(NOW);
       mockSupabaseChain({
         appUser: { id: 'user-1' },
         member: { id: 'member-1', role_ids: ['role-1'] },
