@@ -1,13 +1,46 @@
 /**
  * PII scrubbing for everything leaving a Frapp process for Sentry (#481, #896,
- * #865).
+ * #865, #2736).
  *
  * `spec/behavior/observability.md` § Error Tracking splits identifiers into two
  * classes, and this module is the single enforcement point for both — across
  * **both event classes**, and now across **both apps**. The SDK routes those
  * classes to two different hooks, so {@link createSentryScrubber} returns two
  * entry points: `scrubSentryEvent` for `beforeSend` (error events) and
- * `scrubSentryTransaction` for `beforeSendTransaction` (tracing events).
+ * `scrubSentryTransaction` for `beforeSendTransaction` (tracing events). A
+ * third, `scrubSentryEnvelope`, runs in the browser's `beforeEnvelope` for what
+ * the SDK sends without an event at all: a standalone span, which is how INP
+ * leaves (#2736).
+ *
+ * ## DOM selectors (#2736)
+ *
+ * The browser SDK names an element with `htmlTreeAsString`: tag, id, classes,
+ * then the element's `aria-label`, `type`, `name`, `title` and `alt` values.
+ * In `apps/web` those values carry user data (a DM partner's name, a
+ * filename), so wherever a selector can leave, its attribute values are
+ * removed ({@link reduceSelector}). Every place one surfaces:
+ *
+ *  - **`ui.click` / `ui.input` breadcrumbs:** the `message` is the selector.
+ *    Reduced. Its `data['ui.component_name']` goes with `data`.
+ *  - **INP:** a standalone span whose name, `browser.web_vital.inp.target`,
+ *    segment name and envelope `trace.transaction` are the selector. All four
+ *    are reduced by `scrubSentryEnvelope`; the rest of the span is held to
+ *    {@link STREAMED_SPAN_ATTRIBUTE_RULES}.
+ *  - **LCP and CLS:** under `traceLifecycle: 'static'` they ride the pageload
+ *    transaction as `lcp.element` and `cls.source.N`, which
+ *    {@link SPAN_DATA_KEY_ALLOWLIST} drops. Under span streaming they become
+ *    spans of their own, named after the component (or a fixed fallback), with
+ *    the selector in `browser.web_vital.lcp.element` and
+ *    `browser.web_vital.cls.source.N`; {@link STREAMED_SPAN_ATTRIBUTE_RULES}
+ *    does not allowlist either. Streaming is off, and turning it on means
+ *    porting the transaction scrubber first (see
+ *    `packages/observability/next/sentry-options.ts`).
+ *  - **Interaction spans** (`interactionsIntegration`, not enabled): named
+ *    after the selector, and reduced like any span name if it is ever
+ *    enabled. Their `browser.web_vital.inp.target` is not allowlisted.
+ *  - **`ui.component_name`:** a React component name, set only under the
+ *    component annotation build plugin, which neither app enables. Dropped
+ *    everywhere it could appear.
  *
  * They cannot be the same function. `spans` is absent from
  * {@link EVENT_KEY_ALLOWLIST}, so pointing `beforeSendTransaction` at
@@ -288,6 +321,66 @@ export function stripAuthority(path: string): string {
 }
 
 /**
+ * The start of an attribute segment, `[name="`, as the browser SDK's
+ * `htmlTreeAsString` writes one (#2736).
+ *
+ * The SDK names a DOM element by its tag, id and classes, then appends
+ * `[aria-label="…"]`, `[type="…"]`, `[name="…"]`, `[title="…"]` and
+ * `[alt="…"]` for whichever it has (plus any `serializeAttribute` keys, which
+ * neither app configures). In `apps/web` those attributes carry user data: a
+ * DM partner's or a channel's name, an attachment's filename, an account name.
+ * So the attribute **names** survive and their **values** never do.
+ */
+const SELECTOR_ATTRIBUTE_START_RE = /\[[A-Za-z_:][-\w:.]*="/;
+/**
+ * One whole attribute segment, value included.
+ *
+ * The SDK does not escape a value, so where a value ends is ambiguous by
+ * construction: `"]` inside a label is indistinguishable from the real end.
+ * The match is therefore lazy and must stop where another segment could
+ * begin — the next attribute, the ` > ` between elements, or the end.
+ * {@link reduceSelector} then checks that what is left is still selector
+ * syntax, and gives up on the whole string when it is not.
+ */
+const SELECTOR_ATTRIBUTE_RE =
+  /\[([A-Za-z_:][-\w:.]*)="[\s\S]*?"\](?=\[[A-Za-z_:][-\w:.]*="|\s>\s|$)/g;
+/**
+ * One element of a reduced selector: a lowercase tag (or, under the component
+ * annotation plugin, a component name) followed by id, class and bare
+ * attribute-name tokens. None of those contain whitespace or a quote, so a
+ * fragment of a label that {@link SELECTOR_ATTRIBUTE_RE} split in the wrong
+ * place — `Jo"] Smith` — fails here.
+ */
+const SELECTOR_ELEMENT_RE = /^[A-Za-z_$][^\s"]*$/;
+/** What a selector that cannot be reduced safely is replaced with. */
+const REDACTED_SELECTOR = '[redacted:selector]';
+
+/**
+ * A DOM selector with every attribute value removed, or `undefined` when the
+ * string cannot be read as one (#2736).
+ *
+ * `button.rounded-md[aria-label="Hide conversation with Jo Smith"]` becomes
+ * `button.rounded-md[aria-label]`: the element path an operator needs to find
+ * the slow or clicked control survives, the label does not. Tags, ids and
+ * classes are code, not user data; an id that embeds a row id still meets the
+ * free-text sweep, which the caller runs next.
+ *
+ * Fail closed: when anything left over is not selector syntax (a value with
+ * `"]` in it, a truncated segment), the caller drops the whole string rather
+ * than guessing where the value ended. One case cannot be caught: a value
+ * that itself spells out a whole further element (`x"] > b[title="y`) leaves
+ * that spelled-out element behind. Only the label's own author can write
+ * one, and what survives is the text they chose to make look like markup.
+ */
+export function reduceSelector(selector: string): string | undefined {
+  const reduced = selector.replace(SELECTOR_ATTRIBUTE_RE, '[$1]');
+  const elements = reduced.split(' > ');
+  return elements.every((element) => SELECTOR_ELEMENT_RE.test(element))
+    ? reduced
+    : undefined;
+}
+
+/**
  * Origin-form path or an absolute-form URL. Used to decide whether a span
  * description / transaction name is HTTP-shaped enough to run through
  * {@link stripAuthority} rather than the free-text sweep (#2080).
@@ -338,6 +431,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   redactFreeText: (input: string) => string;
   scrubSentryEvent: (event: ScrubbableEvent) => ScrubbableEvent | null;
   scrubSentryTransaction: (event: ScrubbableEvent) => ScrubbableEvent | null;
+  scrubSentryEnvelope: (envelope: unknown) => void;
 } {
   /**
    * Best-effort PII sweep over a free-text string (exception messages, culprits,
@@ -477,14 +571,30 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   }
 
   /**
-   * HTTP-shaped names: span `description`, `contexts.trace.description`, and
-   * the transaction name.
+   * A DOM selector, reduced and swept, or {@link REDACTED_SELECTOR} when it
+   * cannot be reduced safely. Never the raw string.
+   */
+  function scrubSelector(selector: string): string {
+    const reduced = reduceSelector(selector);
+    return reduced === undefined ? REDACTED_SELECTOR : redactFreeText(reduced);
+  }
+
+  /**
+   * Span, transaction and segment names: span `description`,
+   * `contexts.trace.description`, the transaction name, and the Dynamic
+   * Sampling Context's `transaction`.
    *
    * Sentry Node's HTTP instrumentation names an outbound span
    * `POST https://us.i.posthog.com/i/v1/logs`. {@link pathOnly} only reduces a
    * bare target, so a method prefix left scheme+host in `redactFreeText`,
    * which keeps host by design (#2080). Peel the method, reduce the target
    * with the same parser as `request.url`, then put the method back.
+   *
+   * The browser SDK names an interaction span after the element's selector
+   * (INP, and `interactionsIntegration`'s click spans), and a standalone INP
+   * span is its own segment, so the same selector becomes the segment name and
+   * the envelope's `trace.transaction` (#2736). A name carrying an attribute
+   * segment is therefore reduced as a selector.
    */
   function pathOnlyHttpName(name: unknown): string | undefined {
     if (typeof name !== 'string' || !name) return undefined;
@@ -502,6 +612,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       }
     }
     if (isHttpUrlTarget(name)) return pathOnly(name);
+    if (SELECTOR_ATTRIBUTE_START_RE.test(name)) return scrubSelector(name);
     return redactFreeText(name);
   }
 
@@ -661,6 +772,14 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    * key) used to survive a spread-then-delete. A non-string `message` is
    * omitted rather than passed through — the same fail-open shape
    * {@link scrubMessageInto} already closed at the event top level.
+   *
+   * A `ui.click` or `ui.input` breadcrumb is the browser SDK's record of a DOM
+   * interaction, and its `message` is the target's selector, with the
+   * element's `aria-label` and `title` in it. It is reduced as a selector
+   * (#2736), whether or not it happens to carry an attribute. Only those two:
+   * React Native's `ui.multiClick` rage-tap crumb (and its `touch` crumb)
+   * carries a label or the touched text, not a selector, and needs its own
+   * rule (#2982).
    */
   function scrubBreadcrumb(
     crumb: unknown,
@@ -678,7 +797,10 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       out.event_id = redactFreeText(source.event_id);
     }
     if (typeof source.message === 'string') {
-      out.message = redactFreeText(source.message);
+      out.message =
+        source.category === 'ui.click' || source.category === 'ui.input'
+          ? scrubSelector(source.message)
+          : redactFreeText(source.message);
     }
     return Object.keys(out).length > 0 ? out : undefined;
   }
@@ -795,6 +917,32 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   }
 
   /**
+   * A Dynamic Sampling Context rebuilt from {@link DSC_FIELD_ALLOWLIST}, with
+   * every string swept and `transaction` reduced as a name. `undefined` when
+   * nothing survives.
+   *
+   * Two places carry one: `sdkProcessingMetadata` on an event, from which the
+   * SDK builds that event's envelope header, and the `trace` header of an
+   * envelope the SDK builds straight from a span, which no event hook sees
+   * (#2736).
+   */
+  function scrubDynamicSamplingContext(
+    dsc: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!dsc || typeof dsc !== 'object') return undefined;
+    const kept: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(dsc as Record<string, unknown>)) {
+      if (!DSC_FIELD_ALLOWLIST.has(key)) continue;
+      kept[key] = typeof value === 'string' ? redactFreeText(value) : value;
+    }
+    const dscTransaction = (dsc as Record<string, unknown>).transaction;
+    if (typeof dscTransaction === 'string') {
+      kept.transaction = pathOnlyHttpName(dscTransaction);
+    }
+    return Object.keys(kept).length > 0 ? kept : undefined;
+  }
+
+  /**
    * `sdkProcessingMetadata`, rebuilt down to the two fields the SDK reads back
    * *after* this hook returns.
    *
@@ -819,21 +967,8 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     const source = metadata as Record<string, unknown>;
     const out: Record<string, unknown> = {};
 
-    const dsc = source.dynamicSamplingContext;
-    if (dsc && typeof dsc === 'object') {
-      const kept: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(
-        dsc as Record<string, unknown>,
-      )) {
-        if (!DSC_FIELD_ALLOWLIST.has(key)) continue;
-        kept[key] = typeof value === 'string' ? redactFreeText(value) : value;
-      }
-      const dscTransaction = (dsc as Record<string, unknown>).transaction;
-      if (typeof dscTransaction === 'string') {
-        kept.transaction = pathOnlyHttpName(dscTransaction);
-      }
-      if (Object.keys(kept).length > 0) out.dynamicSamplingContext = kept;
-    }
+    const dsc = scrubDynamicSamplingContext(source.dynamicSamplingContext);
+    if (dsc) out.dynamicSamplingContext = dsc;
 
     if (typeof source.spanCountBeforeProcessing === 'number') {
       out.spanCountBeforeProcessing = source.spanCountBeforeProcessing;
@@ -1021,7 +1156,185 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     }
   }
 
-  return { redactFreeText, scrubSentryEvent, scrubSentryTransaction };
+  /**
+   * One streamed-span attribute (`{ type, value, unit? }`), scrubbed by the
+   * rule {@link STREAMED_SPAN_ATTRIBUTE_RULES} gives its key, or `undefined`.
+   */
+  function scrubStreamedAttribute(
+    rule: StreamedAttributeRule,
+    attribute: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!attribute || typeof attribute !== 'object') return undefined;
+    const { type, value, unit } = attribute as Record<string, unknown>;
+    if (typeof type !== 'string' || !STREAMED_ATTRIBUTE_TYPES.has(type)) {
+      return undefined;
+    }
+    let scrubbedValue: unknown;
+    if (rule === 'value') {
+      scrubbedValue = scrubAttributeValue(value);
+    } else if (typeof value === 'string') {
+      scrubbedValue =
+        rule === 'selector'
+          ? scrubSelector(value)
+          : rule === 'name'
+            ? pathOnlyHttpName(value)
+            : pathOnly(value);
+    }
+    if (scrubbedValue === undefined) return undefined;
+    return {
+      type,
+      value: scrubbedValue,
+      ...(typeof unit === 'string' ? { unit: redactFreeText(unit) } : {}),
+    };
+  }
+
+  /**
+   * One span of a v2 span container, rebuilt from an allowlist (#2736).
+   *
+   * This is the shape a **standalone** span takes on the wire: the SDK sends
+   * INP as one, straight from the span, past `beforeSend` and
+   * `beforeSendTransaction`. Identity, timing and status survive; the name is
+   * reduced like any span name (a selector, here); attributes are held to
+   * {@link STREAMED_SPAN_ATTRIBUTE_RULES}. `links` is dropped by omission,
+   * because each link carries its own attribute bag.
+   */
+  function scrubStreamedSpan(span: unknown): Record<string, unknown> | undefined {
+    if (!span || typeof span !== 'object') return undefined;
+    const source = span as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of ['trace_id', 'span_id', 'parent_span_id'] as const) {
+      if (typeof source[key] === 'string') out[key] = source[key];
+    }
+    for (const key of ['start_timestamp', 'end_timestamp'] as const) {
+      if (typeof source[key] === 'number') out[key] = source[key];
+    }
+    if (source.status === 'ok' || source.status === 'error') {
+      out.status = source.status;
+    }
+    if (typeof source.is_segment === 'boolean') {
+      out.is_segment = source.is_segment;
+    }
+    out.name =
+      typeof source.name === 'string' ? (pathOnlyHttpName(source.name) ?? '') : '';
+
+    const attributes: Record<string, unknown> = {};
+    const bag = source.attributes;
+    if (bag && typeof bag === 'object') {
+      for (const [key, attribute] of Object.entries(
+        bag as Record<string, unknown>,
+      )) {
+        const rule = STREAMED_SPAN_ATTRIBUTE_RULES.get(key);
+        if (!rule) continue;
+        const scrubbed = scrubStreamedAttribute(rule, attribute);
+        if (scrubbed) attributes[key] = scrubbed;
+      }
+    }
+    out.attributes = attributes;
+    return out;
+  }
+
+  /**
+   * A `span` item's payload — `{ version: 2, items: [...] }` — rebuilt, or
+   * `undefined` when it is not that shape or no span survives.
+   *
+   * `ingest_settings` tells Sentry whether to infer the user's IP and user
+   * agent from the request. The SDK sets both to `never` because
+   * `dataCollection.userInfo` is off; it is pinned to `never` here too, so
+   * that stays true whatever the option says.
+   */
+  function scrubSpanContainer(
+    payload: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!payload || typeof payload !== 'object') return undefined;
+    const source = payload as Record<string, unknown>;
+    if (source.version !== 2 || !Array.isArray(source.items)) return undefined;
+    const items = source.items
+      .map(scrubStreamedSpan)
+      .filter((span): span is Record<string, unknown> => span !== undefined);
+    if (items.length === 0) return undefined;
+    return {
+      version: 2,
+      ...(source.ingest_settings !== undefined
+        ? { ingest_settings: { infer_ip: 'never', infer_user_agent: 'never' } }
+        : {}),
+      items,
+    };
+  }
+
+  /**
+   * `beforeEnvelope`: the envelope as it is about to reach the transport,
+   * header included, rewritten **in place** (the hook's return value is
+   * ignored) (#2736).
+   *
+   * The two event hooks cover everything the SDK sends as an event. This
+   * covers what it builds without one: a standalone span, which the browser
+   * SDK uses for INP. Its selector reached Sentry through the span's name, its
+   * `browser.web_vital.inp.target` attribute, its segment name, and — because
+   * the span is its own segment — the envelope's `trace.transaction` header,
+   * which neither event hook can reach.
+   *
+   * - **The `trace` header** is rebuilt on every envelope. On an event's
+   *   envelope it was built from the already-scrubbed
+   *   `sdkProcessingMetadata`, and the rebuild is idempotent.
+   * - **`span` items** are rebuilt from an allowlist. An item that is not the
+   *   v2 container shape, or that fails to scrub, is removed.
+   * - **Every other item** is left alone: events and transactions have already
+   *   been through the two event hooks, and sessions and client reports carry
+   *   counts, not user data.
+   *
+   * Fail closed, as the event hooks are: an item that throws is removed, and a
+   * header that throws loses its `trace`. An envelope left with no items is
+   * not sent at all.
+   */
+  function scrubSentryEnvelope(envelope: unknown): void {
+    if (!Array.isArray(envelope)) return;
+    const [headers, items] = envelope as [unknown, unknown];
+
+    if (headers && typeof headers === 'object' && 'trace' in headers) {
+      const writable = headers as Record<string, unknown>;
+      try {
+        const trace = scrubDynamicSamplingContext(writable.trace);
+        if (trace) writable.trace = trace;
+        else delete writable.trace;
+      } catch {
+        delete writable.trace;
+      }
+    }
+
+    if (!Array.isArray(items)) return;
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item: unknown = items[index];
+      if (!Array.isArray(item)) continue;
+      const itemHeader: unknown = item[0];
+      if (
+        !itemHeader ||
+        typeof itemHeader !== 'object' ||
+        (itemHeader as Record<string, unknown>).type !== 'span'
+      ) {
+        continue;
+      }
+      try {
+        const payload = scrubSpanContainer(item[1]);
+        if (!payload) {
+          items.splice(index, 1);
+          continue;
+        }
+        item[1] = payload;
+        (itemHeader as Record<string, unknown>).item_count = (
+          payload.items as unknown[]
+        ).length;
+      } catch {
+        items.splice(index, 1);
+      }
+    }
+  }
+
+  return {
+    redactFreeText,
+    scrubSentryEvent,
+    scrubSentryTransaction,
+    scrubSentryEnvelope,
+  };
 }
 
 /**
@@ -1109,6 +1422,66 @@ const SPAN_DATA_KEY_ALLOWLIST = new Set([
   'chat.push.recipients',
   'chat.push.sent',
   'chat.push.presence_channels',
+]);
+
+/**
+ * How one streamed-span attribute is scrubbed: `value` sweeps it like any
+ * allowlisted attribute, `name` reduces it like a span name, `selector`
+ * reduces it as a DOM selector, and `path` cuts a URL to its path.
+ */
+type StreamedAttributeRule = 'value' | 'name' | 'selector' | 'path';
+
+/**
+ * Attributes that may survive on a streamed (v2) span, by exact key (#2736).
+ *
+ * A standalone span carries its op, origin and measured value as attributes
+ * rather than fields, so this is wider than {@link SPAN_DATA_KEY_ALLOWLIST},
+ * which it includes. Everything else is dropped unread. Measured on a real
+ * INP span from the v11 browser SDK, that includes `user_agent.original`
+ * (the event path drops the `User-Agent` header too), `culture.*`,
+ * `react.version`, `sentry.sdk.integrations` and `sentry.is_localhost`.
+ *
+ * - `browser.web_vital.inp.target` is the clicked element's selector.
+ * - `sentry.segment.name` and `sentry.transaction` are the segment's name,
+ *   which for a standalone INP span is that same selector.
+ * - `url.full` is the page's URL, query string included, so only its path
+ *   survives, as `request.url`'s does on an event.
+ *
+ * `ui.component_name` is not here. It exists only under the component
+ * annotation build plugin, which neither Next app enables.
+ */
+const STREAMED_SPAN_ATTRIBUTE_RULES = new Map<string, StreamedAttributeRule>([
+  ...[...SPAN_DATA_KEY_ALLOWLIST].map(
+    (key) => [key, 'value'] as [string, StreamedAttributeRule],
+  ),
+  ['sentry.op', 'value'],
+  ['sentry.origin', 'value'],
+  ['sentry.exclusive_time', 'value'],
+  ['sentry.sample_rate', 'value'],
+  ['sentry.segment.id', 'value'],
+  ['sentry.segment.name.source', 'value'],
+  ['sentry.trace_lifecycle', 'value'],
+  ['sentry.pageload.span_id', 'value'],
+  ['sentry.release', 'value'],
+  ['sentry.environment', 'value'],
+  ['sentry.sdk.name', 'value'],
+  ['sentry.sdk.version', 'value'],
+  ['browser.web_vital.inp.value', 'value'],
+  ['browser.web_vital.inp.interaction_type', 'value'],
+  ['browser.navigation.type', 'value'],
+  ['browser.web_vital.inp.target', 'selector'],
+  ['sentry.segment.name', 'name'],
+  ['sentry.transaction', 'name'],
+  ['url.full', 'path'],
+]);
+
+/** The attribute `type` tags the v2 span format uses. */
+const STREAMED_ATTRIBUTE_TYPES = new Set([
+  'string',
+  'boolean',
+  'integer',
+  'double',
+  'array',
 ]);
 
 /**

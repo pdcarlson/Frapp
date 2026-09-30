@@ -3,6 +3,7 @@ import { POSTHOG_EXCEPTION_AUTOCAPTURE } from "../src/policy";
 import {
   buildAnonymousBrowserSentryOptions,
   buildAnonymousServerSentryOptions,
+  sentryEnvelopeScrubIntegration,
 } from "./sentry-options";
 
 const DSN = "https://examplepublickey@o0.ingest.sentry.io/0";
@@ -136,6 +137,33 @@ describe("anonymous Next Sentry options", () => {
     }) as { spans?: unknown[] } | null;
     expect(scrubbed?.spans).toHaveLength(1);
     expect(JSON.stringify(scrubbed)).not.toContain(MEMBER_EMAIL);
+  });
+});
+
+describe("sentryEnvelopeScrubIntegration (#2736)", () => {
+  it("scrubs each envelope in place from the client's beforeEnvelope", () => {
+    const listeners = new Map<string, (envelope: unknown) => void>();
+    const integration = sentryEnvelopeScrubIntegration();
+    integration.setup({
+      on: (hook, callback) => listeners.set(hook, callback),
+    });
+    expect(integration.name).toBe("FrappEnvelopeScrub");
+    expect([...listeners.keys()]).toEqual(["beforeEnvelope"]);
+
+    const selector = 'body > button[aria-label="Hide conversation with Jo Smith"]';
+    const envelope = [
+      { trace: { trace_id: "abc", transaction: selector } },
+      [
+        [
+          { type: "span", item_count: 1 },
+          { version: 2, items: [{ span_id: "1", name: selector, attributes: {} }] },
+        ],
+      ],
+    ];
+    listeners.get("beforeEnvelope")!(envelope);
+
+    expect(JSON.stringify(envelope)).not.toContain("Jo Smith");
+    expect(JSON.stringify(envelope)).toContain("body > button[aria-label]");
   });
 });
 

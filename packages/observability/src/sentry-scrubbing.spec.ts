@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createSentryScrubber,
   NO_PSEUDONYMS,
+  reduceSelector,
   type ScrubbableEvent,
   type SentryPseudonymizer,
 } from "./sentry-scrubbing";
@@ -921,3 +922,323 @@ describe("breadcrumb allowlist", () => {
   });
 });
 
+
+/**
+ * DOM selectors (#2736).
+ *
+ * The browser SDK's `htmlTreeAsString` appends an element's `aria-label`,
+ * `type`, `name`, `title` and `alt` values to its selector. The shapes below
+ * are the SDK's own, copied from what `@sentry/nextjs` 11 produced for a
+ * button labelled the way `channel-list.tsx` labels its hide control.
+ */
+const MEMBER_NAME = "Jo Smith";
+const HIDE_LABEL = `Hide conversation with ${MEMBER_NAME}`;
+const HIDE_SELECTOR = `body > button.rounded-md.px-2[aria-label="${HIDE_LABEL}"]`;
+const REDUCED_HIDE_SELECTOR = "body > button.rounded-md.px-2[aria-label]";
+
+describe("reduceSelector (#2736)", () => {
+  it("keeps tag, id and class and drops every attribute value", () => {
+    expect(reduceSelector(HIDE_SELECTOR)).toBe(REDUCED_HIDE_SELECTOR);
+    expect(
+      reduceSelector(
+        `li#row-7[title="${MEMBER_NAME}"] > input.field[type="text"][name="display_name"][alt="${MEMBER_NAME}"]`,
+      ),
+    ).toBe("li#row-7[title] > input.field[type][name][alt]");
+  });
+
+  it("reads a value containing the element separator as one value", () => {
+    expect(reduceSelector(`button[aria-label="Move ${MEMBER_NAME} > Officers"]`)).toBe(
+      "button[aria-label]",
+    );
+  });
+
+  it("leaves Tailwind's bracketed classes and component names alone", () => {
+    expect(
+      reduceSelector(
+        `ChannelList > div.grid-cols-[1fr_auto] > button.data-[state=open]:bg-accent[aria-label="${HIDE_LABEL}"]`,
+      ),
+    ).toBe(
+      "ChannelList > div.grid-cols-[1fr_auto] > button.data-[state=open]:bg-accent[aria-label]",
+    );
+  });
+
+  it("passes a selector with no attribute through unchanged", () => {
+    expect(reduceSelector("div.flex > button.rounded-md")).toBe(
+      "div.flex > button.rounded-md",
+    );
+  });
+
+  it("gives up on a value it cannot delimit, rather than guessing", () => {
+    // `"]` then ` > ` inside a label reads like the end of the value, which
+    // would leave `Smith"]` behind as an element.
+    expect(reduceSelector(`button[aria-label="Jo"] > Smith"]`)).toBeUndefined();
+    // Cut off mid-value.
+    expect(reduceSelector(`button[aria-label="Hide conversation with Jo`)).toBeUndefined();
+    expect(reduceSelector("")).toBeUndefined();
+  });
+});
+
+describe("DOM selectors in breadcrumbs and names (#2736)", () => {
+  it("reduces a ui.click breadcrumb's selector", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      breadcrumbs: [
+        {
+          category: "ui.click",
+          message: HIDE_SELECTOR,
+          data: { "ui.component_name": "ChannelList" },
+        },
+        { category: "ui.input", message: `input.field[name="${MEMBER_NAME}"]` },
+      ],
+    });
+
+    expect(serialize(scrubbed)).not.toContain(MEMBER_NAME);
+    expect(scrubbed?.breadcrumbs).toEqual([
+      { category: "ui.click", message: REDUCED_HIDE_SELECTOR },
+      { category: "ui.input", message: "input.field[name]" },
+    ]);
+  });
+
+  it("replaces a ui breadcrumb selector it cannot reduce", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      breadcrumbs: [
+        { category: "ui.click", message: `button[aria-label="Jo"] > Smith"]` },
+      ],
+    });
+
+    expect(serialize(scrubbed)).not.toContain("Smith");
+    expect(scrubbed?.breadcrumbs).toEqual([
+      { category: "ui.click", message: "[redacted:selector]" },
+    ]);
+  });
+
+  it("leaves other breadcrumb messages to the free-text sweep", () => {
+    // `ui.multiClick` is React Native's rage tap: a label, not a selector.
+    // How a label is scrubbed is #2982's to decide.
+    const scrubbed = browser.scrubSentryEvent({
+      breadcrumbs: [
+        { category: "console", message: 'lookup [status="404"]' },
+        { category: "ui.multiClick", message: "Save changes" },
+      ],
+    });
+
+    expect(scrubbed?.breadcrumbs).toEqual([
+      { category: "console", message: 'lookup [status="404"]' },
+      { category: "ui.multiClick", message: "Save changes" },
+    ]);
+  });
+
+  it("reduces selector-named spans, transactions and the DSC transaction", () => {
+    const scrubbed = browser.scrubSentryTransaction({
+      transaction: HIDE_SELECTOR,
+      contexts: { trace: { description: HIDE_SELECTOR, op: "ui.interaction.click" } },
+      sdkProcessingMetadata: {
+        dynamicSamplingContext: { trace_id: "abc", transaction: HIDE_SELECTOR },
+      },
+      spans: [
+        {
+          span_id: "1",
+          op: "ui.interaction.click",
+          description: HIDE_SELECTOR,
+          data: { "browser.web_vital.inp.target": HIDE_SELECTOR },
+        },
+      ],
+    });
+
+    expect(serialize(scrubbed)).not.toContain(MEMBER_NAME);
+    expect(scrubbed?.transaction).toBe(REDUCED_HIDE_SELECTOR);
+    const spans = scrubbed?.spans as Record<string, unknown>[];
+    expect(spans[0]?.description).toBe(REDUCED_HIDE_SELECTOR);
+    expect(spans[0]?.data).toEqual({});
+    expect(
+      (scrubbed?.sdkProcessingMetadata as Record<string, Record<string, unknown>>)
+        .dynamicSamplingContext?.transaction,
+    ).toBe(REDUCED_HIDE_SELECTOR);
+  });
+});
+
+/**
+ * The INP envelope as `@sentry/nextjs` 11 builds it for a standalone span
+ * that roots its own trace, trimmed to the fields that matter. Measured from
+ * the SDK under jsdom; `apps/web/lib/sentry/inp-trace-root.envelope.spec.ts`
+ * drives the real one.
+ */
+function inpEnvelope(): [Record<string, unknown>, [Record<string, unknown>, unknown][]] {
+  const attribute = (value: unknown, type = "string") => ({ value, type });
+  return [
+    {
+      sent_at: "2026-09-30T19:08:43.821Z",
+      trace: {
+        environment: "production",
+        public_key: "fixturekey",
+        trace_id: "efe858088a6240be9ddd9a18fe2cef92",
+        sampled: "true",
+        sample_rate: "1",
+        transaction: HIDE_SELECTOR,
+        replay_id: "not-on-the-allowlist",
+      },
+      sdk: { name: "sentry.javascript.nextjs", version: "11.0.0" },
+    },
+    [
+      [
+        {
+          type: "span",
+          item_count: 1,
+          content_type: "application/vnd.sentry.items.span.v2+json",
+        },
+        {
+          version: 2,
+          ingest_settings: { infer_ip: "auto", infer_user_agent: "auto" },
+          items: [
+            {
+              name: HIDE_SELECTOR,
+              span_id: "9628524128ca8436",
+              trace_id: "efe858088a6240be9ddd9a18fe2cef92",
+              start_timestamp: 1790795322.9,
+              end_timestamp: 1790795323.14,
+              is_segment: true,
+              status: "ok",
+              links: [{ attributes: { note: attribute(MEMBER_EMAIL) } }],
+              attributes: {
+                "sentry.origin": attribute("auto.http.browser.inp"),
+                "sentry.op": attribute("ui.interaction.click"),
+                "sentry.exclusive_time": attribute(240, "integer"),
+                "browser.web_vital.inp.value": attribute(240, "integer"),
+                "browser.web_vital.inp.target": attribute(HIDE_SELECTOR),
+                "browser.web_vital.inp.interaction_type": attribute("click"),
+                "sentry.segment.name": attribute(HIDE_SELECTOR),
+                "sentry.segment.id": attribute("9628524128ca8436"),
+                "user_agent.original": attribute("Mozilla/5.0 (X11; Linux x86_64)"),
+                "url.full": attribute(`https://app.frapp.live/chat/${USER_UUID}?invite=tok`),
+                "culture.timezone": attribute("America/New_York"),
+              },
+            },
+          ],
+        },
+      ],
+    ],
+  ];
+}
+
+describe("scrubSentryEnvelope (#2736)", () => {
+  it("rebuilds the trace header with the selector reduced", () => {
+    const envelope = inpEnvelope();
+    browser.scrubSentryEnvelope(envelope);
+
+    expect(envelope[0].trace).toEqual({
+      environment: "production",
+      public_key: "fixturekey",
+      trace_id: "efe858088a6240be9ddd9a18fe2cef92",
+      sampled: "true",
+      sample_rate: "1",
+      transaction: REDUCED_HIDE_SELECTOR,
+    });
+    // Other header keys are the SDK's, and stay.
+    expect(envelope[0].sent_at).toBe("2026-09-30T19:08:43.821Z");
+    expect(envelope[0].sdk).toEqual({
+      name: "sentry.javascript.nextjs",
+      version: "11.0.0",
+    });
+  });
+
+  it("rebuilds a standalone span from the allowlist", () => {
+    const envelope = inpEnvelope();
+    browser.scrubSentryEnvelope(envelope);
+
+    expect(serialize(envelope as unknown as ScrubbableEvent)).not.toContain(MEMBER_NAME);
+    expect(serialize(envelope as unknown as ScrubbableEvent)).not.toContain(MEMBER_EMAIL);
+    const [itemHeader, payload] = envelope[1][0]!;
+    expect(itemHeader.item_count).toBe(1);
+    expect(payload).toEqual({
+      version: 2,
+      ingest_settings: { infer_ip: "never", infer_user_agent: "never" },
+      items: [
+        {
+          name: REDUCED_HIDE_SELECTOR,
+          span_id: "9628524128ca8436",
+          trace_id: "efe858088a6240be9ddd9a18fe2cef92",
+          start_timestamp: 1790795322.9,
+          end_timestamp: 1790795323.14,
+          is_segment: true,
+          status: "ok",
+          attributes: {
+            "sentry.origin": { value: "auto.http.browser.inp", type: "string" },
+            "sentry.op": { value: "ui.interaction.click", type: "string" },
+            "sentry.exclusive_time": { value: 240, type: "integer" },
+            "browser.web_vital.inp.value": { value: 240, type: "integer" },
+            "browser.web_vital.inp.target": {
+              value: REDUCED_HIDE_SELECTOR,
+              type: "string",
+            },
+            "browser.web_vital.inp.interaction_type": {
+              value: "click",
+              type: "string",
+            },
+            "sentry.segment.name": { value: REDUCED_HIDE_SELECTOR, type: "string" },
+            "sentry.segment.id": { value: "9628524128ca8436", type: "string" },
+            "url.full": { value: "/chat/[redacted:id]", type: "string" },
+          },
+        },
+      ],
+    });
+  });
+
+  it("leaves event items and envelopes without a span alone", () => {
+    const event = { event_id: "e1", message: "already scrubbed by beforeSend" };
+    const envelope: [Record<string, unknown>, [Record<string, unknown>, unknown][]] = [
+      { event_id: "e1", sent_at: "now" },
+      [[{ type: "event" }, event]],
+    ];
+    browser.scrubSentryEnvelope(envelope);
+
+    expect(envelope).toEqual([
+      { event_id: "e1", sent_at: "now" },
+      [[{ type: "event" }, event]],
+    ]);
+    expect(envelope[1][0]![1]).toBe(event);
+  });
+
+  it("drops a span attribute whose type it does not know", () => {
+    const envelope = inpEnvelope();
+    const span = (
+      envelope[1][0]![1] as { items: { attributes: Record<string, unknown> }[] }
+    ).items[0]!;
+    span.attributes["sentry.op"] = { value: "ui.interaction.click", type: "object" };
+    browser.scrubSentryEnvelope(envelope);
+
+    const [, payload] = envelope[1][0]!;
+    expect(
+      (payload as { items: { attributes: Record<string, unknown> }[] }).items[0]!
+        .attributes,
+    ).not.toHaveProperty("sentry.op");
+  });
+
+  it("removes a span item it cannot read, and one that throws", () => {
+    const hostile = {
+      version: 2,
+      get items(): unknown[] {
+        throw new Error("hostile getter");
+      },
+    };
+    const envelope: [Record<string, unknown>, [Record<string, unknown>, unknown][]] = [
+      { trace: { trace_id: "abc", transaction: HIDE_SELECTOR } },
+      [
+        [{ type: "span", item_count: 1 }, { name: HIDE_SELECTOR }],
+        [{ type: "span", item_count: 1 }, hostile],
+        [{ type: "span", item_count: 1 }, { version: 2, items: [] }],
+      ],
+    ];
+    browser.scrubSentryEnvelope(envelope);
+
+    expect(envelope[1]).toEqual([]);
+    expect(envelope[0].trace).toEqual({
+      trace_id: "abc",
+      transaction: REDUCED_HIDE_SELECTOR,
+    });
+  });
+
+  it("ignores what is not an envelope", () => {
+    expect(() => browser.scrubSentryEnvelope(undefined)).not.toThrow();
+    expect(() => browser.scrubSentryEnvelope({ trace: HIDE_SELECTOR })).not.toThrow();
+    expect(() => browser.scrubSentryEnvelope([null, null])).not.toThrow();
+  });
+});
