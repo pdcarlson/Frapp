@@ -257,7 +257,7 @@ export async function peelVTags({ token, repo, fetchImpl }) {
     });
     // An annotated tag we cannot read is not "this tag does not exist".
     // Skipping it would let evaluatePin report "no vX.Y.Z" when the live
-    // tag is the one that failed (v1.0.0 is annotated).
+    // tag is the one that failed (release.yml mints annotated tags).
     if (!peeled.ok) {
       return {
         ok: false,
