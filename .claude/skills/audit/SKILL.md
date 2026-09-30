@@ -178,8 +178,8 @@ Workflows with specific audit concerns (the full set is `.github/workflows/`):
 | Deploy (production) | `deploy-production.yml`, calling `_deploy.yml` (#2805) | SHA must be an ancestor of `main` and CI-green, one approval, the call passes `secrets: inherit`, installs before any secret and local actions from the trusted ref, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, the served-commit check, `CANCELED` treated as failure, the alert on a failed ship |
 | Production guardrails | `production-guardrails.yml` | Render `frapp-api-prod` auto-deploy off, tracking `main`, health check path `/health`; Vercel `frapp-web` and `frapp-landing` not linked to Git |
 | Release | `release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
-| Docs | `docs.yml` | Not a documentation gate — what its job checks: [`DOCS_CI.md` § What runs](../../../docs/internal/ci-cd/DOCS_CI.md#what-runs) |
-| Links | `links.yml` | Markdown links and heading anchors, offline — [`DOCS_CI.md` § What runs](../../../docs/internal/ci-cd/DOCS_CI.md#what-runs) |
+| Docs | `docs.yml` | Not a documentation gate — what its job checks: [`docs-ci.md` § What runs](../../../docs/ci-cd/docs-ci.md#what-runs) |
+| Links | `links.yml` | Markdown links and heading anchors, offline — [`docs-ci.md` § What runs](../../../docs/ci-cd/docs-ci.md#what-runs) |
 
 The guardrail settings live only in provider dashboards and fail open: if one drifts, merges to
 `main` can reach production ungated. Both Vercel projects are deliberately unlinked from Git
@@ -192,7 +192,7 @@ neither validates a doc's claims. The old gates for cited paths, filename refere
 placement were removed on purpose; don't propose them back. The repo relies on
 [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the
 docs angle in [`diff-review`](../diff-review/angles.md), and
-[`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) says what runs and what nothing checks.
+[`docs-ci.md`](../../../docs/ci-cd/docs-ci.md) says what runs and what nothing checks.
 
 **Workflow secrets.** Secrets only via `${{ secrets.* }}`, never echoed or logged; minimal
 `permissions:` blocks; no `pull_request_target` trigger that exposes secrets to forks.

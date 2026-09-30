@@ -9,4 +9,4 @@ relevant `spec/behavior/` files; these are implementation/ops notes.)
 | [`ai-prompt-injection.md`](ai-prompt-injection.md) | Prompt-injection threat model for the AI corpus + acting agent; enforced by `apps/api/test/ai-evals/` |
 | [`content-validation.md`](content-validation.md) | File-upload content-type/extension allowlists, size caps, and filename stripping in storage paths; SVG-XSS warning |
 | [`security-fixes.md`](security-fixes.md) | Historical log of applied security fixes |
-| [`../internal/ci-cd/SECRET_SCANNING.md`](../internal/ci-cd/SECRET_SCANNING.md) | gitleaks secret-scanning gate (pre-commit + CI; ADR-13/ADR-17 push-protection replacement) |
+| [`../ci-cd/secret-scanning.md`](../ci-cd/secret-scanning.md) | gitleaks secret-scanning gate (pre-commit + CI; ADR-13/ADR-17 push-protection replacement) |

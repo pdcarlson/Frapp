@@ -32,7 +32,7 @@ const nextConfig = {
     // The `typescript` package here is `@typescript/typescript6` (compiler API
     // + `tsc6` only) so Nest, typescript-eslint, and ts-jest keep working;
     // native `tsc` lives on `@typescript/native`. API mode uses that compiler
-    // API. See docs/internal/ci-cd/AGENT_INFRA.md § TypeScript 7.
+    // API. See docs/ci-cd/agent-infra.md § TypeScript 7.
     useTypeScriptCli: false,
   },
   // Type-check the build against `tsconfig.build.json`, not `tsconfig.json`.

@@ -46,6 +46,7 @@ import type {
   DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
+import { ChannelCacheService } from '../chat-push-worker/channel-cache.service';
 import {
   channelServesMergeKey,
   newChannelMergeKey,
@@ -137,6 +138,7 @@ export class DiscordImportWorkerService {
     @Inject(DISCORD_CONNECTION_REPOSITORY)
     private readonly connectionRepo: IDiscordConnectionRepository,
     private readonly rbac: RbacService,
+    private readonly channelCache: ChannelCacheService,
   ) {}
 
   /**
@@ -923,6 +925,10 @@ export class DiscordImportWorkerService {
       category_id: null,
       is_read_only: mapping.new_channel_is_read_only,
     });
+    // Recorded before the mapping row learns its target: remapping a failed
+    // import rewrites the mapping rows without targets, and this is how the
+    // purge still finds a channel the import made (#2905).
+    await this.importRepo.recordCreatedChannel(importId, created.id);
     await this.importRepo.updateChannel(mapping.id, importId, {
       target_channel_id: created.id,
     });
@@ -979,6 +985,23 @@ export class DiscordImportWorkerService {
       if (!held) return { claimed: true, importId: job.id, finished: false };
     }
 
+    // Then the channels this import created, now that its rows are gone (#2905).
+    // Left behind, each met a re-import of the same server as a name clash to
+    // resolve, or as a duplicate when hidden from the admin (#2799). The
+    // function keeps any channel that still holds a message of any kind, an
+    // attachment, a points-ledger link, or a `use_existing` merge into it, and
+    // it checks and deletes each one under the channel's row lock, so a
+    // message sent meanwhile keeps its channel.
+    const channelsDeleted = await this.importRepo.deleteEmptyCreatedChannels(
+      job.id,
+      job.chapter_id,
+    );
+    // As `ChatService.deleteChannel` does: nothing can post into a deleted
+    // channel, but a cached row would outlive it by up to the cache's TTL.
+    for (const channelId of channelsDeleted) {
+      this.channelCache.invalidate(channelId);
+    }
+
     const prefix =
       job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);
     // `listFiles` does not recurse, so each level the layout uses is swept
@@ -999,7 +1022,7 @@ export class DiscordImportWorkerService {
       purged_at: new Date().toISOString(),
     });
     this.logger.log(
-      `Purged Discord import ${job.id}: ${deleted} messages and its archive objects.`,
+      `Purged Discord import ${job.id}: ${deleted} messages, ${channelsDeleted.length} emptied channels it created, and its archive objects.`,
     );
     return { claimed: true, importId: job.id, finished: true };
   }

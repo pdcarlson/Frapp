@@ -153,7 +153,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > meeting Discord's error page, **but only when Discord's answer lists the registered redirects**.
 > Whether it does has not been confirmed from a deployment; where it does not, the check is skipped
 > and the error page is still possible. (2) The **Message Content Intent** under Bot → Privileged Gateway
-> Intents: nothing checks that before an import runs, and `available: true` says nothing about it.
+> Intents: `available: true` says nothing about it, and the import's own check of it has limits.
 > What each check covers, how each failure presents, and what evidence it leaves server-side is in
 > [`integrations.md`](../ops/deployment/integrations.md) § 7A. Discord Application Setup, which owns
 > that mechanism. Do not restate it here; provider behavior falsifies these facts, and a second copy
@@ -548,7 +548,7 @@ already carries. **The name check is the load-bearing one** — the audit built 
 env values, so it establishes which variables reach the browser, not which values do; a clean
 gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
 method, caveats, and re-run instructions:
-[`SECRET_SCANNING.md` § Audit history](../ci-cd/SECRET_SCANNING.md#audit-history).
+[`secret-scanning.md` § Audit history](../../ci-cd/secret-scanning.md#audit-history).
 
 **Adding a client-read variable? The prefix decision is the security review.** Step 3 of _Adding a
 New Variable_ at the end of this document is mechanical — it tells you how to add the reference, not
@@ -585,7 +585,7 @@ Every GitHub secret belongs in an **environment** restricted to `main`, never in
 because a repository secret is readable from any branch (#2518). The Infisical pair below is not the
 only GitHub secret. The provider API keys, the release PAT and the base-sync App pair live there
 too. Which secrets exist, which environment holds each, and the state today:
-[`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
+[`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets).
 
 **Permanent (Infisical bootstrap):**
 

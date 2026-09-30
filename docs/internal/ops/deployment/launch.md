@@ -26,7 +26,7 @@
       on 2026-09-02; re-check it with the
       [runbook's Environments steps](../GITHUB_BRANCH_PROTECTION_RUNBOOK.md#verification-checklist).
 - [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see
-      [`AGENT_INFRA.md`](../../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60 s monitor
+      [`agent-infra.md`](../../../ci-cd/agent-infra.md) § Scheduled conformance). A Sentry 60 s monitor
       is still the finer-grained human path (quota; ask before creating), planned under #2505.
 - [x] Stripe live mode: production has checked webhooks against the live endpoint's secret since
       2026-09-15 ([`integrations.md` § 7.2](integrations.md#72-live-mode-production)). Mobile

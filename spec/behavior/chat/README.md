@@ -577,9 +577,13 @@ channel that reports a different one fails the import rather than being skipped.
   in one is a thread, and they inherit the forum's choice.
 - **A bot that cannot read message content fails loudly.** Without Discord's
   Message Content Intent the API gets HTTP 200 with empty content on every
-  message. The import counts authored messages with nothing in them and stops
-  with an error naming the fix, rather than writing a chapter's whole history as
-  empty bubbles — which would look like success.
+  message. Before it writes anything, the import asks Discord whether the intent
+  is on and stops with an error naming the fix if it isn't, rather than writing a
+  chapter's whole history as empty bubbles, which would look like success. When
+  Discord can't answer that, a count of blank messages is the only guard: it
+  stops an archive that comes back blank at scale, not a small one, and its error
+  says how many messages it had already written. What each check covers is in
+  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md) § 7A.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.
@@ -786,8 +790,37 @@ channel that reports a different one fails the import rather than being skipped.
   attachments and reactions, and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a
   live channel leaves that channel's live messages — and any *other* import's
-  messages — untouched. This is currently the only deletion path that reaps the
-  `chat-archive` bucket; there is no chapter-deletion path in the product.
+  messages — untouched. It then deletes each channel the import **created**
+  (#2905) that is left holding nothing:
+  - no message of any kind (live, deleted, a tombstone, or another import's);
+  - no attachment;
+  - no points-ledger row pointing at it;
+  - no import merged into it (a `use_existing` mapping row).
+
+  The worker records each channel it creates, so this holds even after a
+  failed import was remapped through the API, which rewrites the mapping rows
+  without their targets. For an import from before that record existed, a
+  `create_new` row's target counts only if the channel is no older than the
+  import and still carries the description the worker gives the channels it
+  creates. An upload mapped before #2859 could name an existing channel there.
+
+  A channel the import merged into is never deleted, and neither is a created
+  channel that still holds something. **Known gap:** a created channel that an
+  import merged into stays, even after that import is deleted too (#2922),
+  because `discord_import_channels_target_present` won't let the merging row
+  lose its target. That covers another import's merge, and this import's own if
+  it was remapped through the API into a channel its first run made.
+
+  Before #2905 every created channel stayed. A bot re-import then merged a
+  public leftover by default (#2856). A channel private in Discord, or any
+  channel in an upload (which says nothing about privacy), was flagged as a
+  name clash to resolve by hand. The clash reached the chapter as a duplicate
+  only when the leftover was hidden from the admin (#2799), which #2905 does
+  not change.
+
+  The roles the import created stay either way, as the role mapping above
+  says. This is currently the only deletion path that reaps the `chat-archive`
+  bucket; there is no chapter-deletion path in the product.
 
 What follows is the behaviour the archive has once it is in.
 

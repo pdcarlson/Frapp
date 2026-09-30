@@ -101,7 +101,7 @@ Frapp/
 
 - **Authoring:** Developer guides in **[`docs/guides/`](../../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
 - **Spec rendering:** Previously the removed docs app rendered `spec/*.md` in a browser. Today, use the repo view on GitHub (or a local markdown preview). A future public docs site may restore styled rendering.
-- **Keeping it true:** what to do when a change makes a doc wrong, or when spec and code disagree, is owned by [`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code) and [§ Documentation discipline](../../AGENTS.md#documentation-discipline). What CI checks: [`DOCS_CI.md` § What runs](../../docs/internal/ci-cd/DOCS_CI.md#what-runs).
+- **Keeping it true:** what to do when a change makes a doc wrong, or when spec and code disagree, is owned by [`AGENTS.md` § Spec vs code](../../AGENTS.md#spec-vs-code) and [§ Documentation discipline](../../AGENTS.md#documentation-discipline). What CI checks: [`docs-ci.md` § What runs](../../docs/ci-cd/docs-ci.md#what-runs).
 
 ---
 
@@ -377,14 +377,14 @@ Health-check response bodies remain owned by
 
 - **Testing:** TDD encouraged. `apps/api` line coverage is measured (`npm run test:cov -w apps/api`,
   currently ~80%) but not CI-gated — a deliberate decision, not an oversight; see
-  [`QUALITY_GATES.md` § Coverage](../../docs/internal/ci-cd/QUALITY_GATES.md#coverage).
+  [`quality-gates.md` § Coverage](../../docs/ci-cd/quality-gates.md#coverage).
 - **Linting:** ESLint (shared config), Prettier for formatting.
 - **Type safety:** TypeScript strict mode across apps and packages, with one recorded exception:
   `apps/api` sets `"strict": false` and opts into `strictNullChecks` / `noImplicitAny` /
   `strictBindCallApply` only. Nest DTO class fields are assigned by class-validator, not
   constructors, so `strictPropertyInitialization` would be hundreds of `TS2564`s with no
   runtime meaning. TypeScript 6/7 default `strict` to true, which is why the flag is now
-  explicit. See [`docs/internal/ci-cd/AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md)
+  explicit. See [`docs/ci-cd/agent-infra.md`](../../docs/ci-cd/agent-infra.md)
   § TypeScript 7.
 - **Validation:** enforced on the API by DTOs under a global `ValidationPipe`; Zod schemas shared to clients are UX only, never enforcement. The pipe's flags and the DTO and write-payload conventions that keep it honest: [`docs/guides/api-architecture.md` § Never trust the client](../../docs/guides/api-architecture.md#never-trust-the-client).
 - **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint — keyed on the authenticated user (Supabase JWT `sub`, after verifying the token's signature: HS256 locally against `SUPABASE_JWT_SECRET`, ES256/RS256 against the project JWKS via `supabase.auth.getClaims()` — the hosted projects sign ES256, so until 2026-09-06 no hosted request was keyed per user), falling back to client IP for unauthenticated, invalid, or expired tokens so a forged/rotating `sub` cannot evade the limit — at 100 req/min read and 30 req/min write, with stricter static overrides on expensive and fan-out routes (see [`spec/behavior/README.md` § Per-route rate limits](../behavior/README.md#per-route-rate-limits)); a standard `Retry-After` header (seconds) accompanies every `429`. The Stripe webhook route is exempt (see Security Note below). File upload MIME type validation.

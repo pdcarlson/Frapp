@@ -13,7 +13,7 @@ in the flow ever named a commit. Three consequences, all measured rather than ar
 - The human gates were both in the wrong place: the promotion PR's required review, and
   then the environment approval after merge on a click nobody was paged for. The second
   held a one-migration apply for 29m52s on 2026-08-28 (ADR-13 amendment, and
-  `docs/internal/ci-cd/AGENT_INFRA.md` § GitHub environments and bootstrap secrets).
+  `docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap secrets).
   Neither happened at a moment when anyone knew whether the migration would apply.
 - A second long-lived branch cost `branch-policy`, a `[main, production]` filter on five
   workflows, an asymmetric branch-protection payload, and a `pr-base-guard` case — all to

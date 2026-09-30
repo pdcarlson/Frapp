@@ -92,4 +92,4 @@ here, removing the last composite action would fail that gate with a message abo
 Infisical slugs — which would be a long way from the actual cause.
 
 Background: ADR-15's 2026-09-02 amendment in [`spec/architecture/adr/adr-15.md`](../../spec/architecture/adr/adr-15.md),
-and the **Composite actions** row in [`AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md).
+and the **Composite actions** row in [`agent-infra.md`](../../docs/ci-cd/agent-infra.md).

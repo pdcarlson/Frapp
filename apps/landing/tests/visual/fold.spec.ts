@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
  * usually answered by regenerating the fixture.
  * `.claude/skills/testing/SKILL.md` records the rule that came out of it —
  * "**Never re-add an `--update-snapshots` step to a checklist** — there are no
- * baselines to update" — and `docs/internal/ci-cd/QUALITY_GATES.md` says pixel
+ * baselines to update" — and `docs/ci-cd/quality-gates.md` says pixel
  * coverage belongs in a hosted service with per-PR baseline review, not in the
  * repo. So this suite stores no baseline and compares no pixels. It reads
  * numbers off the rendered page, which cannot go stale and needs no

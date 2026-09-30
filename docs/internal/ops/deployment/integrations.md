@@ -218,10 +218,11 @@ this page nor the setting.
    Message Content Intent → on. This is **self-serve below 100 servers** and is
    separate from bot verification, which is not needed yet (revisit before that
    threshold). Without it Discord answers `200` with `content: ""` on every
-   message a chapter's members wrote. The importer detects that and fails with a
-   message naming this toggle rather than importing a decade of empty bubbles —
-   but only turning it on makes an import actually work, and the detection is
-   thresholded rather than absolute (see the table below, and #2317).
+   message a chapter's members wrote. The importer asks Discord whether the
+   toggle is on before each slice writes anything, and fails with a message
+   naming it rather than importing a decade of empty bubbles. Only turning it on
+   makes an import work, and the check holds only when Discord's answer carries
+   the application's flags (the step-5 row and its caveat in the table below).
 
 **Permissions.** The install requests View Channels + Read Message History and
 nothing else (bitfield `66560`, pinned as `DISCORD_BOT_PERMISSIONS` in
@@ -289,8 +290,9 @@ an admin to Discord's error page. Three limits:
 - **The client secret is invisible to it.** The secret is only ever presented to
   Discord on the callback's code exchange, so a reset or mistyped
   `DISCORD_CLIENT_SECRET` still reads as verified (table below).
-- **Step 5 is invisible to it.** The Message Content Intent shows up only once
-  an import is already running, so `available: true` says nothing about it.
+- **Step 5 is invisible to it.** `available: true` says nothing about the
+  Message Content Intent. The import checks it itself, before it writes
+  anything (the step-5 row below).
 - **Discord's answer may not list the redirects.** `redirect_uris` is optional
   on Discord's application object. It does come back to a bot token: staging's
   boot log read `Discord application setup verified` on 2026-09-28, after
@@ -311,25 +313,33 @@ failing. The failures look nothing alike:
 | Redirect URI not registered (step 4) | `availability` answers `false` and the card greys out as above; `POST /v1/discord/connect` 503s before minting a state. The API logs `Connect Discord withdrawn. Discord application <id> has no OAuth2 redirect registered for <uri> … Registered: <list>` at error level, and Sentry gets one `Discord setup: redirect_unregistered` issue per change, not per request. Add the logged URI verbatim; no redeploy is needed, and a wizard loaded a minute or more later offers the flow again. **If Discord's answer carried no `redirect_uris`** (the limit above), the old presentation applies instead: `POST /v1/discord/connect` succeeds, the browser hits Discord's **`Invalid OAuth2 redirect_uri`** page, and the callback never fires. Its fingerprint is `discord_oauth_states` rows with `consumed_at IS NULL` and no matching `discord_connections` row, but only briefly: the hourly worker deletes every expired handshake, used or not, so look within the hour, or for its `Reaped N expired Discord OAuth handshakes` log line. The fastest live check is the `redirect_uri=` parameter in that page's address bar. |
 | Bot token reset, or from another application (steps 2–3) | Same withdrawal, logged and reported as `Discord setup: bot_token_rejected` or `Discord setup: client_id_mismatch`. A rejected token is Discord answering 401, to the check or to any import: someone clicked Reset Token, which while environments share an application breaks all of them. A 401 met by an import is remembered at once but reported by the check, so the withdrawal, log line and Sentry issue land on the next availability or connect request (or the next boot), not the instant the import fails; the import's own error carries the 401 meanwhile. It stays withdrawn until Infisical carries the new token **and the API restarts**, because the client discards a rejected token. A mismatch means `DISCORD_BOT_TOKEN` and `DISCORD_CLIENT_ID` name different applications, so the bot an admin installs is not the one that reads. |
 | Client secret reset or wrong (step 3) | **Not caught before use.** `availability` stays `true` and the boot log says verified. The admin gets through Discord's consent screen, then the callback's code exchange is refused and the wizard shows `?discord=failed`. The API logs `Discord connect failed for chapter <id>: Discord refused the authorization code: <Discord's error code>` at warn level. |
-| Message Content Intent off (step 5)  | Connecting succeeds and channel and role mapping succeed. The import fails with an error naming this toggle (`MISSING_MESSAGE_CONTENT_INTENT_ERROR`) **only once a slice has seen 25 authored messages with no content, attachment or embed between them** (`MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK`, `apps/api/src/domain/utils/discord-api-message.ts`). Under that threshold — a small or quiet archive — the import goes green and writes those messages empty. See the caveat below.                                  |
+| Message Content Intent off (step 5)  | Connecting succeeds and channel and role mapping succeed. The import's first slice reads Discord's record of the application (`GET /applications/@me`, the same read as the setup check) and, when its `flags` carry neither `GatewayMessageContent` nor `GatewayMessageContentLimited`, fails that slice before it creates a channel or writes a row, with an error naming this toggle and saying how many messages the import already holds from earlier slices, if any (`messageContentIntentOffError`, `apps/api/src/domain/utils/discord-api-message.ts`). Every slice asks again, so switching the toggle off mid-import stops the next one. See the caveat below for when that read settles nothing. |
 
-**Two caveats on that last row, because it is the one that can pass while wrong.**
-The tally is cumulative across a slice and checked once per 100-message page
-*before* that page is written, so rows written by earlier pages are already
-committed when a later page trips it — an import that fails this way can still
-have left empty rows behind, despite what the error text says. And the check
-needs `withSubstance === 0`: a single message anywhere in the slice carrying an
-embed or attachment latches it off for the rest of that slice. So **a green
-import on a small test server is not proof the intent is on** — verify the
-toggle in the portal directly. ([#2317](https://github.com/pdcarlson/Frapp/issues/2317)
-tracks tightening the detector and correcting its error string.)
+**One caveat on that last row: when the flags read settles nothing.** If
+`GET /applications/@me` fails (a timeout, a 5xx, a rate limit) or its answer
+carries no `flags`, the slice logs a warning (`Could not read the Discord
+application's Message Content Intent` or `Discord's application record carried
+no flags`) and goes on, and only the older content tally guards it. That tally
+fails once a slice has seen `MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK` authored
+messages with no content, attachment or embed, so a small archive never trips
+it, and the bot's own messages or one that mentions it (Discord still returns
+those) disarm it. It trips on the page in hand, so earlier pages and channels of
+that slice may already be written; its error counts those as empty and counts
+earlier slices' messages apart, because the tally never saw them. So a green
+import is proof the intent is on only when **no slice** of it logged either
+warning. No deployment has yet been observed returning `flags` to the bot token
+(`redirect_uris`, the same read's other field, was, above). Until an import's
+log shows a slice with neither warning, confirm step 5 by eye in the portal as
+well ([#2317](https://github.com/pdcarlson/Frapp/issues/2317)).
 
 So the proof of step 4 is the boot log line `Discord application setup verified:
 the redirect URI <uri> is registered`. Where the log says the setup is unchecked,
 the proof is clicking **Add to Server** once in that environment and reaching
 Discord's consent screen instead of its error page. Either proves step 4 and
 nothing else — the consent screen renders happily with the
-Message Content Intent off. Confirm step 5 by eye in the portal.
+Message Content Intent off. Step 5 is checked by the import itself, within the
+caveat above; confirm it by eye in the portal until that caveat's first
+observation is recorded.
 
 **Where an import's attachment bytes go, and who bills them** ([ADR-26](../../../../spec/architecture/adr/adr-26.md), #2848).
 Render bills a service's outbound bytes to the public internet, which includes its own requests to

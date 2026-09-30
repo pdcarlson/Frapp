@@ -932,12 +932,12 @@ test("staging-conformance.yml wires Render creds to the staging service, never p
   // Staging's service id comes from `.github/environments.json` (#2806);
   // `provider-ids.test.mjs` pins that this job reads staging's entry.
   const infra = readFileSync(
-    new URL("../../../docs/internal/ci-cd/AGENT_INFRA.md", import.meta.url),
+    new URL("../../../docs/ci-cd/agent-infra.md", import.meta.url),
     "utf8",
   );
   assert.ok(
     infra.includes("and `staging-conformance.yml` (`RENDER_API_KEY`)"),
-    "AGENT_INFRA must list staging-conformance.yml as a RENDER_API_KEY consumer",
+    "agent-infra.md must list staging-conformance.yml as a RENDER_API_KEY consumer",
   );
   // The roster row itself, not any line: production-guardrails' 07:15 row
   // names the same words for production.

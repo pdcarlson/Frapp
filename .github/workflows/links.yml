@@ -81,7 +81,7 @@ jobs:
       # them here does not restore that: neither carries a markdown link today,
       # so lychee finds nothing to check. It is scope for the links they may
       # grow. What those files actually lost is the backticked-path check, and
-      # nothing replaces it (see docs/internal/ci-cd/DOCS_CI.md).
+      # nothing replaces it (see docs/ci-cd/docs-ci.md).
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:

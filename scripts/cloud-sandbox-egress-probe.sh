@@ -45,7 +45,7 @@ TIMEOUT="${FRAPP_EGRESS_PROBE_TIMEOUT:-8}"
 # below calls this before exiting, so a bringup that reached this script always leaves a
 # readable file behind.
 #
-# Absence was the actual harm in #2205, not the syntax error. AGENT_INFRA.md,
+# Absence was the actual harm in #2205, not the syntax error. agent-infra.md,
 # CLOUD_SANDBOX.md and live-verification/SKILL.md all tell agents to read this file
 # INSTEAD of probing hosts by hand, and they frame its absence as impossible. A session that
 # finds nothing therefore has no sanctioned reading for what it is looking at, and the
@@ -125,7 +125,7 @@ write_unknown_manifest() {
 # trap that put prod on the allowlist once already. Source of truth is
 # `mcp__Supabase__list_projects`: frapp-staging = hnoyzpidbmizhbqaiity,
 # frapp-prod = unttyvyfezddlyafcydh. Project URLs are not secret material (see
-# docs/internal/ci-cd/AGENT_INFRA.md, "a project URL is not secret material" — SECRET_SCANNING.md
+# docs/ci-cd/agent-infra.md, "a project URL is not secret material" — secret-scanning.md
 # states no such rule); the anon/service keys are, and are not here.
 PROBES="
 staging_api|https://api-staging.frapp.live/health|reachable|staging API (Render)
