@@ -37,3 +37,13 @@ export interface UserSettings {
   theme: Theme;
   updated_at: string;
 }
+
+/**
+ * A member's settings as `GET` and `PATCH /v1/settings` answer them: the fields
+ * they can change, without the row's bookkeeping. A member who has never saved
+ * has no row, so they have no `id` or `updated_at` to report either (#2885).
+ */
+export type UserSettingsValues = Pick<
+  UserSettings,
+  'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
+>;

@@ -1979,7 +1979,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSettingsDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2007,7 +2014,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSettingsDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -9438,6 +9452,44 @@
           "chapter_id",
           "category",
           "is_enabled"
+        ]
+      },
+      "UserSettingsDto": {
+        "type": "object",
+        "properties": {
+          "quiet_hours_start": {
+            "type": "string",
+            "description": "Quiet hours start, as Postgres returns a `time` (HH:mm:ss). Null when no window is set; quiet hours are enforced only while start and end are both set.",
+            "nullable": true,
+            "example": "22:00:00"
+          },
+          "quiet_hours_end": {
+            "type": "string",
+            "description": "Quiet hours end (HH:mm:ss). Null when no window is set.",
+            "nullable": true,
+            "example": "08:00:00"
+          },
+          "quiet_hours_tz": {
+            "type": "string",
+            "description": "Time zone the window is evaluated in. Null means UTC while a window is set.",
+            "nullable": true,
+            "example": "America/New_York"
+          },
+          "theme": {
+            "type": "string",
+            "description": "Theme preference. `system` until the member saves one.",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          }
+        },
+        "required": [
+          "quiet_hours_start",
+          "quiet_hours_end",
+          "quiet_hours_tz",
+          "theme"
         ]
       },
       "UpdateUserSettingsDto": {

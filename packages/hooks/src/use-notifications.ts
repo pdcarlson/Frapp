@@ -189,6 +189,15 @@ export function useNotificationPreferences(chapterId: string) {
   });
 }
 
+/**
+ * The caller's quiet hours and theme. Never resolves `undefined`.
+ *
+ * The API answers a member who has never saved with the defaults (#2885). It
+ * used to send an empty body, which `openapi-fetch` reads as `data: undefined`,
+ * and TanStack Query refuses that with a console error and a failed query. An
+ * empty body is now a contract break, so it rejects under a name that says so
+ * rather than tripping TanStack's generic guard.
+ */
 export function useUserSettings() {
   const client = useFrappClient();
   return useQuery({
@@ -196,6 +205,9 @@ export function useUserSettings() {
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/settings");
       if (error) throw error;
+      if (data === undefined) {
+        throw new Error("GET /v1/settings answered with an empty body");
+      }
       return data;
     },
     staleTime: 300_000,
@@ -321,10 +333,10 @@ export function useUpdateUserSettings() {
     onMutate: async (body) => {
       await queryClient.cancelQueries({ queryKey: userSettingsKey });
       const previous = queryClient.getQueryData(userSettingsKey);
-      // Only predict against a payload the server actually sent. With no
-      // response schema on `GET /v1/settings` an unfetched entry is
-      // `undefined`, and writing a body-shaped object into it would hand
-      // consumers a settings row that never existed.
+      // Only predict against a payload the server actually sent. An entry
+      // that has not loaded (offline, or failed) is `undefined`, and writing a
+      // body-shaped object into it would hand consumers settings the server
+      // never reported.
       const wrote = previous !== undefined;
       if (wrote) {
         queryClient.setQueryData(

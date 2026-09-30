@@ -337,9 +337,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   // edited on web must reach this device on refetch.
   useEffect(() => {
     if (!settingsQuery.isSuccess) return;
-    const serverWindow = settingsToQuietHoursWindow(
-      settingsQuery.data as unknown as ServerSettings | undefined,
-    );
+    const serverWindow = settingsToQuietHoursWindow(settingsQuery.data);
     if (!serverWindow) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed remembered quiet-hours from the server so a web edit reaches this device
     setRememberedWindow((current) =>
@@ -353,9 +351,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   // latched out.
 
   const serverQuietHoursEnabled = settingsQuery.isSuccess
-    ? settingsToQuietHoursEnabled(
-        settingsQuery.data as unknown as ServerSettings | undefined,
-      )
+    ? settingsToQuietHoursEnabled(settingsQuery.data)
     : null;
   const quietHoursEnabled =
     serverQuietHoursEnabled ?? cached.quietHoursEnabled;
@@ -412,9 +408,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
    * clobber times set on another device before hydration lands.
    */
   const resolveWindowForEnable = useCallback((): QuietHoursWindow => {
-    const serverWindow = settingsToQuietHoursWindow(
-      settingsQuery.data as unknown as ServerSettings | undefined,
-    );
+    const serverWindow = settingsToQuietHoursWindow(settingsQuery.data);
     return serverWindow ?? rememberedWindow ?? fallbackWindow;
   }, [fallbackWindow, rememberedWindow, settingsQuery.data]);
 
