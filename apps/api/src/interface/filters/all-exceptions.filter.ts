@@ -105,11 +105,12 @@ function extractCode(exception: HttpException): string | undefined {
  *
  *  - **401 / 403 / 429** → a `warn`-level `security_event` record, plus (401
  *    only) the sliding-window spike detector.
- *  - **>= 500** → the existing `error` log, and now `Sentry.captureException`
- *    through `reportSwallowed`, which nothing previously called. `beforeSend`
- *    (built in `sentry-options.ts`) does the PII scrubbing; the capture
- *    context built here carries only pre-pseudonymized ids. There is no scope
- *    fork, so a tag set on the current scope would reach other events.
+ *  - **>= 500** → the existing `error` log, and now `Sentry.captureException`,
+ *    which nothing previously called, sent through `reportSwallowed`.
+ *    `beforeSend` (built in `sentry-options.ts`) does the PII scrubbing; the
+ *    capture context built here carries only pre-pseudonymized ids. There is
+ *    no scope fork, so a tag set on the current scope would reach other
+ *    events.
  *    `@SentryExceptionCaptured` / `SentryGlobalFilter` are deliberately not
  *    used: they would `captureException` the raw value (PostgREST `{code,
  *    message, details}` objects become `[object Object]`) and double-report

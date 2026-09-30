@@ -260,12 +260,18 @@ describe('AllExceptionsFilter', () => {
     });
     expect(user).not.toEqual({ id: USER_ID });
 
-    expect(tags.chapter).toMatch(/^[0-9a-f]{64}$/);
-    expect(tags.chapter).not.toBe(CHAPTER_ID);
-    expect(tags.route).toBe('/v1/chapters/join');
-    expect(tags.request_id).toBe('req-abc');
-    expect(tags.status_code).toBe('500');
-    expect(tags.http_method).toBe('POST');
+    // The whole set, so a raw id can't ride along as an extra tag: ids are
+    // hashed here, at the source, and the scrubber is only the backstop.
+    expect(tags).toEqual({
+      chapter: expect.stringMatching(/^[0-9a-f]{64}$/),
+      request_id: 'req-abc',
+      status_code: '500',
+      http_method: 'POST',
+      route: '/v1/chapters/join',
+    });
+    const shipped = JSON.stringify(reportedContext());
+    expect(shipped).not.toContain(USER_ID);
+    expect(shipped).not.toContain(CHAPTER_ID);
     expect(captured.status).toBe(500);
   });
 
