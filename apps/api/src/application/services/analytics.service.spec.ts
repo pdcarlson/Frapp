@@ -61,6 +61,7 @@ function makeMember(chapterId: string): Member {
     role_ids: [],
     custom_role_ids: [],
     has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   };

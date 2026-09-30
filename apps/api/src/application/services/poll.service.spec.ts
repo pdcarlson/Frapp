@@ -137,6 +137,7 @@ describe('PollService', () => {
     // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
     mockMemberRepo.findByUserAndChapter.mockResolvedValue({
       id: 'm-1',
+      dismissed_ops_nudges: [],
     });
     mockRbac.getEffectivePermissions.mockResolvedValue([]);
     mockChannelRepo.findByIds.mockResolvedValue([
@@ -1337,6 +1338,7 @@ describe('PollService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'm-1',
         role_ids: ['role-alumni'],
+        dismissed_ops_nudges: [],
       });
       mockRbac.hasAlumniRole.mockResolvedValue(true);
     });

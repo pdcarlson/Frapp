@@ -950,6 +950,7 @@ describe('NotificationService', () => {
       role_ids: [],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '',
       updated_at: '',
     };

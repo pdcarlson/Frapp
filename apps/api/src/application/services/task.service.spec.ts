@@ -56,6 +56,7 @@ describe('TaskService', () => {
     role_ids: ['role-1'],
     custom_role_ids: [],
     has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
     created_at: '2026-02-01T00:00:00.000Z',
     updated_at: '2026-02-01T00:00:00.000Z',
   };
@@ -189,8 +190,18 @@ describe('TaskService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockTaskRepo.create.mockResolvedValue(baseTask);
       mockUserRepo.findByIds.mockResolvedValue([
-        { id: 'admin-1', display_name: 'Admin Alice' },
-        { id: 'user-1', display_name: 'Member Bob' },
+        {
+          id: 'admin-1',
+          display_name: 'Admin Alice',
+          active_chapter_id: null,
+          deleted_at: null,
+        },
+        {
+          id: 'user-1',
+          display_name: 'Member Bob',
+          active_chapter_id: null,
+          deleted_at: null,
+        },
       ]);
 
       await service.create({
@@ -278,8 +289,18 @@ describe('TaskService', () => {
         mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
         mockTaskRepo.create.mockResolvedValue(baseTask);
         mockUserRepo.findByIds.mockResolvedValue([
-          { id: 'admin-1', display_name: 'Admin Alice' },
-          { id: 'user-1', display_name: 'Member Bob' },
+          {
+            id: 'admin-1',
+            display_name: 'Admin Alice',
+            active_chapter_id: null,
+            deleted_at: null,
+          },
+          {
+            id: 'user-1',
+            display_name: 'Member Bob',
+            active_chapter_id: null,
+            deleted_at: null,
+          },
         ]);
 
         const result = await service.create(chatInput);

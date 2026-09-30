@@ -221,6 +221,7 @@ describe('ChapterService', () => {
         role_ids: ['role-president'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       },
@@ -231,6 +232,7 @@ describe('ChapterService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
       },
@@ -302,6 +304,7 @@ describe('ChapterService', () => {
         role_ids: ['role-president'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       },
@@ -312,6 +315,7 @@ describe('ChapterService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
       },
@@ -534,6 +538,7 @@ describe('ChapterService', () => {
       role_ids: [mockRoleIdForName('President')],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2026-05-24',
       updated_at: '2026-05-24',
     });
@@ -587,6 +592,7 @@ describe('ChapterService', () => {
       role_ids: [presidentRole.id],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -642,6 +648,7 @@ describe('ChapterService', () => {
       role_ids: [mockRoleIdForName('President')],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -736,6 +743,7 @@ describe('ChapterService', () => {
       role_ids: [mockRoleIdForName('President')],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -1753,6 +1761,7 @@ describe('ChapterService', () => {
     it('persists the selection for a member', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-1',
+        dismissed_ops_nudges: [],
       });
 
       await service.setActiveChapter('user-1', 'ch-1');

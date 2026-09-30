@@ -128,6 +128,7 @@ describe('Chat hot path (e2e)', () => {
     chapter_id: 'chapter-1',
     role_ids: ['role-member'],
     has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   };

@@ -520,6 +520,7 @@ describe('InviteService', () => {
       role_ids: [memberRole.id],
       custom_role_ids: [],
       has_completed_onboarding: false,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -590,6 +591,7 @@ describe('InviteService', () => {
         role_ids: [],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -675,6 +677,7 @@ describe('InviteService', () => {
         role_ids: [],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -743,6 +746,7 @@ describe('InviteService', () => {
         role_ids: [],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -800,6 +804,7 @@ describe('InviteService', () => {
     it('answers an existing member with 409, not a request for the checkbox', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-existing',
+        dismissed_ops_nudges: [],
       });
 
       await expect(
@@ -856,6 +861,7 @@ describe('InviteService', () => {
       role_ids: [memberRole.id],
       custom_role_ids: [],
       has_completed_onboarding: false,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -881,6 +887,8 @@ describe('InviteService', () => {
         graduation_year: null,
         current_city: null,
         current_company: null,
+        active_chapter_id: null,
+        deleted_at: null,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -921,6 +929,8 @@ describe('InviteService', () => {
         graduation_year: null,
         current_city: null,
         current_company: null,
+        active_chapter_id: null,
+        deleted_at: null,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -948,6 +958,8 @@ describe('InviteService', () => {
         graduation_year: null,
         current_city: null,
         current_company: null,
+        active_chapter_id: null,
+        deleted_at: null,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -1008,6 +1020,7 @@ describe('InviteService', () => {
       role_ids: [memberRole.id],
       custom_role_ids: [],
       has_completed_onboarding: false,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -1066,6 +1079,7 @@ describe('InviteService', () => {
       role_ids: [renamedMemberRole.id],
       custom_role_ids: [],
       has_completed_onboarding: false,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -1133,6 +1147,7 @@ describe('InviteService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -1196,6 +1211,7 @@ describe('InviteService', () => {
       role_ids: [memberRole.id],
       custom_role_ids: [],
       has_completed_onboarding: false,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -1298,6 +1314,7 @@ describe('InviteService', () => {
         role_ids: [],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       });
@@ -1416,6 +1433,7 @@ describe('InviteService', () => {
       role_ids: [],
       custom_role_ids: [],
       has_completed_onboarding: false,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -1471,6 +1489,7 @@ describe('InviteService', () => {
       role_ids: ['role-1'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };

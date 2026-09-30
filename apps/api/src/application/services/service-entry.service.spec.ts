@@ -489,7 +489,12 @@ describe('ServiceEntryService', () => {
     it('posts a server-originated hours card when channel + client_message_id are set', async () => {
       mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
       mockUserRepo.findByIds.mockResolvedValue([
-        { id: 'user-1', display_name: 'Alice Member' },
+        {
+          id: 'user-1',
+          display_name: 'Alice Member',
+          active_chapter_id: null,
+          deleted_at: null,
+        },
       ]);
 
       await service.create({
@@ -569,7 +574,12 @@ describe('ServiceEntryService', () => {
       it('reports card_posted: true when the card posts', async () => {
         mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
         mockUserRepo.findByIds.mockResolvedValue([
-          { id: 'user-1', display_name: 'Alice Member' },
+          {
+            id: 'user-1',
+            display_name: 'Alice Member',
+            active_chapter_id: null,
+            deleted_at: null,
+          },
         ]);
 
         const result = await service.create(chatInput);
