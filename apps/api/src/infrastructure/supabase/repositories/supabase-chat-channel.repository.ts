@@ -10,6 +10,17 @@ import type { IChatChannelRepository } from '#domain/repositories/chat.repositor
 import { ChatChannel } from '#domain/entities/chat.entity';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
+/**
+ * A DM's member ids as Postgres returns a `uuid[]`: lowercase, sorted. The
+ * route accepts any `@IsUUID()`, uppercase included, and `findDm` compares the
+ * stored ids as strings, so an uppercase id would never match its own pair.
+ * Now that `createDm` re-reads the pair after a `23505`, that miss would be a
+ * 500 on every retry rather than a duplicate DM.
+ */
+function dmPair(memberIds: string[]): string[] {
+  return memberIds.map((id) => id.toLowerCase()).sort();
+}
+
 @Injectable()
 export class SupabaseChatChannelRepository implements IChatChannelRepository {
   constructor(
@@ -79,7 +90,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     chapterId: string,
     memberIds: string[],
   ): Promise<ChatChannel | null> {
-    const sorted = [...memberIds].sort();
+    const sorted = dmPair(memberIds);
     const { data, error } = await this.supabase
       .from('chat_channels')
       .select('*')
@@ -113,7 +124,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
    * the honest answer, and a retry then creates it.
    */
   async createDm(chapterId: string, memberIds: string[]): Promise<ChatChannel> {
-    const sorted = [...memberIds].sort();
+    const sorted = dmPair(memberIds);
     const { data, error } = await this.supabase
       .from('chat_channels')
       .insert({

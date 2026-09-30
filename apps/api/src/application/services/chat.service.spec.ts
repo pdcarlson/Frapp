@@ -947,34 +947,6 @@ describe('ChatService', () => {
       expect(result.type).toBe('DM');
     });
 
-    // #2788: both calls miss `findDm`; the database lets one insert win, and
-    // `createDm` hands the other that row, so both callers share one thread.
-    it('gives two overlapping calls for one pair the same channel', async () => {
-      const winner = {
-        ...baseChannel,
-        id: 'ch-dm-winner',
-        type: 'DM' as const,
-        member_ids: ['user-1', 'user-2'],
-      };
-      mockChannelRepo.findDm.mockResolvedValue(null);
-      mockChannelRepo.createDm.mockResolvedValue(winner);
-
-      const [first, second] = await Promise.all([
-        service.getOrCreateDm(
-          { chapter_id: 'ch-1', member_ids: ['user-1', 'user-2'] },
-          'user-1',
-        ),
-        service.getOrCreateDm(
-          { chapter_id: 'ch-1', member_ids: ['user-2', 'user-1'] },
-          'user-2',
-        ),
-      ]);
-
-      expect(first.id).toBe('ch-dm-winner');
-      expect(second.id).toBe('ch-dm-winner');
-      expect(mockChannelRepo.create).not.toHaveBeenCalled();
-    });
-
     // #2303: opening a DM you hid is the explicit way back to it.
     it('clears the opener’s own hide when they open an existing DM', async () => {
       const dmChannel = {

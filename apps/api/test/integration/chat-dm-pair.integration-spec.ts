@@ -137,6 +137,24 @@ describeIntegration('One DM per pair against live PostgREST', () => {
     expect(await dmRows(chapterId)).toHaveLength(1);
   });
 
+  it('opens the same DM when the ids arrive in uppercase', async () => {
+    // `@IsUUID()` accepts uppercase and Postgres hands uuid[] back lowercase,
+    // so the pair is compared in that form, or this call would 500 on the
+    // index's 23505.
+    const first = await chat.getOrCreateDm({
+      chapter_id: chapterId,
+      member_ids: [low, high],
+    });
+
+    const again = await chat.getOrCreateDm({
+      chapter_id: chapterId,
+      member_ids: [high.toUpperCase(), low.toUpperCase()],
+    });
+
+    expect(again.id).toBe(first.id);
+    expect(await dmRows(chapterId)).toHaveLength(1);
+  });
+
   it('refuses a second DM for the pair whatever its order or name', async () => {
     await repo.createDm(chapterId, [low, high]);
 

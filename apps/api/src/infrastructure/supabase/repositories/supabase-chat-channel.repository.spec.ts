@@ -257,6 +257,24 @@ describe('SupabaseChatChannelRepository — createDm when the pair already exist
     ]);
   });
 
+  it('re-reads the pair when the caller sent the ids in uppercase', async () => {
+    // Postgres returns uuid[] lowercase. Compared as sent, an uppercase id
+    // would miss its own pair here and turn the 23505 into a 500 on every retry.
+    const { client, filters } = createClient({
+      insertError: { code: '23505', message: 'duplicate key value' },
+      reselect: [winner],
+    });
+    const repo = new SupabaseChatChannelRepository(client);
+
+    const result = await repo.createDm(CHAPTER, [
+      HIGH.toUpperCase(),
+      LOW.toUpperCase(),
+    ]);
+
+    expect(result.id).toBe(winner.id);
+    expect(filters).toContainEqual(['member_ids', [LOW, HIGH]]);
+  });
+
   it('rethrows when the winning DM vanished between the insert and the re-select', async () => {
     const { client } = createClient({
       insertError: { code: '23505', message: 'duplicate key value' },
