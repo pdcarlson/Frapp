@@ -159,6 +159,7 @@ personal token that can write; no stored CI token can.
 | Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) |
 | Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
+| Leaked password protection ("Prevent use of leaked passwords", Authentication → Sign In / Providers → Email; Pro plan and up) | **on** (owner 2026-09-29; security advisor clear at 21:14Z; asserted daily as `auth-leaked-password`) | **on** (owner 2026-09-29; security advisor clear at 21:31Z; asserted daily as `auth-leaked-password`) |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
 
 **`frapp://**` was added to both allow lists on 2026-09-06.** The mobile app's magic-link

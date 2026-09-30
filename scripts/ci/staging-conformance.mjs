@@ -762,6 +762,64 @@ export async function checkAuthMagicLink({
 }
 
 /**
+ * Leaked-password protection is on: GoTrue rejects a password that appears in
+ * HaveIBeenPwned's Pwned Passwords list.
+ *
+ * Mobile sign-in is `signInWithPassword`, so with this off a member can pick a
+ * password already in credential-stuffing lists. It is a dashboard toggle no
+ * migration performs (Authentication → Sign In / Providers → Email → "Prevent
+ * use of leaked passwords"; Supabase offers it on the Pro plan and up). It was
+ * off on `frapp-prod` from about 2026-09-08 with every workflow green, and was
+ * found only because a routine happened to read the security advisor (#2289).
+ *
+ * `password_hibp_enabled` is the field's name in the Management API's
+ * `GET /v1/projects/{ref}/config/auth` response schema: a required
+ * `boolean | null`, the same response the checks above read. Only `true`
+ * passes: `null` is a project that never set it. A response without the field
+ * FAILs rather than skips: it means the API renamed it, and a check that
+ * quietly stopped asserting is the silence this file exists to prevent.
+ *
+ * Read-only: the same GET `checkAuthHook` makes.
+ */
+export async function checkAuthLeakedPassword({ accessToken, projectRef, fetchImpl = fetch }) {
+  const id = "auth-leaked-password";
+  const label = "Leaked-password protection is on";
+  if (!accessToken || !projectRef) {
+    return result(id, label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
+  }
+  const response = await fetchImpl(
+    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
+  );
+  if (!response.ok) {
+    return result(id, label, FAIL, `Management API returned HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  if (!data || typeof data !== "object" || !Object.hasOwn(data, "password_hibp_enabled")) {
+    return result(
+      id,
+      label,
+      FAIL,
+      "the Management API's auth config has no password_hibp_enabled field, so this check can't " +
+        "tell whether leaked-password protection is on. Find the field's new name in the " +
+        "config/auth response and update checkAuthLeakedPassword.",
+    );
+  }
+  const enabled = data.password_hibp_enabled;
+  if (enabled !== true) {
+    return result(
+      id,
+      label,
+      FAIL,
+      `password_hibp_enabled is ${JSON.stringify(enabled)}, so Supabase Auth accepts passwords ` +
+        "known from breaches. Turn on Authentication → Sign In / Providers → Email → " +
+        '"Prevent use of leaked passwords" (Pro plan and up). See #2289.',
+    );
+  }
+  return result(id, label, PASS, "password_hibp_enabled=true");
+}
+
+/**
  * Every Infisical secret sync reports a succeeded status.
  *
  * Catches the #834 class: a sync failing *now*. It deliberately does not claim
@@ -1287,6 +1345,12 @@ export async function runStagingConformance({
       }) },
     { id: "auth-magic-link", label: "Magic Link template uses token_hash on the app host", run: () =>
       checkAuthMagicLink({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-leaked-password", label: "Leaked-password protection is on", run: () =>
+      checkAuthLeakedPassword({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,

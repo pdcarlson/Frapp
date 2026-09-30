@@ -14,6 +14,7 @@ import {
   buildRunSummary,
   canResolveAlert,
   checkAuthHook,
+  checkAuthLeakedPassword,
   checkAuthRedirects,
   checkAuthSignIn,
   checkAuthSmtp,
@@ -715,6 +716,123 @@ test("default staging toRun includes auth-magic-link — the function alone is n
   const toRun = source.slice(source.indexOf("const toRun = checks ??"));
   assert.match(toRun, /id: "auth-magic-link"/);
   assert.match(toRun, /checkAuthMagicLink\(/);
+});
+
+// ── Leaked-password protection — off on frapp-prod for weeks, unnoticed (#2289) ──
+
+const leakedPasswordCheck = (config, { projectRef = "ref", urls = [] } = {}) =>
+  checkAuthLeakedPassword({
+    accessToken: "t",
+    projectRef,
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      return ok(config);
+    },
+  });
+
+test("leaked-password protection off fails and says where to turn it back on", async () => {
+  const result = await leakedPasswordCheck({ password_hibp_enabled: false });
+  assert.equal(result.id, "auth-leaked-password");
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /password_hibp_enabled is false/);
+  assert.match(result.detail, /Sign In \/ Providers → Email/);
+  // #2289's body names Authentication → Policies, which is not where the toggle lives.
+  assert.doesNotMatch(result.detail, /Policies/);
+  assert.match(result.detail, /#2289/);
+});
+
+test("leaked-password protection never set (null) is not a pass", async () => {
+  const result = await leakedPasswordCheck({ password_hibp_enabled: null });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /password_hibp_enabled is null/);
+});
+
+test("a truthy non-boolean is not a pass either", async () => {
+  const result = await leakedPasswordCheck({ password_hibp_enabled: "true" });
+  assert.equal(result.status, FAIL);
+});
+
+test("a response without password_hibp_enabled fails as unassertable, never skips", async () => {
+  // A renamed field must not turn into a check that quietly stops asserting.
+  const result = await leakedPasswordCheck({ hook_custom_access_token_enabled: true });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /no password_hibp_enabled field/);
+  assert.doesNotMatch(result.detail, /is undefined/);
+});
+
+test("leaked-password protection on passes", async () => {
+  const result = await leakedPasswordCheck({ password_hibp_enabled: true });
+  assert.equal(result.status, PASS);
+  assert.equal(result.detail, "password_hibp_enabled=true");
+});
+
+test("leaked-password check reads the auth config of the project it was handed", async () => {
+  const urls = [];
+  await leakedPasswordCheck({ password_hibp_enabled: true }, { projectRef: "hnoyzpidbmizhbqaiity", urls });
+  assert.deepEqual(urls, ["https://api.supabase.com/v1/projects/hnoyzpidbmizhbqaiity/config/auth"]);
+});
+
+test("leaked-password check skips without credentials and makes no call", async () => {
+  let called = false;
+  const fetchImpl = async () => {
+    called = true;
+    return ok({ password_hibp_enabled: true });
+  };
+  const noToken = await checkAuthLeakedPassword({ accessToken: "", projectRef: "ref", fetchImpl });
+  const noRef = await checkAuthLeakedPassword({ accessToken: "t", projectRef: "", fetchImpl });
+  assert.equal(noToken.status, SKIPPED);
+  assert.equal(noRef.status, SKIPPED);
+  assert.equal(called, false);
+});
+
+test("leaked-password check fails on a Management API error", async () => {
+  const result = await checkAuthLeakedPassword({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => httpError(401),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /HTTP 401/);
+});
+
+test("default staging toRun asserts leaked-password protection against the injected project", async () => {
+  const run = async (authConfigBody, env) => {
+    const supabaseUrls = [];
+    const gh = makeFetchMock([
+      { method: "GET", path: "/issues?state=all", body: [] },
+      { method: "POST", path: "/issues", body: { number: 2289 } },
+    ]);
+    const fetchImpl = async (url, init) => {
+      const u = String(url);
+      if (u.startsWith("https://api.supabase.com/")) {
+        supabaseUrls.push(u);
+        return u.endsWith("/config/auth") ? ok(authConfigBody) : ok({ status: "ACTIVE_HEALTHY" });
+      }
+      return gh.fetchImpl(u, init);
+    };
+    const { results } = await runStagingConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env,
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    return { row: results.find((r) => r.id === "auth-leaked-password"), supabaseUrls };
+  };
+  const env = { SUPABASE_ACCESS_TOKEN: "tok", SUPABASE_PROJECT_REF: "hnoyzpidbmizhbqaiity" };
+
+  const off = await run({ password_hibp_enabled: false }, env);
+  assert.equal(off.row.status, FAIL);
+  assert.ok(
+    off.supabaseUrls.includes("https://api.supabase.com/v1/projects/hnoyzpidbmizhbqaiity/config/auth"),
+  );
+
+  const on = await run({ password_hibp_enabled: true }, env);
+  assert.equal(on.row.status, PASS);
+
+  const noCredential = await run({ password_hibp_enabled: true }, {});
+  assert.equal(noCredential.row.status, SKIPPED);
 });
 
 test("default staging toRun includes health-check-path — the function alone is not enough", () => {
