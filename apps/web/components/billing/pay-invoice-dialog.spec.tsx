@@ -30,68 +30,17 @@ vi.mock("@stripe/react-stripe-js", () => ({
   useElements: () => ({}),
 }));
 
-vi.mock("@repo/hooks", () => ({
+// The real `payIntentErrorCopy` passes through, so the dialog renders the
+// shared mapping (its cases live in `@repo/hooks`' `pay-errors.spec.ts`).
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePayInvoice: () => payInvoiceMock,
   useAwaitInvoicePaid: () => awaitPaidMock,
 }));
 
-import { PayInvoiceDialog, payIntentErrorCopy } from "./pay-invoice-dialog";
+import { PayInvoiceDialog } from "./pay-invoice-dialog";
 
 const INVOICE = { id: "inv-1", title: "Fall Dues", amount: 15000 };
-
-describe("payIntentErrorCopy", () => {
-  it("maps each real endpoint failure to member-facing copy", () => {
-    expect(payIntentErrorCopy({ statusCode: 403 })).toBe(
-      "You can only pay your own invoices.",
-    );
-    expect(payIntentErrorCopy({ statusCode: 404 })).toBe(
-      "This invoice could not be found.",
-    );
-    expect(payIntentErrorCopy({ statusCode: 503 })).toBe(
-      "The payment provider is unavailable right now. Please try again.",
-    );
-  });
-
-  it("prefers the server's wording for the two distinct 409s", () => {
-    // These say different things — wait vs retry — so collapsing them into one
-    // generic string would lose the only signal that tells them apart.
-    expect(
-      payIntentErrorCopy({
-        statusCode: 409,
-        message: "Payment already completed; confirmation is being processed",
-      }),
-    ).toBe("Payment already completed; confirmation is being processed");
-    expect(
-      payIntentErrorCopy({
-        statusCode: 409,
-        message:
-          "A payment attempt for this invoice is already in progress. Please retry in a moment.",
-      }),
-    ).toBe(
-      "A payment attempt for this invoice is already in progress. Please retry in a moment.",
-    );
-  });
-
-  it("keeps the 400's current-status detail, which tells the member why", () => {
-    expect(
-      payIntentErrorCopy({
-        statusCode: 400,
-        message: "Only OPEN invoices can be paid (current status: VOID)",
-      }),
-    ).toBe("Only OPEN invoices can be paid (current status: VOID)");
-  });
-
-  it("falls back safely on unrecognized and malformed errors", () => {
-    expect(payIntentErrorCopy(undefined)).toBe(
-      "Could not start payment. Please try again.",
-    );
-    expect(payIntentErrorCopy({ statusCode: 418 })).toBe(
-      "Could not start payment. Please try again.",
-    );
-    // NestJS validation errors arrive as an array of strings.
-    expect(payIntentErrorCopy({ message: ["a", "b"] })).toBe("a, b");
-  });
-});
 
 describe("PayInvoiceDialog", () => {
   beforeEach(() => {
@@ -147,5 +96,17 @@ describe("PayInvoiceDialog", () => {
       "You can only pay your own invoices.",
     );
     expect(screen.queryByTestId("payment-element")).not.toBeInTheDocument();
+  });
+
+  it("explains a failure whose server message is empty, rather than a blank line", async () => {
+    // Web's own copy of the mapping rendered `""` verbatim until #1068.
+    payInvoiceMock.isError = true;
+    payInvoiceMock.error = { statusCode: 409, message: "" };
+
+    render(<PayInvoiceDialog invoice={INVOICE} open onOpenChange={() => {}} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "A payment for this invoice is already being processed.",
+    );
   });
 });
