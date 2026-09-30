@@ -102,8 +102,10 @@ export function highestBump(labelSets) {
  * `0.MINOR.PATCH` until v1 GA (#2523), and during 0.x a breaking API or database
  * change is a minor bump. Left alone, the first PR labelled `release:major`
  * would mint 1.0.0. So on a 0.x version a `major` becomes `minor`. Leaving 0.x
- * is a decision taken by dispatching Release with `bump=major`, which never
- * reaches this: an override skips the label scan.
+ * is a decision taken by dispatching Deploy production with `bump=major`, which
+ * never reaches this: an override skips the label scan. (Not a Release
+ * dispatch: that retries the tag for a commit already live and tagged, so it
+ * would put a second tag on the same commit.)
  */
 export function capBumpBeforeOne(currentVersion, bump) {
   const major = Number.parseInt(String(currentVersion).split(".")[0], 10) || 0;
@@ -247,7 +249,7 @@ export async function resolveReleaseBump({
   const bump = capBumpBeforeOne(currentVersion, asked);
   if (bump !== asked) {
     logger.log?.(
-      `::notice::A release:major label on ${currentVersion} ships as a minor while releases are pre-1.0 (#2529). Leaving 0.x takes a Release dispatch with bump=major.`,
+      `::notice::A release:major label on ${currentVersion} ships as a minor while releases are pre-1.0 (#2529). Leaving 0.x takes a Deploy production dispatch with bump=major.`,
     );
   }
   return { bump, version: applyBump(currentVersion, bump), prNumbers: readPrNumbers };

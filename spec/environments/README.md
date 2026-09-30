@@ -365,7 +365,15 @@ promotion PR to carry it any more.
 
 - No release label on any PR in range → patch bump
 - Any `release:minor` in range → minor bump
-- Any `release:major` in range → major bump
+- Any `release:major` in range → major bump, except while the latest tag's major is 0,
+  when it is a minor bump
+
+Releases are pre-1.0 until v1 GA ([#2523](https://github.com/pdcarlson/Frapp/issues/2523);
+ADR-24 decision 5), and during 0.x a breaking API or database change is a minor bump. So a
+label never leaves 0.x: that takes the Deploy production dispatch's `bump=major`
+(`capBumpBeforeOne` in `scripts/ci/resolve-release-bump.mjs`). Until the `v1.x` tags are
+renumbered to 0.x ([#2529](https://github.com/pdcarlson/Frapp/issues/2529)), the latest
+tag's major is 1 and the exception doesn't apply.
 
 The **Deploy production** dispatch also accepts an explicit `bump` input that overrides
 the scan. The tag is created *after* Render and Vercel report healthy, so a `v*` tag
