@@ -87,6 +87,11 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/components/profile/blocked-members-card", () => ({
   BlockedMembersCard: () => null,
 }));
+// Likewise the Discord history card (#2878), which has its own spec
+// (`discord-history-card.spec.tsx`) and reads hooks this file does not mock.
+vi.mock("@/components/profile/discord-history-card", () => ({
+  DiscordHistoryCard: () => null,
+}));
 // Likewise the photo control (`profile-photo-control.spec.tsx`), though it
 // records its props: whether the panel disables it offline is the panel's job.
 vi.mock("@/components/profile/profile-photo-control", () => ({

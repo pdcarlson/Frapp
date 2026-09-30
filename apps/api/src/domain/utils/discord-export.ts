@@ -352,9 +352,12 @@ export function toImportedMessage(
 
   return {
     channel_id: channelId,
-    // Always null. An imported author is a name on a message, never an account
-    // — see the phase-1 migration header for why synthetic `users` rows were
-    // rejected.
+    // Always written null. An imported author is a name on a message, never a
+    // synthetic account (the phase-1 migration header says why). A member who
+    // linked their own Discord account in the chapter (#2878) is attached by
+    // the database as the row is inserted
+    // (`trg_chat_messages_attach_linked_author`), so both import paths honour
+    // links without either writer having to look them up.
     sender_id: null,
     author_name: resolveAuthorName(message.author ?? null),
     author_avatar_path: avatarPath,

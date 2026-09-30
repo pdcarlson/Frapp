@@ -7,7 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
-import { ChatService } from './chat.service';
+import { ChatService, tombstoneMetadata } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -2639,6 +2639,54 @@ describe('ChatService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    // #2878: a member who linked their Discord account is the sender of their
+    // imported messages. They may delete them, never rewrite them: an archive
+    // records what was said then. The clients hide Edit; this is the rule.
+    it('refuses to edit an imported message, even for its linked sender', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        kind: 'imported',
+        author_name: 'jkslayer',
+        author_external_id: '3000000000000000001',
+      });
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
+      ).rejects.toThrow('Imported messages cannot be edited');
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the linked sender delete their imported message, keeping it purgeable with its import', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        kind: 'imported',
+        author_name: 'jkslayer',
+        metadata: { discord_import_id: 'imp-1', attachment_count: 2 },
+      });
+
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        kind: 'imported',
+        content: '[message deleted]',
+        is_deleted: true,
+      });
+
+      const result = await service.deleteMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        false,
+      );
+      expect(result.is_deleted).toBe(true);
+      // The import purge selects on `metadata->>discord_import_id`; wiping it
+      // would strand the tombstone when the import is deleted.
+      expect(mockMessageRepo.update).toHaveBeenCalledWith('msg-1', {
+        content: '[message deleted]',
+        is_deleted: true,
+        metadata: { discord_import_id: 'imp-1' },
+      });
+    });
+
     it('should reject editing deleted message', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...baseMessage,
@@ -4882,5 +4930,35 @@ describe('ChatService', () => {
         expect.objectContaining({ mentions: [] }),
       );
     });
+  });
+});
+
+describe('tombstoneMetadata (#2878)', () => {
+  it('keeps only the import id on an imported row', () => {
+    expect(
+      tombstoneMetadata({
+        kind: 'imported',
+        metadata: { discord_import_id: 'imp-1', attachment_count: 3 },
+      }),
+    ).toEqual({ discord_import_id: 'imp-1' });
+  });
+
+  it('wipes everything on any other row, even one carrying the key', () => {
+    expect(
+      tombstoneMetadata({
+        kind: 'text',
+        metadata: { discord_import_id: 'imp-1', poll: true },
+      }),
+    ).toEqual({});
+  });
+
+  it('keeps nothing when the imported row has no string import id', () => {
+    expect(tombstoneMetadata({ kind: 'imported', metadata: {} })).toEqual({});
+    expect(
+      tombstoneMetadata({
+        kind: 'imported',
+        metadata: { discord_import_id: 7 },
+      }),
+    ).toEqual({});
   });
 });

@@ -3096,6 +3096,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/discord/author-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your linked Discord account in this chapter, if any */
+        get: operations["DiscordAuthorLinkController_getMine_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Unlink your Discord account in this chapter
+         * @description Your imported messages here go back to their Discord name. Messages you deleted stay deleted.
+         */
+        delete: operations["DiscordAuthorLinkController_unlink_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/author-link/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start linking your Discord account
+         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.
+         */
+        post: operations["DiscordAuthorLinkController_begin_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/discord/author-link/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link the Discord account the callback parked
+         * @description Links the account only for the member who started the handshake, in this chapter, and attributes that Discord author’s imported messages here to them. 409 when the account is already linked to another member of the chapter. Linking a different account replaces your previous link.
+         */
+        post: operations["DiscordAuthorLinkController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/client-policy": {
         parameters: {
             query?: never;
@@ -4751,6 +4812,42 @@ export interface components {
         ConfirmDiscordConnectDto: {
             /** @description The one-time confirmation token the OAuth callback put on the redirect. It is delivered to exactly one place — the browser that completed the authorization — and activates only against a session whose active chapter matches the one that started the handshake. */
             handshake: string;
+        };
+        DiscordAuthorLinkDto: {
+            /** @description Whether linking can be started in this environment: a Discord application is configured and Discord has not reported it misconfigured. The same answer as `GET /v1/discord/availability`, without its officer gate. */
+            available: boolean;
+            /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
+            linked: boolean;
+            /** @description What Discord called the linked account when it was linked. Display only. */
+            discord_username: string | null;
+            linked_at: string | null;
+        };
+        BeginDiscordAuthorLinkResponseDto: {
+            /** @description Send the member here. Asks Discord for the `identify` scope only, with a single-use state bound to this member and chapter. */
+            authorize_url: string;
+            /** @description When the handshake stops being redeemable. */
+            expires_at: string;
+        };
+        ConfirmDiscordAuthorLinkDto: {
+            /** @description The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
+            handshake: string;
+        };
+        ConfirmDiscordAuthorLinkResponseDto: {
+            /** @description Whether linking can be started in this environment: a Discord application is configured and Discord has not reported it misconfigured. The same answer as `GET /v1/discord/availability`, without its officer gate. */
+            available: boolean;
+            /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
+            linked: boolean;
+            /** @description What Discord called the linked account when it was linked. Display only. */
+            discord_username: string | null;
+            linked_at: string | null;
+            /** @description How many imported messages in this chapter the link attributed to the caller. Zero when none were imported under that account yet; later imports attach as they land. */
+            messages_linked: number;
+        };
+        UnlinkDiscordAuthorResponseDto: {
+            /** @description False when there was no link to remove. */
+            unlinked: boolean;
+            /** @description How many imported messages went back to their Discord name. Messages the caller deleted stay deleted. */
+            messages_restored: number;
         };
         ClientPolicyDto: {
             /** @description True when the build named in X-Client-Version is below this deployment's minimum for its platform. The app then shows a blocking update screen. False whenever the header is missing, malformed, or names an unknown platform, and whenever no minimum is set. */
@@ -9605,6 +9702,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscordConnectionDto"];
+                };
+            };
+        };
+    };
+    DiscordAuthorLinkController_getMine_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscordAuthorLinkDto"];
+                };
+            };
+        };
+    };
+    DiscordAuthorLinkController_unlink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnlinkDiscordAuthorResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordAuthorLinkController_begin_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeginDiscordAuthorLinkResponseDto"];
+                };
+            };
+        };
+    };
+    DiscordAuthorLinkController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDiscordAuthorLinkDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmDiscordAuthorLinkResponseDto"];
                 };
             };
         };

@@ -42,3 +42,4 @@ export * from "./use-discord-import";
 export * from "./use-discord-connection";
 export * from "./channel-sidebar";
 export * from "./use-chat-sidebar";
+export * from "./use-discord-author-link";

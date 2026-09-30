@@ -350,13 +350,19 @@ describe("resolveAuthorName", () => {
 
   it("falls back to author_name when the roster cannot resolve the sender", () => {
     expect(
-      resolveAuthorName({ sender_id: "gone", author_name: "Marcus" }, roster({})),
+      resolveAuthorName(
+        { sender_id: "gone", author_name: "Marcus" },
+        roster({}),
+      ),
     ).toBe("Marcus");
   });
 
   it("reads author_name when there is no sender at all", () => {
     expect(
-      resolveAuthorName({ sender_id: null, author_name: "DiscordUser" }, roster({})),
+      resolveAuthorName(
+        { sender_id: null, author_name: "DiscordUser" },
+        roster({}),
+      ),
     ).toBe("DiscordUser");
   });
 
@@ -396,14 +402,7 @@ describe("resolveAuthorAvatar", () => {
     ).toBe("https://signed/member-a");
   });
 
-  it("falls back to the imported author's signed avatar", () => {
-    expect(
-      resolveAuthorAvatar(
-        { sender_id: "user-b", author_avatar_path: "archive/x.png" },
-        avatarFor,
-        imported,
-      ),
-    ).toBe("https://signed/imported-x");
+  it("draws the Discord avatar for an imported author nobody has linked", () => {
     expect(
       resolveAuthorAvatar(
         { sender_id: null, author_avatar_path: "archive/x.png" },
@@ -411,6 +410,18 @@ describe("resolveAuthorAvatar", () => {
         imported,
       ),
     ).toBe("https://signed/imported-x");
+  });
+
+  it("never draws the Discord snapshot on a linked row, photo or not (#2878)", () => {
+    // A linked row is the member's message; it keeps the snapshot only so an
+    // unlink can restore it.
+    expect(
+      resolveAuthorAvatar(
+        { sender_id: "user-b", author_avatar_path: "archive/x.png" },
+        avatarFor,
+        imported,
+      ),
+    ).toBe(null);
   });
 
   it("is null for initials when nothing resolves", () => {
@@ -430,7 +441,9 @@ describe("resolveAuthorAvatar", () => {
 describe("authorInitialsFallback", () => {
   it("uses the first two characters of the sender id", () => {
     expect(
-      authorInitialsFallback({ sender_id: "2f4a1c00-0000-0000-0000-000000000000" }),
+      authorInitialsFallback({
+        sender_id: "2f4a1c00-0000-0000-0000-000000000000",
+      }),
     ).toBe("2F");
   });
 
@@ -447,13 +460,21 @@ describe("resolveAuthorLabel", () => {
 
   it("says 'You' for the viewer's own message", () => {
     expect(
-      resolveAuthorLabel({ sender_id: "u1" }, roster({ u1: "Marcus Reid" }), "u1"),
+      resolveAuthorLabel(
+        { sender_id: "u1" },
+        roster({ u1: "Marcus Reid" }),
+        "u1",
+      ),
     ).toBe("You");
   });
 
   it("renders the resolved display name for another member", () => {
     expect(
-      resolveAuthorLabel({ sender_id: "u1" }, roster({ u1: "Marcus Reid" }), "u2"),
+      resolveAuthorLabel(
+        { sender_id: "u1" },
+        roster({ u1: "Marcus Reid" }),
+        "u2",
+      ),
     ).toBe("Marcus Reid");
   });
 
@@ -471,14 +492,22 @@ describe("resolveAuthorLabel", () => {
     // users.display_name is NOT NULL DEFAULT '', so '' is the real "no name
     // set" case and a blank label is worse than a truncated id.
     expect(
-      resolveAuthorLabel({ sender_id: "user-blank" }, roster({ "user-blank": "" }), null),
+      resolveAuthorLabel(
+        { sender_id: "user-blank" },
+        roster({ "user-blank": "" }),
+        null,
+      ),
     ).toBe("Member user-b");
   });
 
   it("names an imported author with no Signet user behind it", () => {
     expect(
       resolveAuthorLabel(
-        { sender_id: null, author_name: "DiscordUser", author_external_id: "9911" },
+        {
+          sender_id: null,
+          author_name: "DiscordUser",
+          author_external_id: "9911",
+        },
         roster({}),
         "u1",
       ),
@@ -507,7 +536,11 @@ describe("authorGroupingKey", () => {
     // null` is true, so an imported channel where twenty Discord members spoke
     // in turn collapsed into one block under one name.
     const a = { sender_id: null, author_name: "Ada", author_external_id: "1" };
-    const b = { sender_id: null, author_name: "Grace", author_external_id: "2" };
+    const b = {
+      sender_id: null,
+      author_name: "Grace",
+      author_external_id: "2",
+    };
     expect(authorGroupingKey(a)).not.toBe(authorGroupingKey(b));
   });
 
@@ -518,8 +551,8 @@ describe("authorGroupingKey", () => {
   });
 
   it("falls back to the name when an imported row carries no external id", () => {
-    expect(
-      authorGroupingKey({ sender_id: null, author_name: "Ada" }),
-    ).not.toBe(authorGroupingKey({ sender_id: null, author_name: "Grace" }));
+    expect(authorGroupingKey({ sender_id: null, author_name: "Ada" })).not.toBe(
+      authorGroupingKey({ sender_id: null, author_name: "Grace" }),
+    );
   });
 });

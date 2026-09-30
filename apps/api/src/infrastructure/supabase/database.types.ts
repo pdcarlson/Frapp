@@ -33,6 +33,7 @@ import type {
   DiscordImportChannel,
   DiscordImportFile,
   DiscordOAuthState,
+  DiscordAuthorLink,
   Event,
   EventAttendance,
   FinancialInvoice,
@@ -119,6 +120,7 @@ export interface Database {
       chat_message_attachments: TableDefinition<ChatMessageAttachment>;
       discord_connections: TableDefinition<DiscordConnection>;
       discord_oauth_states: TableDefinition<DiscordOAuthState>;
+      discord_author_links: TableDefinition<DiscordAuthorLink>;
       discord_imports: TableDefinition<DiscordImport>;
       discord_import_channels: TableDefinition<DiscordImportChannel>;
       discord_import_files: TableDefinition<DiscordImportFile>;
@@ -474,6 +476,35 @@ export interface Database {
       anonymize_user: {
         Args: { p_user_id: string; p_rescan_cards?: boolean };
         Returns: User[];
+      };
+      /**
+       * `20260929230000` (#2878). Links a member's Discord account in one
+       * chapter and attaches that author's imported rows in the chapter's
+       * channels to them. Raises `23505` when the account is linked to another
+       * member of the chapter and `42501` when the user is not a member.
+       */
+      link_discord_author: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_discord_user_id: string;
+          p_discord_username: string | null;
+        };
+        Returns: {
+          discord_user_id: string;
+          discord_username: string | null;
+          linked_at: string;
+          messages_linked: number;
+        }[];
+      };
+      /**
+       * `20260929230000` (#2878). Removes the member's link in the chapter and
+       * returns how many imported rows went back to their Discord name, or
+       * null when there was no link.
+       */
+      unlink_discord_author: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: number | null;
       };
       /**
        * `20260805150000`. `claim_outcome` is `text` in SQL, narrowed here to

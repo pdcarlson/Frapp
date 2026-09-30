@@ -6,9 +6,9 @@ import type { ChatMessage } from "./types";
  * mobile (#2775). They are the UX pre-filter that keeps a client from offering
  * a control that would fail. The server enforces ownership, `channels:manage`,
  * channel access and the read-only reply rule (`ChatService.editMessage` /
- * `deleteMessage` / `sendMessage`), but **not** the card and imported-row half
- * of `canEditMessage`: `editMessage` never reads `kind`, so that half is
- * client-side only until #2863. Two clients deriving these separately is how
+ * `deleteMessage` / `sendMessage`) and refuses to edit an imported row
+ * (#2878), but **not** the card half of `canEditMessage`: `editMessage` never
+ * checks for a card kind, so that half is client-side only until #2863. Two clients deriving these separately is how
  * one of them came to offer Edit on every imported row for a while (see
  * `isOwnMessage`).
  *

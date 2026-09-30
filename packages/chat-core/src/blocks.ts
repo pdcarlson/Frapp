@@ -87,8 +87,10 @@ type ClassifiedFields = Pick<
 /**
  * Whether a sender can be on anyone's block list at all.
  *
- * `null` is an imported archive row (no Frapp user behind it — blocks are
- * keyed on `users.id`), and the system actor is refused by the API: blocking it
+ * `null` is an imported archive row whose Discord author has not linked their
+ * account (no Frapp user behind it — blocks are keyed on `users.id`). A linked
+ * row carries the member as its sender (#2878) and is blockable like anything
+ * else they wrote. The system actor is refused by the API: blocking it
  * would silently mask the welcome post, the audit bridge and invite DMs.
  */
 export function isBlockableSender(senderId: string | null): senderId is string {

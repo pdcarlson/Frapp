@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
+import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import {
   DELETE_ACCOUNT_FAILED,
@@ -94,8 +95,7 @@ export function ProfilePanel() {
   const updateSettings = useUpdateUserSettings();
   const updateOnboarding = useUpdateOnboarding();
   const deleteFlow = useDeleteAccountFlow({
-    onFailed: () =>
-      toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
+    onFailed: () => toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
   const isDeletingAccount = deleteFlow.isDeleting;
   // The notification categories are per-chapter — `notification_preferences` is
@@ -891,6 +891,8 @@ export function ProfilePanel() {
         not look like "nobody is blocked".
       */}
       <BlockedMembersCard />
+
+      <DiscordHistoryCard />
 
       <Card>
         <CardHeader>
