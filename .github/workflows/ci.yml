@@ -947,6 +947,22 @@ jobs:
           TZ: Asia/Tokyo
         run: npm run test -w apps/mobile
 
+      # What the binaries actually declare, read from the config the plugins'
+      # mods produce rather than from app.json (#2343): the exact iOS purpose
+      # strings, the Android runtime permissions and `tools:node="remove"` set,
+      # and a required-reason API scan of every linked iOS pod against
+      # ios.privacyManifests. An app.json-level check can't see an omitted
+      # plugin option shipping its default purpose string, a vendor option
+      # spelled some other way, or a new pod using an undeclared API (an
+      # ITMS-91053 rejection). `expo config --type introspect` writes nothing
+      # and needs no native toolchain; the step adds about five seconds. It runs
+      # before prebuild on purpose: introspection reads apps/mobile/ios and
+      # android when they exist, so it must see the checkout's templates, which
+      # is what EAS starts from. The roster and its reasons:
+      # scripts/check-mobile-native-declarations.mjs.
+      - name: Native declarations match the roster (expo config --type introspect)
+        run: npm run check:mobile-native-declarations
+
       # EAS Build regenerates the native projects from app.json with exactly
       # this command before it compiles anything, using this lockfile. Nothing
       # else in CI exercises the config plugins, so a plugin that fails at
