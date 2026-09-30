@@ -5,30 +5,31 @@ as code, so this file is what you copy into it: settings, prompts, and the rules
 shares. The prompts are thin; the behavior contract is each routine's skill, which the session reads
 from `main` at run time.
 
-Each routine runs as a Claude Code Routine (claude.ai/code → the Frapp environment → Routines).
+Each routine runs as a Claude Code Routine ([claude.ai/code/routines](https://claude.ai/code/routines)).
+A Routine belongs to one claude.ai account and draws on that account's usage and daily run cap.
+Since 2026-09-30 they live on the Frapp work account, the same account Frapp's cloud sessions run
+under, rather than the owner's personal one; the five were recreated there in the UI that day.
 Editing a prompt block or a Settings row here changes nothing that runs until the live Routine is
 updated, and that update belongs after the PR changing it merges, since the run reads its skill from `main`.
 In a session the owner is attending, an agent can update a Routine an agent created with
-`update_trigger` (as of 2026-09-22, PR Follow-ups and Docs Upkeep); `list_triggers` shows how each
-was created, and `update_trigger` refuses the rest ("Agents can only update routines they
-created"). A Routine created in the UI (as of 2026-09-22, Issue Curator, Issue Triage, Hygiene
-Scan) can only be edited there, so hand the owner the new text. Whenever the live Routine isn't
+`update_trigger`; `list_triggers` shows how each was created, and `update_trigger` refuses the
+rest ("Agents can only update routines they created"). A Routine created in the UI, which is all
+five, can only be edited there, so hand the owner the new text. Whenever the live Routine isn't
 updated in the same session, which includes every scheduled run, file a `[human]` issue carrying
 the new prompt text or setting and the PR it waits on. Decision record: ADR-16 amendments 4–10 in
 [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
 
 | # | Routine | Skill (behavior contract) | When (ET) | What it does |
 | --- | --- | --- | --- | --- |
-| 1 | **Issue Curator** | [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) | daily 08:00 | Maintains the agent-owned `suggestion` issues; files a few new ones into `triage` |
-| 2 | **Issue Triage** | [`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:00, an hour after #1 | Works the `triage` inbox and a Backlog batch: priorities (what [`/next`](../../../.claude/commands/next.md) ranks by), briefs, dedup, promotion |
-| 3 | **PR Follow-ups** | [`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
-| 4 | **Docs Upkeep** | [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:00 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
-| 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 23:00, the evening before, so it runs first each day | Fixes one bounded hygiene theme in one product-code PR; files the rest |
+| 1 | **Issue Curator** | [`issue-curator`](../../../.claude/skills/issue-curator/SKILL.md) | Mon and Thu 08:07 | Maintains the agent-owned `suggestion` issues; files a few new ones into `triage` |
+| 2 | **Issue Triage** | [`issue-triage`](../../../.claude/skills/issue-triage/SKILL.md) | daily 09:07, an hour after #1 on its days | Works the `triage` inbox and a Backlog batch: priorities (what [`/next`](../../../.claude/commands/next.md) ranks by), briefs, dedup, promotion |
+| 3 | **PR Follow-ups** | [`pr-followups`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:07, before #1–2 so that morning's passes see what it filed | Files what recent PRs left for a human; republishes the "PR Follow-ups — Human Action List" |
+| 4 | **Docs Upkeep** | [`docs-upkeep`](../../../.claude/skills/docs-upkeep/SKILL.md) | weekly Wed 07:07 | Fixes a rotating fifth of the docs corpus in one docs-only PR (repairs rather than files, because filed docs debt ages) |
+| 5 | **Hygiene Scan** | [`hygiene-scan`](../../../.claude/skills/hygiene-scan/SKILL.md) | daily 23:07, the evening before, so it runs first each day | Fixes one bounded hygiene theme in one product-code PR; files the rest |
 
-The account also holds a sixth Routine, "Next steps" (created in the UI; hourly `/next`), disabled
-since 2026-09-05. It isn't one of these five: it would claim and ship backlog work, product code
-included, which is outside the ownership boundary below. Leave it disabled; deleting it is the
-owner's call, in the UI.
+The personal account also held a sixth Routine, "Next steps" (hourly `/next`), disabled since
+2026-09-05 and deliberately not recreated on 2026-09-30. Don't bring it back: it would claim and
+ship backlog work, product code included, which is outside the ownership boundary below.
 
 ## Shared ownership boundary (all routines)
 
@@ -172,17 +173,20 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
 
 ## Settings (per routine, set in the Routines UI)
 
-Cron values are UTC during EDT; shift +1h when ET returns to EST.
+Enter times in ET. The Routines form takes local wall-clock time and converts it, so a run keeps
+its ET time across daylight-saving changes and needs no cron edit when EST returns. Each time sits
+a few minutes past the hour because a run scheduled on the hour can start several minutes late
+([Routines docs](https://code.claude.com/docs/en/routines#add-a-schedule-trigger)).
 
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | The Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
-| Schedule | Curator daily 08:00 ET; Triage daily 09:00 ET; PR Follow-ups weekly Mon 07:00 ET; Docs Upkeep weekly Wed 07:00 ET; Hygiene Scan daily 23:00 ET | UTC cron: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, `0 3 * * *`. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. If a PR Follow-ups batch runs long, move it to twice weekly with `0 11 * * 1,4`. |
+| Schedule | Curator Mon and Thu 08:07; Triage daily 09:07; PR Follow-ups weekly Mon 07:07; Docs Upkeep weekly Wed 07:07; Hygiene Scan daily 23:07 (all ET) | The Curator went from daily to twice weekly on 2026-09-30 (owner decision): its discovery output had thinned, the inbox was mostly `[human]` items, and the account's usage is better spent on coding sessions. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. If a PR Follow-ups batch runs long, move it to twice weekly, Mon and Thu 07:07. |
 | Model | All five: Opus 5.5 (`claude-opus-5-5`) | Owner decision, 2026-09-22. |
 | Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
 | Session | Fresh session per run | Each run re-reads its skill from `main`. |
-| Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. No secrets in the environment config. |
-| Connectors | Issue Curator, PR Follow-ups and Docs Upkeep: Sentry, Supabase, Vercel, Render, PostHog. Issue Triage and Hygiene Scan: none. | These three read provider state: the Curator's runtime-signals and `/audit` lenses, PR Follow-ups' close-on-proof audit of `[human]` items (Sentry and PostHog settings among them), and `infrastructure-research`. A run missing one reports that source as unavailable. Attach nothing else: a connector is standing access for an unattended run, write tools included (the Supabase connector can run SQL against production). As of 2026-09-22 (`list_triggers`) the live Routines also carry connectors no skill reads (Stripe, Mermaid-Chart, Wispr-Flow, Claude-Docs), and Triage and Hygiene Scan carry provider connectors they don't read; the owner can detach those in the UI. GitHub is the MCP and the repository attachment, not a connector. |
+| Access | GitHub MCP | Plus the repo itself for Hygiene Scan's gates. Routines run in the same Frapp environment as interactive sessions, so they carry its variables and allowlist ([`AGENT_CREDENTIALS.md`](../environment/AGENT_CREDENTIALS.md), [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md#whats-configured-in-the-web-ui)). |
+| Connectors | Issue Curator, PR Follow-ups and Docs Upkeep: Sentry, Supabase, Vercel, Render, PostHog. Issue Triage and Hygiene Scan: none. | These three read provider state: the Curator's runtime-signals and `/audit` lenses, PR Follow-ups' close-on-proof audit of `[human]` items (Sentry and PostHog settings among them), and `infrastructure-research`. A run missing one reports that source as unavailable. Attach nothing else: a connector is standing access for an unattended run, write tools included (the Supabase connector can run SQL against production). The form attaches every connector on the account by default, so remove the rest when creating a Routine; on the work account that means Stripe, Resend and Claude Docs everywhere, and all of them for Triage and Hygiene Scan. GitHub is the MCP and the repository attachment, not a connector. |
 | Completion notification | Push for all; PR Follow-ups also emails | Each run ends with a report meant for the owner. |
 
 ## Routine prompts (copy-paste)
@@ -190,7 +194,7 @@ Cron values are UTC during EDT; shift +1h when ET returns to EST.
 Paste these verbatim, one per routine. Each names the role, hands off to the skill, and carries only
 the limits that must hold whatever the skill says.
 
-**Routine 1 — "Issue Curator"** (daily 08:00 ET):
+**Routine 1 — "Issue Curator"** (Mon and Thu 08:07 ET):
 
 ```text
 You are the Issue Curator for the Frapp repository: you keep the agent-owned `suggestion` issues on
@@ -214,7 +218,7 @@ tool call. End earlier only if nothing more can move without the human or a prot
 blocks you. Your final message is the run report the skill specifies.
 ```
 
-**Routine 2 — "Issue Triage"** (daily 09:00 ET):
+**Routine 2 — "Issue Triage"** (daily 09:07 ET):
 
 ```text
 You are the Issue Triage agent for the Frapp repository: you keep the `triage` inbox and the
@@ -239,7 +243,7 @@ can move without the human or a protected resource blocks you. Your final messag
 board-health report the skill specifies.
 ```
 
-**Routine 3 — "PR Follow-ups"** (weekly Mon 07:00 ET):
+**Routine 3 — "PR Follow-ups"** (weekly Mon 07:07 ET):
 
 ```text
 You are the PR Follow-ups harvester for the Frapp repository: you make sure work a PR left for a
@@ -263,7 +267,7 @@ message as your next tool call. End earlier only if nothing more can move withou
 protected resource blocks you. Your final message is the run report the skill specifies.
 ```
 
-**Routine 4 — "Docs Upkeep"** (weekly Wed 07:00 ET):
+**Routine 4 — "Docs Upkeep"** (weekly Wed 07:07 ET):
 
 ```text
 You are the Docs Upkeep agent for the Frapp repository: you keep this week's slice of the docs true
@@ -286,7 +290,7 @@ End earlier only if nothing more can move without the human or a protected resou
 Your final message is the run report the skill specifies.
 ```
 
-**Routine 5 — "Hygiene Scan"** (daily 23:00 ET):
+**Routine 5 — "Hygiene Scan"** (daily 23:07 ET):
 
 ```text
 You are the Hygiene Scan agent for the Frapp repository: each day you fix one bounded, verified
@@ -315,12 +319,13 @@ message is the run report the skill specifies.
 
 ## How to create them (UI)
 
-1. For each routine in the table at the top: claude.ai/code → the Frapp environment → **Routines**
-   → **New routine**. Name it as in the table (e.g. "Issue Curator"), set its schedule, use
-   environment `pdcarlson/Frapp` (`main`), take the model, autofix and every other setting from
-   [Settings](#settings-per-routine-set-in-the-routines-ui), and paste its prompt from
-   [Routine prompts](#routine-prompts-copy-paste). A routine's `.claude/skills/<name>/` must be on
-   `main` before you enable it, since that's where the session reads it.
+1. For each routine in the table at the top: [claude.ai/code/routines](https://claude.ai/code/routines)
+   → **New routine**. Name it as in the table (e.g. "Issue Curator"), paste its prompt from
+   [Routine prompts](#routine-prompts-copy-paste), pick the model in the prompt box, add repository
+   `pdcarlson/Frapp`, select environment **Frapp**, set its schedule, remove every connector its
+   Connectors row doesn't list, and take the remaining settings from
+   [Settings](#settings-per-routine-set-in-the-routines-ui). A routine's `.claude/skills/<name>/`
+   must be on `main` before you enable it, since that's where the session reads it.
 2. Enable all five, and confirm each shows a next-run time.
 
 Create routines in the UI. One created with `create_trigger` from an agent session can come out with

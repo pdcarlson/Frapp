@@ -51,7 +51,6 @@ staging.frapp.live
 api-staging.frapp.live
 hnoyzpidbmizhbqaiity.supabase.co
 app.infisical.com
-vercel.com
 ```
 
 The first two are what makes `supabase start` work. The middle four are the **live staging
@@ -63,25 +62,10 @@ by the service token — scoped `dev` + `staging` **read-only**, never `prod` �
 network. Omit it and secrets stay unreadable from the sandbox
 (credential details: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md)).
 
-The eighth, `vercel.com`, is **unexplained**, and is recorded here only because it is
-**observed in the live environment as of 2026-09-02** — read out of the settings box while
-confirming the allowlist for [#1447](https://github.com/pdcarlson/Frapp/issues/1447). Nothing in
-this repo asks for it, no script or workflow is known to depend on it, and it is not probed by
-`scripts/cloud-sandbox-egress-probe.sh`, so its absence would not be noticed either. It also sits
-against the posture in [What this does not unlock](#what-this-does-not-unlock) below, which says
-provider APIs are reached over MCP rather than the allowlist.
-
-Two things are worth separating. It grants **no reach to any Frapp production host** — none of
-`api.frapp.live`, `app.frapp.live`, or the `frapp-prod` Supabase ref is under `vercel.com` — so it
-is not a second instance of the [#1447](https://github.com/pdcarlson/Frapp/issues/1447)
-regression, which is why documenting it does not reopen that issue. But whether a **bare** entry
-also permits its subdomains is **not known**: the observations under
-[Wildcard semantics](#wildcard-semantics--weaker-than-the-docs-imply) probed `*.` entries only,
-and nothing here establishes the converse. Do not cite that section for a bare-entry rule.
-
-**This entry needs an owner decision, not further documentation:** confirm what it is for and
-record that here, or remove it from the environment and delete this paragraph. Until then, treat
-it as drift rather than as precedent for adding undocumented entries.
+A bare `vercel.com` line sat on the live list from at least 2026-09-02 with no known purpose.
+The owner dropped it when the environment was rebuilt on the Frapp work account (2026-09-30), so
+don't re-add it: provider APIs are reached over MCP ([What this does not unlock](#what-this-does-not-unlock)),
+and an entry nothing here asks for is drift, not precedent.
 
 **Three of the staging four are literal hosts on purpose.** Both wildcards a reader reaches for —
 `*.frapp.live` and `*.supabase.co` — silently include **production**, because prod and
@@ -582,11 +566,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   smoke account, never a real member's.
 - **Provider APIs.** Render, Vercel, Sentry, PostHog and the Supabase Management API stay
   blocked to direct `fetch` (`api.supabase.com` answered `000` through the proxy and `403
-  host_not_allowed` direct on 2026-09-24, so a `403` there says nothing about a token) — with
-  one **unexplained** exception, a bare `vercel.com` line the live allowlist carries and this
-  repo never asked for (see [What's configured in the web
-  UI](#whats-configured-in-the-web-ui)); it is drift pending removal or justification, not a
-  sanctioned path, so do not build on it. Otherwise
+  host_not_allowed` direct on 2026-09-24, so a `403` there says nothing about a token), so
   agents fall back to **MCP connectors**, which do not go through this allowlist at all —
   those parts of the MCP-based
   [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
@@ -608,8 +588,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   CI, where the allowlist does not apply.
 - **Per-deployment Vercel URLs.** Of the deployment surfaces, only the aliased staging
   hostnames are allowlisted, not the unique `*.vercel.app` URL each deployment also gets.
-  (The unexplained bare `vercel.com` entry noted above is the dashboard apex and does not
-  cover `*.vercel.app` either.) When the alias lags behind the
+  When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in
   [`../ops/deployment/vercel.md`](../ops/deployment/vercel.md) — you can reach what the alias currently
   points at, not the newer deployment behind it. Check the alias state via the Vercel MCP
