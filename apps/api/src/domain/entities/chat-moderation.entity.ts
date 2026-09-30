@@ -87,14 +87,18 @@ export interface ChatMessageReport {
    * evidence and leave an unactionable report in the officer queue.
    */
   reported_content: string | null;
-  /** `users.id` of the reported sender, or null for an imported archive row. */
+  /**
+   * `users.id` of the reported sender, or null for an imported archive row
+   * whose author has not linked their Discord account (linking sets it, #2878).
+   */
   reported_sender_id: string | null;
   /**
    * The reported author's display name, captured alongside `reported_sender_id`
    * rather than instead of it.
    *
    * `chat_messages` enforces `sender_id is not null or author_name is not null`,
-   * so a Discord-imported row names its author here with a NULL `sender_id`.
+   * so a Discord-imported row names its author here, with a NULL `sender_id`
+   * until that author links their Discord account (#2878).
    * Mirroring only `sender_id` would snapshot nobody for exactly the rows whose
    * message is most likely to be hard-deleted by the import purge.
    */

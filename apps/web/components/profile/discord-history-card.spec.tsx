@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CHAT_MESSAGE_QUERY_ROOT } from "@repo/chat-core/types";
 
 const state = vi.hoisted(() => ({
   chapterId: "chapter-1" as string | null,
@@ -50,8 +51,7 @@ vi.mock("@/hooks/use-toast", () => ({
 const { DiscordHistoryCard, DISCORD_LINK_OUTCOME_MESSAGES, linkedMessage } =
   await import("./discord-history-card");
 
-function renderCard() {
-  const client = new QueryClient();
+function renderCard(client = new QueryClient()) {
   return render(
     <QueryClientProvider client={client}>
       <DiscordHistoryCard />
@@ -75,6 +75,23 @@ beforeEach(() => {
   state.toast.mockReset();
   window.history.replaceState(null, "", "/profile");
 });
+
+/**
+ * A client holding one cached chat thread and one unrelated query, neither
+ * observed, so both are inactive. Linking and unlinking rewrite attribution
+ * on imported rows that never arrive over Realtime, so the card drops cached
+ * threads; nothing else may go with them.
+ */
+function clientWithCachedThread() {
+  const client = new QueryClient();
+  client.setQueryData([CHAT_MESSAGE_QUERY_ROOT, "chan-1"], { pages: [] });
+  client.setQueryData(["profile", "me"], { id: "me" });
+  return client;
+}
+
+function holdsThread(client: QueryClient) {
+  return client.getQueryData([CHAT_MESSAGE_QUERY_ROOT, "chan-1"]) !== undefined;
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -107,7 +124,8 @@ describe("DiscordHistoryCard (#2878)", () => {
       linked_at: "2026-09-29T12:00:00Z",
     };
     state.unlink.mockResolvedValue({ unlinked: true, messages_restored: 3 });
-    renderCard();
+    const client = clientWithCachedThread();
+    renderCard(client);
 
     expect(screen.getByText("jkslayer")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Unlink" }));
@@ -116,6 +134,8 @@ describe("DiscordHistoryCard (#2878)", () => {
       description:
         "Discord account unlinked. 3 imported messages show under the Discord name again.",
     });
+    expect(holdsThread(client)).toBe(false);
+    expect(client.getQueryData(["profile", "me"])).toEqual({ id: "me" });
   });
 
   it("says linking is unavailable rather than offering a button that fails", () => {
@@ -140,7 +160,8 @@ describe("DiscordHistoryCard (#2878)", () => {
       linked_at: "2026-09-29T12:00:00Z",
       messages_linked: 412,
     });
-    renderCard();
+    const client = clientWithCachedThread();
+    renderCard(client);
 
     await waitFor(() =>
       expect(state.toast).toHaveBeenCalledWith({
@@ -152,6 +173,8 @@ describe("DiscordHistoryCard (#2878)", () => {
       handshake: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     });
     expect(window.location.search).toBe("");
+    expect(holdsThread(client)).toBe(false);
+    expect(client.getQueryData(["profile", "me"])).toEqual({ id: "me" });
   });
 
   it("reports a declined link by its code, never by text from the URL", async () => {

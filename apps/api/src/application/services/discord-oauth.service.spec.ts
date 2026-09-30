@@ -1366,6 +1366,20 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
 
     expect(new URL(outcome.returnUrl).pathname).toBe(DEFAULT_RETURN_PATH);
   });
+
+  it('sends a link attempt the store failed to consume back to /profile', async () => {
+    const service = await build();
+    repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
+    repo.findStateReturnPath.mockResolvedValue(AUTHOR_LINK_RETURN_PATH);
+
+    const outcome = await service.handleCallback({ code: 'c', state: STATE });
+
+    expect(outcome.code).toBe('failed');
+    const url = new URL(outcome.returnUrl);
+    expect(url.pathname).toBe('/profile');
+    expect(url.searchParams.get('discord')).toBe('failed');
+  });
+
   it('parks the approving account and binds nothing on the callback', async () => {
     const service = await build();
     repo.consumeState.mockResolvedValue(linkState());

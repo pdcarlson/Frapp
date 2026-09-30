@@ -16,7 +16,7 @@ import {
   DiscordAuthorLinkNotMemberError,
   type IDiscordAuthorLinkRepository,
 } from '#domain/repositories/discord-author-link.repository.interface';
-import { DiscordOAuthService } from './discord-oauth.service';
+import { DiscordOAuthService, isUuid } from './discord-oauth.service';
 
 export interface DiscordAuthorLinkView {
   available: boolean;
@@ -24,9 +24,6 @@ export interface DiscordAuthorLinkView {
   discord_username: string | null;
   linked_at: string | null;
 }
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * A member linking their own Discord account in a chapter, so the chapter's
@@ -97,7 +94,7 @@ export class DiscordAuthorLinkService {
     userId: string,
     handshake: string,
   ): Promise<DiscordAuthorLinkView & { messages_linked: number }> {
-    if (!UUID_RE.test(handshake)) {
+    if (!isUuid(handshake)) {
       throw new BadRequestException(
         'That Discord link is not valid. Connect Discord again.',
       );

@@ -4114,11 +4114,21 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       { scrubbed, pinstripe, jakeLinks, deletedReport, orphanReport },
     );
 
+    // `anonymize_user` also deletes the membership, so the membership check
+    // alone would refuse this. Put the membership back so only the tombstone
+    // guard stands between a deleted account and a link: the state a first
+    // link racing account deletion sees.
+    await db.exec(`insert into members (user_id, chapter_id) values ('${JAKE}', '${A}');`);
+    const tombstoneLink = await errCode(
+      `select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
+    );
+    const tombstoneLinks = await q(
+      `select count(*)::int as n from discord_author_links where user_id = '${JAKE}'`,
+    );
     check(
       "a deleted account cannot link",
-      (await errCode(
-        `select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
-      )) === "42501",
+      tombstoneLink === "42501" && tombstoneLinks[0]?.n === 0,
+      { tombstoneLink, tombstoneLinks },
     );
   } catch (e) {
     check("Discord author links scenario ran", false, String(e?.message ?? e).split("\n")[0]);

@@ -59,6 +59,21 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
 ] as const;
 
 /**
+ * The signed Discord avatar a row draws, if any.
+ *
+ * Only for an imported author nobody has linked. A linked row is the member's
+ * message (#2878): it draws the member, and keeps its Discord snapshot solely
+ * so an unlink can restore it.
+ */
+export function importedAvatarUrl(
+  message: Pick<ChatMessage, "sender_id" | "author_avatar_path">,
+  signed: Record<string, string> | undefined,
+): string | undefined {
+  if (message.sender_id || !message.author_avatar_path) return undefined;
+  return signed?.[message.author_avatar_path];
+}
+
+/**
  * The cold-load and channel-switch placeholder for the timeline.
  *
  * This replaced a `LoadingState` card, and the swap is the whole point rather
@@ -89,22 +104,6 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
  * use to a screen reader. The audible half of the cold load is announced once,
  * by the `role="status"` region `chat-shell.tsx` owns for exactly this reason.
  */
-
-/**
- * The signed Discord avatar a row draws, if any.
- *
- * Only for an imported author nobody has linked. A linked row is the member's
- * message (#2878): it draws the member, and keeps its Discord snapshot solely
- * so an unlink can restore it.
- */
-export function importedAvatarUrl(
-  message: Pick<ChatMessage, "sender_id" | "author_avatar_path">,
-  signed: Record<string, string> | undefined,
-): string | undefined {
-  if (message.sender_id || !message.author_avatar_path) return undefined;
-  return signed?.[message.author_avatar_path];
-}
-
 export function MessageTimelineSkeleton() {
   return (
     <div

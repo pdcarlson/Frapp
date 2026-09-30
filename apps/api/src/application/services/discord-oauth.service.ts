@@ -639,10 +639,17 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
           describeError(error),
         );
         captureSwallowed(error, 'failed');
+        // Same best-effort lookup as the `expired` branch below: a member's
+        // link attempt goes back to `/profile`, not the officer wizard
+        // (#2878). With the store fully down it fails too, and the default
+        // path stands.
         return {
           ok: false,
           code: 'failed',
-          returnUrl: this.buildReturnUrl(null, 'failed'),
+          returnUrl: this.buildReturnUrl(
+            await this.storedReturnPath(stateId),
+            'failed',
+          ),
           reason: 'The handshake store could not be reached.',
         };
       }
@@ -664,16 +671,13 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
       // `/profile`, not in the officer import wizard (#2878). Best-effort,
       // and never an oracle: every unconsumable state answers `expired`, and
       // the path is one this server stored, sanitised again on the way out.
-      let returnPath: string | null = null;
-      if (isUuid(stateId)) {
-        returnPath = await this.connectionRepo
-          .findStateReturnPath(stateId)
-          .catch(() => null);
-      }
       return {
         ok: false,
         code: 'expired',
-        returnUrl: this.buildReturnUrl(returnPath, 'expired'),
+        returnUrl: this.buildReturnUrl(
+          isUuid(stateId) ? await this.storedReturnPath(stateId) : null,
+          'expired',
+        ),
         reason: 'No live handshake matched the state on the callback.',
       };
     }
@@ -1001,6 +1005,16 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
   }
 
   /**
+   * Where an unconsumed handshake was headed, for a callback that could not
+   * consume it. Best-effort and never an oracle: the outcome code is the same
+   * whether or not a row answers, and the path is one this server stored,
+   * sanitised again by `buildReturnUrl`.
+   */
+  private storedReturnPath(stateId: string): Promise<string | null> {
+    return this.connectionRepo.findStateReturnPath(stateId).catch(() => null);
+  }
+
+  /**
    * Where the browser goes next.
    *
    * `returnPath` was sanitised at write time (`safeReturnPath`), and it is
@@ -1102,6 +1116,7 @@ export function apiBaseUrl(value: string | undefined): string | null {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function isUuid(value: string): boolean {
+/** The handshake ids both Discord confirm flows accept (#2878 shares them). */
+export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
 }

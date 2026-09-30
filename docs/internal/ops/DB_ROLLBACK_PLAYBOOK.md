@@ -2341,7 +2341,7 @@ A new table, a column and CHECK on `discord_oauth_states`, three functions, an i
 
 **Revert the API and web code forward, and keep the migration file.** Revert the #2878 code on `main` and ship that, but keep `supabase/migrations/20260929230000_discord_author_links.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
 
-Then undo it in one new forward migration, not by hand, and in this order.
+Then undo it in two new forward migrations, not by hand. A deploy applies migrations before it ships the API, so the first migration, steps 1 to 3, ships with the code revert: the detach cannot wait for a later deploy (step 1). Until the reverted API is live, the #2878 author-link routes answer 500 because their table is gone; that is the feature being withdrawn. The bot connect flow keeps working, because `purpose` stays. The second migration, step 4, ships in a later deploy.
 
 1. **Detach every link.** This is not optional. The server-side refusal to edit an imported message ships with the #2878 API, so after the revert a member still attributed as the sender of an imported row could rewrite it through the API. Detaching returns rows to their Discord name. It leaves rows the member deleted deleted. It cannot restore the Discord snapshot that account deletion already cleared; those rows keep the tombstone as sender, like the member's live messages.
 
@@ -2358,7 +2358,7 @@ Then undo it in one new forward migration, not by hand, and in this order.
       and m.author_external_id = l.discord_user_id;
    ```
 
-2. **Put `anonymize_user` back before dropping the table.** The #2878 body reads and deletes from `discord_author_links`, so dropping the table under it makes every account deletion fail with `relation "discord_author_links" does not exist`. Copy the `create or replace function anonymize_user(...)` definition from `20260929213000_chat_sidebar_preferences.sql` into this migration verbatim, with its grants block. (Corrected 2026-09-29: this said `20260915210100`, which predates the #2877 sidebar purge and would drop it.)
+2. **Put `anonymize_user` back before dropping the table.** The #2878 body reads and deletes from `discord_author_links`, so dropping the table under it makes every account deletion fail with `relation "discord_author_links" does not exist`. Copy the `create or replace function anonymize_user(...)` definition from `20260929213000_chat_sidebar_preferences.sql` into this migration verbatim, with its grants block.
 
 3. **Remove the objects.**
 
@@ -2370,9 +2370,12 @@ Then undo it in one new forward migration, not by hand, and in this order.
    drop function if exists public.discord_author_detach(uuid, uuid, text);
    drop function if exists public.discord_author_link_lock_key(uuid);
    drop table if exists public.discord_author_links;
+   ```
+
+4. **Drop `purpose`, in the second migration, once the reverted API is live.** The #2878 API writes `purpose` on every handshake and filters every confirm on it, so dropping it any earlier breaks the bot connect flow until the revert deploys. The reverted API ignores the column; its `not null default 'connect'` keeps its inserts valid.
+
+   ```sql
    alter table public.discord_oauth_states
      drop constraint if exists discord_oauth_states_purpose_check;
    alter table public.discord_oauth_states drop column if exists purpose;
    ```
-
-   Drop `purpose` only after the reverted API is live, because the #2878 API filters every confirm on it.

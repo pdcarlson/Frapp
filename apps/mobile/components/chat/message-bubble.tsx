@@ -252,9 +252,11 @@ export function MessageBubble({
   // `FrappClientProvider`; before #1007 an incoming-message row never needed
   // one, and incoming rows are the overwhelming majority. Same reasoning as
   // `MessageAttachments` below, mounted only when a message has files.
-  // `isMine` is derived from the message's fixed `sender_id` and the thread's
-  // `viewerId`, neither of which changes for a given row, so a message never
-  // switches which of these two components renders it.
+  // `isMine` is derived from the message's `sender_id` and the thread's
+  // `viewerId`. `sender_id` changes on an imported row when its author links
+  // or unlinks their Discord account (#2878); the row then switches component
+  // and remounts, which is safe because each branch is its own component, so
+  // never put a hook behind this branch in the parent.
   if (isMine) {
     return (
       <MineMessageBubble
