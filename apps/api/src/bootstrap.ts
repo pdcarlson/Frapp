@@ -23,11 +23,11 @@ import { RequestContextLogger } from './infrastructure/observability/request-con
  * spec set up versioning and the validation pipe and stopped there, so no e2e
  * test ever ran under `AllExceptionsFilter` — the suite exercised Nest's
  * *default* filter, which serialises an exception response object verbatim,
- * while production ships four fixed keys and drops everything else.
+ * while production ships the filter's fixed envelope and nothing else.
  *
  * That gap is not theoretical: `cross-tenant-isolation.e2e-spec.ts` asserted a
  * structured `code` on an error body and passed in CI every run until this
- * change, against a shape `main.ts` cannot emit (#1020). A test that green-lights behaviour
+ * change, against a shape `main.ts` could not emit (#1020). A test that green-lights behaviour
  * production cannot produce is worse than no test, because it is counted.
  *
  * So the fix is not "remember to add the filter in tests" — it is having one

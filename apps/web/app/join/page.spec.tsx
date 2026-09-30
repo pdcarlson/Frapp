@@ -122,7 +122,7 @@ describe("web join — the Terms checkbox (#2302)", () => {
 
   it("shows the checkbox when the server refuses a join for want of it", async () => {
     legal.data = { required: false };
-    // As served: `AllExceptionsFilter` sends no `code` (#1020).
+    // No `code`, as an API older than #1020 sends it: the message fallback.
     redeemMutate.mockRejectedValueOnce({
       statusCode: 403,
       error: "FORBIDDEN",

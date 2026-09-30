@@ -109,7 +109,7 @@ trademark record is on #1901; this file is the listing paste.
 > byte-identical. Do not describe the window as only bumps and refactors: `a3a042d`
 > (#2417) touches no `apps/api` file but adds `subscriptionRefusalFromServerMessage` to
 > `packages/validation/src/subscription.ts`, which matches the API's 403 **prose** because
-> `AllExceptionsFilter` drops `code` (#1020). That is the one prose-coupled contract in
+> `AllExceptionsFilter` dropped `code` until #1020 (2026-09-30). That is the one prose-coupled contract in
 > the window: it holds only while those refusal strings are byte-identical, which today
 > they are. Reword a `chapter.guard.ts` message and deploy the API alone and the store
 > binary stops recognizing a subscription refusal.
