@@ -20,7 +20,10 @@ import {
   type ArchiveMediaCopyItem,
   type ArchiveMediaCopyResult,
 } from '#domain/adapters/archive-media-copier.interface';
-import { MISSING_MESSAGE_CONTENT_INTENT_ERROR } from '#domain/utils/discord-api-message';
+import {
+  MESSAGE_CONTENT_INTENT_OFF_ERROR,
+  missingMessageContentIntentError,
+} from '#domain/utils/discord-api-message';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -218,6 +221,13 @@ async function build(
       pageIndex += 1;
       return page;
     }),
+    // The pre-flight's read (#2317). On by default, so a test about anything
+    // else reaches the walk.
+    fetchApplication: jest.fn(async () => ({
+      id: '1541430523090698250',
+      redirectUris: null,
+      messageContentIntent: 'enabled' as 'enabled' | 'disabled' | null,
+    })),
   };
 
   // Stores everything it is given, unless a test says otherwise.
@@ -702,7 +712,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       const args = runArgs(harness, { resolveTargetChannel });
 
       await expect(harness.worker.runSlice(args)).rejects.toThrow(
-        MISSING_MESSAGE_CONTENT_INTENT_ERROR,
+        missingMessageContentIntentError(0),
       );
       // The channel being walked is made when the walk reaches it, as it
       // always was; nothing else is.
@@ -1529,11 +1539,75 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
 
     const args = runArgs(harness);
     await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      MISSING_MESSAGE_CONTENT_INTENT_ERROR,
+      missingMessageContentIntentError(0),
     );
 
-    // Checked BEFORE anything is written, so there are no empty rows to undo.
+    // Checked BEFORE this page is written, and it is the first page.
     expect(args.importBatch).not.toHaveBeenCalled();
+  });
+
+  it('says how many empty rows it already wrote when it trips after a page landed', async () => {
+    // The gap #2317 names: the tally is cumulative and gates only the page in
+    // hand, so a first page under the threshold is written before a later one
+    // trips it. The error must say so, not "nothing was imported".
+    const blank = (id: string) => ({
+      id,
+      channel_id: DISCORD_CHANNEL,
+      type: 0,
+      content: '',
+      timestamp: '2019-03-04T18:22:11.000+00:00',
+      author: { id: '2', username: 'paul' },
+      attachments: [],
+      embeds: [],
+    });
+    // Two channels: the first ends on a short page of 20 blanks, under the
+    // threshold, so it is written and finished; the second channel's first
+    // page takes the slice's tally past it.
+    const harness = await build({
+      channels: [
+        channel(),
+        channel({
+          id: 'mapping-2',
+          discord_channel_id: '900000000000000003',
+          discord_channel_name: 'rush-week',
+          position: 1,
+        }),
+      ],
+      pages: [
+        Array.from({ length: 20 }, (_, i) => blank(String(100 + i))),
+        Array.from({ length: 10 }, (_, i) => blank(String(50 + i))),
+      ],
+    });
+    // The flags read settled nothing, so only the tally guards this slice.
+    harness.bot.fetchApplication.mockRejectedValue(new Error('timeout'));
+
+    const args = runArgs(harness);
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(
+      missingMessageContentIntentError(20),
+    );
+    expect(args.importBatch).toHaveBeenCalledTimes(1);
+    expect(missingMessageContentIntentError(20)).toMatch(
+      /already written 20 messages .* Delete this import to remove them/,
+    );
+  });
+
+  it('counts messages earlier slices of the same import wrote', async () => {
+    const blanks = Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) => ({
+      id: String(i),
+      channel_id: DISCORD_CHANNEL,
+      type: 0,
+      content: '',
+      timestamp: '2019-03-04T18:22:11.000+00:00',
+      author: { id: '2', username: 'paul' },
+      attachments: [],
+      embeds: [],
+    }));
+    const harness = await build({ pages: [blanks] });
+    const args = runArgs(harness, { job: { ...job(), imported_messages: 7 } });
+
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(
+      missingMessageContentIntentError(7),
+    );
   });
 
   it('does not trip on a channel that legitimately has system messages', async () => {
@@ -1553,4 +1627,67 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
       harness.worker.runSlice(runArgs(harness)),
     ).resolves.toMatchObject({ finished: true });
   });
+});
+
+describe('DiscordExportWorkerService — the Message Content Intent pre-flight (#2317)', () => {
+  it('refuses before resolving, creating or writing anything when Discord says the intent is off', async () => {
+    const harness = await build();
+    harness.bot.fetchApplication.mockResolvedValue({
+      id: '1541430523090698250',
+      redirectUris: null,
+      messageContentIntent: 'disabled',
+    });
+    const args = runArgs(harness);
+
+    await expect(harness.worker.runSlice(args)).rejects.toThrow(
+      MESSAGE_CONTENT_INTENT_OFF_ERROR,
+    );
+    // Nothing read, made or written: the small-archive case the tally could
+    // never see is refused here, with every message still unimported.
+    expect(harness.bot.verifyChannelInGuild).not.toHaveBeenCalled();
+    expect(harness.bot.fetchMessagePage).not.toHaveBeenCalled();
+    expect(args.resolveTargetChannel).not.toHaveBeenCalled();
+    expect(args.importBatch).not.toHaveBeenCalled();
+    expect(harness.repo.updateChannel).not.toHaveBeenCalled();
+    expect(MESSAGE_CONTENT_INTENT_OFF_ERROR).toMatch(/Nothing was imported\./);
+  });
+
+  it('asks only after the tenant check, so a job for another server still fails as that', async () => {
+    const harness = await build({ guildId: null });
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      /no longer has a Discord server connected/,
+    );
+    expect(harness.bot.fetchApplication).not.toHaveBeenCalled();
+  });
+
+  it('imports as usual when Discord says the intent is on', async () => {
+    const harness = await build();
+    const args = runArgs(harness);
+    await harness.worker.runSlice(args);
+
+    expect(harness.bot.fetchApplication).toHaveBeenCalledTimes(1);
+    expect(harness.bot.fetchMessagePage).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the read fails', () => Promise.reject(new Error('Discord 503'))],
+    [
+      'the record carries no flags',
+      async () => ({
+        id: '1541430523090698250',
+        redirectUris: null,
+        messageContentIntent: null,
+      }),
+    ],
+  ])(
+    'does not fail the import when %s: the tally is the backstop',
+    async (_label, answer) => {
+      const harness = await build();
+      harness.bot.fetchApplication.mockImplementation(answer);
+      const args = runArgs(harness);
+
+      await harness.worker.runSlice(args);
+      expect(harness.bot.fetchMessagePage).toHaveBeenCalled();
+    },
+  );
 });

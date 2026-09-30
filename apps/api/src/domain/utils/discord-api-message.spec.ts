@@ -3,6 +3,7 @@ import {
   MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK,
   discordAttachmentKey,
   isLikelyMissingMessageContentIntent,
+  missingMessageContentIntentError,
   tallyMessageContent,
   toExportShapeMessage,
   type DiscordApiMessage,
@@ -351,6 +352,35 @@ describe('the missing Message Content Intent check', () => {
         substantive,
       ]);
       expect(isLikelyMissingMessageContentIntent(tally)).toBe(false);
+    }
+  });
+});
+
+describe('missingMessageContentIntentError (#2317)', () => {
+  it('says nothing was imported only when nothing was', () => {
+    expect(missingMessageContentIntentError(0)).toMatch(
+      /Nothing was imported as empty\./,
+    );
+    expect(missingMessageContentIntentError(0)).not.toMatch(
+      /Delete this import/,
+    );
+  });
+
+  it('names what this import already wrote, and how to remove it', () => {
+    const text = missingMessageContentIntentError(20);
+    expect(text).toMatch(/already written 20 messages/);
+    expect(text).toMatch(/Delete this import to remove them/);
+    expect(text).not.toMatch(/Nothing was imported/);
+    expect(missingMessageContentIntentError(1)).toMatch(
+      /already written 1 message /,
+    );
+  });
+
+  it('names the toggle in both forms', () => {
+    for (const n of [0, 3]) {
+      expect(missingMessageContentIntentError(n)).toMatch(
+        /Bot → Privileged Gateway Intents/,
+      );
     }
   });
 });

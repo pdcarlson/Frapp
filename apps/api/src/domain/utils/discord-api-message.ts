@@ -269,9 +269,12 @@ export function toExportShapeMessage(
  * entire history as empty bubbles, which is worse than failing, because it
  * looks like it worked.
  *
- * So the export counts, and refuses to keep going once it has seen enough
- * authored messages with nothing in any of them to be sure. See
- * {@link isLikelyMissingMessageContentIntent}.
+ * The export first asks Discord whether the intent is on, before it writes
+ * anything (`GET /applications/@me`'s flags; see
+ * {@link MESSAGE_CONTENT_INTENT_OFF_ERROR}). This tally is the backstop for
+ * when that answer is missing or unreadable: it counts, and refuses to keep
+ * going once it has seen enough authored messages with nothing in any of them
+ * to be sure. See {@link isLikelyMissingMessageContentIntent}.
  */
 export interface MessageContentTally {
   /** Messages of an authored type (see {@link AUTHORED_MESSAGE_TYPES}). */
@@ -316,6 +319,15 @@ export function tallyMessageContent(
  * Deliberately requires *zero* substance across the whole sample rather than a
  * ratio: a single message with content proves the bot can read content, and
  * from there a quiet archive is just a quiet archive.
+ *
+ * Its limits, which is why it is only the backstop (#2317). Without the intent
+ * Discord still returns content for the bot's own messages and for messages
+ * that mention it, so one of those disarms it for the rest of the slice; a job
+ * with fewer than {@link MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK} authored
+ * messages in a slice never trips it; and it trips on the page in hand, after
+ * earlier pages were written. A ratio would close the first gap and open
+ * false positives on real archives, so the application-flags read decides the
+ * common case instead.
  */
 export function isLikelyMissingMessageContentIntent(
   tally: MessageContentTally,
@@ -326,11 +338,44 @@ export function isLikelyMissingMessageContentIntent(
   );
 }
 
-/** The error an admin sees when the tally trips. Names the exact fix. */
-export const MISSING_MESSAGE_CONTENT_INTENT_ERROR =
-  'Discord returned every message with no content, no attachments and no embeds. ' +
-  'That means the Frapp bot does not have the Message Content Intent enabled, ' +
-  'so it can read that messages exist but not what they say. Nothing was imported ' +
-  'as empty. Enable "Message Content Intent" for the Frapp application in the ' +
-  'Discord Developer Portal (Bot → Privileged Gateway Intents), then start the ' +
-  'import again.';
+/** Where the toggle is, shared by both errors below. */
+const INTENT_TOGGLE =
+  '"Message Content Intent" for the Frapp application in the Discord ' +
+  'Developer Portal (Bot → Privileged Gateway Intents)';
+
+/**
+ * The error an admin sees when Discord says the intent is off, which the
+ * export asks before writing anything. Names the exact fix.
+ */
+export const MESSAGE_CONTENT_INTENT_OFF_ERROR =
+  'Discord reports that the Frapp bot does not have the Message Content Intent ' +
+  'enabled, so it could read that messages exist but not what they say. ' +
+  `Nothing was imported. Enable ${INTENT_TOGGLE}, then start the import again.`;
+
+/**
+ * The error an admin sees when the tally trips. Names the exact fix, and what
+ * this import already wrote: the tally trips on the page in hand, so earlier
+ * pages, earlier channels and earlier slices may already be in Frapp, empty.
+ *
+ * @param alreadyImported messages this import had written before the trip.
+ */
+export function missingMessageContentIntentError(
+  alreadyImported: number,
+): string {
+  const cause =
+    'Discord returned every message with no content, no attachments and no embeds. ' +
+    'That means the Frapp bot does not have the Message Content Intent enabled, ' +
+    'so it can read that messages exist but not what they say. ';
+  if (alreadyImported <= 0) {
+    return (
+      cause +
+      `Nothing was imported as empty. Enable ${INTENT_TOGGLE}, then start the import again.`
+    );
+  }
+  const messages = alreadyImported === 1 ? 'message' : 'messages';
+  return (
+    cause +
+    `This import had already written ${alreadyImported} ${messages} before the check could tell, and they are probably empty. ` +
+    `Delete this import to remove them, enable ${INTENT_TOGGLE}, then start a new import.`
+  );
+}
