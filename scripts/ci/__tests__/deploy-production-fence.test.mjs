@@ -28,6 +28,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -957,7 +958,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.deepEqual(config.deployJobs, ["deploy"]);
     assert.equal(callerJob("deploy").keys.get("uses"), "./.github/workflows/_deploy.yml");
     assert.ok(config.alert.labels.includes("P1"));
-    const routing = readFileSync(join(REPO_ROOT, "docs", "ops", "alert-routing.md"), "utf8");
+    const routing = readFileSync(join(REPO_ROOT, ALERT_ROUTING), "utf8");
     assert.ok(routing.includes(`*${config.alert.title}*`), "alert-routing.md's roster must list the alert by its title");
   });
 

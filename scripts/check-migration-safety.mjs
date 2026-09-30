@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
 // Resolved from this file, never `process.cwd()`. Every path this gate reasons
 // about is repo-root-relative — `git diff --name-only` emits them that way, and
@@ -127,13 +128,10 @@ function validateMigrationFiles(migrationFiles) {
 }
 
 /**
- * The two migration ledgers, named once. Everything below that means "the
- * promotion log" or "the rollback playbook" reads these, so moving either doc
- * is a one-line edit here (#1598 stage 7 collapsed seven copies of the paths).
+ * The two migration ledgers are `PROMOTION_LOG` and `ROLLBACK_PLAYBOOK`
+ * (`./ci/lib/ops-docs.mjs`, the one place their paths are written). Every list
+ * and map below reads them, so moving either doc is an edit there, not here.
  */
-export const PROMOTION_LOG = "docs/ops/db-promotion-runbook.md";
-export const ROLLBACK_PLAYBOOK = "docs/ops/db-rollback-playbook.md";
-
 /**
  * The docs a migration change must update. Declared once, and checked for
  * staleness on every run before the gate judges any PR (see
@@ -144,7 +142,7 @@ export const ROLLBACK_PLAYBOOK = "docs/ops/db-rollback-playbook.md";
  * migration PR in the repository because the author updated the *renamed* file
  * and matched none of the literals, or it quietly stops requiring anything at
  * all. Checking the manifest first turns both into one loud failure that names
- * this constant, so the rename gets fixed instead of the blameless PR.
+ * the path constants, so the rename gets fixed instead of the blameless PR.
  *
  * `spec/environments/` used to be a third disjunct: touching ANY environments
  * doc satisfied the gate. Measured over the last 400 commits on `main` it was
@@ -469,9 +467,10 @@ function validateDocManifest() {
   }
   console.error(
     "A promotion/rollback doc was renamed, moved or deleted without updating " +
-      "MIGRATION_DOCS in scripts/check-migration-safety.mjs. Repoint the list " +
-      "in the same change set as the rename — until then this REQUIRED check " +
-      "blocks every migration PR in the repository.",
+      "PROMOTION_LOG / ROLLBACK_PLAYBOOK in scripts/ci/lib/ops-docs.mjs. " +
+      "Repoint that constant (every list and map here reads it) in the same " +
+      "change set as the rename — until then this REQUIRED check blocks every " +
+      "migration PR in the repository.",
   );
   process.exit(2);
 }
@@ -591,8 +590,9 @@ function validateLedgerCoverage(migrations) {
         console.error(`- ${doc}: ${error instanceof Error ? error.message : error}`);
         console.error(
           "The file is tracked but could not be read. Restore it (or repoint " +
-            "MIGRATION_DOCS if it moved) — this REQUIRED check cannot grade " +
-            "ledger coverage without it.",
+            "PROMOTION_LOG / ROLLBACK_PLAYBOOK in scripts/ci/lib/ops-docs.mjs if " +
+            "it moved) — this REQUIRED check cannot grade ledger coverage " +
+            "without it.",
         );
         process.exit(2);
       }

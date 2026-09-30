@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING as ALERT_ROUTING_DOC } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -20,7 +21,7 @@ import { makeFetchMock } from "./helpers.mjs";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-uptime.yml");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "production-uptime.mjs");
-const ALERT_ROUTING = join(REPO_ROOT, "docs", "ops", "alert-routing.md");
+const ALERT_ROUTING = join(REPO_ROOT, ALERT_ROUTING_DOC);
 const REQUIRED_CHECKS = join(REPO_ROOT, "scripts", "ci", "lib", "required-checks.mjs");
 
 const TEST_URL = "https://example.test/health/ready";

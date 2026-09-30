@@ -26,6 +26,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ROLLBACK_PLAYBOOK } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -34,7 +35,7 @@ const SIGNET_MIGRATION = "supabase/migrations/20260909120000_rename_system_user_
 const MIGRATION = "supabase/migrations/20260924190000_rename_system_actor_to_frapp.sql";
 const SEED = "supabase/migrations/20260524120000_chapter_directory_requests.sql";
 const LANDMARK = "scripts/check-pglite-migrations.mjs";
-const ROLLBACK = "docs/ops/db-rollback-playbook.md";
+const ROLLBACK = ROLLBACK_PLAYBOOK;
 const VALIDATION = "packages/validation/src/index.ts";
 const CHAT = "apps/api/src/domain/constants/chat.ts";
 

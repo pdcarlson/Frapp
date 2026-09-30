@@ -94,6 +94,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { ALERT_ROUTING, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
 // ── Alert configurations ────────────────────────────────────────────────────
 // One entry per watched deploy workflow. A config is the complete answer to
@@ -241,7 +242,7 @@ export const DEPLOY_PRODUCTION_CONFIG = {
     "list and emails only the person who ran it. Nothing durable recorded that production was left",
     "half-shipped: a migrated database under the previous API, or a new API under the previous",
     "frontends. The run log names the step that failed, and what each step leaves behind is in",
-    "`docs/ops/alert-routing.md`. Recovery: `docs/ops/db-rollback-playbook.md`.",
+    `\`${ALERT_ROUTING}\`. Recovery: \`${ROLLBACK_PLAYBOOK}\`.`,
   ],
 };
 

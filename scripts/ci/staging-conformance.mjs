@@ -74,6 +74,7 @@ import {
   readHealthCheckPath,
 } from "./lib/render-health-check-path.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { ALERT_ROUTING } from "./lib/ops-docs.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -896,9 +897,10 @@ export async function checkInfisicalSyncs({
  * configuration. It covers the whole chain at once — migration applied, grants
  * present, RLS policies intact, hook enabled and resolving.
  *
- * The trap, recorded in #838 and db-promotion-runbook.md:154 — a correctly
- * working hook returns a token with NO claim when the user resolves to no
- * chapter. So a claimless token is reported as a FAIL naming that cause, never
+ * The trap, recorded in #838 and in the promotion log (`PROMOTION_LOG`,
+ * `lib/ops-docs.mjs`) under "2026-08-02: Active-chapter JWT claim" — a
+ * correctly working hook returns a token with NO claim when the user resolves
+ * to no chapter. So a claimless token is reported as a FAIL naming that cause, never
  * as a pass, and the seeded user must have exactly one membership.
  *
  * `SUPABASE_URL` / `SUPABASE_ANON_KEY` are expected on the scheduled job
@@ -1487,7 +1489,7 @@ export async function runStagingConformance({
     // while the run reports conformant.
     logger.log?.(
       "::error::Staging is conformant but the alert issue could not be closed. " +
-        "It is still open; if this persists, the owner closes it by hand (docs/ops/alert-routing.md § Escalation).",
+        `It is still open; if this persists, the owner closes it by hand (${ALERT_ROUTING} § Escalation).`,
     );
   }
   return { outcome, results, alert };

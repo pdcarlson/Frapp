@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -66,7 +67,7 @@ describe("the alert identities", () => {
   });
 
   it("are all listed in alert-routing.md", () => {
-    const routing = readFileSync(join(REPO_ROOT, "docs", "ops", "alert-routing.md"), "utf8");
+    const routing = readFileSync(join(REPO_ROOT, ALERT_ROUTING), "utf8");
     // One row stands for all of them: the title pattern, and one literal title
     // (the lookup key a search for the issue would use).
     assert.ok(routing.includes("Sentry has no source maps for &lt;project&gt; on &lt;environment&gt; — its stack traces are minified"));

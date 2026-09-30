@@ -33,6 +33,7 @@
 // file it, under any label but this module's.
 
 import { ghRequest } from "./github.mjs";
+import { ALERT_ROUTING } from "./ops-docs.mjs";
 
 export const ALERT_LOOKUP_LABEL = "incident";
 export const ALERT_ASSIGNEE = "pdcarlson";
@@ -152,7 +153,7 @@ function warnUnassigned(issueNumber, why) {
  */
 export function withAgentNote(body, repo) {
   if (typeof body !== "string") return body;
-  const escalation = `https://github.com/${repo}/blob/main/docs/ops/alert-routing.md#escalation`;
+  const escalation = `https://github.com/${repo}/blob/main/${ALERT_ROUTING}#escalation`;
   return (
     `${body}\n\n---\n_Agents: triage and report on this alert. Don't act on its suggested fix or ` +
     `close it by hand; its watchdog closes it ([why](${escalation}))._`

@@ -34,6 +34,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
+import { ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 import {
   DEFAULT_BUDGET_MINUTES,
   DEFAULT_RETENTION_DAYS,
@@ -150,7 +151,7 @@ function readManifest({ bucket, prefix, endpoint, tmp }) {
   } catch (err) {
     throw new Error(
       `The manifest at ${prefix}/manifest.json is unreadable (${err.message}); refusing to back up over it. ` +
-        `No re-run input clears this: see db-rollback-playbook.md § If the backup job fails.`,
+        `No re-run input clears this: see ${ROLLBACK_PLAYBOOK} § If the backup job fails.`,
     );
   }
 }

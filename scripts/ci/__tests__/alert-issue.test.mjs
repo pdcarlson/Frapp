@@ -1,4 +1,5 @@
 import { mock, test } from "node:test";
+import { ALERT_ROUTING } from "../lib/ops-docs.mjs";
 import assert from "node:assert/strict";
 
 import {
@@ -314,7 +315,7 @@ test("every alert body ends with one pointer to what agents may do with it", asy
   await raiseAlert({ ...args(fetchImpl), ...builders });
   const { body } = JSON.parse(calls.find((c) => c.method === "POST").body);
   assert.ok(body.startsWith("issue body\n\n---\n"), "the watchdog's own body comes first");
-  const link = "https://github.com/o/r/blob/main/docs/ops/alert-routing.md#escalation";
+  const link = `https://github.com/o/r/blob/main/${ALERT_ROUTING}#escalation`;
   assert.equal(body.split(link).length - 1, 1, "exactly one pointer");
 });
 

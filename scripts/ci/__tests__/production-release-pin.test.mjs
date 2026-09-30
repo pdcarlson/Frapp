@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING as ALERT_ROUTING_DOC } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -37,7 +38,7 @@ const GUARDRAILS_WORKFLOW = join(
   "production-guardrails.yml",
 );
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "production-release-pin.mjs");
-const ALERT_ROUTING = join(REPO_ROOT, "docs", "ops", "alert-routing.md");
+const ALERT_ROUTING = join(REPO_ROOT, ALERT_ROUTING_DOC);
 const REQUIRED_CHECKS = join(REPO_ROOT, "scripts", "ci", "lib", "required-checks.mjs");
 const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
 
