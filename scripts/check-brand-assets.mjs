@@ -2,7 +2,7 @@
 /**
  * The CI gate over the committed Signet brand assets.
  *
- * Five independent properties, because before #2153 this script checked only
+ * Six independent properties, because before #2153 this script checked only
  * the first one and it proved nothing about the mark:
  *
  *   1. PARITY — synced Next app icons are byte-identical to their canonical
@@ -25,7 +25,12 @@
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
- *   5. STORE GRAPHICS — the Google Play icon and feature graphic under
+ *   5. IOS ICON — the Icon Composer bundle `expo.ios.icon` names is exactly
+ *      what `scripts/lib/ios-icon.mjs` writes: its `icon.json`, and a crest
+ *      whose path is the glyph vector's, byte for byte, in the locked gold.
+ *      Nothing else can check it: no raster exists until Xcode compiles it.
+ *
+ *   6. STORE GRAPHICS — the Google Play icon and feature graphic under
  *      `apps/mobile/store/graphics/` are the shape Play takes, the icon is
  *      still a render of the vector, and the feature graphic is what the
  *      renderer draws today. The audits live in `scripts/lib/store-graphics.mjs`,
@@ -40,7 +45,7 @@
  * because the gate has to hold for whatever is committed — including a file
  * someone dropped in by hand.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +66,14 @@ import {
   glyphCoverage,
   maskIou,
 } from "./lib/brand-pixels.mjs";
+import {
+  IOS_ICON_CREST,
+  IOS_ICON_DIR,
+  IOS_ICON_JSON,
+  crestSvg,
+  glyphPath,
+  iconJson,
+} from "./lib/ios-icon.mjs";
 import {
   PLAY_FEATURE_GRAPHIC,
   PLAY_ICON,
@@ -320,7 +333,41 @@ if (
   }
 }
 
-// ── 6. Store graphics ───────────────────────────────────────────────────────
+// ── 6. The iOS icon bundle ──────────────────────────────────────────────────
+// Exact equality with what `rasterize-brand-assets.mjs` writes, rather than a
+// looser shape check: the document has no pixels to measure, and a hand edit
+// to it (or to the crest's copy of the path) is exactly the drift this gate
+// exists for. Stray files in `Assets/` fail too: Xcode compiles what it finds.
+if (present(IOS_ICON_JSON, "run npm run rasterize:brand-assets")) {
+  if (readFileSync(repo(IOS_ICON_JSON), "utf8") !== iconJson()) {
+    fail(
+      `drift: ${IOS_ICON_JSON} is not what scripts/lib/ios-icon.mjs writes\n  run: npm run rasterize:brand-assets`,
+    );
+  }
+}
+if (present(IOS_ICON_CREST, "run npm run rasterize:brand-assets")) {
+  try {
+    const committed = readFileSync(repo(IOS_ICON_CREST), "utf8");
+    assertSvgLocked(committed, IOS_ICON_CREST, { requireField: false });
+    const glyph = readFileSync(
+      repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg"),
+      "utf8",
+    );
+    if (committed !== crestSvg(glyphPath(glyph, "signet-emblem-B-glyph.svg"))) {
+      fail(
+        `stale: ${IOS_ICON_CREST} does not draw signet-emblem-B-glyph.svg's path\n  run: npm run rasterize:brand-assets`,
+      );
+    }
+    const assets = readdirSync(repo(`${IOS_ICON_DIR}/Assets`));
+    if (assets.length !== 1 || assets[0] !== "crest.svg") {
+      fail(`${IOS_ICON_DIR}/Assets: holds ${assets.join(", ")}; it holds crest.svg only`);
+    }
+  } catch (error) {
+    fail(String(error.message ?? error));
+  }
+}
+
+// ── 7. Store graphics ───────────────────────────────────────────────────────
 // Nothing ships these in a binary: the owner uploads them in Play Console. They
 // are gated anyway because the Play icon IS the mark, and a listing that shows
 // an old crest beside a new app is the same drift #2153 was.
@@ -354,5 +401,6 @@ console.log(
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
     `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA; ` +
+    `the iOS icon bundle draws the glyph; ` +
     `the Play icon and feature graphic are the shape Play takes and current`,
 );

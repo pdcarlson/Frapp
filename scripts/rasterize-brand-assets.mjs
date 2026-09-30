@@ -41,6 +41,13 @@ import {
   glyphCoverage,
 } from "./lib/brand-pixels.mjs";
 import {
+  IOS_ICON_CREST,
+  IOS_ICON_JSON,
+  crestSvg,
+  glyphPath,
+  iconJson,
+} from "./lib/ios-icon.mjs";
+import {
   PLAY_FEATURE_GRAPHIC,
   PLAY_ICON,
   PLAY_ICON_SIZE,
@@ -343,6 +350,18 @@ async function main() {
     await monochrome(launcher),
     "monochrome",
   );
+
+  // ── iOS: the Icon Composer bundle `expo.ios.icon` names ───────────────────
+  // Not a raster: iOS renders the bundle itself, in Liquid Glass, and derives
+  // its dark, clear and tinted appearances from it. What is written here is the
+  // document and the crest it draws, copied from the glyph vector; why each
+  // field is what it is lives in `lib/ios-icon.mjs`.
+  const crest = crestSvg(
+    glyphPath(readFileSync(GLYPH_SVG, "utf8"), "signet-emblem-B-glyph.svg"),
+  );
+  assertSvgLocked(crest, IOS_ICON_CREST, { requireField: false });
+  await write(IOS_ICON_JSON, Buffer.from(iconJson()));
+  await write(IOS_ICON_CREST, Buffer.from(crest));
 
   // ── Google Play listing: apps/mobile/store/graphics ───────────────────────
   // Not read by any build: the owner uploads them in Play Console. Rendered
