@@ -237,10 +237,16 @@ test("no app token, twenty behind PRs: twenty wakes but exactly one alert issue"
       ...prs.map(detailRoute),
       ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
       emptyCommentsRoute,
+      { method: "GET", path: "/issues?state=all", body: [] },
     ],
     updateToken: null,
   });
   assert.equal(filedIssues(calls).length, 1, "one alert for the sweep, not one per PR");
+  assert.equal(
+    calls.filter((c) => c.method === "GET" && c.url.includes("/issues?state=all")).length,
+    1,
+    "the open-alert check's read is handed to the raise, not repeated (#2333)",
+  );
   assert.equal(
     calls.filter((c) => c.method === "POST" && c.url.includes("/comments")).length,
     20,

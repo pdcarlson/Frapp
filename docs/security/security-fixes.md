@@ -52,6 +52,12 @@ When `npm audit` flags transitive CVEs, prefer **`overrides` at the repo root** 
 
 **Use `npm update <pkg>` — do not delete the lockfile.** Editing an override does *not* move an already-locked version: npm never re-checks a locked version against a *changed* override range, so `npm install`, `npm install --package-lock-only`, and even a clean `node_modules` rebuild all silently leave the old resolution in place. (Verified in #699: the undici override was narrowed to `>=7.29.0` and all three still resolved 7.26.0.) Deleting `package-lock.json` *does* apply the new override, but it re-resolves every range in the monorepo — measured at **356 unrelated packages** on one run, including `next`, `vite`, `prettier`, `eslint`, `@playwright/test`, and `@supabase/*`. That destroys the revert story and risks formatting, lint, and visual-snapshot failures unrelated to the advisory. `npm update <pkg>` re-resolves the named package against the new constraint and nothing else.
 
+**Re-resolve with the pinned npm, not the one your Node bundles.** Run lockfile re-resolves as `npx npm@<version> …`, using the version in the root `package.json`'s `packageManager` field, e.g. `npx npm@<version> update <pkg> --package-lock-only`. npm ignores `packageManager` and corepack is off by default, so a plain `npm` is whatever your Node ships, and `engines.node` admits Node 24 releases whose npm damages the lockfile even on a no-op `npm install --package-lock-only`. Measured on 2026-09-30 from `main`'s lockfile (method: run the command, then `git diff package-lock.json`):
+- npm 11.6.2, bundled with Node 24.11.1–24.13.0, dropped `@emnapi/core` and `@emnapi/runtime` and stripped every `libc` field, so `npm ci` failed with `Missing: @emnapi/runtime@1.11.3 from lock file`.
+- npm 11.10.0 kept `@emnapi/*` but still stripped every `libc` field. Node 24.13.1–24.14.1 bundle npm 11.8–11.11.
+
+Why Dependabot depends on the same pin: [`dependency-updates.md` § Dependabot resolves with the root `packageManager` npm](../ci-cd/dependency-updates.md#dependabot-resolves-with-the-root-packagemanager-npm).
+
 **Check for a duplicate hoisted copy afterward.** An optional peer dependency can reintroduce the vulnerable version under a second path, leaving `npm audit` red even though the direct dependency was bumped. In #684, bumping `@nestjs/platform-express` alone left a second hoisted copy at the old version — pulled in by `@nestjs/core`'s optional peer on `@nestjs/platform-express@^11.0.0` — still carrying the vulnerable `multer`. Bumping the sibling packages in lockstep collapsed it. Confirm with `npm ls <pkg> --all` that exactly one version resolves, and remember `@nestjs/platform-express` pins `multer` **exactly**, so the fixing release must be found by walking versions rather than assuming a range floats.
 
 ## multer / body-parser / undici advisory sweep (#684, #699)
@@ -138,7 +144,7 @@ When the gate goes red on a PR that did not touch dependencies, read the **exit 
 
 > **2026-09-08 (#1921).** Two new highs against an untouched lockfile: `js-yaml` 4.3.1 (`GHSA-2883-xcg3-v3hh`, patched 4.3.2) and `sharp` `<0.35.4` (`GHSA-rgj7-g3m4-5g8c`, patched 0.35.4). Cleared with a targeted lockfile bump — hoisted `js-yaml` 4.3.2, swagger-nested `js-yaml` 5.4.1, `sharp` 0.35.4 and its `@img/sharp-*` / libvips 1.3.3 optional binaries. No full lockfile rebuild. `@next/swc-*` stayed at 8 platform entries.
 
-The lockfile versions alone do not hold after a later `npm install`: `@redocly/openapi-core@1.34.19` still *declares* `js-yaml@4.3.1` exactly, and Next's optional `sharp` range is `^0.35.3`. Root overrides keep the hoisted 4.3.2 / 0.35.4 copies (swagger nest `^5.4.1`). GHSA-2883 lists only the 3.x / 4.x lines; istanbul was already on 3.15.2.
+The lockfile versions alone do not hold after a later `npm install`: `@redocly/openapi-core@1.34.19` still *declares* `js-yaml@4.3.1` exactly, so a root override keeps the hoisted `js-yaml` on the patched release (swagger nest `^5.4.1`). `sharp` is pinned exactly in both the root `devDependencies` and the root `overrides` (current values in `package.json`), and Dependabot's #2963 moved the two together. Next's optional `sharp` range (`^0.35.4` in `next@16.3.6`, checked 2026-09-30) already excludes the vulnerable releases. GHSA-2883 lists only the 3.x / 4.x lines; istanbul was already on 3.15.2.
 
 > **2026-09-08 (later).** Three new multer highs (`GHSA-wc9g-mqfw-jrwm`, `GHSA-qfvm-cv95-jqjf`, `GHSA-535w-7cp7-47q4`) against `@nestjs/platform-express@11.2.1`'s exact pin `multer@2.2.0`. Patched at **2.3.0**. Latest `@nestjs/platform-express` (12.0.1) still declares 2.2.0, so a root override is the lever — not a Nest bump. Targeted `npm update multer --package-lock-only`. No FileInterceptor / multer config in this repo; no allowlist.
 
@@ -520,7 +526,11 @@ CORS** — a second review pass caught that this would have silently broken ever
 to this API even with a matching `Access-Control-Allow-Origin`, because `app.frapp.live` and
 `api.frapp.live` are different origins (`CORS_OPTIONS` / `enableCors()` in
 `configureApp()`, which allowlists `*.frapp.live` plus the local dev ports with
-`credentials: true` — this API is cross-origin by design, not by accident). `supertest` never enforces
+`credentials: true` — this API is cross-origin by design, not by accident). **Correction
+(2026-09-30):** the allowlist is now exact origins per deployment (`corsOptionsFor` in
+`cors.options.ts`): the production deployment admits only `https://app.frapp.live`, not the
+staging dashboard or any other `*.frapp.live` host, from the first Deploy production that carries
+#2507's change. `supertest` never enforces
 CORP, so nothing in the test suite would have caught this before a real browser did. `HELMET_OPTIONS`
 sets `crossOriginResourcePolicy: { policy: 'cross-origin' }`; the actual authorization boundary stays
 CORS plus bearer auth, which this header does not touch. Every other Helmet default (frameguard,

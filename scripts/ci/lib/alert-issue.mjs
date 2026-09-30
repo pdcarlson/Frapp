@@ -165,6 +165,10 @@ function withOwnerAssigned(issue) {
   return [...new Set([...current, ALERT_ASSIGNEE])];
 }
 
+// The alert each `findAlertIssuesDetailed` result was read for, so a raise or
+// resolve handed that result can refuse one read for a different alert.
+const LOOKUP_ALERTS = new WeakMap();
+
 /**
  * Every issue (open or closed) that is this alert, newest first.
  *
@@ -212,7 +216,36 @@ export async function findAlertIssuesDetailed({ token, repo, fetchImpl, alert })
     }
     if (data.length < 100) break;
   }
-  return { issues: found, lookupOk };
+  const lookup = { issues: found, lookupOk };
+  LOOKUP_ALERTS.set(lookup, alert);
+  return lookup;
+}
+
+/**
+ * The alert's issues for a raise or resolve: the caller's `lookup` when it read
+ * successfully, and a fresh read otherwise.
+ *
+ * A watchdog that has to see its alert before deciding what to do (whether one
+ * is already open, or which assertions an open one names) used to read it, then
+ * call `raiseAlert` or `resolveAlert`, which read the same up-to-5 pages again
+ * (#2333). Passing the read through halves the calls. A failed read is still
+ * read again: that second look is a retry, the one production-uptime.mjs's
+ * comment relies on, not a duplicate.
+ *
+ * The caller's read must be this run's and must come straight before the raise
+ * or resolve, with no write to the alert's issues in between; every caller
+ * reads immediately before deciding.
+ */
+async function lookupFor({ token, repo, fetchImpl, alert, lookup, caller }) {
+  if (lookup != null) {
+    if (LOOKUP_ALERTS.get(lookup) !== alert) {
+      throw new TypeError(
+        `${caller} was handed a lookup that findAlertIssuesDetailed did not read for this alert`,
+      );
+    }
+    if (lookup.lookupOk) return lookup;
+  }
+  return findAlertIssuesDetailed({ token, repo, fetchImpl, alert });
 }
 
 /**
@@ -221,6 +254,10 @@ export async function findAlertIssuesDetailed({ token, repo, fetchImpl, alert })
  * `buildIssueBody()` is used for a first-time create; `buildCommentBody({ reopened })`
  * for every subsequent failure. Returns { action, issueNumber } where action is
  * "created" | "commented" | "reopened" | "failed".
+ *
+ * `lookup` is the caller's own `findAlertIssuesDetailed` read, when it made one
+ * to decide whether to raise at all (see `lookupFor`). A failed lookup still
+ * falls through to create, as described at `findAlertIssues`.
  */
 export async function raiseAlert({
   token,
@@ -235,9 +272,17 @@ export async function raiseAlert({
   // staging-conformance.mjs's failing-assertion marker) need the body to track
   // the current failure set; deploy-alert.mjs does not and leaves this off.
   refreshBodyOnRaise = false,
+  lookup,
 }) {
   assertDefinedAlert(alert, "raiseAlert");
-  const existing = await findAlertIssues({ token, repo, fetchImpl, alert });
+  const { issues: existing } = await lookupFor({
+    token,
+    repo,
+    fetchImpl,
+    alert,
+    lookup,
+    caller: "raiseAlert",
+  });
   // Prefer an open one; otherwise reopen the most recent closed one.
   const open = existing.find((issue) => issue.state === "open");
   const target = open ?? existing[0];
@@ -339,16 +384,27 @@ export async function raiseAlert({
  *   callers' policies differ. Every daily watchdog goes red on it (the
  *   conformance pair, check-migration-drift, production-guardrails,
  *   production-backup-env, both backup-freshness watchdogs,
- *   production-release-pin and supabase-quota): one failed read is usually transient, but a
+ *   production-release-pin, routine-heartbeat and supabase-quota): one failed
+ *   read is usually transient, but a
  *   lasting one means the job's token lost issues access, and then the next
  *   real failure could not raise its alert either. production-uptime passes
  *   with a warning, because at a 15-minute cadence a blip would be constant
  *   noise and the dailies catch a lasting break. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
  *   must never say an alert "is still open" when it could not look.
+ *
+ * `lookup` is the caller's own `findAlertIssuesDetailed` read, when it made one
+ * to decide whether recovery is proven (see `lookupFor`).
  */
-export async function resolveAlert({ token, repo, fetchImpl, alert, buildRecoveryBody }) {
+export async function resolveAlert({ token, repo, fetchImpl, alert, buildRecoveryBody, lookup }) {
   assertDefinedAlert(alert, "resolveAlert");
-  const { issues, lookupOk } = await findAlertIssuesDetailed({ token, repo, fetchImpl, alert });
+  const { issues, lookupOk } = await lookupFor({
+    token,
+    repo,
+    fetchImpl,
+    alert,
+    lookup,
+    caller: "resolveAlert",
+  });
   if (!lookupOk) return { action: "unread", closed: [] };
   const openIssues = issues.filter((issue) => issue.state === "open");
   if (openIssues.length === 0) return { action: "none", closed: [] };

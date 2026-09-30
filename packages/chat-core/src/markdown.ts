@@ -5,18 +5,37 @@
  * `apps/web`) and mobile renders it with the same library into React Native
  * `Text` (`message-markdown.tsx` in `apps/mobile`). What decides the output
  * lives here, so the two can't drift: the element allowlist, the #2209 depth
- * cap, and the bare-URL links. Each is dependency-free: the mdast they walk is
- * written out, for the reason `markdown-depth-cap.ts` gives.
+ * cap, the #2664 parse budget, and the bare-URL links. Each is
+ * dependency-free: the mdast they walk is written out, for the reason
+ * `markdown-depth-cap.ts` gives.
  */
 
 import { bareUrlEnd, bareUrls, isOpenableHref } from "./links";
+import { opensTooManyContainers } from "./markdown-depth-cap";
+import { exceedsParseBudget } from "./markdown-parse-budget";
 
+// Only the combined check is exported, not its two halves: a renderer that
+// asked one of them would pay the other's parse.
 export {
   MAX_MESSAGE_MARKDOWN_DEPTH,
-  opensTooManyContainers,
   remarkDepthCap,
   type DepthCapOptions,
 } from "./markdown-depth-cap";
+
+/**
+ * Whether a body should skip remark's parse and render as its raw text,
+ * decided from the source alone. Both renderers ask this before parsing and
+ * pass the answer to `remarkDepthCap` as `flatten`, handing remark an empty
+ * string instead of the body. It covers the two ways a body within the length
+ * cap is too costly to parse: a line that opens too many containers (#2209,
+ * `opensTooManyContainers`), and a paragraph whose emphasis, labels, images,
+ * raw HTML or container run would make micromark's parse quadratic (#2664,
+ * `exceedsParseBudget`). Either one's body would take seconds on the main
+ * thread, for every member who opens the channel.
+ */
+export function skipsMarkdownParse(content: string): boolean {
+  return opensTooManyContainers(content) || exceedsParseBudget(content);
+}
 
 /**
  * `spec/behavior/chat/README.md`'s "Text formatting" set, and nothing wider:

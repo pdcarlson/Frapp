@@ -6,6 +6,7 @@ import {
   ALERT_LOOKUP_LABEL,
   defineAlert,
   findAlertIssues,
+  findAlertIssuesDetailed,
   isDefinedAlert,
   raiseAlert,
   resolveAlert,
@@ -404,4 +405,76 @@ test("resolveAlert reports a failed lookup as unread, apart from a failed close 
   const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered" });
   assert.deepEqual(out, { action: "unread", closed: [] });
   assert.equal(calls.length, 1, "one lookup, and nothing written");
+});
+
+// ── A caller's own lookup (#2333) ───────────────────────────────────────────
+// A watchdog that reads its alert to decide what to do hands that read on,
+// rather than letting raiseAlert/resolveAlert read the same pages again.
+
+const lookupGets = (calls) => calls.filter((c) => c.method === "GET").length;
+
+test("raiseAlert reuses the caller's successful lookup instead of reading again", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [{ number: 7, title: TITLE, state: "closed" }] },
+    { method: "PATCH", path: "/issues/7", body: { number: 7, assignees: [{ login: ALERT_ASSIGNEE }] } },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  const lookup = await findAlertIssuesDetailed(args(fetchImpl));
+  const out = await raiseAlert({ ...args(fetchImpl), ...builders, lookup });
+  assert.equal(out.action, "reopened");
+  assert.equal(lookupGets(calls), 1, "one lookup for the whole run");
+});
+
+test("resolveAlert reuses the caller's successful lookup instead of reading again", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [{ number: 7, title: TITLE, state: "open" }] },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/7", body: {} },
+  ]);
+  const lookup = await findAlertIssuesDetailed(args(fetchImpl));
+  const out = await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered", lookup });
+  assert.deepEqual(out, { action: "closed", closed: [7] });
+  assert.equal(lookupGets(calls), 1, "one lookup for the whole run");
+});
+
+test("a caller's failed lookup is read again, as a retry, before raising or resolving", async () => {
+  for (const act of ["raise", "resolve"]) {
+    const { fetchImpl: serve, calls } = makeFetchMock([
+      { method: "GET", path: "/issues?state=all", body: [{ number: 7, title: TITLE, state: "open" }] },
+      { method: "POST", path: "/comments", body: {} },
+      { method: "PATCH", path: "/issues/7", body: {} },
+    ]);
+    // The caller's own read fails; every later request is served normally.
+    let failNextGet = true;
+    const fetchImpl = async (url, init = {}) => {
+      if (failNextGet && (init.method ?? "GET") === "GET") {
+        failNextGet = false;
+        calls.push({ method: "GET", url, body: null });
+        return { ok: false, status: 502, text: async () => "{}" };
+      }
+      return serve(url, init);
+    };
+    const lookup = await findAlertIssuesDetailed(args(fetchImpl));
+    assert.equal(lookup.lookupOk, false);
+    const out =
+      act === "raise"
+        ? await raiseAlert({ ...args(fetchImpl), ...builders, lookup })
+        : await resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered", lookup });
+    assert.equal(out.action, act === "raise" ? "commented" : "closed", act);
+    assert.equal(lookupGets(calls), 2, `${act}: the failed read, then one fresh read`);
+  }
+});
+
+test("a lookup read for another alert, or built by hand, is refused", async () => {
+  const OTHER = defineAlert({ title: "Other alert" });
+  const { fetchImpl } = makeFetchMock([{ method: "GET", path: "/issues?state=all", body: [] }]);
+  const foreign = await findAlertIssuesDetailed({ ...args(fetchImpl), alert: OTHER });
+  const handBuilt = { issues: [], lookupOk: true };
+  for (const lookup of [foreign, handBuilt]) {
+    await assert.rejects(raiseAlert({ ...args(fetchImpl), ...builders, lookup }), TypeError);
+    await assert.rejects(
+      resolveAlert({ ...args(fetchImpl), buildRecoveryBody: () => "recovered", lookup }),
+      TypeError,
+    );
+  }
 });

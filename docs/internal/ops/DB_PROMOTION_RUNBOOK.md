@@ -497,6 +497,12 @@ Before you promote — the API does not boot without these:
       is set **and non-empty** in the target environment's Infisical folder:
       `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
       `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
+- [ ] Those values also have the right shape, because `validateEnv` refuses some
+      non-empty values too: a client key (the publishable key or the legacy
+      `anon` JWT) or an unresolved `${…}` reference in
+      `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL` beside the
+      production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
+      `MOBILE_UPDATE_URL_*`. Each throws at boot with the variable named.
 
 `validateEnv` rejects an **empty string** exactly as it rejects an absent key
 (`typeof value !== 'string' || value.trim().length === 0`), so a name that is

@@ -162,5 +162,10 @@ export async function fetchWithRetry(
  * injectable `fetchImpl = fetch` parameter, so swapping that default is the
  * whole cutover: production picks up the timeout and the method-scoped retry,
  * and every test that injects its own double is untouched by construction.
+ *
+ * Not for a GitHub call. `ghRequest` (`./github.mjs`) bounds every call itself,
+ * so a `resilientFetch` handed to it as `fetchImpl` would run all its attempts
+ * under that one deadline, and a stall on the first would end them all. A
+ * GitHub read retries by passing `retry: true` to `ghRequest` (#2333).
  */
 export const resilientFetch = (url, init) => fetchWithRetry(url, init);

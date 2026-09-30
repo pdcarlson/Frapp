@@ -203,6 +203,8 @@ describe("runWatchdog", () => {
     assert.ok(created.labels.includes("P1"));
     assert.match(created.body, /\/health\/ready/);
     assert.doesNotMatch(created.body, /Fixes #/);
+    // The open-alert check's read is handed to raiseAlert, not repeated (#2333).
+    assert.equal(calls.filter((c) => c.url.includes("/issues?state=all")).length, 1);
   });
 
   it("closes the alert on recovery only when lookup succeeded", async () => {

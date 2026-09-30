@@ -5,10 +5,20 @@ import request from 'supertest';
 import { configureApp, TRUST_PROXY_HOPS } from './bootstrap';
 import { enqueueSanitizedLog } from './infrastructure/analytics/posthog-runtime';
 import { getRequestId } from './infrastructure/observability/request-als';
+import type { DeploymentEnvironment } from './interface/http/deployment-environment';
+import { createProxyChainTripwire } from './interface/middleware/proxy-chain-tripwire.middleware';
 
 jest.mock('./infrastructure/analytics/posthog-runtime', () => ({
   enqueueSanitizedLog: jest.fn(),
   captureSentryErrorCorrelated: jest.fn(),
+}));
+
+// What the tripwire reports is its own spec's business; here the question is
+// only which deployments register it, and with which count.
+jest.mock('./interface/middleware/proxy-chain-tripwire.middleware', () => ({
+  createProxyChainTripwire: jest.fn(
+    () => (_req: unknown, _res: unknown, next: () => void) => next(),
+  ),
 }));
 
 /** Echoes what Express resolved, so the assertions read the real resolution. */
@@ -20,12 +30,15 @@ class EchoController {
   }
 }
 
-async function createConfiguredEchoApp(): Promise<INestApplication> {
+/** No `environment` configures for this process, which under Jest is `local`. */
+async function createConfiguredEchoApp(
+  environment?: DeploymentEnvironment,
+): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     controllers: [EchoController],
   }).compile();
   const app = moduleRef.createNestApplication();
-  configureApp(app);
+  configureApp(app, environment);
   await app.init();
   return app;
 }
@@ -60,8 +73,10 @@ describe('configureApp', () => {
         .getHttpAdapter()
         .getInstance<{ get: (setting: string) => unknown }>();
 
-      expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS);
-      expect(TRUST_PROXY_HOPS).toBe(3);
+      expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.local);
+      // Measured per service: staging's chain is three entries (#864),
+      // production's two (#2972). `local` carries staging's figure.
+      expect(TRUST_PROXY_HOPS).toEqual({ production: 2, staging: 3, local: 3 });
     });
 
     // The whole point of a hop *count*: entries beyond the trusted ones are the
@@ -100,9 +115,9 @@ describe('configureApp', () => {
     // trusts N entries whether or not N proxies appended them, so where the real
     // chain is shorter than TRUST_PROXY_HOPS — local dev, or any route that
     // bypasses Render's edge — the leftmost entry wins and a client can set its
-    // own `req.ip`. Deployed traffic always carries the measured three (#864).
-    // If this ever starts failing, the trust model changed and #864 needs
-    // re-reading before the number is touched.
+    // own `req.ip`. That is exactly what production ran into under staging's
+    // count (#2972). If this ever starts failing, the trust model changed and
+    // #864 needs re-reading before the number is touched.
     it('over-trusts a chain shorter than the hop count (known boundary)', async () => {
       const res = await get('1.2.3.4').expect(200);
 
@@ -115,6 +130,148 @@ describe('configureApp', () => {
 
       expect(res.body.ips).toEqual([]);
       expect(res.body.ip).toBeDefined();
+    });
+  });
+
+  describe('trust proxy per deployment (#2972)', () => {
+    const apps: INestApplication[] = [];
+    const appFor = async (environment?: DeploymentEnvironment) => {
+      const configured = await createConfiguredEchoApp(environment);
+      apps.push(configured);
+      return configured;
+    };
+
+    afterAll(async () => {
+      await Promise.all(apps.map((configured) => configured.close()));
+    });
+
+    beforeEach(() => jest.mocked(createProxyChainTripwire).mockClear());
+
+    // Production's proxies append two entries. Under staging's count of three
+    // the forged value below was `req.ip`, and each rotation a fresh
+    // rate-limit bucket.
+    it('resolves the real client behind a forged prefix on production’s two-hop chain', async () => {
+      const prod = await appFor('production');
+
+      const res = await request(prod.getHttpServer())
+        .get('/v1/echo')
+        // forged, real client, the one proxy that appends before the socket
+        .set('X-Forwarded-For', '203.0.113.99, 198.51.100.5, 192.0.2.1')
+        .expect(200);
+
+      expect(res.body.ip).toBe('198.51.100.5');
+      expect(res.body.ips[0]).toBe('198.51.100.5');
+    });
+
+    it.each([
+      ['production', 2],
+      ['staging', 3],
+    ] as const)(
+      'arms the chain tripwire on %s with its own count',
+      async (environment, hops) => {
+        const configured = await appFor(environment);
+
+        const instance = configured
+          .getHttpAdapter()
+          .getInstance<{ get: (setting: string) => unknown }>();
+        expect(instance.get('trust proxy')).toBe(hops);
+        expect(createProxyChainTripwire).toHaveBeenCalledWith(hops);
+      },
+    );
+
+    // `main.ts` calls `configureApp(app)` with no environment, so the process's
+    // own NODE_ENV has to reach the hop count, the tripwire and CORS. Every
+    // other case here passes one explicitly and would stay green if it didn't.
+    it('takes the deployment from the process when none is passed, as main.ts does', async () => {
+      const savedNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      const configured = await appFor().finally(() => {
+        process.env.NODE_ENV = savedNodeEnv;
+      });
+
+      const instance = configured
+        .getHttpAdapter()
+        .getInstance<{ get: (setting: string) => unknown }>();
+      expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.production);
+      expect(createProxyChainTripwire).toHaveBeenCalledWith(
+        TRUST_PROXY_HOPS.production,
+      );
+      const preflight = (origin: string) =>
+        request(configured.getHttpServer())
+          .options('/v1/echo')
+          .set('Origin', origin)
+          .set('Access-Control-Request-Method', 'GET')
+          .expect(204);
+      expect(
+        (await preflight('https://app.frapp.live')).headers[
+          'access-control-allow-origin'
+        ],
+      ).toBe('https://app.frapp.live');
+      expect(
+        (await preflight('http://localhost:3000')).headers[
+          'access-control-allow-origin'
+        ],
+      ).toBeUndefined();
+    });
+
+    it('does not arm it locally, where every chain is shorter than the count', async () => {
+      await appFor('local');
+
+      expect(createProxyChainTripwire).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('CORS origins per deployment (#2507)', () => {
+    const apps = new Map<DeploymentEnvironment, INestApplication>();
+
+    beforeAll(async () => {
+      for (const environment of ['production', 'staging', 'local'] as const) {
+        apps.set(environment, await createConfiguredEchoApp(environment));
+      }
+    });
+
+    afterAll(async () => {
+      await Promise.all(
+        [...apps.values()].map((configured) => configured.close()),
+      );
+    });
+
+    const allowOrigin = async (
+      environment: DeploymentEnvironment,
+      origin: string,
+    ) => {
+      const configured = apps.get(environment) as INestApplication;
+      const res = await request(configured.getHttpServer())
+        .options('/v1/echo')
+        .set('Origin', origin)
+        .set('Access-Control-Request-Method', 'GET')
+        .expect(204);
+      return res.headers['access-control-allow-origin'] as string | undefined;
+    };
+
+    it.each([
+      ['production', 'https://app.frapp.live'],
+      ['staging', 'https://app.staging.frapp.live'],
+      ['staging', 'http://localhost:3000'],
+      ['local', 'http://localhost:3000'],
+      ['local', 'http://localhost:3002'],
+    ] as const)('%s admits %s', async (environment, origin) => {
+      expect(await allowOrigin(environment, origin)).toBe(origin);
+    });
+
+    // The acceptance criterion: production stops trusting the staging
+    // dashboard, and every other `*.frapp.live` host the old pattern let in.
+    it.each([
+      ['production', 'https://app.staging.frapp.live'],
+      ['production', 'https://staging.frapp.live'],
+      ['production', 'https://docs.frapp.live'],
+      ['production', 'https://frapp.live'],
+      ['production', 'http://localhost:3000'],
+      ['staging', 'https://app.frapp.live'],
+      ['local', 'https://app.frapp.live'],
+      ['local', 'https://app.staging.frapp.live'],
+    ] as const)('%s refuses %s', async (environment, origin) => {
+      expect(await allowOrigin(environment, origin)).toBeUndefined();
     });
   });
 
@@ -231,16 +388,14 @@ describe('configureApp', () => {
     it('mints a request id when the client sent none, even if trace headers are present', async () => {
       const res = await request(app.getHttpServer())
         .get('/v1/echo')
-        .set('Origin', 'https://app.frapp.live')
+        .set('Origin', DASHBOARD_ORIGIN)
         .set(
           'sentry-trace',
           '00-cccccccccccccccccccccccccccccccc-dddddddddddddddd-01',
         )
         .expect(200);
 
-      expect(res.headers['access-control-allow-origin']).toBe(
-        'https://app.frapp.live',
-      );
+      expect(res.headers['access-control-allow-origin']).toBe(DASHBOARD_ORIGIN);
       expect(res.headers['x-request-id']).toMatch(/^req_[0-9a-f-]{36}$/);
       expect(res.headers['x-request-id']).not.toContain('cccccccc');
     });

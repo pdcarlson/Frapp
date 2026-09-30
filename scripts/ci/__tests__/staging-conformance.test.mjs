@@ -2137,21 +2137,19 @@ test("a conformant run whose first alert lookup fails is red, and never says an 
   assert.ok(!lines.some((l) => /still open/.test(l)));
 });
 
-test("a conformant run whose second alert lookup (resolveAlert's) fails is red, with an ::error::", async () => {
-  // The gate reads an open alert it may close; resolveAlert's own lookup then
-  // 502s. Before #2627 that read as "none" and the run went green.
+test("a conformant run closes an open alert on the gate's one read (#2333)", async () => {
+  // The gate reads an open alert it may close and hands that read to
+  // resolveAlert. Before #2333 resolveAlert read the same pages again, and a
+  // 502 on that second read turned a proven recovery into an unread red run.
   const open = [{ number: 700, state: "open", title: ALERT.title, body: "" }];
   const { fetchImpl, writes, lookupCount } = issueLookups([open, 502]);
-  const { logger, lines } = linesLogger();
   const run = await runStagingConformance({
-    token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger,
+    token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger: quiet,
   });
-  assert.equal(lookupCount(), 2);
-  assert.deepEqual(run.alert, { action: "unread", closed: [] });
-  assert.equal(conformanceExitCode(run), 1);
-  assert.equal(writes.length, 0);
-  assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
-  assert.ok(!lines.some((l) => /still open/.test(l)));
+  assert.equal(lookupCount(), 1);
+  assert.deepEqual(run.alert, { action: "closed", closed: [700] });
+  assert.equal(conformanceExitCode(run), 0);
+  assert.ok(writes.some((w) => w.method === "PATCH" && w.url.endsWith("/issues/700")));
 });
 
 test("a conformant run whose gate read nothing open does not look again, and stays green", async () => {

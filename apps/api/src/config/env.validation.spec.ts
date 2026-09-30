@@ -94,6 +94,46 @@ describe('validateEnv', () => {
     );
   });
 
+  // #2532. The key swap puts the publishable and secret keys side by side, and
+  // a service client built on the client one boots and then reads nothing.
+  describe('SUPABASE_SERVICE_ROLE_KEY authority', () => {
+    const jwtWith = (claims: unknown): string =>
+      `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`;
+
+    it.each([
+      ['a secret key', 'sb_secret_not-a-real-key'],
+      ['the legacy service_role JWT', jwtWith({ role: 'service_role' })],
+      ['an unclassifiable stand-in', 'ci-not-a-real-key'],
+    ])('accepts %s', (_why, key) => {
+      expect(() =>
+        validateEnv({ ...complete, SUPABASE_SERVICE_ROLE_KEY: key }),
+      ).not.toThrow();
+    });
+
+    it.each([
+      ['the publishable key', 'sb_publishable_not-a-real-key'],
+      ['the legacy anon JWT', jwtWith({ role: 'anon', ref: 'abc' })],
+    ])('refuses %s, without echoing it', (_why, key) => {
+      let message = '';
+      try {
+        validateEnv({ ...complete, SUPABASE_SERVICE_ROLE_KEY: key });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/SUPABASE_SERVICE_ROLE_KEY holds a client key/);
+      expect(message).not.toContain(key);
+    });
+
+    it('refuses an unresolved Infisical reference', () => {
+      expect(() =>
+        validateEnv({
+          ...complete,
+          SUPABASE_SERVICE_ROLE_KEY: '${SUPABASE_SERVICE_ROLE_KEY}',
+        }),
+      ).toThrow(/unresolved variable reference/);
+    });
+  });
+
   const productionSupabase = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
 
   it('allows production Supabase with unset or production APP_URL', () => {

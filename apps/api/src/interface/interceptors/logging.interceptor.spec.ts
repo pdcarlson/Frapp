@@ -161,6 +161,43 @@ describe('LoggingInterceptor', () => {
     });
   });
 
+  it('records the mobile build from X-Client-Version on both sinks (#2507)', async () => {
+    await run(
+      context({
+        ...request,
+        headers: { ...request.headers, 'x-client-version': 'ios/0.9.0+12' },
+      }),
+      { handle: () => of({ ok: true }) },
+    );
+
+    expect(JSON.parse(logged[0])).toMatchObject({
+      clientVersion: 'ios/0.9.0+12',
+    });
+    const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+      { attributes: Record<string, unknown> },
+    ];
+    expect(record.attributes.client_version).toBe('ios/0.9.0+12');
+  });
+
+  it('logs a malformed X-Client-Version as invalid, not as sent', async () => {
+    await run(
+      context({
+        ...request,
+        headers: { ...request.headers, 'x-client-version': 'ios/<script>' },
+      }),
+      { handle: () => of({ ok: true }) },
+    );
+
+    expect(JSON.parse(logged[0])).toMatchObject({ clientVersion: 'invalid' });
+    expect(logged[0]).not.toContain('<script>');
+  });
+
+  it('omits the field when no client version was sent (the web dashboard)', async () => {
+    await run(context(request), { handle: () => of({ ok: true }) });
+
+    expect(JSON.parse(logged[0])).not.toHaveProperty('clientVersion');
+  });
+
   // The point of the whole change: spec/behavior/observability.md forbids
   // logging IP addresses unconditionally. A future edit that "helpfully"
   // substitutes the raw value for the count must fail here.
