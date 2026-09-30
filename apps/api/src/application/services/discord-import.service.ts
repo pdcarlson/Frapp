@@ -1404,7 +1404,9 @@ export class DiscordImportService {
    * Both writes go through `RbacService`, so each role created and each
    * permission granted writes its `chapter_audit_log` row as `userId`, the
    * member who started the import, as the same change made on Settings →
-   * Roles would (#2599).
+   * Roles would (#2599). A start that fails on one of those audit writes has
+   * already made the change, and the retry skips it like any other finished
+   * step, so that role or grant stays unaudited (#1599).
    */
   private async provisionRoles(
     importId: string,
@@ -1551,24 +1553,34 @@ export class DiscordImportService {
     let order = Math.max(0, ...roles.map((role) => role.display_order));
     for (const [key, plan] of toCreate) {
       order += 1;
-      const role = await this.rbac.create(chapterId, userId, {
-        name: plan.name,
-        permissions: plan.permissions,
-        display_order: order,
-        color: null,
-      });
-      for (const entry of provisioned) {
-        if (
-          entry.action === 'new' &&
-          entry.frapp_role_id === null &&
-          roleNameKey(entry.new_role_name ?? entry.discord_role_name) === key
-        ) {
-          entry.frapp_role_id = role.id;
-        }
-      }
-      await this.importRepo.update(importId, chapterId, {
-        role_mapping: provisioned,
-      });
+      // The id is recorded before the role's audit row is written, not after
+      // `create` returns: that write can fail once the role exists, and a
+      // mapping without the id would make the retry refuse this very role.
+      await this.rbac.create(
+        chapterId,
+        userId,
+        {
+          name: plan.name,
+          permissions: plan.permissions,
+          display_order: order,
+          color: null,
+        },
+        async (role) => {
+          for (const entry of provisioned) {
+            if (
+              entry.action === 'new' &&
+              entry.frapp_role_id === null &&
+              roleNameKey(entry.new_role_name ?? entry.discord_role_name) ===
+                key
+            ) {
+              entry.frapp_role_id = role.id;
+            }
+          }
+          await this.importRepo.update(importId, chapterId, {
+            role_mapping: provisioned,
+          });
+        },
+      );
     }
 
     for (const grant of grants) {

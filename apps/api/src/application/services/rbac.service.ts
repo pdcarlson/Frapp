@@ -63,10 +63,18 @@ export class RbacService {
     return this.roleRepo.findByChapter(chapterId);
   }
 
+  /**
+   * `onCreated` runs after the role is inserted and before its audit row is
+   * written, for a caller that must record the new id whatever the audit write
+   * then does. The audit write can fail after the role exists (#1599), and a
+   * Discord import that had not recorded the id by then would refuse its own
+   * retry over the role it just made.
+   */
   async create(
     chapterId: string,
     actorUserId: string,
     data: Partial<Role>,
+    onCreated?: (role: Role) => Promise<void>,
   ): Promise<Role> {
     // Only the seeded President role may carry the wildcard: letting
     // `roles:manage` mint a new `*` role would bypass the presidency-transfer
@@ -94,6 +102,7 @@ export class RbacService {
       // carry a key.
       system_key: null,
     });
+    await onCreated?.(role);
     await this.chapterAuditLogService.record({
       chapterId,
       actorUserId,

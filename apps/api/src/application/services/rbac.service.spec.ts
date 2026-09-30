@@ -183,6 +183,93 @@ describe('RbacService', () => {
     expect(mockRoleRepo.create).toHaveBeenCalledTimes(1);
   });
 
+  // A Discord import records the new role's id in `onCreated`, so the id is
+  // kept even when the audit write that follows fails.
+  it('runs onCreated after the insert and before the audit write', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const order: string[] = [];
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.create.mockImplementation(async () => {
+      order.push('insert');
+      return role;
+    });
+    mockChapterAuditLogService.record.mockImplementation(async () => {
+      order.push('audit');
+      throw new Error('audit insert failed');
+    });
+    const onCreated = jest.fn(async () => {
+      order.push('onCreated');
+    });
+
+    await expect(
+      service.create(
+        'ch-1',
+        ACTOR,
+        { name: 'Custom', permissions: [] },
+        onCreated,
+      ),
+    ).rejects.toThrow('audit insert failed');
+    expect(onCreated).toHaveBeenCalledWith(role);
+    expect(order).toEqual(['insert', 'onCreated', 'audit']);
+  });
+
+  it('surfaces a failed audit write after the role is updated or deleted (#1599)', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: ['members:view'],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findById.mockResolvedValue(role);
+    mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+    mockRoleRepo.update.mockResolvedValue({ ...role, name: 'Renamed' });
+    mockRoleRepo.delete.mockResolvedValue(undefined);
+    mockChapterAuditLogService.record.mockRejectedValue(
+      new Error('audit insert failed'),
+    );
+
+    await expect(
+      service.update('role-1', 'ch-1', ACTOR, { name: 'Renamed' }),
+    ).rejects.toThrow('audit insert failed');
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
+      'audit insert failed',
+    );
+    expect(mockRoleRepo.update).toHaveBeenCalledTimes(1);
+    expect(mockRoleRepo.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes no role_deleted row when the delete itself fails', async () => {
+    mockRoleRepo.findById.mockResolvedValue({
+      id: 'role-1',
+      chapter_id: 'ch-1',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    });
+    mockRoleRepo.delete.mockRejectedValue(new Error('db boom'));
+
+    await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
+      'db boom',
+    );
+    expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+  });
+
   // Only the seeded President role may carry `*`; minting a new wildcard role
   // would bypass the presidency-transfer safeguard (spec/behavior/rbac.md).
   it('rejects creating a role with the wildcard permission', async () => {
@@ -789,6 +876,31 @@ describe('RbacService', () => {
       await expect(
         service.transferPresidency('ch-1', 'member-1', 'member-2'),
       ).rejects.toThrow('db boom');
+      expect(mockChapterAuditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a failed audit write after the transfer commits (#1599)', async () => {
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(
+          makeMember({
+            id: 'member-1',
+            user_id: 'user-1',
+            role_ids: [presidentRole.id],
+          }),
+        )
+        .mockResolvedValueOnce(
+          makeMember({ id: 'member-2', user_id: 'user-2' }),
+        );
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      mockMemberRepo.transferPresidencyAtomic.mockResolvedValue(true);
+      mockChapterAuditLogService.record.mockRejectedValue(
+        new Error('audit insert failed'),
+      );
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('audit insert failed');
+      expect(mockMemberRepo.transferPresidencyAtomic).toHaveBeenCalledTimes(1);
     });
   });
 

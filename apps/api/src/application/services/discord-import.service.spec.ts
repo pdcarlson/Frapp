@@ -1797,6 +1797,23 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
     };
   }
 
+  /**
+   * `RbacService.create` as the import sees it: the role exists, then
+   * `onCreated` runs, then the audit row would be written.
+   */
+  const createsRole =
+    (id = 'new-role-1') =>
+    async (
+      _chapter: string,
+      _user: string,
+      data: Record<string, unknown>,
+      onCreated?: (created: Record<string, unknown>) => Promise<void>,
+    ) => {
+      const created = { ...role({ id }), ...data };
+      await onCreated?.(created);
+      return created;
+    };
+
   const chapterRoles = () => [
     role({ id: EXEC_ROLE, name: 'Exec', permissions: ['members:view'] }),
     role({
@@ -2193,10 +2210,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       );
       repo.findChannels.mockResolvedValue([gated()]);
       rbac.findByChapter.mockResolvedValue(chapterRoles());
-      rbac.create.mockImplementation(async (_chapter, _user, data) => ({
-        ...role({ id: 'new-role-1' }),
-        ...data,
-      }));
+      rbac.create.mockImplementation(createsRole());
       rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
         ...role({ id }),
         ...data,
@@ -2205,13 +2219,18 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       await svc.start(IMPORT_ID, CHAPTER, USER, true);
 
       expect(rbac.create).toHaveBeenCalledTimes(1);
-      expect(rbac.create).toHaveBeenCalledWith(CHAPTER, USER, {
-        name: 'Rush Chair',
-        permissions: ['channels:read:rush-chair'],
-        // After every existing role, so it lists below the seeded ones.
-        display_order: 6,
-        color: null,
-      });
+      expect(rbac.create).toHaveBeenCalledWith(
+        CHAPTER,
+        USER,
+        {
+          name: 'Rush Chair',
+          permissions: ['channels:read:rush-chair'],
+          // After every existing role, so it lists below the seeded ones.
+          display_order: 6,
+          color: null,
+        },
+        expect.any(Function),
+      );
       expect(rbac.update).toHaveBeenCalledTimes(1);
       expect(rbac.update).toHaveBeenCalledWith(EXEC_ROLE, CHAPTER, USER, {
         permissions: ['members:view', 'channels:read:exec'],
@@ -2226,6 +2245,71 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
       ).toMatchObject({ action: 'new', frapp_role_id: 'new-role-1' });
     });
 
+    // The role's audit row is written after the role exists and can fail
+    // (#1599). The id must already be on the import by then, or the retry
+    // refuses the role this import just made as someone else's (#2599).
+    it("records a new role's id before its audit write, so a start that fails there resumes onto it", async () => {
+      const svc = await build(
+        job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      rbac.findByChapter.mockResolvedValue(chapterRoles());
+      rbac.create.mockImplementation(
+        async (
+          chapter: string,
+          user: string,
+          data: Record<string, unknown>,
+          onCreated?: (created: Record<string, unknown>) => Promise<void>,
+        ) => {
+          await createsRole()(chapter, user, data, onCreated);
+          throw new Error('audit insert failed');
+        },
+      );
+
+      await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
+        'audit insert failed',
+      );
+      const [, , recorded] = repo.update.mock.calls.at(-1);
+      expect(recorded.status).toBeUndefined();
+      expect(
+        recorded.role_mapping.find(
+          (entry: { discord_role_id: string }) =>
+            entry.discord_role_id === D_RUSH,
+        ),
+      ).toMatchObject({ action: 'new', frapp_role_id: 'new-role-1' });
+
+      // The retry reads the mapping the failed start left behind.
+      const retry = await build(
+        job({
+          source: 'bot',
+          guild_id: GUILD,
+          role_mapping: recorded.role_mapping,
+        }),
+      );
+      repo.findChannels.mockResolvedValue([gated()]);
+      rbac.findByChapter.mockResolvedValue([
+        ...chapterRoles(),
+        role({
+          id: 'new-role-1',
+          name: 'Rush Chair',
+          permissions: ['channels:read:rush-chair'],
+        }),
+      ]);
+      rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
+        ...role({ id }),
+        ...data,
+      }));
+
+      await retry.start(IMPORT_ID, CHAPTER, USER, true);
+
+      expect(rbac.create).not.toHaveBeenCalled();
+      expect(rbac.update).toHaveBeenCalledWith(EXEC_ROLE, CHAPTER, USER, {
+        permissions: ['members:view', 'channels:read:exec'],
+      });
+      const [, , patch] = repo.update.mock.calls.at(-1);
+      expect(patch.status).toBe('ready');
+    });
+
     it('creates a new role that gates nothing with no permissions at all', async () => {
       const svc = await build(
         job({ source: 'bot', guild_id: GUILD, role_mapping: savedMapping() }),
@@ -2237,10 +2321,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         }),
       ]);
       rbac.findByChapter.mockResolvedValue(chapterRoles());
-      rbac.create.mockImplementation(async (_chapter, _user, data) => ({
-        ...role({ id: 'new-role-1' }),
-        ...data,
-      }));
+      rbac.create.mockImplementation(createsRole());
       rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
         ...role({ id }),
         ...data,
@@ -2252,6 +2333,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
         CHAPTER,
         USER,
         expect.objectContaining({ name: 'Rush Chair', permissions: [] }),
+        expect.any(Function),
       );
     });
 
@@ -2356,10 +2438,7 @@ describe('DiscordImportService — Discord roles gate private channels (#2818)',
 
     const provisionable = () => {
       rbac.findByChapter.mockResolvedValue(chapterRoles());
-      rbac.create.mockImplementation(async (_chapter, _user, data) => ({
-        ...role({ id: 'new-role-1' }),
-        ...data,
-      }));
+      rbac.create.mockImplementation(createsRole());
       rbac.update.mockImplementation(async (id, _chapter, _user, data) => ({
         ...role({ id }),
         ...data,
