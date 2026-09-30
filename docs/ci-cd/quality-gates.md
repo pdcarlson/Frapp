@@ -41,9 +41,10 @@ the snapshot gate's exemption and could not block.
 Two things keep the required gate from passing vacuously, and both are load-bearing. `forbidOnly` is
 set under `CI`, so a committed `test.only` cannot narrow the gate to one route while still exiting 0.
 And Playwright exits **1** when a run collects no tests, so an emptied suite reddens the job rather
-than silently asserting nothing. That was verified by running it, not assumed — against the 1.62.1
-`npm ci` resolved at the time; the lockfile now resolves 1.63.0 (`apps/web/package.json` asks for
-`^1.63.0`), so re-check on any upgrade that moves the lockfile.
+than silently asserting nothing. That was verified by running it, not assumed: first against 1.62.1,
+then again on 2026-09-30 against 1.63.0, which the lockfile now resolves (`apps/web/package.json`
+asks for `^1.63.0`; an empty `tests/visual/` printed `Error: No tests found` and exited 1). Re-check
+on any upgrade that moves the lockfile.
 
 **The second guard narrowed when the snapshot suite went away, and a second spec has since
 replaced it.** `test:floor` runs the whole `apps/web/tests/visual/` directory instead of
