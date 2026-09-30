@@ -679,6 +679,24 @@ describe('AllExceptionsFilter', () => {
       expect(JSON.stringify(record)).not.toContain('database exploded');
     });
 
+    it('omits status_class for a status outside 100–599 rather than calling it 5xx (#2434)', () => {
+      new AllExceptionsFilter().catch(
+        new HttpException('out of range', 999),
+        host(),
+      );
+
+      expect(captureSentryErrorCorrelated).toHaveBeenCalledTimes(1);
+      const [, properties] = jest.mocked(captureSentryErrorCorrelated).mock
+        .calls[0] as [string, Record<string, unknown>];
+      expect(properties.status_class).toBeUndefined();
+
+      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0];
+      expect(record.body).toBe('error');
+      expect(record.attributes.status_code).toBe(999);
+      expect(record.attributes).not.toHaveProperty('status_class');
+    });
+
     it('does not emit the marker on 4xx', () => {
       new AllExceptionsFilter().catch(new ForbiddenException(), host());
       expect(captureSentryErrorCorrelated).not.toHaveBeenCalled();

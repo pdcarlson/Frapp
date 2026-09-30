@@ -198,6 +198,28 @@ describe('LoggingInterceptor', () => {
     expect(JSON.parse(logged[0])).not.toHaveProperty('clientVersion');
   });
 
+  it('buckets a 3xx response on the PostHog request row', async () => {
+    await run(context(request, 304), { handle: () => of({ ok: true }) });
+
+    const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+      { attributes: Record<string, unknown> },
+    ];
+    expect(record.attributes).toMatchObject({
+      status_code: 304,
+      status_class: '3xx',
+    });
+  });
+
+  it('omits status_class for a status outside 100–599 rather than calling it 5xx (#2434)', async () => {
+    await run(context(request, 999), { handle: () => of({ ok: true }) });
+
+    const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+      { attributes: Record<string, unknown> },
+    ];
+    expect(record.attributes.status_code).toBe(999);
+    expect(record.attributes).not.toHaveProperty('status_class');
+  });
+
   // The point of the whole change: spec/behavior/observability.md forbids
   // logging IP addresses unconditionally. A future edit that "helpfully"
   // substitutes the raw value for the count must fail here.

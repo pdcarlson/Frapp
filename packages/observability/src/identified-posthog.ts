@@ -45,7 +45,5 @@ export type {
 export {
   attachPostHogCorrelation,
   withPostHogSentryCorrelation,
-  headerValue,
-  httpStatusClass,
 } from "./sentry-posthog-correlation";
 export type { CorrelatableSentryEvent } from "./sentry-posthog-correlation";
