@@ -27,7 +27,8 @@ export interface AnonymousNextSentryRuntime {
   tracePropagationTargets?: string[];
 }
 
-const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
+const { scrubError, scrubTransaction, scrubEnvelope } =
+  createNoPseudonymScrubHooks();
 
 function sharedRuntimeOptions(runtime: AnonymousNextSentryRuntime) {
   const release = runtime.release || undefined;
@@ -51,29 +52,42 @@ function sharedRuntimeOptions(runtime: AnonymousNextSentryRuntime) {
 }
 
 /**
- * Options for the browser's `browserTracingIntegration`, which each app
- * passes in its `integrations` (an app-supplied instance replaces the
- * SDK's default one). This package does not depend on `@sentry/*`, so it
- * holds the options and the apps build the integration.
- *
- * **INP is off** (`webVitals.ignore: ['inp']`). The SDK (v10 and v11 alike) sends each INP measurement as
- * a standalone span, past `beforeSend` and `beforeSendTransaction`, and names
- * it after the clicked element's selector. That selector includes the
- * element's `aria-label`, `title`, `name` and `alt`, which in `apps/web` can
- * hold a member's or a channel's name. The same text also goes out as the
- * envelope's `trace.transaction` header, which no hook can reach. A static
- * `beforeSendSpan` was tried in #2722 and failed on both counts: it could
- * not touch that header, and v11 serialises a static standalone span from
- * `data` alone, so the scrubbed span arrived with no op or value at all.
- * Turn it back on once selector text is scrubbed everywhere it surfaces
- * (#2736). LCP, CLS, FCP and TTFB are unaffected: they ride on the pageload
- * transaction, through the transaction scrubber.
+ * The one client hook `sentryEnvelopeScrubIntegration` needs, described
+ * structurally so this package still imports nothing from `@sentry/*`.
  */
-export const SENTRY_BROWSER_TRACING_OPTIONS = {
-  // The v11 spelling. The older `enableInp: false` still works but is
-  // deprecated, and would stop existing at the next major.
-  webVitals: { ignore: ["inp" as const] },
-};
+interface SentryEnvelopeHookClient {
+  on(hook: "beforeEnvelope", callback: (envelope: unknown) => void): unknown;
+}
+
+/**
+ * Runs the scrubber's third entry point, `scrubSentryEnvelope`, on every
+ * envelope the browser SDK is about to send (#2736). Each app adds it to its
+ * `integrations`.
+ *
+ * It exists for **INP**, which the SDK sends as a standalone span: straight
+ * from the span, past `beforeSend` and `beforeSendTransaction`, named after
+ * the clicked element's selector. That selector carries the element's
+ * `aria-label` and `title`, which in `apps/web` hold member and channel
+ * names, and it also becomes the envelope's `trace.transaction` header,
+ * which no event hook can reach. `beforeEnvelope` sees the whole envelope,
+ * header included, just before the transport, and the SDK's own
+ * `moduleMetadata` integration strips data there the same way.
+ *
+ * A static `beforeSendSpan` was tried in #2722 and dropped: it couldn't touch
+ * the header, and v11 serialises a static standalone span from `data` alone,
+ * so the span arrived with no op or value. INP was off until this existed.
+ *
+ * An integration rather than an init option: `beforeEnvelope` is a client
+ * hook, and `setup` is where an integration gets the client.
+ */
+export function sentryEnvelopeScrubIntegration() {
+  return {
+    name: "FrappEnvelopeScrub",
+    setup(client: SentryEnvelopeHookClient) {
+      client.on("beforeEnvelope", scrubEnvelope);
+    },
+  };
+}
 
 /**
  * Browser Sentry options. Replay sample rates stay 0 while

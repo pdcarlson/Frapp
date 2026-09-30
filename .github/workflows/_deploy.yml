@@ -18,7 +18,8 @@ name: Deploy
 #   plan (staging) / rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
 #   the API by commit → verify it serves the commit → UPLOAD web + landing →
-#   point the staging hosts at them.
+#   point the staging hosts at them → ask Sentry for the source maps (reports,
+#   never fails).
 # A failure anywhere before the upload ships no frontend: a failed build before
 # anything is applied, a failed migration before the API, a failed API before
 # the frontends that call it. One job, because the built output lives in
@@ -124,6 +125,12 @@ on:
       applied:
         description: "Production: the outcome of the migration apply step"
         value: ${{ jobs.deploy.outputs.applied }}
+      sourcemaps:
+        description: "verify-sentry-sourcemaps.mjs's verdicts: one word per Sentry project, or empty when the check didn't run"
+        value: ${{ jobs.deploy.outputs.sourcemaps }}
+      sourcemaps-checked:
+        description: "The two source-map check steps' outcomes, run together: says whether an empty `sourcemaps` means none ran"
+        value: ${{ jobs.deploy.outputs.sourcemaps-checked }}
 
 permissions:
   contents: read
@@ -135,7 +142,9 @@ jobs:
     # secrets, after its main-only rule, and its reviewers (see the header).
     environment: ${{ inputs.environment }}
     # The steps' own ceilings: the Render poll 20 minutes, the served-commit
-    # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), on top
+    # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), the
+    # source-map check under 3 (a minute of re-asking, two intervals and one
+    # read), on top
     # of installs, two builds, production's rehearsal stack and the
     # migrations. 75 bounds the job past all of them.
     timeout-minutes: 75
@@ -171,12 +180,20 @@ jobs:
     # `plan` is staging's: a successful `stale` run neither raises nor closes
     # the alert, a successful `forward` one doesn't close it, a failed run of
     # either raises it, and a `current` one isn't reported as an API deploy.
-    # The rest feed production's summary.
+    # `sourcemaps` feeds each caller's source-map alerts; at most one of its
+    # two steps runs, so the other half of the value is always empty. It is
+    # verdict words only: the runner drops a job output that contains a value
+    # the Infisical injection masked, `staging` and `production` among them
+    # (verify-sentry-sourcemaps.mjs, "Why the output is only words").
+    # `sourcemaps-checked` says whether a check ran, so a dropped `sourcemaps`
+    # can't pass for "nothing built". The rest feed production's summary.
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       render-deploy-id: ${{ steps.render.outputs.deploy_id }}
       replay-outcome: ${{ steps.replay.outputs.outcome }}
       applied: ${{ steps.apply.outcome }}
+      sourcemaps: ${{ steps.sourcemaps-staging.outputs.verdicts }}${{ steps.sourcemaps-production.outputs.verdicts }}
+      sourcemaps-checked: ${{ steps.sourcemaps-staging.outcome }}${{ steps.sourcemaps-production.outcome }}
     steps:
       # Refused here, before any checkout: an environment this job doesn't
       # know, a SHA that isn't 40 lowercase hex (the rule
@@ -356,7 +373,9 @@ jobs:
       # tree, it would also set a floor on rollbacks: a commit from before the
       # script existed (#2505) could ship its API and then fail here. The script
       # and its `lib/` imports are Node built-ins only, so the copy needs no
-      # install.
+      # install. The source-map check at the end of the job (#2489) runs from
+      # this copy for the same reasons; the step keeps its name, which the
+      # deploy tests pin.
       - name: Keep a trusted copy of the served-commit check
         env:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
@@ -553,6 +572,15 @@ jobs:
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
         run: node scripts/run-migration.mjs --env "$TARGET_ENVIRONMENT" --dry-run
+
+      # The time this run's builds begin, for the source-map check at the end
+      # (#2489): staging and production upload to the same Sentry projects
+      # under the same release, and only a bundle uploaded after this counts
+      # as this run's. Before both environments' builds, and before the Render
+      # deploy that builds the API.
+      - name: Note when this run's builds begin
+        id: builds-start
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       # BUILD both bundles before anything is applied, so a failed build ships
       # nothing. Each project's `.vercel` is stashed under $RUNNER_TEMP for the
@@ -879,3 +907,44 @@ jobs:
             VERCEL_STAGING_ALIAS=staging.frapp.live \
             SERVICE_LABEL=frapp-landing \
             node scripts/ci/ensure-vercel-staging-alias.mjs
+
+      # LAST: ask Sentry whether this commit's source maps arrived, for each
+      # project whose build ran in this job or on Render (#2489). The uploads
+      # are best effort and never fail a build (#2431), so without this a
+      # revoked token, a renamed project or a token missing from Infisical
+      # shipped minified stack traces with every run green. From the trusted
+      # copy, like the served-commit check: it is a verdict on the deploy.
+      #
+      # It never fails the job. The script exits 0 on every verdict and every
+      # error of its own, asks the projects concurrently and re-asks for a
+      # minute at most, and writes one verdict word per project as the
+      # `sourcemaps` output, which each caller's `deploy-outcome` job turns
+      # into alerts (`sentry-sourcemaps-alert.mjs`). This job holds the Sentry
+      # token and no write scope; that one holds `issues: write` and no token.
+      #
+      # Staging: the API when this run deployed it, web and landing when it
+      # uploaded them. Production: all three on a real `full` run; a dry run
+      # withholds the token on purpose and uploads nothing, and a
+      # `migrations-only` run builds nothing. Only a bundle uploaded since
+      # `builds-start` counts; the script header says why.
+      - name: Check Sentry has this commit's source maps (staging)
+        id: sourcemaps-staging
+        if: inputs.environment == 'staging' && (steps.plan.outputs.deploy == 'true' || steps.plan.outputs.upload == 'true')
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          API_BUILT: ${{ steps.plan.outputs.deploy }}
+          FRONTENDS_BUILT: ${{ steps.plan.outputs.upload }}
+          SOURCEMAPS_SINCE: ${{ steps.builds-start.outputs.at }}
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: node "$TRUSTED_CI/verify-sentry-sourcemaps.mjs"
+
+      - name: Check Sentry has this commit's source maps (production)
+        id: sourcemaps-production
+        if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          API_BUILT: "true"
+          FRONTENDS_BUILT: "true"
+          SOURCEMAPS_SINCE: ${{ steps.builds-start.outputs.at }}
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: node "$TRUSTED_CI/verify-sentry-sourcemaps.mjs"

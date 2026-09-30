@@ -1204,6 +1204,7 @@ export class DiscordImportService {
   async start(
     id: string,
     chapterId: string,
+    userId: string,
     canManageRoles: boolean,
     options: { messagesAfter?: string | null } = {},
   ): Promise<DiscordImport> {
@@ -1303,6 +1304,7 @@ export class DiscordImportService {
     const roleMapping = await this.provisionRoles(
       id,
       chapterId,
+      userId,
       channels,
       parseRoleMapping(job.role_mapping),
       canManageRoles,
@@ -1395,13 +1397,23 @@ export class DiscordImportService {
    * A new role is created with only the read permissions that gate an
    * imported channel, and nothing else (owner's decision on #2818). Its id is
    * recorded on the import as soon as it exists, so a start that fails part
-   * way leaves a mapping that points at it, and re-running skips it. A role
-   * someone else added under a new role's name since is refused, not
+   * way leaves a mapping that points at it, and re-running skips it. The
+   * exception is a failure of that recording write itself: the role exists
+   * with no id on the import, and the retry refuses it as a clash (#2986).
+   * A role someone else added under a new role's name since is refused, not
    * adopted, and a permission a role already holds is not added twice.
+   *
+   * Both writes go through `RbacService`, so each role created and each
+   * permission granted writes its `chapter_audit_log` row as `userId`, the
+   * member who started the import, as the same change made on Settings →
+   * Roles would (#2599). A start that fails on one of those audit writes has
+   * already made the change, and the retry skips it like any other finished
+   * step, so that role or grant stays unaudited (#1599).
    */
   private async provisionRoles(
     importId: string,
     chapterId: string,
+    userId: string,
     channels: readonly DiscordImportChannel[],
     mapping: DiscordRoleMapping[],
     canManageRoles: boolean,
@@ -1543,24 +1555,34 @@ export class DiscordImportService {
     let order = Math.max(0, ...roles.map((role) => role.display_order));
     for (const [key, plan] of toCreate) {
       order += 1;
-      const role = await this.rbac.create(chapterId, {
-        name: plan.name,
-        permissions: plan.permissions,
-        display_order: order,
-        color: null,
-      });
-      for (const entry of provisioned) {
-        if (
-          entry.action === 'new' &&
-          entry.frapp_role_id === null &&
-          roleNameKey(entry.new_role_name ?? entry.discord_role_name) === key
-        ) {
-          entry.frapp_role_id = role.id;
-        }
-      }
-      await this.importRepo.update(importId, chapterId, {
-        role_mapping: provisioned,
-      });
+      // The id is recorded before the role's audit row is written, not after
+      // `create` returns: that write can fail once the role exists, and a
+      // mapping without the id would make the retry refuse this very role.
+      await this.rbac.create(
+        chapterId,
+        userId,
+        {
+          name: plan.name,
+          permissions: plan.permissions,
+          display_order: order,
+          color: null,
+        },
+        async (role) => {
+          for (const entry of provisioned) {
+            if (
+              entry.action === 'new' &&
+              entry.frapp_role_id === null &&
+              roleNameKey(entry.new_role_name ?? entry.discord_role_name) ===
+                key
+            ) {
+              entry.frapp_role_id = role.id;
+            }
+          }
+          await this.importRepo.update(importId, chapterId, {
+            role_mapping: provisioned,
+          });
+        },
+      );
     }
 
     for (const grant of grants) {
@@ -1568,7 +1590,7 @@ export class DiscordImportService {
       if (!role || role.permissions.includes(grant.permission)) continue;
       byId.set(
         role.id,
-        await this.rbac.update(role.id, chapterId, {
+        await this.rbac.update(role.id, chapterId, userId, {
           permissions: [...role.permissions, grant.permission],
         }),
       );
