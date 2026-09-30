@@ -134,9 +134,10 @@ answered …"* on the job.
 
 ### Collect Keys
 
-From each project's dashboard → Settings → API Keys, note the project URL (`SUPABASE_URL` /
-`NEXT_PUBLIC_SUPABASE_URL`), the client key (`SUPABASE_ANON_KEY`) and the service key
-(`SUPABASE_SERVICE_ROLE_KEY`, API only, never exposed to a client). Which key each name takes, and
+For each project, note its URL, `https://<project-ref>.supabase.co` (`SUPABASE_URL` /
+`NEXT_PUBLIC_SUPABASE_URL`), and from the dashboard → Settings → API Keys, the client key
+(`SUPABASE_ANON_KEY`) and the service key (`SUPABASE_SERVICE_ROLE_KEY`, API only, never exposed to
+a client). Which key each name takes, and
 which key generation, is in
 [`ENV_REFERENCE.md` § Core App Secrets](../../environment/ENV_REFERENCE.md#core-app-secrets).
 
