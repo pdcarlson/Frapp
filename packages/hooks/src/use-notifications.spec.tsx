@@ -9,6 +9,7 @@ import {
   notificationKeys,
   useUpdateNotificationPreference,
   useUpdateUserSettings,
+  useUserSettings,
   userSettingsKey,
 } from "./use-notifications";
 
@@ -342,6 +343,60 @@ describe("useUpdateNotificationPreference", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: notificationKeys.preferencesRoot,
     });
+  });
+});
+
+describe("useUserSettings", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = makeQueryClient();
+    vi.clearAllMocks();
+  });
+
+  // What the API answers for a member with no `user_settings` row since #2885,
+  // which is every member until their first save.
+  it("resolves the defaults the API sends for a member who never saved", async () => {
+    const defaults = {
+      quiet_hours_start: null,
+      quiet_hours_end: null,
+      quiet_hours_tz: null,
+      theme: "system",
+    };
+    const get = vi.fn().mockResolvedValue({ data: defaults, error: undefined });
+    const { result } = renderHook(() => useUserSettings(), {
+      wrapper: createWrapper({ GET: get }, queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(get).toHaveBeenCalledWith("/v1/settings");
+    expect(result.current.data).toEqual(defaults);
+  });
+
+  // Before #2885 the API sent `null` as an empty body, `openapi-fetch` read it
+  // as `data: undefined`, and the queryFn returned that. TanStack Query refuses
+  // `undefined` with a console error ("Query data cannot be undefined") and a
+  // generic failure. The hook now names the contract break itself.
+  it("rejects an empty body instead of resolving undefined", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const get = vi
+      .fn()
+      .mockResolvedValue({ data: undefined, error: undefined });
+    const { result } = renderHook(() => useUserSettings(), {
+      wrapper: createWrapper({ GET: get }, queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.error?.message).toBe(
+      "GET /v1/settings answered with an empty body",
+    );
+    expect(consoleError).not.toHaveBeenCalledWith(
+      expect.stringContaining("Query data cannot be undefined"),
+    );
+    consoleError.mockRestore();
   });
 });
 
