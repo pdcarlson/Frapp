@@ -1,7 +1,9 @@
 # Dependency updates (Dependabot)
 
+Facts for Dependabot's configuration, grouping, ignore list and held majors, and the dependency-tree traps they guard against. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
+
 Config: [`.github/dependabot.yml`](../../.github/dependabot.yml). This is the automated half of
-the supply-chain story; the blocking half is `npm run check:npm-audit` (above), which fails CI on any
+the supply-chain story; the blocking half is `npm run check:npm-audit` ([`agent-infra.md` → Lint, test, build](agent-infra.md#lint-test-build-repo-root)), which fails CI on any
 non-allowlisted high/critical advisory.
 
 **One ecosystem entry, at the root.** `apps/*` and `packages/*` are npm workspaces resolving through
@@ -86,8 +88,8 @@ what #2369 proposed, because that release landed while the PR sat red.
 `npm dedupe` is not a lever for this — neither it nor a root `overrides` entry moves an existing
 peer resolution, as that same record states. In this repo it never gets that far anyway: it
 re-resolves the whole tree and exits `ERESOLVE` on the `openapi-typescript` peer conflict under
-[TypeScript 7 is native `tsc` plus a TypeScript 6 compiler
-API](#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api) below.
+[`agent-infra.md` → TypeScript 7 is native `tsc` plus a TypeScript 6 compiler
+API](agent-infra.md#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api).
 
 ## The ignore list is a runtime constraint, not a preference
 
@@ -366,7 +368,7 @@ file. **The read half is answered as of 2026-09-02: alerts are DISABLED on this 
 `GET /repos/pdcarlson/Frapp/vulnerability-alerts` returns **404 `"disabled"`** when called direct
 (node `fetch`) — not the `403` this paragraph used to record, which was the agent proxy's
 GitHub-credential layer answering rather than GitHub, and therefore said nothing about the toggle
-either way (see **The `api.github.com` route rule** under Work status). A session can now read this
+either way (see **The `api.github.com` route rule** under [`agent-infra.md` → Work status](agent-infra.md#work-status)). A session can now read this
 setting; it still cannot flip it — the GitHub MCP exposes no repo-security-settings tool and the
 REST route above is a read channel. So #921 stays open as `[human]`, now scoped to the write half:
 turning alerts (and security updates) on in repo Settings. The alerts toggle is the half that was
@@ -375,4 +377,4 @@ itself read. Read that alongside § *The ignore list is a runtime constraint, no
 above: security PRs for the React/RN/Expo set are suppressed there deliberately, and with the
 repo-level toggle off no alert is being raised for anything else either — so `npm run
 check:npm-audit` in CI is the only vulnerability signal this repo actually has today, and unlike a
-Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` rows above).
+Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` row in [`agent-infra.md` → Lint, test, build](agent-infra.md#lint-test-build-repo-root)).

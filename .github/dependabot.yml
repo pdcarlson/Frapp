@@ -14,7 +14,7 @@
 #
 # Safety net: CI (`npm ci`, lint, type-check, unit + E2E suites) plus the
 # blocking high/critical audit gate (`npm run check:npm-audit`, #618) is what
-# makes auto-updates safe to merge. Docs: docs/ci-cd/agent-infra.md.
+# makes auto-updates safe to merge. Docs: docs/ci-cd/dependency-updates.md.
 version: 2
 
 updates:
@@ -61,7 +61,7 @@ updates:
       # half-move does not fail — npm satisfies both constraints by splitting
       # the shared hoisted node in two, and one side of that split is invisible
       # to CI. The measured trees, the two PRs they came from, and why one of
-      # them went GREEN are in docs/ci-cd/agent-infra.md
+      # them went GREEN are in docs/ci-cd/dependency-updates.md
       # § The vitest 5 major is held on jest-dom's matcher types. Deliberately
       # not restated here — see the React-pin note below on what happens to a
       # version pair copied into this file.
@@ -205,11 +205,11 @@ updates:
       # 58.0.0, and `eas build -p ios` failed with
       # `type 'Utilities' has no member 'keyWindow'`. Nothing in CI compiles
       # Swift, so a bump off the line passes every build step. Why the rule is
-      # mechanical and what the break looks like: docs/ci-cd/agent-infra.md
+      # mechanical and what the break looks like: docs/ci-cd/dependency-updates.md
       # § The ignore list is a runtime constraint, not a preference.
       # `npm run check:expo-sdk-line` (the mobile-validate CI job) enforces this
       # roster and the installed Expo packages' SDK line (#2330); exactly what
-      # it checks is in that same agent-infra.md section.
+      # it checks is in that same dependency-updates.md section.
       #
       # These move only as a version-locked set via a planned SDK upgrade
       # (#2329), like the React family above.
@@ -384,7 +384,7 @@ updates:
       #
       # Both reproduced locally (2026-09-21). The signatures, the measured
       # blast radius and the re-evaluation commands are in
-      # docs/ci-cd/agent-infra.md
+      # docs/ci-cd/dependency-updates.md
       # § The vitest 5 major is held on jest-dom's matcher types — kept there
       # rather than here so there is one copy to refresh, not two.
       #
