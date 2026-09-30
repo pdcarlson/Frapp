@@ -151,7 +151,7 @@ export function useChatRuntime(): ChatRuntime {
               },
             },
           );
-          if (error) throw error as Error;
+          if (error) throw error;
           return Array.isArray(data) ? (data as RawChatMessage[]) : [];
         },
       });

@@ -521,11 +521,11 @@ describe('BillingService', () => {
       expect(mockBillingProvider.createCustomer).not.toHaveBeenCalled();
     });
 
-    it('carries the portal in the past_due refusal message (#929, #1020)', async () => {
-      // AllExceptionsFilter drops `code` from every response (#1020), so the
-      // message is the only channel a client can map on. Asserted explicitly so
-      // that rewording it is a deliberate act rather than a silent break of the
-      // web client's routing.
+    it('carries the portal in the past_due refusal message (#929)', async () => {
+      // This refusal has no `code` (#2995 weighs adding one), so the message is
+      // the only channel a client can map on. Asserted explicitly so that
+      // rewording it is a deliberate act rather than a silent break of the web
+      // client's routing.
       mockChapterRepo.findById.mockResolvedValue({
         ...baseChapter,
         subscription_status: 'past_due' as const,

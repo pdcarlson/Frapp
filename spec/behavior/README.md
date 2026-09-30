@@ -59,16 +59,7 @@ Each topic file is canonical **intended** behavior. Delivery (which is shipped v
 
 ## Error Handling Standards
 
-All API errors follow a consistent shape:
-
-```json
-{
-  "statusCode": 404,
-  "error": "Not Found",
-  "message": "Event with id abc123 not found in this chapter.",
-  "requestId": "req_abc123def456"
-}
-```
+All API errors share one body, specified in [`architecture/README.md` § Error responses](../architecture/README.md#error-responses): `statusCode`, `error`, `message` and `requestId`, plus `code` when the refusal has one.
 
 - Internal errors (500) never expose database details or stack traces. The `requestId` enables support to locate the full error in logs.
 - Error logging is per status class, not uniform. A 5xx is logged as one flat JSON
