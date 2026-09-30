@@ -1,0 +1,39 @@
+{
+  "color-space-for-untagged-svg-colors": "srgb",
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "extended-srgb:0.10196,0.10196,0.10196,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "solid": "extended-srgb:0.10196,0.10196,0.10196,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "crest.svg",
+          "name": "crest"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

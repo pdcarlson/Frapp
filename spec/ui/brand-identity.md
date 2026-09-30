@@ -68,7 +68,7 @@ Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring,
 
 ### Platform requirements when the real mark lands
 
-- **iOS:** Light, Dark, and Tinted app-icon variants.
+- **iOS:** Light, Dark, and Tinted app-icon variants. Provided by an Icon Composer bundle from which iOS derives every appearance, unverified until the first EAS build compiles it ([assets.md](assets.md) §7).
 - **Android:** an adaptive icon with a monochrome layer.
 
 Asset production, storage, and sync are owned by [assets.md](assets.md).
