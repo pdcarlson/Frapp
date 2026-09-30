@@ -100,8 +100,8 @@ export function OpsSetupNudge() {
     President, who holds the wildcard), but custom roles are a shipped feature.
     If the server's requirement ever changes, this list changes with it.
 
-    Otherwise the same call `chat-shell` makes at :397-398 and `settings-page` at
-    :204. If permission resolution moves off `useMyPermissions` onto a viewer
+    Otherwise the same `useMyPermissions()` + `can(...)` call `ChatShell` and
+    `SettingsPage` make. If permission resolution moves off `useMyPermissions` onto a viewer
     context, this call site has to move with them or the surfaces will disagree.
   */
   const canDismiss = canAll(

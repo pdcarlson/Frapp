@@ -194,6 +194,7 @@ const slashGateReads = {
   orgConfigError: false,
   enabledModules: null as Record<string, boolean> | null,
   recruitment: undefined as string | undefined,
+  archetype: undefined as string | undefined,
 };
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
@@ -279,6 +280,7 @@ vi.mock("@repo/hooks", async () => ({
   useCurrentChapter: () => ({
     data: {
       enabled_modules: slashGateReads.enabledModules,
+      org_archetype: slashGateReads.archetype,
       vocabulary: slashGateReads.recruitment
         ? { recruitment: slashGateReads.recruitment }
         : undefined,
@@ -833,6 +835,7 @@ beforeEach(() => {
   slashGateReads.orgConfigError = false;
   slashGateReads.enabledModules = null;
   slashGateReads.recruitment = undefined;
+  slashGateReads.archetype = undefined;
   // Session-wide by design, so a row an earlier case showed against a ready
   // list would otherwise stay cleared into the next one.
   blockClearance.reset();
@@ -877,6 +880,19 @@ describe("ChatShell slash-command module gate (#2957, #2993)", () => {
     expect(screen.getByTestId("composer")).toHaveAttribute(
       "data-recruitment",
       "intake",
+    );
+  });
+
+  it("falls back to the archetype's word when the chapter stores none", () => {
+    // The member view carries the raw column; the archetype merge the config
+    // read applied has to happen on this path too, or an NPHC chapter with no
+    // stored word gets /rush.
+    slashGateReads.archetype = "nphc";
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-recruitment",
+      "Intake",
     );
   });
 

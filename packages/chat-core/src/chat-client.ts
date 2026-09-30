@@ -830,7 +830,13 @@ export async function hydrateOutboxIntoCache(
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {
-        next = markFailed(next, row.clientId, row.lastError ?? "Send failed");
+        // Through the same mapping as a live refusal: a row persisted before
+        // the mapping existed still carries the guard's sentence to an officer.
+        next = markFailed(
+          next,
+          row.clientId,
+          memberFacingRefusal(row.lastError ?? "Send failed"),
+        );
       }
     }
     return mergePersistedNotices(next, {

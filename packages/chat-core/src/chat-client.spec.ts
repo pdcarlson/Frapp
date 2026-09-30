@@ -585,6 +585,42 @@ describe("actOnCard", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it("gives a member their own copy when a vote is refused because Polls is off (#2993)", async () => {
+    // The vote path feeds mobile's action-error banner (through onError) and
+    // the web toast. Both must carry the member's row, not the guard's
+    // sentence to an officer.
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: "chapter.module.disabled",
+          message: moduleDisabledMessage("polls"),
+        },
+        response: { status: 403 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      actionType: "vote",
+      payload: { option_id: "opt-1" },
+    });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ description: POLLS_OFF_COPY }),
+    );
+    expect(onError).toHaveBeenCalledWith({
+      title: "Couldn't record action",
+      description: POLLS_OFF_COPY,
+    });
+  });
+
   it("fires both toast and onError, with the same message, on a rejected action", async () => {
     const apiClient = {
       POST: vi.fn().mockResolvedValue({
@@ -986,6 +1022,32 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
     expect(row?._status).toBe("recorded");
     expect(row?._replay).toBeUndefined();
     expect(row?._error).toMatch(/don't run this command again/i);
+  });
+
+  it("restores a Polls-refused row with the member's copy, even one persisted with the guard's sentence (#2993)", async () => {
+    const queryClient = new QueryClient();
+    const outbox = stubOutbox({
+      listForChannel: vi.fn().mockResolvedValue([
+        {
+          clientId: "c-poll",
+          channelId: "chan-1",
+          body: "Formal venue?",
+          kind: "poll",
+          attempts: 1,
+          status: "failed",
+          queuedAt: Date.now() - 5000,
+          lastError: moduleDisabledMessage("polls"),
+        } satisfies OutboxRow,
+      ]),
+    });
+    await hydrateOutboxIntoCache(
+      buildCtx({ queryClient, outbox, kv: memoryStore() }),
+      "chan-1",
+    );
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(cache?.byId["c-poll"]?._error).toBe(POLLS_OFF_COPY);
   });
 
   it("does not upsert a pending twin next to an already-confirmed server row (#1718)", async () => {
