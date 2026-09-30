@@ -452,12 +452,17 @@ jobs:
         run: node scripts/ci/plan-staging-deploy.mjs
 
       # ── Production: rehearse the migration before touching the database ──
-      # Only what the migrations need a real server for. The exclusion list is
-      # copied verbatim from migration-drift-gate.yml: a different list is a
-      # different rehearsal.
+      # The same stack migration-drift-gate.yml's `migration-replay` starts,
+      # through the same script: a different exclusion list is a different
+      # rehearsal. It retries when ghcr.io rate-limits an image pull (#2609),
+      # which would otherwise fail a production deploy before it began. Run
+      # from the trusted copy, like the served-commit check, so a rollback to a
+      # commit from before the script existed still starts the stack.
       - name: Start disposable Supabase stack
         if: inputs.environment == 'production'
-        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit
+        env:
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: bash "$TRUSTED_CI/supabase-start-disposable.sh"
 
       # The #1332 gate, run here against LIVE production state rather than at PR
       # time: rebuild production's applied set on the disposable stack, then

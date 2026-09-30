@@ -621,6 +621,18 @@ describe("installs run before any secret, and the trust split holds", () => {
     }
   });
 
+  // The rehearsal's stack starts after the detach, and a rollback can deploy a
+  // commit from before supabase-start-disposable.sh existed (#2609). Run from
+  // the deployed tree, the script would set a floor on rollbacks.
+  it("starts the rehearsal stack from the trusted copy, never the deployed tree", () => {
+    const copy = sharedSteps()[at("Keep a trusted copy of the served-commit check")];
+    const start = sharedSteps()[at("Start disposable Supabase stack")];
+    assert.equal(start.env.get("TRUSTED_CI"), copy.env.get("TRUSTED_CI"), "the stack start reads another copy");
+    assert.match(start.body, /run: bash "\$TRUSTED_CI\/supabase-start-disposable\.sh"/);
+    assert.doesNotMatch(start.body, /scripts\/ci\/supabase-start-disposable/, "the stack start runs the deployed tree's copy");
+    assert.ok(at("Start disposable Supabase stack") > at("Check out the commit being deployed"));
+  });
+
   // What made the #2801 fix possible to test at all: the verifier's copy needs
   // no install, so it must stay free of npm imports.
   it("the trusted copy needs no install: the verifier imports Node built-ins and ./lib only", () => {
