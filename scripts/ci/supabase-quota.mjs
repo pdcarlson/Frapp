@@ -6,18 +6,19 @@
 // billed: Supabase emails the billing address, starts a grace period, and then
 // restricts EVERY project in the organization, production included. The first
 // real Discord import on staging went over Free's storage quota that way, which
-// is why the organization moved to Pro (supabase.md § Plan and quotas, which
-// owns the numbers QUOTAS below copies). Supabase's own email arrives only once
-// a quota is already exceeded. This watch pages at 70%, while there is room to
+// is why the organization moved to Pro. docs/internal/ops/deployment/supabase.md
+// § Plan and quotas owns the quotas, and DISK_QUOTA_BYTES and
+// STORAGE_QUOTA_BYTES below copy them. Supabase's own email arrives only once a
+// quota is already exceeded. This watch pages at 70%, while there is room to
 // act.
 //
 // What it reads, per project in .github/environments.json:
 //
 //   - Disk: `GET /v1/projects/{ref}/config/disk/util`. On Pro the database's
-//     limit is its disk, not Free's 500 MB database size: 8 GB is included per
-//     project, the disk grows at 90% full, and the project goes read-only at 95%
-//     once resizes run out (Supabase, "Understanding Database and Disk Size").
-//     `fs_used_bytes` includes the database, its WAL and system files.
+//     limit is its disk, not Free's 500 MB database size, and with the spend cap
+//     on the disk doesn't grow past what Pro includes (supabase.md, as above).
+//     `fs_used_bytes` includes the database, its WAL and system files, and is
+//     judged against the included size, not the provisioned one.
 //   - Storage: the sum of `storage.objects` sizes, Supabase's own definition of
 //     storage size, read with `POST /v1/projects/{ref}/database/query/read-only`
 //     (runs as `supabase_read_only_user`). The quota is organization-wide, so
@@ -288,11 +289,12 @@ export function buildTable({ rows }) {
   ].join("\n");
 }
 
-function thresholdLine(threshold) {
-  const pct = Math.round(threshold * 1000) / 10;
-  return pct === DEFAULT_THRESHOLD_PERCENT
-    ? `Threshold: ${pct}% of each quota.`
-    : `Threshold: **${pct}%** of each quota, lowered for this run (the default is ${DEFAULT_THRESHOLD_PERCENT}%).`;
+export function thresholdLine(threshold) {
+  // Compared unrounded, so 69.99% is never labelled as the default; printed to
+  // four decimals at most, which drops the float noise of `threshold * 100`.
+  if (threshold === DEFAULT_THRESHOLD_PERCENT / 100) return `Threshold: ${DEFAULT_THRESHOLD_PERCENT}% of each quota.`;
+  const pct = Number((threshold * 100).toFixed(4));
+  return `Threshold: **${pct}%** of each quota, lowered for this run (the default is ${DEFAULT_THRESHOLD_PERCENT}%).`;
 }
 
 function runLine(runUrl) {
@@ -395,12 +397,18 @@ export async function runSupabaseQuota({
       alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ rows, threshold, runUrl }),
       buildCommentBody: ({ reopened }) => buildAlertCommentBody({ rows, threshold, runUrl, reopened }),
+      // The body is this run's table. Without a refresh, a reopen would keep the
+      // body of whichever run first filed the issue, which may be a test page.
+      refreshBodyOnRaise: true,
     });
     logger.log?.(
       alert.action === "failed"
         ? "::error::A Supabase quota needs attention, and the alert issue could not be written."
         : `[supabase-quota] alert issue #${alert.issueNumber} ${alert.action}`,
     );
+    if (alert.bodyRefreshFailed) {
+      logger.log?.("::warning::The alert comment was posted, but the issue body still shows an earlier run's table.");
+    }
     return { outcome: "alert", rows, alert };
   }
 
@@ -433,23 +441,31 @@ export function exitCodeFor({ outcome, alert }) {
   return alert.action === "none" || alert.action === "closed" ? 0 : 1;
 }
 
-async function main() {
-  const token = requireEnv("GITHUB_TOKEN");
-  const repo = requireEnv("GITHUB_REPOSITORY");
+/**
+ * The CLI. Returns the exit code rather than exiting, so a test can check that
+ * the workflow's threshold input reaches the run: that path is the only way the
+ * test page happens.
+ */
+export async function main({ env = process.env, run = runSupabaseQuota, log = console.error } = {}) {
+  const token = requireEnv("GITHUB_TOKEN", { env });
+  const repo = requireEnv("GITHUB_REPOSITORY", { env });
   let threshold;
   try {
-    threshold = parseThresholdPercent(process.env.SUPABASE_QUOTA_THRESHOLD_PERCENT);
+    threshold = parseThresholdPercent(env.SUPABASE_QUOTA_THRESHOLD_PERCENT);
   } catch (error) {
-    console.error(`::error::${error.message}`);
-    process.exit(2);
+    log(`::error::${error.message}`);
+    return 2;
   }
-  const code = exitCodeFor(await runSupabaseQuota({ token, repo, threshold }));
-  if (code !== 0) process.exit(code);
+  return exitCodeFor(await run({ token, repo, env, threshold }));
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  main().catch((error) => {
-    console.error(`Unhandled error: ${error.stack ?? error.message}`);
-    process.exit(1);
-  });
+  main()
+    .then((code) => {
+      if (code !== 0) process.exit(code);
+    })
+    .catch((error) => {
+      console.error(`Unhandled error: ${error.stack ?? error.message}`);
+      process.exit(1);
+    });
 }

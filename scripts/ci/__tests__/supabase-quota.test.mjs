@@ -13,10 +13,12 @@ import {
   evaluateUsage,
   exitCodeFor,
   formatBytes,
+  main,
   parseThresholdPercent,
   readDiskBytes,
   readStorageBytes,
   runSupabaseQuota,
+  thresholdLine,
 } from "../supabase-quota.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
@@ -110,6 +112,15 @@ describe("parseThresholdPercent", () => {
   });
 });
 
+describe("thresholdLine", () => {
+  it("labels only the exact default as the default", () => {
+    assert.equal(thresholdLine(0.7), "Threshold: 70% of each quota.");
+    assert.match(thresholdLine(parseThresholdPercent("69.99")), /^Threshold: \*\*69\.99%\*\* of each quota, lowered for this run/);
+    assert.match(thresholdLine(parseThresholdPercent("0.04")), /^Threshold: \*\*0\.04%\*\*/);
+    assert.match(thresholdLine(0), /^Threshold: \*\*0%\*\*/);
+  });
+});
+
 describe("readDiskBytes", () => {
   it("reads fs_used_bytes from the disk utilization endpoint, with the project's token", async () => {
     const mock = makeFetchMock([{ method: "GET", path: "/config/disk/util", body: diskBody(3e9) }]);
@@ -161,6 +172,26 @@ describe("readStorageBytes", () => {
     const call = mock.calls[0];
     assert.equal(call.url, "https://api.supabase.com/v1/projects/stagingref00000001/database/query/read-only");
     assert.deepEqual(JSON.parse(call.body), { query: STORAGE_SIZE_SQL });
+  });
+
+  it("re-sends the query after a transient failure, though it is a POST", async () => {
+    const mock = makeFetchMock([
+      {
+        method: "POST",
+        path: "/database/query/read-only",
+        status: undefined,
+        body: [{ bytes: "7" }],
+      },
+    ]);
+    let attempts = 0;
+    const fetchImpl = async (url, init) => {
+      attempts += 1;
+      if (attempts === 1) return { ok: false, status: 503, text: async () => "{}" };
+      return { ...(await mock.fetchImpl(url, init)), status: 201, ok: true };
+    };
+    const result = await readStorageBytes({ projectRef: "r", token: "t", fetchImpl, sleep: async () => {} });
+    assert.deepEqual(result, { ok: true, bytes: 7 });
+    assert.equal(attempts, 2);
   });
 
   it("asks only for a schema-qualified read", () => {
@@ -303,7 +334,7 @@ describe("runSupabaseQuota", () => {
     const open = [{ number: 42, title: ALERT.title, state: "open", assignees: [], labels: [{ name: ALERT_LOOKUP_LABEL }] }];
     const mock = supabaseRoutes({ prodStorageStatus: 401, openAlerts: open });
     const result = await run({ mock });
-    assert.deepEqual(result.alert, { action: "commented", issueNumber: 42 });
+    assert.deepEqual(result.alert, { action: "commented", issueNumber: 42, bodyRefreshFailed: false });
     assert.equal(issueCreates(mock.calls).length, 0);
     assert.equal(closes(mock.calls).length, 0);
   });
@@ -328,6 +359,76 @@ describe("runSupabaseQuota", () => {
     const result = await run({ mock });
     assert.equal(result.alert.action, "unread");
     assert.equal(exitCodeFor(result), 1);
+  });
+});
+
+describe("runSupabaseQuota, reopening", () => {
+  it("rewrites the body of a reopened alert, so a test page's table can't outlive it", async () => {
+    const closed = [
+      {
+        number: 42,
+        title: ALERT.title,
+        state: "closed",
+        assignees: [],
+        body: "Threshold: **0%** of each quota, lowered for this run (the default is 70%).",
+        labels: [{ name: ALERT_LOOKUP_LABEL }],
+      },
+    ];
+    const mock = supabaseRoutes({ stagingDisk: 6e9, openAlerts: closed });
+    const result = await run({ mock });
+    assert.equal(result.alert.action, "reopened");
+    const patch = mock.calls.find((c) => c.method === "PATCH" && c.url.endsWith("/issues/42"));
+    const body = JSON.parse(patch.body);
+    assert.equal(body.state, "open");
+    assert.match(body.body, /^The daily Supabase quota watch/);
+    assert.match(body.body, /Threshold: 70% of each quota\./);
+    assert.match(body.body, /\| Disk \| frapp-staging \| 6\.00 GB of 8\.00 GB \(75\.0%\) \| \*\*over\*\* \|/);
+    assert.doesNotMatch(body.body, /lowered for this run/);
+  });
+});
+
+describe("exitCodeFor", () => {
+  it("is 0 only for a clean run whose alert state is known to match", () => {
+    assert.equal(exitCodeFor({ outcome: "ok", alert: { action: "none" } }), 0);
+    assert.equal(exitCodeFor({ outcome: "ok", alert: { action: "closed" } }), 0);
+    assert.equal(exitCodeFor({ outcome: "ok", alert: { action: "failed" } }), 1, "an alert left open by a failed close");
+    assert.equal(exitCodeFor({ outcome: "ok", alert: { action: "unread" } }), 1);
+    assert.equal(exitCodeFor({ outcome: "alert", alert: { action: "commented" } }), 1);
+  });
+});
+
+describe("main", () => {
+  const ENV = { GITHUB_TOKEN: "g", GITHUB_REPOSITORY: REPO, ...TOKENS };
+
+  function capture(result = { outcome: "ok", alert: { action: "none" } }) {
+    const seen = [];
+    return { seen, run: async (options) => (seen.push(options), result) };
+  }
+
+  it("hands the workflow's threshold input to the run: the test page's only path", async () => {
+    const { seen, run: fakeRun } = capture({ outcome: "alert", alert: { action: "created" } });
+    const code = await main({ env: { ...ENV, SUPABASE_QUOTA_THRESHOLD_PERCENT: "0" }, run: fakeRun, log: () => {} });
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].threshold, 0);
+    assert.equal(seen[0].env.SUPABASE_ACCESS_TOKEN_STAGING, "sbp_staging_token", "the run reads tokens from the same env");
+    assert.deepEqual([seen[0].token, seen[0].repo], ["g", REPO]);
+    assert.equal(code, 1);
+  });
+
+  it("runs at the default when the input is empty, as on a scheduled run", async () => {
+    const { seen, run: fakeRun } = capture();
+    const code = await main({ env: { ...ENV, SUPABASE_QUOTA_THRESHOLD_PERCENT: "" }, run: fakeRun, log: () => {} });
+    assert.equal(seen[0].threshold, 0.7);
+    assert.equal(code, 0);
+  });
+
+  it("exits 2 without reading anything when the threshold is out of range", async () => {
+    const { seen, run: fakeRun } = capture();
+    const logged = [];
+    const code = await main({ env: { ...ENV, SUPABASE_QUOTA_THRESHOLD_PERCENT: "80" }, run: fakeRun, log: (m) => logged.push(m) });
+    assert.equal(code, 2);
+    assert.equal(seen.length, 0);
+    assert.match(logged[0], /^::error::SUPABASE_QUOTA_THRESHOLD_PERCENT must be a number from 0 to 70/);
   });
 });
 
