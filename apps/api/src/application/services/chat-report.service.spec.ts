@@ -8,6 +8,7 @@ import {
   ChatReportService,
   REPORT_FILED_NOTIFICATION,
   REPORT_QUEUE_PERMISSIONS,
+  reportedContentSnapshot,
 } from './chat-report.service';
 import {
   ChannelAccessService,
@@ -355,6 +356,102 @@ describe('ChatReportService', () => {
           reported_author_name: 'someone#1234',
         }),
       );
+    });
+
+    describe('a poll (#2724)', () => {
+      const pollMessage: ChatMessage = {
+        ...baseMessage,
+        content: 'Where should we eat?',
+        kind: 'poll',
+        payload: {
+          question: 'Where should we eat?',
+          options: [
+            { id: 'a', label: 'Pizza' },
+            { id: 'b', label: 'something harassing' },
+          ],
+          closes_at: '2026-03-02T00:00:00.000Z',
+        },
+      };
+
+      it('snapshots the option labels as well as the question', async () => {
+        channelAccess.assertMessageAccess.mockResolvedValue(pollMessage);
+
+        await service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'harassment',
+        });
+
+        expect(reportRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reported_content:
+              'Where should we eat?\n- Pizza\n- something harassing',
+          }),
+        );
+      });
+
+      it('keeps the option text after the author deletes the poll', async () => {
+        // The failure #2724 names: the author's own delete tombstones
+        // `content` and wipes the card, and the officer queue reads only the
+        // report's snapshot. The store below is the report table: the
+        // snapshot is written once, at file time, and nothing rewrites it.
+        let message: ChatMessage = pollMessage;
+        const stored: ChatMessageReportView[] = [];
+        channelAccess.assertMessageAccess.mockImplementation(
+          async () => message,
+        );
+        reportRepo.create.mockImplementation(async (input) => {
+          const row: ChatMessageReportView = {
+            ...baseReport,
+            ...input,
+            details: input.details ?? null,
+          };
+          stored.push(row);
+          return { report: row, created: true };
+        });
+        reportRepo.findByChapterAndStatus.mockImplementation(
+          async () => stored,
+        );
+
+        await service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'harassment',
+        });
+        message = {
+          ...pollMessage,
+          content: '[message deleted]',
+          is_deleted: true,
+          metadata: {},
+          payload: null,
+        };
+
+        const [report] = await service.listReports(CHAPTER, OFFICER);
+        expect(report.reported_content).toContain('something harassing');
+        expect(report.reported_content).toContain('Where should we eat?');
+      });
+
+      it('reads the older `type: POLL` shape, whose options are strings in metadata', async () => {
+        channelAccess.assertMessageAccess.mockResolvedValue({
+          ...baseMessage,
+          content: 'Formal date?',
+          type: 'POLL',
+          metadata: {
+            question: 'Formal date?',
+            options: ['Friday', 'Saturday'],
+            choice_mode: 'single',
+          },
+        } satisfies ChatMessage);
+
+        await service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'spam',
+        });
+
+        expect(reportRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reported_content: 'Formal date?\n- Friday\n- Saturday',
+          }),
+        );
+      });
     });
 
     it('returns whatever the repository resolved, so a duplicate open report is not an error', async () => {
@@ -766,11 +863,12 @@ describe('ChatReportService', () => {
       expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
-    it('withdraws the claim and rethrows a 4xx refusal even when the message is gone', async () => {
+    it('rethrows a 4xx refusal even when the message is gone, withdrawing the claim and then closing the report unstamped', async () => {
       // A 4xx is the access check refusing this caller before anything was
       // written — here, an officer removed from the chapter after the guard
       // admitted the request. It is not an answer about the message, so the
-      // sender having deleted it already must not turn it into a 200.
+      // sender having deleted it already must not turn it into a 200, and the
+      // refused call must not be recorded as the removal (#2748).
       const refusal = new ForbiddenException(
         'You do not have access to this channel',
       );
@@ -784,10 +882,44 @@ describe('ChatReportService', () => {
         service.removeReportedMessage('report-1', CHAPTER, OFFICER),
       ).rejects.toBe(refusal);
 
-      expect(chatService.reportedMessageState).not.toHaveBeenCalled();
+      // Withdrawn first, then read — after the write, so a removal racing it
+      // cannot slip between the two.
       expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
+      expect(chatService.reportedMessageState).toHaveBeenCalledWith(
+        MESSAGE_ID,
+        CHAPTER,
+      );
+      expect(reportRepo.releaseClaim.mock.invocationCallOrder[0]).toBeLessThan(
+        chatService.reportedMessageState.mock.invocationCallOrder[0],
+      );
+      // Gone, so closed with no officer's stamp rather than left open.
+      expect(reportRepo.closeForDeletedMessage).toHaveBeenCalledWith(
+        'report-1',
+        CHAPTER,
+        expect.any(String),
+      );
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
       expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
+    });
+
+    it('does not re-check the message when the claim could not be withdrawn', async () => {
+      chatService.deleteReportedMessage.mockRejectedValue(
+        new ForbiddenException('You do not have access to this channel'),
+      );
+      reportRepo.releaseClaim.mockResolvedValue(false);
+      jest
+        .spyOn(
+          (service as unknown as { logger: { error: jest.Mock } }).logger,
+          'error',
+        )
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(chatService.reportedMessageState).not.toHaveBeenCalled();
+      expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
     });
 
     it("keeps the removal's own error, and logs, when the claim cannot be withdrawn either", async () => {
@@ -962,6 +1094,8 @@ describe('ChatReportService', () => {
     const OTHER_OFFICER = 'user-other-officer';
     let rows: Map<string, ChatMessageReportView>;
     let messageDeleted: boolean;
+    /** The row itself is gone: a channel delete or the import purge. */
+    let messageRowGone: boolean;
 
     const current = (id: string) => rows.get(id)!;
 
@@ -971,6 +1105,7 @@ describe('ChatReportService', () => {
         ['report-2', { ...baseReport, id: 'report-2', reason: 'spam' }],
       ]);
       messageDeleted = false;
+      messageRowGone = false;
 
       const visible = (row: ChatMessageReportView, chapterId: string) =>
         row.chapter_id === chapterId;
@@ -1024,10 +1159,25 @@ describe('ChatReportService', () => {
           return true;
         },
       );
-      chatService.reportedMessageState.mockImplementation(async () => ({
-        channelId: 'chan-1',
-        isDeleted: messageDeleted,
-      }));
+      reportRepo.closeForDeletedMessage.mockImplementation(
+        async (id, chapterId, at) => {
+          const row = rows.get(id);
+          if (!row || !visible(row, chapterId) || row.status !== 'open') {
+            return false;
+          }
+          Object.assign(row, {
+            status: 'actioned',
+            resolved_by: null,
+            resolved_at: at,
+          });
+          return true;
+        },
+      );
+      chatService.reportedMessageState.mockImplementation(async () =>
+        messageRowGone
+          ? null
+          : { channelId: 'chan-1', isDeleted: messageDeleted },
+      );
       chatService.deleteReportedMessage.mockImplementation(async () => {
         const alreadyDeleted = messageDeleted;
         messageDeleted = true;
@@ -1168,6 +1318,113 @@ describe('ChatReportService', () => {
       expect(chatService.deleteReportedMessage).toHaveBeenCalledTimes(1);
     });
 
+    describe('a removal refused while another takes the message (#2748)', () => {
+      const refusal = new ForbiddenException(
+        'You do not have access to this channel',
+      );
+
+      /**
+       * OFFICER's removal of report-1 has claimed it, and while it is in
+       * flight OTHER_OFFICER removes the message through report-2. That sweep
+       * skips report-1, which the claim has made `actioned`. Then OFFICER's own
+       * delete is refused.
+       */
+      function refuseAfterSiblingRemoval(error: Error) {
+        chatService.deleteReportedMessage.mockImplementationOnce(async () => {
+          await service.removeReportedMessage(
+            'report-2',
+            CHAPTER,
+            OTHER_OFFICER,
+          );
+          throw error;
+        });
+      }
+
+      it("a 403 leaves the report closed with no officer's stamp, not back in the open queue", async () => {
+        refuseAfterSiblingRemoval(refusal);
+
+        // The refused officer still gets the refusal, never "already removed".
+        await expect(
+          service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+        ).rejects.toBe(refusal);
+
+        // Withdrawn — the refused call removed nothing — and then closed,
+        // because the message is gone: nobody's removal of it succeeded.
+        expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
+        expect(current('report-1')).toMatchObject({
+          status: 'actioned',
+          resolved_by: null,
+        });
+        expect(current('report-1').resolved_at).not.toBeNull();
+        expect(current('report-2')).toMatchObject({
+          status: 'actioned',
+          resolved_by: OTHER_OFFICER,
+        });
+        expect(
+          [...rows.values()].filter((row) => row.status === 'open'),
+        ).toEqual([]);
+      });
+
+      it('a 404 for a row hard-deleted mid-removal closes the report the same way', async () => {
+        const gone = new NotFoundException('Message not found');
+        chatService.deleteReportedMessage.mockImplementationOnce(async () => {
+          messageRowGone = true;
+          throw gone;
+        });
+
+        await expect(
+          service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+        ).rejects.toBe(gone);
+
+        expect(current('report-1')).toMatchObject({
+          status: 'actioned',
+          resolved_by: null,
+        });
+      });
+
+      it('a failure whose re-read saw the message, which then went before the release, still closes', async () => {
+        // The 5xx branch reads the message (still there), and the sibling's
+        // removal lands between that read and the release. Only a read after
+        // the release can see it.
+        chatService.deleteReportedMessage.mockRejectedValueOnce(
+          new Error('db down'),
+        );
+        chatService.reportedMessageState.mockImplementationOnce(async () => {
+          const before = { channelId: 'chan-1', isDeleted: false };
+          await service.removeReportedMessage(
+            'report-2',
+            CHAPTER,
+            OTHER_OFFICER,
+          );
+          return before;
+        });
+
+        await expect(
+          service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+        ).rejects.toThrow('db down');
+
+        expect(current('report-1')).toMatchObject({
+          status: 'actioned',
+          resolved_by: null,
+        });
+      });
+
+      it('a refusal over a message still in place reopens the report for a retry, as before', async () => {
+        chatService.deleteReportedMessage.mockRejectedValueOnce(refusal);
+
+        await expect(
+          service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+        ).rejects.toBe(refusal);
+
+        expect(current('report-1')).toMatchObject({
+          status: 'open',
+          resolved_by: null,
+          resolved_at: null,
+        });
+        expect(reportRepo.closeForDeletedMessage).not.toHaveBeenCalled();
+      });
+    });
+
     it('the second of two removals on sibling reports gets the same 200, whichever order they land in', async () => {
       const first = await service.removeReportedMessage(
         'report-1',
@@ -1294,5 +1551,62 @@ describe('ChatReportService', () => {
         service.resolveReport('report-1', CHAPTER, 'dismissed', OFFICER),
       ).rejects.toThrow(ConflictException);
     });
+  });
+});
+
+describe('reportedContentSnapshot', () => {
+  const text = {
+    content: 'hello',
+    type: 'TEXT' as const,
+    kind: 'text' as const,
+    payload: null,
+    metadata: {},
+  };
+
+  it('is the content for anything that is not a poll', () => {
+    expect(reportedContentSnapshot(text)).toBe('hello');
+    // A card of another kind carries no member-written options.
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        kind: 'announcement',
+        payload: { options: [{ label: 'not a poll' }] },
+      }),
+    ).toBe('hello');
+  });
+
+  it("adds the card's question when it differs from content, since the card shows the question", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'edited text',
+        kind: 'poll',
+        payload: {
+          question: 'the original question',
+          options: [
+            { id: 'a', label: 'A' },
+            { id: 'b', label: 'B' },
+          ],
+        },
+      }),
+    ).toBe('edited text\nthe original question\n- A\n- B');
+  });
+
+  it('falls back to the content for a card it cannot read, rather than failing the report', () => {
+    for (const payload of [
+      null,
+      'not an object',
+      { question: 'q' },
+      { question: 'q', options: 'nope' },
+      { question: 'q', options: [{ id: 'a' }, 7, null] },
+    ]) {
+      expect(
+        reportedContentSnapshot({
+          ...text,
+          kind: 'poll',
+          payload: payload as ChatMessage['payload'],
+        }),
+      ).toBe('hello');
+    }
   });
 });

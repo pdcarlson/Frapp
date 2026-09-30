@@ -194,7 +194,10 @@ export interface IChatMessageReportRepository {
    * For a report that landed on a message removed while it was being written
    * (`ChatReportService.fileReport`): the removal's sweep had already run, so
    * nothing else would close it, and leaving it open would page every officer
-   * about a message that is already gone. No officer decided it, so none is
+   * about a message that is already gone. And for a report {@link releaseClaim}
+   * just put back to `open` whose message turns out to be gone (#2748): a
+   * sibling's removal swept past it while the claim stood, so it would sit in
+   * the queue with nothing to act on. No officer decided it, so none is
    * stamped. Scoped by chapter and conditional on `status = 'open'` like every
    * write here.
    */

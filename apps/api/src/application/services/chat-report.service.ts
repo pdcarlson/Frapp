@@ -15,6 +15,7 @@ import type {
   ChatReportResolutionStatus,
   ChatReportStatus,
 } from '#domain/entities/chat-moderation.entity';
+import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import {
   ChannelAccessService,
@@ -152,6 +153,8 @@ export class ChatReportService {
    * snapshot's sender, #2878). Mirroring
    * `sender_id` alone would snapshot nobody for exactly the rows the import
    * purge later hard-deletes, leaving an officer with content and no author.
+   * The content is {@link reportedContentSnapshot}: for a poll that is the
+   * question *and* the option labels, which the member also wrote (#2724).
    *
    * Idempotency is the repository's: a second report on the same message while
    * the first is still `open` returns that first report instead of surfacing the
@@ -206,7 +209,7 @@ export class ChatReportService {
       chapter_id: chapterId,
       message_id: input.message_id,
       reporter_user_id: reporterUserId,
-      reported_content: message.content,
+      reported_content: reportedContentSnapshot(message),
       reported_sender_id: message.sender_id,
       reported_author_name: message.author_name ?? null,
       reason: input.reason,
@@ -214,7 +217,14 @@ export class ChatReportService {
     });
     if (!created) return report;
 
-    if (await this.closeIfMessageGone(report.id, input.message_id, chapterId)) {
+    if (
+      await this.closeIfMessageGone(
+        report.id,
+        input.message_id,
+        chapterId,
+        'filed on a message deleted as it landed',
+      )
+    ) {
       throw messageDeletedConflict();
     }
 
@@ -223,27 +233,34 @@ export class ChatReportService {
   }
 
   /**
-   * The re-check after a new report is written: if its message was removed in
-   * the meantime, close the report as `actioned` (no reviewer — nobody decided
-   * it) and answer `true`.
+   * The re-check after a report has just been made `open` — written by
+   * {@link fileReport}, or put back by a withdrawn removal claim
+   * ({@link settleFailedRemoval}): if its message is gone by now (soft- or
+   * hard-deleted), close the report as `actioned` (no reviewer — nobody decided
+   * it) and answer `true`. `context` says which, for the log.
    *
-   * **Never fails the report.** The row is committed, and a 500 here would
+   * **A read after the write**, so it cannot miss a removal that raced it: a
+   * removal's sibling sweep runs after its delete, so either the sweep ran
+   * after this report was open and closed it, or the delete committed before
+   * this read and the read sees it.
+   *
+   * **Never fails the caller.** The row is committed, and a 500 here would
    * invite a retry that the idempotent path answers silently — so if the read
-   * itself fails, the message is taken to be live and the officers are told,
-   * which is the ordinary outcome. A close that fails is logged; the report
-   * then sits `open` over a deleted message until an officer's Remove closes
-   * it (idempotently), and nobody was paged about it.
+   * itself fails, the message is taken to be live, which is the ordinary
+   * outcome. A close that fails is logged; the report then sits `open` over a
+   * deleted message until an officer's Remove closes it (idempotently).
    *
-   * One window stays open by construction: a removal that has claimed its
-   * report but not yet deleted the message. A report written then reads the
-   * message live and notifies; the removal's sweep, which runs after its
-   * delete, then closes it. The officers were paged about a report that is
+   * One window stays open by construction for a new report: a removal that has
+   * claimed its report but not yet deleted the message. A report written then
+   * reads the message live and notifies; the removal's sweep, which runs after
+   * its delete, then closes it. The officers were paged about a report that is
    * already `actioned` when they open the queue — noise, not a lost report.
    */
   private async closeIfMessageGone(
     reportId: string,
     messageId: string,
     chapterId: string,
+    context: string,
   ): Promise<boolean> {
     let state: ReportedMessageState | null;
     try {
@@ -252,7 +269,7 @@ export class ChatReportService {
       logThrowable(
         this.logger,
         'warn',
-        `Could not re-check the message of new chat report ${reportId}`,
+        `Could not re-check the message of chat report ${reportId}, ${context}`,
         error,
       );
       return false;
@@ -269,7 +286,7 @@ export class ChatReportService {
       logThrowable(
         this.logger,
         'warn',
-        `Could not close chat report ${reportId}, filed on a message deleted as it landed`,
+        `Could not close chat report ${reportId}, ${context}`,
         error,
       );
     }
@@ -393,9 +410,10 @@ export class ChatReportService {
    *    what the report says:
    *    - **A 4xx** was decided before anything was written — the access check
    *      refused this caller ({@link decidedBeforeWrite}) — so the claim is
-   *      withdrawn ({@link releaseClaim}) whatever state the message is in. A
-   *      refusal is never an answer about the message: an officer removed
-   *      from the chapter mid-request must get the 403, not "already removed".
+   *      withdrawn ({@link releaseClaim}): this call removed nothing, and the
+   *      record must not say it did. A refusal is never an answer about the
+   *      message: an officer removed from the chapter mid-request must get the
+   *      403, not "already removed".
    *    - **Anything else** is not proof that nothing was written, because
    *      Postgres can commit the tombstone and the answer still be lost on the
    *      way back, so the message is read again
@@ -408,6 +426,15 @@ export class ChatReportService {
    *      over a removed message for a Dismiss to record as "left up". The
    *      client says the outcome is unknown and refetches, and a retry gets
    *      the report-level replay's 200.
+   *
+   *    **A withdrawn claim never leaves the report open over a message that is
+   *    gone** (#2748). While the claim stood, the report was `actioned`, so
+   *    another officer's removal through a sibling report swept past it, and
+   *    the sender or a channel delete may have removed the message too. So
+   *    once the claim is withdrawn the message is read again
+   *    ({@link closeIfMessageGone}), and if it is gone the report closes as
+   *    `actioned` with no officer stamp — nobody's removal of it succeeded —
+   *    instead of going back to the queue with nothing to act on.
    * 3. **Sweep.** Every other open report on the message closes, in one
    *    conditional `UPDATE` stamped with this officer and the claim's
    *    timestamp. It runs *after* the delete so it also catches a report filed
@@ -571,7 +598,20 @@ export class ChatReportService {
           chapterId,
         );
     if (!state?.isDeleted) {
-      await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt);
+      const released = await this.releaseClaim(
+        reportId,
+        chapterId,
+        officerUserId,
+        claimedAt,
+      );
+      if (released) {
+        await this.closeIfMessageGone(
+          reportId,
+          messageId,
+          chapterId,
+          'reopened by a failed removal over a message that is gone',
+        );
+      }
       return;
     }
     await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
@@ -634,13 +674,16 @@ export class ChatReportService {
    * and the partial unique index refuses a second open one — is logged at
    * `error`, because the record now says `actioned` over a message that may
    * still be there, and a person has to look.
+   *
+   * Answers whether the report is `open` again, which is when the caller
+   * re-checks the message.
    */
   private async releaseClaim(
     reportId: string,
     chapterId: string,
     officerUserId: string,
     resolvedAt: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const released = await this.reportRepo.releaseClaim(
         reportId,
@@ -654,6 +697,7 @@ export class ChatReportService {
           { reportId, chapterId },
         );
       }
+      return released;
     } catch (error) {
       logThrowable(
         this.logger,
@@ -661,6 +705,7 @@ export class ChatReportService {
         `Could not release the claim on chat report ${reportId} after a failed removal`,
         error,
       );
+      return false;
     }
   }
 
@@ -748,6 +793,68 @@ export class ChatReportService {
     if (!report) throw new NotFoundException('Report not found');
     return report;
   }
+}
+
+/**
+ * The text a report snapshots as `reported_content`: what the member wrote, as
+ * it stood when the report was filed (`spec/behavior/chat/README.md` § Report,
+ * "A report carries its own evidence").
+ *
+ * For most messages that is `content`. **A poll's member-written text is not
+ * all in `content`** (#2724): `content` holds the question, and the option
+ * labels live only on the card — without them, an innocuous question with a
+ * harassing option is reported as the question alone, and the author's delete
+ * leaves the officer nothing else. So a poll snapshots `content`, then the
+ * card's question on its own line if it differs from `content` (the card shows
+ * the question, not `content`), then one `- label` line per option. The web
+ * queue renders the snapshot with its line breaks.
+ *
+ * Polls come in two shapes, and both are read: today's clients post
+ * `kind: 'poll'` with `payload.options: [{ id, label }]` (chat-core's
+ * `dispatchPoll`), and the older `POST /v1/channels/:id/polls` writes
+ * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
+ * A malformed card falls back to `content`, the same as any other message:
+ * this runs on the filing path and must not fail it.
+ */
+export function reportedContentSnapshot(
+  message: Pick<
+    ChatMessage,
+    'content' | 'type' | 'kind' | 'payload' | 'metadata'
+  >,
+): string {
+  const poll = pollText(message);
+  if (!poll || poll.labels.length === 0) return message.content;
+  const lines = [message.content];
+  if (poll.question && poll.question.trim() !== message.content.trim()) {
+    lines.push(poll.question);
+  }
+  for (const label of poll.labels) lines.push(`- ${label}`);
+  return lines.join('\n');
+}
+
+function pollText(
+  message: Pick<ChatMessage, 'type' | 'kind' | 'payload' | 'metadata'>,
+): { question: string | null; labels: string[] } | null {
+  let card: unknown;
+  if (message.kind === 'poll') card = message.payload;
+  else if (message.type === 'POLL') card = message.metadata;
+  else return null;
+  if (!card || typeof card !== 'object') return null;
+
+  const { question, options } = card as {
+    question?: unknown;
+    options?: unknown;
+  };
+  if (!Array.isArray(options)) return null;
+  const labels: string[] = [];
+  for (const option of options) {
+    const label: unknown =
+      option && typeof option === 'object'
+        ? (option as { label?: unknown }).label
+        : option;
+    if (typeof label === 'string') labels.push(label);
+  }
+  return { question: typeof question === 'string' ? question : null, labels };
 }
 
 /**
