@@ -84,7 +84,7 @@ const ESCAPED_CHAR = new RegExp(
  * draw as raw source is still flattened here. The renderers do that for a
  * body nested past the depth cap (`markdown-depth-cap.ts`, #2209) and for one
  * too costly to parse (`markdown-parse-budget.ts`, #2664), which includes a
- * long formatted list or code block. A one-line quote reads better flattened.
+ * long numbered list heavy with bold. A one-line quote reads better flattened.
  *
  * **Over-stripping is the failure mode that matters, not under-stripping.**
  * The chain was diffed against `mdast-util-from-markdown` over 28 inputs

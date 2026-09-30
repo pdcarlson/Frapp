@@ -9,7 +9,7 @@
  * parse every text message on the main JS thread: web's `MessageMarkdown` and
  * mobile's `parseMessageMarkdown`, which runs on Hermes with no JIT. Measured
  * in Node 24 (micromark 4.0.2), cap-length bodies of `_` or `**` runs took
- * 1.3–1.8 s, and `"[".repeat(4999) + "a" + "]".repeat(4999)` 1.6 s, against
+ * 1.0–1.8 s, and `"[".repeat(4999) + "a" + "]".repeat(4999)` 1.6 s, against
  * 2–30 ms for ordinary bodies of the same length. Every member who opens the
  * channel pays that, once per mount. The depth cap can't help: it runs after
  * the parse, and several of these shapes are not deep.
@@ -35,14 +35,20 @@
  *   work grows with those openers times the length, and faster across line
  *   endings, which the scan tokenizes. A tag opener (`<a`, `</a`) stops at its
  *   line or its attributes and measured cheap at any count.
+ * - **Container runs** (block, not inline). micromark re-checks every open
+ *   block quote and list item on each line, and a line with no marker of its
+ *   own continues a paragraph inside them lazily, which is quadratic in the
+ *   lines. See `MAX_CONTAINER_RUN_LINES`.
  *
- * **The estimate.** Per paragraph, three products, each with a budget:
+ * **The estimate.** Per paragraph, three products and a count, each with a
+ * budget:
  *
  * - the `*`, `_` and `]` count, plus each `<!` or `<?` weighted four times,
  *   times the characters that can start a construct (an upper bound on the
  *   events);
  * - the `]`, `<!` and `<?` count times the length;
- * - the `![` count times the length.
+ * - the `![` count times the length;
+ * - the container markers and lines from its first container line on.
  *
  * Any one over its budget, and the body skips the parse. An `_` between two
  * ASCII letters or digits is left out of the first count: it can neither open
@@ -50,25 +56,28 @@
  * snake_case names in prose and code from counting as formatting. It is still
  * a construct, since it still adds events.
  *
- * **It runs high, never low.** Paragraphs are split only at blank lines,
- * which is where CommonMark ends one; a block quote, list item or code fence
- * can end one sooner. Telling those apart is where CommonMark's rules get
- * subtle (an HTML block can make a line that looks like a fence into text),
- * and a wrong split would hide a costly paragraph, so the scan doesn't try.
- * Every delimiter counts, including ones inside code or escaped, for the same
- * reason. Over-counting costs one message its formatting; under-counting
- * costs every reader the parse. What it over-counts in practice is long block
- * content without blank lines: a list of about 55 items that each carry bold
- * and a link renders as raw text.
+ * **It runs high, never low.** A paragraph ends at a blank line, and at a
+ * bullet or `1.` list item with content, indented at most three spaces:
+ * CommonMark always lets those interrupt a paragraph, so a long bulleted list
+ * is measured item by item. Anything else that might end one is ignored: a
+ * `2.` item or a `>` line can be a lazy continuation, and a line that looks
+ * like a code fence can sit inside an HTML block, so a split there could hide
+ * a costly paragraph. Every delimiter counts, including ones inside code or
+ * escaped, for the same reason. Over-counting costs one message its
+ * formatting; under-counting costs every reader the parse. What it
+ * over-counts in practice is long block content without blank lines: a
+ * numbered list of about 70 items that each carry bold, or a code block heavy
+ * with `*` or `<?` (PHP, HTML comments), renders as raw text.
  *
  * **The budgets** were set by searching shape families for the slowest body
  * that stays under them: runs, nests, failing closers, labels, images and
  * unclosed raw HTML, each padded with text, entities, escapes, code spans, raw
- * HTML, snake_case or short lines. The slowest took 60–75 ms in Node 24, and
- * all of them were bodies of 5,000 short lines, which take about 55 ms with no
- * delimiters at all. That is the inline cost. Block structure isn't
- * estimated: its parse is linear, but a cap-length list of 2,500 one-letter
- * items still takes about 130 ms. Ordinary chat sits inside: a
+ * HTML, snake_case or short lines; and lazy runs and long, nested or padded
+ * lists. Best of three runs in Node 24 on the machine that set them, the
+ * slowest inline bodies took 60–85 ms, all of them bodies of 5,000 short lines
+ * that take 45–90 ms with no delimiters at all, and the slowest block bodies
+ * about 50 ms. The spread between runs is wide, so treat these as a scale,
+ * not a bound. Ordinary chat sits inside: a
  * 10,000-character paragraph with 60 bold phrases, 30 links and 30 entities
  * estimates at about 90% of the event budget, and a message with several
  * paragraphs is measured one paragraph at a time. Image openers get the
@@ -144,7 +153,103 @@ function isIntraword(content: string, index: number): boolean {
   );
 }
 
-/** Whether any paragraph of `content` estimates over one of the three budgets. */
+/**
+ * How long a run may be, from a paragraph's first container line (a block
+ * quote or list marker) to the next blank line: each line weighs its markers,
+ * or one if it has none. micromark re-checks every open container on each
+ * line, and a line with no marker of its own continues the paragraph lazily,
+ * which is quadratic: `">a\n" + "b\n".repeat(4998)` took 450 ms. Past 1,000
+ * the body skips the parse. That also bounds long or deeply nested lists,
+ * which are linear but slow per marker (2,500 items took 130 ms).
+ */
+export const MAX_CONTAINER_RUN_LINES = 1_000;
+
+interface LineStart {
+  /** How many block quote and list markers the line opens with. */
+  markers: number;
+  /**
+   * The line is a list item CommonMark always lets interrupt a paragraph, so
+   * it ends the one before it: a bullet, or an ordered item numbered `1`, with
+   * content after the marker, indented at most three spaces and no tab. Any
+   * other marker line may be a paragraph's lazy continuation, so it doesn't.
+   */
+  startsItem: boolean;
+}
+
+function isDigit(char: string | undefined): boolean {
+  return char !== undefined && char >= "0" && char <= "9";
+}
+
+function isSpace(char: string | undefined): boolean {
+  return char === " " || char === "\t";
+}
+
+/**
+ * The end of the block quote or list marker at `at`, or -1 when there isn't
+ * one; and whether it is a marker that may interrupt a paragraph.
+ */
+function readMarker(
+  content: string,
+  at: number,
+  end: number,
+): { after: number; interrupts: boolean } {
+  const char = content[at];
+  if (char === ">") return { after: at + 1, interrupts: false };
+  let after = -1;
+  let interrupts = true;
+  if (char === "-" || char === "+" || char === "*") {
+    after = at + 1;
+  } else if (isDigit(char)) {
+    let digits = at;
+    while (digits < end && digits - at < 9 && isDigit(content[digits])) {
+      digits += 1;
+    }
+    if (content[digits] === "." || content[digits] === ")") {
+      after = digits + 1;
+      interrupts = digits === at + 1 && char === "1";
+    }
+  }
+  // A list marker needs a space, a tab or the end of the line after it.
+  if (after !== -1 && char !== ">" && after < end && !isSpace(content[after])) {
+    after = -1;
+  }
+  return { after, interrupts };
+}
+
+/** Reads the markers, if any, that the line from `start` to `end` opens with. */
+function readLineStart(content: string, start: number, end: number): LineStart {
+  let at = start;
+  let tab = false;
+  while (at < end && isSpace(content[at])) {
+    if (content[at] === "\t") tab = true;
+    at += 1;
+  }
+  const indent = at - start;
+  const first = readMarker(content, at, end);
+  if (first.after === -1) return { markers: 0, startsItem: false };
+
+  // Count the markers that follow, as `opensTooManyContainers` does.
+  let markers = 0;
+  let next = at;
+  for (;;) {
+    const marker = readMarker(content, next, end);
+    if (marker.after === -1) break;
+    markers += 1;
+    next = marker.after;
+    while (next < end && isSpace(content[next])) next += 1;
+  }
+
+  let text = first.after;
+  while (text < end && isSpace(content[text])) text += 1;
+  const isListItem = content[at] !== ">";
+  return {
+    markers,
+    startsItem:
+      isListItem && first.interrupts && text < end && !tab && indent <= 3,
+  };
+}
+
+/** Whether any paragraph of `content` estimates over one of its budgets. */
 export function exceedsParseBudget(content: string): boolean {
   let emphasis = 0;
   let constructs = 0;
@@ -152,52 +257,90 @@ export function exceedsParseBudget(content: string): boolean {
   let htmlOpeners = 0;
   let images = 0;
   let length = 0;
-  // Whether the current line holds anything but spaces and tabs so far. A line
-  // that holds nothing else is blank, and a blank line ends the paragraph.
-  let lineHasText = false;
+  // Container markers and lines since the paragraph's first container line,
+  // or -1 before one.
+  let containerRun = -1;
 
+  const resetInline = () => {
+    emphasis = 0;
+    constructs = 0;
+    labelEnds = 0;
+    htmlOpeners = 0;
+    images = 0;
+    length = 0;
+  };
   const overBudget = () =>
     (emphasis + labelEnds + HTML_OPENER_WEIGHT * htmlOpeners) * constructs >
       EVENT_PARSE_BUDGET ||
     (labelEnds + htmlOpeners) * length > SCAN_PARSE_BUDGET ||
-    images * length > IMAGE_PARSE_BUDGET;
+    images * length > IMAGE_PARSE_BUDGET ||
+    containerRun > MAX_CONTAINER_RUN_LINES;
 
-  for (let i = 0; i <= content.length; i += 1) {
-    const char = content[i];
-    // CRLF is one line ending. Read as two, the empty "line" between them
-    // would end the paragraph at every line, and the estimate would miss a
-    // paragraph written with them.
-    if (char === "\r" && content[i + 1] === "\n") continue;
-    if (char === undefined || char === "\n" || char === "\r") {
-      if (overBudget()) return true;
-      if (char === undefined) break;
-      if (!lineHasText) {
-        emphasis = 0;
-        constructs = 0;
-        labelEnds = 0;
-        htmlOpeners = 0;
-        images = 0;
-        length = 0;
-      } else {
+  let start = 0;
+  while (start <= content.length) {
+    let end = start;
+    while (
+      end < content.length &&
+      content[end] !== "\n" &&
+      content[end] !== "\r"
+    ) {
+      end += 1;
+    }
+
+    let blank = true;
+    for (let i = start; i < end; i += 1) {
+      if (content[i] !== " " && content[i] !== "\t") {
+        blank = false;
+        break;
+      }
+    }
+
+    if (blank) {
+      // A blank line ends the paragraph, and any lazy run with it.
+      resetInline();
+      containerRun = -1;
+    } else {
+      const line = readLineStart(content, start, end);
+      if (line.startsItem) resetInline();
+      // Each marker opens a container micromark re-checks on every line after
+      // it; a line with none continues the run lazily and weighs one.
+      if (line.markers > 0 && containerRun === -1) containerRun = 0;
+      if (containerRun !== -1) containerRun += Math.max(1, line.markers);
+
+      for (let i = start; i < end; i += 1) {
+        const char = content[i]!;
+        length += 1;
+        if (!startsConstruct(char)) continue;
+        constructs += 1;
+        if (char === "*" || (char === "_" && !isIntraword(content, i))) {
+          emphasis += 1;
+        } else if (char === "]") {
+          labelEnds += 1;
+        } else if (
+          char === "<" &&
+          (content[i + 1] === "!" || content[i + 1] === "?")
+        ) {
+          htmlOpeners += 1;
+        } else if (
+          char === "!" &&
+          content[i + 1] === "[" &&
+          content[i - 1] !== "<"
+        ) {
+          // `<![CDATA[` is a raw-HTML opener, counted above, not an image.
+          images += 1;
+        }
+      }
+      if (end < content.length) {
+        // The line ending: a construct, and part of the paragraph.
         constructs += 1;
         length += 1;
       }
-      lineHasText = false;
-      continue;
     }
-    length += 1;
-    if (char !== " " && char !== "\t") lineHasText = true;
-    if (!startsConstruct(char)) continue;
-    constructs += 1;
-    if (char === "*" || (char === "_" && !isIntraword(content, i)))
-      emphasis += 1;
-    else if (char === "]") labelEnds += 1;
-    else if (
-      char === "<" &&
-      (content[i + 1] === "!" || content[i + 1] === "?")
-    ) {
-      htmlOpeners += 1;
-    } else if (char === "!" && content[i + 1] === "[") images += 1;
+    if (overBudget()) return true;
+    if (end >= content.length) break;
+    // CRLF is one line ending. Read as two, the empty "line" between them
+    // would end the paragraph at every line and hide it from the estimate.
+    start = end + (content[end] === "\r" && content[end + 1] === "\n" ? 2 : 1);
   }
   return false;
 }

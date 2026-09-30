@@ -6,7 +6,7 @@ import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/
 import {
   COSTLY_MARKDOWN_BODIES,
   NEAR_BUDGET_MARKDOWN_BODY,
-} from "@repo/chat-core/markdown-parse-budget.fixtures";
+} from "@repo/chat-core/test/markdown-parse-budget.fixtures";
 import { TextRenderer } from "./text-renderer";
 
 // #369: the timeline used to render `message.content` as plain text, so a
@@ -348,16 +348,17 @@ describe("TextRenderer over-nested bodies", () => {
 });
 
 /**
- * #2664. Bodies within the length cap that remark took hundreds of
- * milliseconds to seconds to parse (Node 24, remark-parse alone), on every
- * mount, for everyone who opened the channel. `skipsMarkdownParse` now reads
- * them off the source and they render as their raw text. The bodies are
- * shared with chat-core's and mobile's specs.
+ * #2664. Bodies within the length cap that remark was slow to parse (Node 24,
+ * remark-parse alone), most of them for hundreds of milliseconds to seconds,
+ * on every mount, for everyone who opened the channel. `skipsMarkdownParse`
+ * now reads them off the source and they render as their raw text. The bodies
+ * are shared with chat-core's and mobile's specs.
  *
- * For a body whose parse would draw something else (a link, emphasis, a
- * decoded entity), rendering it exactly as typed proves the parse was skipped.
- * For the rest, the depth cap after the parse draws the same raw text, so the
- * loose time bound is what tells.
+ * Where the parse would render something else (a link, emphasis, a decoded
+ * entity, an unwrapped quote or list), rendering the body exactly as typed
+ * proves the parse was skipped. Where it would render the same text (a run
+ * the depth cap flattens, raw HTML shown as typed), the loose time bound is
+ * what tells.
  */
 describe("TextRenderer bodies too costly to parse", () => {
   it.each(COSTLY_MARKDOWN_BODIES.map((c) => [c.label, c.body]))(
@@ -384,7 +385,8 @@ describe("TextRenderer bodies too costly to parse", () => {
     const started = performance.now();
     const { container } = render(<TextRenderer message={message(body)} />);
     expect(performance.now() - started).toBeLessThan(1_000);
-    expect(container.querySelector('[data-slot="message-body"]')).not.toBeNull();
+    // Deeper than the cap, so it renders as its raw text after the parse.
+    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
   });
 });
 

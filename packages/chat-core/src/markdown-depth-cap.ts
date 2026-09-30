@@ -34,7 +34,8 @@
  * **Parse time is a separate exposure.** remark's parse is super-linear on some
  * bodies. `opensTooManyContainers` below skips the parse for lines of container
  * markers, and `exceedsParseBudget` (`markdown-parse-budget.ts`, #2664) for
- * emphasis, labels and images that would make the inline resolvers quadratic.
+ * emphasis, labels, images, raw HTML and container runs that would make the
+ * parse quadratic.
  * `skipsMarkdownParse` in `markdown.ts` asks both.
  *
  * **Why the render path, not only send-time validation.** Messages already

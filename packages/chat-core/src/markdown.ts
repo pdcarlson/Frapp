@@ -28,8 +28,8 @@ export {
  * pass the answer to `remarkDepthCap` as `flatten`, handing remark an empty
  * string instead of the body. It covers the two ways a body within the length
  * cap is too costly to parse: a line that opens too many containers (#2209,
- * `opensTooManyContainers`), and a paragraph whose emphasis, labels, images or
- * raw HTML would make micromark's inline parse quadratic (#2664,
+ * `opensTooManyContainers`), and a paragraph whose emphasis, labels, images,
+ * raw HTML or container run would make micromark's parse quadratic (#2664,
  * `exceedsParseBudget`). Either one's body would take seconds on the main
  * thread, for every member who opens the channel.
  */
