@@ -25,8 +25,6 @@ export type { AnonymousNextSentryRuntime } from "./sentry-options";
 
 export {
   attachAnonymousPostHogCorrelation,
-  headerValue,
-  httpStatusClass,
   withAnonymousPostHogSentryCorrelation,
 } from "./sentry-correlation";
 export type {
