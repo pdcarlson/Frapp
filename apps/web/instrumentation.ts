@@ -32,9 +32,7 @@ export function register(): void {
  * The error payload goes through `beforeSend` exactly like any other event, so
  * the scrubbing rules apply here without anything extra.
  */
-export const onRequestError: typeof Sentry.captureRequestError = (
-  ...args
-) => {
+export const onRequestError: typeof Sentry.captureRequestError = (...args) => {
   if (!webSentryDsn()) return;
   return Sentry.captureRequestError(...args);
 };
