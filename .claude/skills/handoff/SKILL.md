@@ -5,7 +5,7 @@ description: >
   the session has that tool, otherwise a copy-pasteable block — for when this session's context is
   filling up, when a task is finishing and the next one should start clean, or when a parallel
   workstream should run in its own chat. Offer this proactively; do not wait to be asked.
-argument-hint: "[continue|next|parallel] [<what the new session should pick up>]"
+argument-hint: "[continue|next|parallel|walkthrough] [<what the new session should pick up>]"
 allowed-tools: Read, Grep, Glob, Bash(git status *), Bash(git log *), Bash(git branch *), Bash(git rev-parse *), Bash(git diff *)
 ---
 
@@ -45,9 +45,12 @@ Offer it in one sentence, without stopping work, when:
 For example: *"This is a good handoff point — want me to draft a prompt for a fresh session?"* Run
 the skill if they say yes, and don't repeat the offer.
 
-Where the session has the suggested-task tool, skip the question: the card is the offer, and the
-user starts or dismisses it. Queue it and say so in one line. Whether a card is worth queuing at all
-is the judgment in [`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset).
+Where the session has the suggested-task tool, the card can be the offer: the user starts or
+dismisses it. Queue it once and say so in one line, and don't queue it again after a dismissal.
+Whether a card is worth queuing at all is the judgment in
+[`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset). A `continue` card hands
+this task over, so queue it when this session stops working the task, not while it carries on; two
+sessions on one branch collide.
 
 ## Modes
 
@@ -56,8 +59,10 @@ is the judgment in [`AGENTS.md` § Operating mindset](../../../AGENTS.md#operati
 | `continue` | This session is degrading mid-task | Pick up the same task with clean context |
 | `next` | Current task is done or nearly | Start the next piece of work, usually via `/next` |
 | `parallel` | An independent track exists | Work a different task without touching this one's branch |
+| `walkthrough` | The user has something to do by hand (a device, a provider dashboard, a `[human]` issue) and wants a session guiding them | Walk them through it one step at a time (`AGENTS.md` § Operating mindset), checking each outcome, and record the result on the issue if there is one |
 
 Default to `next` if the user didn't say and the current task looks complete, `continue` otherwise.
+`walkthrough` is never a default: pick it when the work is the user's hands, not an agent's.
 
 ## Multi-stage programs
 
@@ -95,11 +100,22 @@ When the session has the suggested-task tool (`spawn_task`), deliver the handoff
 - `tldr`: one or two plain sentences on what the new session does and why it's worth doing.
 - `prompt`: the seven items below, in the same order, without the outer fence.
 
-The user may start the card on their machine or in the cloud, on a checkout that has none of this
-session's unpushed work. So push first, or name what isn't pushed (branch and SHA), and give
-repo-relative paths only. When a card goes stale (the work landed here, or a better-scoped card
-replaces it), withdraw it with `dismiss_task`. A card the user already started or dismissed stays as
-they left it.
+Only `prompt` reaches the new session. `title` and `tldr` are what the user reads on the card, so
+nothing the session needs lives only there.
+
+The user may start the card on their machine or in the cloud, on a checkout with nothing this
+session hasn't pushed, so give repo-relative paths only. A card that depends on unpushed work waits
+until that work is pushed (the pre-push review gate applies); a SHA only this session holds can't be
+fetched.
+
+A card that starts a tracker issue opens with `/next <N>`, so the new session claims it. `/next`
+never claims a `triage` issue, so a follow-up filed moments ago gets its card once it's promoted;
+until then the issue is the record. A `continue` card carries on a claim this session hands off
+(`AGENT-HANDOFF` in [`/next`](../../commands/next.md)), and a `walkthrough` card claims nothing,
+because the user does the work.
+
+When a card goes stale (the work landed here, or a better-scoped card replaces it), withdraw it with
+`dismiss_task`. A card the user already started or dismissed stays as they left it.
 
 Without the tool, emit the block below.
 
@@ -111,8 +127,10 @@ session needs goes inside; anything outside isn't carried over.
 
 In order:
 
-1. **Command line.** `/next` for mode `next`. For `continue` or `parallel`, a plain instruction
-   naming the task, since the issue is already picked.
+1. **Command line.** `/next` for mode `next`. For `continue`, a plain instruction naming the task,
+   since the issue is already picked. For `parallel`, `/next <N>` when the track is a tracker issue,
+   else a plain instruction naming it. For `walkthrough`, a plain instruction naming what to walk the
+   user through, and its issue if there is one.
 2. **Task and why.** Two to four sentences on what we're achieving and why it's worth doing. Not
    how.
 3. **Live state.** Branch, HEAD SHA, PR and CI, tracker issue, tree clean or not, as just checked.
