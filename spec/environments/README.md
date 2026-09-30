@@ -265,14 +265,12 @@ Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-stagi
 
 ### Deploy Pipeline (on merge)
 
-```text
-staging:     merge to main → CI passes → deploy-staging.yml → _deploy.yml, one job: plan
-             → DB migration dry-run → vercel build (web, landing) → apply → API deploy (Render)
-             → verify served commit → vercel deploy --prebuilt (web, landing) → alias the staging hostnames
-production:  dispatch a SHA → validate (ancestor of main + CI green) → approve → _deploy.yml, the
-             same job: provider preflight → migration replay → dry-run → vercel build --prod → apply
-             → Render deploy by commit → verify served commit → vercel deploy --prebuilt --prod → tag
-```
+Staging deploys on every merge whose CI passes; production deploys a SHA a human dispatches and
+approves. Both run the same job, `_deploy.yml`, in the order
+[`ci-cd.md` § How Deployments Are Gated](../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated)
+gives. **Corrected 2026-09-30 (#2489):** this section used to restate that order as a diagram. It
+had drifted twice (it left out the Supabase Edge Functions deploy and, when #2489 added it, the
+source-map check), so the order now lives only in `ci-cd.md`.
 
 Production deployments run only when a human dispatches **Deploy production** with a
 commit SHA, types the confirmation phrase, and approves the `production` environment.
