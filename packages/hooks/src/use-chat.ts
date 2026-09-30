@@ -597,15 +597,24 @@ function chunk<T>(items: T[], size: number): T[][] {
  * throw the other chunks' already-fetched avatars away. A channel with 120
  * distinct imported authors sends 3 chunked requests — a transient failure on
  * the third should degrade those 20 authors to initials, not all 120.
+ *
+ * A linked row (an imported message with a `sender_id`, #2878) is the member's
+ * message, so it never draws the Discord avatar its snapshot still carries,
+ * and its path is not signed. Unlinked rows sharing that path still are.
  */
 export function useAuthorAvatars(
   channelId: string | undefined,
-  messages: { id: string; author_avatar_path?: string | null }[],
+  messages: {
+    id: string;
+    sender_id?: string | null;
+    author_avatar_path?: string | null;
+  }[],
 ) {
   const client = useFrappClient();
   const messageIdsByDistinctPath = useMemo(() => {
     const seen = new Map<string, string>();
     for (const message of messages) {
+      if (message.sender_id) continue;
       if (message.author_avatar_path && !seen.has(message.author_avatar_path)) {
         seen.set(message.author_avatar_path, message.id);
       }

@@ -80,6 +80,12 @@ export const OAUTH_STATE_TTL_MS = 15 * 60_000;
 export const DEFAULT_RETURN_PATH = '/discord-import';
 
 /**
+ * Where a member's link handshake returns (#2878): the profile page that
+ * started it, which confirms the parked account from the member's own session.
+ */
+export const AUTHOR_LINK_RETURN_PATH = '/profile';
+
+/**
  * How long the browser has to activate what the callback parked.
  *
  * Far shorter than the handshake's 15 minutes, because it covers a redirect the
@@ -488,6 +494,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS);
     const state = await this.connectionRepo.createState({
       chapter_id: chapterId,
+      purpose: 'connect',
       created_by: userId,
       // Sanitised here rather than on the way out. The callback has no session
       // to re-authorise against, so whatever is stored is what the browser will
@@ -501,6 +508,53 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
       authorize_url: this.oauth.buildAuthorizeUrl({
         state: state.id,
         redirectUri: this.redirectUri(),
+      }),
+      expires_at: state.expires_at,
+    };
+  }
+
+  /**
+   * Start a member's link handshake (#2878): prove which Discord account is
+   * theirs, so their imported history can be attached to them.
+   *
+   * The same single-use state and the same callback URL as `beginConnect`,
+   * tagged `author_link` so the callback parks an account rather than a guild
+   * and only the link confirm can spend it. The authorize URL asks for
+   * `identify` alone. The chapter and the member come from the authenticated,
+   * chapter-scoped request that calls this, never from the browser later.
+   */
+  async beginAuthorLink(
+    chapterId: string,
+    userId: string,
+  ): Promise<{ authorize_url: string; expires_at: string }> {
+    try {
+      await this.assertAvailable({ fresh: true });
+    } catch (error) {
+      // `assertAvailable` speaks to an officer about the bot import. A
+      // member linking their own account needs a sentence about that.
+      if (error instanceof ServiceUnavailableException) {
+        throw new ServiceUnavailableException(
+          "Linking a Discord account isn't available right now. Try again later.",
+          { cause: toReportableError(error) },
+        );
+      }
+      throw error;
+    }
+
+    const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS);
+    const state = await this.connectionRepo.createState({
+      chapter_id: chapterId,
+      purpose: 'author_link',
+      created_by: userId,
+      return_path: AUTHOR_LINK_RETURN_PATH,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    return {
+      authorize_url: this.oauth.buildAuthorizeUrl({
+        state: state.id,
+        redirectUri: this.redirectUri(),
+        grant: 'identify',
       }),
       expires_at: state.expires_at,
     };
@@ -585,10 +639,17 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
           describeError(error),
         );
         captureSwallowed(error, 'failed');
+        // Same best-effort lookup as the `expired` branch below: a member's
+        // link attempt goes back to `/profile`, not the officer wizard
+        // (#2878). With the store fully down it fails too, and the default
+        // path stands.
         return {
           ok: false,
           code: 'failed',
-          returnUrl: this.buildReturnUrl(null, 'failed'),
+          returnUrl: this.buildReturnUrl(
+            await this.storedReturnPath(stateId),
+            'failed',
+          ),
           reason: 'The handshake store could not be reached.',
         };
       }
@@ -605,10 +666,20 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     });
 
     if (!consumed) {
-      return finish(
-        'expired',
-        'No live handshake matched the state on the callback.',
-      );
+      // Nothing to consume, but the row may still say where this handshake
+      // was going: a member's expired link attempt belongs back on
+      // `/profile`, not in the officer import wizard (#2878). Best-effort,
+      // and never an oracle: every unconsumable state answers `expired`, and
+      // the path is one this server stored, sanitised again on the way out.
+      return {
+        ok: false,
+        code: 'expired',
+        returnUrl: this.buildReturnUrl(
+          isUuid(stateId) ? await this.storedReturnPath(stateId) : null,
+          'expired',
+        ),
+        reason: 'No live handshake matched the state on the callback.',
+      };
     }
 
     if (query.error) {
@@ -643,9 +714,14 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
     }
 
     try {
-      const confirmToken = await this.parkConnection(consumed.id, query.code);
+      const confirmToken =
+        consumed.purpose === 'author_link'
+          ? await this.parkAuthorLink(consumed.id, query.code)
+          : await this.parkConnection(consumed.id, query.code);
       this.logger.log(
-        `Chapter ${consumed.chapter_id} has a Discord guild awaiting confirmation.`,
+        consumed.purpose === 'author_link'
+          ? `A member of chapter ${consumed.chapter_id} has a Discord account awaiting confirmation.`
+          : `Chapter ${consumed.chapter_id} has a Discord guild awaiting confirmation.`,
       );
       // `pending`, not `connected`. Nothing is bound yet — the dashboard has to
       // present the confirm token from a session whose chapter matches, which
@@ -779,6 +855,53 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
   }
 
   /**
+   * A member's link handshake, between "valid code" and "account parked"
+   * (#2878).
+   *
+   * Reads which Discord account approved the screen, under that account's own
+   * token, and parks it. **Binds nothing**, for the same reason
+   * `parkConnection` does not: the callback is an unauthenticated redirect,
+   * so the person who approved on Discord need not be the member who started
+   * the handshake. A member who sent their authorize URL to somebody else
+   * would otherwise get that person's history attached to themselves. The
+   * confirm step (`DiscordAuthorLinkService.confirm`) binds only for the
+   * member who started it.
+   */
+  private async parkAuthorLink(stateId: string, code: string): Promise<string> {
+    const token = await this.oauth.exchangeCode({
+      code,
+      redirectUri: this.redirectUri(),
+    });
+
+    try {
+      const account = await this.oauth.fetchAuthorizingUser(token.accessToken);
+      const confirmToken = randomUUID();
+      const parked = await this.connectionRepo.attachPendingAuthorLink(
+        stateId,
+        {
+          discord_user_id: account.id,
+          discord_username: account.username,
+          scopes: token.scope,
+          confirm_token: confirmToken,
+          confirm_expires_at: new Date(
+            Date.now() + CONFIRM_TOKEN_TTL_MS,
+          ).toISOString(),
+        },
+      );
+      if (!parked) {
+        throw new DiscordConnectFailure(
+          'expired',
+          'Link handshake could not be parked; it already carries a pending account.',
+        );
+      }
+      return confirmToken;
+    } finally {
+      // One read, then the token is useless to us. Not stored.
+      await this.oauth.revokeToken(token.accessToken).catch(() => undefined);
+    }
+  }
+
+  /**
    * Activate what the callback parked — the step that makes the flow safe.
    *
    * Three things must line up, and the third is the one that closes the hole:
@@ -879,6 +1002,16 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
       );
     }
     return connection.guild_id;
+  }
+
+  /**
+   * Where an unconsumed handshake was headed, for a callback that could not
+   * consume it. Best-effort and never an oracle: the outcome code is the same
+   * whether or not a row answers, and the path is one this server stored,
+   * sanitised again by `buildReturnUrl`.
+   */
+  private storedReturnPath(stateId: string): Promise<string | null> {
+    return this.connectionRepo.findStateReturnPath(stateId).catch(() => null);
   }
 
   /**
@@ -983,6 +1116,7 @@ export function apiBaseUrl(value: string | undefined): string | null {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function isUuid(value: string): boolean {
+/** The handshake ids both Discord confirm flows accept (#2878 shares them). */
+export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
