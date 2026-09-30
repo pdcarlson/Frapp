@@ -63,6 +63,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: '2026-08-24T12:00:00Z',
     completed_at: null,
     purged_at: null,
+    purged_messages: 0,
     cleared_at: null,
     messages_after: null,
     ...overrides,
