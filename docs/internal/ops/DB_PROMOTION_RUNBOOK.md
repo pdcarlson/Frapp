@@ -574,14 +574,39 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-09-30: A Discord import's deletion shows how far it has got (#2944)
 
-### 20260930133000_discord_import_purged_messages.sql
+### 20260930150000_discord_import_purged_messages.sql
 
 - **Purpose**: Adds `purged_messages integer not null default 0` to `public.discord_imports`: how many imported messages the purge has deleted so far. The purge worker writes it with each lease renewal, and the web's import list shows it as a countdown out of `imported_messages` while an import is `purging`. Every existing row takes 0. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'purged_messages';` returns one row: `purged_messages | integer | NO | 0`.
 - **Promoter notes**: Ship it before, or with, the API that writes it. A deploy applies migrations first, so the worker never sees a database without it. Against an unmigrated database the newer worker's lease renewal names an unknown column, so every purge slice fails after its first round and marks the import `failed`; deleting it again once the migration is in finishes it. An older API ignores the column, and an older web client never reads it. On Postgres 11 and later, adding a column with a constant default rewrites no rows, so the table is locked only briefly. An import already mid-purge when this lands counts from 0, so its row shows more messages left than there are until it finishes (on staging, import `0e4c41e5` was mid-purge on 2026-09-30). Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-purge-progress-20260930133000) § Rollback Discord import purge progress.
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-discord-import-purge-progress-20260930150000) § Rollback Discord import purge progress.
+
+## 2026-09-30: A channel a Discord import merged into can be deleted (#2922)
+
+### 20260930140000_discord_import_merge_target_deletable.sql
+
+- **Purpose**: Deleting any channel a Discord import had merged into (a `use_existing` mapping row) failed. `target_channel_id`'s `on delete set null` broke the `discord_import_channels_target_present` CHECK, so `DELETE /v1/channels/:id` answered 500. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+  - **The CHECK** `discord_import_channels_target_present` is dropped. `discord_import_channels_new_name_present` (`mapping_action <> 'create_new' or new_channel_name is not null`) keeps the half the database can hold true for a row's whole life. The API now owns "a merge names its target": the mapping routes, `start`, and the worker, which stops the import with a sentence.
+  - **`discord_import_channel_holds_anything`** (`create or replace`): a `use_existing` row keeps its channel only while its import isn't `purging` or `purged`.
+  - **`delete_empty_discord_import_channels`** (`create or replace`) also considers each channel a `purging` or `purged` import recorded creating that the purging import merged into. It checks and deletes those under the same lock as its own. `purging` counts because a purge writes `purged` only after its channel and storage steps, so two purges running at once would otherwise each leave the channel to the other.
+  - Both functions keep their signatures, `security invoker` and service-role-only grants. The grants are re-stated.
+- **Checks**: After `db push`, these return `0`, the definition shown, and `f`:
+  - `select count(*) from pg_constraint where conname = 'discord_import_channels_target_present';`
+  - `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_new_name_present';` returns `CHECK (((mapping_action <> 'create_new'::text) OR (new_channel_name IS NOT NULL)))`.
+  - `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');`
+- **Promoter notes**:
+  - **Order:** either way round works; ship it with the API.
+    - An API without it still answers 500 to deleting a merged-into channel.
+    - The migration without the new API lets the delete through. An import whose merge channel is then deleted fails with an older message instead of the new sentence: "Channel mapping for #… has no target." when the channel went between slices, and a raw foreign-key error, or "…points at a channel outside this chapter." at the next part or channel it resolves, when it went mid-write. `start` doesn't refuse it first.
+  - **Nothing runs at apply time.** The new CHECK is weaker than the old one, so every existing row passes it (staging has no `create_new` row without a name, read 2026-09-30). Channels go only as imports are purged afterwards.
+  - **What it unblocks on staging** (read 2026-09-30): 879 `use_existing` rows pin 17 channels that no officer can delete today. Every staging import is `purged` (4) or `purging` (1, `0e4c41e5`, still deleting its messages), so after this migration none of those merges keeps a channel from a purge either.
+  - **Idempotent:** `drop constraint if exists` before each add, `create or replace function`, and the grants.
+  - **Locks:** adding the CHECK scans `discord_import_channels` under an `ACCESS EXCLUSIVE` lock. The table is small, so the lock is brief.
+  - Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-deletable-import-merge-targets-20260930140000) § Rollback deletable import merge targets.
 
 ## 2026-09-30: A deleted Discord import takes the channels it left empty (#2905)
 
