@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   checkAncestry,
@@ -241,9 +242,48 @@ describe("validateDeploySha", () => {
     const result = await validateDeploySha({
       sha: SHA, repo: "o/r", token: "t", required, git, logger: quiet,
       fetchImpl: async () => ({ ok: false, status: 500, text: async () => "" }),
+      retryOptions: { sleep: async () => {} },
     });
     assert.equal(result.ok, false);
     assert.match(result.reason, /Could not read CI status/);
+  });
+
+  // #2333: ghRequest bounds every call itself, so the gate retries through its
+  // `retry` option, each attempt on its own deadline. A resilientFetch
+  // fetchImpl nested inside it shared one deadline across all its attempts,
+  // and one stalled page refused a green commit.
+  it("retries a checks page that never answers, each attempt on its own deadline", { timeout: 2000 }, async () => {
+    const { git } = makeGit();
+    const signals = [];
+    const result = await validateDeploySha({
+      sha: SHA, repo: "o/r", token: "t", required, git, logger: quiet,
+      fetchImpl: async (_url, init) => {
+        // Each attempt must arrive with a deadline that hasn't fired yet.
+        assert.ok(init.signal instanceof AbortSignal, "every attempt carries a deadline");
+        assert.equal(init.signal.aborted, false, "a retry never starts on a spent deadline");
+        signals.push(init.signal);
+        if (signals.length > 1) {
+          return okJson({ check_runs: [{ name: "ci-a", status: "completed", conclusion: "success" }] });
+        }
+        return new Promise((_, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        });
+      },
+      retryOptions: { timeoutMs: 20, sleep: async () => {} },
+    });
+    assert.equal(signals.length, 2);
+    assert.notEqual(signals[0], signals[1]);
+    assert.equal(result.ok, true, result.reason);
+  });
+
+  // The CLI path can't be seen by a test that injects its own fetchImpl, so
+  // the script must not reach for `lib/http.mjs` at all: any import from it,
+  // aliased or not, is how a retrying fetch gets back under ghRequest.
+  it("never imports a retrying fetch to hand to ghRequest", () => {
+    const code = readFileSync(new URL("../validate-deploy-sha.mjs", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /lib\/http\.mjs|resilientFetch|fetchWithRetry/);
   });
 
   // A malformed 2xx body must not read as "zero check runs" — that would

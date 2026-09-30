@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   HUNG_AFTER_MS,
   JOB_TIMEOUT_MS,
   PRODUCTION_JOB_NAME,
@@ -20,7 +20,7 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
-import { workflowJobs } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowJobs } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-backup-storage-freshness.yml");
@@ -363,7 +363,47 @@ describe("readDumpFreshness", () => {
     assert.equal(calls.length, 3);
   });
 
-  it("does not retry a 500", async () => {
+  // The read that follows a refused token retries too (#2333), so a blip on
+  // it doesn't file a P1 either.
+  it("retries a 5xx on the fallback read after a 401", async () => {
+    const calls = [];
+    let runsGets = 0;
+    const fetchImpl = async (url, init = {}) => {
+      calls.push({ method: init.method ?? "GET", url, token: init.headers?.Authorization });
+      if (String(url).includes(`/actions/workflows/${WORKFLOW_FILE}/runs`)) {
+        runsGets += 1;
+        if (runsGets === 1) return { ok: false, status: 401, text: async () => "{}" };
+        if (runsGets === 2) return { ok: false, status: 502, text: async () => "{}" };
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify({ workflow_runs: [{ id: 99, status: "completed", created_at: hoursAgo(16) }] }),
+        };
+      }
+      if (String(url).includes("/actions/runs/99/jobs")) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ jobs: [successJob()] }) };
+      }
+      throw new Error(`unexpected ${init.method ?? "GET"} ${url}`);
+    };
+    const verdict = await readDumpFreshness({
+      token: "tok",
+      fallbackToken: "pat",
+      repo: "org/repo",
+      fetchImpl,
+      now: NOW,
+      retryOptions: { sleep: async () => {} },
+    });
+    assert.equal(verdict.ok, true, verdict.reason);
+    assert.deepEqual(
+      calls.slice(0, 3).map((c) => c.token),
+      ["Bearer tok", "Bearer pat", "Bearer pat"],
+    );
+  });
+
+  // #2333: a blip on the Actions read is re-asked on the same token before
+  // the verdict calls it unreadable. The fallback token is only for 401/403.
+  it("retries a 500 on the same token, never with the fallback token", async () => {
     const { fetchImpl, calls } = makeFetchMock([
       {
         method: "GET",
@@ -378,10 +418,11 @@ describe("readDumpFreshness", () => {
       repo: "org/repo",
       fetchImpl,
       now: NOW,
+      retryOptions: { sleep: async () => {} },
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /unreadable \(HTTP 500\)/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 3, "three attempts on one token; the fallback would add three more");
   });
 });
 
@@ -512,7 +553,7 @@ describe("runWatchdog", () => {
     assert.equal(created.outcome, "fail");
     assert.equal(created.alert.action, "created");
     const createdBody = JSON.parse(calls.find((c) => c.method === "POST").body);
-    assert.equal(createdBody.title, ALERT_ISSUE_TITLE);
+    assert.equal(createdBody.title, ALERT.title);
     assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
     assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
     assert.ok(createdBody.labels.includes("P1"));
@@ -524,7 +565,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -545,7 +586,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -582,7 +623,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/comments", body: {} },
       { method: "PATCH", path: "/issues/42", status: 502, body: {} },
@@ -603,7 +644,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
     ]);
     const out = await runWatchdog({
@@ -731,7 +772,7 @@ describe("workflow wiring", () => {
   });
 
   it("no other daily schedule shares 14:00", () => {
-    for (const file of readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f))) {
+    for (const file of workflowFiles()) {
       if (file === "production-backup-storage-freshness.yml") continue;
       const text = uncommented(readFileSync(join(WORKFLOWS_DIR, file), "utf8"));
       assert.doesNotMatch(
@@ -755,7 +796,7 @@ describe("workflow wiring", () => {
 
   it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
-      routing.includes(ALERT_ISSUE_TITLE),
+      routing.includes(ALERT.title),
       "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });

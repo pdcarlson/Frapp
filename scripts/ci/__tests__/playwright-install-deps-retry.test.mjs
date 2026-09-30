@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 // Pins the install-deps retry AND dropping GitHub's unused chrome apt
 // source. That source Hash-Sum-mismatches and reds required
@@ -82,7 +83,7 @@ describe("playwright install-deps retries apt Hash Sum mismatch", () => {
   });
 
   it("retries every workflow install-deps, or has none besides the floor job", () => {
-    const files = readdirSync(WORKFLOWS).filter((f) => f.endsWith(".yml"));
+    const files = workflowFiles();
     const hits = [];
     for (const name of files) {
       const text = readFileSync(join(WORKFLOWS, name), "utf8");

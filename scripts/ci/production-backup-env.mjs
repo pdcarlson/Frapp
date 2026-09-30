@@ -25,7 +25,7 @@
 // `scripts/ci/__tests__/production-backup-env.test.mjs`.
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -35,10 +35,10 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const ENV_NAME = "production-backup";
 
-export const ALERT_ISSUE_TITLE =
-  "production-backup has required reviewers — nightly dumps will expire";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "production-backup has required reviewers — nightly dumps will expire",
+  labels: ["area:ci", "P1"],
+});
 
 /**
  * Prefer a PAT when one is in the environment, which means a local run: the
@@ -168,9 +168,7 @@ export async function runWatchdog({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ verdict, runUrl }),
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still protected: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
@@ -183,8 +181,7 @@ export async function runWatchdog({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       `production-backup has no required reviewers or wait timer again: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });

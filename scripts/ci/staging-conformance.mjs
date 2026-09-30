@@ -61,6 +61,7 @@ import { dirname, join } from "node:path";
 
 import {
   ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
@@ -91,10 +92,10 @@ export function readWorkspaceId({ path = join(REPO_ROOT, ".infisical.json"), rea
 // ── Alert identity ──────────────────────────────────────────────────────────
 // Title is the primary key — looked up by exact match, so it must stay stable.
 // The lookup label comes from lib/alert-issue.mjs, which says what it does.
-export const ALERT_ISSUE_TITLE =
-  "Staging conformance is failing — frapp-staging has drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Staging conformance is failing — frapp-staging has drifted",
+  labels: ["area:ci", "P1"],
+});
 
 export const PASS = "pass";
 export const FAIL = "fail";
@@ -1161,7 +1162,7 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null, copy
     copy.issueDriftLine,
     "state the repository expects. It closes itself on the next clean scheduled run.",
     "",
-    `Do not claim this issue as backlog work — it carries \`${ALERT_ISSUE_LOOKUP_LABEL}\` and tracks live state, not a`,
+    `Do not claim this issue as backlog work — it carries \`${ALERT_LOOKUP_LABEL}\` and tracks live state, not a`,
     "unit of work. Fix the underlying drift and it resolves on its own.",
     "",
     "### Failing assertions",
@@ -1361,9 +1362,7 @@ export async function runStagingConformance({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       // previousBody is null on create and the existing body on refresh; the
       // builder merges its marker so an unresolved assertion is never dropped.
       buildIssueBody: (previousBody) =>
@@ -1402,13 +1401,13 @@ export async function runStagingConformance({
 
   // Recovery is gated on the assertions the OPEN alert names, not on this
   // run's pass count. Read them before deciding to close.
-  const { issues: allAlerts, lookupOk } = await findAlertIssuesDetailed({
+  const lookup = await findAlertIssuesDetailed({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
   });
+  const { issues: allAlerts, lookupOk } = lookup;
 
   // Falling through on a failed lookup would let a transient 5xx close an
   // alert whose gated assertion was never proven — and because the unproven
@@ -1424,8 +1423,6 @@ export async function runStagingConformance({
   const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
   // The gate just read that nothing is open, so there is nothing to close.
-  // resolveAlert would look again, and a transient failure of that second read
-  // would red a run that already knows the answer.
   if (openAlerts.length === 0) {
     writeSummary(buildRunSummary({ outcome, results, runUrl }));
     return { outcome, results, alert: { action: "none", closed: [] } };
@@ -1472,13 +1469,15 @@ export async function runStagingConformance({
   }
 
   writeSummary(buildRunSummary({ outcome, results, runUrl }));
+  // The gate's own read is handed on, so the close doesn't read the same
+  // pages again (#2333).
   const alert = await resolveAlert({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
+    lookup,
   });
   if (alert.action === "closed") {
     logger.log?.(`[staging-conformance] closed alert issue(s): ${alert.closed.join(", ")}`);
@@ -1490,10 +1489,6 @@ export async function runStagingConformance({
       "::error::Staging is conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
-  } else if (alert.action === "unread") {
-    // resolveAlert's own lookup failed after the gate's succeeded. Whether an
-    // alert is open is unknown, so the message must not say it is.
-    logger.log?.(STAGING_ALERT_UNREAD);
   }
   return { outcome, results, alert };
 }

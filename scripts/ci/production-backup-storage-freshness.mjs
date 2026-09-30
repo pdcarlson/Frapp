@@ -40,7 +40,7 @@
 // `scripts/ci/__tests__/production-backup-storage-freshness.test.mjs` for this watch.
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   raiseAlert,
   resolveAlert,
 } from "./lib/alert-issue.mjs";
@@ -50,7 +50,7 @@ import {
   verdictLogLine,
 } from "./lib/backup-job-freshness.mjs";
 import { requireEnv } from "./lib/env.mjs";
-import { ghRequest } from "./lib/github.mjs";
+import { ghGetWithFallback } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const WORKFLOW_FILE = "db-backup.yml";
@@ -63,10 +63,10 @@ export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
 // cancelled dispatch. The test suite checks it against the workflow.
 export const JOB_TIMEOUT_MS = 60 * 60 * 1000;
 
-export const ALERT_ISSUE_TITLE =
-  "Nightly production Storage mirror is stale or failed — recoverability is unproven";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Nightly production Storage mirror is stale or failed — recoverability is unproven",
+  labels: ["area:ci", "P1"],
+});
 
 /** Prefer the job token: Actions reads work with GITHUB_TOKEN. */
 export function resolveActionsReadToken(env = process.env) {
@@ -82,23 +82,6 @@ export function resolveActionsFallbackToken(env = process.env) {
   const primary = resolveActionsReadToken(env);
   if (env.GITHUB_PAT && env.GITHUB_PAT !== primary) return env.GITHUB_PAT;
   return "";
-}
-
-function isAuthish(status) {
-  return status === 401 || status === 403;
-}
-
-async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
-  const first = await ghRequest({ token, fetchImpl, path });
-  if (
-    isAuthish(first.status) &&
-    typeof fallbackToken === "string" &&
-    fallbackToken &&
-    fallbackToken !== token
-  ) {
-    return ghRequest({ token: fallbackToken, fetchImpl, path });
-  }
-  return first;
 }
 
 function runsPath(repo) {
@@ -118,7 +101,8 @@ function jobsPath(repo, runId) {
  * A feature-branch dispatch is not the production dump. Schedule and
  * workflow_dispatch on `main` both count: a failed dump on `main` is a
  * failed dump. Retry with the fallback token only on 401/403, and only
- * when the fallback token is different. Never PUT.
+ * when the fallback token is different. A transport failure is retried on
+ * the same token first (`ghGetWithFallback` in `lib/github.mjs`). Never PUT.
  */
 export async function readDumpFreshness({
   token,
@@ -126,6 +110,8 @@ export async function readDumpFreshness({
   fetchImpl,
   fallbackToken,
   now = Date.now(),
+  // Passed to `ghGetWithFallback` (backoff, sleep, timeout) so tests stay offline.
+  retryOptions,
 }) {
   return readJobFreshness({
     jobName: PRODUCTION_JOB_NAME,
@@ -135,7 +121,7 @@ export async function readDumpFreshness({
     timeoutMs: JOB_TIMEOUT_MS,
     runsPath: runsPath(repo),
     jobsPath: (runId) => jobsPath(repo, runId),
-    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path }),
+    get: (path) => ghGetWithFallback({ token, fallbackToken, fetchImpl, path, retryOptions }),
     now,
   });
 }
@@ -170,9 +156,7 @@ export async function runWatchdog({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ verdict, runUrl }),
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still stale or failed: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
@@ -189,8 +173,7 @@ export async function runWatchdog({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       `Nightly production Storage mirror is fresh again: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });

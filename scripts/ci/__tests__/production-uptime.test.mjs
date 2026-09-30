@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   DEFAULT_READY_URL,
   READY_PATH,
   assertReadyUrl,
@@ -197,12 +197,14 @@ describe("runWatchdog", () => {
     assert.equal(out.outcome, "fail");
     assert.equal(out.alert.action, "created");
     const created = JSON.parse(calls.find((c) => c.method === "POST").body);
-    assert.equal(created.title, ALERT_ISSUE_TITLE);
+    assert.equal(created.title, ALERT.title);
     assert.ok(created.labels.includes(ALERT_LOOKUP_LABEL));
     assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);
     assert.ok(created.labels.includes("P1"));
     assert.match(created.body, /\/health\/ready/);
     assert.doesNotMatch(created.body, /Fixes #/);
+    // The open-alert check's read is handed to raiseAlert, not repeated (#2333).
+    assert.equal(calls.filter((c) => c.url.includes("/issues?state=all")).length, 1);
   });
 
   it("closes the alert on recovery only when lookup succeeded", async () => {
@@ -210,7 +212,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -253,7 +255,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/comments", body: {} },
       { method: "PATCH", path: "/issues/42", status: 502, body: {} },
@@ -275,7 +277,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/issues", body: { number: 99 } },
       { method: "POST", path: "/comments", body: {} },
@@ -359,7 +361,7 @@ describe("workflow wiring", () => {
 
   it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
-      routing.includes(ALERT_ISSUE_TITLE),
+      routing.includes(ALERT.title),
       "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });

@@ -37,7 +37,7 @@
 import { appendFileSync } from "node:fs";
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
@@ -80,9 +80,10 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
-export const ALERT_ISSUE_TITLE = "Production Auth settings have drifted";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
+export const ALERT = defineAlert({
+  title: "Production Auth settings have drifted",
+  labels: ["area:ci", "P1"],
+});
 
 const result = (id, label, status, detail) => ({ id, label, status, detail });
 
@@ -254,9 +255,7 @@ export async function runProductionAuthConformance({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: (previousBody) =>
         buildAlertIssueBody({ results, runUrl, previousBody }),
       buildCommentBody: ({ reopened }) =>
@@ -286,13 +285,13 @@ export async function runProductionAuthConformance({
     return { outcome, results, alert: { action: "none", closed: [] } };
   }
 
-  const { issues: allAlerts, lookupOk } = await findAlertIssuesDetailed({
+  const lookup = await findAlertIssuesDetailed({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
   });
+  const { issues: allAlerts, lookupOk } = lookup;
 
   // A failed lookup must not fall through to a close (see staging-conformance),
   // and it reds the run (conformanceExitCode).
@@ -305,8 +304,6 @@ export async function runProductionAuthConformance({
   const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
   // The gate just read that nothing is open, so there is nothing to close.
-  // resolveAlert would look again, and a transient failure of that second read
-  // would red a run that already knows the answer.
   if (openAlerts.length === 0) {
     writeSummary(buildRunSummary({ outcome, results, runUrl }));
     return { outcome, results, alert: { action: "none", closed: [] } };
@@ -347,13 +344,15 @@ export async function runProductionAuthConformance({
   }
 
   writeSummary(buildRunSummary({ outcome, results, runUrl }));
+  // The gate's own read is handed on, so the close doesn't read the same
+  // pages again (#2333).
   const alert = await resolveAlert({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () => buildRecoveryCommentBody({ results, runUrl }),
+    lookup,
   });
   if (alert.action === "closed") {
     logger.log?.(`[production-auth-conformance] closed alert issue(s): ${alert.closed.join(", ")}`);
@@ -362,8 +361,6 @@ export async function runProductionAuthConformance({
       "::error::Production Auth settings are conformant but the alert issue could not be closed. " +
         "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
     );
-  } else if (alert.action === "unread") {
-    logger.log?.(PRODUCTION_ALERT_UNREAD);
   }
   return { outcome, results, alert };
 }

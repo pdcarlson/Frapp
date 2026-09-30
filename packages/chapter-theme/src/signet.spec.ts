@@ -213,7 +213,7 @@ describe("deriveSignetPalette", () => {
   /**
    * accent-engine.md §8's fill floor (#2541, #2586). `accent-primary` is the
    * only cue for a state in several consumers (switch track, active tab
-   * underline, the focus ring border, poll selection), so WCAG 1.4.11 holds it
+   * underline, poll selection), so WCAG 1.4.11 holds it
    * to 3:1 on every surface it paints on, not just under a label. Its hover
    * shade is held too: the voted poll option is a primary button, and pointing
    * at it swaps the fill that carries the vote for `accent-hover`.

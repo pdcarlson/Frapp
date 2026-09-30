@@ -50,7 +50,7 @@
 import { ghRequest } from "./lib/github.mjs";
 import { clearMarkedComments, upsertWakeComment } from "./ci-wake.mjs";
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert as raiseAlertIssue,
   resolveAlert as resolveAlertIssue,
@@ -71,9 +71,10 @@ export const BASE_SYNC_MARKER = "<!-- frapp-base-sync -->";
 // P2, not P1: the sweep degrades rather than breaks. PRs still merge; they just
 // need a human or an agent to press Update branch, which is where this repo was
 // before the sweep existed.
-export const ALERT_ISSUE_TITLE = "PR base sync cannot auto-update PR branches";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
+export const ALERT = defineAlert({
+  title: "PR base sync cannot auto-update PR branches",
+  labels: ["area:ci", "P2"],
+});
 
 const SETUP_STEPS = [
   "The token is minted in `.github/workflows/pr-base-sync.yml` by",
@@ -101,14 +102,15 @@ function alertBody(detail) {
 }
 
 /** One alert for the whole repo, however many PRs were affected this sweep. */
-export async function raiseAutoUpdateAlert({ token, repo, detail, fetchImpl }) {
+export async function raiseAutoUpdateAlert({ token, repo, detail, fetchImpl, lookup }) {
   return raiseAlertIssue({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    labels: ALERT_ISSUE_LABELS,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
+    // The sweep's own read, when it made one (reconcileTokenAlert), so the
+    // raise doesn't read the same pages again (#2333).
+    lookup,
     buildIssueBody: () => alertBody(detail),
     buildCommentBody: ({ reopened }) =>
       [
@@ -139,8 +141,7 @@ export async function resolveAutoUpdateAlert({ token, repo, proven, fetchImpl })
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       [
         "**Base-branch auto-update recovered.** Closing.",
@@ -438,13 +439,13 @@ async function reconcileTokenAlert({
     // comment on the alert per merge — the same fan-out this change removes,
     // relocated from N PRs to one issue. So only a state CHANGE is written: an
     // already-open alert is left exactly as it is.
-    const { issues, lookupOk } = await findAlertIssuesDetailed({
+    const lookup = await findAlertIssuesDetailed({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
     });
+    const { issues, lookupOk } = lookup;
     // A failed lookup falls through to raise, matching alert-issue.mjs's own
     // trade-off: a duplicate alert self-heals (resolveAlert closes every match),
     // silence about a broken watchdog does not.
@@ -460,6 +461,7 @@ async function reconcileTokenAlert({
       repo,
       detail: failures[0].blockedDetail,
       fetchImpl,
+      lookup,
     });
     logger.log?.(
       `[pr-base-sync] ${failures.length} behind PR(s) could not be auto-updated — ` +

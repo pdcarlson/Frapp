@@ -19,9 +19,9 @@ import remarkBreaks from "remark-breaks";
 import { isOpenableHref } from "@repo/chat-core/links";
 import {
   MESSAGE_MARKDOWN_ELEMENTS,
-  opensTooManyContainers,
   remarkBareUrls,
   remarkDepthCap,
+  skipsMarkdownParse,
 } from "@repo/chat-core/markdown";
 import { SignetTokens } from "@repo/theme/signet";
 import { openMessageLink } from "@/lib/chat/open-link";
@@ -254,8 +254,8 @@ function rehypeTextFlow(result: TextFlowResult) {
  */
 export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
   // Decided from the source, before remark sees it: see
-  // `opensTooManyContainers` (#2209).
-  const flatten = opensTooManyContainers(content);
+  // `skipsMarkdownParse` (#2209, #2664).
+  const flatten = skipsMarkdownParse(content);
   const result: TextFlowResult = {
     links: [],
     empty: false,

@@ -1,12 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getEnvironment } from "../lib/environments.mjs";
 import {
-  ALERT_ISSUE_TITLE as STAGING_ALERT_TITLE,
+  ALERT as STAGING_ALERT,
   AUTH_SMTP_SENDER_NAME,
   FAIL,
   PASS,
@@ -15,7 +15,7 @@ import {
   conformanceExitCode,
 } from "../staging-conformance.mjs";
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   DEFAULT_CHECK_IDS,
   PRODUCTION_AUTH_COPY,
   PRODUCTION_AUTH_SMTP_ADMIN_EMAIL,
@@ -28,6 +28,7 @@ import {
   runProductionAuthConformance,
 } from "../production-auth-conformance.mjs";
 import { makeFetchMock, quiet } from "./helpers.mjs";
+import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-auth-conformance.yml");
@@ -106,8 +107,8 @@ function uncommented(text) {
 
 describe("identity", () => {
   it("uses a distinct alert title from staging conformance", () => {
-    assert.notEqual(ALERT_ISSUE_TITLE, STAGING_ALERT_TITLE);
-    assert.equal(ALERT_ISSUE_TITLE, "Production Auth settings have drifted");
+    assert.notEqual(ALERT.title, STAGING_ALERT.title);
+    assert.equal(ALERT.title, "Production Auth settings have drifted");
   });
 
   it("pins the production Site URL first users actually hit", () => {
@@ -222,7 +223,7 @@ describe("default assertions", () => {
             {
               number: 900,
               state: "open",
-              title: ALERT_ISSUE_TITLE,
+              title: ALERT.title,
               body: "`conformance-failing: auth-hook`",
             },
           ],
@@ -270,7 +271,7 @@ describe("default assertions", () => {
     assert.equal(alert.action, "created");
     const created = calls.find((c) => c.method === "POST" && c.url.includes("/issues"));
     assert.match(created.body, /Production Auth settings have drifted/);
-    assert.doesNotMatch(created.body, new RegExp(STAGING_ALERT_TITLE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(created.body, new RegExp(STAGING_ALERT.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   });
 
   it("fails when leaked-password protection is off, and the alert names that check", async () => {
@@ -307,7 +308,7 @@ describe("default assertions", () => {
     const open = {
       number: 902,
       state: "open",
-      title: ALERT_ISSUE_TITLE,
+      title: ALERT.title,
       body: "`conformance-failing: auth-leaked-password`",
     };
     const { fetchImpl } = combinedFetch({
@@ -640,7 +641,7 @@ describe("alert contract", () => {
           {
             number: 900,
             state: "open",
-            title: ALERT_ISSUE_TITLE,
+            title: ALERT.title,
             body: "`conformance-failing: auth-hook`",
           },
         ],
@@ -733,14 +734,13 @@ describe("alert contract", () => {
     assert.ok(!lines.some((l) => /still open/.test(l)));
   });
 
-  it("a conformant run whose second alert lookup (resolveAlert's) fails is red, with an ::error::", async () => {
-    const lines = [];
-    const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
-    const result = await run(issueLookups([open, 502]), lines);
-    assert.deepEqual(result.alert, { action: "unread", closed: [] });
-    assert.equal(conformanceExitCode(result), 1);
-    assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
-    assert.ok(!lines.some((l) => /still open/.test(l)));
+  it("a conformant run closes an open alert on the gate's one read (#2333)", async () => {
+    // A 502 on a second read can't reach the close: resolveAlert reuses the
+    // gate's read instead of reading the same pages again.
+    const open = [{ number: 700, state: "open", title: ALERT.title, body: "" }];
+    const result = await run(issueLookups([open, 502]));
+    assert.deepEqual(result.alert, { action: "closed", closed: [700] });
+    assert.equal(conformanceExitCode(result), 0);
   });
 
   it("a conformant run whose gate read nothing open does not look again, and stays green", async () => {
@@ -750,7 +750,7 @@ describe("alert contract", () => {
   });
 
   it("a conformant run whose alert close fails is red", async () => {
-    const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
+    const open = [{ number: 700, state: "open", title: ALERT.title, body: "" }];
     const result = await run(issueLookups([open], { closeStatus: 502 }));
     assert.deepEqual(result.alert, { action: "failed", closed: [] });
     assert.equal(conformanceExitCode(result), 1);
@@ -856,7 +856,7 @@ describe("workflow wiring", () => {
   });
 
   it("no other daily schedule shares 07:45", () => {
-    for (const file of readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f))) {
+    for (const file of workflowFiles()) {
       if (file === "production-auth-conformance.yml") continue;
       const text = uncommented(readFileSync(join(WORKFLOWS_DIR, file), "utf8"));
       assert.doesNotMatch(
@@ -869,7 +869,7 @@ describe("workflow wiring", () => {
 
   it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
-      routing.includes(ALERT_ISSUE_TITLE),
+      routing.includes(ALERT.title),
       "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });

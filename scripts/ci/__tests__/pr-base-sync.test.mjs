@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   BASE_SYNC_MARKER,
   MAX_PRS,
   MERGEABLE_POLL_ATTEMPTS,
@@ -224,7 +224,7 @@ test("no app token: the PR still gets its wake, and the DIAGNOSIS goes to one is
 
   const filed = filedIssues(calls);
   assert.equal(filed.length, 1);
-  assert.equal(JSON.parse(filed[0].body).title, ALERT_ISSUE_TITLE);
+  assert.equal(JSON.parse(filed[0].body).title, ALERT.title);
   assert.match(JSON.parse(filed[0].body).body, /PR_BASE_SYNC_APP_CLIENT_ID/);
   assert.match(JSON.parse(filed[0].body).body, /Contents: Read and write/);
 });
@@ -237,10 +237,16 @@ test("no app token, twenty behind PRs: twenty wakes but exactly one alert issue"
       ...prs.map(detailRoute),
       ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
       emptyCommentsRoute,
+      { method: "GET", path: "/issues?state=all", body: [] },
     ],
     updateToken: null,
   });
   assert.equal(filedIssues(calls).length, 1, "one alert for the sweep, not one per PR");
+  assert.equal(
+    calls.filter((c) => c.method === "GET" && c.url.includes("/issues?state=all")).length,
+    1,
+    "the open-alert check's read is handed to the raise, not repeated (#2333)",
+  );
   assert.equal(
     calls.filter((c) => c.method === "POST" && c.url.includes("/comments")).length,
     20,
@@ -258,7 +264,7 @@ test("an already-open alert is not re-commented on every merge to main", async (
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }],
+        body: [{ number: 900, state: "open", title: ALERT.title }],
       },
       emptyCommentsRoute,
     ],
@@ -324,8 +330,8 @@ test("a close that leaves a duplicate alert open is surfaced, not dropped", asyn
   // resolveAlert reports a partial close as "failed" with what did close; a
   // sweep that logged only "closed" would hide the one left open.
   const openAlerts = [
-    { number: 900, state: "open", title: ALERT_ISSUE_TITLE },
-    { number: 901, state: "open", title: ALERT_ISSUE_TITLE },
+    { number: 900, state: "open", title: ALERT.title },
+    { number: 901, state: "open", title: ALERT.title },
   ];
   const lines = [];
   const pr = makePr(16);
@@ -373,7 +379,7 @@ test("a successful update whose alert lookup fails warns 'could not be read', ne
 });
 
 test("a successful update closes an open alert; a quiet sweep does not", async () => {
-  const openAlert = [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }];
+  const openAlert = [{ number: 900, state: "open", title: ALERT.title }];
   const alertLookupRoute = { method: "GET", path: "/issues?state=all", body: openAlert };
 
   const pr = makePr(16);

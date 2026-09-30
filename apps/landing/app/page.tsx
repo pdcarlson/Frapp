@@ -64,15 +64,18 @@ const SECTION_H2 = "text-display-lg text-balance text-foreground";
 /*
  * Controls take radius 12 and a 48 box (44 in the nav), per foundations §8 and
  * the System sheet. Focus is §10's: a 3px ring of the accent at 25% with the
- * border going solid accent. `chrome-motion` carries only the timing.
+ * border going solid accent-11 (`--accent-text`, #2398). The primary buttons
+ * clip their fill to the padding box, so that border shows the page at rest and
+ * the accent on focus rather than repainting under the fill it already sits on.
+ * `chrome-motion` carries only the timing.
  */
 const FOCUS_RING =
-  "focus-visible:outline-3 focus-visible:outline-offset-0 focus-visible:outline-primary/25 focus-visible:border-primary";
+  "focus-visible:outline-3 focus-visible:outline-offset-0 focus-visible:outline-primary/25 focus-visible:border-accent-text";
 
-const BUTTON_PRIMARY = `chrome-motion inline-flex h-12 items-center justify-center rounded-md border border-transparent bg-primary px-6 text-body font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
+const BUTTON_PRIMARY = `chrome-motion inline-flex h-12 items-center justify-center rounded-md border border-transparent bg-primary bg-clip-padding px-6 text-body font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
 
 /* The nav's own primary sits on the 44 touch floor rather than the 48 box. */
-const BUTTON_PRIMARY_NAV = `chrome-motion inline-flex h-11 items-center justify-center rounded-md border border-transparent bg-primary px-[18px] text-label font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
+const BUTTON_PRIMARY_NAV = `chrome-motion inline-flex h-11 items-center justify-center rounded-md border border-transparent bg-primary bg-clip-padding px-[18px] text-label font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
 
 /* Quiet links lift to the foreground; the accent link holds its colour and
  * underlines instead, so the one gold on the page never becomes two. */

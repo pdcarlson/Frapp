@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import {
   ALERT_CONFIGS,
   DEPLOY_PRODUCTION_CONFIG,
   DEPLOY_STAGING_CONFIG,
+  REQUIRED_ENV,
   alertJobNames,
   deployNeverStarted,
   main,
@@ -26,7 +27,8 @@ import {
   resolveAlertConfig,
   runDeployAlert,
 } from "../deploy-alert.mjs";
-import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
+import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL, defineAlert, isDefinedAlert } from "../lib/alert-issue.mjs";
+import { WORKFLOW_DIR, stepsRunning } from "./helpers/workflow-yaml.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Two kinds of config are used here, and they must not be confused.
@@ -49,7 +51,7 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
  *
  * Its title is deliberately NOT one of `DEPLOY_STAGING_CONFIG`'s retired
  * titles, so it can stand for "another watchdog's live alert" in the isolation
- * tests. It declares no `retiredAlertTitles` on purpose: a config without one
+ * tests. It declares no `retiredAlerts` on purpose: a config without one
  * must still resolve.
  */
 const API_SHAPED_CONFIG = {
@@ -61,8 +63,10 @@ const API_SHAPED_CONFIG = {
   gateOutputRows: [],
   planOutput: { job: "deploy-staging", output: "plan" },
   closesOn: "a later stand-in run for `main`'s tip deploys successfully",
-  alertTitle: "API-shaped stand-in is failing — test fixture only",
-  alertLabels: [ALERT_LOOKUP_LABEL, "area:ci", "P3"],
+  alert: defineAlert({
+    title: "API-shaped stand-in is failing — test fixture only",
+    labels: ["area:ci", "P3"],
+  }),
   noOpReason: "no migrate or deploy job ran",
   noOpIsUnexpected: true,
   noOpNote: "Neither `migrate-staging` nor `deploy-staging` ran. (Stand-in note.)",
@@ -81,7 +85,7 @@ const GATED_CONFIG = {
   name: "gated-stand-in",
   workflowLabel: "Gated stand-in",
   workflowFile: ".github/workflows/gated-stand-in.yml",
-  alertTitle: "Gated stand-in is failing — test fixture only",
+  alert: defineAlert({ title: "Gated stand-in is failing — test fixture only", labels: ["area:ci", "P3"] }),
   noOpIsUnexpected: false,
   noOpReason: "the changed-path gate skipped every migrate and deploy job",
   noOpNote: "The changed-path gate found nothing to deploy. See issue #763.",
@@ -162,8 +166,8 @@ function alertIssue(number, title, state = "open") {
   return { number, title, state };
 }
 
-const OPEN_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alertTitle);
-const CLOSED_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alertTitle, "closed");
+const OPEN_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alert.title);
+const CLOSED_ALERT = alertIssue(900, DEPLOY_STAGING_CONFIG.alert.title, "closed");
 
 /**
  * Minimal GitHub API stub. Every issues lookup answers with `issues` (the
@@ -241,16 +245,16 @@ test("the staging alert's title and priority are pinned, and the titles it repla
   // old titles stay listed so a successful run still closes an issue left open
   // under either; dropping or editing one strands that issue for good.
   assert.equal(
-    DEPLOY_STAGING_CONFIG.alertTitle,
+    DEPLOY_STAGING_CONFIG.alert.title,
     "Deploy staging is failing — merges are not reaching staging",
   );
-  assert.deepEqual(DEPLOY_STAGING_CONFIG.retiredAlertTitles, [
+  assert.deepEqual(DEPLOY_STAGING_CONFIG.retiredAlerts.map((alert) => alert.title), [
     "Deploy API is failing — pushes are not reaching the environment",
     "Deploy Vercel staging is failing — web and landing are not reaching staging",
   ]);
   // P1, the level Deploy API used (owner decision on #2803): the frontends
   // ship only behind a verified API, so a failure anywhere stops staging.
-  assert.deepEqual(DEPLOY_STAGING_CONFIG.alertLabels, [ALERT_LOOKUP_LABEL, "area:ci", "P1"]);
+  assert.deepEqual(DEPLOY_STAGING_CONFIG.alert.labels, [ALERT_LOOKUP_LABEL, "area:ci", "P1"]);
 });
 
 // ── readJobResults ──────────────────────────────────────────────────────────
@@ -439,7 +443,7 @@ test("findAlertIssues ignores pull requests and foreign titles, retired ones inc
   // or reopen an issue that watched a workflow that no longer exists.
   const { fetchImpl } = makeFetchStub({
     issues: [
-      { number: 1, title: DEPLOY_STAGING_CONFIG.alertTitle, state: "open", pull_request: {} },
+      { number: 1, title: DEPLOY_STAGING_CONFIG.alert.title, state: "open", pull_request: {} },
       { number: 2, title: "Something else", state: "open" },
       alertIssue(3, RETIRED_API_TITLE),
       OPEN_ALERT,
@@ -475,8 +479,8 @@ test("raiseAlert creates the issue when none exists, with the incident label and
 
   assert.deepEqual(result, { action: "created", issueNumber: 901 });
   const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
-  assert.deepEqual(create.body.labels, DEPLOY_STAGING_CONFIG.alertLabels);
+  assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alert.title);
+  assert.deepEqual(create.body.labels, DEPLOY_STAGING_CONFIG.alert.labels);
   // The lookup label is what keeps /next from claiming this as backlog work.
   assert.ok(create.body.labels.includes(ALERT_LOOKUP_LABEL));
   assert.deepEqual(create.body.assignees, [ALERT_ASSIGNEE]);
@@ -595,7 +599,7 @@ test("a successful run closes an issue still open under a retired title, as repl
     assert.match(comment, /^\*\*Replaced by Deploy staging, which succeeded\.\*\* Closing\./);
     assert.doesNotMatch(comment, /recovered/i);
     assert.ok(comment.includes("`.github/workflows/deploy-staging.yml`"), title);
-    assert.ok(comment.includes(DEPLOY_STAGING_CONFIG.alertTitle), title);
+    assert.ok(comment.includes(DEPLOY_STAGING_CONFIG.alert.title), title);
   }
 });
 
@@ -710,7 +714,7 @@ test("a failed run never touches a retired-title issue", async () => {
     assert.equal(result.outcome, "failed");
     assert.deepEqual(result.alert, { action: "created", issueNumber: 901 });
     const create = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-    assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
+    assert.equal(create.body.title, DEPLOY_STAGING_CONFIG.alert.title);
     assert.ok(
       !calls.some((c) => /\/issues\/96[01](\/|$)/.test(c.path)),
       "no call may touch a retired-title issue",
@@ -784,7 +788,7 @@ test("a no-op run never closes an open alert", async () => {
   // deploys work, so closing here would silence a live outage. Under a path
   // gate, no-op runs were the MAJORITY (46 of 90 in #763).
   const { fetchImpl, calls } = makeFetchStub({
-    issues: [alertIssue(900, GATED_CONFIG.alertTitle)],
+    issues: [alertIssue(900, GATED_CONFIG.alert.title)],
   });
   const { logger, lines } = capturingLogger();
   let summary = "";
@@ -922,32 +926,35 @@ test("the retired config names are refused, not resolved to their replacement", 
 test("no two configurations share an alert issue identity", () => {
   // Title is the lookup key. If any two ever matched, one watchdog's green run
   // would close the other's live outage alert.
-  const titles = Object.values(ALERT_CONFIGS).map((config) => config.alertTitle);
+  const titles = Object.values(ALERT_CONFIGS).map((config) => config.alert.title);
   assert.equal(new Set(titles).size, titles.length);
 
   // Nor may a live title also be a retired one, a config's own or another's.
   // resolveAlert closes every retired title's open issue on success, so a
   // config retiring a title another config still raises would close that
   // watchdog's open incident with a "replaced" comment.
-  const retired = Object.values(ALERT_CONFIGS).flatMap((config) => config.retiredAlertTitles ?? []);
+  const retired = Object.values(ALERT_CONFIGS).flatMap((config) =>
+    (config.retiredAlerts ?? []).map((alert) => alert.title),
+  );
   for (const title of titles) {
     assert.ok(!retired.includes(title), `live title is also retired: ${title}`);
   }
 
-  // Every config declares the lookup label. This asserts CONFIG SHAPE, not
-  // findability: `lib/alert-issue.mjs` forces `lookupLabel` into the created
-  // label set precisely so a caller cannot omit it, and that forcing — not
-  // this assertion — is what guarantees an alert can be found again. Do not
-  // read this test as making that belt-and-braces redundant.
+  // Every identity, live or retired, was made by `defineAlert`, which is what
+  // puts the lookup label on it: the lib refuses any other shape, so a config
+  // can't carry a hand-built identity that files an issue its lookup misses.
   for (const config of Object.values(ALERT_CONFIGS)) {
-    assert.ok(config.alertLabels.includes(ALERT_LOOKUP_LABEL), `${config.name} lookup label`);
+    for (const alert of [config.alert, ...config.retiredAlerts]) {
+      assert.ok(isDefinedAlert(alert), `${config.name}: ${alert?.title}`);
+    }
+    assert.ok(config.alert.labels.includes(ALERT_LOOKUP_LABEL), `${config.name} lookup label`);
   }
 
   // The stand-ins' titles are neither a live nor a retired title, or the
   // isolation tests below, which use them as "another watchdog's alert",
   // would pass vacuously.
   for (const standIn of [API_SHAPED_CONFIG, GATED_CONFIG]) {
-    assert.ok(![...titles, ...retired].includes(standIn.alertTitle), standIn.name);
+    assert.ok(![...titles, ...retired].includes(standIn.alert.title), standIn.name);
   }
 });
 
@@ -1095,14 +1102,14 @@ test("runDeployAlert files each config's alert under its own title, labels and b
     assert.equal(result.alert.action, "created", config.name);
 
     const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
-    assert.equal(created.body.title, config.alertTitle);
-    assert.notEqual(created.body.title, other.alertTitle);
-    assert.deepEqual(created.body.labels, config.alertLabels, config.name);
+    assert.equal(created.body.title, config.alert.title);
+    assert.notEqual(created.body.title, other.alert.title);
+    assert.deepEqual(created.body.labels, config.alert.labels, config.name);
     assert.ok(created.body.labels.includes(ALERT_LOOKUP_LABEL), config.name);
     assert.ok(created.body.labels.includes(priority), `${config.name} is ${priority}`);
     assert.ok(summary.startsWith(`## ${config.workflowLabel} outcome`), config.name);
 
-    // The BODY too, not just the title. `raiseAlert` passes `config.alertTitle`
+    // The BODY too, not just the title. `raiseAlert` passes `config.alert.title`
     // to the library directly but builds the body through a closure, so those
     // two can disagree: dropping `config` from the closure yields an issue
     // titled for one config whose body opens "## Deploy staging is failing" and
@@ -1120,9 +1127,9 @@ test("a recovered run closes only its own alert, never another config's", async 
   // stand-in retires nothing, so it must leave that issue alone as well: a
   // retired title belongs to the config that replaced it, not to every config.
   const issues = [
-    alertIssue(950, DEPLOY_STAGING_CONFIG.alertTitle),
-    alertIssue(951, API_SHAPED_CONFIG.alertTitle),
-    alertIssue(952, DEPLOY_PRODUCTION_CONFIG.alertTitle),
+    alertIssue(950, DEPLOY_STAGING_CONFIG.alert.title),
+    alertIssue(951, API_SHAPED_CONFIG.alert.title),
+    alertIssue(952, DEPLOY_PRODUCTION_CONFIG.alert.title),
     alertIssue(960, RETIRED_API_TITLE),
   ];
   const cases = [
@@ -1181,7 +1188,7 @@ test("a gateless config escalates 'nothing ran' to a failure, not a benign no-op
   });
   assert.equal(result.alert.action, "created");
   const created = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
-  assert.equal(created.body.title, DEPLOY_STAGING_CONFIG.alertTitle);
+  assert.equal(created.body.title, DEPLOY_STAGING_CONFIG.alert.title);
 });
 
 test("the gated config keeps a no-op benign, and never closes an open alert", async () => {
@@ -1194,7 +1201,7 @@ test("the gated config keeps a no-op benign, and never closes an open alert", as
   assert.equal(classify(apiShapedNoOpNeeds(), GATED_CONFIG).outcome, "no-op");
 
   const { fetchImpl, calls } = makeFetchStub({
-    issues: [alertIssue(900, GATED_CONFIG.alertTitle)],
+    issues: [alertIssue(900, GATED_CONFIG.alert.title)],
   });
   const result = await runDeployAlert({
     ...RUN,
@@ -1224,7 +1231,7 @@ test("a SECOND failure comments as its own config, never as another", async () =
     { config: API_SHAPED_CONFIG, needs: apiShapedFailedNeeds(), other: DEPLOY_STAGING_CONFIG },
   ];
   for (const { config, needs, other } of cases) {
-    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alertTitle)] });
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alert.title)] });
 
     const result = await runDeployAlert({
       ...RUN,
@@ -1251,7 +1258,7 @@ test("a reopened alert names its own config in the reopen comment", async () => 
   ];
   for (const { config, needs, other } of cases) {
     const { fetchImpl, calls } = makeFetchStub({
-      issues: [alertIssue(950, config.alertTitle, "closed")],
+      issues: [alertIssue(950, config.alert.title, "closed")],
     });
 
     const result = await runDeployAlert({
@@ -1284,7 +1291,7 @@ test("the recovery comment names its own config, never another", async () => {
     { config: API_SHAPED_CONFIG, needs: apiShapedDeployedNeeds(), other: DEPLOY_STAGING_CONFIG },
   ];
   for (const { config, needs, other } of cases) {
-    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alertTitle)] });
+    const { fetchImpl, calls } = makeFetchStub({ issues: [alertIssue(950, config.alert.title)] });
 
     await runDeployAlert({
       ...RUN,
@@ -1304,79 +1311,170 @@ test("the recovery comment names its own config, never another", async () => {
   }
 });
 
-// ── Every caller names itself ───────────────────────────────────────────────
+// ── Every caller names itself, at every call site ───────────────────────────
+//
+// `main()` requires REQUIRED_ENV, so a workflow step that omits one fails at
+// deploy time — loud, but only once a deploy actually runs. These tests catch
+// it in CI instead, and cover workflows added later: they discover callers by
+// scanning, rather than listing the ones that exist today.
+//
+// Each assertion is scoped to one call site (#2276). The guard before this
+// matched `ALERT_CONFIG:` anywhere in a caller's file, so a second reporting
+// step without it passed on the first step's copy: the whole-file shape that
+// hid a missing `DEPLOY_SHA` until run 34892839657 (#2265). The env is read the
+// way Actions resolves it, workflow then job then step (`workflowSteps`).
 
-test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => {
-  // `main()` calls requireEnv("ALERT_CONFIG"), so a workflow that omits it
-  // fails at deploy time — loud, but only once a deploy actually runs. This
-  // catches it in CI instead, and covers workflows added later: it discovers
-  // callers by scanning, rather than listing the ones that exist today.
-  const workflowDir = join(
-    dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "..",
-    "..",
-    ".github",
-    "workflows",
-  );
+const ALERT_SCRIPT = "scripts/ci/deploy-alert.mjs";
 
-  // `.yaml` as well as `.yml`. Actions honours both, and scanning only one is
-  // the exact hole this test exists to close — a `deploy-mobile.yaml` with a
-  // copied deploy-outcome block would never be read, and the roster assertion
-  // below could not compensate because it is built from the same list.
-  const callers = readdirSync(workflowDir)
-    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
-    .map((name) => ({ name, text: readFileSync(join(workflowDir, name), "utf8") }))
-    .filter(({ text }) =>
-      text.split("\n").some((line) => !/^\s*#/.test(line) && line.includes("deploy-alert.mjs")),
-    );
+/** Every step, across every workflow in `dir`, that runs deploy-alert.mjs. */
+function alertCallSites(dir = WORKFLOW_DIR) {
+  return stepsRunning(ALERT_SCRIPT, dir);
+}
 
-  // Guards the scan itself: a path typo would make the loop below vacuous.
-  // #2803 merged deploy-api.yml and deploy-vercel-staging.yml into
-  // deploy-staging.yml; #2805 added deploy-production.yml.
-  assert.deepEqual(
-    callers.map((c) => c.name).sort(),
-    ["deploy-production.yml", "deploy-staging.yml"],
-    "expected exactly the known callers — add a new one to this list deliberately",
-  );
-
-  // Tolerates the forms a human will actually write: quoted or bare, with or
-  // without a trailing comment. A guard that fails on `ALERT_CONFIG: "deploy-staging"`
-  // trains people to distrust it. `matchAll`, not `match`, so a workflow with
-  // two reporting steps has BOTH checked rather than only the first.
-  const configsIn = (text) =>
-    [
-      ...text.matchAll(
-        /^[ \t]*ALERT_CONFIG:[ \t]*["']?([A-Za-z0-9._-]+)["']?[ \t]*(?:#.*)?$/gm,
-      ),
-    ].map((m) => m[1]);
-
+/**
+ * What is wrong with a set of call sites, one message each, and which workflow
+ * claims each ALERT_CONFIG. `requireEnv` treats an empty value as missing, so
+ * an empty one is reported as missing here too.
+ */
+function callSiteProblems(sites) {
+  const problems = [];
   const claimedBy = new Map();
-  for (const { name, text } of callers) {
-    const configs = configsIn(text);
-    assert.ok(configs.length > 0, `${name} runs deploy-alert.mjs but sets no ALERT_CONFIG`);
-    for (const config of configs) {
-      assert.ok(
-        Object.hasOwn(ALERT_CONFIGS, config),
-        `${name} sets ALERT_CONFIG: ${config}, which is not a known configuration`,
-      );
-      claimedBy.set(config, (claimedBy.get(config) ?? new Set()).add(name));
+  for (const site of sites) {
+    const where = `${site.workflowFile} step "${site.name}" (job ${site.jobId})`;
+    for (const name of REQUIRED_ENV) {
+      if (!site.env.get(name)) problems.push(`${where} runs ${ALERT_SCRIPT} without ${name}`);
     }
+    const config = site.env.get("ALERT_CONFIG");
+    if (!config) continue;
+    if (!Object.hasOwn(ALERT_CONFIGS, config)) {
+      problems.push(`${where} sets ALERT_CONFIG: ${config}, which is not a known configuration`);
+      continue;
+    }
+    claimedBy.set(config, (claimedBy.get(config) ?? new Set()).add(site.workflowFile));
   }
-
-  // No configuration may be claimed by two different workflows — that would
+  // No configuration may be claimed by two different workflows: that would
   // point both at one alert issue, so either could close the other's incident.
   for (const [config, files] of claimedBy) {
-    assert.equal(
-      files.size,
-      1,
-      `ALERT_CONFIG ${config} is claimed by ${[...files].join(" and ")}`,
-    );
+    if (files.size > 1) problems.push(`ALERT_CONFIG ${config} is claimed by ${[...files].join(" and ")}`);
   }
+  return { problems, claimedBy };
+}
+
+test("every deploy-alert.mjs call site supplies what main() requires, and a known ALERT_CONFIG", () => {
+  const sites = alertCallSites();
+
+  // Guards the scan itself: a reader regression would make every check below
+  // a loop over nothing. #2803 merged deploy-api.yml and
+  // deploy-vercel-staging.yml into deploy-staging.yml; #2805 added
+  // deploy-production.yml.
+  assert.deepEqual(
+    sites.map((site) => site.workflowFile).sort(),
+    ["deploy-production.yml", "deploy-staging.yml"],
+    "expected exactly one call site in each known caller — add a new one to this list deliberately",
+  );
+
+  const { problems, claimedBy } = callSiteProblems(sites);
+  assert.deepEqual(problems, []);
 
   // And each caller selects its own config.
   assert.deepEqual([...claimedBy.get("deploy-staging")], ["deploy-staging.yml"]);
   assert.deepEqual([...claimedBy.get("deploy-production")], ["deploy-production.yml"]);
+});
+
+test("the call-site guard fails a second reporting step that omits ALERT_CONFIG", () => {
+  // The mutation test #2276 asks for: the committed tree passes above, and
+  // this proves the guard can fail. The first step's `ALERT_CONFIG` stays in
+  // the same file, which is exactly what satisfied the whole-file guard.
+  const dir = mkdtempSync(join(tmpdir(), "deploy-alert-callers-"));
+  try {
+    const original = readFileSync(join(WORKFLOW_DIR, "deploy-staging.yml"), "utf8");
+    const anchor = `        run: node ${ALERT_SCRIPT}\n`;
+    assert.equal(original.split(anchor).length, 2, "deploy-staging.yml should run deploy-alert.mjs once");
+    const secondStep = [
+      "      - name: Report the outcome again",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "          DEPLOY_NEEDS: ${{ toJSON(needs) }}",
+      `        run: node ${ALERT_SCRIPT}`,
+      "",
+    ].join("\n");
+    writeFileSync(join(dir, "deploy-staging.yml"), original.replace(anchor, anchor + secondStep));
+
+    const sites = alertCallSites(dir);
+    assert.equal(sites.length, 2);
+    assert.match(original, /^\s+ALERT_CONFIG: deploy-staging$/m, "the file still carries one ALERT_CONFIG");
+    const { problems } = callSiteProblems(sites);
+    assert.equal(problems.length, 1, problems.join("\n"));
+    assert.match(problems[0], /"Report the outcome again" .* without ALERT_CONFIG$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the call-site guard finds a caller that runs the script by its file name alone", () => {
+  // A step under `working-directory: scripts/ci` runs `node deploy-alert.mjs`.
+  // Matching the repo path missed it, so a new workflow wired that way, with
+  // no ALERT_CONFIG, passed the roster and the env check and failed only at
+  // deploy time. A file that merely shares the suffix is not a caller.
+  const dir = mkdtempSync(join(tmpdir(), "deploy-alert-callers-"));
+  try {
+    writeFileSync(
+      join(dir, "deploy-mobile.yml"),
+      [
+        "name: Deploy mobile",
+        "on: workflow_dispatch",
+        "jobs:",
+        "  deploy-outcome:",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - name: Report deploy outcome",
+        "        working-directory: scripts/ci",
+        "        env:",
+        "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+        "          DEPLOY_NEEDS: ${{ toJSON(needs) }}",
+        "        run: node deploy-alert.mjs",
+        "      - name: Not a caller",
+        "        run: node scripts/ci/pre-deploy-alert.mjs",
+        "",
+      ].join("\n"),
+    );
+    const sites = alertCallSites(dir);
+    assert.deepEqual(
+      sites.map((site) => site.name),
+      ["Report deploy outcome"],
+    );
+    assert.deepEqual(callSiteProblems(sites).problems, [
+      `deploy-mobile.yml step "Report deploy outcome" (job deploy-outcome) runs ${ALERT_SCRIPT} without ALERT_CONFIG`,
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the call-site guard reads a job-level ALERT_CONFIG, and refuses an unknown one", () => {
+  const site = (env) => ({ workflowFile: "w.yml", jobId: "j", name: "s", env: new Map(env) });
+  const base = [
+    ["GITHUB_TOKEN", "t"],
+    ["DEPLOY_NEEDS", "{}"],
+  ];
+  // `workflowSteps` merges workflow, job and step env, so a value set at job
+  // level arrives here like a step's own.
+  assert.deepEqual(callSiteProblems([site([...base, ["ALERT_CONFIG", "deploy-staging"]])]).problems, []);
+  assert.deepEqual(callSiteProblems([site([...base, ["ALERT_CONFIG", "toString"]])]).problems, [
+    'w.yml step "s" (job j) sets ALERT_CONFIG: toString, which is not a known configuration',
+  ]);
+  assert.deepEqual(callSiteProblems([site([...base, ["ALERT_CONFIG", ""]])]).problems, [
+    `w.yml step "s" (job j) runs ${ALERT_SCRIPT} without ALERT_CONFIG`,
+  ]);
+});
+
+test("main() requires nothing from its environment that REQUIRED_ENV doesn't list", () => {
+  // The call-site guard reads REQUIRED_ENV, so a `requireEnv("X")` written
+  // straight into the script would escape it. The only other read is the
+  // runner-provided GITHUB_REPOSITORY.
+  const source = readFileSync(fileURLToPath(new URL("../deploy-alert.mjs", import.meta.url)), "utf8");
+  const reads = [...source.matchAll(/\brequireEnv\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual(reads.sort(), ['"GITHUB_REPOSITORY"', "name"]);
 });
 
 test("an escalated no-op explains its own job table instead of contradicting it", () => {
@@ -1628,7 +1726,7 @@ test("a stale plan on one of several jobs is superseded even with a sibling job 
   // API shape, where #2505 found it): `migrate-staging` succeeding must not
   // turn a `stale` run into a deploy that closes the alert.
   const { fetchImpl, calls } = makeFetchStub({
-    issues: [alertIssue(951, API_SHAPED_CONFIG.alertTitle)],
+    issues: [alertIssue(951, API_SHAPED_CONFIG.alert.title)],
   });
   const result = await runDeployAlert({
     ...RUN,

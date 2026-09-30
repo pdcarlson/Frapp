@@ -21,6 +21,7 @@
     "./grouping": "./src/grouping.ts",
     "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
+    "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
     "./attachments": "./src/attachments.ts"
   },
   "scripts": {
@@ -35,7 +36,7 @@
     "@repo/formatting": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.117.1",
-    "@tanstack/react-query": "^5.103.2"
+    "@tanstack/react-query": "^5.104.0"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

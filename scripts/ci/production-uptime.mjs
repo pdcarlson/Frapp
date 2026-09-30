@@ -20,7 +20,7 @@
 // `scripts/ci/__tests__/production-uptime.test.mjs`.
 
 import {
-  ALERT_LOOKUP_LABEL,
+  defineAlert,
   findAlertIssuesDetailed,
   raiseAlert,
   resolveAlert,
@@ -34,9 +34,10 @@ export const READY_PATH = "/health/ready";
 
 // Title is the lookup key. Rename only in a change that also closes every
 // open alert carrying the old wording.
-export const ALERT_ISSUE_TITLE = "Production /health/ready is failing";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:infra", "P1"];
+export const ALERT = defineAlert({
+  title: "Production /health/ready is failing",
+  labels: ["area:infra", "P1"],
+});
 
 const BODY_SNIPPET_CHARS = 500;
 
@@ -165,15 +166,16 @@ export async function runWatchdog({
 }) {
   if (!result.ok) {
     // A 15-minute cadence must not comment on every tick. Create or reopen
-    // only; an already-open P1 *is* the incident. A failed lookup falls
-    // through to raiseAlert, which looks again and creates on a second failure:
-    // a duplicate self-heals on recovery, silence about an outage does not.
+    // only; an already-open P1 *is* the incident. The lookup is handed to
+    // raiseAlert, which reuses a successful one rather than reading the same
+    // pages again (#2333). A failed lookup falls through to raiseAlert, which
+    // looks again and creates on a second failure: a duplicate self-heals on
+    // recovery, silence about an outage does not.
     const lookup = await findAlertIssuesDetailed({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
     });
     const open = lookup.lookupOk
       ? lookup.issues.find((issue) => issue.state === "open")
@@ -189,13 +191,12 @@ export async function runWatchdog({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ result, url, runUrl }),
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still failing: ${result.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
       refreshBodyOnRaise: true,
+      lookup,
     });
     return { outcome: "fail", alert: raised, lookupOk: lookup.lookupOk };
   }
@@ -204,8 +205,7 @@ export async function runWatchdog({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       `Production /health/ready returned 200 status=ok again.${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });

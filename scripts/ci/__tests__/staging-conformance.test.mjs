@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  ALERT_ISSUE_TITLE,
+  ALERT,
   DELEGATED,
   FAIL,
   FAILING_MARKER,
@@ -1334,7 +1334,7 @@ test("a failing run writes the summary, annotates as an error, and raises the al
   assert.equal(alert.action, "created");
   assert.match(summary, /has drifted/);
   const created = calls.find((c) => c.method === "POST" && c.url.includes("/issues"));
-  assert.match(created.body, new RegExp(ALERT_ISSUE_TITLE.slice(0, 20)));
+  assert.match(created.body, new RegExp(ALERT.title.slice(0, 20)));
 });
 
 test("a clean run closes an open alert", async () => {
@@ -1342,7 +1342,7 @@ test("a clean run closes an open alert", async () => {
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }],
+      body: [{ number: 900, state: "open", title: ALERT.title }],
     },
     { method: "POST", path: "/comments", body: {} },
     { method: "PATCH", path: "/issues/900", body: {} },
@@ -1366,7 +1366,7 @@ test("an all-skipped run does NOT close an open alert by counting as healthy", a
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }],
+      body: [{ number: 900, state: "open", title: ALERT.title }],
     },
     { method: "POST", path: "/comments", body: {} },
     { method: "PATCH", path: "/issues/900", body: {} },
@@ -1391,7 +1391,7 @@ test("an inconclusive run issues no PATCH — the open alert is untouched", asyn
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }],
+      body: [{ number: 900, state: "open", title: ALERT.title }],
     },
     { method: "PATCH", path: "/issues/900", body: {} },
   ]);
@@ -1413,7 +1413,7 @@ test("a partially-skipped run with at least one real pass still resolves", async
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE }],
+      body: [{ number: 900, state: "open", title: ALERT.title }],
     },
     { method: "POST", path: "/comments", body: {} },
     { method: "PATCH", path: "/issues/900", body: {} },
@@ -1541,7 +1541,7 @@ test("a run where the alert's failing check merely SKIPPED does not close it", a
   const openAlert = {
     number: 900,
     state: "open",
-    title: ALERT_ISSUE_TITLE,
+    title: ALERT.title,
     body: `\`${FAILING_MARKER} auth-signin\``,
   };
   const { fetchImpl, calls } = makeFetchMock([
@@ -1576,7 +1576,7 @@ test("a run where the alert's failing check now PASSES does close it", async () 
   const openAlert = {
     number: 900,
     state: "open",
-    title: ALERT_ISSUE_TITLE,
+    title: ALERT.title,
     body: `\`${FAILING_MARKER} auth-signin\``,
   };
   const { fetchImpl } = makeFetchMock([
@@ -1806,7 +1806,7 @@ test("re-raising onto an open alert refreshes its body, and the marker accumulat
   const openAlert = {
     number: 900,
     state: "open",
-    title: ALERT_ISSUE_TITLE,
+    title: ALERT.title,
     body: `\`${FAILING_MARKER} auth-hook\``,
   };
   const { fetchImpl, calls } = makeFetchMock([
@@ -1888,7 +1888,7 @@ test("a failed body refresh does not suppress the failure comment", async () => 
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE, body: "" }],
+      body: [{ number: 900, state: "open", title: ALERT.title, body: "" }],
     },
     { method: "PATCH", path: "/issues/900", status: 502, body: {} },
     { method: "POST", path: "/comments", body: {} },
@@ -1926,7 +1926,7 @@ test("a reopen starts from a clean marker — a close is proof the old one recov
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 901, state: "closed", title: ALERT_ISSUE_TITLE, body: closedBody }],
+      body: [{ number: 901, state: "closed", title: ALERT.title, body: closedBody }],
     },
     { method: "PATCH", path: "/issues/901", body: {} },
     { method: "POST", path: "/comments", body: {} },
@@ -1982,7 +1982,7 @@ test("unproven-recovery records what it proved, so alternating passes converge",
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 902, state: "open", title: ALERT_ISSUE_TITLE, body: day1 }],
+      body: [{ number: 902, state: "open", title: ALERT.title, body: day1 }],
     },
     { method: "PATCH", path: "/issues/902", body: {} },
     { method: "POST", path: "/comments", body: {} },
@@ -2007,7 +2007,7 @@ test("unproven-recovery records what it proved, so alternating passes converge",
     {
       method: "GET",
       path: "/issues?state=all",
-      body: [{ number: 902, state: "open", title: ALERT_ISSUE_TITLE, body: day2 }],
+      body: [{ number: 902, state: "open", title: ALERT.title, body: day2 }],
     },
     { method: "POST", path: "/comments", body: {} },
     { method: "PATCH", path: "/issues/902", body: {} },
@@ -2064,7 +2064,7 @@ test("a failed alert lookup never closes an alert — unreadable is not the same
             {
               number: 100,
               state: "open",
-              title: ALERT_ISSUE_TITLE,
+              title: ALERT.title,
               body: `\`${FAILING_MARKER} auth-hook\``,
             },
           ]),
@@ -2137,21 +2137,19 @@ test("a conformant run whose first alert lookup fails is red, and never says an 
   assert.ok(!lines.some((l) => /still open/.test(l)));
 });
 
-test("a conformant run whose second alert lookup (resolveAlert's) fails is red, with an ::error::", async () => {
-  // The gate reads an open alert it may close; resolveAlert's own lookup then
-  // 502s. Before #2627 that read as "none" and the run went green.
-  const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
+test("a conformant run closes an open alert on the gate's one read (#2333)", async () => {
+  // The gate reads an open alert it may close and hands that read to
+  // resolveAlert. Before #2333 resolveAlert read the same pages again, and a
+  // 502 on that second read turned a proven recovery into an unread red run.
+  const open = [{ number: 700, state: "open", title: ALERT.title, body: "" }];
   const { fetchImpl, writes, lookupCount } = issueLookups([open, 502]);
-  const { logger, lines } = linesLogger();
   const run = await runStagingConformance({
-    token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger,
+    token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger: quiet,
   });
-  assert.equal(lookupCount(), 2);
-  assert.deepEqual(run.alert, { action: "unread", closed: [] });
-  assert.equal(conformanceExitCode(run), 1);
-  assert.equal(writes.length, 0);
-  assert.ok(lines.some((l) => /^::error::.*could not be read/.test(l)));
-  assert.ok(!lines.some((l) => /still open/.test(l)));
+  assert.equal(lookupCount(), 1);
+  assert.deepEqual(run.alert, { action: "closed", closed: [700] });
+  assert.equal(conformanceExitCode(run), 0);
+  assert.ok(writes.some((w) => w.method === "PATCH" && w.url.endsWith("/issues/700")));
 });
 
 test("a conformant run whose gate read nothing open does not look again, and stays green", async () => {
@@ -2167,7 +2165,7 @@ test("a conformant run whose gate read nothing open does not look again, and sta
 });
 
 test("a conformant run whose alert close fails is red", async () => {
-  const open = [{ number: 700, state: "open", title: ALERT_ISSUE_TITLE, body: "" }];
+  const open = [{ number: 700, state: "open", title: ALERT.title, body: "" }];
   const { fetchImpl } = issueLookups([open], { closeStatus: 502 });
   const run = await runStagingConformance({
     token: "t", repo: "o/r", fetchImpl, checks: allPass, writeSummary: () => {}, logger: quiet,

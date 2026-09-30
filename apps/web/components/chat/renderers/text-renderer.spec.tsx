@@ -2,7 +2,11 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH, extractMentionTokens } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { MAX_MESSAGE_MARKDOWN_DEPTH } from "@repo/chat-core/markdown";
+import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/markdown";
+import {
+  COSTLY_MARKDOWN_BODIES,
+  NEAR_BUDGET_MARKDOWN_BODY,
+} from "@repo/chat-core/test/markdown-parse-budget.fixtures";
 import { TextRenderer } from "./text-renderer";
 
 // #369: the timeline used to render `message.content` as plain text, so a
@@ -340,6 +344,59 @@ describe("TextRenderer over-nested bodies", () => {
       "@Alice",
     ]);
     expect(container.textContent).toBe(body);
+  });
+});
+
+/**
+ * #2664. Bodies within the length cap that remark was slow to parse (Node 24,
+ * remark-parse alone), most of them for hundreds of milliseconds to seconds,
+ * on every mount, for everyone who opened the channel. `skipsMarkdownParse`
+ * now reads them off the source and they render as their raw text. The bodies
+ * are shared with chat-core's and mobile's specs.
+ *
+ * Where the parse would render something else (a link, emphasis, a decoded
+ * entity, an unwrapped quote or list), rendering the body exactly as typed
+ * proves the parse was skipped. Where it would render the same text (a run
+ * the depth cap flattens, raw HTML shown as typed), the loose time bound is
+ * what tells.
+ */
+describe("TextRenderer bodies too costly to parse", () => {
+  it.each(COSTLY_MARKDOWN_BODIES.map((c) => [c.label, c.body]))(
+    "renders %s as its raw text, without the slow parse",
+    (_label, body) => {
+      expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
+      expect(skipsMarkdownParse(body)).toBe(true);
+
+      const started = performance.now();
+      const { container } = render(<TextRenderer message={message(body)} />);
+      // Timed only on one line. A body of thousands of lines costs jsdom a
+      // `<br>` per line even as raw text (about 0.5 s on CI), and each of
+      // those carries quote or list markers a parse would strip, so the
+      // raw-text assertion below is the proof for them.
+      if (!body.includes("\n")) {
+        expect(performance.now() - started).toBeLessThan(500);
+      }
+
+      expect(container.querySelector("strong, em, a")).toBeNull();
+      // The raw-text path keeps every character but a line's leading
+      // indentation, which `remark-breaks` drops at each break.
+      expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(
+        body.replace(/\n[ \t]+/g, "\n"),
+      );
+    },
+  );
+
+  it("parses a body just inside the budget quickly", () => {
+    // It goes through the parse (and then the depth cap flattens it), and
+    // stays far from the seconds the bodies above took.
+    const body = NEAR_BUDGET_MARKDOWN_BODY;
+    expect(skipsMarkdownParse(body)).toBe(false);
+
+    const started = performance.now();
+    const { container } = render(<TextRenderer message={message(body)} />);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    // Deeper than the cap, so it renders as its raw text after the parse.
+    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
   });
 });
 
