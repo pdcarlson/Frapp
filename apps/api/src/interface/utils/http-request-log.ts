@@ -1,12 +1,12 @@
 import { Logger } from '@nestjs/common';
 import type { Request } from 'express';
+import { httpStatusClass } from '@repo/observability';
 import {
   CLIENT_VERSION_HEADER,
   clientVersionForLog,
 } from '#domain/constants/client-version';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from './path-only';
-import { httpStatusClass } from '../../infrastructure/analytics/http-status-class';
 import { enqueueSanitizedLog } from '../../infrastructure/analytics/posthog-runtime';
 import {
   pseudonymizeChapterId,
@@ -128,6 +128,7 @@ export function emitSanitizedHttpRequestLog(
 
   const userHash = pseudonymizeUserId(request.appUser?.id);
   const chapterHash = pseudonymizeChapterId(request.chapterId);
+  const statusClass = httpStatusClass(status);
   enqueueSanitizedLog({
     body: 'request',
     severity: status >= 500 ? 'ERROR' : 'INFO',
@@ -136,7 +137,7 @@ export function emitSanitizedHttpRequestLog(
       method: request.method ?? 'UNKNOWN',
       path: path ?? '/',
       status_code: status,
-      status_class: httpStatusClass(status),
+      ...(statusClass ? { status_class: statusClass } : {}),
       ...(latencyMs !== undefined ? { latency_ms: latencyMs } : {}),
       ...(clientVersion ? { client_version: clientVersion } : {}),
       ...(userHash ? { user_hash: userHash } : {}),

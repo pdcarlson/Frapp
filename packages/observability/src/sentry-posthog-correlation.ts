@@ -8,8 +8,6 @@ import {
 import { statusFrom, traceIdFrom } from "./sentry-event";
 import { headerValue, httpStatusClass } from "./sentry-http";
 
-export { headerValue, httpStatusClass } from "./sentry-http";
-
 /**
  * The fields web and mobile Sentry events share for PostHog correlation.
  * Vendor event types are structural supersets of this.

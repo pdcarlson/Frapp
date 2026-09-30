@@ -6,8 +6,6 @@ import {
 } from "../src/index";
 import { statusFrom, traceIdFrom } from "../src/sentry-event";
 
-export { headerValue, httpStatusClass } from "../src/index";
-
 /**
  * Anonymous PostHog ↔ Sentry correlation: session/replay tags and the
  * content-free `sentry-error-correlated` marker.
