@@ -25,17 +25,18 @@ jest.mock('@sentry/nestjs', () => ({
   getTraceData: jest.fn(() => ({
     'sentry-trace': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-1',
   })),
-  // Given its scope in `beforeEach`, so a test that overrides it cannot leak
-  // its scope into the next one.
-  withScope: jest.fn(),
 }));
 
-const mockScope = {
-  setLevel: jest.fn(),
-  setTag: jest.fn(),
-  setUser: jest.fn(),
-  setFingerprint: jest.fn(),
-};
+/** The capture context of the one 5xx report a test made. */
+function reportedContext(): {
+  level?: string;
+  tags?: Record<string, string>;
+  user?: { id: string };
+  fingerprint?: string[];
+} {
+  expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+  return jest.mocked(Sentry.captureException).mock.calls[0]?.[1] as never;
+}
 
 jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
   captureSentryErrorCorrelated: jest.fn(),
@@ -67,12 +68,6 @@ describe('AllExceptionsFilter', () => {
   beforeEach(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
     jest.clearAllMocks();
-    jest.mocked(Sentry.withScope).mockImplementation((...args: unknown[]) => {
-      // The callback is the last argument under either overload; the filter
-      // uses the callback-only one.
-      const callback = args[args.length - 1] as (scope: never) => unknown;
-      return callback(mockScope as never);
-    });
     captured = {
       warn: [],
       error: [],
@@ -235,42 +230,48 @@ describe('AllExceptionsFilter', () => {
     }
 
     expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(Sentry.captureMessage).mock.calls[0]?.[0]).toContain(
-      'Auth failure spike',
-    );
+    const [text, context] = jest.mocked(Sentry.captureMessage).mock
+      .calls[0] as [string, { level?: string; tags?: Record<string, string> }];
+    expect(text).toContain('Auth failure spike');
+    expect(context.level).toBe('warning');
+    expect(context.tags).toEqual({
+      security_event: 'auth_failure_spike',
+      origin: expect.stringMatching(/^[0-9a-f]{64}$/),
+      failure_count: '3',
+      window_ms: '60000',
+    });
+    expect(context.tags?.origin).not.toContain(CLIENT_IP);
     const spike = securityEvents().find((e) => e.kind === 'auth_failure_spike');
     expect(spike).toMatchObject({ count: 3, threshold: 3 });
   });
 
   it('reports 5xx to Sentry with a pseudonymous user, never the raw id', () => {
-    const setUser = jest.fn();
-    const setTag = jest.fn();
-    jest.mocked(Sentry.withScope).mockImplementation((...args: unknown[]) => {
-      const callback = args[args.length - 1] as (scope: never) => unknown;
-      return callback({
-        setLevel: jest.fn(),
-        setTag,
-        setUser,
-        setFingerprint: jest.fn(),
-      } as never);
-    });
-
     new AllExceptionsFilter().catch(
       new Error('database exploded'),
       host({ appUser: { id: USER_ID }, chapterId: CHAPTER_ID }),
     );
 
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    expect(setUser).toHaveBeenCalledWith({
+    const { level, user, tags = {} } = reportedContext();
+    // The level decides which Sentry alert rules can match a 500, so it is
+    // contract, not a default to leave implicit.
+    expect(level).toBe('error');
+    expect(user).toEqual({
       id: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-    expect(setUser).not.toHaveBeenCalledWith({ id: USER_ID });
+    expect(user).not.toEqual({ id: USER_ID });
 
-    const tags = Object.fromEntries(setTag.mock.calls as [string, string][]);
-    expect(tags.chapter).toMatch(/^[0-9a-f]{64}$/);
-    expect(tags.chapter).not.toBe(CHAPTER_ID);
-    expect(tags.route).toBe('/v1/chapters/join');
-    expect(tags.request_id).toBe('req-abc');
+    // The whole set, so a raw id can't ride along as an extra tag: ids are
+    // hashed here, at the source, and the scrubber is only the backstop.
+    expect(tags).toEqual({
+      chapter: expect.stringMatching(/^[0-9a-f]{64}$/),
+      request_id: 'req-abc',
+      status_code: '500',
+      http_method: 'POST',
+      route: '/v1/chapters/join',
+    });
+    const shipped = JSON.stringify(reportedContext());
+    expect(shipped).not.toContain(USER_ID);
+    expect(shipped).not.toContain(CHAPTER_ID);
     expect(captured.status).toBe(500);
   });
 
@@ -296,6 +297,38 @@ describe('AllExceptionsFilter', () => {
       statusCode: 401,
       requestId: 'req-abc',
     });
+  });
+
+  it('still answers a 5xx, and emits no correlation marker, when Sentry throws', () => {
+    jest.mocked(Sentry.captureException).mockImplementationOnce(() => {
+      throw new Error('sentry unreachable');
+    });
+
+    new AllExceptionsFilter().catch(new Error('database exploded'), host());
+
+    expect(captured.status).toBe(500);
+    expect(captured.json).toMatchObject({
+      statusCode: 500,
+      requestId: 'req-abc',
+    });
+    expect(captured.warn).toContainEqual(
+      expect.stringContaining('sentry unreachable'),
+    );
+    expect(captureSentryErrorCorrelated).not.toHaveBeenCalled();
+  });
+
+  it('still answers a 5xx when the correlation marker throws', () => {
+    jest.mocked(Sentry.getTraceData).mockImplementationOnce(() => {
+      throw new Error('trace lookup broke');
+    });
+
+    new AllExceptionsFilter().catch(new Error('database exploded'), host());
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(captured.status).toBe(500);
+    expect(captured.warn).toContainEqual(
+      expect.stringContaining('trace lookup broke'),
+    );
   });
 
   /**
@@ -452,7 +485,7 @@ describe('AllExceptionsFilter', () => {
     expect(reported.cause).toBe(providerError);
     // Types and frames alone can't tell this fault from a timeout at the same
     // site, so the fingerprint names the cause's class and code.
-    expect(mockScope.setFingerprint).toHaveBeenCalledWith([
+    expect(reportedContext().fingerprint).toEqual([
       '{{ default }}',
       'ServiceUnavailableException',
       'StripeInvalidRequestError:resource_missing',
@@ -464,14 +497,14 @@ describe('AllExceptionsFilter', () => {
       { code: 'PGRST205', message: 'Could not find the table', details: null },
       host(),
     );
-    expect(mockScope.setFingerprint).toHaveBeenCalledWith([
+    expect(reportedContext().fingerprint).toEqual([
       '{{ default }}',
       'NonErrorThrowable:PGRST205',
     ]);
 
-    mockScope.setFingerprint.mockClear();
+    jest.mocked(Sentry.captureException).mockClear();
     new AllExceptionsFilter().catch(new Error('boom'), host());
-    expect(mockScope.setFingerprint).not.toHaveBeenCalled();
+    expect(reportedContext()).not.toHaveProperty('fingerprint');
   });
 
   it('strips the query string from the 5xx error log (#1260)', () => {
