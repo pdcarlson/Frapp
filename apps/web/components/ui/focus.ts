@@ -25,23 +25,25 @@
  * moved it to `--accent-text`, the token `FOCUS_RING_OFFSET` below already
  * uses, for two reasons that `focus-contrast.spec.ts` pins:
  *
- * - **A primary button had no focus border at all.** `buttonVariants` gives
+ * - **A primary button had no focus change at all.** `buttonVariants` gives
  *   every variant `border-transparent`, and on the `default` variant the fill
  *   is `bg-primary`, so swapping the border to `--primary` repainted it in the
- *   fill's own colour. The edge did not move, and the 25% halo was the whole
- *   indicator. accent-11 draws an edge the surface outside the button can be
- *   told apart from.
+ *   fill's own colour. The 25% halo was the whole indicator.
  * - **Headroom.** accent-9 used to fail 3:1 on 9 of 19 seeds over `--popover`.
  *   Since #2541 the engine holds it to 3:1 on every ladder step, but 3:1 is all
  *   the floor guarantees (3.78:1 at the worst seed). accent-11 is the engine's
  *   text role, gated at 4.5:1 as text, and its worst seed × ladder step is
  *   6.81:1. One token for both recipes also means one number to watch.
  *
- * The one surface accent-11 does not stand out on is accent-9 itself
- * (1.09–2.07:1 across the 19 seeds, the reason `signet.css` rejects it for
- * `::selection`). That is the fill *inside* a primary button, so there the
- * edge reads against the surface outside the button, at 6.81:1 or better, and
- * not against the fill.
+ * The token alone did not fix the primary button. The one surface accent-11
+ * does not stand out on is accent-9 itself (1.09–2.07:1 across the 19 seeds,
+ * the reason `signet.css` rejects it for `::selection`), and with the default
+ * `border-box` background clip the fill paints under the transparent border.
+ * So focus would only have moved that 1px from accent-9 to accent-11. The
+ * `default` variant therefore clips its fill to the padding box
+ * (`bg-clip-padding`): at rest the border shows the surface behind the button,
+ * and on focus it turns accent-11, a change of 6.81:1 or better. Any other
+ * filled control over a transparent border needs the same clip.
  *
  * That is also why `FOCUS_RING` is wrong for a control whose border already
  * encodes something. On a `Switch` the border carries on/off, and on a

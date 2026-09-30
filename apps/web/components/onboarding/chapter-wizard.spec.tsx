@@ -408,9 +408,10 @@ describe("the archetype card, at the call site", () => {
     // Both Tailwind opacity spellings, and the bare accent slot with them.
     expect(selected.className).not.toMatch(/bg-(?:primary|accent|secondary)\//);
     expect(selected.className).not.toMatch(/(?:^|\s)bg-primary\b/);
-    // Anchored to the start of a class rather than a word boundary: the card
-    // legitimately carries `focus-visible:border-accent-text` from `FOCUS_RING`,
-    // and that is the indicator the test below pins.
+    // Anchored to the start of a class, so a variant-prefixed
+    // `…:border-primary` would not trip it. The card's focus border comes from
+    // `FOCUS_RING` (`focus-visible:border-accent-text`), pinned by the test
+    // below.
     expect(selected.className).not.toMatch(/(?:^|\s)border-primary\b/);
   });
 

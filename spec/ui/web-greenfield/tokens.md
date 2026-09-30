@@ -409,6 +409,10 @@ and `FOCUS_RING_WITHIN` all swap to it. `focus-contrast.spec.ts` now measures al
   (3.78:1 at the worst). And on a primary button, whose fill is `accent-9` over a reserved
   transparent border, an `accent-9` border swap drew nothing, so the 25% ring was the whole
   indicator.
+- **The token alone doesn't fix the primary button.** The fill paints under a transparent border by
+  default, so accent-9 → accent-11 there is a 1.09:1 change at the worst seed. The `default` Button
+  variant (and landing's primary buttons) now clip the fill to the padding box (`bg-clip-padding`),
+  so the border shows the surface at rest and accent-11 on focus.
 - **This diverges from the board**, which draws the focus state as "gold border + 3px 25% ring"
   (`reference/web-framework.dc.html:387`, `:1157`). The decision post-dates the board and rests on
   the non-text contrast floor, which a board can't lower. The board's

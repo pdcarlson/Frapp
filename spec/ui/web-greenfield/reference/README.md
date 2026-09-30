@@ -109,9 +109,9 @@ One thing the board draws that deliberately no longer ships (added 2026-09-30):
 - **The focus border.** The board draws the focus state as "gold border + 3px 25% ring" (`:387`,
   `:1157`), which is `accent-9`. Since [#2398](https://github.com/pdcarlson/Frapp/issues/2398) the
   border is `accent-11`, on the owner's decision of 2026-09-18. `accent-9` clears the 3:1 non-text
-  floor only because the accent engine lifts it there, and it drew nothing on a primary button's
-  `accent-9` fill. A board can't lower a WCAG floor, so this is the one place its trust rank gives
-  way. [`../tokens.md`](../tokens.md) § L-07 has the measurements.
+  floor with no headroom (the engine guarantees the floor and nothing more), and it drew nothing on a
+  primary button's `accent-9` fill. A board can't lower a WCAG floor, so this is the one place its
+  trust rank gives way. [`../tokens.md`](../tokens.md) § L-07 has the measurements.
 
 ## What goes here
 
