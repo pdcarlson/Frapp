@@ -100,6 +100,7 @@ describe('PollService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findDm: jest.fn(),
+      createDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
