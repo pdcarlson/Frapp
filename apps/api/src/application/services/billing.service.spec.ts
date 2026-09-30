@@ -46,7 +46,7 @@ function postgrestBody(): {
 
 function loggerPrinted(spy: jest.SpyInstance): string {
   return spy.mock.calls
-    .map((args) =>
+    .map((args: unknown[]) =>
       args
         .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
         .join('\n'),
@@ -267,6 +267,8 @@ describe('BillingService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -1068,6 +1070,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -1238,6 +1241,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -1252,6 +1256,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -2038,6 +2043,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -2051,6 +2057,7 @@ describe('BillingService', () => {
         role_ids: ['role-pres'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       };
@@ -3373,6 +3380,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -3387,6 +3395,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -3451,6 +3460,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },
@@ -3537,6 +3547,7 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        system_key: null,
         permissions: [],
         is_system: true,
         display_order: 0,
@@ -3551,6 +3562,7 @@ describe('BillingService', () => {
           role_ids: ['role-pres'],
           custom_role_ids: [],
           has_completed_onboarding: true,
+          dismissed_ops_nudges: [],
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
         },

@@ -25,7 +25,9 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chapter-1" }),
 }));
 
-const { useChapterModuleGate } = await import("./use-chapter-module-gate");
+const { useChapterModuleGate, useChapterModuleGateState } = await import(
+  "./use-chapter-module-gate"
+);
 
 describe("useChapterModuleGate", () => {
   beforeEach(() => {
@@ -74,5 +76,54 @@ describe("useChapterModuleGate", () => {
     const { result } = renderHook(() => useChapterModuleGate());
     expect(result.current?.("events")).toBe(true);
     expect(result.current?.("polls")).toBe(false);
+  });
+});
+
+/**
+ * The same read with its state, for chat's slash commands (#2957, #2993). The
+ * palette and the composer have to tell "still loading" and "failed" apart
+ * from "switched off", because each says something different to the member.
+ */
+describe("useChapterModuleGateState", () => {
+  beforeEach(() => {
+    useCurrentChapter.mockReset();
+  });
+
+  it("is loading, and closed, while the read is in flight", () => {
+    useCurrentChapter.mockReturnValue({ data: undefined, isError: false });
+    const { result } = renderHook(() => useChapterModuleGateState());
+    expect(result.current.status).toBe("loading");
+    // Fail closed (#310): nothing module-backed runs before the gate answers.
+    expect(result.current.isModuleEnabled("polls")).toBe(false);
+  });
+
+  it("is an error, and closed, once the read failed with nothing cached", () => {
+    useCurrentChapter.mockReturnValue({ data: undefined, isError: true });
+    const { result } = renderHook(() => useChapterModuleGateState());
+    expect(result.current.status).toBe("error");
+    expect(result.current.isModuleEnabled("polls")).toBe(false);
+  });
+
+  it("is ready from the member view, including a failed refetch over cached data", () => {
+    useCurrentChapter.mockReturnValue({
+      data: { enabled_modules: { polls: false } },
+      isError: true,
+    });
+    const { result } = renderHook(() => useChapterModuleGateState());
+    expect(result.current.status).toBe("ready");
+    expect(result.current.isModuleEnabled("polls")).toBe(false);
+    expect(result.current.isModuleEnabled("events")).toBe(true);
+  });
+
+  it("retries the member-view read", () => {
+    const refetch = vi.fn();
+    useCurrentChapter.mockReturnValue({
+      data: undefined,
+      isError: true,
+      refetch,
+    });
+    const { result } = renderHook(() => useChapterModuleGateState());
+    result.current.retry();
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });

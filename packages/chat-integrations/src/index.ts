@@ -50,7 +50,9 @@ export interface SlashCommand {
   usage?: string;
   /**
    * `enabled_modules` key that gates this command, or `null` for always-on.
-   * Resolve against `useOrgConfig().isModuleEnabled` in the UI.
+   * Resolve it against the member view's `enabled_modules`
+   * (`useChapterModuleGateState` on web), never the officer-only config, which
+   * errors for every member below President (#2957).
    */
   requiredModule: string | null;
   /**
@@ -183,9 +185,9 @@ export function getSlashCommand(
 /**
  * Filters the command catalog for the palette. `query` is the text typed after
  * the slash; an empty query returns everything. Commands whose module is
- * disabled are excluded via the supplied predicate (wire it to
- * `useOrgConfig().isModuleEnabled`). Commands with no `requiredModule` are
- * always included.
+ * disabled are excluded via the supplied predicate (on web, the gate from
+ * `useChapterModuleGateState`, which reads the member view). Commands with no
+ * `requiredModule` are always included.
  *
  * Pass `options.recruitment` so the rush row matches and displays the chapter's
  * vocabulary token (`/intake`, `/recruitment`, …) without changing `name`.

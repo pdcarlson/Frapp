@@ -27,7 +27,8 @@ import {
 } from '../../infrastructure/observability/security-events';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
-import { errorFingerprint } from '../../infrastructure/observability/error-fingerprint';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 import {
   captureSentryErrorCorrelated,
   enqueueSanitizedLog,
@@ -105,8 +106,11 @@ function extractCode(exception: HttpException): string | undefined {
  *  - **401 / 403 / 429** → a `warn`-level `security_event` record, plus (401
  *    only) the sliding-window spike detector.
  *  - **>= 500** → the existing `error` log, and now `Sentry.captureException`,
- *    which nothing previously called. `instrument.ts`'s `beforeSend` does
- *    the PII scrubbing; the scope set here carries only pre-pseudonymized ids.
+ *    which nothing previously called, sent through `reportSwallowed`.
+ *    `beforeSend` (built in `sentry-options.ts`) does the PII scrubbing; the
+ *    capture context built here carries only pre-pseudonymized ids. There is
+ *    no scope fork, so a tag set on the current scope would reach other
+ *    events.
  *    `@SentryExceptionCaptured` / `SentryGlobalFilter` are deliberately not
  *    used: they would `captureException` the raw value (PostgREST `{code,
  *    message, details}` objects become `[object Object]`) and double-report
@@ -257,21 +261,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
         }),
       );
 
-      Sentry.withScope((scope) => {
-        scope.setLevel('warning');
-        scope.setTag('security_event', 'auth_failure_spike');
-        if (originHash) scope.setTag('origin', originHash);
-        scope.setTag('failure_count', String(trip.count));
-        scope.setTag('window_ms', String(trip.windowMs));
-        Sentry.captureMessage(
-          `Auth failure spike: ${trip.count} failures from one origin in ${
-            trip.windowMs / 60_000
-          }m`,
-        );
-      });
+      reportSwallowed(this.logger, 'an auth-failure spike', () => ({
+        message: `Auth failure spike: ${trip.count} failures from one origin in ${
+          trip.windowMs / 60_000
+        }m`,
+        level: 'warning',
+        tags: {
+          security_event: 'auth_failure_spike',
+          ...(originHash ? { origin: originHash } : {}),
+          failure_count: String(trip.count),
+          window_ms: String(trip.windowMs),
+        },
+      }));
     } catch (error) {
-      this.logger.warn(
-        `security-event emission failed: ${(error as Error).message}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        'security-event emission failed',
+        error,
       );
     }
   }
@@ -292,8 +299,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     try {
       emitSanitizedHttpRequestLog(new Logger('HTTP'), request, status);
     } catch (error) {
-      this.logger.warn(
-        `unmatched-request log emission failed: ${(error as Error).message}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        'unmatched-request log emission failed',
+        error,
       );
     }
   }
@@ -313,40 +323,32 @@ export class AllExceptionsFilter implements ExceptionFilter {
     status: number,
     requestId: string,
   ): void {
-    try {
-      Sentry.withScope((scope) => {
-        const userHash = pseudonymizeUserId(request.appUser?.id);
-        if (userHash) scope.setUser({ id: userHash });
-
-        const chapterHash = pseudonymizeChapterId(request.chapterId);
-        if (chapterHash) scope.setTag('chapter', chapterHash);
-
-        scope.setTag('request_id', requestId);
-        scope.setTag('status_code', String(status));
-        if (request.method) scope.setTag('http_method', request.method);
-        const path = pathOnly(request.url);
-        if (path) scope.setTag('route', path);
-
-        const reported = toReportableError(exception);
-        const fingerprint = errorFingerprint(reported);
-        if (fingerprint) scope.setFingerprint(fingerprint);
-
-        const eventId = Sentry.captureException(reported);
-        this.emitSentryErrorCorrelated(
-          request,
-          status,
-          requestId,
-          typeof eventId === 'string' ? eventId : undefined,
-        );
-      });
-    } catch (error) {
-      this.logger.warn(`Sentry capture failed: ${(error as Error).message}`);
-    }
+    const eventId = reportSwallowed(this.logger, `a ${status}`, () => {
+      const userHash = pseudonymizeUserId(request.appUser?.id);
+      const chapterHash = pseudonymizeChapterId(request.chapterId);
+      const path = pathOnly(request.url);
+      return {
+        error: exception,
+        level: 'error',
+        tags: {
+          ...(chapterHash ? { chapter: chapterHash } : {}),
+          request_id: requestId,
+          status_code: String(status),
+          ...(request.method ? { http_method: request.method } : {}),
+          ...(path ? { route: path } : {}),
+        },
+        ...(userHash ? { user: { id: userHash } } : {}),
+      };
+    });
+    this.emitSentryErrorCorrelated(request, status, requestId, eventId);
   }
 
   /**
    * Content-free PostHog timeline marker. Never the exception, stack, body,
    * query, or message. Errors are counted only in Sentry.
+   *
+   * Guarded on its own, for the same reason the capture is: it reads the
+   * active trace from the Sentry SDK, and the response has not been written.
    */
   private emitSentryErrorCorrelated(
     request: RequestContext,
@@ -355,20 +357,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
     sentryEventId: string | undefined,
   ): void {
     if (!sentryEventId) return;
-    const userHash = pseudonymizeUserId(request.appUser?.id);
-    const chapterHash = pseudonymizeChapterId(request.chapterId);
-    const distinctId =
-      (isPseudonymHex(userHash) ? userHash : undefined) ??
-      (isPseudonymHex(chapterHash) ? chapterHash : undefined) ??
-      `req:${requestId}`;
-    captureSentryErrorCorrelated(distinctId, {
-      sentry_event_id: sentryEventId,
-      trace_id: sentryTraceId(),
-      request_id: requestId,
-      route: pathOnly(request.url),
-      status_class: httpStatusClass(status),
-      release: readDeployedCommit(),
-    });
+    try {
+      const userHash = pseudonymizeUserId(request.appUser?.id);
+      const chapterHash = pseudonymizeChapterId(request.chapterId);
+      const distinctId =
+        (isPseudonymHex(userHash) ? userHash : undefined) ??
+        (isPseudonymHex(chapterHash) ? chapterHash : undefined) ??
+        `req:${requestId}`;
+      captureSentryErrorCorrelated(distinctId, {
+        sentry_event_id: sentryEventId,
+        trace_id: sentryTraceId(),
+        request_id: requestId,
+        route: pathOnly(request.url),
+        status_class: httpStatusClass(status),
+        release: readDeployedCommit(),
+      });
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        'sentry-error-correlated emission failed',
+        error,
+      );
+    }
   }
 
   private enqueueSanitizedErrorLog(

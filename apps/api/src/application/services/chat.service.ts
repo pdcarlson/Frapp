@@ -13,6 +13,7 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isDirectChannel,
+  isModuleEnabled,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
   resolveMentions,
@@ -84,6 +85,7 @@ import {
   ChannelAccessService,
   type ReportedMessageGrant,
 } from './channel-access.service';
+import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import { ChatBlockService } from './chat-block.service';
 import {
   isFromBlockedSender,
@@ -173,6 +175,13 @@ export interface SendMessageInput {
   reply_to_id?: string | null;
   metadata?: Record<string, any>;
   /**
+   * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
+   * client send: it is what refuses a card kind whose module is off
+   * ({@link MODULE_GATED_KINDS}). Absent or `null` reads as every module on,
+   * the same as a chapter with no toggles stored.
+   */
+  enabled_modules?: EnabledModules;
+  /**
    * Internal-only: set by trusted server callers (e.g. `PointsService` posting
    * a `points` card after a committed ledger write) to bypass the
    * server-originated-kind guard. Never present on `SendMessageDto`, so a
@@ -203,6 +212,23 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   // would have a message that never notifies and never appears live.
   'imported',
 ]);
+
+/**
+ * Client-postable kinds that are a toggleable module's artifact, keyed to that
+ * module. `sendMessage` refuses one while its module is off, with the same
+ * refusal `ChapterGuard` returns for the module's own routes (#2993): the chat
+ * send route is an always-on module's, so route metadata can't gate it.
+ *
+ * The server-only kinds need no entry: their only writers are the modules' own
+ * services, reached through controllers that carry `@RequireModule`. `dues` is
+ * here although member-invoice routes stay ungated: that exemption keeps
+ * *paying* reachable for a locked chapter (`spec/product/modules.md`), and
+ * posting a dues card pays nothing.
+ */
+const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
+  poll: 'polls',
+  dues: 'dues',
+};
 
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
 const VOTE_ACTION_TYPE = 'vote';
@@ -959,6 +985,29 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
+
+    const gatedModule = MODULE_GATED_KINDS[kind];
+    if (
+      gatedModule &&
+      !isModuleEnabled(input.enabled_modules ?? null, gatedModule)
+    ) {
+      // A replay of a card that committed before the module was switched off
+      // is not a new write: answer it as the duplicate below would, or the
+      // client's outbox marks a card that exists on the server as failed.
+      // Nothing is written on this path, not even the attachment repair.
+      const existing = input.client_message_id
+        ? await this.messageRepo.findByClientMessageId(
+            input.channel_id,
+            input.sender_id,
+            input.client_message_id,
+          )
+        : null;
+      if (existing && existing.kind === kind) {
+        return { message: existing, deduplicated: true };
+      }
+      assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
+    }
+
     const mentions = await this.resolveMentionsForChapter(
       input.chapter_id,
       input.content,
@@ -1819,6 +1868,7 @@ export class ChatService {
     chapterId: string,
     userId: string,
     input: { action_type: string; payload?: Record<string, unknown> | null },
+    enabledModules: EnabledModules,
   ): Promise<{
     action: ChatMessageAction;
     deduplicated: boolean;
@@ -1840,6 +1890,13 @@ export class ChatService {
     // are shared with `PollService.vote`; only the encoding differs, since this
     // side addresses options by id rather than by index.
     if (isVote && message.kind === 'poll') {
+      // A vote is a write to the Polls module, so it is frozen with the module
+      // (#2993), exactly as `POST /v1/polls/:id/vote` is by its controller's
+      // `@RequireModule('polls')`. Reading the card and its tally is not
+      // gated, and neither is an emoji reaction on it, which belongs to chat.
+      // Before the poll rules, so a closed poll in a disabled module reports
+      // the module rather than a deadline nobody can act on.
+      assertModuleEnabled(enabledModules, 'polls');
       assertCardPollVoteAllowed(message.payload, payload);
     }
 

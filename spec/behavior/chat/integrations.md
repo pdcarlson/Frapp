@@ -4,11 +4,11 @@ Chat is the spine; an ops module with a message-shaped action is a **chat integr
 
 ## Slash command catalog
 
-Slash commands turn chat into the dispatcher for the ops modules that have a message-shaped action. The catalog is filtered by the chapter's `enabled_modules` so disabling a paid module hides its command from the palette without UI churn. Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast as modules ship. **Server-side authorization is independent of the client gate** — the server re-checks permission for every send; the client gate is UX only, the server is the trust boundary.
+Slash commands turn chat into the dispatcher for the ops modules that have a message-shaped action. The catalog is filtered by the chapter's `enabled_modules` so disabling a paid module hides its command from the palette without UI churn, and the composer refuses the same command typed out in full. Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast as modules ship. **Server-side authorization is independent of the client gate** — the server re-checks permission for every send; the client gate is UX only, the server is the trust boundary.
 
 | Command | Implemented | Required module | Server gate | Posted to |
 | --- | --- | --- | --- | --- |
-| `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member | current channel |
+| `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member; `ChatService.sendMessage` refuses `kind: "poll"` with `403 chapter.module.disabled` while `polls` is off, and so does a card vote ([`../../product/modules.md` § Module disabling behavior](../../product/modules.md#module-disabling-behavior)) | current channel |
 | `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
 | `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust`, re-checked on `POST /v1/points/adjust` (no self-adjust, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud) | current channel |
 | `/task "<title>" @assignee <YYYY-MM-DD> [points]` | yes | `tasks` | `tasks:manage`, re-checked on `POST /v1/tasks` (assignee must be a chapter member) | current channel |

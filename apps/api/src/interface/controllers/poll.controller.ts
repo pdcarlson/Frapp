@@ -61,10 +61,12 @@ export class PollController {
     @CurrentUser('id') userId: string,
     @Body() dto: VoteDto,
   ) {
-    const indexes = Array.isArray(dto.option_indexes)
-      ? dto.option_indexes
-      : [dto.option_indexes];
-    await this.pollService.vote(messageId, userId, chapterId, indexes);
+    await this.pollService.vote(
+      messageId,
+      userId,
+      chapterId,
+      dto.option_indexes,
+    );
     return { success: true };
   }
 

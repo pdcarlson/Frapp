@@ -104,8 +104,8 @@ the Render deploy and the health check reaches that upload. A dry run, a `migrat
 or a run that fails earlier leaves them where they were. The run's `release` job then tags the
 shipped commit `vX.Y.Z`. If tagging fails after a live ship, `production-release-pin.mjs` raises
 its own alert. Anything merged since the last such run is on the staging hostnames, not here. On 2026-09-28 the
-landing reskin had been on `main` for ten days while `www.frapp.live` still served `v1.2.0`, the
-2026-09-17 deploy. That was a deploy that hadn't happened yet, not a broken alias.
+landing reskin had been on `main` for ten days while `www.frapp.live` still served `v1.2.0` (renumbered `v0.4.0` on
+2026-09-30, [#2529](https://github.com/pdcarlson/Frapp/issues/2529)), the 2026-09-17 deploy. That was a deploy that hadn't happened yet, not a broken alias.
 
 #### Staging hostnames
 

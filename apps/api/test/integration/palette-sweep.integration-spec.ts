@@ -51,7 +51,14 @@ describeIntegration('Stale-palette sweep against live PostgREST', () => {
   const behind = randomUUID(); // stamped by an older engine
   const racedSeed = randomUUID(); // accent changes between read and write
   const racedStamp = randomUUID(); // another writer stamps between read and write
-  const fixtures = [crimson, noAccent, current, behind, racedSeed, racedStamp];
+  const fixtures: string[] = [
+    crimson,
+    noAccent,
+    current,
+    behind,
+    racedSeed,
+    racedStamp,
+  ];
 
   const assertOk = (label: string, error: { message: string } | null) => {
     if (error) throw new Error(`seed ${label}: ${error.message}`);

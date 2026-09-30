@@ -286,7 +286,7 @@ more than 24 hours after 2026-09-24 19:00 UTC. *Corrected 2026-09-28: that last 
 longer fires. Production is now judged against its latest `v*` tag, not `main`, so a
 migration merged and not yet shipped reads as unreleased
 ([`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
-`20260924190000` shipped in v1.3.0.*
+`20260924190000` shipped in v1.3.0, renumbered `v0.5.0` on 2026-09-30 ([#2529](https://github.com/pdcarlson/Frapp/issues/2529)).*
 
 1. **Staging.** Once the merge's staging deploy is live, in `frapp-staging` →
    Authentication: SMTP Settings → Sender name `Frapp`; Email Templates → Magic Link → the

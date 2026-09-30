@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
-import * as Sentry from '@sentry/nestjs';
+import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 import { forwardedShape } from '../utils/http-request-log';
 
 /**
@@ -39,26 +39,15 @@ export function createProxyChainTripwire(trustedHops: number) {
         reported = true;
         const message = `trust proxy is ${trustedHops} hops, but a request arrived with a ${xffCount}-entry X-Forwarded-For chain. req.ip is client-controlled until the hop count is re-measured (#2972).`;
         logger.error(message);
-        try {
-          Sentry.captureMessage(
-            'trust proxy hop count exceeds the forwarded chain',
-            {
-              level: 'error',
-              tags: {
-                trust_proxy_hops: String(trustedHops),
-                xff_count: String(xffCount),
-              },
-              fingerprint: ['trust-proxy-hop-count'],
-            },
-          );
-        } catch (error) {
-          // The log line above already carries the finding.
-          logger.warn(
-            `Sentry report failed for the trust proxy check: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
+        reportSwallowed(logger, 'the trust proxy check', () => ({
+          message: 'trust proxy hop count exceeds the forwarded chain',
+          level: 'error',
+          tags: {
+            trust_proxy_hops: String(trustedHops),
+            xff_count: String(xffCount),
+          },
+          fingerprint: ['trust-proxy-hop-count'],
+        }));
       }
     }
     next();
