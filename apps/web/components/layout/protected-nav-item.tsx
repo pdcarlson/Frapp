@@ -7,7 +7,12 @@ import type { NavItem } from "@/components/layout/nav-config";
 
 type Props = {
   item: NavItem;
-  isActive: boolean;
+  /**
+   * `"page"` when this row's own route is open; `"true"` when a route listed in
+   * the row's `activeFor` is open (a Settings tool, for the Settings row).
+   * Both paint the active fill; only the first claims to be the current page.
+   */
+  current?: "page" | "true";
   permissions: readonly string[] | null | undefined;
   iconClassName: string;
   onNavigate?: () => void;
@@ -18,10 +23,12 @@ type Props = {
   collapsed?: boolean;
   focusClassName: string;
   /**
-   * Predicate from `useOrgConfig().data?.isModuleEnabled`. When provided and
-   * the item declares a `module`, the item is hidden if that module is
-   * disabled. Omitted (e.g. while the chapter config is still loading) means
-   * "don't module-gate" so items never flash out during the initial load.
+   * The chapter's module gate, from `useChapterModuleGate()` (the member-
+   * readable current chapter; never `useOrgConfig()`, which members cannot
+   * read, #1982). When provided and the item declares a `module`, the item
+   * hides if that module is off. Omitted while the chapter read is in flight,
+   * which means "don't module-gate", so items never flash out during the
+   * initial load. Once that read has failed the gate says every module is off.
    */
   isModuleEnabled?: (moduleKey: string) => boolean;
 };
@@ -44,14 +51,13 @@ function isGranted(
  *
  * `ProtectedNavItem` returns `null` for a hidden item, which tells the parent
  * nothing — so a section whose every item was hidden used to render a bare
- * heading over empty space. The Admin section makes that load-bearing: it is
- * role-gated purely by its items' permissions, and an ordinary member must see
- * neither the rows nor the word "Admin". Exported so `dashboard-shell.tsx` can
- * ask the same question before it draws the heading.
+ * heading over empty space. Exported so `app-nav.tsx` can ask the same
+ * question before it draws a section's heading: a heading is a promise that
+ * something the viewer can open sits under it.
  *
  * Both gates are deliberately fail-open while their source is unresolved:
  * `permissions` is undefined until the query settles, and `isModuleEnabled` is
- * undefined until the chapter config loads. Showing a link one render early is
+ * undefined until the current-chapter read settles. Showing a link one render early is
  * harmless — the route itself is guarded server-side — whereas hiding one is a
  * visible flash of nav items disappearing. (`<Can>` fails closed instead,
  * because it guards actions rather than signposts.)
@@ -61,10 +67,14 @@ export function isNavItemVisible(
   permissions: readonly string[] | null | undefined,
   isModuleEnabled?: (moduleKey: string) => boolean,
 ): boolean {
-  if (permissions !== undefined && permissions !== null && !isGranted(item, permissions)) {
+  const resolved = permissions !== undefined && permissions !== null;
+  if (resolved && !isGranted(item, permissions)) {
     return false;
   }
   if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
+    return false;
+  }
+  if (resolved && item.showWhen && !item.showWhen(permissions, isModuleEnabled)) {
     return false;
   }
   return true;
@@ -80,12 +90,12 @@ export function isNavItemVisible(
  * the permissions query is loading — UI hides only when the fetch has
  * resolved and the caller definitively lacks access. This avoids a flash
  * of nav options during the initial load. Module gating (Chunk 06) layers
- * on top: an item tied to a disabled module is hidden once the chapter
- * config has loaded.
+ * on top: an item tied to a disabled module is hidden once the current-chapter
+ * read has settled.
  */
 export function ProtectedNavItem({
   item,
-  isActive,
+  current,
   permissions,
   iconClassName,
   onNavigate,
@@ -96,6 +106,7 @@ export function ProtectedNavItem({
   if (!isNavItemVisible(item, permissions, isModuleEnabled)) {
     return null;
   }
+  const isActive = current !== undefined;
 
   /*
    * Greenfield nav row (board option `1b`, pin 2): 34px tall, radius 10, 10px
@@ -117,7 +128,7 @@ export function ProtectedNavItem({
       <Link
         href={item.href}
         onClick={onNavigate}
-        aria-current={isActive ? "page" : undefined}
+        aria-current={current}
         // In the rail the label has nowhere to render, so the accessible name
         // has to come from somewhere other than the text content.
         aria-label={collapsed ? item.label : undefined}

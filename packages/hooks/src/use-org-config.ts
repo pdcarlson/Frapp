@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "./use-frapp-client";
+import { currentChapterQueryKey } from "./use-chapters";
 import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
 import { CHAPTER_POINTS_CONFIG_DEFAULTS } from "@repo/validation";
@@ -181,6 +182,7 @@ export function usePatchOrgConfig() {
   const chapterId = useActiveChapterId();
   const qc = useQueryClient();
   const queryKey = ["chapter-config", chapterId] as const;
+  const chapterKey = currentChapterQueryKey(chapterId);
 
   return useMutation({
     // Identifies this mutation to `usePendingConfigKeys` below, which needs to
@@ -205,21 +207,69 @@ export function usePatchOrgConfig() {
     // Optimistic update: write the merged config into the cache immediately so
     // module toggles and vocabulary edits feel instant, then roll back on error
     // (per the Chunk 06 brief — settings writes go through this mutation).
+    //
+    // A module toggle is also written into the current-chapter payload. The
+    // web shell's module gate (sidebar, drawer, Ask pill, Settings tools) reads
+    // `enabled_modules` from there, because members cannot read this config
+    // endpoint (#1982), and that query is cached for five minutes. Without this
+    // write, switching a module off would leave its nav row up until the cache
+    // went stale.
     onMutate: async (diff: PatchChapterConfig) => {
       await qc.cancelQueries({ queryKey });
       const previous = qc.getQueryData<OrgConfig>(queryKey);
       qc.setQueryData<OrgConfig>(queryKey, (old) => applyOptimistic(old, diff));
-      return { previous };
+
+      const modules = diff.enabled_modules;
+      if (!modules) return { previous };
+      await qc.cancelQueries({ queryKey: chapterKey });
+      // Only the keys this write touches, with the value each had. `scope`
+      // serialises the PATCHes but not `onMutate`, so a second toggle's
+      // optimistic write lands while this one is in flight; restoring a
+      // whole-object snapshot on error would silently undo it too.
+      const touchedModules: Record<string, boolean | undefined> = {};
+      qc.setQueryData(chapterKey, (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        const current =
+          (old as { enabled_modules?: Record<string, boolean> | null })
+            .enabled_modules ?? {};
+        for (const key of Object.keys(modules)) touchedModules[key] = current[key];
+        return { ...old, enabled_modules: { ...current, ...modules } };
+      });
+      return { previous, touchedModules };
     },
     onError: (_error, _diff, context) => {
       if (context && "previous" in context) {
         qc.setQueryData(queryKey, context.previous);
       }
+      const touched = context && "touchedModules" in context ? context.touchedModules : null;
+      if (touched) {
+        qc.setQueryData(chapterKey, (old: unknown) => {
+          if (!old || typeof old !== "object") return old;
+          const restored = {
+            ...((old as { enabled_modules?: Record<string, boolean> | null })
+              .enabled_modules ?? {}),
+          };
+          for (const [key, value] of Object.entries(touched)) {
+            if (value === undefined) delete restored[key];
+            else restored[key] = value;
+          }
+          return { ...old, enabled_modules: restored };
+        });
+      }
     },
     // Reconcile against the server (which deep-merges + recomputes derived
-    // fields such as theme_palette) once the write settles either way.
+    // fields such as theme_palette) once the write settles either way. The
+    // current chapter is re-read too: it carries `enabled_modules`, `branding`,
+    // `vocabulary` and `analytics_opt_out` from the same row. Both re-reads
+    // wait for the last config write in flight: fetched while a later toggle
+    // is still queued, either would return the row without that toggle and
+    // overwrite its optimistic value, flicking the switch and its nav row
+    // back. During `onSettled` this mutation still counts as pending, so 1
+    // means "only this one".
     onSettled: () => {
+      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1) return;
       void qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({ queryKey: chapterKey });
     },
   });
 }

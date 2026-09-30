@@ -96,16 +96,17 @@ test.describe("pre-auth routes hold the 375px floor", () => {
 /**
  * The guard this suite's existence costs, restored.
  *
- * `playwright.config.ts` says it plainly: Playwright exits 1 only when a run
- * collects **no** tests, so with two specs in this directory "delete or rename
- * the floor spec and the run passes on the survivor and exits 0 with the floor
- * silently unmeasured. Adding a second spec to this directory means taking
- * that on deliberately."
+ * Playwright exits 1 only when a run collects **no** tests (the `forbidOnly`
+ * note in `playwright.config.ts`). So with more than one spec in this
+ * directory, deleting or renaming the floor spec would let the run pass on the
+ * survivors and exit 0 with the floor silently unmeasured.
  *
- * Taken on, and closed. Deleting or renaming `responsive-floor.spec.ts`, or
- * quietly shrinking its route list, turns the surviving spec red — which is a
- * strictly better guard than the one it replaces, because the old one only
- * fired when the directory collected nothing at all.
+ * Taken on, and closed for those cases. Deleting or renaming
+ * `responsive-floor.spec.ts`, dropping its read of `DASHBOARD_ROUTES`, or
+ * shrinking `routes.ts` turns this spec red, which is a strictly better guard
+ * than the one it replaces, because the old one only fired when the directory
+ * collected nothing at all. It does not read what the floor spec does with the
+ * list: a `.slice()`, a `.skip` or a removed assertion there still passes.
  */
 test("the dashboard floor suite still exists and still measures all sixteen routes", () => {
   // `new URL(..., import.meta.url)` rather than `__dirname`: Playwright loads

@@ -1,5 +1,6 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
+import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
 import { EYEBROW } from "@/components/ui/typography";
 import { ProChip } from "@/components/billing/pro-chip";
 
@@ -56,9 +57,11 @@ import { ProChip } from "@/components/billing/pro-chip";
  * than placeholder them.
  *
  * So the filter is "does a member have somewhere to go", and the maintained
- * answer to that in `apps/web` is `nav-config.ts`: a module key on a nav item
- * is a surface, and this app owns and updates that file. Deriving beats a
- * hand-kept list, which would drift the first time a module shipped.
+ * answer to that in `apps/web` is the nav: a module key on a nav item is a
+ * surface, and so is one on an officer tool behind the Settings row
+ * (`SETTINGS_TOOLS`, where Reports and Study Zones went when the Admin group
+ * folded into Settings in #2946). Deriving beats a hand-kept list, which
+ * would drift the first time a module shipped.
  *
  * Two deliberate adjustments to what the nav alone would produce:
  *
@@ -83,6 +86,7 @@ import { ProChip } from "@/components/billing/pro-chip";
  */
 const SHIPPED_PAID_KEYS = new Set<string>([
   ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
+  ...SETTINGS_TOOLS.flatMap((tool) => (tool.module ? [tool.module] : [])),
   "dues",
 ]);
 
