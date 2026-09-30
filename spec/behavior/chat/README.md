@@ -671,14 +671,19 @@ channel that reports a different one fails the import rather than being skipped.
     mapping step and Start both refuse a merge whose channel is gone, and the
     admin picks another. An import that is queued or running when the channel
     it merges into is deleted **stops**, as `failed`, with the reason "The
-    Frapp channel #… was importing into was deleted."; a bot import also marks
-    that channel failed in Watch. It never writes into a missing channel (the
-    foreign key refuses the insert), and mapping the channel again then
-    restarting resumes it (through the API only today, #2947). *2026-09-30
-    (#2922): stopping rather than skipping the channel means its history
-    never goes missing without anyone choosing that, and it is how the import
-    already stops when a channel it writes into turns out to be a direct
-    message, or has lost the readers its mapping asked for.*
+    Frapp channel #… was importing into was deleted, so the import stopped.";
+    a bot import also marks that channel failed in Watch. It never writes into
+    a missing channel (the foreign key refuses the insert). Deleting the
+    channel took the history already imported into it, as deleting any
+    channel does, so the way to bring that channel in is to delete the import
+    and import again, which is what the reason says. Remapping and restarting
+    is not a way back (#2947): an upload resumes past the parts it already
+    did, and a remap forgets the channels the import created, so the restart
+    makes each of them again. *2026-09-30 (#2922): stopping rather than
+    skipping the channel means its history never goes missing without anyone
+    choosing that, and it is how the import already stops when a channel it
+    writes into turns out to be a direct message, or has lost the readers its
+    mapping asked for.*
 
   **Known gap (#2799):** the check runs against the admin's own
   channel list, so a clash with a channel hidden from them (a `PRIVATE`
@@ -822,12 +827,13 @@ channel that reports a different one fails the import rather than being skipped.
   import and still carries the description the worker gives the channels it
   creates. An upload mapped before #2859 could name an existing channel there.
 
-  A channel the import merged into goes only when an import already deleted
-  created it (#2922). When import A created a channel and import B merged
-  into it, A's purge had to keep it, since it held B's messages or B's merge;
-  B's purge then takes it under the same rules. Any other channel the import
-  merged into is never deleted, and neither is a created channel that still
-  holds something. A channel an earlier purge kept that no later purge
+  A channel the import merged into goes only when this import, or another
+  import being or already deleted, created it (#2922). When import A created
+  a channel and import B merged into it, A's purge had to keep it, since it
+  held B's messages or B's merge; B's purge then takes it under the same
+  rules, even while A's own purge is still finishing. Any other channel the
+  import merged into is never deleted, and neither is a created channel that
+  still holds something. A channel an earlier purge kept that no later purge
   revisits stays until an officer deletes it, which works for any channel
   since #2922 (before it, deleting a channel an import had merged into failed
   the `discord_import_channels_target_present` CHECK).

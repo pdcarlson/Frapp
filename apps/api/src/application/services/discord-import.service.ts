@@ -1263,16 +1263,27 @@ export class DiscordImportService {
     // `target_channel_id` is `on delete set null`, and the database no longer
     // refuses that (#2922). The mapping routes never save a merge without a
     // target, so this is the one way one reaches here, and the worker would
-    // only stop on it. A thread row repeats its parent's decision and is
-    // listed after it, so the first found is the channel the admin picked for.
+    // only stop on it. Only a row the worker will still walk counts: a bot
+    // import never walks a finished row again, but an upload's row reads
+    // completed after any of its parts, with more to come, so each counts.
     const lostMerge = channels.find(
       (channel) =>
         channel.mapping_action === 'use_existing' &&
-        channel.target_channel_id === null,
+        channel.target_channel_id === null &&
+        !(job.source === 'bot' && channel.status === 'completed'),
     );
     if (lostMerge) {
+      // A thread repeats its parent's decision, so it is named by the channel
+      // the admin mapped.
+      const parentId = lostMerge.parent_discord_channel_id;
+      const mapped =
+        (parentId &&
+          channels.find(
+            (channel) => channel.discord_channel_id === parentId,
+          )) ||
+        lostMerge;
       throw new BadRequestException(
-        `The Frapp channel chosen for #${lostMerge.discord_channel_name} was deleted. Pick another channel for it, or choose to create a new one.`,
+        `The Frapp channel chosen for #${mapped.discord_channel_name} was deleted. Pick another channel for it, or choose to create a new one.`,
       );
     }
 

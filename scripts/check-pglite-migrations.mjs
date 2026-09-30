@@ -4164,9 +4164,10 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
 //   - a created channel another import merged into is kept while that
 //     import isn't deleted, a finished one included; a merge by a `purging`
 //     or `purged` import, this one included, pins nothing (#2922);
-//   - a channel this import merged into is a candidate only when an import
-//     already `purged` recorded creating it, which re-reaps what that
-//     import's purge had to keep (#2922);
+//   - a channel this import merged into is a candidate only when a
+//     `purging` or `purged` import recorded creating it, which re-reaps what
+//     that import's purge had to keep (#2922; `purging` too, since a purge
+//     writes `purged` only after its channel step, and two can run at once);
 //   - a `create_new` row naming a channel older than the import, or one
 //     without the worker's "Imported from Discord #…" description (an upload
 //     mapped before #2859), doesn't make it a candidate;
@@ -4212,6 +4213,7 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     MERGED_BY_PURGING: "a2905000-0000-4000-8000-0000000000e3", // created here, merged into by another purging import: deleted
     REREAP: "a2905000-0000-4000-8000-0000000000e4", // a purged import created it, this one merged into it: deleted
     REREAP_PINNED: "a2905000-0000-4000-8000-0000000000e5", // as REREAP, but a running import merges into it too: kept
+    REREAP_PURGING: "a2905000-0000-4000-8000-0000000000e7", // an import still purging created it, this one merged into it: deleted
     OTHERS_CREATED: "a2905000-0000-4000-8000-0000000000e6", // a completed import created it, this one merged into it: kept
   };
   const DELETABLE = [
@@ -4222,6 +4224,7 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     CH.MERGED_BY_PURGED,
     CH.MERGED_BY_PURGING,
     CH.REREAP,
+    CH.REREAP_PURGING,
   ].sort();
 
   const results = [];
@@ -4258,7 +4261,8 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${CH.MERGED_BY_PURGING}', '${A}', 'treasury', 'PUBLIC'),
         ('${CH.REREAP}', '${A}', 'philanthropy', 'PUBLIC'),
         ('${CH.REREAP_PINNED}', '${A}', 'brotherhood', 'PUBLIC'),
-        ('${CH.OTHERS_CREATED}', '${A}', 'chapter', 'PUBLIC');
+        ('${CH.OTHERS_CREATED}', '${A}', 'chapter', 'PUBLIC'),
+        ('${CH.REREAP_PURGING}', '${A}', 'recruitment', 'PUBLIC');
       -- Named only by mapping rows, as for an import from before the created-
       -- channel record: the worker's description is what marks it as made.
       insert into chat_channels (id, chapter_id, name, type, description) values
@@ -4274,7 +4278,8 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${PURGING}', '${CH.DELETED_MSG}'), ('${PURGING}', '${CH.OTHER_MSGS}'), ('${PURGING}', '${CH.POINTS}'),
         ('${PURGING}', '${CH.MERGED_INTO}'), ('${PURGING}', '${CH.IN_B}'), ('${RUNNING}', '${CH.RUNNING_CH}'),
         ('${PURGING}', '${CH.SELF_MERGED}'), ('${PURGING}', '${CH.MERGED_BY_PURGED}'), ('${PURGING}', '${CH.MERGED_BY_PURGING}'),
-        ('${PURGED}', '${CH.REREAP}'), ('${PURGED}', '${CH.REREAP_PINNED}'), ('${OTHER}', '${CH.OTHERS_CREATED}');
+        ('${PURGED}', '${CH.REREAP}'), ('${PURGED}', '${CH.REREAP_PINNED}'), ('${OTHER}', '${CH.OTHERS_CREATED}'),
+        ('${OTHER_PURGING}', '${CH.REREAP_PURGING}');
       insert into discord_import_channels
         (import_id, discord_channel_id, discord_channel_name, mapping_action, new_channel_name, target_channel_id) values
         ('${PURGING}', 'd1', 'rush', 'create_new', 'rush', '${CH.EMPTY}'),
@@ -4298,7 +4303,8 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${PURGING}', 'd11', 'philanthropy', 'use_existing', null, '${CH.REREAP}'),
         ('${PURGING}', 'd13', 'brotherhood', 'use_existing', null, '${CH.REREAP_PINNED}'),
         ('${RUNNING}', 'f2', 'brotherhood', 'use_existing', null, '${CH.REREAP_PINNED}'),
-        ('${PURGING}', 'd12', 'chapter', 'use_existing', null, '${CH.OTHERS_CREATED}');
+        ('${PURGING}', 'd12', 'chapter', 'use_existing', null, '${CH.OTHERS_CREATED}'),
+        ('${PURGING}', 'd14', 'recruitment', 'use_existing', null, '${CH.REREAP_PURGING}');
       -- What the purge leaves behind: a member's live message, a deleted one,
       -- another import's history, and a chat points adjustment whose card
       -- never posted.
@@ -4336,7 +4342,7 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     );
     check("keeps a created channel a points-ledger row points at", left.includes(CH.POINTS), { left });
     check(
-      "keeps a created channel an import that isn't deleted merged into, a finished one included, and a channel it merged into that no purged import created",
+      "keeps a created channel an import that isn't deleted merged into, a finished one included, and a channel it merged into that no deleted import created",
       left.includes(CH.MERGED_INTO) && left.includes(CH.EXISTING) && left.includes(CH.OTHERS_CREATED),
       { left },
     );
@@ -4346,8 +4352,8 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
       { deleted },
     );
     check(
-      "re-reaps a channel an already-purged import created that this one merged into, unless a live import's merge still pins it (#2922)",
-      deleted.includes(CH.REREAP) && left.includes(CH.REREAP_PINNED),
+      "re-reaps a channel a purged, or still purging, import created that this one merged into, unless a live import's merge still pins it (#2922)",
+      deleted.includes(CH.REREAP) && deleted.includes(CH.REREAP_PURGING) && left.includes(CH.REREAP_PINNED),
       { deleted, left },
     );
     check(

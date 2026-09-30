@@ -101,12 +101,19 @@ const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
  * was deleted (#2922). An officer may delete any channel, one an import
  * merges into included; the mapping row keeps its record with no target, and
  * the import stops rather than write that history somewhere nobody chose.
+ *
+ * It points at deleting the import and importing again, not at remapping and
+ * restarting as the older stops do: the channel took the history already
+ * imported into it, an upload's restart resumes past it, and a remap forgets
+ * the channels the import created, so a restart would make each again (#2947).
  */
 function targetDeleted(
   mapping: Pick<DiscordImportChannel, 'discord_channel_name'>,
+  detail = 'was deleted',
 ): Error {
+  const name = `#${mapping.discord_channel_name}`;
   return new Error(
-    `The Frapp channel #${mapping.discord_channel_name} was importing into was deleted. Map the channels again, then restart the import.`,
+    `The Frapp channel ${name} was importing into ${detail}, so the import stopped. To bring ${name} in, delete this import and import again.`,
   );
 }
 
@@ -631,12 +638,17 @@ export class DiscordImportWorkerService {
       }
 
       // Accumulate onto the in-memory row as well, for the same reason
-      // `target_channel_id` is written back: the next part of this channel
-      // reuses this object, and re-reading the original base would make part 1
-      // overwrite part 0's contribution instead of adding to it.
+      // `target_channel_id` is written back onto it: the next part of this
+      // channel reuses this object, and re-reading the original base would
+      // make part 1 overwrite part 0's contribution instead of adding to it.
+      //
+      // The target itself is not written here: the row already holds it
+      // (`resolveTargetChannel` records a channel it creates or reuses at
+      // once). Written again, it would point the row back at a channel an
+      // officer deleted since the last insert, which fails the foreign key and
+      // the import with it (#2922).
       mapping.imported_count += channelImported;
       await this.importRepo.updateChannel(mapping.id, job.id, {
-        target_channel_id: targetChannelId,
         imported_count: mapping.imported_count,
         status:
           messageIndex >= parsed.messages.length ? 'completed' : 'running',
@@ -844,7 +856,8 @@ export class DiscordImportWorkerService {
    * it any time after that. The foreign key then refuses the insert, so
    * nothing lands in a missing channel, but the raw `23503` would be the
    * import's only explanation. Re-read to tell that apart from a violation
-   * with another cause, which is rethrown as it is.
+   * with another cause, which is rethrown as it is, as it also is when the
+   * re-read itself fails: the violation is the error worth keeping.
    */
   private async intoTarget<T>(
     args: { targetChannelId: string; chapterId: string; channelName: string },
@@ -853,12 +866,14 @@ export class DiscordImportWorkerService {
     try {
       return await write();
     } catch (error) {
-      if (
-        isForeignKeyViolation(error) &&
-        !(await this.channelRepo.findById(args.targetChannelId, args.chapterId))
-      ) {
-        throw targetDeleted({ discord_channel_name: args.channelName });
-      }
+      if (!isForeignKeyViolation(error)) throw error;
+      const gone = await this.channelRepo
+        .findById(args.targetChannelId, args.chapterId)
+        .then(
+          (channel) => channel === null,
+          () => false,
+        );
+      if (gone) throw targetDeleted({ discord_channel_name: args.channelName });
       throw error;
     }
   }
@@ -900,8 +915,9 @@ export class DiscordImportWorkerService {
       if (!target) {
         // Usually deleted since this slice read the row: an officer may
         // delete any channel, one an import writes into included (#2922).
-        throw new Error(
-          `The Frapp channel #${mapping.discord_channel_name} was importing into was deleted, or isn't one of this chapter's channels. Map the channels again, then restart the import.`,
+        throw targetDeleted(
+          mapping,
+          "was deleted, or isn't one of this chapter's channels",
         );
       }
       // Checked here too, for a mapping saved before the service refused it.
@@ -1057,8 +1073,8 @@ export class DiscordImportWorkerService {
     // attachment, a points-ledger link, or a merge into it by an import that
     // isn't deleted (#2922), and it checks and deletes each one under the
     // channel's row lock, so a message sent meanwhile keeps its channel. It
-    // also takes a channel an already-deleted import made that this one
-    // merged into, which that import's purge had to keep.
+    // also takes a channel another deleted import made that this one merged
+    // into, which that import's purge had to keep.
     const channelsDeleted = await this.importRepo.deleteEmptyCreatedChannels(
       job.id,
       job.chapter_id,

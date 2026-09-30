@@ -627,11 +627,75 @@ describe('DiscordImportService — starting', () => {
         mapping_action: 'create_new',
         target_channel_id: null,
       },
+      // An upload's row reads completed after any of its parts, with more
+      // to come, so it counts whatever its status.
       {
         id: 'map-2',
         discord_channel_name: 'general',
         mapping_action: 'use_existing',
         target_channel_id: null,
+        status: 'completed',
+      },
+    ]);
+
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      'The Frapp channel chosen for #general was deleted. Pick another channel for it, or choose to create a new one.',
+    );
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('restarts a bot import past a finished merge whose channel was deleted, which the worker never walks again (#2922)', async () => {
+    await build(job({ source: 'bot', status: 'failed', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      {
+        id: 'map-1',
+        discord_channel_id: 'd-general',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'completed',
+        parent_discord_channel_id: null,
+      },
+      {
+        id: 'map-2',
+        discord_channel_id: 'd-rush',
+        discord_channel_name: 'rush',
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        status: 'failed',
+        parent_discord_channel_id: null,
+      },
+    ]);
+
+    await service.start(IMPORT_ID, CHAPTER, true);
+
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ status: 'ready' }),
+    );
+  });
+
+  it("names a thread's lost merge by its parent, the channel the admin mapped (#2922)", async () => {
+    await build(job({ source: 'bot', status: 'failed', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      {
+        id: 'map-1',
+        discord_channel_id: 'd-general',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'completed',
+        parent_discord_channel_id: null,
+      },
+      {
+        id: 'map-2',
+        discord_channel_id: 'd-planning',
+        discord_channel_name: 'general › planning',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'pending',
+        parent_discord_channel_id: 'd-general',
       },
     ]);
 

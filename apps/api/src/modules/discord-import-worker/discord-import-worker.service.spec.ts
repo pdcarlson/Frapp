@@ -722,7 +722,7 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.insertMessages).not.toHaveBeenCalled();
     expect(repoRef.state().status).toBe('failed');
     expect(repoRef.state().error).toBe(
-      'The Frapp channel #general was importing into was deleted. Map the channels again, then restart the import.',
+      'The Frapp channel #general was importing into was deleted, so the import stopped. To bring #general in, delete this import and import again.',
     );
   });
 
@@ -737,8 +737,8 @@ describe('DiscordImportWorkerService — importing', () => {
 
     expect(repoRef.insertMessages).not.toHaveBeenCalled();
     expect(repoRef.state().status).toBe('failed');
-    expect(repoRef.state().error).toMatch(
-      /#general was importing into was deleted, or isn't one of this chapter's channels/,
+    expect(repoRef.state().error).toBe(
+      "The Frapp channel #general was importing into was deleted, or isn't one of this chapter's channels, so the import stopped. To bring #general in, delete this import and import again.",
     );
   });
 
@@ -762,8 +762,72 @@ describe('DiscordImportWorkerService — importing', () => {
 
     expect(repoRef.state().status).toBe('failed');
     expect(repoRef.state().error).toBe(
-      'The Frapp channel #general was importing into was deleted. Map the channels again, then restart the import.',
+      'The Frapp channel #general was importing into was deleted, so the import stopped. To bring #general in, delete this import and import again.',
     );
+  });
+
+  it('names the deleted channel when the attachment insert meets the foreign key (#2922)', async () => {
+    // Deleted between the batch's message insert and its attachment insert.
+    repoRef.files = [
+      exportFile(),
+      mediaFile('general [800000000000000001]_Files/rush-schedule-c3d4.pdf'),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const live = await channelRepo.findById(SIGNET_CHANNEL, CHAPTER);
+    channelRepo.findById
+      .mockResolvedValueOnce(live)
+      .mockResolvedValueOnce(null);
+    repoRef.insertAttachments.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_message_attachments" violates foreign key constraint "chat_message_attachments_channel_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertAttachments).toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      'The Frapp channel #general was importing into was deleted, so the import stopped. To bring #general in, delete this import and import again.',
+    );
+  });
+
+  it('keeps the foreign-key failure when the re-read that would explain it fails', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const live = await channelRepo.findById(SIGNET_CHANNEL, CHAPTER);
+    channelRepo.findById
+      .mockResolvedValueOnce(live)
+      .mockRejectedValueOnce(new Error('PostgREST unavailable'));
+    repoRef.insertMessages.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_messages" violates foreign key constraint "chat_messages_reply_to_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toMatch(/chat_messages_reply_to_id_fkey/);
+  });
+
+  it('leaves the target out of the per-part write, so a channel deleted after the insert is not written back (#2922)', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    const afterPart = repoRef.channelUpdates.filter(
+      (patch) => 'imported_count' in patch,
+    );
+    expect(afterPart.length).toBeGreaterThan(0);
+    for (const patch of afterPart) {
+      expect(patch).not.toHaveProperty('target_channel_id');
+    }
   });
 
   it('keeps a foreign-key failure with another cause as the database said it', async () => {

@@ -29,11 +29,14 @@
 -- 3. The purge also reaps a channel an earlier purge had to keep. When import
 --    A created a channel and import B merged into it, A's purge kept it (it
 --    held B's messages, or B's merge pinned it). B's purge now also considers
---    each channel B merged into that a `purged` import recorded creating in
---    `discord_import_created_channels`, and deletes it under the same checks
---    and row lock as B's own. A channel an older purge left behind that no
---    later purge revisits stays until an officer deletes it, which (1) now
---    allows.
+--    each channel B merged into that a `purging` or `purged` import recorded
+--    creating in `discord_import_created_channels`, and deletes it under the
+--    same checks and row lock as B's own. `purging` counts too because a
+--    purge writes `purged` only after its channel step and its storage
+--    deletes: two purges running at once on two API instances would each
+--    leave the channel to the other. A channel an older purge left behind
+--    that no later purge revisits stays until an officer deletes it, which
+--    (1) now allows.
 --
 -- The functions keep their signatures, `security invoker` and service-role-
 -- only grants; the grants are re-stated so this file stands alone. Nothing is
@@ -129,8 +132,8 @@ begin
               and c.created_at >= i.created_at
               and c.description = 'Imported from Discord #' || m.discord_channel_name
          )
-         -- What an import already purged created and this one merged into
-         -- (#2922), which that purge had to keep.
+         -- What an import being or already purged created and this one
+         -- merged into (#2922), which that purge had to keep.
          or exists (
            select 1
              from discord_import_channels m
@@ -140,7 +143,7 @@ begin
               and m.mapping_action = 'use_existing'
               and m.target_channel_id = c.id
               and o.chapter_id = p_chapter_id
-              and o.status = 'purged'
+              and o.status in ('purging', 'purged')
          )
        )
      order by c.id

@@ -218,7 +218,7 @@ export class DiscordExportWorkerService {
     importBatch: (batch: {
       messages: DiscordExportMessage[];
       targetChannelId: string;
-      /** The Discord channel or thread the page came from. */
+      /** The Discord channel whose mapping chose the target; see `runChannel`. */
       channelName: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
       mentionContext: ImportMentionContext;
@@ -368,12 +368,21 @@ export class DiscordExportWorkerService {
         continue;
       }
 
+      // The channel whose mapping chose where this row lands: a thread lands
+      // where its parent's did (`resolveDestination`), so a stop names the
+      // parent, the channel the admin mapped (#2922).
+      const decidedBy =
+        (mapping.parent_discord_channel_id &&
+          byDiscordId.get(mapping.parent_discord_channel_id)) ||
+        mapping;
+
       let done: boolean;
       try {
         done = await this.runChannel({
           job,
           guildId,
           mapping,
+          destinationName: decidedBy.discord_channel_name,
           deadline,
           totals,
           mediaByRelativePath,
@@ -502,6 +511,8 @@ export class DiscordExportWorkerService {
     job: DiscordImport;
     guildId: string;
     mapping: DiscordImportChannel;
+    /** The Discord channel whose mapping chose the target: a thread's parent. */
+    destinationName: string;
     deadline: number;
     totals: SliceTotals;
     mediaByRelativePath: Map<string, DiscordImportFile>;
@@ -522,7 +533,7 @@ export class DiscordExportWorkerService {
     importBatch: (batch: {
       messages: DiscordExportMessage[];
       targetChannelId: string;
-      /** The Discord channel or thread the page came from. */
+      /** The Discord channel whose mapping chose the target; see `runChannel`. */
       channelName: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
       mentionContext: ImportMentionContext;
@@ -538,6 +549,7 @@ export class DiscordExportWorkerService {
       job,
       guildId,
       mapping,
+      destinationName,
       deadline,
       totals,
       mediaByRelativePath,
@@ -702,7 +714,7 @@ export class DiscordExportWorkerService {
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,
-        channelName: mapping.discord_channel_name,
+        channelName: destinationName,
         mediaByRelativePath,
         mentionContext,
       });
@@ -734,8 +746,11 @@ export class DiscordExportWorkerService {
         before = oldest;
       }
 
+      // No `target_channel_id`: it was recorded before the first page (above).
+      // Written again, it would point the row back at a channel an officer
+      // deleted since this page's insert, which fails the foreign key and the
+      // import with it (#2922).
       await this.importRepo.updateChannel(mapping.id, job.id, {
-        target_channel_id: targetChannelId,
         cursor_before_snowflake: before,
         imported_count: channelImported,
         status: 'running',
