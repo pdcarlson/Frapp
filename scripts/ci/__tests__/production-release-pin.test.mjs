@@ -191,7 +191,7 @@ describe("readProductionVercelCommit", () => {
     assert.match(verdict.reason, /not a 40-hex SHA/);
   });
 
-  it("accepts historical `state: READY` when readyState is absent", () => {
+  it("accepts `state: READY` when readyState is absent", () => {
     const verdict = readProductionVercelCommit(
       {
         deployments: [

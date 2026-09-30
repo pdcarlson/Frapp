@@ -1,5 +1,6 @@
-// Thin HTTP wrappers around the Render and Vercel deployment-listing APIs.
-// Both accept an injectable `fetchImpl` so tests can replay canned responses.
+// Thin HTTP wrappers around the Render and Vercel deployment-listing APIs,
+// plus the readers and state vocabulary for the Vercel rows they return. The
+// wrappers accept an injectable `fetchImpl` so tests can replay canned responses.
 
 const RENDER_DEPLOYS_URL = (serviceId, cursor) =>
   `https://api.render.com/v1/services/${serviceId}/deploys?limit=10` +
@@ -63,6 +64,31 @@ export async function fetchVercelDeployments({ apiKey, projectId, until, teamId,
 export function vercelDeploymentCreatedAt(deployment) {
   return new Date(deployment?.createdAt ?? deployment?.created ?? 0).getTime();
 }
+
+/** A deployment's state. Vercel reports it under two names (docs read
+ *  2026-09-30): its list-deployments schema requires `readyState` and also
+ *  returns an optional `state` with the same values, and the single-deployment
+ *  endpoint `deploy-vercel.mjs` polls (`GET /v13/deployments/:id`) returns
+ *  `readyState` and no `state` at all, so there the fallback is the whole read.
+ *  Neither is documented as legacy, and fixtures here carry either spelling,
+ *  so read `state` and fall back to `readyState`. That is the order four of
+ *  the five copies this replaced used (#1778); `production-release-pin.mjs`
+ *  read `readyState` first, which differs only for a row whose two fields
+ *  disagree, and none has been seen.
+ *  Shared for the same reason as `vercelDeploymentCreatedAt`: an API change
+ *  should be one edit, not one per caller. */
+export function vercelDeploymentState(deployment) {
+  return deployment?.state ?? deployment?.readyState;
+}
+
+// Terminal deployment states. A caller decides what each means for it:
+// `deploy-vercel.mjs` fails a deployment it created on CANCELED, and
+// `ensure-vercel-staging-alias.mjs` reads CANCELED as "nothing to alias".
+export const VERCEL_TERMINAL_SUCCESS_STATES = new Set(["READY"]);
+export const VERCEL_TERMINAL_FAILURE_STATES = new Set(["ERROR"]);
+// Neither a successful build nor a build failure: Vercel produced no deployed
+// output, without erroring.
+export const VERCEL_NEUTRAL_TERMINAL_STATES = new Set(["CANCELED"]);
 
 /**
  * Page back through Vercel's deployments list looking for `sha`, bounded by

@@ -183,10 +183,9 @@ describe("vercelDeployArgs", () => {
     assert.ok(vercelDeployArgs({ target: VERCEL_TARGET_PRODUCTION, sha: SHA }).includes("--prod"));
   });
 
-  // A --prebuilt upload carries NO git metadata of its own. Three consumers
-  // read it back: ADR-19's named-commit guarantee, ensure-vercel-staging-alias
-  // (which finds the deployment by githubCommitSha), and the observer's
-  // per-branch supersession test (githubCommitRef).
+  // A --prebuilt upload carries NO git metadata of its own. Two consumers read
+  // the sha back: ADR-19's named-commit guarantee, and
+  // ensure-vercel-staging-alias (which finds the deployment by githubCommitSha).
   it("stamps the commit sha as deployment metadata", () => {
     const args = vercelDeployArgs({ target: VERCEL_TARGET_PRODUCTION, sha: SHA });
     const metaIndex = args.indexOf(`githubCommitSha=${SHA}`);
@@ -195,8 +194,9 @@ describe("vercelDeployArgs", () => {
   });
 
   it("stamps the branch, not the sha, as githubCommitRef", () => {
-    // Every branch-scoped lookup downstream matches on this field. A commit id
-    // here matches nothing — the bug the old gitSource.ref comment warned about.
+    // A branch-scoped lookup matches on this field, and a commit id here
+    // matches nothing — the bug the old gitSource.ref comment warned about.
+    // Nothing in the repo reads it since the retired observer (#1778).
     const args = vercelDeployArgs({ target: VERCEL_TARGET_PRODUCTION, sha: SHA });
     assert.ok(args.includes("githubCommitRef=main"));
     assert.ok(!args.includes(`githubCommitRef=${SHA}`));
