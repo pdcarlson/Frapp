@@ -24,7 +24,7 @@ import {
  * they ask `GET /v1/users/me/legal-acceptance`, because a store binary compiled
  * with an older value would otherwise disagree with the server.
  */
-export const LEGAL_POLICY_VERSION = "2026-09";
+export const LEGAL_POLICY_VERSION = "2026-09.2";
 
 /**
  * The checkbox every acceptance surface shows: the create-chapter wizard, the
