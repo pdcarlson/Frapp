@@ -11,6 +11,7 @@ import {
 import {
   defaultNotificationCategoryState,
   isNotificationCategoryKey,
+  isUtcOffset,
   MAX_TIME_ZONE_LENGTH,
   rowsToNotificationCategoryState,
   type NotificationCategoryKey,
@@ -61,10 +62,18 @@ const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
  */
 const TIME_OF_DAY_PATTERN = /^(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
 
+/**
+ * The device's zone, as the default for a member who has never set one. Some
+ * runtimes report a custom system zone as an offset (`TZ=GMT-5` gives
+ * `"-05:00"` on Node 24), and the server rejects offsets on every runtime
+ * (#2361), so an offset falls back too rather than seeding a PATCH that 400s.
+ */
 function resolveDeviceTimeZone(): string {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return tz && tz.length > 0 ? tz : FALLBACK_QUIET_HOURS_TZ;
+    return tz && tz.length > 0 && !isUtcOffset(tz)
+      ? tz
+      : FALLBACK_QUIET_HOURS_TZ;
   } catch {
     return FALLBACK_QUIET_HOURS_TZ;
   }
@@ -100,8 +109,11 @@ function normalizeTimeOfDay(value: unknown): string | null {
  * Substituting on it would show the wrong zone and then PATCH the device's own
  * zone over the member's, permanently, everywhere, with no error.
  *
- * So only device-independent defects are repaired: not a string, blank, or
- * longer than the column allows. Anything else is the server's to judge — it is
+ * So only device-independent defects are repaired: not a string, blank, longer
+ * than the column allows, or a UTC offset. The server rejects an offset by a
+ * pattern rather than by asking `Intl` (#2361), so every device reaches the same
+ * verdict on it, and replaying one would 400 on every toggle and time edit.
+ * Anything else is the server's to judge — it is
  * the authority (spec/behavior/notifications.md § Quiet Hours). A legacy row
  * holding a genuinely unresolvable zone therefore still round-trips to a 400 on
  * toggle, surfaced as the retry state. That is the accepted cost: a visible
@@ -110,7 +122,11 @@ function normalizeTimeOfDay(value: unknown): string | null {
 function normalizeTimeZone(value: unknown): string {
   if (typeof value !== "string") return resolveDeviceTimeZone();
   const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_TIME_ZONE_LENGTH) {
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > MAX_TIME_ZONE_LENGTH ||
+    isUtcOffset(trimmed)
+  ) {
     return resolveDeviceTimeZone();
   }
   return trimmed;
@@ -174,7 +190,9 @@ const LEGACY_CATEGORY_KEYS: Record<string, NotificationCategoryKey> = {
  * every change, and a key nothing reads would otherwise live on that device
  * forever (this is what #266 found with `digestEmailsEnabled`).
  */
-export function parseCachedPreferences(value: unknown): CachedPreferences | null {
+export function parseCachedPreferences(
+  value: unknown,
+): CachedPreferences | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.quietHoursEnabled !== "boolean") return null;
@@ -358,8 +376,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   const serverQuietHoursEnabled = settingsQuery.isSuccess
     ? settingsToQuietHoursEnabled(settingsQuery.data)
     : null;
-  const quietHoursEnabled =
-    serverQuietHoursEnabled ?? cached.quietHoursEnabled;
+  const quietHoursEnabled = serverQuietHoursEnabled ?? cached.quietHoursEnabled;
 
   const categories = useMemo<CategoryState>(() => {
     // Success means the server has spoken for *every* category, including the

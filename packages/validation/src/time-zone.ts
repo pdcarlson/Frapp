@@ -68,6 +68,15 @@ const RUNTIME_RESOLVES_ZONES = (() => {
 const UTC_OFFSET_PATTERN = /^[+\-\u2212]\d/;
 
 /**
+ * True when `tz` is written as a UTC offset rather than as a zone name. The
+ * verdict is the same on every runtime, so a client may repair such a value
+ * without second-guessing the server (the mobile quiet-hours sync does).
+ */
+export function isUtcOffset(tz: string): boolean {
+  return UTC_OFFSET_PATTERN.test(tz.trim());
+}
+
+/**
  * True when `tz` is a zone this system will accept and store: a named zone the
  * runtime can format with, which is precisely what notification delivery needs.
  * Fixed UTC offsets are rejected on every runtime (see the module docblock).
@@ -78,7 +87,7 @@ export function isSupportedTimeZone(tz: unknown): tz is string {
   const value = tz.trim();
   if (value.length === 0 || value.length > MAX_TIME_ZONE_LENGTH) return false;
 
-  if (UTC_OFFSET_PATTERN.test(value)) return false;
+  if (isUtcOffset(value)) return false;
 
   if (!RUNTIME_RESOLVES_ZONES) return true;
 

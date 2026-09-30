@@ -3714,7 +3714,7 @@ export interface components {
             quiet_hours_start?: string | null;
             /** @description Quiet hours end (HH:mm format, e.g. 08:00). Pass null or an empty string to clear. */
             quiet_hours_end?: string | null;
-            /** @description Time zone for quiet hours — must be a named zone this server can resolve (e.g. America/New_York). A fixed UTC offset such as -05:00 is always rejected, because it observes no daylight saving time. Pass null or an empty string to clear. */
+            /** @description Time zone for quiet hours — must be a named zone this server can resolve (e.g. America/New_York). A fixed UTC offset such as -05:00 is rejected as a format on every runtime; DST-free zone names such as Etc/GMT+5 or UTC are accepted. Pass null or an empty string to clear. */
             quiet_hours_tz?: string | null;
             /**
              * @description Theme preference

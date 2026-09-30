@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isSupportedTimeZone,
+  isUtcOffset,
   normalizeTimeZoneInput,
   MAX_TIME_ZONE_LENGTH,
 } from "./time-zone";
@@ -78,6 +79,45 @@ describe("isSupportedTimeZone", () => {
       expect(normalized === undefined).toBe(!accepted);
       if (accepted) expect(normalized).toBe(candidate);
     }
+  });
+});
+
+// The offset guard must run before the fail-open, or a client on an ICU build
+// that resolves no zones (a lean container, an older React Native JSC) would
+// accept `-05:00` while the server rejects it. The zone probe runs once at
+// import, so the module is re-imported under an `Intl` that resolves nothing.
+describe("isSupportedTimeZone on a runtime that resolves no zones", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("still rejects offsets while failing open on named zones", async () => {
+    vi.stubGlobal("Intl", {
+      ...Intl,
+      DateTimeFormat: function DateTimeFormat() {
+        throw new RangeError("no time zone support");
+      },
+    });
+    vi.resetModules();
+    const zoneless = await import("./time-zone");
+
+    expect(zoneless.isSupportedTimeZone("-05:00")).toBe(false);
+    expect(zoneless.isSupportedTimeZone("+0530")).toBe(false);
+    expect(zoneless.isSupportedTimeZone("America/New_York")).toBe(true);
+    expect(zoneless.isSupportedTimeZone("Mars/Olympus")).toBe(true);
+  });
+});
+
+describe("isUtcOffset", () => {
+  it("recognizes offset syntax and never a zone name", () => {
+    expect(isUtcOffset("-05:00")).toBe(true);
+    expect(isUtcOffset(" +05 ")).toBe(true);
+    expect(isUtcOffset("\u221205:00")).toBe(true);
+    expect(isUtcOffset("Etc/GMT+5")).toBe(false);
+    expect(isUtcOffset("GMT-05:00")).toBe(false);
+    expect(isUtcOffset("UTC")).toBe(false);
+    expect(isUtcOffset("")).toBe(false);
   });
 });
 
