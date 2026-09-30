@@ -121,6 +121,9 @@ describe('ChapterService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      findChapterMemberIdentities: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
+      claimPresidencyAtomic: jest.fn(),
     };
 
     mockUserRepo = {
@@ -213,17 +216,20 @@ describe('ChapterService', () => {
         updated_at: '2024-01-02',
       },
     ];
+    // A row that predates `dismissed_ops_nudges` (#492): the key is absent,
+    // not `[]`, which is what the `?? []` in `mapMembershipSummary` is for.
+    const legacyMember: Omit<Member, 'dismissed_ops_nudges'> = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'ch-1',
+      role_ids: ['role-president'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
     mockMemberRepo.findByUser.mockResolvedValue([
-      {
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'ch-1',
-        role_ids: ['role-president'],
-        custom_role_ids: [],
-        has_completed_onboarding: true,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
+      legacyMember as Member,
       {
         id: 'member-2',
         user_id: 'user-1',
@@ -231,6 +237,7 @@ describe('ChapterService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: ['events'],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
       },
@@ -255,10 +262,10 @@ describe('ChapterService', () => {
         chapter_id: 'ch-1',
         role_ids: ['role-president'],
         has_completed_onboarding: true,
-        // `[]`, not absent: the member fixtures predate `dismissed_ops_nudges`
-        // (#492) and carry no such key, so this pins the `?? []` normalization
-        // in `mapMembershipSummary` — the web contract declares a plain array
-        // and `undefined` reaching `selectOpsNudge` would be a silent hole.
+        // `[]`, not absent: member-1 carries no such key, so this pins the
+        // `?? []` normalization in `mapMembershipSummary` — the web contract
+        // declares a plain array and `undefined` reaching `selectOpsNudge`
+        // would be a silent hole.
         dismissed_ops_nudges: [],
         chapter: toChapterMemberView(chapters[0]),
       },
@@ -267,7 +274,8 @@ describe('ChapterService', () => {
         chapter_id: 'ch-2',
         role_ids: ['role-member'],
         has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
+        // A stored list passes through untouched.
+        dismissed_ops_nudges: ['events'],
         chapter: toChapterMemberView(chapters[1]),
       },
     ]);
@@ -302,6 +310,7 @@ describe('ChapterService', () => {
         role_ids: ['role-president'],
         custom_role_ids: [],
         has_completed_onboarding: true,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
       },
@@ -312,6 +321,7 @@ describe('ChapterService', () => {
         role_ids: ['role-member'],
         custom_role_ids: [],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
       },
@@ -534,6 +544,7 @@ describe('ChapterService', () => {
       role_ids: [mockRoleIdForName('President')],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2026-05-24',
       updated_at: '2026-05-24',
     });
@@ -587,6 +598,7 @@ describe('ChapterService', () => {
       role_ids: [presidentRole.id],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -642,6 +654,7 @@ describe('ChapterService', () => {
       role_ids: [mockRoleIdForName('President')],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -671,9 +684,9 @@ describe('ChapterService', () => {
   // with no repair path, which is #1008 verbatim. Assert the invariant that
   // makes the omission safe rather than the seed itself.
   it('should not seed a PRIVATE default channel, which the seeder cannot make readable', () => {
-    expect(
-      DEFAULT_CHANNELS.filter((channelDef) => channelDef.type === 'PRIVATE'),
-    ).toEqual([]);
+    expect(DEFAULT_CHANNELS.map((channelDef) => channelDef.type)).not.toContain(
+      'PRIVATE',
+    );
   });
 
   // FRA-321: the seeder used to drop `required_permissions` entirely, leaving
@@ -736,6 +749,7 @@ describe('ChapterService', () => {
       role_ids: [mockRoleIdForName('President')],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
@@ -805,8 +819,8 @@ describe('ChapterService', () => {
     // or a systematic sweep of the hue/saturation/lightness space fails it, so
     // this exercises the disclosure plumbing via a stubbed generator result
     // rather than hunting for a real seed that may not exist.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
     const loggerWarnSpy = jest
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
@@ -857,8 +871,8 @@ describe('ChapterService', () => {
     // The engine lifts the fill until it clears 3:1, so a failure means the
     // lift broke (a generator resync, say). Nothing the officer chose caused
     // it, so it is logged, not returned as `failedContrastChecks`.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
     const loggerWarnSpy = jest
       .spyOn((service as any).logger, 'warn')
       .mockImplementation(() => undefined);
@@ -907,8 +921,8 @@ describe('ChapterService', () => {
         greek_letters: 'ΦΓΔ',
         colors: { dark: '#4B2E2E', accent: '#8B0000' },
       },
-    });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    } as Partial<Chapter> as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { accent_color: '#1E293B' }, 'user-1');
 
@@ -925,8 +939,11 @@ describe('ChapterService', () => {
   });
 
   it('does not touch branding when the update carries no accent', async () => {
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1', name: 'Alpha' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      name: 'Alpha',
+    } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { name: 'Renamed' }, 'user-1');
 
@@ -964,7 +981,7 @@ describe('ChapterService', () => {
 
     it('writes one member-visible audit row carrying only the changed fields', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update(
         'ch-1',
@@ -988,7 +1005,7 @@ describe('ChapterService', () => {
 
     it('audits an accent change, which posts to this route rather than the config PATCH', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-9');
 
@@ -1007,7 +1024,7 @@ describe('ChapterService', () => {
 
     it('treats a hex-case-only accent re-pick as no change', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       // Chapters seeded from the directory store uppercase; `<input type="color">`
       // always reports lowercase. A strict compare made re-picking the same
@@ -1027,7 +1044,7 @@ describe('ChapterService', () => {
         ...stored,
         branding: {},
       });
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update('ch-1', { accent_color: '#8B0000' }, 'user-9');
 
@@ -1047,7 +1064,7 @@ describe('ChapterService', () => {
         ...stored,
         branding: { colors: { accent: '#003087' } },
       });
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       await service.update('ch-1', { accent_color: '#8B0000' }, 'user-9');
 
@@ -1077,7 +1094,7 @@ describe('ChapterService', () => {
 
     it('writes no row when the form re-sends unchanged values', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
       // The Settings form re-sends every stored value on save, so this is the
       // common case, not an edge one. Writing here would mirror a "chapter
@@ -1106,7 +1123,7 @@ describe('ChapterService', () => {
 
     it('fails the request when the audit write fails, rather than silently not auditing', async () => {
       mockChapterRepo.findById.mockResolvedValue(stored);
-      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+      mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
       mockAuditLog.record.mockRejectedValue(new Error('audit down'));
 
       await expect(
@@ -1124,8 +1141,8 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       branding: { colors: { accent: '#8B0000' } },
-    });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    } as Partial<Chapter> as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-1');
 
@@ -1150,8 +1167,8 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       branding: { colors: { accent: '#8B0000' } },
-    });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    } as Partial<Chapter> as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     await service.update('ch-1', { accent_color: '#0C5C3D' }, 'user-1');
 
@@ -1178,11 +1195,11 @@ describe('ChapterService', () => {
     // save anything in Settings (the form resends the stored value). Legibility
     // is not gated here; why, and what is and isn't guaranteed instead:
     // `spec/behavior/branding.md` § Accent Color.
-    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' });
-    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' });
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as Chapter);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as Chapter);
 
     // #C9A56F is 2.16:1 on bone and is the most common accent in the seed.
-    await service.update('ch-1', { accent_color: '#C9A56F' });
+    await service.update('ch-1', { accent_color: '#C9A56F' }, 'user-1');
 
     expect(mockChapterRepo.update).toHaveBeenCalledWith(
       'ch-1',
@@ -1281,7 +1298,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       logo_path: 'chapters/ch-1/branding/logo.png',
-    });
+    } as Chapter);
 
     await expect(
       service.confirmLogoUpload(
@@ -1304,7 +1321,7 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue({
       id: 'ch-1',
       logo_path: null,
-    });
+    } as Chapter);
 
     await expect(
       service.confirmLogoUpload(
@@ -1328,8 +1345,8 @@ describe('ChapterService', () => {
     function rowReads(before: string | null, after: string | null) {
       mockChapterRepo.findById
         .mockReset()
-        .mockResolvedValueOnce({ id: 'ch-1', logo_path: before })
-        .mockResolvedValue({ id: 'ch-1', logo_path: after });
+        .mockResolvedValueOnce({ id: 'ch-1', logo_path: before } as Chapter)
+        .mockResolvedValue({ id: 'ch-1', logo_path: after } as Chapter);
     }
 
     beforeEach(() => {
@@ -1337,7 +1354,7 @@ describe('ChapterService', () => {
       mockChapterRepo.update.mockResolvedValue({
         id: 'ch-1',
         logo_path: next,
-      });
+      } as Chapter);
       mockStorageProvider.listObjects.mockResolvedValue([
         { path: current, createdAt: ago(3 * DAY) },
         { path: next, createdAt: ago(60_000) },
@@ -1422,7 +1439,7 @@ describe('ChapterService', () => {
         .mockImplementation(() => undefined);
       mockChapterRepo.findById
         .mockReset()
-        .mockResolvedValueOnce({ id: 'ch-1', logo_path: current })
+        .mockResolvedValueOnce({ id: 'ch-1', logo_path: current } as Chapter)
         .mockRejectedValue(new Error('db blip'));
 
       await expect(
@@ -1753,7 +1770,7 @@ describe('ChapterService', () => {
     it('persists the selection for a member', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'member-1',
-      });
+      } as Member);
 
       await service.setActiveChapter('user-1', 'ch-1');
 

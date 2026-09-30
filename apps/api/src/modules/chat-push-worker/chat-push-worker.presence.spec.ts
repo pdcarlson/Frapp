@@ -288,6 +288,8 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
           expect.objectContaining({
             level: 'warning',
             tags: expect.objectContaining({ realtime_status: status }),
+            // One issue per status, not one for every refused join.
+            fingerprint: ['chat-push-presence-join', status],
           }),
         );
         expect(realtime.opened[0].unsubscribe).not.toHaveBeenCalled();
@@ -295,6 +297,26 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
         expect(realtime.channel).toHaveBeenCalledTimes(1);
       },
     );
+
+    it('logs, and keeps the channel, when Sentry itself throws', async () => {
+      // The report runs inside realtime-js's status callback, so a Sentry
+      // fault that escaped it would surface there instead of being logged.
+      jest.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
+        throw new Error('sentry unreachable');
+      });
+      await receive('ch-a');
+
+      expect(() =>
+        realtime.opened[0].status('CHANNEL_ERROR', new Error('too many')),
+      ).not.toThrow();
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('sentry unreachable'),
+      );
+      expect(realtime.opened[0].unsubscribe).not.toHaveBeenCalled();
+      await receive('ch-a');
+      expect(realtime.channel).toHaveBeenCalledTimes(1);
+    });
 
     // A dropped socket fails every open channel at once.
     it('reports to Sentry once per window, however many channels fail', async () => {
@@ -346,8 +368,10 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
           unsubscribe: jest.fn().mockResolvedValue('ok'),
           teardown: jest.fn(),
           presenceState: () => ({}),
+          // `subscribe` throws before it can hand the worker a callback.
+          status: jest.fn(),
         };
-        realtime.opened.push(broken as unknown as FakeChannel);
+        realtime.opened.push(broken);
         return broken;
       });
 
@@ -373,24 +397,18 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
     };
 
     let spans: Array<{
-      options: Record<string, unknown>;
+      options: Parameters<typeof Sentry.startSpan>[0];
       setAttributes: jest.Mock;
     }>;
 
     beforeEach(() => {
       spans = [];
-      jest
-        .mocked(Sentry.startSpan)
-        .mockImplementation(
-          (
-            options: Record<string, unknown>,
-            callback: (span: { setAttributes: jest.Mock }) => unknown,
-          ) => {
-            const span = { setAttributes: jest.fn() };
-            spans.push({ options, setAttributes: span.setAttributes });
-            return callback(span);
-          },
-        );
+      jest.mocked(Sentry.startSpan).mockImplementation((options, callback) => {
+        const span = { setAttributes: jest.fn() };
+        spans.push({ options, setAttributes: span.setAttributes });
+        // The worker only calls `setAttributes`; the rest of `Span` is unused.
+        return callback(span as unknown as Sentry.Span);
+      });
       claim.mockResolvedValue('claimed');
       worker.__setChannelForTest(CHANNEL);
       findByChapter.mockResolvedValue(

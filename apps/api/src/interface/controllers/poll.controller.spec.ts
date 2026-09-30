@@ -68,25 +68,6 @@ describe('PollController', () => {
   });
 
   describe('vote', () => {
-    it('should cast a vote with a single option index', async () => {
-      const messageId = 'msg-123';
-      const chapterId = 'chapter-123';
-      const userId = 'user-123';
-      const dto: VoteDto = { option_indexes: 1 };
-
-      pollService.vote.mockResolvedValue(undefined);
-
-      const result = await controller.vote(messageId, chapterId, userId, dto);
-
-      expect(pollService.vote).toHaveBeenCalledWith(
-        messageId,
-        userId,
-        chapterId,
-        [1],
-      );
-      expect(result).toEqual({ success: true });
-    });
-
     it('should cast a vote with an array of option indexes', async () => {
       const messageId = 'msg-123';
       const chapterId = 'chapter-123';

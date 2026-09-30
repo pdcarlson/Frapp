@@ -80,7 +80,7 @@ Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture
 | Lint autofix | `npm run lint:api:fix`, the only lint script that writes; see [contributing.md §5](docs/guides/contributing.md#5-linting-types-and-tests) |
 | Tests | `npm run test -w apps/api` |
 | Build | `npm run build` |
-| Types | `npm run check-types` (includes the API via `tsconfig.build.json`, the same program as `nest build`) |
+| Types | `npm run check-types` (for the API, specs included: [what it runs](docs/ci-cd/agent-infra.md#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api)) |
 | API compile | `npm run build -w apps/api` (matches the Render `Dockerfile` builder) |
 | API image | `docker build -f apps/api/Dockerfile .` (CI job `api-docker-build`) |
 | API contract | `npm run check:api-contract` |
