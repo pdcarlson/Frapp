@@ -510,6 +510,23 @@ The confirmation says the conversation stays closed because that is the rule an 
 
 Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 
+### Discord Import (dashboard)
+
+Deleting an import from `/discord-import` ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
+
+| State | Title | Description |
+|---|---|---|
+| Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
+| Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
+| Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
+| Deletion stopped (row) | — | The row's counts, then ` · <n> already deleted`, when a deletion failed part-way and Delete import is offered again |
+| Deleted (row) | — | `Deleted. The messages, attachments and archive files it brought in are gone.` |
+| Delete refused (toast) | — | The API's own message (`Cancel the running import before deleting it.`), or `Could not delete the import.` |
+
+The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
+
+Implementation: `apps/web/components/discord-import/delete-import-copy.ts`.
+
 ### Billing (dashboard)
 
 | State | Title | Description |
@@ -694,7 +711,7 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Edit failed | — | The reason chat-core classified, in the composer hint; the edit stays open with the member's text | mobile `lib/chat/use-composer-staging.ts` |
 | Edited marker | — | `(edited)` after the message's last line, on every row, grouped or not, and not on a deleted message. On a card it goes on a line under the card. The behavior is [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete; the placement is [`components.md`](components.md) §11 § What rides the row | `@repo/chat-core/message-actions` (`EDITED_MARKER`, `showsEditedMarker`) |
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
-| Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-text.tsx`, `components/chat/message-item.tsx` |
+| Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-markdown.tsx`, `components/chat/message-item.tsx` |
 
 ### Start a DM (mobile s13)
 

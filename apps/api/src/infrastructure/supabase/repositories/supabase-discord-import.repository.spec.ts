@@ -412,6 +412,50 @@ describe('SupabaseDiscordImportRepository — purging a large import', () => {
       expect(batch.length).toBeLessThanOrEqual(ID_CHUNK_SIZE);
     }
   });
+
+  // The deleted count (#2944) is written in the lease renewal's own statement,
+  // so it is bound to the lock token: a worker that lost the lease matches no
+  // row and cannot overwrite the new holder's count.
+  it('records the deleted count in the lock-token-bound lease renewal', async () => {
+    const patches: Record<string, unknown>[] = [];
+    const filters: [string, unknown][] = [];
+    const builder: Record<string, jest.Mock> = {};
+    builder.update = jest.fn((patch: Record<string, unknown>) => {
+      patches.push(patch);
+      return builder;
+    });
+    builder.eq = jest.fn((column: string, value: unknown) => {
+      filters.push([column, value]);
+      return builder;
+    });
+    builder.select = jest.fn(() =>
+      Promise.resolve({ data: [{ id: IMPORT_A }], error: null }),
+    );
+    const repo = new SupabaseDiscordImportRepository({
+      from: jest.fn(() => builder),
+    } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0]);
+    const now = new Date('2026-09-30T13:00:00Z');
+
+    await expect(
+      repo.renewLease(IMPORT_A, 'token-1', now, 60_000, {
+        purged_messages: 5874,
+      }),
+    ).resolves.toBe(true);
+
+    expect(patches).toEqual([
+      {
+        purged_messages: 5874,
+        lease_expires_at: '2026-09-30T13:01:00.000Z',
+        updated_at: now.toISOString(),
+      },
+    ]);
+    expect(filters).toEqual([
+      ['id', IMPORT_A],
+      ['lock_token', 'token-1'],
+    ]);
+  });
 });
 
 /**

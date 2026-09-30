@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
+import { drawnText } from "@/test/screen-text";
 
 const attachmentHook = vi.hoisted(() => ({
   calls: [] as Array<{ enabled: boolean }>,
@@ -320,7 +321,7 @@ describe("compact layout (#2873)", () => {
     const tree = renderItem(message(), undefined, { startsRun: false });
     const drawn = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
-      .map((node) => JSON.stringify(node.props.children));
+      .map(drawnText);
     expect(drawn.some((text) => text.includes("CA"))).toBe(false);
     expect(drawn.some((text) => text.includes("Casey"))).toBe(false);
     expect(drawn.some((text) => text.includes(":09"))).toBe(false);
@@ -462,7 +463,7 @@ describe("compact layout (#2873)", () => {
       (node) =>
         (node.type as unknown) === "Text" &&
         Array.isArray(node.props.style) &&
-        JSON.stringify(node.props.children).includes("hello"),
+        drawnText(node).includes("hello"),
     );
     expect(JSON.stringify(body.props.style)).toContain(
       `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
@@ -552,10 +553,9 @@ describe("reply quote (#1727)", () => {
   });
 
   it("flattens markdown in the parent using the shared preview rules", () => {
-    // Mobile rows still print `content` raw (no markdown renderer on this
-    // surface). The quote uses the web preview rules on purpose (#1727), so
-    // `_really_ urgent` becomes `really urgent` in the strip even though the
-    // parent row would still show the underscores.
+    // The quote flattens the parent with the shared preview rules (#1727), so
+    // `_really_ urgent` reads `really urgent` in the strip, as the parent's own
+    // row now draws it too (#2861).
     const flat = JSON.stringify(
       renderItem(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
@@ -724,6 +724,52 @@ describe("links in a message are tappable (#2775)", () => {
         ),
     );
     expect(container.props.accessible).toBe(true);
+  });
+});
+
+describe("markers under a list (#2861)", () => {
+  it("start their own line with no leading space", () => {
+    const tree = renderItem(
+      message({
+        content: "- a\n- b",
+        edited_at: "2026-09-29T18:00:00Z",
+        is_pinned: true,
+      }),
+    );
+    const body = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        Array.isArray(node.props.style) &&
+        drawnText(node).startsWith("a"),
+    );
+    expect(drawnText(body)).toBe(`a\nb\n${EDITED_MARKER} · Pinned`);
+  });
+
+  it("drop the Pinned separator when Pinned starts the line", () => {
+    const tree = renderItem(message({ content: "- a", is_pinned: true }));
+    const body = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        Array.isArray(node.props.style) &&
+        drawnText(node).startsWith("a"),
+    );
+    expect(drawnText(body)).toBe("a\nPinned");
+  });
+});
+
+describe("a body whose markdown draws nothing (#2861)", () => {
+  it("draws no text line, and puts the markers on a line of their own", () => {
+    const tree = renderItem(
+      message({ content: "---", edited_at: "2026-09-29T18:00:00Z" }),
+    );
+    const drawn = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map(drawnText);
+    // `OwnLineMarkers` draws the marker bare; one trailing a text line leads
+    // with a space.
+    expect(drawn).toContain(EDITED_MARKER);
+    expect(drawn).not.toContain(` ${EDITED_MARKER}`);
+    expect(drawn.some((text) => text.includes("---"))).toBe(false);
   });
 });
 

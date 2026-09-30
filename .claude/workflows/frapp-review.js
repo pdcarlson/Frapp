@@ -60,8 +60,8 @@ const SCOPE = FULL
 const CODE_AT = A.dirty ? `the working tree (commit ${A.head} plus its uncommitted changes)` : `commit ${A.head}`
 const PINNED = 'The SHAs are pinned: use them as given and never re-resolve `origin/main`, which a background fetch can move mid-review.'
 
-// Every agent() call sets effort. Without it an agent inherits the session's effort, which
-// ultracode pins to xhigh (.claude/skills/multi-agent/SKILL.md § Effort).
+// Every agent() call sets effort. Without it an agent inherits the session's effort, which can be
+// xhigh (.claude/skills/multi-agent/SKILL.md § Effort).
 const EFFORT = { finder: 'high', verifier: 'medium', escalation: 'high' }
 
 const candidatesSchema = (cap) => ({

@@ -2456,3 +2456,31 @@ drop table if exists public.discord_import_created_channels;
 The two indexes are harmless to keep: they only speed up the `on delete set null` actions any channel delete runs. Drop them only if something else needs them gone (`drop index if exists public.idx_point_transactions_channel; drop index if exists public.idx_discord_import_channels_target;`).
 
 A channel a purge already deleted can't be recovered by rollback. It held no message of any kind, no attachment, no points-ledger link and no other import's merge when it went; a re-import recreates it.
+
+## Rollback deletable import merge targets (20260930140000)
+
+* **Migration**: `20260930140000_discord_import_merge_target_deletable.sql`
+
+It replaces the `discord_import_channels_target_present` CHECK with `discord_import_channels_new_name_present`, so a `use_existing` mapping row can lose its target when its channel is deleted. It also replaces two functions: `discord_import_channel_holds_anything` stops counting a merge by a `purging` or `purged` import, and `delete_empty_discord_import_channels` also reaps a channel a `purging` or `purged` import created that the purging import merged into (#2922). The migration itself rewrites no row. Data changes come later, from an officer deleting a merged-into channel (the mapping rows keep their record with `target_channel_id` null) and from purges.
+
+**Revert the API code forward, and keep the migration file.** Revert the #2922 code on `main` and ship that, but keep `supabase/migrations/20260930140000_discord_import_merge_target_deletable.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API runs safely on the new schema, but it doesn't name the deletion. `start` no longer refuses a merge whose channel was deleted, and the worker fails that import with an older message. A channel deleted between slices gives "Channel mapping for #… has no target.". One deleted while a slice writes into it gives a raw foreign-key error (`23503`) from the insert or the row's write-back, or "…points at a channel outside this chapter." at the next part or channel it resolves. Nothing is written into the missing channel either way.
+
+**Don't restore the old CHECK.** It is the bug: with it back, deleting any channel an import merged into answers 500 again. It also can't be added once an officer has deleted such a channel, because the rows that merged into it now have no target and fail validation. `not valid` would skip them and still bring the 500 back.
+
+To restore only the #2905 purge rule (a merge by any import keeps its channel, and nothing is re-reaped), re-create both functions in a new forward migration. Copy their bodies verbatim from `20260930030000_discord_import_purge_channels.sql`, sections 2a and 2, and re-state that file's grants. Don't edit them in by hand, which would leave the ledger out of step.
+
+A channel a purge or an officer already deleted can't be recovered by rollback. A purge deletes only a channel that held no message of any kind, no attachment, no points-ledger link, and no merge by an import that isn't deleted; a re-import recreates it.
+
+## Rollback Discord import purge progress (20260930150000)
+
+* **Migration**: `20260930150000_discord_import_purged_messages.sql`
+
+One column on `discord_imports`, `purged_messages integer not null default 0` (#2944). No data is rewritten, and the count it holds is progress only: nothing reads it to decide what to delete.
+
+**Revert the API and web code forward, and keep the migration file.** The worker that ships with this migration writes `purged_messages` with every lease renewal during a purge. Revert the #2944 code on `main` and ship that, but keep `supabase/migrations/20260930150000_discord_import_purged_messages.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker doesn't write the column and the reverted web doesn't read it, so leaving it in place is safe.
+
+To remove it, drop it in a new forward migration once the reverted API is live, not by hand. A newer worker still running fails every purge slice after its first round until the revert deploys, and the import is marked `failed`; deleting it again finishes it.
+
+```sql
+alter table public.discord_imports drop column if exists purged_messages;
+```

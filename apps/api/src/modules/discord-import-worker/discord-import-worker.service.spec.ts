@@ -78,6 +78,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: NOW.toISOString(),
     completed_at: null,
     purged_at: null,
+    purged_messages: 0,
     cleared_at: null,
     messages_after: null,
     ...overrides,
@@ -705,6 +706,145 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.state().error).toMatch(/points at a direct message/);
   });
 
+  // An officer may delete any channel, one an import merges into included
+  // (#2922). The row keeps its record with no target, and the import stops
+  // with a sentence rather than guess a channel or surface a constraint.
+  it('stops with a sentence when the channel a merge goes into was deleted before the slice (#2922)', async () => {
+    repoRef.channels = [channelMapping({ target_channel_id: null })];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    expect(channelRepo.create).not.toHaveBeenCalled();
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      'The Frapp channel #general was importing into was deleted, so the import stopped. To bring #general in, delete this import and import again.',
+    );
+  });
+
+  it('says a channel deleted after the slice read its row may be why its target is gone (#2922)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.findById.mockResolvedValue(null);
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      "The Frapp channel #general was importing into was deleted, or isn't one of this chapter's channels, so the import stopped. To bring #general in, delete this import and import again.",
+    );
+  });
+
+  it('names the deleted channel when an insert meets the foreign key mid-batch (#2922)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    // Resolved while it existed; deleted before the insert landed.
+    const live = await channelRepo.findById(SIGNET_CHANNEL, CHAPTER);
+    channelRepo.findById
+      .mockResolvedValueOnce(live)
+      .mockResolvedValueOnce(null);
+    repoRef.insertMessages.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_messages" violates foreign key constraint "chat_messages_channel_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      'The Frapp channel #general was importing into was deleted, so the import stopped. To bring #general in, delete this import and import again.',
+    );
+  });
+
+  it('names the deleted channel when the attachment insert meets the foreign key (#2922)', async () => {
+    // Deleted between the batch's message insert and its attachment insert.
+    repoRef.files = [
+      exportFile(),
+      mediaFile('general [800000000000000001]_Files/rush-schedule-c3d4.pdf'),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const live = await channelRepo.findById(SIGNET_CHANNEL, CHAPTER);
+    channelRepo.findById
+      .mockResolvedValueOnce(live)
+      .mockResolvedValueOnce(null);
+    repoRef.insertAttachments.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_message_attachments" violates foreign key constraint "chat_message_attachments_channel_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertAttachments).toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      'The Frapp channel #general was importing into was deleted, so the import stopped. To bring #general in, delete this import and import again.',
+    );
+  });
+
+  it('keeps the foreign-key failure when the re-read that would explain it fails', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const live = await channelRepo.findById(SIGNET_CHANNEL, CHAPTER);
+    channelRepo.findById
+      .mockResolvedValueOnce(live)
+      .mockRejectedValueOnce(new Error('PostgREST unavailable'));
+    repoRef.insertMessages.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_messages" violates foreign key constraint "chat_messages_reply_to_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toMatch(/chat_messages_reply_to_id_fkey/);
+  });
+
+  it('leaves the target out of the per-part write, so a channel deleted after the insert is not written back (#2922)', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    const afterPart = repoRef.channelUpdates.filter(
+      (patch) => 'imported_count' in patch,
+    );
+    expect(afterPart.length).toBeGreaterThan(0);
+    for (const patch of afterPart) {
+      expect(patch).not.toHaveProperty('target_channel_id');
+    }
+  });
+
+  it('keeps a foreign-key failure with another cause as the database said it', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+    repoRef.insertMessages.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_messages" violates foreign key constraint "chat_messages_reply_to_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toMatch(/chat_messages_reply_to_id_fkey/);
+  });
+
   it('creates a channel once across every part of that channel', async () => {
     // `channelBySnowflake` hands the same object back for each part, so a
     // channel split by `--partition` would otherwise mint one identically-named
@@ -1194,6 +1334,32 @@ describe('DiscordImportWorkerService — purging', () => {
     expect(
       (repoRef.updates.at(-1) as { purged_at: string }).purged_at,
     ).toBeTruthy();
+  });
+
+  // The admin's progress bar (#2944). Counting the rows left on every poll
+  // would scan up to the whole import; the worker already renews its lease
+  // after every round, and the count rides that lock-bound write.
+  it('records the running deleted count with each lease renewal, continuing from the stored one', async () => {
+    // A purge resumed from an earlier slice, or re-requested after one failed.
+    repoRef = makeRepo(job({ status: 'purging', purged_messages: 1000 }));
+    repoRef.deletedRounds = [PURGE_BATCH_SIZE, 12];
+    const storage = makeStorage(null);
+    const { worker } = await buildWorker(repoRef, storage);
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    // Two non-empty rounds, two renewals, each with the total so far; the
+    // empty round that ends the loop deleted nothing, so renews nothing.
+    expect(
+      repoRef.renewLease.mock.calls.map((call: unknown[]) => [
+        call[1],
+        call[4],
+      ]),
+    ).toEqual([
+      ['token-1', { purged_messages: 1000 + PURGE_BATCH_SIZE }],
+      ['token-1', { purged_messages: 1000 + PURGE_BATCH_SIZE + 12 }],
+    ]);
   });
 
   // The direct regression test for #1628 on the purge path. A project whose

@@ -87,6 +87,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: NOW.toISOString(),
     completed_at: null,
     purged_at: null,
+    purged_messages: 0,
     cleared_at: null,
     ...overrides,
   };
@@ -976,6 +977,45 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
         (call: unknown[]) => call.length === 2,
       ),
     ).toBe(true);
+  });
+
+  it("names a thread's page by its parent, the channel the admin mapped (#2922)", async () => {
+    // The batch writer's stop for a deleted target names this channel, and a
+    // thread has no mapping of its own for the admin to change.
+    const parent = channel({ id: 'mapping-parent', position: 0 });
+    const thread = channel({
+      id: 'mapping-thread',
+      discord_channel_id: THREAD,
+      discord_channel_name: 'general › planning',
+      parent_discord_channel_id: DISCORD_CHANNEL,
+      position: 1,
+    });
+    const harness = await build({
+      channels: [parent, thread],
+      pages: [[], [apiMessage('1'), apiMessage('2')]],
+    });
+    const args = runArgs(harness);
+
+    await harness.worker.runSlice(args);
+
+    expect(args.importBatch).toHaveBeenCalledTimes(1);
+    expect(args.importBatch.mock.calls[0][0]).toMatchObject({
+      channelName: parent.discord_channel_name,
+    });
+  });
+
+  it('leaves the target out of the per-page write, so a channel deleted after the insert is not written back (#2922)', async () => {
+    const harness = await build();
+
+    await harness.worker.runSlice(runArgs(harness));
+
+    const perPage = harness.repo.updateChannel.mock.calls
+      .map((call) => call[2])
+      .filter((patch) => 'cursor_before_snowflake' in patch);
+    expect(perPage.length).toBeGreaterThan(0);
+    for (const patch of perPage) {
+      expect(patch).not.toHaveProperty('target_channel_id');
+    }
   });
 
   it('re-verifies an inherited target through the chapter, never trusting the row', async () => {

@@ -2785,7 +2785,7 @@ export interface paths {
         };
         /**
          * Import detail and progress
-         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled.
+         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.
          */
         get: operations["DiscordImportController_get_v1"];
         put?: never;
@@ -3686,6 +3686,28 @@ export interface components {
             category: string;
             /** @description Whether notifications for this category are enabled */
             is_enabled: boolean;
+        };
+        UserSettingsDto: {
+            /**
+             * @description Quiet hours start, as Postgres returns a `time` (HH:mm:ss). Null when no window is set; quiet hours are enforced only while start and end are both set.
+             * @example 22:00:00
+             */
+            quiet_hours_start: string | null;
+            /**
+             * @description Quiet hours end (HH:mm:ss). Null when no window is set.
+             * @example 08:00:00
+             */
+            quiet_hours_end: string | null;
+            /**
+             * @description Time zone the window is evaluated in. Null means UTC while a window is set.
+             * @example America/New_York
+             */
+            quiet_hours_tz: string | null;
+            /**
+             * @description Theme preference. `system` until the member saves one.
+             * @enum {string}
+             */
+            theme: "light" | "dark" | "system";
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -6198,7 +6220,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UserSettingsDto"];
+                };
             };
         };
     };
@@ -6219,7 +6243,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UserSettingsDto"];
+                };
             };
         };
     };

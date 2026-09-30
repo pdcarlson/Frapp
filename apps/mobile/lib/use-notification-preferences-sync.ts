@@ -6,6 +6,7 @@ import {
   useUpdateNotificationPreference,
   useUpdateUserSettings,
   useUserSettings,
+  type UserSettings,
 } from "@repo/hooks";
 import {
   defaultNotificationCategoryState,
@@ -132,11 +133,15 @@ export type QuietHoursWindow = {
 
 export type SyncIndicator = "synced" | "pending" | "cached" | "retry";
 
-type ServerSettings = {
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
-  quiet_hours_tz?: string | null;
-};
+/**
+ * The quiet-hour fields of `GET /v1/settings`. Picked from the contract's type
+ * rather than restated, so renaming one there fails to compile here instead of
+ * reading every member's window as "off".
+ */
+type ServerSettings = Pick<
+  UserSettings,
+  "quiet_hours_start" | "quiet_hours_end" | "quiet_hours_tz"
+>;
 
 /** What lives under {@link PREFERENCE_STORAGE_KEY}. */
 type CachedPreferences = {
@@ -337,9 +342,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   // edited on web must reach this device on refetch.
   useEffect(() => {
     if (!settingsQuery.isSuccess) return;
-    const serverWindow = settingsToQuietHoursWindow(
-      settingsQuery.data as unknown as ServerSettings | undefined,
-    );
+    const serverWindow = settingsToQuietHoursWindow(settingsQuery.data);
     if (!serverWindow) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed remembered quiet-hours from the server so a web edit reaches this device
     setRememberedWindow((current) =>
@@ -353,9 +356,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   // latched out.
 
   const serverQuietHoursEnabled = settingsQuery.isSuccess
-    ? settingsToQuietHoursEnabled(
-        settingsQuery.data as unknown as ServerSettings | undefined,
-      )
+    ? settingsToQuietHoursEnabled(settingsQuery.data)
     : null;
   const quietHoursEnabled =
     serverQuietHoursEnabled ?? cached.quietHoursEnabled;
@@ -412,9 +413,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
    * clobber times set on another device before hydration lands.
    */
   const resolveWindowForEnable = useCallback((): QuietHoursWindow => {
-    const serverWindow = settingsToQuietHoursWindow(
-      settingsQuery.data as unknown as ServerSettings | undefined,
-    );
+    const serverWindow = settingsToQuietHoursWindow(settingsQuery.data);
     return serverWindow ?? rememberedWindow ?? fallbackWindow;
   }, [fallbackWindow, rememberedWindow, settingsQuery.data]);
 
