@@ -8,10 +8,16 @@
 // `npm ci` (see the header of `brand-pixels.test.mjs`), and these decode PNGs
 // with sharp. `npm run check:brand-assets` runs this file after the gate, in the
 // `lint-and-typecheck` job, where sharp is installed.
+//
+// The staleness limits are tested against a FRESH render of this host, never
+// the committed banner: the limits exist to absorb rounding between hosts, so a
+// boundary drawn on the committed file would move on exactly those hosts.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -20,6 +26,7 @@ import {
   FACES,
   FEATURE_RENDER_DRIFT_MAX,
   FEATURE_RENDER_ROUNDING,
+  FEATURE_RENDER_WORST,
   PLAY_FEATURE_GRAPHIC,
   PLAY_ICON,
   assertFacesDiffer,
@@ -29,14 +36,15 @@ import {
   checkFaces,
   cssColour,
   fontFace,
+  renderFeatureGraphic,
 } from "../store-graphics.mjs";
 
-const REPO_ROOT = join(
+const LIB = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
-  "..",
-  "..",
+  "store-graphics.mjs",
 );
+const REPO_ROOT = join(dirname(LIB), "..", "..");
 const repo = (rel) => join(REPO_ROOT, rel);
 
 const master = readFileSync(
@@ -44,14 +52,19 @@ const master = readFileSync(
 );
 const icon = readFileSync(repo(PLAY_ICON));
 const banner = readFileSync(repo(PLAY_FEATURE_GRAPHIC));
+const signetCss = readFileSync(repo("packages/theme/src/signet.css"), "utf8");
+const fresh = await renderFeatureGraphic();
 const png = (pipeline) => pipeline.png().toBuffer();
 const patch = (colour, width, height) => ({
   input: { create: { width, height, channels: 3, background: colour } },
 });
 
-/** The banner with the first `count` painted pixels under the lockup shifted by `levels`. */
+/**
+ * The fresh render with the painted pixels under the lockup (the line) shifted
+ * by `levels`: all of them, or the first `count`.
+ */
 async function drift(levels, count = Infinity) {
-  const { data, info } = await sharp(banner)
+  const { data, info } = await sharp(fresh)
     .raw()
     .toBuffer({ resolveWithObject: true });
   const out = Buffer.from(data);
@@ -82,20 +95,52 @@ function sfnt(tables) {
   return Buffer.concat([header, ...bodies]);
 }
 
+/** A face that declares `family` at `weight`, with one name record on `platform`. */
+function face(family, weight, platform = 3) {
+  const os2 = Buffer.alloc(8);
+  os2.writeUInt16BE(weight, 4);
+  const string = Buffer.from(family, "utf16le").swap16();
+  const name = Buffer.alloc(18);
+  name.writeUInt16BE(1, 2); // count
+  name.writeUInt16BE(18, 4); // string offset
+  name.writeUInt16BE(platform, 6);
+  name.writeUInt16BE(1, 8); // encoding
+  name.writeUInt16BE(1, 12); // nameID 1, the family
+  name.writeUInt16BE(string.length, 14);
+  return sfnt({ "OS/2": os2, name: Buffer.concat([name, string]) });
+}
+
 test("the committed graphics pass every audit", async () => {
   await auditPlayIcon(icon, "icon", master);
   await auditFeatureGraphic(banner, "banner");
   await assertFeatureGraphicCurrent(banner, "banner");
 });
 
-test("text renders stay hermetic after this process rendered text with the host's fonts", async () => {
-  // fontconfig keeps the config it first initialized with for the life of a
-  // process. Rendering here first pins this process to the host's fonts, which
-  // must not reach the banner: its text is set in a process of its own.
-  await sharp({ text: { text: "host fonts", font: "sans 24" } })
-    .png()
-    .toBuffer();
-  await assertFeatureGraphicCurrent(banner, "banner");
+test("text stays hermetic in a process that rendered with the host's fonts first", () => {
+  // Its own process with the host's environment, because fontconfig keeps the
+  // config it first initialized with, and in this file's process the renders
+  // above already started it. The child pins itself to the host's fonts, then
+  // checks the committed banner, which it can only match if the banner's text
+  // is set in a process of its own under the hermetic config.
+  const script = [
+    `import { readFileSync } from "node:fs";`,
+    `import sharp from "sharp";`,
+    `await sharp({ text: { text: "host fonts", font: "sans 24" } }).png().toBuffer();`,
+    `const lib = await import(${JSON.stringify(LIB)});`,
+    `await lib.assertFeatureGraphicCurrent(readFileSync(${JSON.stringify(repo(PLAY_FEATURE_GRAPHIC))}), "banner");`,
+  ].join("\n");
+  const env = { ...process.env };
+  delete env.FONTCONFIG_FILE;
+  const run = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", script],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env,
+    },
+  );
+  assert.equal(run.status, 0, run.stderr);
 });
 
 test("the Play icon audit refuses each shape Play would not take", async () => {
@@ -169,7 +214,7 @@ test("a stale banner fails against a fresh render: another size, a patch, a shif
     [icon, /not the size a fresh render is/],
     [
       await png(
-        sharp(banner).composite([
+        sharp(fresh).composite([
           { ...patch("#FF0000", 60, 60), left: 600, top: 180 },
         ]),
       ),
@@ -177,7 +222,7 @@ test("a stale banner fails against a fresh render: another size, a patch, a shif
     ],
     [
       await png(
-        sharp(banner)
+        sharp(fresh)
           .extract({ left: 1, top: 0, width: 1023, height: 500 })
           .extend({ right: 1, background: "#1A1A1A" }),
       ),
@@ -185,7 +230,7 @@ test("a stale banner fails against a fresh render: another size, a patch, a shif
     ],
     [
       await png(
-        sharp(banner).composite([
+        sharp(fresh).composite([
           { ...patch("#1A1A1A", 2, 2), left: 300, top: 220 },
         ]),
       ),
@@ -197,6 +242,24 @@ test("a stale banner fails against a fresh render: another size, a patch, a shif
   }
 });
 
+test("one pixel fails past the worst-pixel limit and not at it, and a 32-level move always fails", async () => {
+  await assertFeatureGraphicCurrent(
+    await drift(FEATURE_RENDER_WORST, 1),
+    "banner",
+  );
+  await assert.rejects(
+    assertFeatureGraphicCurrent(
+      await drift(FEATURE_RENDER_WORST + 1, 1),
+      "banner",
+    ),
+    /levels at/,
+  );
+  await assert.rejects(
+    assertFeatureGraphicCurrent(await drift(32, 1), "banner"),
+    /levels at/,
+  );
+});
+
 test("colour drift fails one level past rounding and one pixel past the drift limit, and not before", async () => {
   // The requirement, in absolute levels: a token moved by 3 fails, a
   // rounding-sized 1 does not. These hold whatever the constants are set to.
@@ -206,8 +269,6 @@ test("colour drift fails one level past rounding and one pixel past the drift li
   );
   await assertFeatureGraphicCurrent(await drift(1), "banner");
   const past = FEATURE_RENDER_ROUNDING + 1;
-  // Rounding: the whole line moved by the rounding allowance passes, and by one
-  // level more fails.
   await assertFeatureGraphicCurrent(
     await drift(FEATURE_RENDER_ROUNDING),
     "banner",
@@ -216,7 +277,6 @@ test("colour drift fails one level past rounding and one pixel past the drift li
     assertFeatureGraphicCurrent(await drift(past), "banner"),
     /pixels differ/,
   );
-  // Drift limit: exactly the limit's worth of pixels past rounding passes, one more fails.
   await assertFeatureGraphicCurrent(
     await drift(past, FEATURE_RENDER_DRIFT_MAX),
     "banner",
@@ -230,10 +290,38 @@ test("colour drift fails one level past rounding and one pixel past the drift li
   );
 });
 
-test("the banner's text colours are the theme's tokens, one definition each", () => {
-  const css = readFileSync(repo("packages/theme/src/signet.css"), "utf8");
-  assert.equal(cssColour(css, "--foreground"), "#EDEAE3");
-  assert.equal(cssColour(css, "--muted-foreground"), "#A9A399");
+test("the banner's text is set in the theme's colour tokens", async () => {
+  // --muted-foreground swapped for pure red in a copy of the theme: the line
+  // comes out red only if the render reads the stylesheet.
+  const red = signetCss.replace(
+    /^(\s*--muted-foreground:\s*)#[0-9A-Fa-f]{6}/m,
+    "$1#FF0000",
+  );
+  assert.notEqual(red, signetCss);
+  const data = await sharp(await renderFeatureGraphic({ css: red }))
+    .raw()
+    .toBuffer();
+  let redPixels = 0;
+  for (let p = 300 * 1024 * 3; p < data.length; p += 3) {
+    if (data[p] === 255 && data[p + 1] === 0 && data[p + 2] === 0)
+      redPixels += 1;
+  }
+  assert.ok(
+    redPixels > 500,
+    `expected the line in #FF0000, found ${redPixels} such pixels`,
+  );
+});
+
+test("cssColour reads exactly one #RRGGBB definition", () => {
+  assert.match(cssColour(signetCss, "--foreground"), /^#[0-9A-F]{6}$/);
+  assert.match(cssColour(signetCss, "--muted-foreground"), /^#[0-9A-F]{6}$/);
+  assert.equal(
+    cssColour(
+      "  --foreground: #abcdef;\n  --muted-foreground: #000000;\n",
+      "--foreground",
+    ),
+    "#ABCDEF",
+  );
   assert.throws(
     () => cssColour(":root { --x: #000000; }", "--foreground"),
     /found 0/,
@@ -257,6 +345,10 @@ test("fontFace reads the vendored faces and refuses what is not a named TrueType
     family: "Figtree",
     weight: 700,
   });
+  assert.deepEqual(fontFace(face("Inter", 700), "inter"), {
+    family: "Inter",
+    weight: 700,
+  });
   assert.throws(
     () =>
       fontFace(
@@ -266,38 +358,48 @@ test("fontFace reads the vendored faces and refuses what is not a named TrueType
     /not a TrueType file/,
   );
   assert.throws(() => fontFace(sfnt({}), "empty"), /no OS\/2 or name table/);
-  // A name table whose only record is a Mac one, so no Windows family name.
-  const name = Buffer.alloc(6 + 12);
-  name.writeUInt16BE(1, 2); // count
-  name.writeUInt16BE(18, 4); // string offset
-  name.writeUInt16BE(1, 6); // platform: Macintosh
-  name.writeUInt16BE(1, 12); // nameID 1
   assert.throws(
-    () => fontFace(sfnt({ "OS/2": Buffer.alloc(8), name }), "mac-only"),
+    () => fontFace(face("Figtree", 700, 1), "mac-only"),
     /no Windows family name/,
   );
 });
 
-test("checkFaces refuses a missing face or a file that is the other face", () => {
+test("checkFaces refuses a missing face, the other weight, and another family", () => {
   assert.doesNotThrow(() => checkFaces(FACES));
   assert.throws(
     () => checkFaces([{ file: "/nonexistent/Figtree-Bold.ttf", weight: 700 }]),
     /missing/,
   );
-  // Regular copied over the Bold path: the file is a real font, but not the Bold one.
+  // Regular copied over the Bold path: a real font, but not the Bold one.
   assert.throws(
     () => checkFaces([{ file: FACES[0].file, weight: 700 }]),
     /declares Figtree 400, not Figtree 700/,
   );
+  // Another family's bold at the Bold path.
+  const bold = join(
+    mkdtempSync(join(tmpdir(), "frapp-face-")),
+    "Figtree-Bold.ttf",
+  );
+  writeFileSync(bold, face("Inter", 700));
+  assert.throws(
+    () => checkFaces([{ file: bold, weight: 700 }]),
+    /declares Inter 700, not Figtree 700/,
+  );
 });
 
-test("assertFacesDiffer refuses two faces that set text identically", () => {
-  const text = { png: Buffer.from([1, 2, 3]), width: 3 };
+test("the feature graphic refuses two faces that set text identically", async () => {
+  const text = { png: Buffer.from([1, 2, 3]), width: 3, height: 1 };
   assert.throws(
     () => assertFacesDiffer(text, { ...text }),
     /one face did not load/,
   );
   assert.doesNotThrow(() =>
-    assertFacesDiffer(text, { png: Buffer.from([1, 2, 4]), width: 3 }),
+    assertFacesDiffer(text, { ...text, png: Buffer.from([1, 2, 4]) }),
+  );
+  // And the render checks its own probe: a renderer that sets every string
+  // the same, as one that lost a face would, is stopped before composing.
+  await assert.rejects(
+    renderFeatureGraphic({ render: (texts) => texts.map(() => ({ ...text })) }),
+    /one face did not load/,
   );
 });

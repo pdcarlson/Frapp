@@ -289,9 +289,17 @@ export function renderTexts(texts) {
   }));
 }
 
-/** Renders the feature graphic: 1024 x 500, opaque RGB PNG. */
-export async function renderFeatureGraphic() {
-  const css = readFileSync(SIGNET_CSS, "utf8");
+/**
+ * Renders the feature graphic: 1024 x 500, opaque RGB PNG.
+ *
+ * `css` and `render` exist for the tests: a stylesheet other than the theme's,
+ * to prove the colours come from it, and a stand-in text renderer, to prove the
+ * face probe is checked.
+ */
+export async function renderFeatureGraphic({
+  css = readFileSync(SIGNET_CSS, "utf8"),
+  render = renderTexts,
+} = {}) {
   const foreground = cssColour(css, "--foreground");
   const mutedForeground = cssColour(css, "--muted-foreground");
 
@@ -330,7 +338,7 @@ export async function renderFeatureGraphic() {
   // "F" alone measures the cap height, which places the baseline inside the
   // word's ink: "Frapp" descends below it, so its ink box is not its cap box.
   // The last two are the face probe for `assertFacesDiffer`.
-  const [word, cap, line, probeRegular, probeBold] = renderTexts([
+  const [word, cap, line, probeRegular, probeBold] = await render([
     bold("Frapp", wordPx, foreground),
     bold("F", wordPx, foreground),
     regular(TAGLINE, taglinePx, mutedForeground),
