@@ -323,7 +323,10 @@ describe("useNotificationPreferencesSync", () => {
     const client = createMockClient({
       GET: vi.fn(async (path: string) => {
         if (path === "/v1/notifications/preferences") {
-          return { data: [{ category: "chat", is_enabled: false }], error: null };
+          return {
+            data: [{ category: "chat", is_enabled: false }],
+            error: null,
+          };
         }
         return { data: null, error: null };
       }),
@@ -546,6 +549,45 @@ describe("useNotificationPreferencesSync", () => {
 
     expect(result.current.quietHoursWindow.tz.trim().length).toBeGreaterThan(0);
     expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
+  });
+
+  // The server rejects an offset by pattern on every runtime (#2361), so no
+  // device can be wrong about it: replaying one would 400 on every toggle.
+  it("repairs a stored UTC offset rather than replaying it into the PATCH", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const { client, patch, settings } = createStatefulClient({
+      quiet_hours_start: "21:00:00",
+      quiet_hours_end: "07:00:00",
+      quiet_hours_tz: "-05:00",
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+      expect(result.current.quietHoursWindow.start).toBe("21:00");
+    });
+    expect(result.current.quietHoursWindow.tz).not.toBe("-05:00");
+    expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
+
+    act(() => {
+      result.current.setQuietHoursEnabled(false);
+    });
+    await waitFor(() => {
+      expect(settings.quiet_hours_start).toBeNull();
+    });
+    act(() => {
+      result.current.setQuietHoursEnabled(true);
+    });
+    await waitFor(() => {
+      expect(settings.quiet_hours_start).toBe("21:00");
+    });
+
+    const body = lastSettingsPatchBody(patch);
+    expect(isSupportedTimeZone(body.quiet_hours_tz)).toBe(true);
   });
 
   it("repairs an over-length cached zone the column could never hold", async () => {
@@ -1016,7 +1058,10 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
     const client = createMockClient({
       GET: vi.fn(async (path: string) => {
         if (path === "/v1/notifications/preferences") {
-          return { data: [{ category: "chat", is_enabled: true }], error: null };
+          return {
+            data: [{ category: "chat", is_enabled: true }],
+            error: null,
+          };
         }
         return { data: null, error: null };
       }),
@@ -1061,7 +1106,8 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
     const queryClient = makeQueryClient();
     const client = createMockClient({
       GET: vi.fn(async (path: string) => {
-        if (path === "/v1/settings") return { data: serverSettings, error: null };
+        if (path === "/v1/settings")
+          return { data: serverSettings, error: null };
         if (path === "/v1/notifications/preferences")
           return { data: [], error: null };
         return { data: null, error: null };
@@ -1101,7 +1147,10 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
     const client = createMockClient({
       GET: vi.fn(async (path: string) => {
         if (path === "/v1/notifications/preferences") {
-          return { data: [{ category: "chat", is_enabled: true }], error: null };
+          return {
+            data: [{ category: "chat", is_enabled: true }],
+            error: null,
+          };
         }
         return { data: null, error: null };
       }),
