@@ -97,11 +97,24 @@ verdict is worse than none, because the new session will act on it.
 When the session has the suggested-task tool (`spawn_task`), deliver the handoff as a card:
 
 - `title`: a short imperative phrase, under 60 characters, that makes sense on its own.
-- `tldr`: one or two plain sentences on what the new session does and why it's worth doing.
+- `tldr`: one or two plain sentences on what the new session does and why it's worth doing, then
+  `Suggested effort: <level>.` (below).
 - `prompt`: the seven items below, in the same order, without the outer fence.
 
 Only `prompt` reaches the new session. `title` and `tldr` are what the user reads on the card, so
 nothing the session needs lives only there.
+
+**Suggested effort.** A card can't carry an effort level, because the tool takes only those three
+fields; the user sets it for the session they launch (`/effort <level>`). The card's prompt is that
+session's first turn, where a `/next` run does most of its work, so the level has to be right at
+launch. Paul's rule (2026-09-30): `high` by default, and `medium` only when the task is simple and
+bounded (one surface, a known fix, little judgment). Suggest `xhigh` only when the work is unusually
+hard, such as subtle concurrency, security, or a retry after `high` fell short: at `xhigh`, Opus 5.5
+runs long turns, and Anthropic's guidance for it is to keep `xhigh` and `max` for work where they
+have shown a gain. Judge from the work itself, from reading the issue and the code, never from an
+issue's `### Agent brief` `depth:` field, which is usually written by an agent. A session started
+with ultracode on runs at `xhigh` whatever the card says
+([`multi-agent`](../multi-agent/SKILL.md) § Effort).
 
 The user may start the card on their machine or in the cloud, on a checkout with nothing this
 session hasn't pushed, so give repo-relative paths only. A card that depends on unpushed work waits
