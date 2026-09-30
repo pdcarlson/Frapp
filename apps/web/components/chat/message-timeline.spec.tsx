@@ -1217,6 +1217,28 @@ describe("MessageTimeline — member photos (#732)", () => {
     );
   });
 
+  it("draws the photo once per run, on its first row only", () => {
+    renderTimeline(
+      [
+        message({ id: "m-1", client_message_id: "m-1", sender_id: ALICE }),
+        message({
+          id: "m-2",
+          client_message_id: "m-2",
+          sender_id: ALICE,
+          content: "and again",
+          created_at: new Date(2026, 7, 16, 17, 10).toISOString(),
+        }),
+      ],
+      { avatarFor: () => "https://signed/alice" },
+    );
+
+    const photos = screen.getAllByTestId("avatar-photo");
+    expect(photos).toHaveLength(1);
+    expect(
+      photos[0]!.closest<HTMLElement>('[role="listitem"]')!.dataset.run,
+    ).toBe("start");
+  });
+
   it("keeps initials for a member with no photo", () => {
     renderTimeline([message({ id: "m-1", sender_id: BOB })], {
       avatarFor: (id: string) => (id === ALICE ? "https://signed/alice" : null),
