@@ -140,7 +140,9 @@ divergent lists until #1635.
 ### 4. Address feedback
 
 - Fix any CI failures.
-- Address Claude review findings as needed and push follow-up commits for re-review.
+- Address review comments and push follow-up commits. A push that adds commits of your own needs a
+  `/diff-review` pass (usually a short inline round over just the new commits), or the pre-push hook
+  refuses it.
 - All required checks must pass before merging.
 
 ### 5. Merge via squash merge
