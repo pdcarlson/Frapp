@@ -36,7 +36,10 @@ import {
 const semesterArchiveRepo: ISemesterArchiveRepository = {
   findByChapter: () => Promise.resolve([]),
   findLatestByChapter: () => Promise.resolve(null),
+  findById: () => Promise.resolve(null),
   create: () => Promise.reject(new Error('not used by report queries')),
+  createWithPromotion: () =>
+    Promise.reject(new Error('not used by report queries')),
 };
 
 describeIntegration('Report queries against live PostgREST', () => {

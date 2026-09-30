@@ -1,4 +1,5 @@
 import { SupabaseTaskRepository } from './supabase-task.repository';
+import { TaskStatus } from '#domain/entities/task.entity';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -71,7 +72,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
   it('update refuses an id belonging to another chapter', async () => {
     await expect(
       harness.expectTenantScoped(CHAPTER_B, () =>
-        repo.update(TASK_A, CHAPTER_B, { status: 'COMPLETED' }),
+        repo.update(TASK_A, CHAPTER_B, { status: TaskStatus.COMPLETED }),
       ),
     ).rejects.toMatchObject({ code: 'PGRST116' });
 

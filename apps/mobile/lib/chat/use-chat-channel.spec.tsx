@@ -100,7 +100,8 @@ const mocks = vi.hoisted(() => {
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
     emitTyping: vi.fn(),
-    getTypingUsers: vi.fn(() => [] as string[]),
+    noTypingUsers: Object.freeze([]) as readonly string[],
+    getTypingUsers: vi.fn((): readonly string[] => []),
     // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`
     // (its `.order().range()` tail is passed through in the module mock below).
     // Deliberately NOT `null`: mocking the client away skips that branch entirely,
@@ -134,6 +135,7 @@ vi.mock("@repo/chat-core/chat-client", () => ({
 }));
 
 vi.mock("@repo/chat-core/realtime-manager", () => ({
+  NO_TYPING_USERS: mocks.noTypingUsers,
   chatRealtime: {
     subscribe: mocks.subscribe,
     unsubscribe: mocks.unsubscribe,
@@ -233,7 +235,7 @@ beforeEach(() => {
       if (at >= 0) mocks.statusListeners.splice(at, 1);
     };
   });
-  mocks.getTypingUsers.mockImplementation(() => []);
+  mocks.getTypingUsers.mockImplementation(() => mocks.noTypingUsers);
   mocks.listForChannel.mockImplementation(async () => []);
   mocks.supabaseIn.mockImplementation(async () => ({ data: [] }));
 });
@@ -598,29 +600,42 @@ describe("realtime attach", () => {
 });
 
 describe("status subscription", () => {
-  it("keeps the typing array identity when membership has not changed", async () => {
-    // `getTypingUsers` builds a fresh array on every call, and the manager pings
-    // status listeners on its 1.5s typing-expiry sweep. Returning that array
-    // unconditionally never hits React's `Object.is` bail-out, so the whole
-    // thread re-rendered every 1.5s while anyone was typing — rebuilding every
-    // visible row's StyleSheet.
-    mocks.getTypingUsers.mockImplementation(() => ["user-7"]);
+  it("hands on the manager's own typing array, re-read on each status ping", async () => {
+    // The manager keeps that array's identity while the typists are unchanged
+    // (`packages/chat-core/src/realtime-manager.spec.ts`, #1004), so a ping
+    // that changes nothing bails out of the re-render instead of rebuilding
+    // every visible row's StyleSheet. That only holds if this hook passes the
+    // array on as it is, so it must neither copy it nor rebuild it.
+    const one = ["user-7"];
+    mocks.getTypingUsers.mockImplementation(() => one);
 
     const { result } = renderChannel();
-    await waitFor(() => expect(result.current.typingUsers).toEqual(["user-7"]));
+    await waitFor(() => expect(result.current.typingUsers).toBe(one));
 
-    const before = result.current.typingUsers;
+    const two = ["user-7", "user-8"];
+    mocks.getTypingUsers.mockImplementation(() => two);
     act(() => {
       mocks.statusListeners.forEach((cb) => cb("live"));
     });
-    // Same membership -> same reference, so React bails out of the re-render.
-    expect(result.current.typingUsers).toBe(before);
+    expect(result.current.typingUsers).toBe(two);
+  });
 
-    mocks.getTypingUsers.mockImplementation(() => ["user-7", "user-8"]);
-    act(() => {
-      mocks.statusListeners.forEach((cb) => cb("live"));
-    });
-    expect(result.current.typingUsers).toEqual(["user-7", "user-8"]);
+  it("shows nobody typing once no channel is open, not the last channel's typists", async () => {
+    const typists = ["user-7"];
+    mocks.getTypingUsers.mockImplementation(() => typists);
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string | null }) =>
+        useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL as string | null },
+        wrapper: createWrapper(createClient(), newQueryClient()),
+      },
+    );
+    await waitFor(() => expect(result.current.typingUsers).toBe(typists));
+
+    rerender({ channelId: null });
+
+    expect(result.current.typingUsers).toEqual([]);
   });
 
   it("releases every status listener on unmount", async () => {

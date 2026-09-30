@@ -63,6 +63,7 @@ import {
   type HeavyCommandNotice,
 } from "./heavy-command-notices";
 import { randomClientId } from "./random-id";
+import { memberFacingRefusal } from "./polls";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import type { AnalyticsProperties } from "@repo/validation";
 
@@ -240,10 +241,11 @@ function classify(error: unknown): {
       status = (resp as { status?: number }).status;
     }
   }
-  const message =
+  const message = memberFacingRefusal(
     extractMessage(error) ??
-    extractMessage((error as { error?: unknown }).error) ??
-    "Couldn't reach chat server";
+      extractMessage((error as { error?: unknown }).error) ??
+      "Couldn't reach chat server",
+  );
   const terminal =
     typeof status === "number" && isDefinitiveClientError(status);
   return { terminal, status, message };
@@ -828,7 +830,13 @@ export async function hydrateOutboxIntoCache(
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {
-        next = markFailed(next, row.clientId, row.lastError ?? "Send failed");
+        // Through the same mapping as a live refusal: a row persisted before
+        // the mapping existed still carries the guard's sentence to an officer.
+        next = markFailed(
+          next,
+          row.clientId,
+          memberFacingRefusal(row.lastError ?? "Send failed"),
+        );
       }
     }
     return mergePersistedNotices(next, {

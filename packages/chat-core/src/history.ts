@@ -273,6 +273,37 @@ export interface HistoryPagerState {
   older: ReadonlyMap<string, "loading" | "error">;
 }
 
+/** A channel's older-history status, as both clients' hooks return it. */
+export interface OlderHistoryView {
+  /** `hasOlderHistory` for the channel, and `false` with no channel open. */
+  hasOlder: boolean;
+  isLoadingOlder: boolean;
+  /** The last older-page read failed; cleared by the next attempt. */
+  olderError: boolean;
+}
+
+/**
+ * The older-history status for `channelId` out of a pager's state and the
+ * channel's cache. Read off the data rather than the query's `isSuccess`: a
+ * refetch that failed keeps its data and reads `error`, and the history it
+ * holds can still be paged from.
+ */
+export function olderHistoryView(
+  state: HistoryPagerState,
+  channelId: string | null,
+  cache: ChannelCache | undefined,
+): OlderHistoryView {
+  if (!channelId) {
+    return { hasOlder: false, isLoadingOlder: false, olderError: false };
+  }
+  const older = state.older.get(channelId);
+  return {
+    hasOlder: hasOlderHistory(cache, state.starts.get(channelId)),
+    isLoadingOlder: older === "loading",
+    olderError: older === "error",
+  };
+}
+
 export interface HistoryPager {
   /** The newest page, for a channel query's `queryFn` (`readNewestPage`). */
   readNewest: (channelId: string) => Promise<ChannelCache>;
