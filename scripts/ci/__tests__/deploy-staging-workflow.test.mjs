@@ -20,12 +20,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ALERT_CONFIGS } from "../deploy-alert.mjs";
-import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const WORKFLOW_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".github", "workflows");
 const WORKFLOW = join(WORKFLOW_DIR, "deploy-staging.yml");
@@ -562,7 +562,7 @@ describe("deploy-staging.yml: the rest of the repo keys on it", () => {
     // outside the run the snapshot publisher and the migration gates watch
     // (#2804 review). The same holds for production: one dispatch, one caller.
     const callers = [];
-    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
+    for (const file of workflowFiles().filter((f) => f !== "_deploy.yml")) {
       for (const j of workflowJobs(join(WORKFLOW_DIR, file))) {
         const uses = String(j.keys.get("uses") ?? "").replace(/^["']|["']$/g, "");
         if (!/\.github\/workflows\/_deploy\.yml(@|$)/.test(uses)) continue;
@@ -574,7 +574,7 @@ describe("deploy-staging.yml: the rest of the repo keys on it", () => {
 
   it("is the only workflow that migrates staging or ships its frontends", () => {
     // A second staging deployer is the race #2803 removed.
-    for (const file of readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
+    for (const file of workflowFiles().filter((f) => f !== "_deploy.yml")) {
       const other = readFileSync(join(WORKFLOW_DIR, file), "utf8")
         .split("\n")
         .filter((line) => !/^\s*#/.test(line))

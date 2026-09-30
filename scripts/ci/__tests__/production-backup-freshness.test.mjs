@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,7 +20,7 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
-import { workflowJobs } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowJobs } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-backup-freshness.yml");
@@ -674,7 +674,7 @@ describe("workflow wiring", () => {
   });
 
   it("no other daily schedule shares 13:15", () => {
-    for (const file of readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f))) {
+    for (const file of workflowFiles()) {
       if (file === "production-backup-freshness.yml") continue;
       const text = uncommented(readFileSync(join(WORKFLOWS_DIR, file), "utf8"));
       assert.doesNotMatch(

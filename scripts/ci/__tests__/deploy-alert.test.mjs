@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import {
   ALERT_CONFIGS,
   DEPLOY_PRODUCTION_CONFIG,
   DEPLOY_STAGING_CONFIG,
+  REQUIRED_ENV,
   alertJobNames,
   deployNeverStarted,
   main,
@@ -27,6 +28,7 @@ import {
   runDeployAlert,
 } from "../deploy-alert.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL, defineAlert, isDefinedAlert } from "../lib/alert-issue.mjs";
+import { WORKFLOW_DIR, workflowFiles, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Two kinds of config are used here, and they must not be confused.
@@ -1309,79 +1311,132 @@ test("the recovery comment names its own config, never another", async () => {
   }
 });
 
-// ── Every caller names itself ───────────────────────────────────────────────
+// ── Every caller names itself, at every call site ───────────────────────────
+//
+// `main()` requires REQUIRED_ENV, so a workflow step that omits one fails at
+// deploy time — loud, but only once a deploy actually runs. These tests catch
+// it in CI instead, and cover workflows added later: they discover callers by
+// scanning, rather than listing the ones that exist today.
+//
+// Each assertion is scoped to one call site (#2276). The guard before this
+// matched `ALERT_CONFIG:` anywhere in a caller's file, so a second reporting
+// step without it passed on the first step's copy: the whole-file shape that
+// hid a missing `DEPLOY_SHA` until run 34892839657 (#2265). The env is read the
+// way Actions resolves it, workflow then job then step (`workflowSteps`).
 
-test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => {
-  // `main()` calls requireEnv("ALERT_CONFIG"), so a workflow that omits it
-  // fails at deploy time — loud, but only once a deploy actually runs. This
-  // catches it in CI instead, and covers workflows added later: it discovers
-  // callers by scanning, rather than listing the ones that exist today.
-  const workflowDir = join(
-    dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "..",
-    "..",
-    ".github",
-    "workflows",
-  );
+const ALERT_SCRIPT = "scripts/ci/deploy-alert.mjs";
 
-  // `.yaml` as well as `.yml`. Actions honours both, and scanning only one is
-  // the exact hole this test exists to close — a `deploy-mobile.yaml` with a
-  // copied deploy-outcome block would never be read, and the roster assertion
-  // below could not compensate because it is built from the same list.
-  const callers = readdirSync(workflowDir)
-    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
-    .map((name) => ({ name, text: readFileSync(join(workflowDir, name), "utf8") }))
-    .filter(({ text }) =>
-      text.split("\n").some((line) => !/^\s*#/.test(line) && line.includes("deploy-alert.mjs")),
-    );
+/** Every step, across every workflow in `dir`, whose body runs deploy-alert.mjs. */
+function alertCallSites(dir = WORKFLOW_DIR) {
+  return workflowFiles(dir)
+    .flatMap((file) => workflowSteps(join(dir, file)))
+    .filter((step) => step.body.includes(ALERT_SCRIPT));
+}
 
-  // Guards the scan itself: a path typo would make the loop below vacuous.
-  // #2803 merged deploy-api.yml and deploy-vercel-staging.yml into
-  // deploy-staging.yml; #2805 added deploy-production.yml.
-  assert.deepEqual(
-    callers.map((c) => c.name).sort(),
-    ["deploy-production.yml", "deploy-staging.yml"],
-    "expected exactly the known callers — add a new one to this list deliberately",
-  );
-
-  // Tolerates the forms a human will actually write: quoted or bare, with or
-  // without a trailing comment. A guard that fails on `ALERT_CONFIG: "deploy-staging"`
-  // trains people to distrust it. `matchAll`, not `match`, so a workflow with
-  // two reporting steps has BOTH checked rather than only the first.
-  const configsIn = (text) =>
-    [
-      ...text.matchAll(
-        /^[ \t]*ALERT_CONFIG:[ \t]*["']?([A-Za-z0-9._-]+)["']?[ \t]*(?:#.*)?$/gm,
-      ),
-    ].map((m) => m[1]);
-
+/**
+ * What is wrong with a set of call sites, one message each, and which workflow
+ * claims each ALERT_CONFIG. `requireEnv` treats an empty value as missing, so
+ * an empty one is reported as missing here too.
+ */
+function callSiteProblems(sites) {
+  const problems = [];
   const claimedBy = new Map();
-  for (const { name, text } of callers) {
-    const configs = configsIn(text);
-    assert.ok(configs.length > 0, `${name} runs deploy-alert.mjs but sets no ALERT_CONFIG`);
-    for (const config of configs) {
-      assert.ok(
-        Object.hasOwn(ALERT_CONFIGS, config),
-        `${name} sets ALERT_CONFIG: ${config}, which is not a known configuration`,
-      );
-      claimedBy.set(config, (claimedBy.get(config) ?? new Set()).add(name));
+  for (const site of sites) {
+    const where = `${site.workflowFile} step "${site.name}" (job ${site.jobId})`;
+    for (const name of REQUIRED_ENV) {
+      if (!site.env.get(name)) problems.push(`${where} runs ${ALERT_SCRIPT} without ${name}`);
     }
+    const config = site.env.get("ALERT_CONFIG");
+    if (!config) continue;
+    if (!Object.hasOwn(ALERT_CONFIGS, config)) {
+      problems.push(`${where} sets ALERT_CONFIG: ${config}, which is not a known configuration`);
+      continue;
+    }
+    claimedBy.set(config, (claimedBy.get(config) ?? new Set()).add(site.workflowFile));
   }
-
-  // No configuration may be claimed by two different workflows — that would
+  // No configuration may be claimed by two different workflows: that would
   // point both at one alert issue, so either could close the other's incident.
   for (const [config, files] of claimedBy) {
-    assert.equal(
-      files.size,
-      1,
-      `ALERT_CONFIG ${config} is claimed by ${[...files].join(" and ")}`,
-    );
+    if (files.size > 1) problems.push(`ALERT_CONFIG ${config} is claimed by ${[...files].join(" and ")}`);
   }
+  return { problems, claimedBy };
+}
+
+test("every deploy-alert.mjs call site supplies what main() requires, and a known ALERT_CONFIG", () => {
+  const sites = alertCallSites();
+
+  // Guards the scan itself: a reader regression would make every check below
+  // a loop over nothing. #2803 merged deploy-api.yml and
+  // deploy-vercel-staging.yml into deploy-staging.yml; #2805 added
+  // deploy-production.yml.
+  assert.deepEqual(
+    sites.map((site) => site.workflowFile).sort(),
+    ["deploy-production.yml", "deploy-staging.yml"],
+    "expected exactly one call site in each known caller — add a new one to this list deliberately",
+  );
+
+  const { problems, claimedBy } = callSiteProblems(sites);
+  assert.deepEqual(problems, []);
 
   // And each caller selects its own config.
   assert.deepEqual([...claimedBy.get("deploy-staging")], ["deploy-staging.yml"]);
   assert.deepEqual([...claimedBy.get("deploy-production")], ["deploy-production.yml"]);
+});
+
+test("the call-site guard fails a second reporting step that omits ALERT_CONFIG", () => {
+  // The mutation test #2276 asks for: the committed tree passes above, and
+  // this proves the guard can fail. The first step's `ALERT_CONFIG` stays in
+  // the same file, which is exactly what satisfied the whole-file guard.
+  const dir = mkdtempSync(join(tmpdir(), "deploy-alert-callers-"));
+  try {
+    const original = readFileSync(join(WORKFLOW_DIR, "deploy-staging.yml"), "utf8");
+    const anchor = `        run: node ${ALERT_SCRIPT}\n`;
+    assert.equal(original.split(anchor).length, 2, "deploy-staging.yml should run deploy-alert.mjs once");
+    const secondStep = [
+      "      - name: Report the outcome again",
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "          DEPLOY_NEEDS: ${{ toJSON(needs) }}",
+      `        run: node ${ALERT_SCRIPT}`,
+      "",
+    ].join("\n");
+    writeFileSync(join(dir, "deploy-staging.yml"), original.replace(anchor, anchor + secondStep));
+
+    const sites = alertCallSites(dir);
+    assert.equal(sites.length, 2);
+    assert.match(original, /^\s+ALERT_CONFIG: deploy-staging$/m, "the file still carries one ALERT_CONFIG");
+    const { problems } = callSiteProblems(sites);
+    assert.equal(problems.length, 1, problems.join("\n"));
+    assert.match(problems[0], /"Report the outcome again" .* without ALERT_CONFIG$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the call-site guard reads a job-level ALERT_CONFIG, and refuses an unknown one", () => {
+  const site = (env) => ({ workflowFile: "w.yml", jobId: "j", name: "s", env: new Map(env) });
+  const base = [
+    ["GITHUB_TOKEN", "t"],
+    ["DEPLOY_NEEDS", "{}"],
+  ];
+  // `workflowSteps` merges workflow, job and step env, so a value set at job
+  // level arrives here like a step's own.
+  assert.deepEqual(callSiteProblems([site([...base, ["ALERT_CONFIG", "deploy-staging"]])]).problems, []);
+  assert.deepEqual(callSiteProblems([site([...base, ["ALERT_CONFIG", "toString"]])]).problems, [
+    'w.yml step "s" (job j) sets ALERT_CONFIG: toString, which is not a known configuration',
+  ]);
+  assert.deepEqual(callSiteProblems([site([...base, ["ALERT_CONFIG", ""]])]).problems, [
+    `w.yml step "s" (job j) runs ${ALERT_SCRIPT} without ALERT_CONFIG`,
+  ]);
+});
+
+test("main() requires nothing from its environment that REQUIRED_ENV doesn't list", () => {
+  // The call-site guard reads REQUIRED_ENV, so a `requireEnv("X")` written
+  // straight into the script would escape it. The only other read is the
+  // runner-provided GITHUB_REPOSITORY.
+  const source = readFileSync(fileURLToPath(new URL("../deploy-alert.mjs", import.meta.url)), "utf8");
+  const reads = [...source.matchAll(/\brequireEnv\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual(reads.sort(), ['"GITHUB_REPOSITORY"', "name"]);
 });
 
 test("an escalated no-op explains its own job table instead of contradicting it", () => {

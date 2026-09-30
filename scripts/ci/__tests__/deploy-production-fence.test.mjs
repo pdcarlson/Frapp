@@ -29,11 +29,11 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import { ALERT_CONFIGS } from "../deploy-alert.mjs";
-import { workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowJobs, workflowKeys, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 // The dispatch: confirmation, validation, the call, the tag and the report.
@@ -972,7 +972,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
 describe("the shared job is the only thing that migrates or ships production", () => {
   it("no other workflow runs the migration, the Render deploy or a production upload", () => {
     const dir = join(REPO_ROOT, ".github", "workflows");
-    for (const file of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f) && f !== "_deploy.yml")) {
+    for (const file of workflowFiles().filter((f) => f !== "_deploy.yml")) {
       const other = withoutComments(readFileSync(join(dir, file), "utf8"));
       assert.doesNotMatch(other, /node scripts\/run-migration\.mjs/, `${file} applies migrations`);
       assert.doesNotMatch(other, /deploy-render-production\.mjs/, `${file} deploys to Render`);

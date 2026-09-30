@@ -972,19 +972,28 @@ export async function runDeployAlert({
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
+/**
+ * Every variable `main()` requires from the step that runs it. Exported so the
+ * workflow guard in deploy-alert.test.mjs reads the same list, per call site
+ * (#2276): a `requireEnv` added here tightens that guard in the same commit.
+ *
+ * `GITHUB_REPOSITORY` isn't listed. The runner sets it for every step, so no
+ * workflow writes it, and a guard asking for it would fail every caller.
+ */
+export const REQUIRED_ENV = Object.freeze(["GITHUB_TOKEN", "DEPLOY_NEEDS", "ALERT_CONFIG"]);
+
 export async function main({ fetchImpl = fetch, writeSummary = defaultWriteSummary, logger = console } = {}) {
-  const token = requireEnv("GITHUB_TOKEN");
+  const env = Object.fromEntries(REQUIRED_ENV.map((name) => [name, requireEnv(name)]));
   const repo = requireEnv("GITHUB_REPOSITORY");
-  const needs = JSON.parse(requireEnv("DEPLOY_NEEDS"));
   // Required, not optional. This is the one place a mis-wired workflow can be
   // caught, so it is deliberately strict in both directions: a typo'd OR an
   // absent ALERT_CONFIG would otherwise write the staging alert's issue from
   // the wrong workflow's job results.
-  const config = resolveAlertConfig(requireEnv("ALERT_CONFIG"));
+  const config = resolveAlertConfig(env.ALERT_CONFIG);
   const { outcome } = await runDeployAlert({
-    token,
+    token: env.GITHUB_TOKEN,
     repo,
-    needs,
+    needs: JSON.parse(env.DEPLOY_NEEDS),
     runUrl: process.env.RUN_URL ?? "",
     runId: process.env.RUN_ID ?? "",
     runAttempt: process.env.RUN_ATTEMPT ?? "",

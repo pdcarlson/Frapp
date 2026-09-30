@@ -43,11 +43,10 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowFiles, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 import {
   DEPLOY_PHASE_BUILD,
@@ -68,8 +67,7 @@ const SCRIPT = "scripts/ci/deploy-vercel.mjs";
  * Actions would give it and the DEPLOY_PHASE and DEPLOY_TARGET it runs with.
  */
 function allCallSites(script) {
-  return readdirSync(WORKFLOW_DIR)
-    .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
+  return workflowFiles()
     .flatMap((f) => workflowSteps(join(WORKFLOW_DIR, f)))
     .filter((step) => step.body.includes(script))
     .map((step) => ({

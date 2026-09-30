@@ -1,8 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 // #2518: every secret this repo holds must be reachable only by code merged to
 // `main`.
@@ -278,9 +279,7 @@ function actionRefsOf(lines, via = "", seen = new Set()) {
   return refs;
 }
 
-const workflows = readdirSync(WORKFLOWS)
-  .filter((f) => /\.ya?ml$/.test(f))
-  .sort()
+const workflows = workflowFiles()
   .map((name) => {
     const lines = codeLines(readFileSync(join(WORKFLOWS, name), "utf8"));
     return { name, triggers: triggersOf(lines), jobs: jobsOf(lines), preamble: preambleOf(lines) };
