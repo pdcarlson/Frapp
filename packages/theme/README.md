@@ -36,14 +36,19 @@ is the stylesheet, not the token module.
 
 ## Fonts
 
-**Figtree** is the Signet typeface. The variable font (400–700) lives at
+**Figtree** is the Signet typeface. The variable font (a `wght` axis of 300–900, of which Signet uses 400/600/700) lives at
 `fonts/FigtreeVF.woff2` (OFL license alongside as `fonts/OFL-Figtree.txt`);
 `apps/web` loads it with `next/font/local` from `app/layout.tsx` as
 `--font-figtree`, and the shared Tailwind preset in this package sets it as
 `fontFamily.sans` for both Next surfaces.
 `apps/mobile` instead loads Figtree from `@expo-google-fonts/figtree` (one
 static TTF per locked weight — 400/600/700 — registered under per-weight family
-names, which Android requires). The `typography.family.mono` token is a CSS
+names, which Android requires), plus the 400 and 700 italic faces for chat
+(#2861). An italic has to be a face of its own on mobile: `fontStyle: "italic"`
+over an upright family stays upright on iOS and falls back to the system sans on
+Android. `FIGTREE_FACES` in `apps/mobile/lib/theme.tsx` is the full list, and
+the root layout loads exactly that. The web and landing variable font is
+upright only, so a browser slants it for an `em`. The `typography.family.mono` token is a CSS
 variable and RN-invalid; mobile maps mono to the system stack via
 `MONO_FONT_FAMILY` in `apps/mobile/lib/theme.tsx`.
 

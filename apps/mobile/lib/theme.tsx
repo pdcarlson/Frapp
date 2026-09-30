@@ -2,6 +2,13 @@ import { createContext, useContext, useMemo } from "react";
 import { Platform } from "react-native";
 import type { TextStyle } from "react-native";
 import {
+  Figtree_400Regular,
+  Figtree_400Regular_Italic,
+  Figtree_600SemiBold,
+  Figtree_700Bold,
+  Figtree_700Bold_Italic,
+} from "@expo-google-fonts/figtree";
+import {
   getSignetTokens,
   SignetTokens,
   SignetTypeRole,
@@ -20,12 +27,28 @@ type FrappThemeContextValue = {
 const FrappThemeContext = createContext<FrappThemeContextValue | null>(null);
 
 /**
+ * Every Figtree face the app registers, keyed by the family name a style
+ * sets. The root layout loads exactly this map (`useFonts(FIGTREE_FACES)`),
+ * and the family maps below are typed as its keys, so a style can't name a
+ * face that was never loaded.
+ */
+export const FIGTREE_FACES = {
+  Figtree_400Regular,
+  Figtree_400Regular_Italic,
+  Figtree_600SemiBold,
+  Figtree_700Bold,
+  Figtree_700Bold_Italic,
+};
+
+type FigtreeFace = keyof typeof FIGTREE_FACES;
+
+/**
  * Figtree ships as one static TTF per weight, registered by expo-font under
  * these names. Android cannot select a static font's weight through
  * `fontWeight` alone, so every text style must carry the per-weight family —
  * which is why `typeRole` below is the only sanctioned way to set type.
  */
-export const FIGTREE_FAMILY: Record<400 | 600 | 700, string> = {
+export const FIGTREE_FAMILY: Record<400 | 600 | 700, FigtreeFace> = {
   400: "Figtree_400Regular",
   600: "Figtree_600SemiBold",
   700: "Figtree_700Bold",
@@ -33,6 +56,27 @@ export const FIGTREE_FAMILY: Record<400 | 600 | 700, string> = {
 
 export function fontFamilyFor(weight: 400 | 600 | 700): string {
   return FIGTREE_FAMILY[weight];
+}
+
+/**
+ * Figtree's italic faces, which only chat uses: markdown's `*italic*` (400)
+ * and `***bold italic***` (700) since #2861, and its italic placeholders (400),
+ * such as a deleted message's.
+ *
+ * An italic is a face of its own, never `fontStyle: "italic"` on an upright
+ * family, for the reason `typeRole` gives about `fontWeight`. iOS picks a face
+ * only when its italic trait matches the requested one (`RCTFont.mm`), so an
+ * upright-only family stays upright. Android looks up an italic variant the
+ * upright family never registered, then falls back to the system sans in
+ * italic (`ReactFontManager`).
+ */
+export const FIGTREE_ITALIC_FAMILY: Record<400 | 700, FigtreeFace> = {
+  400: "Figtree_400Regular_Italic",
+  700: "Figtree_700Bold_Italic",
+};
+
+export function italicFontFamilyFor(weight: 400 | 700): string {
+  return FIGTREE_ITALIC_FAMILY[weight];
 }
 
 /**

@@ -58,6 +58,7 @@ const HEALTHY_AUTH = {
   smtp_pass: "must-never-appear-in-detail",
   mailer_subjects_magic_link: "Your Magic Link",
   mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+  password_hibp_enabled: true,
 };
 
 function jsonOk(body) {
@@ -135,6 +136,7 @@ describe("identity", () => {
       "auth-redirects",
       "auth-smtp",
       "auth-magic-link",
+      "auth-leaked-password",
     ]);
     assert.ok(!DEFAULT_CHECK_IDS.includes("auth-signin"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("infisical-syncs"));
@@ -165,7 +167,7 @@ describe("default assertions", () => {
     assert.equal(outcome, "healthy");
     assert.deepEqual(
       results.map((r) => r.id),
-      ["project-status", "auth-hook", "auth-redirects", "auth-smtp", "auth-magic-link"],
+      ["project-status", "auth-hook", "auth-redirects", "auth-smtp", "auth-magic-link", "auth-leaked-password"],
     );
     const smtp = results.find((r) => r.id === "auth-smtp");
     assert.equal(smtp.status, SKIPPED);
@@ -274,6 +276,63 @@ describe("default assertions", () => {
     const created = calls.find((c) => c.method === "POST" && c.url.includes("/issues"));
     assert.match(created.body, /Production Auth settings have drifted/);
     assert.doesNotMatch(created.body, new RegExp(STAGING_ALERT_TITLE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  });
+
+  it("fails when leaked-password protection is off, and the alert names that check", async () => {
+    const { fetchImpl, calls } = combinedFetch({
+      auth: { ...HEALTHY_AUTH, password_hibp_enabled: false },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 902 } },
+      ],
+    });
+    const { outcome, results, alert } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const row = results.find((r) => r.id === "auth-leaked-password");
+    assert.equal(row.status, FAIL);
+    assert.match(row.detail, /password_hibp_enabled is false/);
+    assert.equal(
+      results.filter((r) => r.status === FAIL).map((r) => r.id).join(","),
+      "auth-leaked-password",
+    );
+    assert.equal(alert.action, "created");
+    const created = calls.find((c) => c.method === "POST" && c.url.includes("/issues"));
+    // The marker is what lets the recovery run close this alert.
+    assert.match(created.body, /conformance-failing: auth-leaked-password/);
+  });
+
+  it("closes a leaked-password alert once protection is back on", async () => {
+    const open = {
+      number: 902,
+      state: "open",
+      title: ALERT_ISSUE_TITLE,
+      body: "`conformance-failing: auth-leaked-password`",
+    };
+    const { fetchImpl } = combinedFetch({
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [open] },
+        { method: "POST", path: "/issues/902/comments", body: {} },
+        { method: "PATCH", path: "/issues/902", body: {} },
+      ],
+    });
+    const { outcome, alert } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "healthy");
+    assert.equal(alert.action, "closed");
+    assert.deepEqual(alert.closed, [902]);
   });
 
   it("fails when the mobile scheme is missing from the allow list", async () => {
