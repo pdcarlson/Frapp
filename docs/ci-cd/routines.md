@@ -174,6 +174,41 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   PR with no label counts as `release:patch` in the production version bump
   ([`agent-infra.md` → Release labels](agent-infra.md#release-labels)).
 
+## Run record (all routines)
+
+A Routine's own run status can't be trusted to show a run that didn't do its job. On 2026-09-17
+three routines died about 7 seconds after firing and wrote nothing, and on 2026-09-30 Hygiene Scan
+read `SUCCEEDED` while its session had stopped at Phase 0 on a sandbox bringup failure
+([#2358](https://github.com/pdcarlson/Frapp/issues/2358)). Neither reached the owner. So every run,
+whatever its outcome, ends with one record the repository can see:
+
+1. **As your last tracker write**, comment once on
+   [#2966](https://github.com/pdcarlson/Frapp/issues/2966) (*Routine runs — heartbeat*,
+   `routine-state`) with `add_issue_comment`. The first line is the record, and the line after it
+   says in one sentence what the run did or why it stopped:
+
+   ```text
+   routine-run: v1 routine=<slug> outcome=<done|stopped>
+   ```
+
+   `<slug>` is your skill's directory name: `issue-curator`, `issue-triage`, `pr-followups`,
+   `docs-upkeep` or `hygiene-scan`.
+2. **`done`** means the run did its job, and a run with nothing to do did its job: a clean slice,
+   an empty inbox, no PR because nothing was worth fixing. A single check you couldn't run is
+   still `done`; name it on the second line.
+3. **`stopped`** means the run ended before doing its job: the sandbox failed to come up, a
+   protected resource blocked it, the skill couldn't be loaded, or a guard turned the run's main
+   writes off. Post the record before your run report.
+4. **One record per run**, manual runs included. It is exempt from rule 6's comment-once, because
+   each run is new information. Never post one for a run you didn't make, or to clear an alert.
+
+Without the GitHub MCP no record can be posted, and the missing record is the signal. The daily
+**Routine heartbeat** workflow reads these comments and raises an `incident` alert when a routine's
+latest scheduled run has no record or a `stopped` one; the rules are in
+[`scripts/ci/routine-heartbeat.mjs`](../../scripts/ci/routine-heartbeat.mjs), and the alert's row is
+in [`ALERT_ROUTING.md`](../internal/ops/ALERT_ROUTING.md#automated-github-issue-alerts). Only
+comments from the owner's account count, because the repository is public.
+
 ## Settings (per routine, set in the Routines UI)
 
 Enter times in ET. The Routines form takes local time and converts it
@@ -188,7 +223,7 @@ because a run scheduled on the hour can start several minutes late.
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | The Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
-| Schedule | Curator weekly Fri 08:07; Triage daily 09:07; PR Follow-ups weekly Mon 07:07; Docs Upkeep weekly Wed 07:07; Hygiene Scan daily 23:07 (all ET) | The Curator went from daily to weekly on 2026-09-30 (owner decision): its discovery output had thinned, the inbox was mostly `[human]` items, and the account's usage is better spent on coding sessions. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. If a PR Follow-ups batch runs long, split it across two weekly Routines rather than one custom schedule. |
+| Schedule | Curator weekly Fri 08:07; Triage daily 09:07; PR Follow-ups weekly Mon 07:07; Docs Upkeep weekly Wed 07:07; Hygiene Scan daily 23:07 (all ET) | The Curator went from daily to weekly on 2026-09-30 (owner decision): its discovery output had thinned, the inbox was mostly `[human]` items, and the account's usage is better spent on coding sessions. Docs Upkeep is on Wednesday so it never shares a morning with PR Follow-ups. The heartbeat watchdog keeps its own copy of each schedule as `list_triggers` stores it (UTC), in the `ROUTINES` table of [`routine-heartbeat.mjs`](../../scripts/ci/routine-heartbeat.mjs), with an hour's slack either side for daylight saving; a schedule change, or a Routine switched off, moves that table too, or the heartbeat alerts. If a PR Follow-ups batch runs long, split it across two weekly Routines rather than one custom schedule. |
 | Model | All five: Opus 5.5 (`claude-opus-5-5`) | Owner decision, 2026-09-22. |
 | Autofix on PR create | Off for Curator, Triage and PR Follow-ups. On for Docs Upkeep and Hygiene Scan. | The first three open a PR only for self-maintenance; the other two open one on most runs. |
 | Session | Fresh session per run | Each run re-reads its skill from `main`. |
@@ -342,6 +377,9 @@ can't load its skill; check both before enabling it.
 ## Verify
 
 Run each routine once manually, then again, and check:
+
+- **Every routine:** each run adds exactly one [run record](#run-record-all-routines) to #2966,
+  `outcome=done` unless the run really stopped.
 
 - **Curator:** new issues land in `triage`, titled `[suggestion] …`, with `suggestion` + `area:*` +
   a priority + an Agent brief + the visible `fp=` marker. The second run files no duplicates

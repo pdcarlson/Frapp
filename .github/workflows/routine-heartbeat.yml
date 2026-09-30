@@ -1,0 +1,67 @@
+name: Routine heartbeat
+
+# Daily watch: every scheduled routine must leave a run record.
+#
+# The five routines (docs/ci-cd/routines.md) run as Claude Code Routines,
+# whose run status nothing in this repo can read, and which reads SUCCEEDED
+# even for a session that stopped before doing its job (#2358). Each routine
+# ends its run by commenting a run record on the heartbeat issue; this job
+# raises one `incident` alert when a routine's latest scheduled run left no
+# record or a `stopped` one, and closes it when every routine's latest run is
+# `done`.
+#
+# 19:20 UTC is after the last routine of the day (Issue Triage, 13:07 UTC) has
+# had its schedule slack and four-hour allowance (18:37), so a run judges the
+# same day's fires.
+#
+# Rules: scripts/ci/routine-heartbeat.mjs (tests:
+# scripts/ci/__tests__/routine-heartbeat.test.mjs, `npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # One of the daily staggered watchdogs. Full schedule:
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
+    - cron: "20 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routine-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # This workflow's own runs on main, which set when judging starts.
+      actions: read
+      # Read the heartbeat issue's comments, and write the alert issue: the
+      # only write scope in this workflow, job-scoped.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci.
+      - name: Assert every routine recorded its latest run
+        env:
+          # GITHUB_TOKEN only. No GITHUB_PAT: this job names no environment,
+          # so a PAT would have to be a repository secret, readable from any
+          # branch (#2518).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/routine-heartbeat.mjs

@@ -20,6 +20,7 @@ import * as productionBackupStorageFreshness from "../production-backup-storage-
 import * as productionGuardrails from "../production-guardrails.mjs";
 import * as productionReleasePin from "../production-release-pin.mjs";
 import * as productionUptime from "../production-uptime.mjs";
+import * as routineHeartbeat from "../routine-heartbeat.mjs";
 import * as stagingConformance from "../staging-conformance.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
@@ -54,6 +55,7 @@ const FLAT = {
   "production-guardrails": productionGuardrails,
   "production-release-pin": productionReleasePin,
   "production-uptime": productionUptime,
+  "routine-heartbeat": routineHeartbeat,
   "staging-conformance": stagingConformance,
 };
 const ALERTS = [
