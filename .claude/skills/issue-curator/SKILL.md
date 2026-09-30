@@ -48,7 +48,8 @@ and `spec/`. Three groups are different:
   [`pr-followups`](../pr-followups/SKILL.md) routine owns them, and a human action can't be
   proven done from code.
 - `scope:production` issues are held by owner decision (the roster's `scope:production` entry in
-  routines.md), not aging. Never mark them `stale`, raise their priority for age, or file duplicates of them.
+  routines.md), not aging. Never mark them `stale`, raise their priority for age, or file
+  duplicates of them.
 - Issues labelled `parked` sit idle on purpose (the roster's `parked` entry, #2565). Never mark
   them `stale` for age or raise their priority. A close you can prove still applies to them.
 
