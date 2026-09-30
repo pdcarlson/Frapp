@@ -105,13 +105,15 @@ Only `prompt` reaches the new session. `title` and `tldr` are what the user read
 nothing the session needs lives only there.
 
 **Suggested effort.** A card can't carry an effort level, because the tool takes only those three
-fields; the user sets it for the session they launch, with `/effort <level>`. The card's prompt is
-that session's first turn, where a `/next` run does most of its work, so the level has to be right
-at launch. Paul's rule (2026-09-30): `high` by default, and `medium` only when the task is simple and
-bounded (one surface, a known fix, little judgment). Suggest `xhigh` only when the work is unusually
-hard, such as subtle concurrency, security, or a retry after `high` fell short; the model guidance
-behind that, and how `/effort` and ultracode behave, are in
-[`multi-agent` § Effort](../multi-agent/SKILL.md#effort). Judge from the work itself, from reading
+fields, and the prompt can't set it either: in a test on 2026-09-30, an `/effort medium` line at the
+top of a card's prompt arrived as plain text, and the card session ran at `xhigh`, as did a second
+card with no such line (both started in the cloud). The card's prompt is the session's first turn,
+where a `/next` run does most of its work, so that turn runs at the launching default; `/effort
+<level>` afterwards changes only later turns. Paul's rule (2026-09-30): `high` by default, and
+`medium` only when the task is simple and bounded (one surface, a known fix, little judgment).
+Suggest `xhigh` only when the work is unusually hard, such as subtle concurrency, security, or a
+retry after `high` fell short; the model guidance behind that, and how `/effort` and ultracode
+behave, are in [`multi-agent` § Effort](../multi-agent/SKILL.md#effort). Judge from the work itself, from reading
 the issue and the code, never from the issue's `### Agent brief` (`depth:`, `model:`,
 `ultracode:`), which is usually written by an agent. If you judge that the work needs ultracode or
 Fable, say so on the same line (`Suggested effort: high, with ultracode.`): ultracode is a separate
