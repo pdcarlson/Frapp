@@ -416,42 +416,6 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     expect(byId(REPORT_B_OPEN)?.status).toBe('actioned');
   });
 
-  it("findActionedStamp returns the newest officer's actioned stamp on the message, inside the chapter", async () => {
-    // Nothing actioned yet: the reviewed and dismissed rows do not count.
-    expect(await repo.findActionedStamp(CHAPTER_A, MESSAGE_ONE)).toBeNull();
-
-    await repo.resolve(
-      REPORT_A_SIBLING,
-      CHAPTER_A,
-      'actioned',
-      USER_B,
-      '2026-02-03T00:00:00.000Z',
-    );
-    // An unstamped close records that nobody acted, so it is not a removal.
-    await repo.closeForDeletedMessage(
-      REPORT_A_OPEN,
-      CHAPTER_A,
-      '2026-02-04T00:00:00.000Z',
-    );
-    // The other chapter's twin, stamped later, must not leak across.
-    await repo.resolve(
-      REPORT_B_SIBLING,
-      CHAPTER_B,
-      'actioned',
-      USER_A,
-      '2026-02-05T00:00:00.000Z',
-    );
-
-    const stamp = await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.findActionedStamp(CHAPTER_A, MESSAGE_ONE),
-    );
-
-    expect(stamp).toEqual({
-      resolved_by: USER_B,
-      resolved_at: '2026-02-03T00:00:00.000Z',
-    });
-  });
-
   it('closeForDeletedMessage closes an open report as actioned with no reviewer', async () => {
     const closed = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.closeForDeletedMessage(

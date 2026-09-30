@@ -41,12 +41,6 @@ export interface CreateChatReportResult {
   created: boolean;
 }
 
-/** Who closed a report as `actioned`, and when: an officer's stamp. */
-export interface ChatReportActionedStamp {
-  resolved_by: string;
-  resolved_at: string;
-}
-
 export interface IChatMessageReportRepository {
   /**
    * File a report, idempotently on the caller's *open* report for this message.
@@ -194,29 +188,17 @@ export interface IChatMessageReportRepository {
   ): Promise<boolean>;
 
   /**
-   * The newest officer-stamped `actioned` decision on one message in the
-   * chapter (`resolved_by` set), or null when there is none.
-   *
-   * For a removal whose claim was withdrawn after a refusal
-   * (`ChatReportService.settleFailedRemoval`, #2748): while that claim stood the
-   * report was `actioned`, so another officer's removal through a sibling
-   * report swept past it. This is that removal's stamp, which the sweep would
-   * have written on this report too.
-   */
-  findActionedStamp(
-    chapterId: string,
-    messageId: string,
-  ): Promise<ChatReportActionedStamp | null>;
-
-  /**
    * Close one **open** report as `actioned` with no reviewer (`resolved_by`
    * NULL), and say whether it did.
    *
    * For a report that landed on a message removed while it was being written
    * (`ChatReportService.fileReport`): the removal's sweep had already run, so
    * nothing else would close it, and leaving it open would page every officer
-   * about a message that is already gone. No officer decided it, so none is
-   * stamped. Scoped by chapter and conditional on `status = 'open'` like every
+   * about a message that is already gone. And for a report a failed removal
+   * just withdrew its claim from, whose message was soft-deleted while the
+   * claim held it (#2748): a sibling's removal swept past it, the sender
+   * deleted it, or the failed request's own write landed late — nothing says
+   * which. No officer is known to have decided it, so none is stamped. Scoped by chapter and conditional on `status = 'open'` like every
    * write here.
    */
   closeForDeletedMessage(

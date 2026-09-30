@@ -8,7 +8,6 @@ import type {
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { escapeFilterValue } from '../supabase.utils';
 import type {
-  ChatReportActionedStamp,
   CreateChatReportInput,
   CreateChatReportResult,
   IChatMessageReportRepository,
@@ -227,30 +226,6 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .maybeSingle();
     if (error) throw error;
     return data !== null;
-  }
-
-  /**
-   * The newest officer-stamped `actioned` decision on the message, chapter
-   * scoped. `resolved_by IS NOT NULL` leaves out the unstamped closes, which
-   * record that nobody acted.
-   */
-  async findActionedStamp(
-    chapterId: string,
-    messageId: string,
-  ): Promise<ChatReportActionedStamp | null> {
-    const { data, error } = await this.supabase
-      .from('chat_message_reports')
-      .select('resolved_by, resolved_at')
-      .eq('chapter_id', chapterId)
-      .eq('message_id', messageId)
-      .eq('status', 'actioned')
-      .not('resolved_by', 'is', null)
-      .order('resolved_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data?.resolved_by || !data.resolved_at) return null;
-    return { resolved_by: data.resolved_by, resolved_at: data.resolved_at };
   }
 
   /**

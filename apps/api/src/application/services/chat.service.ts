@@ -1290,10 +1290,11 @@ export class ChatService {
    * answer to a report that is already `actioned`; and the same message after
    * a removal of it failed, from a report that call had just claimed —
    * `messageStateAfterFailedRemoval` on a 5xx or a lost response, and
-   * `closeIfSweptPast` on a 4xx. That last one runs for an officer the access
-   * check has just refused, which is safe only because this answers nothing
-   * but "deleted or not" and the channel id, and its one use is to close that
-   * report as another officer's removal already did (#2748). The channel must
+   * `closeIfRemovedMeanwhile` once the claim is withdrawn, 4xx included
+   * (#2748). That last one also runs for an officer the access check has just
+   * refused, which is safe only because this answers nothing but "deleted or
+   * not" and the channel id, and its one use is to close that report, with no
+   * officer stamp, when its message is already gone. The channel must
    * still resolve inside `chapterId`, as every message path here requires.
    */
   async reportedMessageState(
