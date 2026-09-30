@@ -215,12 +215,11 @@ subject and `token_hash` href daily (`auth-magic-link`) so a dashboard reset to
 `{{ .ConfirmationURL }}` cannot sit green, and fails any `mailer_subjects_*` or a Magic
 Link body that still says Signet.
 
-Because production SMTP is now on, the 07:45 `production-auth-conformance.yml`
-watchdog no longer skip-asserts an empty host. Empty SMTP is still SKIPPED *if* the
-host is empty; with SMTP on, the same check requires
-`Frapp <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
-Link is the same: ConfirmationURL is SKIPPED only while SMTP is unset; with SMTP on,
-the href must carry `token_hash` + `type=magiclink` or the 07:45 job fails. The
+Production SMTP is on, so the 07:45 `production-auth-conformance.yml` watchdog
+fails an empty host, as staging does. It requires `Frapp <no-reply@mail.frapp.live>`
+at ≥300/hour and fails a burned apex From. The Magic Link href must carry
+`token_hash` + `type=magiclink`, whatever the SMTP state, or the 07:45 job fails.
+Both used to be skipped while the host was empty (#2349). The
 Magic Link body is now on prod; confirm and invite were intentionally left uncopied.
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
@@ -339,7 +338,7 @@ Observation 2026-09-10 for the first two Google rows, **2026-09-13 for the Apple
 | --- | --- |
 | Google Cloud OAuth 2.0 **Web** client (JS origins `https://app.frapp.live`, `https://app.staging.frapp.live`; redirect URIs the two hosted `/auth/v1/callback` URLs; client id + secret pasted into each project's Google provider) | **Done**. It lives in Cloud project `signet-frapp` and is named "Frapp Web client 1" under Google Auth Platform → Clients, a dashboard label only. *2026-09-24: renamed from "Signet Web client 1" by the owner ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* |
 | Google provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** |
-| Google Auth Platform → **Audience** (publishing) | **Published: In production**, user type External, after the brand was verified (next row). Any Google account can now reach the consent screen. **No Google sign-in has been seen to complete yet.** Earlier that day the status was **Testing** with **0 test users**, and the OAuth user cap read "0 users … counted over the entire lifetime of the app", so nobody had ever been admitted. *2026-09-28: the Testing reading, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). In production and External, from the owner's later Audience screenshot the same evening ([#2758](https://github.com/pdcarlson/Frapp/issues/2758)).* |
+| Google Auth Platform → **Audience** (publishing) | **Published: In production**, user type External, after the brand was verified (next row). Any Google account can now reach the consent screen. Earlier that day the status was **Testing** with **0 test users**, and the OAuth user cap read "0 users … counted over the entire lifetime of the app". **Google had already admitted accounts on both projects before that reading**: Google identities were linked on `frapp-staging` on 2026-09-10 and on `frapp-prod` on 2026-09-15, and a Google sign-in completed on `frapp-prod` on 2026-09-17 (see **Observed sign-ins** below). So either the counter doesn't count these sign-ins, or a project's Google provider isn't using the `signet-frapp` client the first row records. **Unresolved:** which of those holds, and why Testing with no test users didn't stop these sign-ins, if that was the status then. Nobody recorded the publishing status before 2026-09-28. *2026-09-28: the Testing reading, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). In production and External, from the owner's later Audience screenshot the same evening ([#2758](https://github.com/pdcarlson/Frapp/issues/2758)). 2026-09-30: this row said no Google sign-in had been seen to complete, and read the counter as "nobody had ever been admitted". Both projects' `auth.identities` disprove that ([#2945](https://github.com/pdcarlson/Frapp/issues/2945)).* |
 | Google Auth Platform → **Branding** | App name **Frapp**. Home page `https://www.frapp.live`; privacy and terms `https://frapp.live/privacy` and `https://frapp.live/terms`; authorized domains `frapp.live`, `hnoyzpidbmizhbqaiity.supabase.co` and `unttyvyfezddlyafcydh.supabase.co`; `team@frapp.live` among the developer contacts; a crest logo that looks, by eye, like the more orange pre-#2153 export. Brand verification: **verified**. Google's Verification status reads "Your branding has been verified and is being shown to users." An earlier attempt had been flagged with two issues: the home page wasn't registered to the Cloud project's owner, and the app name didn't match the home page. The banner doesn't report on each issue. We infer both cleared through two fixes: the Search Console record in [`vercel.md` § 4.4](vercel.md#44-dns-records-squarespace-domains), and the Frapp landing (#2770) reaching production in [Deploy production run 36464014731](https://github.com/pdcarlson/Frapp/actions/runs/36464014731) of `0719d521`. *2026-09-24: the owner renamed the app name from Signet, with no verification prompt on save. 2026-09-28: the rest, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669), [#2758](https://github.com/pdcarlson/Frapp/issues/2758)). The verified status comes from a later screenshot the same evening, taken after that deploy ([#2758 comment](https://github.com/pdcarlson/Frapp/issues/2758#issuecomment-5876200553)). It shows app name Frapp, the owner's personal Gmail as user support email, and a gold crest logo, not compared against the current export. It doesn't show the links or domains above, which are the earlier reading. An agent read `www.frapp.live`, `/privacy` and `/terms` through the Vercel MCP and found Frapp on all three and no "Signet".* |
 | Automatic linking | **On** (a later Google/Apple identity can attach to an existing email/password or magic-link user; do not merge `public.users` rows — unique on `supabase_auth_id` only) |
 | Skip nonce (Google provider) | **Off** |
@@ -439,16 +438,63 @@ delivery log** rather than as an application error — look there first, not at 
 API or the invite token. Not yet observed either way: no mail has been sent to a
 relay address from either domain.
 
-**Not proven — and not only for Apple.** The strongest evidence ever recorded for
-**Google** is that kickoff can 2xx on hosted Auth (2026-09-10): a redirect the
-provider accepted, *not* a completed round-trip. The Google rows above should not
-be read as a proven sign-in either. *2026-09-28: for Google it is now known that
-none has happened; see the Audience row.* For Apple it is weaker still — no live Apple
-sign-in has been run against either project. The
-provider is enabled and configured; that is not the same as a verified
-round-trip on web or native iOS, and this table is not evidence of one. The
-earlier instruction not to assert that Apple is enabled is superseded by the
-rows above, but **conformance should still wait on an observed sign-in**, not on
-this section.
+**Observed sign-ins.** The provider rows in the Done / Not done table record
+configuration, not a sign-in. What has been observed, per project and surface,
+as of 2026-09-30:
+
+| | `frapp-staging` | `frapp-prod` |
+| --- | --- | --- |
+| **Apple, web** | **Observed.** The owner reported "live round-trip OK on `app.staging.frapp.live`" on 2026-09-13 at 16:59Z ([#2120](https://github.com/pdcarlson/Frapp/issues/2120#issuecomment-5654699636), closed 2026-09-30). The one `apple` identity was linked about five minutes earlier, at 16:53:45Z. | **Not observed**: no `apple` identity. [#808](https://github.com/pdcarlson/Frapp/issues/808) row 4 owns the first one, on `app.frapp.live`. |
+| **Apple, native iOS** | Not observed. | Not observed. [#2334](https://github.com/pdcarlson/Frapp/issues/2334) owns it, on the iOS build. |
+| **Google** | **Reported, not confirmed by the database.** The owner reported Google "OK in a normal window" in the same 2026-09-13 comment, naming no host. A private-window attempt that day hit a Supabase callback `Gateway Timeout`, treated at the time as a transient flake. Separately, the one `google` identity was linked on 2026-09-10 at 19:03Z, from an unrecorded surface, and no session from that day remains. At 16:26Z on 2026-09-13 the owner still wrote that no Google round-trip had happened. | **Observed, surface unrecorded.** The one `google` identity was linked on 2026-09-15 at 04:37Z to an existing user, created on 2026-09-07 with an `email` identity. That user holds a live session with the `oauth` method, created 2026-09-17 at 20:07Z; Google is its only OAuth identity, so that is a Google sign-in. Nobody reported it, and whether it came from the web app or a mobile build isn't recorded. |
+
+Neither project has a sign-in recorded as coming from a mobile build.
+
+How to read that database evidence:
+
+- An `auth.identities` row is written when GoTrue accepts the provider's
+  callback. It proves the round-trip to the provider reached GoTrue, not that
+  the member ended up signed in. A session proves a sign-in, but its method
+  (`auth.mfa_amr_claims`) reads `oauth` for both providers, and signing out
+  deletes it.
+- A row's `last_sign_in_at` doesn't advance on later sign-ins, as far as staging
+  shows. The staging user's OAuth sign-in on 2026-09-28 (session created
+  21:58:09Z, method `oauth`, provider not recorded) left both OAuth identities'
+  `last_sign_in_at` where they were. So the Google row's 09-10 timestamp can't be
+  read as "no Google sign-in since".
+- Both projects' Auth audit logs are empty, so there is no per-sign-in history.
+  Staging's remaining OAuth sessions were created 2026-09-13 at 16:58:17Z (49 seconds
+  before the owner's report), 2026-09-14 and 2026-09-28. All three belong to the
+  one staging user that holds the `email`, `google` and `apple` identities, linked
+  by Automatic linking (row above).
+
+*Read 2026-09-30 through the Supabase MCP's `execute_sql`, aggregates and
+timestamps only. On `frapp-staging`: `select provider, count(*),
+min(created_at), max(created_at), max(last_sign_in_at) from auth.identities
+group by provider`; each OAuth identity joined to `auth.users` for the user's
+`created_at`, `last_sign_in_at` and other identities; `select s.created_at,
+c.authentication_method from auth.sessions s join auth.mfa_amr_claims c on
+c.session_id = s.id`; and `select count(*) from auth.audit_log_entries`. On
+`frapp-prod`: `select provider, count(*), min(created_at) from auth.identities
+where provider in ('google', 'apple') group by provider`, then the same user
+join, sessions read (for the Google user only) and audit-log count.*
+
+The earlier instruction not to assert that Apple is enabled is superseded by the
+provider rows above. **Conformance should still wait on an observed sign-in** in
+the project it checks, not on this section. Staging has one with each provider:
+Apple on web, and Google by the owner's report. So a staging check of their
+config can be written ([#2949](https://github.com/pdcarlson/Frapp/issues/2949)),
+though the native-only Apple client ids (the bundle id and `host.exp.Exponent`)
+are config no sign-in has exercised yet. `frapp-prod` has an observed Google
+sign-in and no Apple one. Neither conformance script checks either provider
+today.
+
+*2026-09-30 ([#2945](https://github.com/pdcarlson/Frapp/issues/2945)): this
+paragraph was headed "Not proven — and not only for Apple". It said no live
+Apple sign-in had been run against either project and, from 2026-09-28, that no
+Google sign-in had happened. The strongest Google evidence it cited was a
+kickoff that returned 2xx on hosted Auth on 2026-09-10. The Apple sentence
+predated the owner's 09-13 staging report. The Google one was inferred from the
+Audience counter, and both projects' Auth databases disprove it.*
 
 ---

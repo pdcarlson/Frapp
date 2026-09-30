@@ -71,6 +71,12 @@ the rest:
   high. Without it, every workflow agent and every Agent-tool launch ran at xhigh. Agent files can
   declare `effort` too, but they load at session start, so whether that field beats ultracode's
   xhigh was not measured.
+  *Corrected 2026-09-30:* since Claude Code 2.1.284, ultracode is its own `/effort` toggle and
+  leaves the effort level alone (only `ultracode` given as the level itself means `xhigh`), so a
+  session runs at `xhigh` because that level was set, not because ultracode is on. The open question
+  is answered too: in a session at `xhigh`, `diff-finder` ran at `high` and `claim-verifier` at
+  `medium`, so agent-file `effort` wins. Current facts:
+  [`multi-agent` § Effort](../../../.claude/skills/multi-agent/SKILL.md#effort).
 
 **Alternatives rejected:**
 

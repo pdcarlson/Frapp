@@ -169,8 +169,10 @@ Unchanged from the Linear era. An issue's description may carry a machine-readab
 
 **Who writes it:** the curator files every suggestion with a brief; the triage routine backfills
 and corrects briefs on `suggestion`-owned issues only. Human-filed issues get a brief only from a
-human; an absent brief reads as `depth:deep`. **Who reads it:** `/next` honors `depth` when
-scaling verification and review (never skipping steps, never shrinking `/diff-review`).
+human; an absent brief reads as `depth:deep`. **Who reads it:** `/next` reads `depth` as a floor
+it can only raise: `deep` asks for the widest verification and review, while `standard` and `skim`
+never license less than the session's own reading of the work (owner decision 2026-09-30, because
+briefs are mostly agent-written). No step is skipped and `/diff-review` is never shrunk.
 
 ## `/next` (the work-selection command)
 

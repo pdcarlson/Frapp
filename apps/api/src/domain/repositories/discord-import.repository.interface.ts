@@ -222,12 +222,20 @@ export interface IDiscordImportRepository {
     workerId: string,
   ): Promise<ClaimedDiscordImport | null>;
 
-  /** Extend a held lease. False means the lease was lost — stop working. */
+  /**
+   * Extend a held lease. False means the lease was lost — stop working.
+   *
+   * `progress` rides the same write: the purge records how many messages it
+   * has deleted each time it renews (#2944). Bound to the lock token like the
+   * renewal, so a worker that lost the lease cannot overwrite the new
+   * holder's count.
+   */
   renewLease(
     id: string,
     lockToken: string,
     now: Date,
     leaseMs: number,
+    progress?: Pick<DiscordImport, 'purged_messages'>,
   ): Promise<boolean>;
 
   /** Hand the job back for the next tick, keeping its status. */
@@ -299,8 +307,11 @@ export interface IDiscordImportRepository {
   /**
    * Delete the channels this import created that now hold nothing: no message
    * of any kind, no attachment, no points-ledger link, and no `use_existing`
-   * mapping of any import (#2905). Runs only while the import is `purging`,
-   * after its messages are gone. Returns the ids of the channels it deleted.
+   * mapping of an import that isn't `purging` or `purged` (#2905, #2922).
+   * Also considers each channel a `purging` or `purged` import created that
+   * this one merged into, which that import's purge had to keep. Runs only
+   * while the import is `purging`, after its messages are gone. Returns the
+   * ids of the channels it deleted.
    */
   deleteEmptyCreatedChannels(
     importId: string,

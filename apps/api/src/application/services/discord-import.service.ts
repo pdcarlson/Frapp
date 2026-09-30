@@ -1259,6 +1259,46 @@ export class DiscordImportService {
         'Choose at least one Discord channel to import.',
       );
     }
+    // A merge whose channel was deleted after it was mapped: the row's
+    // `target_channel_id` is `on delete set null`, and the database no longer
+    // refuses that (#2922). The mapping routes never save a merge without a
+    // target, so this is the one way one reaches here, and the worker would
+    // only stop on it. Only a row the worker will still walk counts: a bot
+    // import never walks a completed or skipped row again. An upload's row
+    // reads completed after any of its parts, with more to come, and which
+    // parts hold a channel is known only by parsing them, so each counts.
+    const lostMerge = channels.find(
+      (channel) =>
+        channel.mapping_action === 'use_existing' &&
+        channel.target_channel_id === null &&
+        !(
+          job.source === 'bot' &&
+          (channel.status === 'completed' || channel.status === 'skipped')
+        ),
+    );
+    if (lostMerge) {
+      // A thread repeats its parent's decision, so it is named by the channel
+      // the admin mapped.
+      const parentId = lostMerge.parent_discord_channel_id;
+      const name = `#${
+        (
+          (parentId &&
+            channels.find(
+              (channel) => channel.discord_channel_id === parentId,
+            )) ||
+          lostMerge
+        ).discord_channel_name
+      }`;
+      // Picking another channel is the answer only before the import has
+      // started. Once it has, a remap forgets the channels the import
+      // created, so the restart makes each again, and an upload resumes past
+      // the parts it already did (#2947). The worker's stop says the same.
+      throw new BadRequestException(
+        job.status === 'draft'
+          ? `The Frapp channel chosen for ${name} was deleted. Pick another channel for it, or choose to create a new one.`
+          : `The Frapp channel chosen for ${name} was deleted, so this import can't carry on. To bring ${name} in, delete this import and import again.`,
+      );
+    }
 
     const roleMapping = await this.provisionRoles(
       id,

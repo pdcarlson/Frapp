@@ -63,6 +63,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: '2026-08-24T12:00:00Z',
     completed_at: null,
     purged_at: null,
+    purged_messages: 0,
     cleared_at: null,
     messages_after: null,
     ...overrides,
@@ -613,6 +614,108 @@ describe('DiscordImportService — starting', () => {
     );
   });
 
+  it('refuses to start a merge whose channel was deleted after it was mapped (#2922)', async () => {
+    // `target_channel_id` is `on delete set null`, and the database no longer
+    // refuses a merge without one, so the start is where it is caught.
+    await build();
+    repo.findFiles.mockResolvedValue([
+      { kind: 'export', uploaded_at: '2026-08-24T12:00:00Z' },
+    ]);
+    repo.findChannels.mockResolvedValue([
+      {
+        id: 'map-1',
+        discord_channel_name: 'rush',
+        mapping_action: 'create_new',
+        target_channel_id: null,
+      },
+      // An upload's row reads completed after any of its parts, with more
+      // to come, so it counts whatever its status.
+      {
+        id: 'map-2',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'completed',
+      },
+    ]);
+
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      'The Frapp channel chosen for #general was deleted. Pick another channel for it, or choose to create a new one.',
+    );
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('restarts a bot import past a finished or skipped merge whose channel was deleted, which the worker never walks again (#2922)', async () => {
+    await build(job({ source: 'bot', status: 'failed', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      {
+        id: 'map-1',
+        discord_channel_id: 'd-general',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'completed',
+        parent_discord_channel_id: null,
+      },
+      // Skipped when Discord stopped showing it, whatever its mapping.
+      {
+        id: 'map-3',
+        discord_channel_id: 'd-announcements',
+        discord_channel_name: 'announcements',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'skipped',
+        parent_discord_channel_id: null,
+      },
+      {
+        id: 'map-2',
+        discord_channel_id: 'd-rush',
+        discord_channel_name: 'rush',
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        status: 'failed',
+        parent_discord_channel_id: null,
+      },
+    ]);
+
+    await service.start(IMPORT_ID, CHAPTER, true);
+
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ status: 'ready' }),
+    );
+  });
+
+  it("names a thread's lost merge by its parent, the channel the admin mapped (#2922)", async () => {
+    await build(job({ source: 'bot', status: 'failed', guild_id: GUILD }));
+    repo.findChannels.mockResolvedValue([
+      {
+        id: 'map-1',
+        discord_channel_id: 'd-general',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'completed',
+        parent_discord_channel_id: null,
+      },
+      {
+        id: 'map-2',
+        discord_channel_id: 'd-planning',
+        discord_channel_name: 'general › planning',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        status: 'pending',
+        parent_discord_channel_id: 'd-general',
+      },
+    ]);
+
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      "The Frapp channel chosen for #general was deleted, so this import can't carry on. To bring #general in, delete this import and import again.",
+    );
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
   it('queues the import and records how many parts to expect', async () => {
     await build();
     repo.findFiles.mockResolvedValue([
@@ -1150,6 +1253,23 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
         },
       ]),
     ).rejects.toThrow(/cannot read #cabinet/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('refuses a merge with no target chosen, as the upload route does', async () => {
+    // The database no longer backs this up: a merge row may lose its target
+    // when an officer deletes the channel (#2922), so the route is the rule.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'general',
+          mapping_action: 'use_existing',
+        },
+      ]),
+    ).rejects.toThrow(/Pick a Frapp channel for #general/);
     expect(repo.replaceChannels).not.toHaveBeenCalled();
   });
 

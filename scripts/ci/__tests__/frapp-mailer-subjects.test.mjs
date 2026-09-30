@@ -6,14 +6,14 @@
 // renamed, a subject the owner missed would keep saying Signet without the
 // exact Magic Link compare noticing, and so would the Magic Link body's
 // heading, which no subject compare reads. A later edit can drop either
-// leftover check, or move the subject check above the empty-host skip so
-// production fails while SMTP is still off.
+// leftover check. (It also pinned the subject check below production's
+// empty-host skip; #2349 removed that skip.)
 //
 // Until step 3 this lock was signet-mailer-subjects and the leftover was
 // Frapp; ADR-25 inverted it.
 //
-// SCOPE. leftoverSignetMailerSubjectKeys, the checkAuthMagicLink call,
-// skip-before-leftover order, and the body's Signet check. Do not assert
+// SCOPE. leftoverSignetMailerSubjectKeys, the checkAuthMagicLink call, and
+// the body's Signet check. Do not assert
 // TokenHash on siblings (1926, blocked). Do not PATCH Auth. Do not
 // lowercase-compare the Magic Link subject here. SMTP sender name is
 // frapp-smtp-sender-name's.
@@ -54,33 +54,11 @@ export function mailerSubjectLockProblems(source) {
   if (!/if \(SIGNET_PRODUCT_NAME\.test\(content\)\) \{/.test(source)) {
     problems.push("checkAuthMagicLink must fail a Magic Link body that says Signet");
   }
-  const skipAt = source.indexOf('!host && whenSmtpUnset === "skip"');
-  const leftoverAt = source.indexOf(
-    "const leftoverSubjects = leftoverSignetMailerSubjectKeys(data)",
-  );
-  if (skipAt === -1 || leftoverAt === -1 || leftoverAt < skipAt) {
-    problems.push("leftover subject check must stay after the empty-host skip");
-  }
   return problems;
 }
 
 test("checkAuthMagicLink fails Signet in any mailer_subjects_* key or the body", () => {
   assert.deepEqual(mailerSubjectLockProblems(readRepo(CONFORMANCE)), []);
-});
-
-test("moving the leftover check above the empty-host skip fails", () => {
-  const assignment = "const leftoverSubjects = leftoverSignetMailerSubjectKeys(data)";
-  const source = readRepo(CONFORMANCE)
-    .replace(assignment, "/* leftover moved above skip */")
-    .replace(
-      'if (!host && whenSmtpUnset === "skip")',
-      `${assignment};\n  if (!host && whenSmtpUnset === "skip")`,
-    );
-  const problems = mailerSubjectLockProblems(source);
-  assert.ok(
-    problems.some((problem) => problem.includes("empty-host skip")),
-    problems.join("; "),
-  );
 });
 
 test("dropping leftoverSignetMailerSubjectKeys from checkAuthMagicLink fails", () => {
