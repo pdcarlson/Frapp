@@ -144,7 +144,10 @@ digest 07).
 
 **Trigger to revisit:**
 - the v1.0 GA checkpoint, which reviews #2524's triggers;
-- any Supabase Free quota above 70% (#2531), a production data-loss event or a failed restore
-  drill;
+- any Supabase quota above 70% (#2531), a production data-loss event or a failed restore
+  drill. *Corrected 2026-09-30:* this said "Supabase Free quota"; the organization moved to Pro on
+  2026-09-28 (decision 3). `supabase-quota.yml` raises this trigger for the disk and Storage quotas
+  ([`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md#automated-github-issue-alerts));
+  egress and Realtime peak connections have no API, so only the Usage page shows them;
 - the pager test firing not arriving;
 - desktop work starting (#2512 records the shell choice in its own ADR).

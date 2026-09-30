@@ -2,11 +2,13 @@
 // Scheduled quota watch for the Supabase organization (#2531).
 //
 // Both projects share one organization, and the organization's plan sets the
-// quotas. The spend cap is on (Pro's default), so going over a quota is not
-// billed: Supabase emails the billing address, starts a grace period, and then
-// restricts EVERY project in the organization, production included. The first
-// real Discord import on staging went over Free's storage quota that way, which
-// is why the organization moved to Pro. docs/internal/ops/deployment/supabase.md
+// quotas. The spend cap is on (Pro's default), so neither quota here is billed
+// past its limit. Past an organization quota such as Storage, Supabase emails
+// the billing address, starts a grace period, and then restricts EVERY project
+// in the organization, production included. The first real Discord import on
+// staging went over Free's storage quota that way, which is why the
+// organization moved to Pro. A project whose disk fills goes read-only on its
+// own, with no grace period. docs/internal/ops/deployment/supabase.md
 // § Plan and quotas owns the quotas, and DISK_QUOTA_BYTES and
 // STORAGE_QUOTA_BYTES below copy them. Supabase's own email arrives only once a
 // quota is already exceeded. This watch pages at 70%, while there is room to
@@ -118,6 +120,15 @@ export function parseThresholdPercent(raw) {
 
 // ── Reads ───────────────────────────────────────────────────────────────────
 
+/**
+ * Text from outside, made one line. A reason lands in a markdown table cell and
+ * in a `::error::` workflow command, and a newline ends both: a multi-line
+ * Postgres error would split the row and push its status onto a stray line.
+ */
+export function oneLine(text) {
+  return String(text).replace(/\s+/g, " ").trim();
+}
+
 /** A short reason from a Management API error body, which is JSON with a `message` when there is one. */
 function describeFailure(status, text) {
   let message = "";
@@ -126,7 +137,7 @@ function describeFailure(status, text) {
   } catch {
     message = "";
   }
-  const detail = typeof message === "string" && message ? `: ${message.slice(0, MESSAGE_LIMIT)}` : "";
+  const detail = typeof message === "string" && message ? `: ${oneLine(message).slice(0, MESSAGE_LIMIT)}` : "";
   return `Management API returned HTTP ${status}${detail}`;
 }
 
@@ -149,7 +160,7 @@ async function managementApi({ path, token, fetchImpl, sleep, method = "GET", bo
     // rejects here (lib/http.mjs), which is a failed read, not a crash.
     text = await response.text();
   } catch (error) {
-    return { ok: false, detail: `request failed: ${error?.message ?? String(error)}` };
+    return { ok: false, detail: `request failed: ${oneLine(error?.message ?? String(error))}` };
   }
   if (!response.ok) return { ok: false, detail: describeFailure(response.status, text) };
   try {
@@ -285,7 +296,8 @@ export function buildTable({ rows }) {
   return [
     "| Quota | Scope | Usage | Status |",
     "| --- | --- | --- | --- |",
-    ...rows.map((r) => `| ${r.quota} | ${r.scope} | ${describeRow(r)} | ${status[r.status]} |`),
+    // A reason quotes the API, so a `|` in it is escaped, or it would open a cell.
+    ...rows.map((r) => `| ${r.quota} | ${r.scope} | ${describeRow(r).replaceAll("|", "\\|")} | ${status[r.status]} |`),
   ].join("\n");
 }
 
@@ -310,10 +322,12 @@ export function buildAlertIssueBody({ rows, threshold, runUrl }) {
     "",
     buildTable({ rows }),
     "",
-    "**Why it matters.** Both projects share the organization's plan, and its spend cap is on. Past a " +
-      "quota, Supabase emails the billing address, then restricts **every** project after a grace " +
-      "period, production included. The quotas, and the plan's cost control: " +
-      "`docs/internal/ops/deployment/supabase.md` § Plan and quotas.",
+    "**Why it matters.** Both projects share the organization's plan, and its spend cap is on, so " +
+      "neither quota is billed past its limit. Past the Storage quota, Supabase emails the billing " +
+      "address, then restricts **every** project after a grace period, production included. A project " +
+      "whose disk fills goes read-only on its own, with no grace period. The quotas, and the plan's cost " +
+      "control: `docs/internal/ops/deployment/supabase.md` § Plan and quotas. An over-quota figure is " +
+      "also one of ADR-24's triggers to revisit (`spec/architecture/adr/adr-24.md`).",
     "",
     "**Over.** Find what grew in the organization's **Usage** page (per project from its dropdown), then " +
       "free space or decide on the plan. The owner decides; agents report (see the note below).",

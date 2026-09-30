@@ -330,13 +330,60 @@ describe("runSupabaseQuota", () => {
     assert.ok(!mock.calls.some((c) => c.url.includes("prodref0000000001")), "no request without a token");
   });
 
-  it("comments on an alert that is already open instead of filing a second", async () => {
-    const open = [{ number: 42, title: ALERT.title, state: "open", assignees: [], labels: [{ name: ALERT_LOOKUP_LABEL }] }];
+  it("comments on an alert that is already open instead of filing a second, and refreshes its body", async () => {
+    const open = [
+      {
+        number: 42,
+        title: ALERT.title,
+        state: "open",
+        assignees: [],
+        // What a test page leaves behind: the next run must not keep it.
+        body: "Threshold: **0%** of each quota, lowered for this run (the default is 70%).",
+        labels: [{ name: ALERT_LOOKUP_LABEL }],
+      },
+    ];
     const mock = supabaseRoutes({ prodStorageStatus: 401, openAlerts: open });
     const result = await run({ mock });
     assert.deepEqual(result.alert, { action: "commented", issueNumber: 42, bodyRefreshFailed: false });
     assert.equal(issueCreates(mock.calls).length, 0);
     assert.equal(closes(mock.calls).length, 0);
+    const patch = mock.calls.find((c) => c.method === "PATCH" && c.url.endsWith("/issues/42"));
+    const body = JSON.parse(patch.body).body;
+    assert.match(body, /Threshold: 70% of each quota\./);
+    assert.match(body, /\| Storage \| organization \(frapp-staging \+ frapp-prod\) \| could not be read/);
+    assert.doesNotMatch(body, /lowered for this run/);
+  });
+
+  it("keeps a multi-line or piped API error on its own table row", async () => {
+    const mock = makeFetchMock([
+      { method: "GET", path: "/config/disk/util", body: diskBody(1) },
+      {
+        method: "POST",
+        path: "/v1/projects/stagingref00000001/database/query/read-only",
+        status: 400,
+        body: { message: "Failed to run sql query: ERROR: x | y\nLINE 1: select\n       ^\n" },
+      },
+      { method: "POST", path: "/database/query/read-only", status: 201, body: [{ bytes: "1" }] },
+      { method: "GET", path: `/repos/${REPO}/issues?state=all`, body: [] },
+      { method: "POST", path: `/repos/${REPO}/issues`, status: 201, body: { number: 7, assignees: [{ login: ALERT_ASSIGNEE }] } },
+    ]);
+    const logged = [];
+    await runSupabaseQuota({
+      token: "g",
+      repo: REPO,
+      env: TOKENS,
+      fetchImpl: mock.fetchImpl,
+      environments: ENVIRONMENTS,
+      writeSummary: () => {},
+      logger: { log: (m) => logged.push(m) },
+    });
+    const body = JSON.parse(issueCreates(mock.calls)[0].body).body;
+    const row = body.split("\n").find((line) => line.startsWith("| Storage |"));
+    assert.ok(row.endsWith("| **unread** |"), row);
+    assert.match(row, /ERROR: x \\\| y LINE 1: select \^/);
+    assert.equal(row.split(/(?<!\\)\|/).length, 6, "four cells, however the API worded its error");
+    const annotation = logged.find((m) => m.startsWith("::error::Storage"));
+    assert.ok(!annotation.includes("\n"), annotation);
   });
 
   it("closes an open alert once every figure is read and under the threshold", async () => {
