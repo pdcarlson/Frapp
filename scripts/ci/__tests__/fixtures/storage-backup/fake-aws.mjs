@@ -24,6 +24,12 @@ if (args[0] === "s3" && args[1] === "cp") {
     fs.copyFileSync(src, local(dst));
   }
 } else if (args[0] === "s3" && args[1] === "rm") {
+  // Like S3, deleting a key that isn't there succeeds. FAKE_AWS_FAIL_RM makes
+  // every delete fail, the way a token without delete rights would.
+  if (process.env.FAKE_AWS_FAIL_RM) {
+    process.stderr.write("delete failed: An error occurred (AccessDenied) when calling the DeleteObject operation\n");
+    process.exit(1);
+  }
   fs.rmSync(local(args[2]), { force: true });
 } else if (args[0] === "s3api" && args[1] === "list-objects-v2") {
   const base = path.join(root, flag("--bucket"));

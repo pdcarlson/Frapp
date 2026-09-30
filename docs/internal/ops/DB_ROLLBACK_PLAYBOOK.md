@@ -389,32 +389,40 @@ acting. Read the job's `::error::` line and match it:
   were hit (`last_offsite_loss`), and a local `verify` prints them.
 - **"does not hold what its manifest lists"** after a write. The upload or the
   destination is broken in a way the run couldn't repair. Run `verify` (below)
-  to see the list.
-- **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out"**, **"transfer(s)
-  failed"** or **"The run stopped early"**. The run didn't copy everything it
-  planned, but it kept what it did copy (#2916). It copies
+  to see the list. One case repairs itself. Suppose the same run also stopped
+  early (next entry), and an object it didn't reach had changed in Storage
+  after R2 lost its old copy. That object is listed here until a run uploads
+  its new version.
+- **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out"**, **"reached
+  MAX_TRANSFER_FAILURES"** or **"transfer(s) failed"**. The run didn't copy
+  everything it planned, but it kept what it did copy (#2916). It copies
   `TRANSFER_CONCURRENCY` objects at a time. It starts no new copy once the
   budget runs out (`DEFAULT_BUDGET_MINUTES`, counted from the start of the run)
-  or `MAX_TRANSFER_FAILURES` copies have failed. All three live in
+  or once `MAX_TRANSFER_FAILURES` copies or prunes have failed. All three are in
   `scripts/storage-backup.mjs`, and the error line prints the budget it used.
   The run then writes a manifest listing only what it actually wrote. New
   objects it didn't reach are not in the backup yet. Changed ones keep their
-  previous copy, and prunes it didn't reach keep their tombstone.
+  previous copy, and prunes that didn't happen keep their tombstone. An object
+  deleted from Storage between the listing and its download is not a failure.
+  The log counts it, and the next listing records the deletion.
   - **A budget overrun** means more changed in Storage than one run can copy.
     A Discord import can add thousands of objects to `chat-archive` at once.
     Re-run **Nightly Backup** to continue now, or leave it for the next night.
     Each run picks up where the last one stopped. If every night runs out on the
-    same work, don't raise the budget toward the job's `timeout-minutes`, because
-    a run cut off by the timeout writes no manifest at all. Find out why the
-    copies are slow.
-  - **A failed download that says `HTTP 404`** is almost always an object
-    deleted between the listing and its download. The next run doesn't plan it,
-    so it passes. Anything else, or a run that reached `MAX_TRANSFER_FAILURES`,
-    points at Storage or R2 itself. Read the listed errors.
+    same work, don't raise the budget toward the job's `timeout-minutes`: a run
+    cut off by the timeout writes no manifest at all. Find out why the copies
+    are slow.
+  - **Failed transfers** are listed in the error, with object paths withheld
+    in CI. The next run retries them. A handful that clear on the retry were
+    transient. A run that reaches `MAX_TRANSFER_FAILURES` points at Storage or
+    R2 itself, such as a credential or an outage. A failed prune is a real
+    failure too, since deleting a key that is already gone succeeds. It keeps
+    its tombstone until a prune works.
   - If the same run also found objects R2 had lost, it re-uploads those first.
-    Any it didn't reach are listed as "not re-uploaded yet". The next run
-    re-uploads them and fails once more on the "were not offsite as written"
-    line above, which is the loss being reported. The run after that passes.
+    Each one it couldn't finish is listed as "not re-uploaded yet" or "re-upload
+    failed". The next run re-uploads it and fails once more on the "were not
+    offsite as written" line above, which is the loss being reported. The run
+    after that passes.
 
 ### Restore
 

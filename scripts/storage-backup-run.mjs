@@ -47,6 +47,7 @@ import {
   checkDeletionSanity,
   downloadObject,
   isMissingObjectError,
+  knownGapIds,
   listBucketObjects,
   MAX_TRANSFER_FAILURES,
   listBuckets,
@@ -58,7 +59,6 @@ import {
   settleManifest,
   sha256,
   TRANSFER_CONCURRENCY,
-  untouchedIds,
   uploadObject,
   uploadOrder,
   verifyOffsiteMirror,
@@ -66,12 +66,11 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+// Throws rather than exiting, like every refusal inside a mode: the rehearsal
+// cleans up its canary on a thrown error, and `process.exit` skips that.
 function requireEnv(name) {
   const v = process.env[name];
-  if (!v) {
-    console.error(`::error::${name} is not set. See docs/internal/environment/SECRETS_MANAGEMENT.md.`);
-    process.exit(1);
-  }
+  if (!v) throw new Error(`${name} is not set. See docs/internal/environment/SECRETS_MANAGEMENT.md.`);
   return v;
 }
 
@@ -257,12 +256,10 @@ async function runBackup(opts) {
   const budgetMinutes = (budgetRaw ?? "").trim() === "" ? DEFAULT_BUDGET_MINUTES : Number(budgetRaw);
 
   if (!Number.isFinite(retentionDays) || retentionDays < 0) {
-    console.error(`::error::BACKUP_RETENTION_DAYS must be a non-negative number, got '${process.env.BACKUP_RETENTION_DAYS}'.`);
-    process.exit(1);
+    throw new Error(`BACKUP_RETENTION_DAYS must be a non-negative number, got '${process.env.BACKUP_RETENTION_DAYS}'.`);
   }
   if (!Number.isFinite(budgetMinutes) || budgetMinutes < 0) {
-    console.error(`::error::STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number, got '${budgetRaw}'.`);
-    process.exit(1);
+    throw new Error(`STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number, got '${budgetRaw}'.`);
   }
   // From process start, not from here: the listings spend the same job timeout.
   const overBudget = () => process.uptime() >= budgetMinutes * 60;
@@ -306,8 +303,7 @@ async function runBackup(opts) {
     // pruning -- by which point the run has looked green for a month.
     const sanity = checkDeletionSanity({ manifest, tombstone: plan.tombstone });
     if (!sanity.ok && process.env.STORAGE_BACKUP_ALLOW_MASS_DELETE !== "true") {
-      console.error(`::error::${sanity.reason}`);
-      process.exit(1);
+      throw new Error(sanity.reason);
     }
     if (!sanity.ok) {
       console.log(`STORAGE_BACKUP_ALLOW_MASS_DELETE=true -- proceeding with ${sanity.deleting} deletions.`);
@@ -323,7 +319,11 @@ async function runBackup(opts) {
     // changes between the listing and the download.
     const records = new Map(plan.manifest.objects.map((o) => [objectId(o), o]));
     let bytes = 0;
-    // Failures are shared across both pools, so the cap is on the run.
+    // Deleted from Storage after the listing: nothing to copy, and the next
+    // listing records the deletion. Not a failure, or every busy night is red.
+    const vanished = new Set();
+    // Failures are shared across both pools, so the cap is on the run. A pool
+    // handed a cap of zero or less starts nothing.
     const transferFailures = [];
     const pool = () => ({
       limit: TRANSFER_CONCURRENCY,
@@ -332,9 +332,17 @@ async function runBackup(opts) {
     });
     const uploadRun = await runPool(uploadOrder(plan), pool(), async (obj, slot) => {
       let body;
-      const scratch = join(tmp, `obj-${slot}`);
       try {
         body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
+      } catch (err) {
+        if (err.status === 404) {
+          vanished.add(objectId(obj));
+          return;
+        }
+        throw withheld(err, obj.path, encodeURIComponent(obj.path));
+      }
+      const scratch = join(tmp, `obj-${slot}`);
+      try {
         writeFileSync(scratch, body);
         await awsAsync(
           ["s3", "cp", scratch, `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"],
@@ -348,24 +356,27 @@ async function runBackup(opts) {
     });
     transferFailures.push(...uploadRun.failures);
 
-    // `allowFailure`: an object already gone offsite is as pruned as it gets.
-    // Skipped once the failure cap is reached, like everything else.
-    const pruneRun =
-      transferFailures.length < MAX_TRANSFER_FAILURES
-        ? await runPool(plan.prune, pool(), (obj) =>
-            awsAsync(["s3", "rm", `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"], {
-              endpoint,
-              allowFailure: true,
-            }),
-          )
-        : { done: [], failures: [] };
+    // No `allowFailure`: deleting a key that is already gone succeeds, so a
+    // failed `rm` is a real failure, and its tombstone must stay for a retry.
+    const pruneRun = await runPool(plan.prune, pool(), (obj) =>
+      awsAsync(["s3", "rm", `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"], {
+        endpoint,
+      }).catch((err) => {
+        throw withheld(err, obj.path, encodeURIComponent(obj.path));
+      }),
+    );
     transferFailures.push(...pruneRun.failures);
+    // Why the pools stopped, decided now: the budget and the cap are the only
+    // two reasons a pool leaves work unstarted.
+    const stoppedBy = transferFailures.length >= MAX_TRANSFER_FAILURES ? "cap" : "budget";
 
-    const uploaded = new Set(uploadRun.done.map(objectId));
+    const uploaded = new Set(uploadRun.done.map(objectId).filter((id) => !vanished.has(id)));
     const pruned = new Set(pruneRun.done.map(objectId));
-    const next = settleManifest({ plan, previous: manifest, uploaded, pruned });
-    const deferredUploads = plan.upload.length - uploaded.size;
-    const deferredPrunes = plan.prune.length - pruned.size;
+    const failed = new Set(transferFailures.map(({ item }) => objectId(item)));
+    const notStarted = new Set(
+      [...plan.upload, ...plan.prune].map(objectId).filter((id) => !uploaded.has(id) && !pruned.has(id) && !vanished.has(id) && !failed.has(id)),
+    );
+    const next = settleManifest({ plan, previous: manifest, uploaded, pruned, deferred: notStarted, vanished });
 
     const manifestPath = join(tmp, "manifest.next.json");
     const written = JSON.stringify(next, null, 2);
@@ -383,24 +394,12 @@ async function runBackup(opts) {
       throw new Error("Read-back mismatch: the manifest read back from the bucket differs from the one written.");
     }
 
-    // Then prove the objects themselves are there, not just the index. What
-    // this run never reached is left out: nothing about it changed offsite,
-    // and a deferred re-upload of lost bytes is reported below, by name,
-    // instead of as a broken mirror.
-    const untouched = untouchedIds({ plan, uploaded, pruned });
-    const checked = verifyOffsite({
-      manifest: { ...next, objects: next.objects.filter((o) => !untouched.has(objectId(o))) },
-      bucket: s3Bucket,
-      prefix: opts.prefix,
-      endpoint,
-    });
+    if (vanished.size > 0) {
+      console.log(`${vanished.size} object(s) were deleted from Storage after the listing; the next run records them as deleted.`);
+    }
 
-    console.log(
-      `Uploaded ${uploaded.size} object(s), ${bytes} byte(s). Manifest read back byte for byte; ` +
-        `all ${checked} manifest object(s) found offsite, at the written size where recorded` +
-        (untouched.size > 0 ? ` (${untouched.size} this run didn't reach were not checked).` : "."),
-    );
-
+    // Every failure below is collected, not thrown on the spot, so a run that
+    // stopped early, lost objects and failed transfers says all of it at once.
     const failures = [];
     if (transferFailures.length > 0) {
       // Already `withheld` per object; one line each, capped like the loss list.
@@ -408,45 +407,66 @@ async function runBackup(opts) {
       const more = transferFailures.length > 5 ? `\n  ...and ${transferFailures.length - 5} more` : "";
       failures.push(
         `${transferFailures.length} transfer(s) failed` +
-          (transferFailures.length >= MAX_TRANSFER_FAILURES
+          (stoppedBy === "cap"
             ? `, which reached MAX_TRANSFER_FAILURES, so the run started no more.`
             : `. The rest of the run went ahead.`) +
-          ` A 404 on a download is usually an object deleted after the listing, and the next run won't plan it:\n${shown}${more}`,
+          ` The next run retries them:\n${shown}${more}`,
       );
     }
+
+    // Then prove the objects themselves are there, not just the index. Known
+    // gaps (knownGapIds) are left out: they are named below instead of
+    // being reported as a broken mirror.
+    const gaps = knownGapIds({ plan, uploaded, pruned });
+    try {
+      const checked = verifyOffsite({
+        manifest: { ...next, objects: next.objects.filter((o) => !gaps.has(objectId(o))) },
+        bucket: s3Bucket,
+        prefix: opts.prefix,
+        endpoint,
+      });
+      console.log(
+        `Uploaded ${uploaded.size} object(s), ${bytes} byte(s). Manifest read back byte for byte; ` +
+          `all ${checked} manifest object(s) found offsite, at the written size where recorded` +
+          (gaps.size > 0 ? ` (${gaps.size} known gap(s), named below, not re-checked).` : "."),
+      );
+    } catch (err) {
+      failures.push(err.message);
+    }
+
     // The mirror is whole again, but it wasn't: fail this run so the loss is
     // seen. The next run finds nothing missing and passes.
     if (plan.missingOffsite.length > 0) {
+      const state = (gap) => {
+        const id = objectId(gap.record);
+        if (!gap.recovered || vanished.has(id)) return "deleted from Storage too, so it is unrecoverable";
+        if (uploaded.has(id)) return "re-uploaded from Storage";
+        if (failed.has(id)) return "re-upload failed (listed above); the next run retries it";
+        return "not re-uploaded yet (the run stopped first); the next run will";
+      };
       const lines = describeObjects(
-        plan.missingOffsite.map((gap) => ({
-          record: gap.record,
-          text:
-            `${PROBLEM_TEXT[gap.kind]}; ` +
-            (!gap.recovered
-              ? "deleted from Storage too, so it is unrecoverable"
-              : uploaded.has(objectId(gap.record))
-                ? "re-uploaded from Storage"
-                : "not re-uploaded yet (the run stopped first); the next run will"),
-        })),
+        plan.missingOffsite.map((gap) => ({ record: gap.record, text: `${PROBLEM_TEXT[gap.kind]}; ${state(gap)}` })),
       );
       failures.push(
         `${plan.missingOffsite.length} object(s) the previous manifest listed were not offsite as written. ` +
-          `Something other than this job changed them (an R2 lifecycle rule, a hand deletion). Every one ` +
-          `Storage still has is offsite again unless listed as not re-uploaded yet; the rest are unrecoverable. ` +
-          `The manifest records which ` +
+          `Something other than this job changed them (an R2 lifecycle rule, a hand deletion). Each one's ` +
+          `state is below. The manifest records which ` +
           `(last_offsite_loss; \`verify\` prints it). Find what changed them:\n${lines}`,
       );
     }
     // Progress is kept, the gap is not hidden: the manifest holds what was
     // written, and the run fails so a mirror that is behind never looks green.
-    if (deferredUploads > 0 || deferredPrunes > 0) {
-      const why = overBudget()
-        ? `The ${budgetMinutes}-minute budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out`
-        : "The run stopped early";
+    const leftUploads = plan.upload.filter((o) => notStarted.has(objectId(o))).length;
+    const leftPrunes = plan.prune.filter((o) => notStarted.has(objectId(o))).length;
+    if (leftUploads > 0 || leftPrunes > 0) {
+      const why =
+        stoppedBy === "cap"
+          ? "The run reached MAX_TRANSFER_FAILURES and stopped"
+          : `The ${budgetMinutes}-minute budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out`;
       failures.push(
         `${why}: uploaded ${uploaded.size} of ${plan.upload.length} object(s) and pruned ${pruned.size} of ` +
           `${plan.prune.length}. The manifest records only what was written, so the next run starts with the ` +
-          `${deferredUploads} upload(s) and ${deferredPrunes} prune(s) left. Re-run the workflow to continue now.`,
+          `${leftUploads} upload(s) and ${leftPrunes} prune(s) never started. Re-run the workflow to continue now.`,
       );
     }
     if (failures.length > 0) throw new Error(failures.join("\n\n"));
@@ -615,7 +635,7 @@ async function runVerify(opts) {
         describeObjects(
           loss.objects.map((o) => ({
             record: o,
-            text: `${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : o.deferred ? "not re-uploaded yet (the run stopped first)" : "unrecoverable"}`,
+            text: `${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : o.deferred ? "not re-uploaded yet (the run stopped first)" : o.failed ? "re-upload failed; the next run retries it" : "unrecoverable"}`,
           })),
         ),
       );

@@ -100,13 +100,15 @@ export const DEFAULT_RETENTION_DAYS = 30;
 // So transfers run `TRANSFER_CONCURRENCY` at a time, and a run that goes past its
 // budget, or collects `MAX_TRANSFER_FAILURES` failed transfers, starts no new
 // transfer. It finishes the ones in flight, writes a manifest of what actually
-// happened (`settleManifest`), and fails. The next run carries on from there. A
-// failed transfer is not fatal on its own: an object deleted between the listing
-// and its download 404s, and on a busy corpus that happens most nights. The cap
-// is there so a broken destination stops quickly instead of failing every
-// object. The budget is counted from process start, because listing Storage and
-// R2 spends the same job timeout. It sits well inside `timeout-minutes: 60`
-// (db-backup.yml), so the manifest write and the offsite check always get to run.
+// happened (`settleManifest`), and fails. The next run carries on from there.
+// One failed transfer doesn't stop the others, and the run fails at the end
+// naming it. The cap is there so a broken destination stops quickly instead of
+// failing every object. A download that 404s is not a failure at all: the object
+// was deleted after the listing, which is ordinary on a live corpus, so the run
+// skips it and the next listing records the deletion. The budget is counted from
+// process start, because listing Storage and R2 spends the same job timeout. It
+// sits well inside `timeout-minutes: 60` (db-backup.yml), so the manifest write
+// and the offsite check always get to run.
 export const TRANSFER_CONCURRENCY = 8;
 export const DEFAULT_BUDGET_MINUTES = 40;
 export const MAX_TRANSFER_FAILURES = 10;
@@ -149,29 +151,33 @@ export async function runPool(items, { limit, shouldStop = () => false, maxFailu
   return { done, failures };
 }
 
-/**
- * The order a run uploads in, most important first, so a run that stops early
- * leaves the least important work for the next one:
- *   1. re-uploads of what R2 lost (`missingOffsite`, `recovered`): a known gap
- *      in the mirror;
- *   2. the rehearsal canary: the rehearsal restores it straight after the
- *      backup, and a backlog must not keep it waiting;
- *   3. everything else, in listing order.
- */
-export function uploadOrder(plan) {
-  const recovering = new Set(plan.missingOffsite.filter((gap) => gap.recovered).map((gap) => objectId(gap.record)));
-  const rank = (o) => (recovering.has(objectId(o)) ? 0 : isRehearsalCanary(o) ? 1 : 2);
-  return plan.upload.map((o, i) => ({ o, i })).sort((a, b) => rank(a.o) - rank(b.o) || a.i - b.i).map(({ o }) => o);
+/** Ids of the objects R2 lost that Storage still has: what this run must re-upload. */
+function recoveringIds(plan) {
+  return new Set(plan.missingOffsite.filter((gap) => gap.recovered).map((gap) => objectId(gap.record)));
 }
 
 /**
- * The `objectId`s of the planned uploads and prunes a run never completed.
- * Nothing about them changed offsite this run, so the offsite check after the
- * write leaves them out; what `planSync` already found about them stands.
+ * The order a run uploads in: re-uploads of what R2 lost first, since those are
+ * a known gap in the mirror, then everything else in listing order. A run that
+ * stops early leaves new objects for the next one before it leaves a gap.
  */
-export function untouchedIds({ plan, uploaded, pruned }) {
+export function uploadOrder(plan) {
+  const recovering = recoveringIds(plan);
+  return [...plan.upload.filter((o) => recovering.has(objectId(o))), ...plan.upload.filter((o) => !recovering.has(objectId(o)))];
+}
+
+/**
+ * Records the offsite check after the write must skip, because the run already
+ * knows their bytes aren't there and reports each one by name:
+ *   - re-uploads of what R2 lost that didn't complete (named in the loss list);
+ *   - prunes that didn't run (the tombstone stays, so the next run prunes it).
+ * Everything else is checked, including a changed object whose upload didn't
+ * run. `planSync` never looked at that one's old bytes, so the check is the only
+ * thing that would notice R2 lost them.
+ */
+export function knownGapIds({ plan, uploaded, pruned }) {
   return new Set([
-    ...plan.upload.map(objectId).filter((id) => !uploaded.has(id)),
+    ...[...recoveringIds(plan)].filter((id) => !uploaded.has(id)),
     ...plan.prune.map(objectId).filter((id) => !pruned.has(id)),
   ]);
 }
@@ -187,17 +193,19 @@ export function untouchedIds({ plan, uploaded, pruned }) {
  *   - a prune that didn't run: its tombstone stays, so the next run prunes it.
  *
  * A re-upload of something R2 lost (`missingOffsite`, `recovered: true`) that
- * didn't run keeps its previous record too, with its bytes still missing. This
- * run's `last_offsite_loss` marks it `deferred` rather than recovered: Storage
- * still has it, so the next run finds the gap again and re-uploads it. The run
- * uploads those first (`uploadOrder`), so only a run that stops inside them
- * leaves one behind. None of these records changed offsite this run, which is
- * why the offsite check after the write skips them (`untouchedIds`).
+ * didn't complete keeps its previous record too, with its bytes still missing.
+ * This run's `last_offsite_loss` stops calling it recovered and says why:
+ *   - `deferred`: never started (the run stopped first); Storage still has it,
+ *     so the next run finds the gap again and re-uploads it;
+ *   - `failed`: its transfer failed; the next run retries it the same way;
+ *   - neither: it `vanished` from Storage before its download, so nothing can
+ *     bring it back, and the next run marks it `lost_offsite_at`.
+ * The run uploads these first (`uploadOrder`).
  *
- * `uploaded` and `pruned` are Sets of `objectId`s. With both complete this
- * returns `plan.manifest` unchanged.
+ * `uploaded`, `pruned`, `deferred` and `vanished` are Sets of `objectId`s. With
+ * every upload and prune complete this returns `plan.manifest` unchanged.
  */
-export function settleManifest({ plan, previous, uploaded, pruned }) {
+export function settleManifest({ plan, previous, uploaded, pruned, deferred = new Set(), vanished = new Set() }) {
   const prior = new Map((previous?.objects ?? []).map((o) => [objectId(o), o]));
   const skipped = new Set(plan.upload.map(objectId).filter((id) => !uploaded.has(id)));
   const unpruned = plan.prune.filter((o) => !pruned.has(objectId(o)));
@@ -221,7 +229,15 @@ export function settleManifest({ plan, previous, uploaded, pruned }) {
   return {
     ...plan.manifest,
     last_offsite_loss: lossThisRun
-      ? { ...loss, objects: loss.objects.map((o) => (skipped.has(objectId(o)) ? { ...o, recovered: false, deferred: true } : o)) }
+      ? {
+          ...loss,
+          objects: loss.objects.map((o) => {
+            const id = objectId(o);
+            if (!skipped.has(id)) return o;
+            if (vanished.has(id)) return { ...o, recovered: false };
+            return deferred.has(id) ? { ...o, recovered: false, deferred: true } : { ...o, recovered: false, failed: true };
+          }),
+        }
       : loss,
     object_count: objects.filter((o) => !o.deleted_at).length,
     tombstone_count: objects.filter((o) => o.deleted_at).length,
@@ -849,7 +865,9 @@ export async function downloadObject({ supabaseUrl, serviceKey, bucket, path, fe
     { headers: storageHeaders(serviceKey) },
   );
   if (!res.ok) {
-    throw new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`);
+    // `status` so a caller can tell an object deleted since the listing (404)
+    // from a failed read.
+    throw Object.assign(new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`), { status: res.status });
   }
   return Buffer.from(await res.arrayBuffer());
 }
