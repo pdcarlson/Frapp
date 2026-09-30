@@ -101,8 +101,9 @@ export function OpsSetupNudge() {
     If the server's requirement ever changes, this list changes with it.
 
     Otherwise the same `useMyPermissions()` + `can(...)` call `ChatShell` and
-    `SettingsPage` make. If permission resolution moves off `useMyPermissions` onto a viewer
-    context, this call site has to move with them or the surfaces will disagree.
+    `SettingsPage` make. If permission resolution moves off `useMyPermissions`
+    onto a viewer context, this call site has to move with them or the surfaces
+    will disagree.
   */
   const canDismiss = canAll(
     ["chapter-config:manage", "members:view"],
