@@ -206,12 +206,14 @@ actually serving traffic — it used to name one that had merged and was expecte
 The bump is read from the `release:*` labels on **every PR merged since the last `v*`
 tag**, taking the highest:
 
-- **Default:** patch, when no PR in range carries a label (`v1.0.0` → `v1.0.1`)
-- **Minor:** any PR in range labelled `release:minor` (`v1.0.0` → `v1.1.0`)
-- **Major:** any PR in range labelled `release:major` (`v1.0.0` → `v2.0.0`). While the
-  latest tag's major is 0 it mints a minor instead (`v0.6.0` → `v0.7.0`): releases are
-  pre-1.0 until v1 GA, and leaving 0.x takes the dispatch's `bump=major`
-  ([spec § Release labels](spec/environments/README.md#release-labels-for-version-tags))
+- **Default:** patch, when no PR in range carries a label (`v0.6.0` → `v0.6.1`)
+- **Minor:** any PR in range labelled `release:minor` (`v0.6.0` → `v0.7.0`)
+- **Major:** any PR in range labelled `release:major`. While the latest tag's major is 0 it
+  mints a minor instead (`v0.6.0` → `v0.7.0`): releases are pre-1.0 until v1 GA, and
+  leaving 0.x takes the dispatch's `bump=major`, though whether the `v1.0.0` it mints can
+  have a GitHub Release is open ([#3015](https://github.com/pdcarlson/Frapp/issues/3015);
+  [spec § Release labels](spec/environments/README.md#release-labels-for-version-tags)).
+  From 1.x on it mints the next major.
 
 **Put the label on your own PR.** Before #1340 the label went on the single promotion PR,
 which no longer exists. A `release:major` change whose PR carries no label ships as a
