@@ -113,8 +113,8 @@ function normalizeTimeOfDay(value: unknown): string | null {
  * than the column allows, or a UTC offset. The server rejects an offset by a
  * pattern rather than by asking `Intl` (#2361), so every device reaches the same
  * verdict on it, and replaying one would 400 on every toggle and time edit.
- * Anything else is the server's to judge — it is
- * the authority (spec/behavior/notifications.md § Quiet Hours). A legacy row
+ * Anything else is the server's to judge — it is the authority
+ * (spec/behavior/notifications.md § Quiet Hours). A legacy row
  * holding a genuinely unresolvable zone therefore still round-trips to a 400 on
  * toggle, surfaced as the retry state. That is the accepted cost: a visible
  * error on an already-broken row beats silent corruption of a correct one.
@@ -190,9 +190,7 @@ const LEGACY_CATEGORY_KEYS: Record<string, NotificationCategoryKey> = {
  * every change, and a key nothing reads would otherwise live on that device
  * forever (this is what #266 found with `digestEmailsEnabled`).
  */
-export function parseCachedPreferences(
-  value: unknown,
-): CachedPreferences | null {
+export function parseCachedPreferences(value: unknown): CachedPreferences | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.quietHoursEnabled !== "boolean") return null;
@@ -376,7 +374,8 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   const serverQuietHoursEnabled = settingsQuery.isSuccess
     ? settingsToQuietHoursEnabled(settingsQuery.data)
     : null;
-  const quietHoursEnabled = serverQuietHoursEnabled ?? cached.quietHoursEnabled;
+  const quietHoursEnabled =
+    serverQuietHoursEnabled ?? cached.quietHoursEnabled;
 
   const categories = useMemo<CategoryState>(() => {
     // Success means the server has spoken for *every* category, including the
