@@ -437,26 +437,37 @@ describe("chat thread mute menu (#2033)", () => {
     act(() => tree.unmount());
   });
 
-  it("hangs the menu from the measured trigger, not a restated header padding", () => {
-    const tree = render();
-    act(() =>
-      header(tree).props.onLayout({
-        nativeEvent: { layout: { x: 0, y: 12, width: 390, height: 52 } },
-      }),
-    );
-    act(() =>
-      muteTrigger(tree).props.onLayout({
-        nativeEvent: { layout: { x: 326, y: 8, width: 44, height: 44 } },
-      }),
-    );
-    openMuteMenu(tree);
+  // The header and the trigger report their frames separately, so a stale
+  // header width can sit under a trigger measured past it. The menu then
+  // pins to the edge rather than hanging off-screen.
+  it.each([
+    ["in bounds", 390, 390 - (326 + 44)],
+    ["under a stale, narrower header", 360, 0],
+  ])(
+    "hangs the menu from the measured trigger, not a restated header padding (%s)",
+    (_label, headerWidth, right) => {
+      const tree = render();
+      act(() =>
+        header(tree).props.onLayout({
+          nativeEvent: {
+            layout: { x: 0, y: 12, width: headerWidth, height: 52 },
+          },
+        }),
+      );
+      act(() =>
+        muteTrigger(tree).props.onLayout({
+          nativeEvent: { layout: { x: 326, y: 8, width: 44, height: 44 } },
+        }),
+      );
+      openMuteMenu(tree);
 
-    expect(tree.root.findByType(NotificationLevelMenu).props.anchor).toEqual({
-      top: 12 + 52,
-      right: 390 - (326 + 44),
-    });
-    act(() => tree.unmount());
-  });
+      expect(tree.root.findByType(NotificationLevelMenu).props.anchor).toEqual({
+        top: 12 + 52,
+        right,
+      });
+      act(() => tree.unmount());
+    },
+  );
 
   it("hides what the menu covers from accessibility while it is open", () => {
     // `accessibilityViewIsModal` is iOS-only; without this TalkBack reaches
@@ -464,6 +475,9 @@ describe("chat thread mute menu (#2033)", () => {
     const tree = render();
     expect(threadContainer(tree).props.accessibilityElementsHidden).toBe(false);
     expect(threadContainer(tree).props.importantForAccessibility).toBe("auto");
+    // One native view throughout: flattened, toggling the two props below
+    // would re-parent the whole thread under the open menu.
+    expect(threadContainer(tree).props.collapsable).toBe(false);
 
     openMuteMenu(tree);
 
@@ -532,6 +546,9 @@ describe("chat thread image viewer (#2874)", () => {
     const covered = () => tree.root.findByType("KeyboardAvoidingView" as never);
     expect(covered().props.accessibilityElementsHidden).toBe(false);
     expect(covered().props.importantForAccessibility).toBe("auto");
+    // As the mute menu's wrapper: one native view, so the toggle below
+    // doesn't re-parent everything under the viewer.
+    expect(covered().props.collapsable).toBe(false);
 
     openImageViewer(tree);
 

@@ -48,6 +48,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import NotificationsScreen from "@/app/(tabs)/notifications";
 
+/**
+ * Unmounted in `afterEach`, not at the end of each test: the shared clock is
+ * module state, and a failed test's tree left subscribed would hold it at that
+ * test's time for the next one.
+ */
+const mounted: ReactTestRenderer[] = [];
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -57,6 +64,7 @@ function render(): ReactTestRenderer {
       </FrappThemeProvider>,
     );
   });
+  mounted.push(tree);
   return tree;
 }
 
@@ -67,6 +75,9 @@ describe("Notifications clock (#2101)", () => {
   });
 
   afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
     vi.useRealTimers();
   });
 
@@ -83,6 +94,5 @@ describe("Notifications clock (#2101)", () => {
 
     expect(screenText(tree)).toContain("EARLIER");
     expect(screenText(tree)).not.toContain("TODAY");
-    act(() => tree.unmount());
   });
 });

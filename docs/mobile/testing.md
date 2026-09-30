@@ -140,13 +140,20 @@ from `test/react-native-stub.ts`. `lib/chat/chat-thread-screen.spec.tsx` does
 this, because its rows reach the image viewer through a provider the screen
 wraps the list in.
 
-Two suites are static rather than render-based, and deliberately so:
-`lib/routes.spec.ts` walks the real route tree — it checks every route literal,
-standing in for typed routes, which do not bind under CI's bare `tsc` (see
-[`spec/ui/mobile/navigation.md`](../../spec/ui/mobile/navigation.md)), and it
-keeps test files out of `app/` (see [§ Gotchas](#gotchas)) — and
-`lib/auth-gate.spec.ts` enumerates every session/chapter state to prove the two
-routing gates cannot redirect into each other.
+Some suites are static rather than render-based, and deliberately so, because
+what they guard is a whole tree, a state space or a file's shape rather than
+what one screen does. For example:
+
+- `lib/routes.spec.ts` walks the real route tree. It checks every route
+  literal, standing in for typed routes, which do not bind under CI's bare
+  `tsc` (see [`spec/ui/mobile/navigation.md`](../../spec/ui/mobile/navigation.md)),
+  and it keeps test files out of `app/` (see [§ Gotchas](#gotchas)).
+- `lib/auth-gate.spec.ts` enumerates every session/chapter state to prove the
+  two routing gates cannot redirect into each other.
+- `lib/observability/wiring.spec.ts` reads build config and the module graph
+  (`metro.config.js`, `package.json`, the Ask corpus). Its reads of
+  `app/_layout.tsx` are screen wiring, not config, and #3020 replaces them with
+  a render.
 
 ```bash
 npm run test -w apps/mobile

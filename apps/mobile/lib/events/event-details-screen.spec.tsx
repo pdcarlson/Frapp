@@ -12,7 +12,9 @@ import { screenText } from "@/test/screen-text";
  * taps through from UP NEXT. A `new Date()` captured at mount left "Check-in
  * hasn't opened" on screen through the start and past the close, with no way
  * to the scanner but backing out. This pins that the screen reads the shared
- * ticking clock, as the Events list does (`events-screen.spec.tsx`).
+ * ticking clock, as the Events list does (`events-screen.spec.tsx`), for both
+ * of the things it works out from "now": the check-in card and the header's
+ * "Tonight / Tomorrow" line.
  *
  * It renders `app/(tabs)/event-details.tsx` but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
@@ -31,13 +33,15 @@ const EVENT = {
   is_mandatory: false,
 };
 
+let event = EVENT;
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useEvent: () => ({
     isPending: false,
     isError: false,
     isFetching: false,
-    data: EVENT,
+    data: event,
     refetch: vi.fn(),
   }),
 }));
@@ -52,6 +56,13 @@ vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => ({
 
 import EventDetailsScreen from "@/app/(tabs)/event-details";
 
+/**
+ * Unmounted in `afterEach`, not at the end of each test: the shared clock is
+ * module state, and a failed test's tree left subscribed would hold it at that
+ * test's time for the next one.
+ */
+const mounted: ReactTestRenderer[] = [];
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -61,6 +72,7 @@ function render(): ReactTestRenderer {
       </FrappThemeProvider>,
     );
   });
+  mounted.push(tree);
   return tree;
 }
 
@@ -68,9 +80,13 @@ describe("Event details clock (#2101)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(MOUNTED_AT);
+    event = EVENT;
   });
 
   afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
     vi.useRealTimers();
   });
 
@@ -85,6 +101,25 @@ describe("Event details clock (#2101)", () => {
     });
 
     expect(screenText(tree)).toContain("Check-in is open");
-    act(() => tree.unmount());
+  });
+
+  it("turns tomorrow's event into tonight's at midnight while the screen is up", () => {
+    // Local-time constructors: CI runs this suite in UTC and in Asia/Tokyo,
+    // and "tomorrow" is the member's own calendar day.
+    vi.setSystemTime(new Date(2026, 8, 30, 23, 59, 30));
+    event = {
+      ...EVENT,
+      start_time: new Date(2026, 9, 1, 18, 0).toISOString(),
+      end_time: new Date(2026, 9, 1, 19, 0).toISOString(),
+    };
+    const tree = render();
+    expect(screenText(tree)).toMatch(/(^|\n)Tomorrow · /);
+
+    act(() => {
+      vi.advanceTimersByTime(90_000);
+    });
+
+    expect(screenText(tree)).toMatch(/(^|\n)Tonight · /);
+    expect(screenText(tree)).not.toContain("Tomorrow");
   });
 });
