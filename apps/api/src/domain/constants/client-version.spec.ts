@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CLIENT_PLATFORMS,
+  clientVersionForLog,
   isBelowMinimum,
   parseClientVersionHeader,
   parseVersionWithBuild,
@@ -115,6 +116,30 @@ describe('isBelowMinimum', () => {
 
   it('fails open when the client reported no build and the minimum needs one', () => {
     expect(isBelowMinimum(v('0.9.0'), v('0.9.0+14'))).toBe(false);
+  });
+});
+
+describe('clientVersionForLog', () => {
+  it('writes back the parsed build, with and without a build number', () => {
+    expect(clientVersionForLog('ios/0.9.0+12')).toBe('ios/0.9.0+12');
+    expect(clientVersionForLog('android/1.2')).toBe('android/1.2.0');
+    expect(clientVersionForLog(' Android/1.2.3 ')).toBe('android/1.2.3');
+  });
+
+  it('is absent when no header was sent', () => {
+    expect(clientVersionForLog(undefined)).toBeUndefined();
+  });
+
+  // The log line is JSON, but the value is still caller-chosen text. Only the
+  // parsed parts are ever written, so nothing the caller typed reaches it.
+  it.each([
+    ['a malformed version', 'ios/latest'],
+    ['an unknown platform', 'windows/1.0.0'],
+    ['a newline smuggled into the value', 'ios/1.0.0\n[Nest] forged line'],
+    ['a repeated header', ['ios/1.0.0', 'ios/2.0.0']],
+    ['an empty value', ''],
+  ])('records %s as invalid, never the raw value', (_label, raw) => {
+    expect(clientVersionForLog(raw)).toBe('invalid');
   });
 });
 

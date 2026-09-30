@@ -25,7 +25,7 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  // CORS lives in configureApp (CORS_OPTIONS) so the e2e harness sees the
+  // CORS lives in configureApp (`corsOptionsFor`) so the e2e harness sees the
   // same Access-Control-Expose-Headers list production ships — including
   // x-request-id. See bootstrap.ts.
   configureApp(app);
