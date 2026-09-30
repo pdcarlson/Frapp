@@ -1,6 +1,6 @@
 # Internal docs
 
-Operations, infrastructure, and agent/CI reference. Grouped by area.
+Operations runbooks, environment reference, and the other internal notes (the documentation conventions, the admin dashboard). Grouped by area.
 
 - **Conventions:** [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md) — the placement map
   and the documentation standard (read before adding any doc). It is a convention the docs angle in

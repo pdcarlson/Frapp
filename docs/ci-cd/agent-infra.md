@@ -15,15 +15,15 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 
 ## Optional environment credentials
 
-Provider/research credentials and cloud-sandbox runtime vars that may appear in cloud agent / automation sessions are listed canonically in [`../environment/AGENT_CREDENTIALS.md`](../internal/environment/AGENT_CREDENTIALS.md) (including the canonical-name/alias discussion). Local development omits most of them; use Infisical login for app secrets instead. The GitHub PAT usage policy below stays here.
+Provider/research credentials and cloud-sandbox runtime vars that may appear in cloud agent / automation sessions are listed canonically in [`../internal/environment/AGENT_CREDENTIALS.md`](../internal/environment/AGENT_CREDENTIALS.md) (including the canonical-name/alias discussion). Local development omits most of them; use Infisical login for app secrets instead. The GitHub PAT usage policy below stays here.
 
 ## GitHub PAT usage policy
 
-The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels, issues, the branch protection script in read-only mode — from an agent session that means `npm run configure:branch-protection:verify`, that exact command and nothing else (**Branch protection script** below names the two spellings that silently *apply* instead) — reading GitHub environments/protection rules, reading PR/CI/branch state. *Applying* branch protection or environment protection rules is a human step with an admin PAT — by policy, not for lack of capability; the canonical statement is in [`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels, issues, the branch protection script in read-only mode — from an agent session that means `npm run configure:branch-protection:verify`, that exact command and nothing else (**Branch protection script** below names the two spellings that silently *apply* instead) — reading GitHub environments/protection rules, reading PR/CI/branch state. *Applying* branch protection or environment protection rules is a human step with an admin PAT — by policy, not for lack of capability; the canonical statement is in [`../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings — branch protection and environment protection rules included, since applying those is a human step (see above) — create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly — that script also accepts it from `.env.local` or `.env` at the repo root, with an exported variable still winning over both (details: [`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
+Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly — that script also accepts it from `.env.local` or `.env` at the repo root, with an exported variable still winning over both (details: [`../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
@@ -170,10 +170,10 @@ configure:branch-protection --dry-run` has the flag swallowed by npm itself (rep
 10.9.7), so the script sees zero arguments, `hasFlag` is false for both `--dry-run` and `--verify`,
 `assertKnownArgs` has nothing to reject, and it **applies**. Applying branch protection is a human
 step with an admin PAT — by policy (canonical statement:
-[`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)) — and
+[`../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)) — and
 the two footguns above are why that policy is not merely etiquette.
 
-Deeper deploy architecture: [`../ops/deployment/`](../internal/ops/deployment/).
+Deeper deploy architecture: [`../internal/ops/deployment/`](../internal/ops/deployment/).
 
 ## Infisical sync map
 
@@ -990,7 +990,7 @@ real:
   has never existed in this repository (hand-applied in February). `supabase db push` refuses to
   run at all in that state, and the error's suggested fix (`migration repair --status reverted`) is
   destructive if applied without first reading what the row did — see
-  [`../ops/DB_PROMOTION_RUNBOOK.md`](../internal/ops/DB_PROMOTION_RUNBOOK.md), the **On-call note —
+  [`../internal/ops/DB_PROMOTION_RUNBOOK.md`](../internal/ops/DB_PROMOTION_RUNBOOK.md), the **On-call note —
   reconciling a foreign migration row** paragraph — bold prose inside the `## 2026-08-10: Staging
   migration backlog cleared` entry, not a heading, so search the phrase rather than the headings.
 
@@ -1348,7 +1348,7 @@ If a chunk crosses a boundary the sandbox still can't reach (push fanout; anythi
 - File or link a tracking issue (`#401` is the agent infra parent; #235 closed-as-subsumed by ADR-11 and should not be reopened — file a fresh issue scoped to the new gap).
 - In the chunk PR body, list each blocked step + the linked issue + which class of verification is missing.
 - Record the same on the tracking issue — work status lives in **GitHub Issues**, not in a
-  status doc ([`../DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md) § Where a fact
+  status doc ([`../internal/DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md) § Where a fact
   lives — "work status is not a doc"; [`github-pm.md`](github-pm.md)).
 
 ### Sandbox-blocked tooling — known list
