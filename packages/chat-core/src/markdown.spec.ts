@@ -218,6 +218,100 @@ describe("remarkBareUrls", () => {
     });
   });
 
+  it("ends the URL before an emphasis whose text ends in an entity", () => {
+    // `a&amp;` reads `a&`: the decoded text is a prefix of its source, which
+    // is not the same as being it.
+    const content = "https://x.test/p*a&amp;*";
+    const emphasis = at({ type: "emphasis", children: [at(text("a&"), 17, 23)] }, 16, 24);
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [at(text("https://x.test/p"), 0, 16), emphasis],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children![0]).toMatchObject({ type: "link", url: "https://x.test/p" });
+    expect(paragraph.children![1]).toBe(emphasis);
+  });
+
+  it.each([
+    ["inline code", { type: "inlineCode", value: "c" }, "`c`"],
+    ["a link", { type: "link", url: "https://y.test", children: [text("l")] }, "[l](https://y.test)"],
+  ])("ends the URL before an emphasis holding %s", (_label, inner, source) => {
+    const content = `https://x.test/*a${source}* d`;
+    const close = 16 + 1 + source.length + 1;
+    const emphasis = at(
+      {
+        type: "emphasis",
+        children: [at(text("a"), 16, 17), at(inner as Node, 17, close - 1)],
+      },
+      15,
+      close,
+    );
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [at(text("https://x.test/"), 0, 15), emphasis, at(text(" d"), close, close + 2)],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children![0]).toMatchObject({ type: "link", url: "https://x.test/" });
+    expect(paragraph.children![1]).toBe(emphasis);
+  });
+
+  it("ends the URL before an emphasis holding a space, keeping what it nests", () => {
+    const content = "https://x.test/a*b **c** d*";
+    const emphasis = at(
+      {
+        type: "emphasis",
+        children: [
+          at(text("b "), 17, 19),
+          at({ type: "strong", children: [at(text("c"), 21, 22)] }, 19, 24),
+          at(text(" d"), 24, 26),
+        ],
+      },
+      16,
+      27,
+    );
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [at(text("https://x.test/a"), 0, 16), emphasis],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children![0]).toMatchObject({ type: "link", url: "https://x.test/a" });
+    expect(paragraph.children![1]).toBe(emphasis);
+  });
+
+  it("takes a node's trailing punctuation into a URL it measured, once", () => {
+    // `bareUrls` gives the `.` back inside the node, but the raw URL runs on
+    // past it, so it belongs to the link and is not drawn again after it.
+    const content = "https://x.test/a.*b*c";
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text("https://x.test/a."), 0, 17),
+        at({ type: "emphasis", children: [at(text("b"), 18, 19)] }, 17, 20),
+        at(text("c"), 20, 21),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children).toEqual([
+      { type: "link", url: content, children: [text(content)] },
+    ]);
+  });
+
+  it("stays linear when every URL stops at a space", () => {
+    // Each URL's run ends at the next space; a walk that didn't stop there
+    // would read every later sibling for every URL.
+    const unit = "http://a*b* ";
+    const content = unit.repeat(3_000);
+    const children: Node[] = [at(text("http://a"), 0, 8)];
+    for (let i = 0; i < content.length; i += unit.length) {
+      children.push(at({ type: "emphasis", children: [at(text("b"), i + 9, i + 10)] }, i + 8, i + 11));
+      const next = i + unit.length < content.length ? " http://a" : " ";
+      children.push(at(text(next), i + 11, i + 11 + next.length));
+    }
+    const started = performance.now();
+    run({ type: "root", children: [{ type: "paragraph", children }] }, content);
+    expect(performance.now() - started).toBeLessThan(300);
+  });
+
   it("stays linear on a body of URLs split at emphasis", () => {
     // `"http://a*b*"` repeated: each URL runs into the next, and a measurement
     // that rescanned the rest of the body per node took seconds at this size.

@@ -72,7 +72,7 @@ const URL_CAN_SPAN = new Set(["text", "emphasis", "strong"]);
  * before this runs, so a URL holding a delimiter pair (`…/pkg/__init__.py`,
  * `?q=a*b*c`) arrives as a text node cut short at the emphasis. When a URL's
  * run reaches the end of its text node, it is measured again on the raw body,
- * through the prose and emphasis that follow (`runInSource`), and becomes one
+ * through the prose and emphasis that follow (`measureInSource`), and becomes one
  * link that reads as typed; whatever of the sibling it ends inside is left as
  * typed too, as `bareUrls` would leave it in plain text. It stops before code,
  * a link or an image, which keep their own meaning, and before any text that
@@ -135,13 +135,22 @@ function verbatimLength(node: MdastNode, start: number, content: string): number
   return length;
 }
 
-/** Whether every character an emphasis draws is its source verbatim. */
+/**
+ * Whether every character an emphasis draws is its source verbatim, and it
+ * holds only prose and emphasis. A text child must match its whole source
+ * span: one whose decoded value is only a prefix of it ends in an entity or an
+ * escape (`a&amp;` reads `a&`).
+ */
 function verbatimInside(node: MdastNode, content: string): boolean {
   return (node.children ?? []).every((child) => {
     const at = offsetsOf(child);
     if (!at) return false;
     if (child.type === "text") {
-      return verbatimLength(child, at[0], content) === (child.value ?? "").length;
+      const length = (child.value ?? "").length;
+      return (
+        at[1] - at[0] === length &&
+        verbatimLength(child, at[0], content) === length
+      );
     }
     return URL_CAN_SPAN.has(child.type) && verbatimInside(child, content);
   });
@@ -236,10 +245,17 @@ function measureInSource(
       }
       continue;
     }
-    if (!verbatimInside(sibling, content)) break;
+    // An emphasis the URL might end partway through would be left as typed,
+    // dropping any formatting nested in its rest; a URL can't run past
+    // whitespace or `<` anyway, so it ends before an emphasis holding either.
+    if (
+      !verbatimInside(sibling, content) ||
+      /[\s<]/.test(content.slice(where[0], where[1]))
+    ) {
+      break;
+    }
     span.push({ node: sibling, start: where[0], stop: where[1] });
     limit = where[1];
-    if (/[\s<]/.test(content.slice(where[0], where[1]))) break;
   }
   if (limit === at[1]) return null;
 
@@ -256,9 +272,10 @@ function measureInSource(
     return { start: urlStart, end: urlEnd, covered: inside, rest: null };
   }
   // The URL ends inside this sibling. What is left of it reads as typed: a
-  // text node keeps its own value (verbatim up to here), and an emphasis the
-  // URL cut through shows its remaining source, delimiters included, since it
-  // no longer closes.
+  // text node keeps its own value (verbatim up to here). An emphasis holds no
+  // whitespace here, so the URL ends inside it only where `bareUrlEnd` gave
+  // trailing punctuation back: its closing delimiters, shown as typed since
+  // they no longer close anything.
   const restValue =
     last.type === "text"
       ? (last.value ?? "").slice(urlEnd - lastStart)

@@ -229,6 +229,14 @@ describe("MessageMarkdown: links", () => {
     expect(drawn(content)).toBe(content);
   });
 
+  it("ends a URL before an emphasis ending in an entity, which draws decoded", () => {
+    const content = "https://x.test/p*a&amp;*";
+    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual([
+      "https://x.test/p",
+    ]);
+    expect(drawn(content)).toBe("https://x.test/pa&");
+  });
+
   it("links the URL after one it had to measure on the raw body", () => {
     expect(
       parseMessageMarkdown("https://x.test/__a__.py and https://y.test").links.map(
@@ -357,7 +365,11 @@ describe("MessageMarkdown: trailing markers", () => {
   it.each([
     ["a code block", "```\ncode\n```", "code"],
     ["a list", "- a\n- b", "a\nb"],
+    ["a numbered list", "1. a\n2. b", "a\nb"],
     ["a quote", "> quoted", "quoted"],
+    ["a list, past a divider", "- a\n\n---", "a"],
+    ["a code block, past a divider", "```\ncode\n```\n\n***", "code"],
+    ["a list, past an image", "- a\n\n![x](https://x.test/i.png)", "a"],
   ])("take a line of their own after %s, as §11 says", (_label, content, body) => {
     const tree = render(content, { trailing: "(edited)" });
     expect(drawnText(texts(tree)[0]!)).toBe(`${body}\n(edited)`);

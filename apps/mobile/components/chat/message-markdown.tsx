@@ -104,7 +104,8 @@ const MAX_BREAKS = 2;
 
 /** The characters a node draws, a line break included. */
 function textOf(node: HastNode): string {
-  if (node.type === "text") return node.value ?? "";
+  // Raw HTML draws as the characters typed (`applyAllowlist`).
+  if (node.type === "text" || node.type === "raw") return node.value ?? "";
   if (isElement(node, "br")) return "\n";
   return (node.children ?? []).map(textOf).join("");
 }
@@ -116,6 +117,19 @@ function isSeparator(node: HastNode): boolean {
 
 function isElement(node: HastNode | undefined, tagName: string): boolean {
   return node?.type === "element" && node.tagName === tagName;
+}
+
+/**
+ * An element that draws nothing once the allowlist has had it: a divider, or
+ * the paragraph left around an image. The layout skips it, so it adds no
+ * blank line, and the trailing markers look past it.
+ */
+function drawsNothing(node: HastNode): boolean {
+  return (
+    node.type === "element" &&
+    node.tagName !== "br" &&
+    textOf(node).trim() === ""
+  );
 }
 
 /**
@@ -171,6 +185,7 @@ function layOut(nodes: HastNode[]): HastNode[] {
       separators += (node.value ?? "").length;
       continue;
     }
+    if (drawsNothing(node)) continue;
     const block = node.type === "element" && BLOCKS.has(node.tagName ?? "");
     if (out.length > 0) {
       let breaks = separators + (afterBlock ? 1 : 0);
@@ -216,8 +231,11 @@ type TextFlowResult = Omit<ParsedMessageMarkdown, "body">;
 /** The rehype pass that shapes the tree for one `Text`. It must run last. */
 function rehypeTextFlow(result: TextFlowResult) {
   return (root: HastNode): void => {
-    // Read before the allowlist unwraps the blocks it is asking about.
-    const last = (root.children ?? []).filter((node) => !isSeparator(node)).pop();
+    // Read before the allowlist unwraps the blocks it is asking about: the
+    // last block that draws anything, so a divider after a list doesn't count.
+    const last = (root.children ?? [])
+      .filter((node) => !isSeparator(node) && !drawsNothing(node))
+      .pop();
     result.trailingOnOwnLine =
       last?.type === "element" && OWN_LINE_AFTER.has(last.tagName ?? "");
     root.children = layOut(applyAllowlist(root.children ?? []));
