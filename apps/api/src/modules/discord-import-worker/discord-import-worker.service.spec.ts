@@ -78,6 +78,7 @@ function job(overrides: Partial<DiscordImport> = {}): DiscordImport {
     updated_at: NOW.toISOString(),
     completed_at: null,
     purged_at: null,
+    purged_messages: 0,
     cleared_at: null,
     messages_after: null,
     ...overrides,
@@ -1333,6 +1334,32 @@ describe('DiscordImportWorkerService — purging', () => {
     expect(
       (repoRef.updates.at(-1) as { purged_at: string }).purged_at,
     ).toBeTruthy();
+  });
+
+  // The admin's progress bar (#2944). Counting the rows left on every poll
+  // would scan up to the whole import; the worker already renews its lease
+  // after every round, and the count rides that lock-bound write.
+  it('records the running deleted count with each lease renewal, continuing from the stored one', async () => {
+    // A purge resumed from an earlier slice, or re-requested after one failed.
+    repoRef = makeRepo(job({ status: 'purging', purged_messages: 1000 }));
+    repoRef.deletedRounds = [PURGE_BATCH_SIZE, 12];
+    const storage = makeStorage(null);
+    const { worker } = await buildWorker(repoRef, storage);
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    // Two non-empty rounds, two renewals, each with the total so far; the
+    // empty round that ends the loop deleted nothing, so renews nothing.
+    expect(
+      repoRef.renewLease.mock.calls.map((call: unknown[]) => [
+        call[1],
+        call[4],
+      ]),
+    ).toEqual([
+      ['token-1', { purged_messages: 1000 + PURGE_BATCH_SIZE }],
+      ['token-1', { purged_messages: 1000 + PURGE_BATCH_SIZE + 12 }],
+    ]);
   });
 
   // The direct regression test for #1628 on the purge path. A project whose
