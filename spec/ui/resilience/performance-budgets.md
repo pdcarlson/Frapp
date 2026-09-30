@@ -145,14 +145,15 @@ Three things the split makes true, none of them visible from the number alone:
   shell got slower; `composer-editor-ready` is what separates the two.
 
 They need no reporting code. `apps/web` adds `userTimingIntegration` to the SDK's default
-integrations, which turns `mark` and `measure` entries into spans on the pageload transaction. (It
-also replaces the default `browserTracingIntegration` with one that has INP off; see
-`SENTRY_BROWSER_TRACING_OPTIONS`. Dropping that replacement turns INP back on.) **Correction (2026-09-28, #2722):** this used to say the SDK defaults alone did it;
+integrations, which turns `mark` and `measure` entries into spans on the pageload transaction. **Correction (2026-09-28, #2722):** this used to say the SDK defaults alone did it;
 that was SDK v10 (`_addMeasureSpans` inside `browserTracingIntegration`), and v11 made it opt-in.
-`browserTracingIntegration` is still the source of FCP, LCP, CLS and TTFB (INP is off until #2736) — which is why this repo does **not** add a
+The SDK's default `browserTracingIntegration` is still the source of FCP, LCP, CLS, TTFB and INP — which is why this repo does **not** add a
 `web-vitals` dependency or a second reporting path. Sampling is `tracesSampleRate` (0.1) and
 initialization is skipped entirely without `NEXT_PUBLIC_SENTRY_DSN`, so these are field metrics: they
-report nothing locally or in CI, by design.
+report nothing locally or in CI, by design. **Correction (2026-09-30, #2736):** from #2722 until
+#2736, `apps/web` replaced that integration with one that had INP off, because the INP span carried
+the clicked element's `aria-label`. INP is back on, with its selector scrubbed
+(`spec/behavior/observability.md` § Error Tracking).
 
 **Locally**, they are visible in the Performance panel and readable directly:
 `performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration` — each name
