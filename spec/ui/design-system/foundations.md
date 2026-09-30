@@ -249,7 +249,7 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 ## 10. Elevation & Focus
 
 - **Elevation is a lighter surface, never a shadow.** Higher surfaces use higher ladder steps (§2); drop shadows are banned. Shadows on warm dark charcoal read as smudges; luminance difference is what the eye actually uses.
-- **Focus ring:** a 3px spread of the accent ring color (`--ring`, accent step 8) at ~25% opacity, with the control border switching to the accent solid. One recipe everywhere — inputs, buttons, and focus-visible keyboard navigation.
+- **Focus ring:** a 3px spread of the accent ring color (`--ring`, accent step 8) at ~25% opacity, with the control border switching to the accent text step (`--accent-text`, accent step 11). One recipe everywhere — inputs, buttons, and focus-visible keyboard navigation. [components.md](components.md) §2 owns the recipe, its measurements, and the offset variant for controls whose border encodes state.
 
 ---
 

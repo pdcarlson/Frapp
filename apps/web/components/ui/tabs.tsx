@@ -18,9 +18,9 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus"
  * `--accent-subtle` active fill are all gone rather than kept alongside.
  *
  * Focus is the offset ring, not the shared border swap. This trigger's bottom
- * border IS the selected indicator, so `focus-visible:border-primary` would
- * paint a focused-but-unselected tab with the exact 2px gold underline that
- * means "selected" — and since the shared ring is only ~1.3:1 on its own, that
+ * border IS the selected indicator, so `FOCUS_RING`'s border swap would
+ * paint a focused-but-unselected tab with a 2px accent underline that reads as
+ * "selected" — and since the shared ring is only ~1.3:1 on its own, that
  * underline would be the only cue a keyboard user got. The offset ring is
  * unambiguous against both states.
  *
