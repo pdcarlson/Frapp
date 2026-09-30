@@ -67,6 +67,7 @@ import {
   parseSlashInput,
   type SlashCommand,
 } from "@repo/chat-integrations";
+import { MODULE_CATALOG } from "@repo/org-archetypes";
 
 /**
  * The composer's geometry, in one place, so the shell and the real composer
@@ -446,6 +447,11 @@ interface ComposerBaseProps {
     args: string,
   ) => Promise<DispatchResult>;
   onTyping: () => void;
+  /**
+   * The chapter's module gate. The palette filters by it, and a typed module
+   * command is refused by it (`slashModuleRefusal`). Meaningful only while
+   * `slashCommandsStatus` is `"ready"`.
+   */
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
    * Chapter recruitment vocabulary. Threaded to the palette so `/intake`
@@ -454,9 +460,10 @@ interface ComposerBaseProps {
    */
   recruitmentVocab?: string;
   /**
-   * Status of the underlying chapter-config query. `"loading"` and `"error"`
+   * Status of the read behind `isModuleEnabled`. `"loading"` and `"error"`
    * surface explicit states inside the slash palette instead of an empty
-   * filter; defaults to `"ready"` for callers that don't gate the catalog.
+   * filter, and refuse a typed module command with their own copy; defaults
+   * to `"ready"` for callers that don't gate the catalog.
    */
   slashCommandsStatus?: "loading" | "error" | "ready";
   onRetrySlashCommands?: () => void;
@@ -553,6 +560,48 @@ export function composerPlaceholder(channelName: string, isDirect?: boolean) {
 
 function slashToken(command: SlashCommand): string {
   return command.displayName ?? command.name;
+}
+
+/**
+ * Why a module-backed slash command can't run right now, or `null` when its
+ * module gate lets it through. The same gate the palette filters by
+ * (`filterSlashCommands`), for a command typed out in full (#2993).
+ *
+ * Fails closed while the chapter's modules are loading or failed to load
+ * (#310), with its own copy for each, so a member isn't told a module is off
+ * when the gate simply hasn't answered. A command with no module (`/announce`)
+ * is never refused here.
+ */
+export function slashModuleRefusal(
+  command: SlashCommand,
+  status: "loading" | "error" | "ready",
+  isModuleEnabled: (moduleKey: string) => boolean,
+): { title: string; description: string } | null {
+  const moduleKey = command.requiredModule;
+  if (!moduleKey) return null;
+  const token = slashToken(command);
+  if (status === "loading") {
+    return {
+      title: `/${token} isn't ready yet`,
+      description:
+        "Still checking which commands your chapter has on. Your text is still here. Send it again in a moment.",
+    };
+  }
+  if (status === "error") {
+    return {
+      title: `Couldn't check /${token}`,
+      description:
+        "Your chapter's modules didn't load, so this command can't run yet. Your text is still here. Try again in a moment.",
+    };
+  }
+  if (isModuleEnabled(moduleKey)) return null;
+  const label =
+    MODULE_CATALOG.find((entry) => entry.key === moduleKey)?.label ??
+    moduleKey;
+  return {
+    title: `/${token} is turned off`,
+    description: `Your chapter has switched off ${label}. An officer can turn it back on in Settings → Modules.`,
+  };
 }
 
 /**
@@ -996,6 +1045,20 @@ export function Composer({
             "Slash commands aren't queued. Your text is still here. Send it when you're back online.",
         };
       }
+      // After the connection, which is the truer reason while offline: the
+      // module read can't answer then either, and "try again in a moment"
+      // would send the member round in circles. Before the staged context,
+      // because while the command can't run at all, clearing that would be
+      // wasted effort. The palette hides a disabled module's command, but a
+      // command typed out in full reaches `submit` without the palette, so
+      // this is the gate for that path (#2993). The server refuses the write
+      // too; this lets the member hear it before a round trip.
+      const moduleRefusal = slashModuleRefusal(
+        command,
+        slashCommandsStatus,
+        isModuleEnabled,
+      );
+      if (moduleRefusal) return moduleRefusal;
       // A slash command posts a card, which has nowhere to hang a file.
       if (pending.length > 0) {
         return {
@@ -1014,7 +1077,7 @@ export function Composer({
       }
       return null;
     },
-    [isOffline, pending.length, replyTo],
+    [isOffline, pending.length, replyTo, slashCommandsStatus, isModuleEnabled],
   );
 
   const submit = useCallback(() => {
