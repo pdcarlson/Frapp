@@ -10,19 +10,38 @@ import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
  * The production pipe's `enableImplicitConversion` turns a `boolean`-typed
  * field's `"false"` into `true`, and a bare `@IsBoolean()` then passes it: a
  * hand-written `{"is_mandatory":"false"}` marked an event mandatory. The fix is
- * `@IsStrictBoolean()`; this guard finds every `isBoolean` property by its
- * validation metadata, so a new field written with a bare `@IsBoolean()` fails
- * here without anyone listing it.
+ * `@IsStrictBoolean()`; this guard finds every boolean property by its
+ * metadata, so a new field written with a bare `@IsBoolean()` fails
+ * here without anyone listing it, and so does a `boolean` field validated
+ * without `isBoolean` at all.
  */
 
-/** Every property carrying an `isBoolean` validator, as `[class, property]`. */
+/**
+ * Every validated property that is a boolean, as `[class, property]`: one that
+ * carries `isBoolean`, or one TypeScript typed `boolean` (`design:type`). The
+ * second catches a field validated some other way, such as a bare
+ * `@Equals(true)`, which implicit conversion also feeds `true` for `"false"`.
+ */
 function booleanFields(classes: DtoClass[]): Array<[DtoClass, string]> {
   const found: Array<[DtoClass, string]> = [];
   for (const cls of classes) {
+    const metadatas = getMetadataStorage().getTargetValidationMetadatas(
+      cls,
+      '',
+      false,
+      false,
+    );
     const props = new Set(
-      getMetadataStorage()
-        .getTargetValidationMetadatas(cls, '', false, false)
-        .filter((m) => m.name === 'isBoolean')
+      metadatas
+        .filter(
+          (m) =>
+            m.name === 'isBoolean' ||
+            Reflect.getMetadata(
+              'design:type',
+              cls.prototype,
+              m.propertyName,
+            ) === Boolean,
+        )
         .map((m) => m.propertyName),
     );
     for (const prop of props) found.push([cls, prop]);
