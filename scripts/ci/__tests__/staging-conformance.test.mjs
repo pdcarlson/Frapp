@@ -785,6 +785,35 @@ test("leaked-password check skips without credentials and makes no call", async 
   assert.equal(called, false);
 });
 
+test("every Auth check's skip and HTTP-error rows carry its own id and label", async () => {
+  // readAuthConfig builds these rows for all five checks. A row under the wrong
+  // id drops the real id from the run, and canResolveAlert then closes an alert
+  // raised for it on a run that asserted nothing.
+  const checks = [
+    ["auth-hook", checkAuthHook],
+    ["auth-redirects", checkAuthRedirects],
+    ["auth-smtp", checkAuthSmtp],
+    ["auth-magic-link", checkAuthMagicLink],
+    ["auth-leaked-password", checkAuthLeakedPassword],
+  ];
+  const labels = new Set();
+  for (const [id, check] of checks) {
+    // An empty config makes every check assert, and fail, under its own label.
+    const asserted = await check({ accessToken: "t", projectRef: "ref", fetchImpl: async () => ok({}) });
+    const skipped = await check({ accessToken: "", projectRef: "ref", fetchImpl: async () => ok({}) });
+    const errored = await check({ accessToken: "t", projectRef: "ref", fetchImpl: async () => httpError(503) });
+    assert.equal(asserted.id, id);
+    assert.equal(skipped.status, SKIPPED, id);
+    assert.equal(skipped.id, id);
+    assert.equal(skipped.label, asserted.label, id);
+    assert.equal(errored.status, FAIL, id);
+    assert.equal(errored.id, id);
+    assert.equal(errored.label, asserted.label, id);
+    labels.add(asserted.label);
+  }
+  assert.equal(labels.size, checks.length, "each Auth check has its own label");
+});
+
 test("leaked-password check fails on a Management API error", async () => {
   const result = await checkAuthLeakedPassword({
     accessToken: "t",
