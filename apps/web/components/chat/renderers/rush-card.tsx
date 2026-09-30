@@ -10,11 +10,11 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import type { RushPayload } from "@repo/chat-integrations";
 import {
   useBidRushCandidate,
-  useOrgConfig,
   useRushCandidate,
   useVoteRushCandidate,
 } from "@repo/hooks";
 import { vocab } from "@/lib/vocabulary";
+import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -57,7 +57,7 @@ function readPayload(message: ChatMessage): RushPayload | null {
  */
 export function RushCard({ message, isConfirmed }: RushCardProps) {
   const payload = readPayload(message);
-  const orgConfig = useOrgConfig();
+  const chapterVocabulary = useChapterVocabulary();
   const live = useRushCandidate(payload?.candidate_id);
   const vote = useVoteRushCandidate();
   const bid = useBidRushCandidate();
@@ -71,7 +71,7 @@ export function RushCard({ message, isConfirmed }: RushCardProps) {
     );
   }
 
-  const label = vocab("recruitment", orgConfig.data);
+  const label = vocab("recruitment", chapterVocabulary);
   const displayName = live.data?.display_name ?? payload.display_name;
   const voteCount = live.data?.vote_count ?? 0;
   const hasVoted = live.data?.viewer_has_voted ?? false;
