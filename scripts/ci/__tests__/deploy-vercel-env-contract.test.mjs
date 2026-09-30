@@ -43,11 +43,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { stepsRunning } from "./helpers/workflow-yaml.mjs";
 
 import {
   DEPLOY_PHASE_BUILD,
@@ -59,8 +56,6 @@ import {
 } from "../deploy-vercel.mjs";
 import { VERCEL_TARGET_PREVIEW, VERCEL_TARGET_PRODUCTION } from "../lib/vercel-cli.mjs";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const WORKFLOW_DIR = join(REPO_ROOT, ".github", "workflows");
 const SCRIPT = "scripts/ci/deploy-vercel.mjs";
 
 /**
@@ -68,15 +63,11 @@ const SCRIPT = "scripts/ci/deploy-vercel.mjs";
  * Actions would give it and the DEPLOY_PHASE and DEPLOY_TARGET it runs with.
  */
 function allCallSites(script) {
-  return readdirSync(WORKFLOW_DIR)
-    .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
-    .flatMap((f) => workflowSteps(join(WORKFLOW_DIR, f)))
-    .filter((step) => step.body.includes(script))
-    .map((step) => ({
-      ...step,
-      phase: parseDeployPhase(step.env.get("DEPLOY_PHASE")),
-      target: parseDeployTarget(step.env.get("DEPLOY_TARGET")),
-    }));
+  return stepsRunning(script).map((step) => ({
+    ...step,
+    phase: parseDeployPhase(step.env.get("DEPLOY_PHASE")),
+    target: parseDeployTarget(step.env.get("DEPLOY_TARGET")),
+  }));
 }
 
 describe("every deploy-vercel.mjs call site satisfies the script's env contract", () => {
