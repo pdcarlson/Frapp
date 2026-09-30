@@ -694,7 +694,7 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Edit failed | — | The reason chat-core classified, in the composer hint; the edit stays open with the member's text | mobile `lib/chat/use-composer-staging.ts` |
 | Edited marker | — | `(edited)` after the message's last line, on every row, grouped or not, and not on a deleted message. On a card it goes on a line under the card. The behavior is [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete; the placement is [`components.md`](components.md) §11 § What rides the row | `@repo/chat-core/message-actions` (`EDITED_MARKER`, `showsEditedMarker`) |
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
-| Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-text.tsx`, `components/chat/message-item.tsx` |
+| Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-markdown.tsx`, `components/chat/message-item.tsx` |
 
 ### Start a DM (mobile s13)
 
