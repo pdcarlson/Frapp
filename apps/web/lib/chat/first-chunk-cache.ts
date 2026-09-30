@@ -33,8 +33,8 @@
  * ## The viewer id row is the sensitive one, and it is named rather than assumed
  *
  * The third row type holds the viewer's **`users.id`** — the id
- * `chat_messages.sender_id` references, and the one that decides which of
- * `components.md` §11's two bubble shapes a row takes. `caching.md`'s argument
+ * `chat_messages.sender_id` references, and the one that decides whether a
+ * row's author line says "You" (`components.md` §11). `caching.md`'s argument
  * against `persistQueryClient` names `["user","me"]` specifically as a key that
  * must not outlive a sign-out, so storing anything derived from it has to be
  * justified out loud instead of waved through on the header above.

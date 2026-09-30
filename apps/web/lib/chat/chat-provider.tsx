@@ -141,7 +141,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     `chatRealtime.configure` and the outbox flush, which are writes — a queued
     message's `senderId`, a reaction's `user_id`, a presence `track()` — and
     those keep waiting for identity to actually resolve. A cached id is good
-    enough to choose a bubble's side; it is not a thing to sign a send with.
+    enough to say "You" on a row; it is not a thing to sign a send with.
   */
   return (
     <CachedViewerIdProvider value={cachedViewerId}>

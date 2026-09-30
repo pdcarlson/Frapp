@@ -177,6 +177,12 @@ untouched, because re-encoding everything would flatten a transparent PNG and re
 an animated GIF to one frame, and a GIF sent as a file is a feature that already works
 through the `document` kind.
 
+*2026-09-30:* the profile photo on s15 (#2897, `lib/more/profile-photo.ts`) is the
+picker's second caller, through the same `pickAndUploadImage`. #2895 edited `app.json`
+as an integrator change so `photosPermission` names both uses ("set your profile photo
+and send photos in chapter chat"), with the privacy policy and the store records in the
+same PR.
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:

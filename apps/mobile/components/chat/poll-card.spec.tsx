@@ -66,7 +66,6 @@ function renderPoll(message: ChatMessage): ReactTestRenderer {
           message={message}
           viewerId={VIEWER}
           isConfirmed={message._status === "confirmed"}
-          nameFor={() => "Casey"}
           onVote={vi.fn()}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}

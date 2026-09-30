@@ -13,6 +13,12 @@ describe("QuotedMessage", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("sets the author in the foreground tone and the preview muted (§11)", () => {
+    render(<QuotedMessage author="Alice Chen" preview="hey there" />);
+    expect(screen.getByText("Alice Chen")).toHaveClass("text-foreground");
+    expect(screen.getByText("hey there")).not.toHaveClass("text-foreground");
+  });
+
   it("is a button when it can open the quoted message", async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();

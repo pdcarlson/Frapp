@@ -93,7 +93,9 @@ export function MessageAttachments({
   );
 
   return (
-    <ul className="mt-1 flex flex-col gap-1.5">
+    // `items-start`: each row sizes to its content, as it did in the bubble's
+    // column, rather than stretching to the full thread width.
+    <ul className="mt-1 flex flex-col items-start gap-1.5">
       {query.data.map((attachment) => {
         const isImage = imageIds.has(attachment.id);
         return (

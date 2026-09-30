@@ -8,6 +8,7 @@ import {
   ChatReportService,
   REPORT_FILED_NOTIFICATION,
   REPORT_QUEUE_PERMISSIONS,
+  reportedContentSnapshot,
 } from './chat-report.service';
 import {
   ChannelAccessService,
@@ -355,6 +356,99 @@ describe('ChatReportService', () => {
           reported_author_name: 'someone#1234',
         }),
       );
+    });
+
+    describe('a poll (#2724)', () => {
+      const pollMessage: ChatMessage = {
+        ...baseMessage,
+        content: 'Where should we eat?',
+        kind: 'poll',
+        payload: {
+          question: 'Where should we eat?',
+          options: [
+            { id: 'a', label: 'Pizza' },
+            { id: 'b', label: 'something harassing' },
+          ],
+          closes_at: '2026-03-02T00:00:00.000Z',
+        },
+      };
+
+      it('snapshots the option labels as well as the question', async () => {
+        channelAccess.assertMessageAccess.mockResolvedValue(pollMessage);
+
+        await service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'harassment',
+        });
+
+        expect(reportRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reported_content:
+              'Where should we eat?\n- Pizza\n- something harassing',
+          }),
+        );
+      });
+
+      it('serves the option text from the report row, never re-reading the poll (the delete itself: chat-report-queries.integration-spec.ts)', async () => {
+        // The failure #2724 names: the author deletes the poll after it is
+        // reported. The queue reads only the report row, so what the officer
+        // sees is the snapshot written at file time, whatever happens to the
+        // message afterwards (a delete tombstones `content` and wipes
+        // `metadata`; #1575 tracks `payload`). The store below stands in for
+        // the report table.
+        const stored: ChatMessageReportView[] = [];
+        channelAccess.assertMessageAccess.mockResolvedValue(pollMessage);
+        reportRepo.create.mockImplementation(async (input) => {
+          const row: ChatMessageReportView = {
+            ...baseReport,
+            ...input,
+            details: input.details ?? null,
+          };
+          stored.push(row);
+          return { report: row, created: true };
+        });
+        reportRepo.findByChapterAndStatus.mockImplementation(
+          async () => stored,
+        );
+
+        await service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'harassment',
+        });
+        channelAccess.assertMessageAccess.mockClear();
+        chatService.reportedMessageState.mockClear();
+
+        const [report] = await service.listReports(CHAPTER, OFFICER);
+        expect(report.reported_content).toContain('something harassing');
+        expect(report.reported_content).toContain('Where should we eat?');
+        // Reading the queue never goes back to the message.
+        expect(channelAccess.assertMessageAccess).not.toHaveBeenCalled();
+        expect(chatService.reportedMessageState).not.toHaveBeenCalled();
+      });
+
+      it('reads the older `type: POLL` shape, whose options are strings in metadata', async () => {
+        channelAccess.assertMessageAccess.mockResolvedValue({
+          ...baseMessage,
+          content: 'Formal date?',
+          type: 'POLL',
+          metadata: {
+            question: 'Formal date?',
+            options: ['Friday', 'Saturday'],
+            choice_mode: 'single',
+          },
+        } satisfies ChatMessage);
+
+        await service.fileReport(CHAPTER, REPORTER, {
+          message_id: MESSAGE_ID,
+          reason: 'spam',
+        });
+
+        expect(reportRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reported_content: 'Formal date?\n- Friday\n- Saturday',
+          }),
+        );
+      });
     });
 
     it('returns whatever the repository resolved, so a duplicate open report is not an error', async () => {
@@ -1294,5 +1388,62 @@ describe('ChatReportService', () => {
         service.resolveReport('report-1', CHAPTER, 'dismissed', OFFICER),
       ).rejects.toThrow(ConflictException);
     });
+  });
+});
+
+describe('reportedContentSnapshot', () => {
+  const text = {
+    content: 'hello',
+    type: 'TEXT' as const,
+    kind: 'text' as const,
+    payload: null,
+    metadata: {},
+  };
+
+  it('is the content for anything that is not a poll', () => {
+    expect(reportedContentSnapshot(text)).toBe('hello');
+    // A card of another kind carries no member-written options.
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        kind: 'announcement',
+        payload: { options: [{ label: 'not a poll' }] },
+      }),
+    ).toBe('hello');
+  });
+
+  it("adds the card's question when it differs from content, since the card shows the question", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'edited text',
+        kind: 'poll',
+        payload: {
+          question: 'the original question',
+          options: [
+            { id: 'a', label: 'A' },
+            { id: 'b', label: 'B' },
+          ],
+        },
+      }),
+    ).toBe('edited text\nthe original question\n- A\n- B');
+  });
+
+  it('falls back to the content for a card it cannot read, rather than failing the report', () => {
+    for (const payload of [
+      null,
+      'not an object',
+      { question: 'q' },
+      { question: 'q', options: 'nope' },
+      { question: 'q', options: [{ id: 'a' }, 7, null] },
+    ]) {
+      expect(
+        reportedContentSnapshot({
+          ...text,
+          kind: 'poll',
+          payload: payload as ChatMessage['payload'],
+        }),
+      ).toBe('hello');
+    }
   });
 });

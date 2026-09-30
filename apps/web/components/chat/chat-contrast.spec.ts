@@ -25,65 +25,80 @@ import {
  * has produced so far came from a pairing that read fine as two token names and
  * failed as pixels — the near-white chat fills slice 1 caught, the danger text
  * on its own tint slice 2 caught, and, in this slice, muted text on a `--primary`
- * button fill (1.9:1) and a `bg-card` bubble inside a `bg-card` pane (1:1). So
+ * button fill (1.9:1) and a `bg-card` bubble inside a `bg-card` pane (1:1; the
+ * bubble is gone since #2873, and the rule now guards the cards). So
  * these assert the *composited* pairs, including the ones that only exist after
  * an alpha tint lands on a specific ladder step.
  *
  * The accent-varying pairs are measured against every distinct colour in the
- * seeded chapter directory, not just house gold: `--primary` is per-tenant, so a
- * bubble that passes under gold and fails under `#FFFFFF` is a defect 1 chapter
+ * seeded chapter directory, not just house gold: the accent is per-tenant, so a
+ * pair that passes under gold and fails under `#FFFFFF` is a defect 1 chapter
  * in 50 would see and nobody testing locally ever would. Seed corpus and the
  * shared helpers: `tests/signet-contrast.ts`.
  */
 
-describe("chat bubbles", () => {
-  it("does not paint the incoming bubble in its own pane's fill", () => {
+/**
+ * The compact message row (`components.md` §11, #2873): text straight on the
+ * thread's `--background`, a hovered row lifted to `--surface-1`, and a card
+ * posted into the thread on `--card`. It replaced the §11 bubble, whose pairs
+ * this block used to pin (the incoming `--card` fill, the per-chapter
+ * `--primary` self fill).
+ */
+describe("chat message rows", () => {
+  const ROW_SURFACES = {
+    rest: SURFACE.background,
+    hovered: SURFACE.surface1,
+  } as const;
+
+  it("keeps body text AA on the row at rest and hovered", () => {
+    for (const [state, bg] of Object.entries(ROW_SURFACES)) {
+      expect(ratio(TEXT.foreground, bg), state).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+
+  it("keeps the viewer's own accent name AA on the row, for every chapter seed", () => {
+    // The one place a message row takes the chapter accent. accent-11 is the
+    // engine's text role, gated at 4.5:1 on the neutral ladder; this pins that
+    // the two surfaces a row actually paints are among the ones it holds on.
+    for (const seed of SEEDS) {
+      const name = accentRolesFor(seed)["--accent-text"]!;
+      for (const [state, bg] of Object.entries(ROW_SURFACES)) {
+        expect(ratio(name, bg), `${seed} ${state}`).toBeGreaterThanOrEqual(
+          AA_TEXT,
+        );
+      }
+    }
+  });
+
+  it("lifts the hovered row by a step too small to carry information", () => {
+    // components.md §11: the hover fill is pointer feedback, so its ~1.1:1 is
+    // acceptable precisely because nothing is lost without it. Pinned so the
+    // doc's reasoning cannot quietly start leaning on the fill for meaning.
+    const step = ratio(ROW_SURFACES.hovered, ROW_SURFACES.rest);
+    expect(step).toBeGreaterThan(1);
+    expect(step).toBeLessThan(AA_NON_TEXT);
+  });
+
+  it("does not paint a card in the thread's own fill", () => {
     // The regression this exists for: the pane used to be a `<Card>`, so the
     // §11 bubble fill was `#1E1B17` on `#1E1B17` — 1.00:1, no bubble at all.
-    // The pane is `--background` now.
+    // The pane is `--background` now, and the cards posted into it are `--card`.
     const step = ratio(SURFACE.card, SURFACE.background);
     expect(step).toBeGreaterThan(1.1);
   });
 
-  it("relies on the hairline for the bubble's edge, not on the ladder step", () => {
-    // Worth stating as a measurement rather than a belief: one step of the
-    // neutral ladder is ~1.12:1 and the composited hairline over it reaches
-    // ~1.4:1 — both under the 3:1 non-text floor. That is not a defect here,
-    // it is why §11 specs a hairline on the incoming bubble at all, and why
-    // components.md §2 says the ladder "cannot carry 'this one' on luminance
-    // alone". A change that drops `border-border` from the incoming bubble
-    // leaves a shape delineated by 1.12:1, so the border is load-bearing.
+  it("relies on the hairline for a card's edge, not on the ladder step", () => {
+    // One step of the neutral ladder is ~1.12:1 and the composited hairline
+    // over it reaches ~1.4:1 — both under the 3:1 non-text floor. That is why
+    // components.md §2 keeps the hairline on a card in the thread: a card that
+    // drops `border-border` is delineated by 1.12:1, and on a hovered row by
+    // less, so the border is load-bearing.
     const hairline = applyAlpha("#FFFFFF", HAIRLINE_ALPHA, SURFACE.card);
-    const step = ratio(SURFACE.card, SURFACE.background);
-    const edge = ratio(hairline, SURFACE.background);
-    expect(edge).toBeGreaterThan(step);
-    expect(step).toBeLessThan(AA_NON_TEXT);
-  });
-
-  it("holds on the thread rail too, not just the centre pane", () => {
-    // The miss this exists for: the centre pane was moved to `--background` so
-    // the `--card` bubble could read, and the *right rail* — which renders the
-    // same `MessageItem` for a thread — was left on `--surface-1`, where the
-    // same bubble is 1.08:1. A bubble is only as visible as the surface
-    // whichever pane happens to host it, so both are asserted.
-    const onSurface1 = ratio(SURFACE.card, SURFACE.surface1);
-    const onBackground = ratio(SURFACE.card, SURFACE.background);
-    expect(onSurface1).toBeLessThan(1.1);
-    expect(onBackground).toBeGreaterThan(onSurface1);
-  });
-
-  it("keeps incoming body text well clear of AA on the card fill", () => {
-    expect(ratio(TEXT.foreground, SURFACE.card)).toBeGreaterThanOrEqual(AA_TEXT);
-  });
-
-  it("keeps the self bubble's text/fill pair AA for every chapter seed", () => {
-    for (const seed of SEEDS) {
-      const roles = accentRolesFor(seed);
-      const fill = roles["--primary"]!;
-      const text = roles["--primary-foreground"]!;
-      expect(ratio(text, fill), `${seed} self bubble`).toBeGreaterThanOrEqual(
-        AA_TEXT,
-      );
+    for (const [state, bg] of Object.entries(ROW_SURFACES)) {
+      const step = ratio(SURFACE.card, bg);
+      const edge = ratio(hairline, bg);
+      expect(edge, state).toBeGreaterThan(step);
+      expect(step, state).toBeLessThan(AA_NON_TEXT);
     }
   });
 
@@ -96,14 +111,13 @@ describe("chat bubbles", () => {
   });
 
   it("lifts every caption off `--muted`, which misses AA on the whole ladder", () => {
-    // The reference draws the meta line in `--muted` (#78716A) and it measures
+    // The reference draws the author line's time in `--muted` (#78716A) and it measures
     // **4.04:1** on the thread background — under the 4.5:1 floor, and worse on
     // every step above it. components.md §1 already grants the remedy and names
     // this exact token: "`--muted` on the surface ladder is 3.3–4.0:1, so tab
     // labels and input placeholders take `--muted-foreground`". Chat's captions
-    // — the meta line, the delivery state, the rail's section headings — take
-    // the same lift, and the sender name keeps its separation by weight rather
-    // than by a second tone, which is what s05 draws anyway.
+    // — the time, the trailing markers, the delivery state, the rail's section
+    // headings — take the same lift.
     for (const [name, bg] of Object.entries(SURFACE)) {
       expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(AA_TEXT);
       expect(
@@ -193,18 +207,14 @@ describe("the mention badge", () => {
   });
 });
 
-describe("the in-bubble mention chip", () => {
+describe("the in-body mention chip", () => {
   /**
-   * §11's TODO-DESIGN for the in-bubble mention highlight, settled as an
-   * **opaque** chip — and the opacity is the requirement, not the styling.
-   *
-   * A mention lands inside a bubble, and a self bubble is `--primary`: a
-   * per-chapter colour the seed corpus alone spreads from `#006400` to
-   * `#FFFFFF`. §5's tint recipe (13% alpha + hue text) composites over whatever
-   * that is, so the same chip would measure 6.5:1 in one chapter and about 1:1
-   * in the next — the message that addresses you unreadable in exactly the
-   * chapters whose accent happens to be pale. An opaque chip carries its own
-   * ground, so the pair measures identically on every bubble in every chapter.
+   * §11's TODO-DESIGN for the in-body mention highlight, settled as an
+   * **opaque** chip. It was argued from the self bubble, where a 13% tint over
+   * the per-chapter `--primary` fill measured 1.94:1 at best and 1.03:1 at
+   * worst across the seed corpus. The compact layout (#2873) removed that
+   * surface; the chip now sits on the row, which is `--background` at rest and
+   * `--surface-1` hovered, and it stays opaque so one pair covers both.
    */
   it("keeps chip text AA on the chip's own fill", () => {
     // Pinned to the measured value, not just to the floor: `components.md` §11
@@ -215,42 +225,19 @@ describe("the in-bubble mention chip", () => {
     expect(measured).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
-  it("measures the same on every chapter bubble, because the fill is opaque", () => {
-    // The guarantee stated as the thing it actually buys: whatever bubble the
-    // chip lands on, the text/fill pair the reader sees is this one pair. An
-    // alpha fill could not make this assertion at all — there would be 19 of
-    // them, one per seed, and the next chapter to sign up would be a 20th.
-    const measured = ratio(MENTION_CHIP.text, MENTION_CHIP.fill);
-    for (const seed of SEEDS) {
-      const bubble = accentRolesFor(seed)["--primary"]!;
-      // The chip is painted over the bubble, not composited with it, so the
-      // bubble cannot enter the measurement. Asserted by measuring the pair
-      // *again* per seed rather than trusting that sentence.
-      expect(ratio(MENTION_CHIP.text, MENTION_CHIP.fill), seed).toBe(measured);
-      expect(bubble).toMatch(/^#[0-9A-F]{6}$/i);
-    }
-  });
-
-  it("would have caught the alpha version, on every seed", () => {
-    // The regression this exists for, kept as a measurement rather than a
-    // comment: the same hue as a 13% tint composites over the bubble, so its
-    // own text's contrast becomes a per-tenant accident. This is what an "it's
-    // just the §5 tint recipe" simplification would ship — and the spread is
-    // the argument, so both ends are pinned. `components.md` §11 quotes them.
-    // The best case was 4.32:1 on crimson's `#8B0000` bubble until #2541 held
-    // the fill to 3:1 on the ladder, and 2.40:1 on `#4B0082`'s `#9B32FA` until
-    // #2586 held the hover there too. Lighter bubbles cost the tint contrast,
-    // so the best case is now `#003087`'s `#2D7BFF` at 1.94:1.
-    const ratios = SEEDS.map((seed) => {
-      const bubble = accentRolesFor(seed)["--primary"]!;
-      return ratio(MENTION_CHIP.text, tint(MENTION_CHIP.text, bubble));
-    });
-
-    expect(Math.max(...ratios)).toBeCloseTo(1.94, 2);
-    expect(Math.min(...ratios)).toBeCloseTo(1.03, 2);
-    // Not one seed in the corpus reaches AA. The opaque pair clears it on all
-    // of them, which is the whole trade.
-    expect(Math.max(...ratios)).toBeLessThan(AA_TEXT);
+  it("would give two figures as an alpha tint, one per row state", () => {
+    // Why it stays opaque: the §5 tint recipe composites over whatever is
+    // under it, and hovering a row changes what is under it. Measured, so the
+    // spec's reason cannot outlive the numbers behind it.
+    const atRest = ratio(
+      MENTION_CHIP.text,
+      tint(MENTION_CHIP.text, SURFACE.background),
+    );
+    const hovered = ratio(
+      MENTION_CHIP.text,
+      tint(MENTION_CHIP.text, SURFACE.surface1),
+    );
+    expect(atRest).not.toBeCloseTo(hovered, 2);
   });
 
   it("is not the mention red, which has no lifted tone to render as text", () => {
@@ -282,17 +269,17 @@ describe("the in-bubble mention chip", () => {
   });
 
   it("separates the handle from the body text around it", () => {
-    // The chip's job inside an incoming bubble: `@Name` must not read as more
-    // prose. The fill is a subtle step off `--card` by design (§5's tint look),
-    // so the separation is carried by the text tone — which is why THAT is the
-    // half asserted, and why a change that keeps the fill and neutralises the
-    // text would fail here rather than pass on the fill alone.
+    // The chip's job inside a message: `@Name` must not read as more prose.
+    // The fill is a subtle step off the row by design (§5's tint look), so the
+    // separation is carried by the text tone — which is why THAT is the half
+    // asserted, and why a change that keeps the fill and neutralises the text
+    // would fail here rather than pass on the fill alone.
     expect(MENTION_CHIP.text.toUpperCase()).not.toBe(
       TEXT.foreground.toUpperCase(),
     );
-    expect(ratio(MENTION_CHIP.text, SURFACE.card)).toBeGreaterThanOrEqual(
-      AA_TEXT,
-    );
+    for (const bg of [SURFACE.background, SURFACE.surface1]) {
+      expect(ratio(MENTION_CHIP.text, bg)).toBeGreaterThanOrEqual(AA_TEXT);
+    }
   });
 });
 
