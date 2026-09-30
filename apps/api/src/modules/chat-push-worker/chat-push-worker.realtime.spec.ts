@@ -9,6 +9,7 @@ import {
   ChatNotificationPreferenceRepository,
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
+import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
 import { RbacService } from '../../application/services/rbac.service';
 import { ChatBlockService } from '../../application/services/chat-block.service';
 import type { ChatMessage } from '#domain/entities';
@@ -207,7 +208,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         return channelStub;
       },
       subscribe: subscribeSpy,
-      // `resolveChannel` opens a presence channel through the same `channel()`
+      // `handleMessage` opens a presence channel through the same `channel()`
       // factory, and `readPresence` then calls `presenceState()` on it. Without
       // this the call throws and is swallowed by `readPresence`'s own catch —
       // the tests would still pass, but via an error path rather than the empty
@@ -230,6 +231,12 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         {
           provide: ChatNotificationPreferenceRepository,
           useValue: { findForUsers },
+        },
+        {
+          // A single instance that wins every claim: this file is about the
+          // payload path, and the claim is proven in the service spec.
+          provide: ChatPushDispatchRepository,
+          useValue: { claim: jest.fn().mockResolvedValue('claimed') },
         },
         { provide: RbacService, useValue: { getEffectivePermissions } },
         {
