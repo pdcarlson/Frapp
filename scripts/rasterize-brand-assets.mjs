@@ -40,6 +40,14 @@ import {
   coverage,
   glyphCoverage,
 } from "./lib/brand-pixels.mjs";
+import {
+  PLAY_FEATURE_GRAPHIC,
+  PLAY_ICON,
+  PLAY_ICON_SIZE,
+  auditFeatureGraphic,
+  auditPlayIcon,
+  renderFeatureGraphic,
+} from "./lib/store-graphics.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -335,6 +343,20 @@ async function main() {
     await monochrome(launcher),
     "monochrome",
   );
+
+  // ── Google Play listing: apps/mobile/store/graphics ───────────────────────
+  // Not read by any build: the owner uploads them in Play Console. Rendered
+  // here so that re-rasterizing after a vector edit cannot leave the listing
+  // on the old crest. The icon is the audited master render at 512, the same
+  // paint as the favicon payloads; the feature graphic's composition lives in
+  // `lib/store-graphics.mjs`, with the audits the gate also runs.
+  const playIcon = await opaqueRgba(markHi, PLAY_ICON_SIZE);
+  await auditPlayIcon(playIcon, PLAY_ICON, readFileSync(MASTER_SVG));
+  await write(PLAY_ICON, playIcon);
+
+  const featureGraphic = await renderFeatureGraphic();
+  await auditFeatureGraphic(featureGraphic, PLAY_FEATURE_GRAPHIC);
+  await write(PLAY_FEATURE_GRAPHIC, featureGraphic);
 }
 
 main().catch((error) => {

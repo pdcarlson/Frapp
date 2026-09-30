@@ -59,16 +59,16 @@ All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 un
 - **Landing header:** `apps/landing/components/frapp-lockup.tsx` (crest on the page background, no tile, + Frapp word).
 - **Web auth:** `apps/web/components/auth/signet-mark.tsx`.
 - **Expo:** rasters under `apps/mobile/assets/images/` — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §7.
+- **Google Play listing:** `npm run rasterize:brand-assets` also renders the Play icon and feature graphic into `apps/mobile/store/graphics/`, for the owner to upload — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §4.
 
 ## Regenerating
 
 1. Edit `assets/signet-emblem-B.svg` (and `signet-emblem-B-glyph.svg`, keeping the path identical).
 2. `npm run rasterize:brand-assets`
 3. `npm run sync:brand-assets`
-4. `npm run render:store-graphics` (the Google Play icon and feature graphic)
-5. `npm run check:brand-assets`
+4. `npm run check:brand-assets`
 
-Steps 2 and 5 both refuse a mark that is not drawn in the locked pair, and refuse an empty or solid Android monochrome layer.
+Steps 2 and 4 both refuse a mark that is not drawn in the locked pair, and refuse an empty or solid Android monochrome layer.
 
 ## Monorepo tasks
 
