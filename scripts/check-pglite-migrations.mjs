@@ -4164,8 +4164,11 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
 //   - a created channel another import merged into is kept (deleting it
 //     would fail `discord_import_channels_target_present`; #2922), and a
 //     channel this import merged into is never a candidate;
-//   - a `create_new` row naming a channel older than the import (an upload
-//     mapped before #2859) doesn't make it a candidate;
+//   - a `create_new` row naming a channel older than the import, or one
+//     without the worker's "Imported from Discord #…" description (an upload
+//     mapped before #2859), doesn't make it a candidate;
+//   - another import's `create_new` row doesn't pin a channel; only a
+//     `use_existing` one does;
 //   - chapter scope: a row pointing into another chapter deletes nothing
 //     there, and the wrong chapter id deletes nothing at all;
 //   - an import that isn't `purging` loses nothing;
@@ -4195,6 +4198,7 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     MERGED_INTO: "a2905000-0000-4000-8000-0000000000c8",
     EXISTING: "a2905000-0000-4000-8000-0000000000c9",
     LEGACY: "a2905000-0000-4000-8000-0000000000ca",
+    LEGACY_NEWER: "a2905000-0000-4000-8000-0000000000cc",
     RUNNING_CH: "a2905000-0000-4000-8000-0000000000cb",
     IN_B: "b2905000-0000-4000-8000-0000000000c1",
   };
@@ -4218,7 +4222,6 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${RUNNING}', '${A}', 'running', now());
       insert into chat_channels (id, chapter_id, name, type) values
         ('${CH.EMPTY}', '${A}', 'rush', 'PUBLIC'),
-        ('${CH.THREADED}', '${A}', 'formal', 'PUBLIC'),
         ('${CH.ORPHAN}', '${A}', 'exec', 'PUBLIC'),
         ('${CH.LIVE}', '${A}', 'general', 'PUBLIC'),
         ('${CH.DELETED_MSG}', '${A}', 'memes', 'PUBLIC'),
@@ -4228,9 +4231,16 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${CH.EXISTING}', '${A}', 'announcements', 'PUBLIC'),
         ('${CH.RUNNING_CH}', '${A}', 'sports', 'PUBLIC'),
         ('${CH.IN_B}', '${B}', 'rush', 'PUBLIC');
-      -- An officer's channel from before the import.
-      insert into chat_channels (id, chapter_id, name, type, created_at) values
-        ('${CH.LEGACY}', '${A}', 'intramurals', 'PUBLIC', now() - interval '1 day');
+      -- Named only by mapping rows, as for an import from before the created-
+      -- channel record: the worker's description is what marks it as made.
+      insert into chat_channels (id, chapter_id, name, type, description) values
+        ('${CH.THREADED}', '${A}', 'formal', 'PUBLIC', 'Imported from Discord #formal');
+      -- An officer's channel from before the import, and one made after the
+      -- import row but not by the worker; a pre-#2859 upload row names both.
+      insert into chat_channels (id, chapter_id, name, type, description, created_at) values
+        ('${CH.LEGACY}', '${A}', 'intramurals', 'PUBLIC', 'Imported from Discord #intramurals', now() - interval '1 day');
+      insert into chat_channels (id, chapter_id, name, type, description) values
+        ('${CH.LEGACY_NEWER}', '${A}', 'pickup', 'PUBLIC', 'Pickup games');
       insert into discord_import_created_channels (import_id, channel_id) values
         ('${PURGING}', '${CH.EMPTY}'), ('${PURGING}', '${CH.ORPHAN}'), ('${PURGING}', '${CH.LIVE}'),
         ('${PURGING}', '${CH.DELETED_MSG}'), ('${PURGING}', '${CH.OTHER_MSGS}'), ('${PURGING}', '${CH.POINTS}'),
@@ -4242,8 +4252,12 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${PURGING}', 'd2-thread', 'formal-thread', 'create_new', 'formal', '${CH.THREADED}'),
         ('${PURGING}', 'd6', 'announcements', 'use_existing', null, '${CH.EXISTING}'),
         ('${PURGING}', 'd7', 'intramurals', 'create_new', 'intramurals', '${CH.LEGACY}'),
+        ('${PURGING}', 'd9', 'pickup', 'create_new', 'pickup', '${CH.LEGACY_NEWER}'),
         ('${PURGING}', 'd8', 'rush', 'create_new', 'rush', '${CH.IN_B}'),
         ('${OTHER}', 'e5', 'social', 'use_existing', null, '${CH.MERGED_INTO}'),
+        -- A leftover create_new row of another import on a channel this one
+        -- made: it holds nothing there, so it pins nothing.
+        ('${OTHER}', 'e1', 'rush', 'create_new', 'rush', '${CH.EMPTY}'),
         ('${RUNNING}', 'f1', 'sports', 'create_new', 'sports', '${CH.RUNNING_CH}');
       -- What the purge leaves behind: a member's live message, a deleted one,
       -- another import's history, and a chat points adjustment whose card
@@ -4287,8 +4301,8 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
       { left },
     );
     check(
-      "keeps a channel older than the import that a create_new row names (an upload mapped before #2859)",
-      left.includes(CH.LEGACY),
+      "keeps a channel a create_new row names that is older than the import, or lacks the worker's description (an upload mapped before #2859)",
+      left.includes(CH.LEGACY) && left.includes(CH.LEGACY_NEWER),
       { left },
     );
     check(

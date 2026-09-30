@@ -989,7 +989,7 @@ export class DiscordImportWorkerService {
     // Left behind, each met a re-import of the same server as a name clash to
     // resolve, or as a duplicate when hidden from the admin (#2799). The
     // function keeps any channel that still holds a message of any kind, an
-    // attachment, a points-ledger link, or another import's merge into it, and
+    // attachment, a points-ledger link, or a `use_existing` merge into it, and
     // it checks and deletes each one under the channel's row lock, so a
     // message sent meanwhile keeps its channel.
     const channelsDeleted = await this.importRepo.deleteEmptyCreatedChannels(

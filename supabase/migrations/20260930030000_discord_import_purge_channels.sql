@@ -3,9 +3,10 @@
 --
 -- The purge removed an import's messages and archive objects but left every
 -- channel the import had created, now empty. A re-import of the same server
--- then met each leftover again. It merged into a public one by default
--- (#2856). One that was private in Discord came back as a name clash the admin
--- had to resolve by hand, or, when the leftover was hidden from the admin
+-- then met each leftover again. A bot scan merged into a public one by default
+-- (#2856). A channel that was private in Discord, or any channel from an
+-- upload (which says nothing about privacy), came back as a name clash the
+-- admin had to resolve by hand, or, when the leftover was hidden from the admin
 -- (#2799), as a second, like-named channel. Staging's first full import
 -- created 59 channels, 57 of them ROLE_GATED.
 --
@@ -19,10 +20,14 @@
 -- 2. `delete_empty_discord_import_channels` runs after the purge has deleted
 --    the import's messages. Its candidates are the channels this import
 --    created: the ones recorded in (1), plus, for an import that ran before
---    (1) existed, each `create_new` row's target created no earlier than the
---    import itself. A channel older than the import can't be one it made, and
---    that excludes the legacy rows above. It deletes a candidate only when all
---    of these hold:
+--    (1) existed, each `create_new` row's target that was created no earlier
+--    than the import and still carries the description the worker gives a
+--    channel it creates ("Imported from Discord #<name>"). Age alone isn't
+--    enough: the import row is written before mapping, so a legacy row could
+--    name a channel made in between. Both together keep an officer's own
+--    channel out; a created channel whose description an officer has since
+--    changed is kept, which errs the safe way. It deletes a candidate only
+--    when all of these hold:
 --
 --      - it holds no message of any kind: no live message, no deleted one, no
 --        other import's rows, and no `[message deleted]` tombstone;
@@ -30,12 +35,14 @@
 --      - no points-ledger row points at it. `point_transactions.channel_id` is
 --        where a chat points card whose post failed is re-posted from, so a
 --        channel with one is not empty;
---      - no `use_existing` mapping row of any import points at it. The
---        `discord_import_channels_target_present` CHECK keeps such a row's
---        target non-null, so the `on delete set null` on `target_channel_id`
---        would fail the delete. #2922 tracks letting that go. Until then a
---        channel another import merged into stays, even once that import is
---        purged too.
+--      - no `use_existing` mapping row of any import, this one included,
+--        points at it. The `discord_import_channels_target_present` CHECK
+--        keeps such a row's target non-null, so the `on delete set null` on
+--        `target_channel_id` would fail the delete. #2922 tracks letting that
+--        go. Until then a channel another import merged into stays, even once
+--        that import is purged too, and so does one this import's own
+--        remapped rows merged into (reachable only through the API: the web
+--        wizard never remaps a failed import).
 --
 --    Each candidate's row is locked before it is checked. A message being
 --    sent into it holds a key-share lock on the channel until that insert
@@ -121,6 +128,7 @@ begin
               and m.mapping_action = 'create_new'
               and m.target_channel_id = c.id
               and c.created_at >= i.created_at
+              and c.description = 'Imported from Discord #' || m.discord_channel_name
          )
        )
      order by c.id
@@ -136,7 +144,12 @@ begin
 
     if exists (select 1 from chat_messages where channel_id = v_channel)
        or exists (select 1 from chat_message_attachments where channel_id = v_channel)
-       or exists (select 1 from point_transactions where channel_id = v_channel)
+       or exists (
+         select 1
+           from point_transactions
+          where chapter_id = p_chapter_id
+            and channel_id = v_channel
+       )
        or exists (
          select 1
            from discord_import_channels

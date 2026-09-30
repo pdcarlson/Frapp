@@ -791,24 +791,28 @@ channel that reports a different one fails the import rather than being skipped.
   - no message of any kind (live, deleted, a tombstone, or another import's);
   - no attachment;
   - no points-ledger row pointing at it;
-  - no other import merged into it.
+  - no import merged into it (a `use_existing` mapping row).
 
   The worker records each channel it creates, so this holds even after a
-  failed import was remapped, which rewrites the mapping rows without their
-  targets. For an import from before that record existed, a `create_new` row's
-  target counts only if the channel is no older than the import. An upload
-  mapped before #2859 could name an existing channel there.
+  failed import was remapped through the API, which rewrites the mapping rows
+  without their targets. For an import from before that record existed, a
+  `create_new` row's target counts only if the channel is no older than the
+  import and still carries the description the worker gives the channels it
+  creates. An upload mapped before #2859 could name an existing channel there.
 
   A channel the import merged into is never deleted, and neither is a created
-  channel that still holds something. **Known gap:** a created channel another
-  import merged into stays even after both are deleted (#2922), because
-  `discord_import_channels_target_present` won't let that import's mapping row
-  lose its target.
+  channel that still holds something. **Known gap:** a created channel that an
+  import merged into stays, even after that import is deleted too (#2922),
+  because `discord_import_channels_target_present` won't let the merging row
+  lose its target. That covers another import's merge, and this import's own if
+  it was remapped through the API into a channel its first run made.
 
-  Before #2905 every created channel stayed. A re-import then merged a public
-  leftover by default (#2856), and flagged a private one's name as a clash to
-  resolve by hand. The clash reached the chapter as a duplicate only when the
-  leftover was hidden from the admin (#2799), which #2905 does not change.
+  Before #2905 every created channel stayed. A bot re-import then merged a
+  public leftover by default (#2856). A channel private in Discord, or any
+  channel in an upload (which says nothing about privacy), was flagged as a
+  name clash to resolve by hand. The clash reached the chapter as a duplicate
+  only when the leftover was hidden from the admin (#2799), which #2905 does
+  not change.
 
   The roles the import created stay either way, as the role mapping above
   says. This is currently the only deletion path that reaps the `chat-archive`

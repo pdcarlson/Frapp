@@ -280,16 +280,6 @@ export interface DiscordImportChannelProgress {
 export type DiscordImportFileKind = 'export' | 'media';
 
 /**
- * One uploaded file, and the only bridge from the export's own asset URLs back
- * to storage.
- *
- * DCE run with `--media` rewrites every asset URL in the JSON to a path
- * relative to the export folder on the admin's machine, so `attachments[].url`
- * reads like `Guild - general [123]_Files/photo-a1b2c3.png`. The importer
- * resolves that by looking `relative_path` up here — never by rebuilding a
- * storage key out of parts.
- */
-/**
  * A channel the worker created for an import (#2905). The purge deletes the
  * ones left holding nothing. Kept apart from the mapping rows, because
  * remapping a failed import rewrites those without their targets.
@@ -300,6 +290,16 @@ export interface DiscordImportCreatedChannel {
   created_at: string;
 }
 
+/**
+ * One uploaded file, and the only bridge from the export's own asset URLs back
+ * to storage.
+ *
+ * DCE run with `--media` rewrites every asset URL in the JSON to a path
+ * relative to the export folder on the admin's machine, so `attachments[].url`
+ * reads like `Guild - general [123]_Files/photo-a1b2c3.png`. The importer
+ * resolves that by looking `relative_path` up here — never by rebuilding a
+ * storage key out of parts.
+ */
 export interface DiscordImportFile {
   id: string;
   import_id: string;

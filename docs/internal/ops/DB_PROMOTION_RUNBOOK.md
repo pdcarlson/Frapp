@@ -588,9 +588,9 @@ date — is welcome; inventing a date to turn the gate green is not.
   - `select has_function_privilege('service_role', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute');`
 - **Promoter notes**:
   - **Order:** ship it before, or with, the API that uses it. A deploy applies migrations first, so the worker never sees a database without them.
-  - **Against an unmigrated database**, the newer worker fails at its first channel creation, and every purge slice fails at the call. The import is marked `failed`, and retrying once the migration is in finishes it.
+  - **Against an unmigrated database**, the newer worker fails at its first channel creation, and every purge slice fails at the call. The import is marked `failed`, and retrying once the migration is in finishes it. Each failed attempt still leaves the channel it created with no record and no mapping target: no purge finds it, and the retry creates another, so an officer deletes those by hand. The same happens if a transient error hits that one write.
   - **An older API** never touches either object.
-  - **Nothing runs at apply time.** Channels go only as imports are purged afterwards. The table starts empty; a purge finds an older import's channels through its mapping rows. Channels that earlier purges left behind stay until an officer deletes them.
+  - **Nothing runs at apply time.** Channels go only as imports are purged afterwards. The table starts empty; a purge finds an older import's channels through its `create_new` mapping rows, when the channel is no older than the import and still has the worker's "Imported from Discord #…" description. It can't find the first-run channels of an older import that was remapped through the API after failing, since the remap cleared their targets. Channels that earlier purges left behind stay until an officer deletes them. On staging, all 59 channels import `0e4c41e5` created pass both checks (read 2026-09-30).
   - **Idempotent:** `create table if not exists`, `create index if not exists`, `create or replace function` and the grants.
   - Hosted projects are not applied from a cloud-agent session.
 

@@ -976,7 +976,10 @@ After any rollback event:
 * **Migration**: `20260824120000_discord_import.sql`
 * **Action**:
   ```sql
-  -- 1. the job tables (safe any time; nothing else references them)
+  -- 1. the job tables (safe any time). discord_import_created_channels
+  --    (20260930030000, #2905) references discord_imports, so it goes first;
+  --    roll that migration back first if its function is still in place.
+  DROP TABLE IF EXISTS public.discord_import_created_channels;
   DROP TABLE IF EXISTS public.discord_import_files;
   DROP TABLE IF EXISTS public.discord_import_channels;
   DROP TABLE IF EXISTS public.discord_imports;
