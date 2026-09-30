@@ -544,6 +544,76 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
   });
 });
 
+describe("deploy-staging.yml: the source-map check (#2489)", () => {
+  const STAGING_CHECK = "Check Sentry has this commit's source maps (staging)";
+
+  it("checks what this run built, from the trusted copy, after the hosts moved", () => {
+    const check = step(STAGING_CHECK);
+    assert.equal(
+      check.if,
+      "inputs.environment == 'staging' && (steps.plan.outputs.deploy == 'true' || steps.plan.outputs.upload == 'true')",
+    );
+    assert.equal(check.env.get("DEPLOY_SHA"), INPUT_SHA);
+    // The API when the plan deployed it; web and landing when it uploaded them.
+    assert.equal(check.env.get("API_BUILT"), "${{ steps.plan.outputs.deploy }}");
+    assert.equal(check.env.get("FRONTENDS_BUILT"), "${{ steps.plan.outputs.upload }}");
+    // Only a web or landing bundle uploaded since this run's builds began counts.
+    assert.equal(check.env.get("SOURCEMAPS_SINCE"), "${{ steps.builds-start.outputs.at }}");
+    // The script never names the environment: nothing to mask in its output.
+    assert.equal(check.env.has("TARGET_ENVIRONMENT"), false);
+    assert.match(check.body, /run: node "\$TRUSTED_CI\/verify-sentry-sourcemaps\.mjs"/);
+    assert.match(check.body, /^\s*id: sourcemaps-staging$/m);
+    const names = deploySteps().map((s) => s.name);
+    assert.ok(names.indexOf(STAGING_CHECK) > names.indexOf("Point the staging hostnames at the new deployments"));
+  });
+
+  it("notes when the builds begin, before every build that uploads maps", () => {
+    const names = deploySteps().map((s) => s.name);
+    const start = names.indexOf("Note when this run's builds begin");
+    assert.ok(start >= 0, "the deploy job notes when its builds begin");
+    const noted = deploySteps()[start];
+    assert.match(noted.body, /^\s*id: builds-start$/m);
+    assert.equal(noted.if, null, "every run notes it");
+    assert.match(noted.body, /echo "at=\$\(date -u \+%Y-%m-%dT%H:%M:%SZ\)" >> "\$GITHUB_OUTPUT"/);
+    for (const later of [
+      "Build the Vercel preview bundles (web + landing)",
+      "Build the Vercel production bundles (web + landing)",
+      "Deploy the commit to Render (staging)",
+      "Deploy the commit to Render (production)",
+    ]) {
+      assert.ok(start < names.indexOf(later), `${later} comes after the note`);
+    }
+  });
+
+  it("hands its verdicts to the caller as the `sourcemaps` output, with a sign that a check ran", () => {
+    assert.equal(workflowCall().outputs.get("sourcemaps").get("value"), "${{ jobs.deploy.outputs.sourcemaps }}");
+    assert.equal(workflowCall().outputs.get("sourcemaps-checked").get("value"), "${{ jobs.deploy.outputs.sourcemaps-checked }}");
+    // Each environment's check has its own step; at most one runs, so the
+    // concatenation is that one's words, or empty.
+    const outputs = sharedJob().keys.get("outputs");
+    assert.equal(
+      outputs.get("sourcemaps"),
+      "${{ steps.sourcemaps-staging.outputs.verdicts }}${{ steps.sourcemaps-production.outputs.verdicts }}",
+    );
+    assert.equal(outputs.get("sourcemaps-checked"), "${{ steps.sourcemaps-staging.outcome }}${{ steps.sourcemaps-production.outcome }}");
+  });
+
+  it("files the alerts in deploy-outcome, after a successful deploy only", () => {
+    const alert = workflowSteps(WORKFLOW).find((s) => s.jobId === "deploy-outcome" && s.body.includes("sentry-sourcemaps-alert.mjs"));
+    assert.ok(alert, "deploy-outcome must run scripts/ci/sentry-sourcemaps-alert.mjs");
+    assert.equal(alert.if, "${{ !cancelled() && needs.deploy.result == 'success' }}");
+    assert.equal(alert.env.get("SOURCEMAPS"), "${{ needs.deploy.outputs.sourcemaps }}");
+    assert.equal(alert.env.get("SOURCEMAPS_CHECKED"), "${{ needs.deploy.outputs.sourcemaps-checked }}");
+    assert.equal(alert.env.get("GITHUB_TOKEN"), "${{ secrets.GITHUB_TOKEN }}");
+    // The environment and the commit come from this job's context: the deploy
+    // job's output can't carry either past the runner's masking.
+    assert.equal(alert.env.get("TARGET_ENVIRONMENT"), "staging");
+    assert.equal(alert.env.get("DEPLOY_SHA"), HEAD_SHA);
+    // The Sentry token stays in the deploy job: the job that writes issues never holds it.
+    assert.doesNotMatch(alert.body, /SENTRY_AUTH_TOKEN/);
+  });
+});
+
 describe("deploy-staging.yml: the rest of the repo keys on it", () => {
   it("is what migration-snapshot.yml triggers on, by name", () => {
     // `workflow_run.workflows` matches workflow NAMES. A rename here with no

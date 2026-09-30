@@ -638,7 +638,33 @@ describe("installs run before any secret, and the trust split holds", () => {
       }
     };
     visit(join(REPO_ROOT, "scripts", "ci", "verify-served-commit.mjs"));
-    assert.ok(seen.size > 1);
+    // The source-map check (#2489) runs from the same copy.
+    visit(join(REPO_ROOT, "scripts", "ci", "verify-sentry-sourcemaps.mjs"));
+    assert.ok(seen.size > 2);
+  });
+
+  it("checks the source maps from the trusted copy, last, on a real full production run only", () => {
+    const copy = sharedSteps()[at("Keep a trusted copy of the served-commit check")];
+    const checks = sharedSteps().filter((s) => /verify-sentry-sourcemaps\.mjs/.test(s.body));
+    assert.deepEqual(
+      checks.map((s) => s.name),
+      ["Check Sentry has this commit's source maps (staging)", "Check Sentry has this commit's source maps (production)"],
+    );
+    // Last: nothing after them can be skipped by one, and they judge what shipped.
+    assert.deepEqual(sharedSteps().slice(-2).map((s) => s.name), checks.map((s) => s.name));
+    for (const step of checks) {
+      assert.equal(step.env.get("TRUSTED_CI"), copy.env.get("TRUSTED_CI"), `"${step.name}" reads another copy`);
+      assert.match(step.body, /run: node "\$TRUSTED_CI\/verify-sentry-sourcemaps\.mjs"/);
+      assert.equal(step.env.get("DEPLOY_SHA"), INPUT_SHA);
+      assert.ok(at(step.name) > at("Check out the commit being deployed"));
+    }
+    const production = checks[1];
+    assert.equal(production.if, "${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}");
+    assert.equal(production.env.has("TARGET_ENVIRONMENT"), false, "the script never names the environment");
+    assert.equal(production.env.get("SOURCEMAPS_SINCE"), "${{ steps.builds-start.outputs.at }}");
+    assert.equal(production.env.get("API_BUILT"), "true");
+    assert.equal(production.env.get("FRONTENDS_BUILT"), "true");
+    assert.match(production.body, /^\s*id: sourcemaps-production$/m);
   });
 });
 
@@ -884,7 +910,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
   // didn't ship, so it can't close). A deploy job that never started reaches
   // the script, which reads this attempt's jobs and files nothing.
   it("raises or closes only on a real ship, or a failed migrations-only run", () => {
-    const [checkout, alert, summary] = outcomeSteps();
+    const [checkout, alert, , summary] = outcomeSteps();
     assert.equal(checkout.if, ALERT_IF);
     assert.match(checkout.body, /uses:\s*actions\/checkout@/);
     assert.match(checkout.body, /persist-credentials:\s*false/);
@@ -900,7 +926,26 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     // Last: it exits 1 on a failed deploy or tag, which would skip a later step.
     assert.equal(summary.name, "Summarise what actually happened");
     assert.equal(summary.if, "always()");
-    assert.equal(outcomeSteps().length, 3);
+    assert.equal(outcomeSteps().length, 4);
+  });
+
+  // #2489. Its own step, before the summary (which exits 1 on a failed deploy
+  // or tag and would skip it). Only on a real `full` run that shipped: a dry
+  // run and a migrations-only run build nothing, and every run it reaches is
+  // one the checkout ran for.
+  it("files source-map alerts from the deploy job's report, only after a real full ship", () => {
+    const [, , sourcemaps] = outcomeSteps();
+    assert.equal(sourcemaps.name, "Alert on missing Sentry source maps");
+    assert.equal(
+      sourcemaps.if,
+      "${{ !cancelled() && !inputs.dry_run_only && inputs.scope != 'migrations-only' && needs.deploy.result == 'success' }}",
+    );
+    assert.match(sourcemaps.body, /run:\s*node scripts\/ci\/sentry-sourcemaps-alert\.mjs/);
+    assert.equal(sourcemaps.env.get("SOURCEMAPS"), "${{ needs.deploy.outputs.sourcemaps }}");
+    assert.equal(sourcemaps.env.get("SOURCEMAPS_CHECKED"), "${{ needs.deploy.outputs.sourcemaps-checked }}");
+    assert.equal(sourcemaps.env.get("GITHUB_TOKEN"), "${{ secrets.GITHUB_TOKEN }}");
+    assert.equal(sourcemaps.env.get("TARGET_ENVIRONMENT"), "production");
+    assert.equal(sourcemaps.env.get("DEPLOY_SHA"), VALIDATED_SHA);
   });
 
   it("matches the alert config it selects, and the roster lists its title", () => {
