@@ -20,7 +20,8 @@ import type {
 } from '#domain/repositories/chat.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
-import type { ChatChannel } from '#domain/entities/chat.entity';
+import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
+import type { Member } from '#domain/entities/member.entity';
 
 describe('ChannelAccessService', () => {
   let service: ChannelAccessService;
@@ -70,7 +71,7 @@ describe('ChannelAccessService', () => {
 
   // Carries real role_ids: the alumni lookup is fed from this row, and a test
   // that leaves them undefined cannot tell a correct call from a garbage one.
-  const member = { id: 'm-1', role_ids: ['role-alumni'] };
+  const member = { id: 'm-1', role_ids: ['role-alumni'] } as Member;
 
   beforeEach(async () => {
     mockChannelRepo = {
@@ -445,7 +446,7 @@ describe('ChannelAccessService', () => {
       sender_id: 'user-b',
       content: 'reported text',
       is_deleted: false,
-    };
+    } as ChatMessage;
     const sibling = { ...reported, id: 'msg-sibling', content: 'unreported' };
     const openReport: ChatMessageReportView = {
       id: 'report-1',
