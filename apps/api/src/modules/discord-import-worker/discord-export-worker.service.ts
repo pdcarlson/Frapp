@@ -218,6 +218,8 @@ export class DiscordExportWorkerService {
     importBatch: (batch: {
       messages: DiscordExportMessage[];
       targetChannelId: string;
+      /** The Discord channel or thread the page came from. */
+      channelName: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
       mentionContext: ImportMentionContext;
     }) => Promise<{
@@ -520,6 +522,8 @@ export class DiscordExportWorkerService {
     importBatch: (batch: {
       messages: DiscordExportMessage[];
       targetChannelId: string;
+      /** The Discord channel or thread the page came from. */
+      channelName: string;
       mediaByRelativePath: Map<string, DiscordImportFile>;
       mentionContext: ImportMentionContext;
     }) => Promise<{
@@ -698,6 +702,7 @@ export class DiscordExportWorkerService {
       const outcome = await importBatch({
         messages: page.map((message) => toExportShapeMessage(message)),
         targetChannelId,
+        channelName: mapping.discord_channel_name,
         mediaByRelativePath,
         mentionContext,
       });

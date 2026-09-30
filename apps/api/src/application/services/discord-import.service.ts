@@ -1259,6 +1259,22 @@ export class DiscordImportService {
         'Choose at least one Discord channel to import.',
       );
     }
+    // A merge whose channel was deleted after it was mapped: the row's
+    // `target_channel_id` is `on delete set null`, and the database no longer
+    // refuses that (#2922). The mapping routes never save a merge without a
+    // target, so this is the one way one reaches here, and the worker would
+    // only stop on it. A thread row repeats its parent's decision and is
+    // listed after it, so the first found is the channel the admin picked for.
+    const lostMerge = channels.find(
+      (channel) =>
+        channel.mapping_action === 'use_existing' &&
+        channel.target_channel_id === null,
+    );
+    if (lostMerge) {
+      throw new BadRequestException(
+        `The Frapp channel chosen for #${lostMerge.discord_channel_name} was deleted. Pick another channel for it, or choose to create a new one.`,
+      );
+    }
 
     const roleMapping = await this.provisionRoles(
       id,

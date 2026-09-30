@@ -705,6 +705,81 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.state().error).toMatch(/points at a direct message/);
   });
 
+  // An officer may delete any channel, one an import merges into included
+  // (#2922). The row keeps its record with no target, and the import stops
+  // with a sentence rather than guess a channel or surface a constraint.
+  it('stops with a sentence when the channel a merge goes into was deleted before the slice (#2922)', async () => {
+    repoRef.channels = [channelMapping({ target_channel_id: null })];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    expect(channelRepo.create).not.toHaveBeenCalled();
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      'The Frapp channel #general was importing into was deleted. Map the channels again, then restart the import.',
+    );
+  });
+
+  it('says a channel deleted after the slice read its row may be why its target is gone (#2922)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.findById.mockResolvedValue(null);
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toMatch(
+      /#general was importing into was deleted, or isn't one of this chapter's channels/,
+    );
+  });
+
+  it('names the deleted channel when an insert meets the foreign key mid-batch (#2922)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    // Resolved while it existed; deleted before the insert landed.
+    const live = await channelRepo.findById(SIGNET_CHANNEL, CHAPTER);
+    channelRepo.findById
+      .mockResolvedValueOnce(live)
+      .mockResolvedValueOnce(null);
+    repoRef.insertMessages.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_messages" violates foreign key constraint "chat_messages_channel_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      'The Frapp channel #general was importing into was deleted. Map the channels again, then restart the import.',
+    );
+  });
+
+  it('keeps a foreign-key failure with another cause as the database said it', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+    repoRef.insertMessages.mockRejectedValueOnce({
+      code: '23503',
+      message:
+        'insert or update on table "chat_messages" violates foreign key constraint "chat_messages_reply_to_id_fkey"',
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toMatch(/chat_messages_reply_to_id_fkey/);
+  });
+
   it('creates a channel once across every part of that channel', async () => {
     // `channelBySnowflake` hands the same object back for each part, so a
     // channel split by `--partition` would otherwise mint one identically-named

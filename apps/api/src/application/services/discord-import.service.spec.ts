@@ -613,6 +613,34 @@ describe('DiscordImportService — starting', () => {
     );
   });
 
+  it('refuses to start a merge whose channel was deleted after it was mapped (#2922)', async () => {
+    // `target_channel_id` is `on delete set null`, and the database no longer
+    // refuses a merge without one, so the start is where it is caught.
+    await build();
+    repo.findFiles.mockResolvedValue([
+      { kind: 'export', uploaded_at: '2026-08-24T12:00:00Z' },
+    ]);
+    repo.findChannels.mockResolvedValue([
+      {
+        id: 'map-1',
+        discord_channel_name: 'rush',
+        mapping_action: 'create_new',
+        target_channel_id: null,
+      },
+      {
+        id: 'map-2',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+      },
+    ]);
+
+    await expect(service.start(IMPORT_ID, CHAPTER, true)).rejects.toThrow(
+      'The Frapp channel chosen for #general was deleted. Pick another channel for it, or choose to create a new one.',
+    );
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
   it('queues the import and records how many parts to expect', async () => {
     await build();
     repo.findFiles.mockResolvedValue([
@@ -1150,6 +1178,23 @@ describe('DiscordImportService — what the scan saw, and who may read what (#27
         },
       ]),
     ).rejects.toThrow(/cannot read #cabinet/);
+    expect(repo.replaceChannels).not.toHaveBeenCalled();
+  });
+
+  it('refuses a merge with no target chosen, as the upload route does', async () => {
+    // The database no longer backs this up: a merge row may lose its target
+    // when an officer deletes the channel (#2922), so the route is the rule.
+    const svc = await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([botChannel()]);
+    await expect(
+      svc.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '900000000000000001',
+          discord_channel_name: 'general',
+          mapping_action: 'use_existing',
+        },
+      ]),
+    ).rejects.toThrow(/Pick a Frapp channel for #general/);
     expect(repo.replaceChannels).not.toHaveBeenCalled();
   });
 
