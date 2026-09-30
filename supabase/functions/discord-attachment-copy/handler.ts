@@ -235,8 +235,9 @@ export async function isServiceCredential(
  *   Auth's admin API, which answers 200 to a service credential and to nothing
  *   else.
  * - `refused`: no key, or Auth answered 401 or 403. The request gets a 401.
- * - `unconfirmed`: Auth answered anything else, or not in time. The request
- *   gets a 503, which the API retries.
+ * - `unconfirmed`: Auth answered anything else, the call threw, or it timed
+ *   out. `reason` says which, and the request's 503 carries it, so the API,
+ *   which retries a 503, logs the cause with each attempt.
  *
  * The byte match can't be the whole check (#2981). On staging the API's key
  * matched neither of the function's, and every copy was refused, though the
@@ -249,17 +250,19 @@ export async function callerVerdict(
   presented: string,
   deps: HandlerDeps,
   timeoutMs: number,
-): Promise<"service" | "refused" | "unconfirmed"> {
-  if (presented.length === 0) return "refused";
-  if (await isServiceCredential(presented, deps.env)) return "service";
+): Promise<CallerVerdict> {
+  if (presented.length === 0) return { verdict: "refused" };
+  if (await isServiceCredential(presented, deps.env)) {
+    return { verdict: "service" };
+  }
   // No URL, no Auth to ask. The platform always sets it, and refusing keeps
   // today's answer for a key the function doesn't hold.
   const supabaseUrl = deps.env("SUPABASE_URL");
-  if (!supabaseUrl) return "refused";
+  if (!supabaseUrl) return { verdict: "refused" };
 
-  // As `storageHeaders` sends the function's own key: a JWT on both headers,
-  // an opaque `sb_…` key on `apikey` alone, since the gateway rejects it as a
-  // Bearer token.
+  // A JWT goes on both headers, as supabase-js sends one. An opaque `sb_…` key
+  // goes on `apikey` alone, which is where the gateway reads it; as a Bearer
+  // token with no `apikey` it is refused.
   const headers: Record<string, string> = { apikey: presented };
   if (!presented.startsWith("sb_")) {
     headers.authorization = `Bearer ${presented}`;
@@ -278,15 +281,30 @@ export async function callerVerdict(
     );
     // The body is a user record; nothing here reads it.
     await response.body?.cancel().catch(() => undefined);
-    if (response.status === 200) return "service";
-    if (response.status === 401 || response.status === 403) return "refused";
-    return "unconfirmed";
-  } catch {
-    return "unconfirmed";
+    if (response.status === 200) return { verdict: "service" };
+    if (response.status === 401 || response.status === 403) {
+      return { verdict: "refused" };
+    }
+    return { verdict: "unconfirmed", reason: `answered ${response.status}` };
+  } catch (error) {
+    const timedOut = error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError");
+    return {
+      verdict: "unconfirmed",
+      reason: timedOut
+        ? "timed out"
+        : `failed: ${describe(error).slice(0, 200)}`,
+    };
   } finally {
     clearTimeout(timer);
   }
 }
+
+/** What {@link callerVerdict} decided about the caller. */
+export type CallerVerdict =
+  | { verdict: "service" }
+  | { verdict: "refused" }
+  | { verdict: "unconfirmed"; reason: string };
 
 /** The project's service credentials, legacy JWT first. */
 function serviceKeys(env: HandlerDeps["env"]): string[] {
@@ -583,17 +601,18 @@ export async function handleCopyRequest(
   if (request.method !== "POST") {
     return json(405, { error: "Use POST." });
   }
-  const verdict = await callerVerdict(
+  const caller = await callerVerdict(
     presentedCredential(request),
     deps,
     limits.authCheckTimeoutMs,
   );
-  if (verdict === "refused") {
+  if (caller.verdict === "refused") {
     return json(401, { error: "Not authorized." });
   }
-  if (verdict === "unconfirmed") {
+  if (caller.verdict === "unconfirmed") {
     return json(503, {
-      error: "Auth could not confirm the caller's credential.",
+      error:
+        `Auth could not confirm the caller's credential: it ${caller.reason}.`,
       retryable: true,
     });
   }

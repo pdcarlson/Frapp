@@ -226,6 +226,8 @@ Deno.test("a service key the function doesn't hold byte for byte is accepted onc
   );
   assert.equal(result.status, "stored");
   assert.equal(calls[0].url, AUTH_CHECK_URL);
+  // A redirect would carry the caller's key, in `apikey`, to another origin.
+  assert.equal(calls[0].init.redirect, "error");
   // Storage still gets the function's own key, never the caller's.
   const upload = calls.find((call) => call.url.startsWith(STORAGE_PREFIX))!;
   const headers = new Headers(upload.init.headers);
@@ -268,23 +270,26 @@ Deno.test("Auth refusing the key is a 401, and nothing is fetched", async () => 
   }
 });
 
-Deno.test("Auth failing to answer is a 503 the API retries, and nothing is fetched", async () => {
-  const answers: FakeOptions["auth"][] = [
-    () => new Response("{}", { status: 500 }),
-    () => new Response("{}", { status: 429 }),
-    () => {
+Deno.test("Auth failing to answer is a 503 the API retries, naming why, and nothing is fetched", async () => {
+  const answers: [FakeOptions["auth"], string][] = [
+    [() => new Response("{}", { status: 500 }), "it answered 500."],
+    [() => new Response("{}", { status: 429 }), "it answered 429."],
+    [() => {
       throw new TypeError("connection reset");
-    },
+    }, "it failed: connection reset."],
     // Never answers until the check's own timeout aborts it.
-    (_url, init) =>
-      new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener(
-          "abort",
-          () => reject(init.signal?.reason),
-        );
-      }),
+    [
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+          );
+        }),
+      "it timed out.",
+    ],
   ];
-  for (const [index, auth] of answers.entries()) {
+  for (const [index, [auth, cause]] of answers.entries()) {
     const { deps, calls } = harness({
       auth,
       limits: { authCheckTimeoutMs: 20 },
@@ -294,10 +299,27 @@ Deno.test("Auth failing to answer is a 503 the API retries, and nothing is fetch
       deps,
     );
     assert.equal(response.status, 503, `answer ${index}`);
-    const body = await response.json() as { retryable?: unknown };
+    const body = await response.json() as {
+      error?: string;
+      retryable?: unknown;
+    };
     assert.notEqual(body.retryable, false, `answer ${index}`);
+    // The API logs this body with each retry, so it must say what happened.
+    assert.ok(body.error?.endsWith(cause), `${index}: ${body.error}`);
     assert.deepEqual(calls.map((call) => call.url), [AUTH_CHECK_URL]);
   }
+});
+
+Deno.test("a key the function doesn't hold is refused when there is no Auth to ask", async () => {
+  const { deps, calls } = harness({
+    env: { SUPABASE_SERVICE_ROLE_KEY: LEGACY_KEY },
+  });
+  const response = await handleCopyRequest(
+    post({ items: [item()] }, { apikey: OTHER_SERVICE_KEY }),
+    deps,
+  );
+  assert.equal(response.status, 401);
+  assert.equal(calls.length, 0);
 });
 
 Deno.test("a new secret key is accepted, and Storage gets it on apikey alone", async () => {
