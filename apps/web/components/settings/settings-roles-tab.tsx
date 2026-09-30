@@ -85,8 +85,9 @@ type Props = {
  * **One tab, one matrix.** This used to be four sub-tabs behind a second tab
  * bar — Pack, Matrix, Custom, Live roles — and `?tab=roles` landed on Pack, a
  * read-only list of archetype role names. The RBAC editor a president came for
- * was two clicks past that. Board `4d` pin 1 makes the nav's Roles row a deep
- * link into this tab, so what it lands on has to be the thing.
+ * was two clicks past that. Board `4d` pin 1 made the nav's Roles row a deep
+ * link into this tab, so what it lands on has to be the thing. That row folded
+ * into the nav's Settings row in #2946; `/roles` still redirects here.
  *
  * What each sub-view became:
  *

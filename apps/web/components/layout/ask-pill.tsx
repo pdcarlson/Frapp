@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useOrgConfig } from "@repo/hooks";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import {
   Dialog,
   DialogContent,
@@ -56,9 +56,10 @@ export function AskPill({ className }: { className?: string }) {
   // Documents can be switched off per chapter, and the nav hides the row when
   // it is. Offering it from here anyway would send a member to a screen
   // whose reads the API refuses — the dead end this dialog exists to avoid,
-  // reintroduced by the dialog itself. Fail-safe while the config loads, like
-  // every other module gate on this surface.
-  const isModuleEnabled = useOrgConfig().data?.isModuleEnabled;
+  // reintroduced by the dialog itself. Fail-safe while the chapter read loads,
+  // like every other module gate on this surface, and read from the same
+  // member-readable source the nav uses (#1982).
+  const isModuleEnabled = useChapterModuleGate();
   const documentsEnabled = !isModuleEnabled || isModuleEnabled("documents");
 
   return (

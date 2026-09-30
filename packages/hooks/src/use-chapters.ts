@@ -55,6 +55,15 @@ function chapterQueryKey(...parts: Array<string | null | undefined>) {
   return ["chapters", ...parts];
 }
 
+/**
+ * The cache key `useCurrentChapter` reads. Exported for writers that change a
+ * field the member view carries: `usePatchOrgConfig` patches `enabled_modules`
+ * here too, because the web shell's module gate reads it from this payload.
+ */
+export function currentChapterQueryKey(chapterId: string | null | undefined) {
+  return chapterQueryKey("current", chapterId);
+}
+
 export function useListChapters(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({

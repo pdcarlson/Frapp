@@ -1,44 +1,47 @@
 import {
   BackworkGlyph,
   BillingGlyph,
-  ChannelsGlyph,
   ChatGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
   EventsGlyph,
-  ImportGlyph,
   PointsGlyph,
   PollsGlyph,
-  ReportsGlyph,
-  RolesGlyph,
   ServiceGlyph,
   SettingsGlyph,
   StudyGlyph,
-  StudyZonesGlyph,
   TasksGlyph,
   type NavGlyphComponent,
 } from "@/components/layout/nav-glyphs";
+import {
+  SETTINGS_ENTRY_PERMISSIONS,
+  SETTINGS_TOOL_ROUTES,
+  hasSettingsDestination,
+} from "@/components/settings/settings-access";
 
 /**
  * Permission-aware dashboard navigation.
  *
  * Kept in a single module so the sidebar and the mobile drawer stay in sync.
  * (There is no longer a command palette or a breadcrumb title map; #2141
- * deleted both.)
+ * deleted both.) The row-by-row table in `spec/ui/web-dashboard/README.md`
+ * § Navigation map mirrors this file, and a change to one changes the other.
  *
- * `spec/ui/web-dashboard/README.md` carries a nav table this file used to
- * mirror. That page is **distrusted on chrome** while
- * [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open
- * (`spec/ui/web-greenfield/README.md` §1) and its table still lists the
- * pre-greenfield sections, so it is not the mirror any more. What remains
- * truth there is the permission and module gating semantics, not the shape.
+ * Structure (#2946): a Chat anchor with no section header, then Chapter, then
+ * Resources, then one unlabeled group holding Directory, Billing and Settings.
+ * Chat leads because chat is the product's home — `/` and `/dashboard` both
+ * redirect there. Profile is deliberately absent: it lives in the account menu,
+ * which the shell hangs off the top-bar avatar (`account-menu.tsx`), because it
+ * is about the viewer, not about the chapter.
  *
- * Structure (greenfield shell, #2141): a Chat anchor with no section header,
- * then Chapter, then Resources, then an unlabeled Directory + Billing group,
- * then Admin. Chat leads because chat is the product's home — `/` and
- * `/dashboard` both redirect there. Profile is deliberately absent: it lives in
- * the account menu, which the shell now hangs off the top-bar avatar
- * (`account-menu.tsx`), because it is about the viewer, not about the chapter.
+ * **The nav fits a 1024×768 window for every seeded role.** A six-row Admin
+ * group (Roles, Study Zones, Reports, Chat Admin, Discord Import, Settings)
+ * used to close the list. For a President it needed an 828px-tall window and
+ * scrolled on a 768px one. It folded into the Settings row: Roles is a Settings
+ * tab, and the four officer tools keep their own pages behind the Settings rail
+ * (`components/settings/settings-access.ts`). Adding a row costs 36px of that
+ * budget, and `tests/visual/nav-fit.spec.ts` fails the build when the nav no
+ * longer fits.
  *
  * There is no `primaryActionLabel`. The shell used to render one per route as a
  * header button, but `primaryActionHref` resolved to the route already open, so
@@ -60,14 +63,14 @@ import {
  *   `MODULE_CATALOG`) that gates this item. When the chapter disables the
  *   module in Settings → Modules, the item is hidden from the sidebar. Items
  *   without a `module` are always-on or governed purely by permission. Hiding
- *   is fail-safe: while the chapter config is still loading the item stays
- *   visible.
+ *   is fail-safe: while the chapter read is still loading the item stays
+ *   visible. The shell reads module state from the member-readable current
+ *   chapter (`lib/hooks/use-chapter-module-gate.ts`), not the officer-only
+ *   config read.
  *
  * Section gating is derived, never declared: a section renders only when at
  * least one of its items survives both gates (`isNavItemVisible` in
- * `protected-nav-item.tsx`). That is what makes the Admin section role-gated —
- * every item in it carries a permission, so an ordinary member sees neither
- * the rows nor the heading.
+ * `protected-nav-item.tsx`), so a heading never announces an empty group.
  */
 
 export type NavPermissionRule =
@@ -89,6 +92,22 @@ export type NavItem = {
   statusLabel?: string;
   /** `enabled_modules` key that gates this item; omit for always-on items. */
   module?: string;
+  /**
+   * Other routes that live under this row. While one of them is open the row
+   * reads as the current section (`aria-current="true"`), so a page reached
+   * from inside Settings still shows where it sits in the nav.
+   */
+  activeFor?: readonly string[];
+  /**
+   * A last check for a row whose destination depends on more than one
+   * permission or module: the row shows only when this returns true. It runs
+   * after the permission rule, and only once permissions have resolved, since
+   * every nav gate fails open until then (`isNavItemVisible`).
+   */
+  showWhen?: (
+    permissions: readonly string[],
+    isModuleEnabled?: (moduleKey: string) => boolean,
+  ) => boolean;
 } & NavPermissionRule;
 
 export type NavSection = {
@@ -214,19 +233,21 @@ export const DASHBOARD_NAV: NavSection[] = [
   },
   {
     /*
-     * Directory and Billing share one UNLABELED group.
+     * Directory, Billing and Settings share one UNLABELED group.
      *
-     * They were two sections of one item each, so the headings "DIRECTORY" and
-     * "FINANCE" were each announcing a single row whose own label already said
-     * the same word. The framework board (option `1b`) merges them and drops
-     * both headings; `1t` lists the two labels as deleted chrome. The group
-     * keeps a wider top margin so it still reads as its own block.
+     * Directory and Billing were two sections of one item each, so the
+     * headings "DIRECTORY" and "FINANCE" were each announcing a single row
+     * whose own label already said the same word. The framework board (option
+     * `1b`) merged them and dropped both headings; `1t` lists the two labels as
+     * deleted chrome. Settings joined them when the Admin group folded into it
+     * (#2946). The group keeps a wider top margin so it still reads as its own
+     * block.
      *
      * `anchor` is the existing "render items with no heading" flag, the same
      * one Chat uses. It is not a claim that this group is an app home.
      */
-    id: "directory-finance",
-    label: "Directory and billing",
+    id: "directory-billing-settings",
+    label: "Directory, billing and settings",
     anchor: true,
     items: [
       {
@@ -249,82 +270,24 @@ export const DASHBOARD_NAV: NavSection[] = [
         status: "available",
         requirePermission: "billing:view",
       },
-    ],
-  },
-  {
-    id: "admin",
-    label: "Admin",
-    items: [
-      {
-        id: "roles",
-        label: "Roles",
-        icon: RolesGlyph,
-        href: "/settings?tab=roles",
-        breadcrumbTitle: "Roles & Permissions",
-        description: "Role pack, permission matrix, custom roles, presidency transfer.",
-        status: "available",
-        requirePermission: "roles:manage",
-      },
-      {
-        id: "geofences",
-        label: "Study Zones",
-        icon: StudyZonesGlyph,
-        href: "/geofences",
-        breadcrumbTitle: "Study Zones",
-        description: "Draw study polygons and reward rates.",
-        status: "available",
-        module: "geofences",
-        requirePermission: "geofences:manage",
-      },
-      {
-        id: "reports",
-        label: "Reports",
-        icon: ReportsGlyph,
-        href: "/reports",
-        breadcrumbTitle: "Reports & Export",
-        description: "Attendance, points, roster, and service exports.",
-        status: "available",
-        module: "reports",
-        requirePermission: "reports:export",
-      },
-      {
-        id: "chat-admin",
-        label: "Chat Admin",
-        icon: ChannelsGlyph,
-        href: "/chat-admin",
-        breadcrumbTitle: "Chat Admin",
-        description:
-          "Create, edit, and delete channels; manage categories and pinned messages.",
-        status: "available",
-        requirePermission: "channels:manage",
-      },
-      {
-        id: "discord-import",
-        label: "Discord Import",
-        icon: ImportGlyph,
-        href: "/discord-import",
-        breadcrumbTitle: "Discord Import",
-        description:
-          "Bring a Discord server's history in as a read-only archive.",
-        status: "available",
-        // `channels:manage` rather than a new permission: an import creates
-        // channels, writes history into them, and can delete all of it again —
-        // exactly what this permission already authorises.
-        requirePermission: "channels:manage",
-      },
       {
         id: "settings",
         label: "Settings",
         icon: SettingsGlyph,
         href: "/settings",
         breadcrumbTitle: "Chapter Settings",
-        description: "Chapter profile, branding, semester, danger zone.",
+        description:
+          "Chapter setup, roles, and officer tools: chat admin, Discord import, study zones, reports.",
         status: "available",
-        // The settings screen reads `GET /chapters/:id/config`, which the API
-        // guards with this same permission — a member without it would land on
-        // a screen that cannot load. Gating the entry point is the fail-fast
-        // rule in `spec/ui/design-system/README.md` §5.
-        requirePermission: "chapter-config:view",
+        // Shown to anyone Settings has something for: a tab they can use, or
+        // an officer tool whose module is on (`settings-access.ts`). The
+        // permission set is the coarse gate; `showWhen` drops the row when
+        // the only tools behind it are switched off. The fail-fast rule in
+        // `spec/ui/design-system/README.md` §5 is why the row is gated at all:
+        // an entry point that opens onto nothing is the defect.
+        requireAnyOf: SETTINGS_ENTRY_PERMISSIONS,
+        showWhen: hasSettingsDestination,
+        activeFor: SETTINGS_TOOL_ROUTES,
       },
     ],
   },

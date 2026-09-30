@@ -17,8 +17,21 @@ Object.defineProperty(window, "location", {
   writable: true,
 });
 
-const { selectChapter, toast, chaptersQuery, currentChapterQuery } = vi.hoisted(
+const {
+  selectChapter,
+  toast,
+  chaptersQuery,
+  currentChapterQuery,
+  permissionsQuery,
+} = vi.hoisted(
   () => ({
+    // An officer by default, so the "Chapter settings" link has somewhere to
+    // go. `undefined` data is a permission read still in flight.
+    permissionsQuery: {
+      current: { data: { permissions: ["chapter-config:view"] } } as {
+        data: { permissions: string[] } | undefined;
+      },
+    },
     selectChapter: vi.fn(async () => true),
     toast: vi.fn(),
     chaptersQuery: {
@@ -33,6 +46,7 @@ const { selectChapter, toast, chaptersQuery, currentChapterQuery } = vi.hoisted(
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chaptersQuery.current,
   useCurrentChapter: () => currentChapterQuery.current,
+  useMyPermissions: () => permissionsQuery.current,
 }));
 
 vi.mock("@/lib/auth/select-chapter", () => ({
@@ -85,6 +99,9 @@ describe("ChapterNavHeader", () => {
       data: chapterPayload("Alpha Chapter"),
       isError: false,
     };
+    permissionsQuery.current = {
+      data: { permissions: ["chapter-config:view"] },
+    };
   });
 
   // REVERSED from the old suite, which asserted `container` was empty here.
@@ -125,6 +142,65 @@ describe("ChapterNavHeader", () => {
     openMenu();
     expect(await screen.findByText("Join another chapter")).toBeInTheDocument();
     expect(screen.getByText("Chapter settings")).toBeInTheDocument();
+  });
+
+  it("offers chapter settings only to a viewer Settings has something for", async () => {
+    // It is the second door into Settings, so it asks the nav row's question
+    // (#2946): an ordinary member would find nothing there they could use.
+    chaptersQuery.current = {
+      data: [membership("chap-1", "Alpha Chapter")],
+      isSuccess: true,
+    };
+    permissionsQuery.current = {
+      data: { permissions: ["members:view", "backwork:upload"] },
+    };
+    render(<ChapterNavHeader collapsed={false} />);
+
+    openMenu();
+    expect(await screen.findByText("Join another chapter")).toBeInTheDocument();
+    expect(screen.queryByText("Chapter settings")).not.toBeInTheDocument();
+  });
+
+  it("drops chapter settings when a tools-only officer's tools are switched off", async () => {
+    // A treasurer's only Settings destination is Reports. The link asks the
+    // module gate too, or it would open onto an empty page once the chapter
+    // turns Reports off.
+    chaptersQuery.current = {
+      data: [membership("chap-1", "Alpha Chapter")],
+      isSuccess: true,
+    };
+    permissionsQuery.current = {
+      data: { permissions: ["members:view", "reports:export"] },
+    };
+    currentChapterQuery.current = {
+      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: false } },
+      isError: false,
+    };
+    const { unmount } = render(<ChapterNavHeader collapsed={false} />);
+    openMenu();
+    expect(await screen.findByText("Join another chapter")).toBeInTheDocument();
+    expect(screen.queryByText("Chapter settings")).not.toBeInTheDocument();
+    unmount();
+
+    currentChapterQuery.current = {
+      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: true } },
+      isError: false,
+    };
+    render(<ChapterNavHeader collapsed={false} />);
+    openMenu();
+    expect(await screen.findByText("Chapter settings")).toBeInTheDocument();
+  });
+
+  it("keeps offering chapter settings while permissions are still loading", async () => {
+    chaptersQuery.current = {
+      data: [membership("chap-1", "Alpha Chapter")],
+      isSuccess: true,
+    };
+    permissionsQuery.current = { data: undefined };
+    render(<ChapterNavHeader collapsed={false} />);
+
+    openMenu();
+    expect(await screen.findByText("Chapter settings")).toBeInTheDocument();
   });
 
   it("keeps chapter switching out of the account menu's job", async () => {

@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import { useMyPermissions, useNotifications, useOrgConfig } from "@repo/hooks";
+import { useMyPermissions, useNotifications } from "@repo/hooks";
 import {
   Sheet,
   SheetContent,
@@ -18,6 +18,7 @@ import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
 import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
@@ -84,11 +85,11 @@ export function DashboardShell({
     () => permissionsPayload?.permissions,
     [permissionsPayload],
   );
-  // Module gating: items tied to a disabled module hide once the chapter config
+  // Module gating: items tied to a disabled module hide once the chapter read
   // resolves. Undefined while loading means "do not gate", so nothing flashes
-  // out during the initial load.
-  const orgConfig = useOrgConfig();
-  const isModuleEnabled = orgConfig.data?.isModuleEnabled;
+  // out during the initial load. Read from the member-readable current chapter,
+  // never the officer-only config read (#1982; the hook says why).
+  const isModuleEnabled = useChapterModuleGate();
 
   const { data: notificationsData } = useNotifications();
   const unreadNotifications = useMemo(() => {
