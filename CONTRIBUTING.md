@@ -210,8 +210,9 @@ tag**, taking the highest:
 - **Minor:** any PR in range labelled `release:minor` (`v0.6.0` → `v0.7.0`)
 - **Major:** any PR in range labelled `release:major`. While the latest tag's major is 0 it
   mints a minor instead (`v0.6.0` → `v0.7.0`): releases are pre-1.0 until v1 GA, and
-  leaving 0.x takes the dispatch's `bump=major`
-  ([spec § Release labels](spec/environments/README.md#release-labels-for-version-tags)).
+  leaving 0.x takes the dispatch's `bump=major`, though whether the `v1.0.0` it mints can
+  have a GitHub Release is open ([#3015](https://github.com/pdcarlson/Frapp/issues/3015);
+  [spec § Release labels](spec/environments/README.md#release-labels-for-version-tags)).
   From 1.x on it mints the next major.
 
 **Put the label on your own PR.** Before #1340 the label went on the single promotion PR,
