@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_MESSAGE_MARKDOWN_DEPTH, opensTooManyContainers } from "./remark-depth-cap";
+import { MAX_MESSAGE_MARKDOWN_DEPTH, opensTooManyContainers } from "./markdown-depth-cap";
 
 // #2209. The scan decides, before remark parses anything, that a body would
 // nest past the depth cap. It exists because remark's parse is quadratic in

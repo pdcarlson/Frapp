@@ -1020,21 +1020,57 @@ describe('NotificationService', () => {
   });
 
   describe('user settings', () => {
-    it('should get user settings', async () => {
+    // `toStrictEqual`, not `toEqual`: the response is the four editable
+    // fields, and a row's `id`, `user_id` and `updated_at` must not leak
+    // through, because a member with no row has none of them to send.
+    it('should get user settings as the editable fields of the row', async () => {
       mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
 
       const result = await service.getSettings('u-1');
 
       expect(mockSettingsRepo.findByUser).toHaveBeenCalledWith('u-1');
-      expect(result).toEqual(baseSettings);
+      expect(result).toStrictEqual({
+        quiet_hours_start: '22:00:00',
+        quiet_hours_end: '08:00:00',
+        quiet_hours_tz: 'America/New_York',
+        theme: 'system',
+      });
     });
 
-    it('should return null when no settings exist', async () => {
+    // #2885. This used to return `null`, which Nest sends as an empty body.
+    // The SDK read that as `data: undefined`, TanStack Query refused it, and
+    // both clients showed their error state to every member who had never
+    // saved settings, which is every new member.
+    it('should return the defaults when the member has no settings row', async () => {
       mockSettingsRepo.findByUser.mockResolvedValue(null);
 
       const result = await service.getSettings('u-1');
 
-      expect(result).toBeNull();
+      expect(result).toStrictEqual({
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+        theme: 'system',
+      });
+    });
+
+    it('should hand each caller its own defaults object', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+
+      const first = await service.getSettings('u-1');
+      first.theme = 'dark';
+      const second = await service.getSettings('u-2');
+
+      expect(second.theme).toBe('system');
+    });
+
+    // The defaults stand for "no row", never for "the read failed": serving
+    // them on an outage would tell a member who has a window that they have
+    // none.
+    it('should propagate a failed read rather than answer with the defaults', async () => {
+      mockSettingsRepo.findByUser.mockRejectedValue(new Error('read failed'));
+
+      await expect(service.getSettings('u-1')).rejects.toThrow('read failed');
     });
 
     it('should update user settings', async () => {
@@ -1052,7 +1088,35 @@ describe('NotificationService', () => {
           theme: 'dark',
         }),
       );
-      expect(result.theme).toBe('dark');
+      // The same four fields `getSettings` answers with, so the two routes
+      // share one response schema.
+      expect(result).toStrictEqual({
+        quiet_hours_start: '22:00:00',
+        quiet_hours_end: '08:00:00',
+        quiet_hours_tz: 'America/New_York',
+        theme: 'dark',
+      });
+    });
+
+    it('should create the row from the defaults on a first save', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockSettingsRepo.upsert.mockResolvedValue({
+        ...baseSettings,
+        quiet_hours_tz: null,
+      });
+
+      await service.updateSettings('u-1', {
+        quiet_hours_start: '22:00',
+        quiet_hours_end: '08:00',
+      });
+
+      expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+        user_id: 'u-1',
+        quiet_hours_start: '22:00',
+        quiet_hours_end: '08:00',
+        quiet_hours_tz: null,
+        theme: 'system',
+      });
     });
 
     it('should preserve existing quiet-hour fields when omitted from update', async () => {

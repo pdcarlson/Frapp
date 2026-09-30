@@ -1,6 +1,9 @@
 /**
  * A remark transform that stops an over-nested message from crashing the
- * render (#2209).
+ * render (#2209). Both clients run it: web's `MessageMarkdown` and, since
+ * #2861, mobile's, which parses with the same react-markdown pipeline and
+ * would overflow the same way on a phone's smaller stack. It moved here from
+ * `apps/web` so neither can drift from the other.
  *
  * **The exposure.** Message bodies are length-capped, never depth-capped:
  * `CHAT_MESSAGE_CONTENT_MAX_LENGTH` is 10,000 characters. A body of
@@ -9,10 +12,10 @@
  * parse builds that tree without overflowing, but every pass after it recurses
  * once per level — `remark-breaks`' walk, `mdast-util-to-hast`, react-markdown's
  * own element filter and `hast-util-to-jsx-runtime` — and one of them throws
- * `RangeError: Maximum call stack size exceeded`. The throw happens during
- * render, and the nearest error boundary is `(dashboard)/error.tsx`, so one
- * message replaced the whole `/chat` content column, composer included, for
- * every member who opened that channel. The message is stored before anyone
+ * `RangeError: Maximum call stack size exceeded`. On web the throw happened
+ * during render, and the nearest error boundary was `(dashboard)/error.tsx`,
+ * so one message replaced the whole `/chat` content column, composer included,
+ * for every member who opened that channel. The message is stored before anyone
  * renders it, so its author only had to send it once.
  *
  * **The behaviour.** When the parsed tree is deeper than
@@ -21,8 +24,8 @@
  * to recurse through. That is deliberate rather than a crash caught somewhere.
  * It is also the honest rendering: a body nested that deep carries no
  * formatting a reader could follow, and showing the source says what was sent.
- * Mention chips still paint, because `remarkMentionChips` tokenizes the raw
- * body and walks `text` nodes, and this leaves exactly one. That one node also
+ * On web, mention chips still paint, because `remarkMentionChips` tokenizes
+ * the raw body and walks `text` nodes, and this leaves exactly one. That one node also
  * holds any code span or link label, so a handle written inside backticks is
  * chipped here although a normally rendered message leaves it plain. The chip
  * is still true: the API's tokenizer ignores markdown, so that member was
@@ -31,7 +34,8 @@
  * **Parse time is a separate exposure.** remark's parse is super-linear on some
  * bodies. `opensTooManyContainers` below skips the parse for the worst of them,
  * lines of container markers. Emphasis runs and nested brackets or images still
- * take over a second at the length cap, once per mount; that is #2664.
+ * take over a second at the length cap, once per mount, on either client; that
+ * is #2664.
  *
  * **Why the render path, not only send-time validation.** Messages already
  * stored have whatever depth they have, so a send-time rule alone would leave
@@ -41,8 +45,9 @@
  * the parse is the one stage that handles depth iteratively. Every plugin after
  * this one, and everything react-markdown runs after the plugins, sees a tree
  * at most the cap deep. The measurement below is an explicit-stack walk for the
- * same reason; `remark-mention-chips.ts` explains why neither file imports
- * `unist-util-visit` or `@types/mdast`.
+ * same reason. `apps/web/components/chat/renderers/remark-mention-chips.ts`
+ * explains why neither file imports `unist-util-visit` or `@types/mdast`, and
+ * the reason holds here too: `@repo/chat-core` declares neither.
  */
 
 interface MdastNode {

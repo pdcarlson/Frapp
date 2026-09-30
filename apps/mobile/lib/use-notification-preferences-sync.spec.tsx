@@ -260,6 +260,53 @@ describe("useNotificationPreferencesSync", () => {
     expect(result.current.categorySync).toBe("synced");
   });
 
+  // #2885: what s16 shows a member who has never saved settings, which is
+  // every new member. The API answers them with the column defaults. It used
+  // to send an empty body, the settings query failed, and the screen fell back
+  // to this device's default of quiet hours ON beside "Couldn't reach the
+  // server", neither of which was true: the server stored no window and
+  // enforced none. Off and synced is what the server actually holds.
+  it("shows quiet hours off and synced for a member with no settings row", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const client = createMockClient({
+      GET: vi.fn(async (path: string) => {
+        if (path === "/v1/settings") {
+          return {
+            data: {
+              quiet_hours_start: null,
+              quiet_hours_end: null,
+              quiet_hours_tz: null,
+              theme: "system",
+            },
+            error: undefined,
+          };
+        }
+        if (path === "/v1/notifications/preferences") {
+          return { data: [], error: undefined };
+        }
+        return { data: null, error: null };
+      }),
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+      expect(result.current.quietHoursSync).toBe("synced");
+    });
+
+    expect(result.current.quietHoursEnabled).toBe(false);
+    // The window turning quiet hours on would apply, not one in force.
+    expect(result.current.quietHoursWindow).toMatchObject({
+      start: "22:00",
+      end: "08:00",
+    });
+    expect(result.current.categorySync).toBe("synced");
+  });
+
   // The server only stores rows for categories a member has changed, and it
   // treats an absent row as enabled — so its answer has to be read as complete,
   // not as a patch over whatever this device last cached.
