@@ -65,11 +65,15 @@ export function vercelDeploymentCreatedAt(deployment) {
   return new Date(deployment?.createdAt ?? deployment?.created ?? 0).getTime();
 }
 
-/** A deployment's state. Vercel's v6 deployments endpoint uses `state`, with
- *  `readyState` as a legacy alias; rows and fixtures carry either spelling.
- *  Prefer `state`; fall back to `readyState`. Shared for the same reason as
- *  `vercelDeploymentCreatedAt`: an API change should be one edit, not one per
- *  caller (it was five copies, one reading the pair in the other order). */
+/** A deployment's state. Vercel reports it twice: its list-deployments schema
+ *  (read 2026-09-30) requires `readyState` and also returns an optional
+ *  `state` with the same values, and documents neither as legacy. Rows and
+ *  fixtures here carry either spelling, so read `state` and fall back to
+ *  `readyState`. That is the order four of the five copies this replaced
+ *  used (#1778); `production-release-pin.mjs` read `readyState` first, which
+ *  differs only for a row whose two fields disagree, and none has been seen.
+ *  Shared for the same reason as `vercelDeploymentCreatedAt`: an API change
+ *  should be one edit, not one per caller. */
 export function vercelDeploymentState(deployment) {
   return deployment?.state ?? deployment?.readyState;
 }

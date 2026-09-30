@@ -48,6 +48,9 @@ import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import {
+  VERCEL_NEUTRAL_TERMINAL_STATES,
+  VERCEL_TERMINAL_FAILURE_STATES,
+  VERCEL_TERMINAL_SUCCESS_STATES,
   fetchVercelDeployments,
   vercelDeploymentCreatedAt,
   vercelDeploymentState,
@@ -60,7 +63,11 @@ export const MAX_DELETIONS_PER_PROJECT = 40;
 /** A project with more than 5,000 deployments is not one this was written for. */
 const MAX_PAGES = 50;
 
-const TERMINAL_STATES = new Set(["READY", "ERROR", "CANCELED"]);
+const TERMINAL_STATES = new Set([
+  ...VERCEL_TERMINAL_SUCCESS_STATES,
+  ...VERCEL_TERMINAL_FAILURE_STATES,
+  ...VERCEL_NEUTRAL_TERMINAL_STATES,
+]);
 
 const DELETE_URL = ({ id, teamId }) =>
   `https://api.vercel.com/v13/deployments/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`;

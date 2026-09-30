@@ -110,7 +110,7 @@ describe("fetchVercelDeployments", () => {
 // One reader for every script that classifies a deployment row: the deployer,
 // the staging alias, the preview pruner and the production release pin.
 describe("vercelDeploymentState", () => {
-  it("reads `state`, and falls back to the legacy `readyState`", () => {
+  it("reads `state`, and falls back to `readyState`", () => {
     assert.equal(vercelDeploymentState({ state: "READY" }), "READY");
     assert.equal(vercelDeploymentState({ readyState: "CANCELED" }), "CANCELED");
   });
