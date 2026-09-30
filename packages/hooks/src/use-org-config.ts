@@ -222,36 +222,54 @@ export function usePatchOrgConfig() {
       const modules = diff.enabled_modules;
       if (!modules) return { previous };
       await qc.cancelQueries({ queryKey: chapterKey });
-      const previousChapter = qc.getQueryData(chapterKey);
-      qc.setQueryData(chapterKey, (old: unknown) =>
-        old && typeof old === "object"
-          ? {
-              ...old,
-              enabled_modules: {
-                ...((old as { enabled_modules?: Record<string, boolean> })
-                  .enabled_modules ?? {}),
-                ...modules,
-              },
-            }
-          : old,
-      );
-      return { previous, previousChapter, patchedChapter: true };
+      // Only the keys this write touches, with the value each had. `scope`
+      // serialises the PATCHes but not `onMutate`, so a second toggle's
+      // optimistic write lands while this one is in flight; restoring a
+      // whole-object snapshot on error would silently undo it too.
+      const touchedModules: Record<string, boolean | undefined> = {};
+      qc.setQueryData(chapterKey, (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        const current =
+          (old as { enabled_modules?: Record<string, boolean> | null })
+            .enabled_modules ?? {};
+        for (const key of Object.keys(modules)) touchedModules[key] = current[key];
+        return { ...old, enabled_modules: { ...current, ...modules } };
+      });
+      return { previous, touchedModules };
     },
     onError: (_error, _diff, context) => {
       if (context && "previous" in context) {
         qc.setQueryData(queryKey, context.previous);
       }
-      if (context && "patchedChapter" in context) {
-        qc.setQueryData(chapterKey, context.previousChapter);
+      const touched = context && "touchedModules" in context ? context.touchedModules : null;
+      if (touched) {
+        qc.setQueryData(chapterKey, (old: unknown) => {
+          if (!old || typeof old !== "object") return old;
+          const restored = {
+            ...((old as { enabled_modules?: Record<string, boolean> | null })
+              .enabled_modules ?? {}),
+          };
+          for (const [key, value] of Object.entries(touched)) {
+            if (value === undefined) delete restored[key];
+            else restored[key] = value;
+          }
+          return { ...old, enabled_modules: restored };
+        });
       }
     },
     // Reconcile against the server (which deep-merges + recomputes derived
     // fields such as theme_palette) once the write settles either way. The
     // current chapter is re-read too: it carries `enabled_modules`, `branding`,
-    // `vocabulary` and `analytics_opt_out` from the same row.
+    // `vocabulary` and `analytics_opt_out` from the same row. That re-read
+    // waits for the last config write in flight: fetched while a later toggle
+    // is still queued, it would return the row without that toggle and
+    // overwrite its optimistic value. During `onSettled` this mutation still
+    // counts as pending, so 1 means "only this one".
     onSettled: () => {
       void qc.invalidateQueries({ queryKey });
-      void qc.invalidateQueries({ queryKey: chapterKey });
+      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) <= 1) {
+        void qc.invalidateQueries({ queryKey: chapterKey });
+      }
     },
   });
 }

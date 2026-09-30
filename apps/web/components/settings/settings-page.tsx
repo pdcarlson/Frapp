@@ -435,8 +435,20 @@ function SettingsPageContent() {
   };
 
   const config = orgConfigQuery.data;
-  const archetypeKey = config?.org_archetype ?? "ifc";
-  const vocabulary = config?.vocabulary ?? {};
+  // A viewer the config read refuses still gets the chapter's own terms: a
+  // `semester:rollover` holder without `chapter-config:view` reaches the
+  // Semester tab (#2946), whose promotion copy names the chapter's pledge
+  // role. The member view of the chapter carries `org_archetype` and
+  // `vocabulary` as well, for exactly this kind of reader.
+  const memberView = chapterQuery.data as
+    | {
+        org_archetype?: string | null;
+        vocabulary?: Record<string, string> | null;
+      }
+    | undefined;
+  const archetypeKey =
+    config?.org_archetype ?? memberView?.org_archetype ?? "ifc";
+  const vocabulary = config?.vocabulary ?? memberView?.vocabulary ?? {};
   // #351: this chapter's term for the pre-promotion role, e.g. "New Member"
   // (IFC default), "Aspirant" (NPHC), "Candidate" (professional) — the
   // rollover copy below promotes members holding this role, so it should
@@ -446,7 +458,7 @@ function SettingsPageContent() {
   // defaults are sentence-case prose ("New member") rather than the title
   // case the seeded role is actually displayed with elsewhere (e.g. the
   // Discord-import role mapping step).
-  const pledgeTerm = titleCase(vocab("pledge", config));
+  const pledgeTerm = titleCase(vocab("pledge", { vocabulary }));
   // "every X", not "Xs": `pledgeTerm` can be an officer-typed free-text
   // override with no plural-form guarantee (see settings-org-tab.tsx's
   // vocab editor) — naively appending "s" breaks for a term already plural

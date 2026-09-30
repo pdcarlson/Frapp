@@ -33,7 +33,7 @@ A Chat anchor, two member sections (Chapter, Resources), and one unlabeled group
 | _(unlabeled)_ | Billing | `/billing` | — | `billing:view` |
 | _(unlabeled)_ | Settings | `/settings` | — | shown when Settings holds a tab or a tool for the viewer ([`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what) § Who sees what) |
 
-**Behind the Settings row.** These were the Admin group's rows until #2946. Each keeps the permission and module gate it had as a row, and each has one stated path:
+**Behind the Settings row.** These were the Admin group's rows until #2946, and each has one stated path. The four tools keep the permission and module gate each had as a row. The Roles tab opens a little wider than its row did: it also admits `chapter-config:view`, since anyone who could open Settings before could see it.
 
 | Destination | Route | Path |
 | --- | --- | --- |

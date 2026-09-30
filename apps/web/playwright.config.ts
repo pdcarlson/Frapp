@@ -63,8 +63,10 @@ export default defineConfig({
    * the floor silently unmeasured. The directory holds three specs now
    * (`responsive-floor`, `pre-auth-floor`, `nav-fit`), and that case was taken
    * on deliberately: `pre-auth-floor.spec.ts` reads `responsive-floor.spec.ts`
-   * off disk and pins `DASHBOARD_ROUTES`' length, so deleting or hollowing out
-   * the floor spec turns this job red whatever else the directory holds.
+   * off disk and pins `DASHBOARD_ROUTES`' length, so deleting or renaming the
+   * floor spec, dropping its read of the route list, or shrinking that list
+   * turns this job red whatever else the directory holds. It does not catch
+   * a floor spec that still reads the list but skips or slices it.
    */
   forbidOnly: isCi,
   /**

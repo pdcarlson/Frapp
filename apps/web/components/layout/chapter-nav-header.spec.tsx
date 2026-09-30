@@ -161,6 +161,36 @@ describe("ChapterNavHeader", () => {
     expect(screen.queryByText("Chapter settings")).not.toBeInTheDocument();
   });
 
+  it("drops chapter settings when a tools-only officer's tools are switched off", async () => {
+    // A treasurer's only Settings destination is Reports. The link asks the
+    // module gate too, or it would open onto an empty page once the chapter
+    // turns Reports off.
+    chaptersQuery.current = {
+      data: [membership("chap-1", "Alpha Chapter")],
+      isSuccess: true,
+    };
+    permissionsQuery.current = {
+      data: { permissions: ["members:view", "reports:export"] },
+    };
+    currentChapterQuery.current = {
+      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: false } },
+      isError: false,
+    };
+    const { unmount } = render(<ChapterNavHeader collapsed={false} />);
+    openMenu();
+    expect(await screen.findByText("Join another chapter")).toBeInTheDocument();
+    expect(screen.queryByText("Chapter settings")).not.toBeInTheDocument();
+    unmount();
+
+    currentChapterQuery.current = {
+      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: true } },
+      isError: false,
+    };
+    render(<ChapterNavHeader collapsed={false} />);
+    openMenu();
+    expect(await screen.findByText("Chapter settings")).toBeInTheDocument();
+  });
+
   it("keeps offering chapter settings while permissions are still loading", async () => {
     chaptersQuery.current = {
       data: [membership("chap-1", "Alpha Chapter")],

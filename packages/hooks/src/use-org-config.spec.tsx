@@ -143,6 +143,95 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
     });
   });
 
+  // `scope` serialises the PATCHes, not `onMutate`: a second toggle writes its
+  // optimistic value while the first is still in flight. Neither the first
+  // one's failure nor its settling re-read may undo the second.
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it("keeps a later toggle when an earlier one fails", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true, polls: true } });
+    qc.setQueryData(CHAPTER_KEY, { enabled_modules: { reports: true, polls: true } });
+    const first = deferred<{ data: undefined; error: { message: string } }>();
+    const second = deferred<{ data: object; error: undefined }>();
+    mockPatch
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    let reportsWrite!: Promise<unknown>;
+    let pollsWrite!: Promise<unknown>;
+    await act(async () => {
+      reportsWrite = result.current
+        .mutateAsync({ enabled_modules: { reports: false } })
+        .catch(() => undefined);
+      pollsWrite = result.current.mutateAsync({ enabled_modules: { polls: false } });
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(qc.getQueryData(CHAPTER_KEY)).toEqual({
+        enabled_modules: { reports: false, polls: false },
+      }),
+    );
+
+    await act(async () => {
+      first.resolve({ data: undefined, error: { message: "boom" } });
+      await reportsWrite;
+    });
+    // Reports goes back; Polls, still in flight, stays off.
+    expect(qc.getQueryData(CHAPTER_KEY)).toEqual({
+      enabled_modules: { reports: true, polls: false },
+    });
+
+    await act(async () => {
+      second.resolve({ data: {}, error: undefined });
+      await pollsWrite;
+    });
+  });
+
+  it("re-reads the current chapter only after the last queued write settles", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { enabled_modules: {} });
+    qc.setQueryData(CHAPTER_KEY, { enabled_modules: {} });
+    const first = deferred<{ data: object; error: undefined }>();
+    const second = deferred<{ data: object; error: undefined }>();
+    mockPatch
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    let reportsWrite!: Promise<unknown>;
+    let pollsWrite!: Promise<unknown>;
+    await act(async () => {
+      reportsWrite = result.current.mutateAsync({ enabled_modules: { reports: false } });
+      pollsWrite = result.current.mutateAsync({ enabled_modules: { polls: false } });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      first.resolve({ data: {}, error: undefined });
+      await reportsWrite;
+    });
+    // A re-read now would return the row without Polls and flip it back on.
+    expect(qc.getQueryState(CHAPTER_KEY)?.isInvalidated).toBe(false);
+
+    await act(async () => {
+      second.resolve({ data: {}, error: undefined });
+      await pollsWrite;
+    });
+    expect(qc.getQueryState(CHAPTER_KEY)?.isInvalidated).toBe(true);
+  });
+
   it("leaves the current chapter's data alone for a write with no module toggle", async () => {
     const qc = makeClient();
     qc.setQueryData(QUERY_KEY, { vocabulary: { recruitment: "Rush" } });
