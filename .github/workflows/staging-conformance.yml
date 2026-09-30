@@ -11,12 +11,10 @@ name: Staging conformance
 # Unit tests: scripts/ci/__tests__/staging-conformance.test.mjs (`npm run test:ci-scripts`).
 #
 # Scope is frapp-staging ONLY. Production Auth hook, redirect allow list,
-# ACTIVE_HEALTHY, skip-until-on SMTP, skip-until-SMTP-on Magic Link, and
-# leaked-password protection are a sibling: production-auth-conformance.yml,
-# own alert title, 07:45 UTC.
-# Empty production SMTP is SKIPPED there (hosted 2/hour cap) so the
-# sibling stays green until #1824; SMTP on with the burned apex From fails,
-# and SMTP on without token_hash in the Magic Link template fails. Infisical /
+# ACTIVE_HEALTHY, SMTP, the Magic Link template, and leaked-password
+# protection are a sibling: production-auth-conformance.yml, own alert
+# title, 07:45 UTC. Empty production SMTP fails there as it does here, and so
+# do the burned apex From and a Magic Link template without token_hash. Infisical /
 # smoke stay production-unwatched. Remaining parity moved from #1384 to #2505.
 # Render `frapp-api-staging` `healthCheckPath` `/health`, and auto-deploy OFF
 # while tracking `main`, are asserted here (empty path is TCP-only; since #2505

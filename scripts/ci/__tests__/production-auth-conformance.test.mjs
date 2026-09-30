@@ -50,14 +50,13 @@ const HEALTHY_AUTH = {
   hook_custom_access_token_uri: "pg-functions://postgres/public/custom_access_token_hook",
   site_url: PRODUCTION_SITE_URL,
   uri_allow_list: `${PRODUCTION_SITE_URL},${PRODUCTION_SITE_URL}/**,frapp://**`,
-  // Hosted-cap SMTP on purpose: the default run must SKIP auth-smtp and
-  // auth-magic-link, not FAIL, until #1824 turns production SMTP on.
-  smtp_host: "",
-  smtp_admin_email: "",
-  rate_limit_email_sent: 2,
+  // Production's shape since #1824: Resend SMTP at the production From.
+  smtp_host: "smtp.resend.com",
+  smtp_admin_email: "no-reply@mail.frapp.live",
+  smtp_sender_name: "Frapp",
+  rate_limit_email_sent: 300,
   smtp_pass: "must-never-appear-in-detail",
-  mailer_subjects_magic_link: "Your Magic Link",
-  mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+  ...FRAPP_MAGIC_LINK,
   password_hibp_enabled: true,
 };
 
@@ -129,7 +128,7 @@ describe("identity", () => {
     assert.match(PRODUCTION_REF, /^[a-z0-9]{15,20}$/);
   });
 
-  it("default checks include skip-until-on SMTP and Magic Link, not staging-only probes", () => {
+  it("default checks include SMTP and Magic Link, not staging-only probes", () => {
     assert.deepEqual([...DEFAULT_CHECK_IDS], [
       "project-status",
       "auth-hook",
@@ -169,21 +168,7 @@ describe("default assertions", () => {
       results.map((r) => r.id),
       ["project-status", "auth-hook", "auth-redirects", "auth-smtp", "auth-magic-link", "auth-leaked-password"],
     );
-    const smtp = results.find((r) => r.id === "auth-smtp");
-    assert.equal(smtp.status, SKIPPED);
-    assert.match(smtp.detail, /2\/hour cap/);
-    assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
-    assert.match(smtp.detail, /smtp_sender_name=Frapp/);
-    assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
-    const magic = results.find((r) => r.id === "auth-magic-link");
-    assert.equal(magic.status, SKIPPED);
-    assert.match(magic.detail, /smtp_host is empty/);
-    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
-    assert.doesNotMatch(magic.detail, /ConfirmationURL/);
-    assert.equal(
-      results.filter((r) => r.id !== "auth-smtp" && r.id !== "auth-magic-link").every((r) => r.status === PASS),
-      true,
-    );
+    assert.equal(results.every((r) => r.status === PASS), true);
     assert.ok(seen.some((u) => u.includes(PRODUCTION_REF)));
     assert.equal(
       seen.filter((u) => u.includes("api.supabase.com") && u.includes(STAGING_REF)).length,
@@ -192,13 +177,21 @@ describe("default assertions", () => {
     );
   });
 
-  it("skips leftover Signet inbox titles while production SMTP is still off", async () => {
+  // Production SMTP is on (#1824), so a switched-off mailer is a regression.
+  // It used to SKIP here and the run still read healthy (#2349).
+  it("fails the run when production SMTP is switched off, and still asserts the Magic Link template", async () => {
     const { fetchImpl } = combinedFetch({
       auth: {
         ...HEALTHY_AUTH,
-        mailer_subjects_invite: "Join Signet",
+        smtp_host: "",
+        smtp_admin_email: "",
+        smtp_sender_name: "",
+        rate_limit_email_sent: 2,
       },
-      githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 908 } },
+      ],
     });
     const { outcome, results } = await runProductionAuthConformance({
       token: "t",
@@ -208,13 +201,15 @@ describe("default assertions", () => {
       writeSummary: () => {},
       logger: quiet,
     });
-    assert.equal(outcome, "healthy");
+    assert.equal(outcome, "failed");
+    assert.equal(results.some((r) => r.status === SKIPPED), false);
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, FAIL);
+    assert.match(smtp.detail, /smtp_host is empty/);
+    assert.match(smtp.detail, /smtp_sender_name=Frapp and smtp_admin_email=no-reply@mail\.frapp\.live/);
+    assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
     const magic = results.find((r) => r.id === "auth-magic-link");
-    assert.equal(magic.status, SKIPPED);
-    assert.match(magic.detail, /smtp_host is empty/);
-    assert.doesNotMatch(magic.detail, /mailer_subjects_invite/);
-    assert.doesNotMatch(magic.detail, /Join Signet/);
-    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
+    assert.equal(magic.status, PASS);
   });
 
   it("skips rather than fails when the Management API token is missing — inconclusive, alert stays open", async () => {
