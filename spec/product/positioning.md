@@ -50,7 +50,7 @@ The first-officer flow is school search → chapter search → archetype confirm
 
 ## Full chapter theming
 
-A chapter picks an accent seed — one colour. Chrome, message accents, mention pills, links, and reaction highlights derive from that seed via the accent engine, not from a hand-picked second palette. Theming runs deeper than an accent chip. Derivation: [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md).
+A chapter picks an accent seed — one colour. Chrome, the viewer's own name in chat, links, and reaction highlights derive from that seed via the accent engine, not from a hand-picked second palette; the `@mention` chip is one fixed amber for every chapter. Theming runs deeper than an accent chip. Derivation: [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md).
 
 ## Visual identity
 

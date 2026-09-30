@@ -66,7 +66,7 @@ const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
 const PERMISSIONS = [
   "Frapp uses the camera to scan the check-in code at chapter events.",
   "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
-  "Frapp uses your photo library so you can send photos in chapter chat.",
+  "Frapp uses your photo library so you can set your profile photo and send photos in chapter chat.",
 ];
 
 const EXPECTED_SITES = [APP_JSON, DUES, PUSH, STRIPE].sort();

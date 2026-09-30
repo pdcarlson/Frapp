@@ -14,19 +14,12 @@ import {
  */
 export function ImportedReactionChips({
   reactions,
-  align = "start",
 }: {
   reactions: ImportedReaction[];
-  align?: "start" | "end";
 }) {
   if (reactions.length === 0) return null;
   return (
-    <div
-      className={cn(
-        "mx-1 mt-1.5 flex flex-wrap gap-1.5",
-        align === "end" && "justify-end",
-      )}
-    >
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
       {reactions.map((reaction) => {
         const glyph = importedReactionGlyph(reaction);
         return (

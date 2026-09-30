@@ -15,7 +15,17 @@ import type {
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+
+/**
+ * The idempotency key a mirror is posted under. Prefixed so it can never equal
+ * a member's client-generated id (a bare UUID), which is the only other thing
+ * `client_message_id` holds.
+ */
+export function auditMirrorClientId(auditId: string): string {
+  return `audit:${auditId}`;
+}
 
 interface AuditLogRow {
   id: string;
@@ -39,6 +49,14 @@ interface AuditLogRow {
  * message. The bridge replaces the inline `postAuditMessage` pattern that
  * used to live in `chapter-config.service.ts` so each new audit-writing
  * service doesn't have to repeat (and risk drifting from) the bridge code.
+ *
+ * **One mirror per audit row, however many instances hear it (#2846).**
+ * Realtime delivers every INSERT to every API process, so each mirror is posted
+ * with `client_message_id = auditMirrorClientId(row.id)`. The existing unique
+ * index `idx_chat_messages_dedupe (channel_id, sender_id, client_message_id)`
+ * then refuses every insert after the first, and the loser's `23505` means
+ * "already mirrored". No claim table is needed: the message row is its own
+ * claim.
  *
  * Failure modes are non-fatal: the bridge logs and continues. A missing
  * `#chapter-audit` channel for a chapter is a configuration bug, not a
@@ -148,6 +166,7 @@ export class ChatBridgeWorkerService
         sender_id: SYSTEM_SENDER_ID,
         content: this.summarize(row),
         kind: 'system_audit',
+        client_message_id: auditMirrorClientId(row.id),
         payload: {
           action: row.action,
           actor_user_id: row.actor_user_id,
@@ -157,6 +176,11 @@ export class ChatBridgeWorkerService
       const { error: insertError } = await this.supabase
         .from('chat_messages')
         .insert(message);
+      if (insertError?.code === PG_UNIQUE_VIOLATION) {
+        // Another instance mirrored this audit row first.
+        this.logger.debug(`chat-bridge: audit ${row.id} already mirrored`);
+        return;
+      }
       if (insertError) {
         logThrowable(
           this.logger,

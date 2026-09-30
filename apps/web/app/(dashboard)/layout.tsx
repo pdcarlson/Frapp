@@ -42,7 +42,7 @@ export default async function DashboardLayout({
         from wherever it is parsed, so anything rendered above it could paint
         once in the house default before this rule exists — and everything the
         accent touches (the nav's active item, the primary button, the member's
-        own chat bubbles) is below.
+        own name in chat) is below.
       */}
       <ChapterAccentStyle paint={accentPaint} />
       <DashboardShell defaultNavCollapsed={navCollapsed}>

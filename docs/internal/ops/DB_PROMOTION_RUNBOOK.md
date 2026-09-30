@@ -572,6 +572,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-30: One chat push fan-out per message, whatever the API's instance count (#2846)
+
+### 20260930020000_chat_push_dispatches.sql
+
+- **Purpose**: Adds `public.chat_push_dispatches`: one row per chat message the push worker fans out, `message_id` the primary key (FK to `chat_messages`, `on delete cascade`), plus `dispatched_at` and its index. RLS is enabled with no policies (service role only). Every API instance receives every `chat_messages` INSERT from Realtime; the primary key lets exactly one of them send. The worker purges rows older than a day hourly. The mechanism is in [`render.md` § 5.5](deployment/render.md#55-in-process-chat-workers-chunk-05).
+- **Checks**: After `db push`,
+  `select relrowsecurity from pg_class where relname = 'chat_push_dispatches';` returns `t`, and
+  `select count(*) from pg_policies where tablename = 'chat_push_dispatches';` returns `0`.
+- **Promoter notes**: **Ship it before the API that writes it, never after.** The #2846 push worker claims every message before sending and treats a failed claim as "not claimed", so against an unmigrated database every chat push is skipped, and the only signal is a `chat-push: dispatch claim failed` error line per message. The deploy workflows apply migrations before shipping the API, which is the order this needs. An older API ignores the table. No existing row is touched. Re-applying is idempotent (`if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-chat-push-dispatch-claims-20260930020000) § Rollback chat push dispatch claims.
+
 ## 2026-09-29: Members link their Discord history to themselves (#2878)
 
 ### 20260929230000_discord_author_links.sql

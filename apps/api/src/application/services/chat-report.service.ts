@@ -15,6 +15,7 @@ import type {
   ChatReportResolutionStatus,
   ChatReportStatus,
 } from '#domain/entities/chat-moderation.entity';
+import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import {
   ChannelAccessService,
@@ -152,6 +153,8 @@ export class ChatReportService {
    * snapshot's sender, #2878). Mirroring
    * `sender_id` alone would snapshot nobody for exactly the rows the import
    * purge later hard-deletes, leaving an officer with content and no author.
+   * The content is {@link reportedContentSnapshot}: for a poll that is the
+   * question *and* the option labels, which the member also wrote (#2724).
    *
    * Idempotency is the repository's: a second report on the same message while
    * the first is still `open` returns that first report instead of surfacing the
@@ -206,7 +209,7 @@ export class ChatReportService {
       chapter_id: chapterId,
       message_id: input.message_id,
       reporter_user_id: reporterUserId,
-      reported_content: message.content,
+      reported_content: reportedContentSnapshot(message),
       reported_sender_id: message.sender_id,
       reported_author_name: message.author_name ?? null,
       reason: input.reason,
@@ -748,6 +751,69 @@ export class ChatReportService {
     if (!report) throw new NotFoundException('Report not found');
     return report;
   }
+}
+
+/**
+ * The text a report snapshots as `reported_content`: what the member wrote, as
+ * it stood when the report was filed (`spec/behavior/chat/README.md` § Report,
+ * "A report carries its own evidence").
+ *
+ * For most messages that is `content`. **A poll's member-written text is not
+ * all in `content`** (#2724): `content` holds the question, and the option
+ * labels live only on the card — without them, an innocuous question with a
+ * harassing option is reported as the question alone, and the author's delete
+ * leaves the officer nothing else. So a poll snapshots `content`, then the
+ * card's question on its own line if it differs from `content` (the card shows
+ * the question, not `content`), then one `- label` line per option. The web
+ * queue renders the snapshot with its line breaks.
+ *
+ * Polls come in two shapes, and both are read: the web client's `/poll`
+ * posts `kind: 'poll'` with `payload.options: [{ id, label }]` (chat-core's
+ * `dispatchPoll`; mobile creates no polls), and the older
+ * `POST /v1/channels/:id/polls` writes
+ * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
+ * A malformed card falls back to `content`, the same as any other message:
+ * this runs on the filing path and must not fail it.
+ */
+export function reportedContentSnapshot(
+  message: Pick<
+    ChatMessage,
+    'content' | 'type' | 'kind' | 'payload' | 'metadata'
+  >,
+): string {
+  const poll = pollText(message);
+  if (!poll || poll.labels.length === 0) return message.content;
+  const lines = [message.content];
+  if (poll.question && poll.question.trim() !== message.content.trim()) {
+    lines.push(poll.question);
+  }
+  for (const label of poll.labels) lines.push(`- ${label}`);
+  return lines.join('\n');
+}
+
+function pollText(
+  message: Pick<ChatMessage, 'type' | 'kind' | 'payload' | 'metadata'>,
+): { question: string | null; labels: string[] } | null {
+  let card: unknown;
+  if (message.kind === 'poll') card = message.payload;
+  else if (message.type === 'POLL') card = message.metadata;
+  else return null;
+  if (!card || typeof card !== 'object') return null;
+
+  const { question, options } = card as {
+    question?: unknown;
+    options?: unknown;
+  };
+  if (!Array.isArray(options)) return null;
+  const labels: string[] = [];
+  for (const option of options) {
+    const label: unknown =
+      option && typeof option === 'object'
+        ? (option as { label?: unknown }).label
+        : option;
+    if (typeof label === 'string') labels.push(label);
+  }
+  return { question: typeof question === 'string' ? question : null, labels };
 }
 
 /**
