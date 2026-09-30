@@ -14,7 +14,7 @@ so use **test-mode / read-only** credentials only.
 
 When present, gather runtime truth (CI, deploys, schema, secret presence) via provider
 APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
-[`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) ("GitHub PAT usage policy").
+[`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md) ("GitHub PAT usage policy").
 
 | Env var | Typical use |
 | ------- | ----------- |
@@ -37,10 +37,10 @@ from the Claude Code environment.
 
 | Env var | Status |
 | ------- | ------ |
-| `RENDER_API_KEY` (older images: `RENDER_APIKEY`) | Removed 2026-09-23 and the agent's Render key revoked ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). The same name is still a GitHub Actions environment secret: [`AGENT_INFRA.md` § No repository secrets](../ci-cd/AGENT_INFRA.md#no-repository-secrets-2518). |
+| `RENDER_API_KEY` (older images: `RENDER_APIKEY`) | Removed 2026-09-23 and the agent's Render key revoked ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). The same name is still a GitHub Actions environment secret: [`agent-infra.md` § No repository secrets](../../ci-cd/agent-infra.md#no-repository-secrets-2518). |
 | `VERCEL_API_KEY` | Removed 2026-09-24; no live Vercel token matched it. Same Actions caveat as `RENDER_API_KEY`. |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `SUPABASE_API_KEY`, `SUPABASE_ACCESS_TOKEN` | Removed from the environment by 2026-09-24T16:03Z; a session whose container started earlier still carries them, so check its start time (`ps -o lstart= -p 1`) before telling Paul. Every Supabase account token except CI's two project-scoped read-only ones was revoked the same day, `claude-code` (the agents' token) among them ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). `SUPABASE_ACCESS_TOKEN` is still the name CI reads from Infisical `staging` and `prod`, where it holds those read-only tokens ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md)); leave that copy alone. No script reads the other two names. |
-| `LINEAR_API_KEY` | Linear personal API key — **dead**: Linear was retired 2026-08-08 (work tracking moved to GitHub Issues, see [`../ci-cd/GITHUB_PM.md`](../ci-cd/GITHUB_PM.md) and [#680](https://github.com/pdcarlson/Frapp/issues/680)). Revoke it. |
+| `LINEAR_API_KEY` | Linear personal API key — **dead**: Linear was retired 2026-08-08 (work tracking moved to GitHub Issues, see [`../../ci-cd/github-pm.md`](../../ci-cd/github-pm.md) and [#680](https://github.com/pdcarlson/Frapp/issues/680)). Revoke it. |
 
 > **Infisical naming.** Older docs said `INFISICAL_API_KEY`; cloud-sandbox sessions don't
 > provide that variable — they carry `INFISICAL_SERVICE_TOKEN` + `INFISICAL_PROJECT_ID` (re-verify with

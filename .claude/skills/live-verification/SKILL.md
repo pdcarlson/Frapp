@@ -221,7 +221,7 @@ Don't read the red run as a result either. An unauthenticated run, a regressed r
 expired session, and the SSO wall all fail the same way. Check the URL each test landed on.
 
 The 375px gate is the local `web-responsive-floor` run, and a staging run doesn't replace it. No
-pixel-baseline suite exists any more ([`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)).
+pixel-baseline suite exists any more ([`quality-gates.md`](../../../docs/ci-cd/quality-gates.md)).
 
 ## Writes and cleanup
 
@@ -243,7 +243,7 @@ session.
 - **Push fanout (APNS/FCM).** APNS is unreachable from a sandbox. FCM's endpoint is reachable, but
   delivery needs service-account credentials and a real device token, so don't report FCM as
   network-blocked. End-to-end push stays under the "Runtime checks BLOCKED" protocol in
-  [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md).
+  [`agent-infra.md`](../../../docs/ci-cd/agent-infra.md).
 - **Provider APIs (Render, Vercel, Sentry, PostHog, Supabase's Management API).** Direct `fetch` is
   blocked. Reach them through MCP, which bypasses the allowlist, per
   [`infrastructure-research`](../infrastructure-research/SKILL.md).

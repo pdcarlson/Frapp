@@ -460,7 +460,7 @@ function main() {
     console.error("These are NOT in the baseline, so this change introduced them.");
     console.error("Fix the import, or — if the boundary itself is wrong — change the rule in");
     console.error("scripts/dependency-cruiser.cjs and say why. Do not re-record the baseline to grow it:");
-    console.error("it exists to shrink. See docs/internal/ci-cd/QUALITY_GATES.md.");
+    console.error("it exists to shrink. See docs/ci-cd/quality-gates.md.");
   }
   return 1;
 }

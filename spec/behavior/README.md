@@ -46,7 +46,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
 
-Each topic file is canonical **intended** behavior. Delivery (which is shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md)), not in this spec.
+Each topic file is canonical **intended** behavior. Delivery (which is shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/ci-cd/github-pm.md`](../../docs/ci-cd/github-pm.md)), not in this spec.
 
 ---
 

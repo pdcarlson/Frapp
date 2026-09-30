@@ -8,7 +8,7 @@ which launches the bringup in [`scripts/cloud-sandbox-up.sh`](../../../scripts/c
 
 Laptop/local setup is the other path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent
 credentials live in [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader
-CI/agent infra is [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
+CI/agent infra is [`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md).
 
 ## How Claude Code web environments work
 
@@ -501,7 +501,7 @@ bringup script) after any local reset.
 The four staging hosts in the allowlist above let a sandbox session
 reach the **deployed staging environment**, not just the local stack. This is what retires
 most of the "Runtime checks BLOCKED" protocol in
-[`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) — see
+[`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md) — see
 [`.claude/skills/live-verification/SKILL.md`](../../../.claude/skills/live-verification/SKILL.md)
 for how an agent is expected to use it.
 
@@ -685,7 +685,7 @@ is worse than no answer.
 - **Supabase MCP write tools** (`create_branch`, `apply_migration`) are not allowlisted in
   `.claude/settings.json`, so they prompt — which unattended sandboxes cannot approve (the
   committed file has never carried a deny rule; see
-  [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md)). Local Supabase covers DB + migrations
+  [`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md)). Local Supabase covers DB + migrations
   without them.
 - **Push fanout**, but read the halves separately — they differ, and the obvious summary
   is wrong. **APNS is unreachable**: `api.push.apple.com` and `api.sandbox.push.apple.com`
@@ -694,7 +694,7 @@ is worse than no answer.
   Trusted entry `*.googleapis.com`, with no Frapp-specific line involved. That is transport
   only: an actual fanout test still needs service-account credentials and a real device
   token to deliver to, so end-to-end push remains a "Runtime checks BLOCKED" case under
-  [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md). Probe before assuming either way.
+  [`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md). Probe before assuming either way.
 - **Live Realtime/Presence and RLS-as-GoTrue** are out of scope *only when the staging
   egress above is not configured*. With it plus a staging smoke credential they are
   reachable against hosted `frapp-staging` — that is the point of

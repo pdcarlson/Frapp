@@ -268,7 +268,7 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
     `- Run: ${run.html_url}`,
     `- Commit: ${run.head_sha}`,
     "",
-    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/pr-babysitting.md`): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed the next time that workflow reports a real verdict (a `skipped`/`neutral` report or a superseded run leaves it in place); success and real failures stay silent._",
+    "_Automated wake signal for watching agent sessions (`docs/ci-cd/pr-babysitting.md`): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed the next time that workflow reports a real verdict (a `skipped`/`neutral` report or a superseded run leaves it in place); success and real failures stay silent._",
   );
   return lines.join("\n");
 }
