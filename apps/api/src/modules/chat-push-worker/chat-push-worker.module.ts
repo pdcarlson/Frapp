@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
+import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
@@ -37,6 +38,11 @@ import { AuthModule } from '../auth/auth.module';
     ChannelCacheModule,
     ChatBlockModule,
   ],
-  providers: [ChatPushWorkerService, ChatNotificationPreferenceRepository],
+  providers: [
+    ChatPushWorkerService,
+    ChatNotificationPreferenceRepository,
+    // The per-message claim that keeps a second instance from re-sending (#2846).
+    ChatPushDispatchRepository,
+  ],
 })
 export class ChatPushWorkerModule {}
