@@ -18,6 +18,7 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 - The bar previously showed six tabs — Home, Chat, Events, Points, Profile, More. It now shows these four; Home and Points are gone as screens, and Profile moved to the More hub per [`screens.md`](screens.md).
 - Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md). They are custom `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`, transcribed from the tab bar drawn in the Canvas reference — not an off-the-shelf icon pack.
 - Every route outside these four is hidden from the bar (`href: null`) and reached by navigation.
+- **No screen draws the tab navigator's header** (`headerShown: false`, [#2485](https://github.com/pdcarlson/Frapp/issues/2485)). The board draws none: every screen carries its own title, through `ScreenShell` or its own bar (s05's `‹ #name`, s22's `✕ End`), so the header only said that title again above it. It supplied no way back either, because a tab route's header renders without a `back`. A pushed route's back control is one it draws itself. `apps/mobile/lib/tab-layout.spec.tsx` renders the layout and fails if the header comes back, for the navigator or for any one registration.
 
 ## More hub (s09)
 
@@ -274,3 +275,13 @@ native code, a config plugin or a permission.
 400 and 700 italic faces (`italicFontFamilyFor`); the three chat styles that set
 `fontStyle: "italic"` moved to the face. Why an italic has to be a face of its own:
 [`packages/theme/README.md` § Fonts](../../../packages/theme/README.md#fonts).
+
+**#2485 touched `app/(tabs)/_layout.tsx` and `components/screen-shell.tsx`, as an
+integrator change.** The layout turned the navigator's header off (§ Tab bar above) and
+lost the header styling and Chat home's `headerTitle` with it. The shell took over what
+the header had been doing: it takes the top safe-area inset, marks its title as the
+screen's heading, and gained an optional `titleMark` slot before the title. Chat home
+fills that slot with the chapter mark, which had been the header's title and is the mark's
+one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
+mark). The two screens that opt out of the shell, s05 and s13, took the top inset
+themselves.

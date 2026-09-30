@@ -697,7 +697,12 @@ export default function ChatThreadScreen() {
           : "Reconnecting…";
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    // Every edge: the tab layout draws no navigator header (#2485), so the
+    // `‹ #name` bar below is the top of the screen.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         // `padding` is the correct iOS behavior; on Android the window already

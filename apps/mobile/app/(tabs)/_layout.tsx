@@ -1,5 +1,4 @@
 import { Redirect, Tabs } from "expo-router";
-import { ChapterHeaderTitle } from "@/components/chapter-header-title";
 import {
   ChatGlyph,
   EventsGlyph,
@@ -11,7 +10,7 @@ import {
 import { resolveAuthGate } from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
@@ -22,6 +21,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * hotspot protocol), so cluster slices add screens without reopening it. A
  * `Tabs.Screen` needs a real backing file, which is why the not-yet-built routes
  * ship as stubs rather than as registrations alone.
+ *
+ * No screen here gets the navigator's header (#2485). The Canvas board draws
+ * none: every screen carries its own title (`ScreenShell`, or the thread's
+ * `‹ #name` bar), so the header only ever said the same thing again above it.
+ * It never supplied a way back either — a tab route's header renders with no
+ * `back` — so the pushed routes keep the back controls they draw themselves.
+ * Chat home's chapter mark, which used to ride in the header, is now its
+ * title row (`spec/behavior/branding.md` § Chapter mark). The `title`s below
+ * still name each route for the tab labels and the web document title.
  */
 export default function TabLayout() {
   const { status, chapterId, isChapterResolving } = useAuthSession();
@@ -49,6 +57,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarActiveTintColor: accent,
         tabBarInactiveTintColor: tokens.color.text.muted,
         tabBarStyle: {
@@ -67,11 +76,6 @@ export default function TabLayout() {
             {children}
           </TabLabel>
         ),
-        headerTitleStyle: {
-          ...typeRole(tokens.typography.role.title),
-          color: tokens.color.text.foreground,
-        },
-        headerStyle: { backgroundColor: tokens.color.surface.card },
       }}
     >
       {/* ── The four locked tabs ─────────────────────────────────────────── */}
@@ -79,7 +83,6 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Chat",
-          headerTitle: ({ style }) => <ChapterHeaderTitle style={style} />,
           tabBarIcon: ({ focused }) => <ChatGlyph {...glyphPaint(focused)} />,
         }}
       />

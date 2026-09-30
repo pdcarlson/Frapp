@@ -245,7 +245,10 @@ const APP_SCREENS = [
     slug: "01-home-chat",
     route: "/",
     label: "s04 — Chat home (chapter channels, UP NEXT, ✦ Ask pill)",
-    ready: () => document.body.innerText.includes("CHANNELS"),
+    // The #general row, not a section header: which headers draw depends on
+    // how the seed files its channels (CHANNELS is only the unfiled ones,
+    // #1684), while every chapter always has #general.
+    ready: () => Boolean(document.querySelector('[aria-label^="#general"]')),
   },
   {
     slug: "02-ask-answer",
@@ -253,9 +256,8 @@ const APP_SCREENS = [
     // Events behind the ✦ pill, never a screen of its own
     // (`spec/ui/mobile/navigation.md:60`); `app/(tabs)/ask.tsx` exists only to
     // back a frozen `Tabs.Screen` registration and says so in its own header
-    // comment. Shooting the route photographs a deliberately bare shell with
-    // the tab navigator's "Ask" title stacked above the shell's own — the pill
-    // on s04 is where a member actually opens this.
+    // comment. Shooting the route photographs a deliberately bare shell — the
+    // pill on s04 is where a member actually opens this.
     route: "/",
     label: "s17 — Ask sheet over Chat home, answered with citations",
     async act(page) {
@@ -275,15 +277,18 @@ const APP_SCREENS = [
       await page.getByText("general", { exact: true }).first().click();
       await page.waitForTimeout(2000);
     },
-    // Two things this predicate must not be phrased as. Not "CHANNELS has
-    // gone": React Navigation keeps the tab's index screen mounted under the
-    // pushed thread, so the channel list stays in `innerText` throughout. And
-    // not `innerText.includes("Message")` for the composer: a placeholder is an
+    // Two things this predicate must not be phrased as. Not "the channel list
+    // has gone": React Navigation keeps the tab's index screen mounted under
+    // the pushed thread, so the list stays in the DOM throughout. And not
+    // `innerText.includes("Message")` for the composer: a placeholder is an
     // attribute, so it never appears in `innerText` at all and the wait can
-    // only ever time out. "Thread" is text, and only this route renders it.
+    // only ever time out. The thread's own `#general` heading is drawn by this
+    // route alone (the tab navigator's "Thread" header it used to wait for is
+    // gone, #2485).
     ready: () =>
-      document.body.innerText.includes("Thread") &&
-      Boolean(document.querySelector('[placeholder="Message"]')),
+      [...document.querySelectorAll('[role="heading"], h1')].some(
+        (heading) => heading.textContent === "#general",
+      ) && Boolean(document.querySelector('[placeholder="Message"]')),
     expectRoute: "/chat-thread",
   },
   {
@@ -324,10 +329,11 @@ const STORE_SCREENS = [
     slug: "01-chat-home",
     route: "/",
     label: "Chat home — chapter channels, unread counts, UP NEXT",
-    // CHANNELS alone is the channels query; UP NEXT and the unread badges come
-    // from separate queries (events/tasks, unread counts), so wait for both.
+    // The #general row alone is the channels query (see s04 above for why not
+    // a section header); UP NEXT and the unread badges come from separate
+    // queries (events/tasks, unread counts), so wait for both.
     ready: () =>
-      document.body.innerText.includes("CHANNELS") &&
+      Boolean(document.querySelector('[aria-label^="#general"]')) &&
       document.body.innerText.includes("UP NEXT") &&
       /\n\d+\n/.test(document.body.innerText),
   },
@@ -341,8 +347,9 @@ const STORE_SCREENS = [
     },
     // Why these two and not something simpler: see `03-chat-thread` above.
     ready: () =>
-      document.body.innerText.includes("Thread") &&
-      Boolean(document.querySelector('[placeholder="Message"]')),
+      [...document.querySelectorAll('[role="heading"], h1')].some(
+        (heading) => heading.textContent === "#general",
+      ) && Boolean(document.querySelector('[placeholder="Message"]')),
     expectRoute: "/chat-thread",
   },
   {
@@ -419,15 +426,15 @@ async function signIn(page) {
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByText("Sign in", { exact: true }).last().click();
 
-  // The chapter name in the header is the first thing that proves the whole
-  // chain worked: session persisted, token mirrored, API accepted the Bearer.
+  // A loaded channel row is the first thing that proves the whole chain
+  // worked: session persisted, token mirrored, API accepted the Bearer.
   // A seeded login has accepted no Terms (#2302), so the auth gate may ask
   // first, on /terms; agree for it and carry on to the home the shots are of.
   await waitFor(
     page,
     "signed-in home or the Terms prompt (is EXPO_PUBLIC_WEB_SECURE_STORE=1 set?)",
     (prompt) =>
-      document.body.innerText.includes("CHANNELS") ||
+      Boolean(document.querySelector('[aria-label^="#general"]')) ||
       document.body.innerText.includes(prompt),
     60_000,
     TERMS_PROMPT_TITLE,
@@ -436,7 +443,7 @@ async function signIn(page) {
   await waitFor(
     page,
     "signed-in home",
-    () => document.body.innerText.includes("CHANNELS"),
+    () => Boolean(document.querySelector('[aria-label^="#general"]')),
     60_000,
   );
 }

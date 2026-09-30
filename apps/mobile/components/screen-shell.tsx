@@ -6,6 +6,13 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
   title: string;
+  /**
+   * Drawn before the title on the title row. Chat home passes the chapter mark
+   * (`ChapterMark`), which is the one mobile surface of the chapter's logo
+   * (`spec/behavior/branding.md` § Chapter mark). It used to ride in the tab
+   * navigator's header, which no screen has since #2485.
+   */
+  titleMark?: ReactNode;
   subtitle: string;
   /**
    * Trailing control rendered on the title row, right-aligned and vertically
@@ -20,8 +27,15 @@ type ScreenShellProps = {
   children: ReactNode;
 };
 
+/**
+ * The screen frame every drawn tab screen shares: its title row, subtitle and
+ * scrolling body. The title is the screen's only heading. The tab layout draws
+ * no navigator header (#2485), so the shell also takes the top safe-area inset
+ * the header used to absorb.
+ */
 export function ScreenShell({
   title,
+  titleMark,
   subtitle,
   headerAction,
   children,
@@ -30,11 +44,17 @@ export function ScreenShell({
   const styles = createStyles(tokens);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={styles.title}>{title}</Text>
+            {titleMark}
+            <Text accessibilityRole="header" style={styles.title}>
+              {title}
+            </Text>
             {headerAction ? (
               <View style={styles.headerAction}>{headerAction}</View>
             ) : null}

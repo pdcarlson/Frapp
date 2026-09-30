@@ -180,10 +180,10 @@ vi.mock("expo-router", () => {
     usePathname: vi.fn(() => "/"),
     Link: "Link",
     Redirect: "Redirect",
-    // A host string cannot carry `.Screen`, and a route file may render
-    // `<Tabs.Screen options={…} />` to set its own options (the flag-off
-    // branch of `app/(tabs)/ask.tsx` does). Both render as host nodes named
-    // for what they stand in for, so a spec can find them and read `options`.
+    // A host string cannot carry `.Screen`, and `app/(tabs)/_layout.tsx`
+    // registers every route with `<Tabs.Screen … />` (`lib/tab-layout.spec.tsx`
+    // renders it). Both render as host nodes named for what they stand in for,
+    // so a spec can find them and read `screenOptions` and `options`.
     Tabs: Object.assign(
       (props: Record<string, unknown>) => React.createElement("Tabs", props),
       {

@@ -40,8 +40,8 @@ import { shareAttachment } from "@/lib/chat/share-attachment";
 /**
  * The chat thread's image viewer (#2874): tapping an image in a message opens
  * it over the whole thread, with pinch, pan and double-tap to zoom and a share
- * action. It covers the thread, not the navigator's header and tab bar, which
- * the frozen tab layout draws (#2889). Web's counterpart is `apps/web/components/chat/image-viewer.tsx`.
+ * action. It covers the thread, not the tab bar, which the frozen tab layout
+ * draws (#2889). Web's counterpart is `apps/web/components/chat/image-viewer.tsx`.
  *
  * It draws the attachment's signed URL in an `Image`, which never runs a
  * response as a document, so it keeps the trust rule the forced download
