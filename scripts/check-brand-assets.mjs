@@ -2,7 +2,7 @@
 /**
  * The CI gate over the committed Signet brand assets.
  *
- * Four independent properties, because before #2153 this script checked only
+ * Five independent properties, because before #2153 this script checked only
  * the first one and it proved nothing about the mark:
  *
  *   1. PARITY — synced Next app icons are byte-identical to their canonical
@@ -25,6 +25,12 @@
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
+ *   5. STORE GRAPHICS — the Google Play icon and feature graphic under
+ *      `apps/mobile/store/graphics/` are the shape Play takes, the icon is
+ *      still a render of the vector, and the feature graphic is what the
+ *      renderer draws today. The audits live in `scripts/lib/store-graphics.mjs`,
+ *      shared with `rasterize-brand-assets.mjs`.
+ *
  * Hash parity is blind to 2, 3 and 4: every file could agree perfectly with
  * every other file and still be the wrong colour, which is exactly the state
  * #2153 found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
@@ -40,7 +46,6 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import {
-  FIELD,
   FIELD_HEX,
   GOLD_HEX,
   ICO_SIZES,
@@ -53,10 +58,18 @@ import {
   assertLockedPair,
   assertSvgLocked,
   census,
-  coverageMask,
   glyphCoverage,
   maskIou,
 } from "./lib/brand-pixels.mjs";
+import {
+  PLAY_FEATURE_GRAPHIC,
+  PLAY_ICON,
+  assertFeatureGraphicCurrent,
+  auditFeatureGraphic,
+  auditPlayIcon,
+  decode as decodeBuffer,
+  vectorMask,
+} from "./lib/store-graphics.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -154,13 +167,8 @@ for (const { canonical, targets } of SYNCED) {
 }
 
 // ── 3. Pixels ───────────────────────────────────────────────────────────────
-async function decode(rel) {
-  const buffer = readFileSync(repo(rel));
-  const [{ data, info }, meta] = await Promise.all([
-    sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
-    sharp(buffer).metadata(),
-  ]);
-  return { data, info, meta };
+function decode(rel) {
+  return decodeBuffer(readFileSync(repo(rel)));
 }
 
 for (const rel of opaqueRasters) {
@@ -226,18 +234,9 @@ for (const rel of monochromeLayers) {
 // covers every SVG and not only this pair.
 if (existsSync(repo(MASTER_SVG)) && existsSync(repo(MASTER_RASTER))) {
   try {
-    const shape = async (input) => {
-      const { data, info } = await sharp(input)
-        .resize(1024, 1024, { fit: "fill" })
-        .flatten({ background: { ...FIELD, alpha: 1 } })
-        .removeAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      return coverageMask(data, info.channels, info.width, info.height);
-    };
     const agreement = maskIou(
-      await shape(readFileSync(repo(MASTER_SVG))),
-      await shape(readFileSync(repo(MASTER_RASTER))),
+      await vectorMask(readFileSync(repo(MASTER_SVG)), 1024),
+      await vectorMask(readFileSync(repo(MASTER_RASTER)), 1024),
     );
     if (agreement < RENDER_AGREEMENT_MIN) {
       fail(
@@ -321,6 +320,31 @@ if (
   }
 }
 
+// ── 6. Store graphics ───────────────────────────────────────────────────────
+// Nothing ships these in a binary: the owner uploads them in Play Console. They
+// are gated anyway because the Play icon IS the mark, and a listing that shows
+// an old crest beside a new app is the same drift #2153 was.
+if (present(PLAY_ICON, "run npm run rasterize:brand-assets")) {
+  try {
+    await auditPlayIcon(
+      readFileSync(repo(PLAY_ICON)),
+      PLAY_ICON,
+      readFileSync(repo(MASTER_SVG)),
+    );
+  } catch (error) {
+    fail(String(error.message ?? error));
+  }
+}
+if (present(PLAY_FEATURE_GRAPHIC, "run npm run rasterize:brand-assets")) {
+  try {
+    const buffer = readFileSync(repo(PLAY_FEATURE_GRAPHIC));
+    await auditFeatureGraphic(buffer, PLAY_FEATURE_GRAPHIC);
+    await assertFeatureGraphicCurrent(buffer, PLAY_FEATURE_GRAPHIC);
+  } catch (error) {
+    fail(String(error.message ?? error));
+  }
+}
+
 if (failed) {
   process.exit(1);
 }
@@ -329,5 +353,6 @@ console.log(
     `${syncedCount} synced copies match canonical; ` +
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
-    `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA`,
+    `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA; ` +
+    `the Play icon and feature graphic are the shape Play takes and current`,
 );
