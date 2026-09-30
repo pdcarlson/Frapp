@@ -1,0 +1,124 @@
+name: Supabase quota watch
+
+# Daily read of the Supabase organization's quotas: each project's disk, and
+# the organization's Storage size. At 70% of a quota, or when a figure can't be
+# read, it raises one `incident` alert, and it closes the alert on a run that
+# read everything under the threshold (#2531).
+#
+# Why page early: the spend cap is on, so neither quota is billed past its
+# limit. Past the Storage quota Supabase restricts BOTH projects, production
+# included, after a grace period, and its own email arrives only once the quota
+# is already exceeded. A project whose disk fills goes read-only on its own,
+# with no grace period. Quotas, spend cap and the reasons:
+# docs/internal/ops/deployment/supabase.md § Plan and quotas. Egress and
+# Realtime peak connections have no API, so only the organization's Usage page
+# shows them.
+#
+# ── The test page ───────────────────────────────────────────────────────────
+# Dispatch with `threshold_percent: 0` to prove an alert reaches the owner: every
+# figure reads as over, so the run files the alert and goes red. The next
+# scheduled run, at the default 70%, closes it. The input can only lower the
+# threshold.
+#
+# ── Two injections, one token each ──────────────────────────────────────────
+# Each Infisical environment's SUPABASE_ACCESS_TOKEN is a read-only token for
+# its own project (#2583), so the job injects both and keeps each under its own
+# name, as migration-snapshot.yml does. Project refs come from
+# .github/environments.json. A missing token is not an error here: the script
+# reports that project as unreadable and raises the alert, which a failed step
+# could not. A missing Infisical credential still fails the injection step and
+# reds the run with no alert, as it does for check-migration-drift.yml.
+#
+# Semantics live in scripts/ci/supabase-quota.mjs.
+# Unit tests: scripts/ci/__tests__/supabase-quota.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 08:15 UTC daily, after production-release-pin.yml (08:00). One of the
+    # daily staggered Management-API watchdogs. Full schedule:
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
+    - cron: "15 8 * * *"
+  workflow_dispatch:
+    inputs:
+      threshold_percent:
+        description: "Percent of each quota that raises the alert (0 to 70). Lower it to test the page."
+        required: false
+        default: "70"
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run at a time: two would race on the single alert issue.
+  group: supabase-quota
+  cancel-in-progress: false
+
+jobs:
+  quota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Secrets belong to the `automation` environment: `main` only, no required
+    # reviewers (#2518, #2583).
+    # See docs/ci-cd/agent-infra.md § GitHub environments and bootstrap secrets.
+    environment:
+      name: automation
+      # A read, not a deployment: no deployment record per run.
+      deployment: false
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Only SUPABASE_ACCESS_TOKEN is read from each; project refs come from
+      # .github/environments.json.
+      - name: Inject staging secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "staging"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Keep the staging token
+        run: |
+          echo "SUPABASE_ACCESS_TOKEN_STAGING=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          # An injection exports only the keys its environment has, so without
+          # this a token missing from `prod` would keep staging's value and be
+          # read as production's.
+          echo "SUPABASE_ACCESS_TOKEN=" >> "$GITHUB_ENV"
+
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
+      - name: Inject production secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Keep the production token
+        run: |
+          echo "SUPABASE_ACCESS_TOKEN_PRODUCTION=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          # Cleared so the script's fallback token can't stand in for a
+          # project whose own token is missing.
+          echo "SUPABASE_ACCESS_TOKEN=" >> "$GITHUB_ENV"
+
+      - name: Check Supabase quotas
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # Empty on a scheduled run, which means the default.
+          SUPABASE_QUOTA_THRESHOLD_PERCENT: ${{ inputs.threshold_percent }}
+        run: node scripts/ci/supabase-quota.mjs
