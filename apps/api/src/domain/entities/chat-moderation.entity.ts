@@ -112,6 +112,57 @@ export interface ChatMessageReport {
   created_at: string;
   resolved_at: string | null;
   resolved_by: string | null;
+  /**
+   * The message's attachments **as they stood when the report was filed**
+   * (#2481), from its `chat_message_attachments` rows. Empty for a message with
+   * none, and for every report filed before the column existed.
+   *
+   * The files themselves are kept rather than copied. Until the report's
+   * release finishes ({@link evidence_released_at}), every purge skips the
+   * objects named here (the message delete and the Discord import's
+   * deletion), so a sender deleting a reported photo no longer destroys the
+   * evidence with it. Once the report resolves, its objects are released:
+   * deleted unless an undeleted message or another report still holds them.
+   */
+  reported_attachments: ReportedAttachment[];
+  /**
+   * When the release of this report's objects last finished, which is what
+   * ends its hold. NULL while the report is open, and after it resolves until
+   * a release succeeds, which is what the hourly sweep looks for.
+   */
+  evidence_released_at: string | null;
+}
+
+/**
+ * One attachment a report holds as evidence: where the object is stored, and
+ * what the member saw of it. `content_type` and `byte_size` are nullable
+ * because they are on `chat_message_attachments` (a row the legacy backfill
+ * recovered knows only a path and a filename).
+ */
+export interface ReportedAttachment {
+  bucket: string;
+  storage_path: string;
+  filename: string;
+  content_type: string | null;
+  byte_size: number | null;
+}
+
+/**
+ * What the officer queue is told about a held attachment: never where it is
+ * stored. An officer reaches the bytes only through the report
+ * (`GET /v1/chat/reports/{id}/attachments`), as a short-lived signed URL.
+ */
+export type ReportedAttachmentSummary = Pick<
+  ReportedAttachment,
+  'filename' | 'content_type' | 'byte_size'
+>;
+
+/**
+ * A held attachment as the officer route hands it out: the summary plus a
+ * forced-download signed URL, minted per request.
+ */
+export interface ReportedAttachmentWithUrl extends ReportedAttachmentSummary {
+  download_url: string;
 }
 
 /**
@@ -130,7 +181,17 @@ export interface ChatMessageReport {
  * member best placed to retaliate. An officer needs the evidence, not the
  * reporter.
  */
-export type ChatMessageReportView = Omit<ChatMessageReport, 'reporter_user_id'>;
+export type ChatMessageReportView = Omit<
+  ChatMessageReport,
+  'reporter_user_id' | 'reported_attachments' | 'evidence_released_at'
+> & {
+  /**
+   * The held attachments without their storage location
+   * ({@link ReportedAttachmentSummary}). `evidence_released_at` is left out
+   * too: it is bookkeeping for the release, not something the queue shows.
+   */
+  reported_attachments: ReportedAttachmentSummary[];
+};
 
 /**
  * One member's block of another, scoped to one chapter.

@@ -30,6 +30,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  ChatReportAttachmentDto,
   ChatReportDto,
   ChatReportRemovalDto,
   CreateChatReportDto,
@@ -62,7 +63,7 @@ import {
  *
  * `MEMBERS_VIEW` at the class is the same floor chat itself requires.
  * `@RequirePermissions` is a pure AND merged across class and handler, so the
- * three officer routes below require `members:view` **and** `channels:manage` —
+ * four officer routes below require `members:view` **and** `channels:manage` —
  * which is what is wanted: the queue is a chapter-data read as well as a
  * moderation surface.
  *
@@ -75,10 +76,10 @@ import {
  *
  * **No officer route serves or acts on a report about its caller.** The
  * repository leaves out rows whose `reported_sender_id` is the caller on the
- * queue read, and the resolve and remove routes answer 404 for them — the same
- * 404 as another chapter's report — so a reported officer cannot read the
- * reporter's note or learn the report exists (`spec/behavior/chat/README.md`
- * § Report).
+ * queue read, and the resolve, attachments and remove routes answer 404 for
+ * them — the same 404 as another chapter's report — so a reported officer
+ * cannot read the reporter's note or learn the report exists
+ * (`spec/behavior/chat/README.md` § Report).
  */
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -152,6 +153,32 @@ export class ChatReportController {
     @Body() dto: ResolveChatReportDto,
   ): Promise<ChatReportDto> {
     return this.reportService.resolveReport(id, chapterId, dto.status, userId);
+  }
+
+  /**
+   * The attachments an open report holds, each with a signed download URL
+   * (#2481). The report is the capability, as it is for a removal: this opens
+   * the report's own snapshot of what the message carried, whether or not the
+   * message still exists, and nothing else — no channel, thread or message is
+   * read, so a report about a DM still does not open the DM.
+   *
+   * `channels:manage` on top of the class floor, like the rest of the queue.
+   * 404 for a report not in the caller's chapter or about the caller; 409 once
+   * the report is resolved, when its attachments are released. The URLs force
+   * a download, as every chat attachment URL does.
+   */
+  @Get(':id/attachments')
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary: 'Attachments an open report holds, with signed download URLs',
+  })
+  @ApiOkResponse({ type: [ChatReportAttachmentDto] })
+  async listReportAttachments(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChatReportAttachmentDto[]> {
+    return this.reportService.listReportEvidence(id, chapterId, userId);
   }
 
   /**

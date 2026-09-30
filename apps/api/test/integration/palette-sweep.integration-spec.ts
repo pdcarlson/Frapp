@@ -92,6 +92,7 @@ describeIntegration('Stale-palette sweep against live PostgREST', () => {
       null as never,
       null as never,
       null as never,
+      null as never,
     );
 
     assertOk(

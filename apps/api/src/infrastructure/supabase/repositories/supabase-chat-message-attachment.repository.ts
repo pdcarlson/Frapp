@@ -86,7 +86,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
 
   async findSharedObjects(
     candidates: readonly { bucket: string; storage_path: string }[],
-    excludingMessageId: string,
+    excludingMessageId: string | null,
   ): Promise<{ bucket: string; storage_path: string }[]> {
     if (candidates.length === 0) return [];
 
@@ -130,14 +130,16 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
       // an *already deleted* message hold an object alive forever: delete both
       // messages sharing one and each is spared by the other's surviving row,
       // and nothing ever purges it.
-      const { data, error } = await this.supabase
+      let probe = this.supabase
         .from('chat_message_attachments')
         .select('id, chat_messages!inner(is_deleted)')
         .eq('bucket', candidate.bucket)
         .eq('storage_path', candidate.storage_path)
-        .eq('chat_messages.is_deleted', false)
-        .neq('message_id', excludingMessageId)
-        .limit(1);
+        .eq('chat_messages.is_deleted', false);
+      if (excludingMessageId !== null) {
+        probe = probe.neq('message_id', excludingMessageId);
+      }
+      const { data, error } = await probe.limit(1);
       if (error) throw error;
 
       if ((data ?? []).length > 0) shared.push(candidate);

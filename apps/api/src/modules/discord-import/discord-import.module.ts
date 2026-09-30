@@ -11,6 +11,7 @@ import { SupabaseDiscordImportRepository } from '../../infrastructure/supabase/r
 import { SupabaseDiscordConnectionRepository } from '../../infrastructure/supabase/repositories/supabase-discord-connection.repository';
 import { SupabaseDiscordAuthorLinkRepository } from '../../infrastructure/supabase/repositories/supabase-discord-author-link.repository';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
+import { SupabaseChatMessageReportRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-report.repository';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { SupabaseArchiveMediaCopier } from '../../infrastructure/storage/supabase-archive-media-copier.service';
 import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-bot-gateway.service';
@@ -21,6 +22,7 @@ import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.r
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { DISCORD_AUTHOR_LINK_REPOSITORY } from '#domain/repositories/discord-author-link.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { ARCHIVE_MEDIA_COPIER } from '#domain/adapters/archive-media-copier.interface';
 import {
@@ -86,6 +88,11 @@ import {
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,
+    },
+    // The purge keeps what an open chat report holds (#2481).
+    {
+      provide: CHAT_MESSAGE_REPORT_REPOSITORY,
+      useClass: SupabaseChatMessageReportRepository,
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     { provide: ARCHIVE_MEDIA_COPIER, useClass: SupabaseArchiveMediaCopier },
