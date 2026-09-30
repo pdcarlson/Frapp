@@ -199,15 +199,15 @@ The module catalog governs which features chapters can enable.
 
 ## Modules are chat integrations, not nav tabs
 
-Chat is the spine of the app (see [`spec/product/positioning.md`](./positioning.md)), so an ops module does not primarily get a top-level nav tab. When a module is enabled it gets:
+Chat is the spine of the app (see [`spec/product/positioning.md`](./positioning.md)), so an ops module does not primarily get a top-level nav tab. When a module is enabled it gets, where they fit its work:
 
-1. **A slash command** in chat (`/event`, `/task`, `/poll`, `/dues`, `/points`, `/hours`).
+1. **A slash command** in chat. The commands, the module each one needs, and which are implemented yet: [`spec/behavior/chat/integrations.md` § Slash command catalog](../behavior/chat/integrations.md#slash-command-catalog).
 2. **A rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit).
 3. **Optionally, a dashboard page** for the longer-form view (calendar, ledger, kanban). The dashboard page is secondary to the chat experience, not primary.
 
 Example: a treasurer types `/dues remind overdue` in `#general`; a rich card summarizes overdue members with a per-row "Send DM reminder" button that DMs each member a templated message with a Pay button — no tab-switching, no separate workflow.
 
-Every paid module ships with slash command(s), a rich renderer, and an optional dashboard surface. It gets no system channel of its own ([`spec/behavior/integrations.md`](../behavior/integrations.md#integration-pattern)).
+Not every paid module has a slash command: a module gets one only when it has a message-shaped action, so Backwork, Reports and Onboarding have none by design (#2468). No module gets a system channel of its own. Both rules: [`spec/behavior/integrations.md` § Integration Pattern](../behavior/integrations.md#integration-pattern).
 
 ## Tiers
 
@@ -253,9 +253,9 @@ Enabling paid ops modules is never a gate — it is surfaced as a dismissible in
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
-Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), and hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), and hides its dashboard nav item (module-gated `ProtectedNavItem`; where that gate reads its state: [`spec/ui/web-dashboard/README.md` § Gating & routing semantics](../ui/web-dashboard/README.md#gating--routing-semantics)). Two known gaps on web: the palette reads its gate from the officer-only config, so it shows members below President no commands (#2957), and a command typed out in full and sent with Enter skips the gate entirely (#2993). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
 
-**Server-side enforcement.** Hiding a surface is not the same as closing it: a direct API call bypasses every client-side gate above. Controllers for paid modules therefore carry `@RequireModule(key)` (`apps/api/src/interface/decorators/module.decorator.ts`), and `ChapterGuard` rejects **writes** to a disabled module with `403 chapter.module.disabled`. Two rules follow from the guarantee that data is preserved:
+**Server-side enforcement.** Hiding a surface is not the same as closing it: a direct API call bypasses every client-side gate above. Controllers for paid modules therefore carry `@RequireModule(key)` (`apps/api/src/interface/decorators/module.decorator.ts`), and `ChapterGuard` rejects **writes** to a disabled module with `403 chapter.module.disabled`. Polls is the exception today: a poll is posted through the chat send route (`POST /v1/channels/:id/messages`, `kind: "poll"`), which carries no `@RequireModule`, so switching Polls off doesn't stop one (#2993). Two rules follow from the guarantee that data is preserved:
 
 - **Reads are never gated.** The toggle hides and freezes a surface; it must not strand the chapter's existing data behind it, or re-enabling could not restore access.
 - **Enabled unless explicitly `false`**, matching the client's `isModuleEnabled` contract — a chapter created before a module existed has no key for it and must not be locked out of something it never turned off.

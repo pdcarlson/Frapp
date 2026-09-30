@@ -1,14 +1,18 @@
 # Ops Integrations
 
-Frapp's ops modules (Events, Tasks, Points, Dues, Rush, Backwork, Reports, Onboarding pathway) follow a single **modules-as-integrations** pattern with chat as the primary surface. This file is the canonical integration pattern shared by every module; per-module rules live in each module's own behavior file (e.g. [`events.md`](events.md), [`tasks.md`](tasks.md), [`points.md`](points.md), [`billing.md`](billing.md), [`rush.md`](rush.md), [`backwork.md`](backwork.md), [`reports.md`](reports.md), [`onboarding.md`](onboarding.md)).
+Frapp's paid ops modules follow a single **modules-as-integrations** pattern with chat as the primary surface. This file is the canonical integration pattern shared by every module; per-module rules live in each module's own behavior file (e.g. [`events.md`](events.md), [`tasks.md`](tasks.md), [`points.md`](points.md), [`polls.md`](polls.md), [`service-hours.md`](service-hours.md), [`billing.md`](billing.md), [`rush.md`](rush.md), [`backwork.md`](backwork.md), [`reports.md`](reports.md)).
+
+This file doesn't list the modules. The roster is `MODULE_CATALOG` in `packages/org-archetypes/src/index.ts`, which Settings → Modules renders and `enabled_modules` is keyed by; its tiers are described in [`spec/product/modules.md`](../product/modules.md#module-catalog). Which modules have a slash command, and whether each command is implemented yet, is the Required module column of [`chat/integrations.md` § Slash command catalog](chat/integrations.md#slash-command-catalog) (in code, `SLASH_COMMANDS` in `packages/chat-integrations/src/index.ts`). (Until 2026-09-30 this paragraph listed eight modules by hand. The list had drifted from both catalogs: it left out Polls and Service hours, which ship `/poll` and `/hours`, and it named Backwork, Reports and Onboarding as if they had commands, #2468.)
 
 ## Integration Pattern
 
-Each module is delivered as a consistent set of surfaces:
+A module is delivered through whichever of these surfaces fit its work:
 
-- **Slash command(s)** in chat — the primary way members create and act on the module's artifacts.
-- **Rich message renderer** — one renderer per artifact type (`kind="<module>"`), keyed off the artifact `kind`. A module may register several (e.g. dues needs both `dues_invoice` and `dues_reminder`).
-- **Optional dashboard surface** — a longer-form view (calendar, kanban, leaderboard) only when it materially adds value. The dashboard is always secondary to chat.
+- **Slash command(s)** in chat: the primary way members create and act on the module's artifacts, for a module whose artifact is message-shaped (an event, a task, a poll, a points grant, an hours entry, a dues reminder, a rush candidate).
+- **Rich message renderer**: one renderer per artifact type (`kind="<module>"`), keyed off the artifact `kind`. A module may register several (e.g. dues needs both `dues_invoice` and `dues_reminder`).
+- **Optional dashboard surface**: a longer-form view (calendar, kanban, leaderboard) only when it materially adds value. The dashboard is always secondary to chat.
+
+**Not every module has a slash command, by design (#2468).** Backwork is a file library, Reports is an export and digest, and Onboarding is a new-member pathway. None produces an artifact that belongs in a message, so each is reached from its own surface and has no command. The same test decides any other module: it gets a command when it gains a message-shaped action, as a row in the slash command catalog, not by amending a list here. A module in `MODULE_CATALOG` with no row in that catalog has no command.
 
 A module gets **no system channel of its own** (decided 2026-09-23, #576). This spec used to promise a `#<module>` channel per enabled module (`#events`, `#dues`, …), created on enable and muted on disable. It was dropped before any was built: nothing posted to such a channel, every paid module would have added an empty channel to every member's list, and once seeded into every chapter, removing them again would take a destructive data migration. A module's cards land in the channel where its slash command ran, and its reminders go out as pushes or direct messages ([`notifications.md`](notifications.md)). The one system channel is `#chapter-audit` ([`chat/integrations.md`](chat/integrations.md#chapter-audit-system-channel-bridge)).
 
@@ -18,7 +22,7 @@ Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/mess
 
 - A module is enabled per chapter via the `enabled_modules` boolean map on chapter config. Free-tier modules are always-on in the sense the UI enforces: `alwaysOn` in `MODULE_CATALOG` locks their Settings toggle, though the config PATCH itself does not yet reject disabling one. Every other module is enabled **unless** `enabled_modules[key]` is explicitly `false` — absence is not disablement — and each archetype seed writes an explicit value for every key at chapter creation; the operations-heavy archetypes turn most paid modules on, while `honor` and `colony` deliberately do not.
 - Module state is **always read from chapter config, never from a `window.*` global**. Renderers, dashboards, and RPC payloads import their state and helpers from ES modules — no module state is hung off `window`.
-- Disabling a module immediately hides its nav item (gated on `isModuleEnabled`) and removes its slash commands from the chat palette. Its data and the messages it posted are kept, so re-enabling restores it.
+- Disabling a module immediately hides its nav item (gated on `isModuleEnabled`) and removes its slash commands from the chat palette. Its data and the messages it posted are kept, so re-enabling restores it. Where each gate reads its state, the server-side write gate, and the known gaps in both: [`spec/product/modules.md` § Module disabling behavior](../product/modules.md#module-disabling-behavior).
 
 ## Actor Identity
 

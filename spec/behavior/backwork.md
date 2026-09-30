@@ -73,4 +73,4 @@ On upload, an optional AI step parses the PDF and pre-fills metadata fields (dep
 
 ## Chat Integration
 
-Chat integration (slash commands, rich renderers): see [`integrations.md`](integrations.md).
+Backwork has no slash command and no rich renderer, by design: nothing it produces belongs in a message ([`integrations.md` § Integration Pattern](integrations.md#integration-pattern), #2468).
