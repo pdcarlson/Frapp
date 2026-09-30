@@ -287,10 +287,12 @@ function applyFilter(row: Row, filter: Filter): boolean {
 
   switch (filter.op) {
     case 'eq':
-      return actual === expected;
+      return sameValue(actual, expected);
     case 'neq':
       // `col <> x` is NULL, not true, when col is NULL.
-      return actual !== null && actual !== undefined && actual !== expected;
+      return (
+        actual !== null && actual !== undefined && !sameValue(actual, expected)
+      );
     case 'is':
       return actual === expected || (expected === null && actual === undefined);
     case 'in':
@@ -323,6 +325,27 @@ function applyFilter(row: Row, filter: Filter): boolean {
           `assertion pass without proving anything.`,
       );
   }
+}
+
+/**
+ * Equality as Postgres sees it for the one non-scalar case repositories use: a
+ * `jsonb` column compared with its JSON text (`.filter(col, 'neq', '[]')`).
+ * The seed holds the parsed value and the filter the text, so the text is
+ * parsed and both are compared as JSON. Everything else is plain `===`.
+ */
+function sameValue(actual: unknown, expected: unknown): boolean {
+  if (
+    actual !== null &&
+    typeof actual === 'object' &&
+    typeof expected === 'string'
+  ) {
+    try {
+      return JSON.stringify(actual) === JSON.stringify(JSON.parse(expected));
+    } catch {
+      return false;
+    }
+  }
+  return actual === expected;
 }
 
 /** PostgREST spells literals inside a filter string; `.eq()` passes them typed. */

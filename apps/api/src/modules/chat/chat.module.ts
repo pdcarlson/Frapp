@@ -142,6 +142,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
-  exports: [ChatService],
+  // ChatReportService for `ScheduledJobsModule`'s hourly sweep of report
+  // evidence whose release did not finish (#2481).
+  exports: [ChatService, ChatReportService],
 })
 export class ChatModule {}

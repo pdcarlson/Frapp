@@ -42,6 +42,15 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
+import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import type {
+  IChatMessageReportRepository,
+  StoredObjectRef,
+} from '#domain/repositories/chat-moderation.repository.interface';
+import type {
+  ReportedAttachment,
+  ReportedAttachmentWithUrl,
+} from '#domain/entities/chat-moderation.entity';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import {
@@ -297,6 +306,10 @@ export class ChatService {
     // Report and block (#2257) live in their own services; the hot path needs
     // only the block list, to mask what it serves.
     private readonly chatBlocks: ChatBlockService,
+    // An open report holds the reported message's attachments (#2481): the
+    // delete purge asks which objects to leave, and the release asks again.
+    @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
+    private readonly reportRepo: IChatMessageReportRepository,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -1359,7 +1372,9 @@ export class ChatService {
 
   /**
    * Delete the Storage objects belonging to a just-deleted message, skipping
-   * any an undeleted message still references.
+   * any an undeleted message still references or an open report holds as
+   * evidence (#2481). A held object is released when its report resolves
+   * ({@link releaseReportEvidence}).
    *
    * Owns its own read so that every failure on this path — the attachment
    * lookup, the reference probe, or Storage itself — is swallowed. Before this,
@@ -1418,43 +1433,218 @@ export class ChatService {
       return;
     }
 
-    const sharedKeys = new Set(
-      shared.map((row) => `${row.bucket} ${row.storage_path}`),
+    const sharedKeys = objectKeys(shared);
+    const unshared = uniqueObjects(attachments).filter(
+      (object) => !sharedKeys.has(objectKey(object)),
     );
+
+    // An open report holds what it names (#2481): the sender deleting a
+    // reported photo must not take the evidence with it. Asked by object, not
+    // by this message, because another message can reach the same object
+    // (#1622) and a report on *that* message holds it too. Only asked when
+    // there is something left to delete.
+    let heldKeys = new Set<string>();
+    if (unshared.length > 0) {
+      try {
+        heldKeys = objectKeys(await this.reportRepo.findHeldObjects(chapterId));
+      } catch (error) {
+        // Fail closed, as the shared check does: an unanswerable "does a
+        // report hold this?" must not be read as "no". An orphan costs
+        // storage; a wrong guess destroys the evidence a report exists for.
+        this.logger.warn(
+          'Could not check reported attachments; keeping objects',
+          {
+            messageId,
+            attachmentCount: unshared.length,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        return;
+      }
+    }
+    const doomed = unshared.filter(
+      (object) => !heldKeys.has(objectKey(object)),
+    );
+
+    await this.deleteChatObjects(doomed, { messageId });
+
+    const keptCount = sharedKeys.size + (unshared.length - doomed.length);
+    if (keptCount > 0) {
+      this.logger.log('Kept chat attachment objects still referenced', {
+        messageId,
+        keptCount,
+        heldByReports: unshared.length - doomed.length,
+      });
+    }
+  }
+
+  /**
+   * Delete chat objects, grouped per bucket, and say whether every bucket's
+   * delete succeeded. Failures are logged, never thrown: both callers are
+   * best-effort, and a `chat` outage must not skip the `chat-archive` deletes.
+   */
+  private async deleteChatObjects(
+    objects: readonly StoredObjectRef[],
+    context: Record<string, unknown>,
+  ): Promise<boolean> {
     const byBucket = new Map<string, string[]>();
-    for (const attachment of attachments) {
-      if (sharedKeys.has(`${attachment.bucket} ${attachment.storage_path}`)) {
-        continue;
-      }
-      const paths = byBucket.get(attachment.bucket) ?? [];
-      if (!paths.includes(attachment.storage_path)) {
-        paths.push(attachment.storage_path);
-      }
-      byBucket.set(attachment.bucket, paths);
+    for (const { bucket, storage_path } of objects) {
+      const paths = byBucket.get(bucket) ?? [];
+      paths.push(storage_path);
+      byBucket.set(bucket, paths);
     }
 
+    let complete = true;
     for (const [bucket, paths] of byBucket) {
       try {
         await this.storageProvider.deleteFiles(bucket, paths);
       } catch (error) {
         // Per bucket, and naming the paths: an operator reconciling orphans by
-        // hand needs to know which objects survived, and a `chat` outage must
-        // not skip the `chat-archive` deletes.
+        // hand needs to know which objects survived.
+        complete = false;
         this.logger.warn('Failed to purge chat attachment objects', {
-          messageId,
+          ...context,
           bucket,
           paths,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
+    return complete;
+  }
 
-    if (sharedKeys.size > 0) {
-      this.logger.log('Kept chat attachment objects still referenced', {
-        messageId,
-        keptCount: sharedKeys.size,
+  // ── Report evidence (#2481) ──────────────────────────────────────────
+  //
+  // An open report keeps the reported message's attachments: the snapshot it
+  // takes names the objects, the purges above leave them alone, and the
+  // report's resolution releases them. `ChatReportService` owns the report
+  // rows; these own the attachment reads and the bytes.
+
+  /**
+   * The attachments a report on this message snapshots: its
+   * `chat_message_attachments` rows, as the officer will need them.
+   *
+   * **Throws on a failed read**, unlike the purge. It runs before the report
+   * is written, so a failure files nothing and a retry files the report whole;
+   * swallowing it would file a report that looks complete and holds nothing.
+   * Callers authorize the message first; this does not.
+   */
+  async reportedAttachmentsSnapshot(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ReportedAttachment[]> {
+    const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
+    return rows.map(
+      ({ bucket, storage_path, filename, content_type, byte_size }) => ({
+        bucket,
+        storage_path,
+        filename,
+        content_type,
+        byte_size,
+      }),
+    );
+  }
+
+  /**
+   * Release a resolved report's evidence: delete each object it held unless
+   * an **undeleted message still references it** — the reported message
+   * itself counts, so a report dismissed over a live message deletes nothing
+   * (the message's own delete purges later) — or **another open report**
+   * holds it.
+   *
+   * Answers whether the release finished: `false` when a read or a delete
+   * failed, and the caller then leaves the report unstamped for the hourly
+   * sweep. The reads fail closed, like the purge's: nothing is deleted on an
+   * answer that could not be had. Deleting an object that is already gone
+   * succeeds, so a release that runs twice is harmless.
+   */
+  async releaseReportEvidence(
+    chapterId: string,
+    attachments: readonly StoredObjectRef[],
+  ): Promise<boolean> {
+    const objects = uniqueObjects(attachments);
+    if (objects.length === 0) return true;
+
+    let keep: Set<string>;
+    try {
+      const live = await this.attachmentRepo.findSharedObjects(objects, null);
+      const held = await this.reportRepo.findHeldObjects(chapterId);
+      keep = objectKeys([...live, ...held]);
+    } catch (error) {
+      this.logger.warn('Could not check report evidence before releasing it', {
+        chapterId,
+        attachmentCount: objects.length,
+        error: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
+
+    const doomed = objects.filter((object) => !keep.has(objectKey(object)));
+    return this.deleteChatObjects(doomed, { chapterId });
+  }
+
+  /**
+   * Forced-download signed URLs for a report's held attachments, for the
+   * officer route (`ChatReportService.listReportEvidence`), which authorizes
+   * the report first.
+   *
+   * `forceDownload: true`, as {@link listMessageAttachments} passes and for
+   * the same reason: a member can store HTML under an image declaration, and a
+   * forced download is what keeps it from rendering when opened directly. An
+   * `<img>` still renders an image served this way. A bucket that cannot be
+   * signed is logged and omitted rather than failing the rest.
+   */
+  async signReportEvidence(
+    reportId: string,
+    attachments: readonly ReportedAttachment[],
+  ): Promise<ReportedAttachmentWithUrl[]> {
+    const pathsByBucket = new Map<string, string[]>();
+    for (const { bucket, storage_path } of uniqueObjects(attachments)) {
+      const paths = pathsByBucket.get(bucket) ?? [];
+      paths.push(storage_path);
+      pathsByBucket.set(bucket, paths);
+    }
+
+    const urlByBucket = new Map<string, Record<string, string>>();
+    await Promise.all(
+      Array.from(pathsByBucket.entries()).map(async ([bucket, paths]) => {
+        try {
+          urlByBucket.set(
+            bucket,
+            await this.storageProvider.getSignedDownloadUrls(
+              bucket,
+              paths,
+              ATTACHMENT_URL_TTL_SECONDS,
+              true,
+            ),
+          );
+        } catch (error) {
+          this.logger.warn(
+            "Could not sign a reported message's attachments; omitting them",
+            {
+              reportId,
+              bucket,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        }
+      }),
+    );
+
+    return attachments.flatMap((attachment) => {
+      const downloadUrl = urlByBucket.get(attachment.bucket)?.[
+        attachment.storage_path
+      ];
+      if (!downloadUrl) return [];
+      return [
+        {
+          filename: attachment.filename,
+          content_type: attachment.content_type,
+          byte_size: attachment.byte_size,
+          download_url: downloadUrl,
+        },
+      ];
+    });
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────
@@ -2362,4 +2552,26 @@ export function tombstoneMetadata(
   if (message.kind !== 'imported') return {};
   const importId: unknown = message.metadata?.discord_import_id;
   return typeof importId === 'string' ? { discord_import_id: importId } : {};
+}
+
+/** One stored object's identity, as the purge and the hold compare it. */
+function objectKey(object: StoredObjectRef): string {
+  return `${object.bucket} ${object.storage_path}`;
+}
+
+function objectKeys(objects: readonly StoredObjectRef[]): Set<string> {
+  return new Set(objects.map(objectKey));
+}
+
+/** Each object once, keeping only its bucket and path. */
+function uniqueObjects(objects: readonly StoredObjectRef[]): StoredObjectRef[] {
+  const seen = new Set<string>();
+  const unique: StoredObjectRef[] = [];
+  for (const { bucket, storage_path } of objects) {
+    const key = objectKey({ bucket, storage_path });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ bucket, storage_path });
+  }
+  return unique;
 }

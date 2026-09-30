@@ -470,6 +470,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
           reported_content: 'something new',
           reported_sender_id: USER_SHARED,
           reported_author_name: null,
+          reported_attachments: [],
           reason: 'other',
           details: null,
         }),
@@ -488,6 +489,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
       reported_content: 'go away',
       reported_sender_id: null,
       reported_author_name: 'imported-handle',
+      reported_attachments: [],
       reason: 'harassment',
       details: 'third time today',
     });
@@ -504,6 +506,220 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
       reported_author_name: 'imported-handle',
       details: 'third time today',
     });
+  });
+});
+
+/**
+ * What a report holds as evidence (#2481): the attachments it snapshotted, the
+ * hold every purge honours while it is open, and the release once it resolves.
+ *
+ * Its own seed, twinned across chapters like the one above, so each read can be
+ * shown not to reach the other chapter's evidence. Reports hold objects, not
+ * messages, so the seed carries no message rows.
+ */
+describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
+  const photo = {
+    bucket: 'chat',
+    storage_path: 'chapters/a/chat/c/u/photo.png',
+    filename: 'photo.png',
+    content_type: 'image/png',
+    byte_size: 4096,
+  };
+  const clip = {
+    bucket: 'chat-archive',
+    storage_path: 'chapters/a/archive/i/media/clip.gif',
+    filename: 'clip.gif',
+    content_type: null,
+    byte_size: null,
+  };
+
+  // Every row is seeded in both chapters (`inA` / `inB` twins), so a read
+  // that loses its chapter predicate returns the twin and fails.
+  const HOLDING = '0a000000-0000-4000-8000-000000000301';
+  const HOLDING_B = '0b000000-0000-4000-8000-000000000301';
+  const EMPTY = '0a000000-0000-4000-8000-000000000302';
+  const PENDING = '0a000000-0000-4000-8000-000000000303';
+  const PENDING_B = '0b000000-0000-4000-8000-000000000303';
+  const RELEASED = '0a000000-0000-4000-8000-000000000304';
+  const LATE = '0a000000-0000-4000-8000-000000000305';
+  const ABOUT_REVIEWER = '0a000000-0000-4000-8000-000000000306';
+
+  const row = (overrides: Record<string, unknown>) => ({
+    ...openRow(),
+    reported_attachments: [photo],
+    evidence_released_at: null,
+    ...overrides,
+  });
+  const resolved = (at: string) => ({
+    status: 'actioned',
+    resolved_at: at,
+    resolved_by: USER_B,
+    reported_attachments: [clip],
+  });
+  const twin = (id: string) => id.replace(/^0a/, '0b');
+  const seeded: [string, Record<string, unknown>][] = [
+    [HOLDING, {}],
+    [EMPTY, { reported_attachments: [] }],
+    [PENDING, resolved('2026-02-02T01:00:00.000Z')],
+    [
+      RELEASED,
+      {
+        ...resolved('2026-02-02T00:30:00.000Z'),
+        evidence_released_at: '2026-02-02T00:31:00.000Z',
+      },
+    ],
+    [LATE, resolved('2026-02-02T05:00:00.000Z')],
+    [ABOUT_REVIEWER, { reported_sender_id: USER_B }],
+  ];
+
+  let harness: TenantHarness;
+  let repo: SupabaseChatMessageReportRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        chat_message_reports: seeded.flatMap(([id, overrides]) => [
+          inA(row({ id, ...overrides })),
+          inB(row({ id: twin(id), ...overrides })),
+        ]),
+      },
+    });
+    repo = new SupabaseChatMessageReportRepository(harness.client);
+  });
+
+  it('create writes the attachment snapshot, and hands back only what the queue may see of it', async () => {
+    const { report } = await repo.create({
+      chapter_id: CHAPTER_A,
+      message_id: '0c000000-0000-4000-8000-000000000307',
+      reporter_user_id: USER_A,
+      reported_content: '',
+      reported_sender_id: USER_SHARED,
+      reported_author_name: null,
+      reported_attachments: [photo, clip],
+      reason: 'sexual',
+      details: null,
+    });
+
+    const written = harness
+      .rows('chat_message_reports')
+      .find((r) => r.message_id === '0c000000-0000-4000-8000-000000000307');
+    expect(written?.reported_attachments).toEqual([photo, clip]);
+    expect(report.reported_attachments).toEqual([
+      { filename: 'photo.png', content_type: 'image/png', byte_size: 4096 },
+      { filename: 'clip.gif', content_type: null, byte_size: null },
+    ]);
+  });
+
+  it('never returns a storage location or the release stamp to the queue', async () => {
+    // USER_SHARED reviews: USER_A is these reports' reported sender, and a
+    // report about the reviewer is left out of their queue.
+    const rows = await repo.findByChapterAndStatus(
+      CHAPTER_A,
+      'actioned',
+      USER_SHARED,
+    );
+
+    expect(rows.length).toBeGreaterThan(0);
+    for (const report of rows) {
+      expect(report).not.toHaveProperty('evidence_released_at');
+      expect(JSON.stringify(report.reported_attachments)).not.toContain(
+        'chapters/',
+      );
+    }
+  });
+
+  it("findHeldObjects returns every object an open report in the chapter holds, and nothing else's", async () => {
+    const held = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findHeldObjects(CHAPTER_A),
+    );
+
+    // HOLDING and ABOUT_REVIEWER are open and hold the photo; the resolved
+    // reports' clip is held by nobody, and B's twin is another chapter's.
+    expect(held).toEqual([
+      { bucket: 'chat', storage_path: photo.storage_path },
+      { bucket: 'chat', storage_path: photo.storage_path },
+    ]);
+  });
+
+  it('findEvidence reads a report as the reviewer may see it, storage location included', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.findEvidence(HOLDING, CHAPTER_A, USER_SHARED),
+      ),
+    ).resolves.toEqual({
+      id: HOLDING,
+      chapter_id: CHAPTER_A,
+      status: 'open',
+      reported_attachments: [photo],
+    });
+    // Another chapter's report, and a report about the reviewer: both null.
+    await expect(
+      repo.findEvidence(HOLDING_B, CHAPTER_A, USER_SHARED),
+    ).resolves.toBeNull();
+    await expect(
+      repo.findEvidence(ABOUT_REVIEWER, CHAPTER_A, USER_B),
+    ).resolves.toBeNull();
+  });
+
+  it('findPendingRelease keeps only resolved, unreleased reports that hold something, in the chapter', async () => {
+    const pending = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findPendingRelease(CHAPTER_A, [
+        HOLDING,
+        EMPTY,
+        PENDING,
+        PENDING_B,
+        RELEASED,
+        LATE,
+      ]),
+    );
+
+    expect(pending.map(({ id }) => id).sort()).toEqual([LATE, PENDING].sort());
+    await expect(repo.findPendingRelease(CHAPTER_A, [])).resolves.toEqual([]);
+  });
+
+  it('listPendingRelease reads every chapter, oldest first, up to the cutoff and the limit', async () => {
+    // Cross-chapter by design: the hourly sweep serves the whole database.
+    const beforeLate = await repo.listPendingRelease(
+      '2026-02-02T04:00:00.000Z',
+      10,
+    );
+    expect(beforeLate.map(({ id }) => id).sort()).toEqual(
+      [PENDING, PENDING_B].sort(),
+    );
+
+    const oldestOne = await repo.listPendingRelease(
+      '2026-02-03T00:00:00.000Z',
+      1,
+    );
+    expect(oldestOne).toHaveLength(1);
+    expect(oldestOne[0].reported_attachments).toEqual([clip]);
+  });
+
+  it('markEvidenceReleased stamps a resolved report in the chapter, and never an open one', async () => {
+    const at = '2026-02-02T06:00:00.000Z';
+    await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.markEvidenceReleased(PENDING, CHAPTER_A, at),
+    );
+    await repo.markEvidenceReleased(HOLDING, CHAPTER_A, at);
+    await repo.markEvidenceReleased(PENDING_B, CHAPTER_A, at);
+
+    const byId = (id: string) =>
+      harness.rows('chat_message_reports').find((r) => r.id === id);
+    expect(byId(PENDING)?.evidence_released_at).toBe(at);
+    expect(byId(HOLDING)?.evidence_released_at).toBeNull();
+    expect(byId(PENDING_B)?.evidence_released_at).toBeNull();
+  });
+
+  it('releaseClaim clears the release stamp, so a reopened report holds again', async () => {
+    const at = '2026-02-02T01:00:00.000Z';
+    await repo.markEvidenceReleased(PENDING, CHAPTER_A, at);
+
+    await expect(
+      repo.releaseClaim(PENDING, CHAPTER_A, USER_B, at),
+    ).resolves.toBe(true);
+    expect(
+      harness.rows('chat_message_reports').find((r) => r.id === PENDING),
+    ).toMatchObject({ status: 'open', evidence_released_at: null });
   });
 });
 
@@ -546,6 +762,7 @@ describe('SupabaseChatMessageReportRepository — duplicate open report', () => 
     reported_content: 'the reported message',
     reported_sender_id: USER_A,
     reported_author_name: null,
+    reported_attachments: [],
     reason: 'harassment' as const,
     details: null,
   };

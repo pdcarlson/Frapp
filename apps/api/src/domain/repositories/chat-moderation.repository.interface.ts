@@ -4,6 +4,7 @@ import type {
   ChatReportReason,
   ChatReportResolutionStatus,
   ChatReportStatus,
+  ReportedAttachment,
 } from '../entities/chat-moderation.entity';
 
 export const CHAT_MESSAGE_REPORT_REPOSITORY = 'CHAT_MESSAGE_REPORT_REPOSITORY';
@@ -21,8 +22,28 @@ export interface CreateChatReportInput {
   reported_content: string | null;
   reported_sender_id: string | null;
   reported_author_name: string | null;
+  /** The message's attachments at filing time, held while the report is open (#2481). */
+  reported_attachments: ReportedAttachment[];
   reason: ChatReportReason;
   details: string | null;
+}
+
+/** One stored object, as a purge and a hold name it. */
+export interface StoredObjectRef {
+  bucket: string;
+  storage_path: string;
+}
+
+/**
+ * The objects one report holds, with where it stands: for the officer route
+ * that signs them and for the release that deletes them. Internal to the API —
+ * the storage location never leaves it ({@link ChatMessageReportView}).
+ */
+export interface ReportEvidence {
+  id: string;
+  chapter_id: string;
+  status: ChatReportStatus;
+  reported_attachments: ReportedAttachment[];
 }
 
 /**
@@ -179,6 +200,10 @@ export interface IChatMessageReportRepository {
    * Can fail on the partial unique index if the same reporter filed a new
    * report on the message while the claim stood; the caller logs that rather
    * than failing on it.
+   *
+   * Clears `evidence_released_at` too. A reopened report holds its evidence
+   * again, and a release that ran while the claim stood (the sweep) must not
+   * leave it stamped as released — a stamped report is never released again.
    */
   releaseClaim(
     id: string,
@@ -203,6 +228,73 @@ export interface IChatMessageReportRepository {
     chapterId: string,
     resolvedAt: string,
   ): Promise<boolean>;
+
+  /**
+   * Every object an **open** report in this chapter holds (#2481), for a purge
+   * to leave alone.
+   *
+   * Keyed by object, not by message, because one object can be reached from
+   * two messages (#1622: a message can claim another's path, and the Discord
+   * importer maps many messages onto one deduplicated object). A hold looked
+   * up by the deleted message's id would miss a report on the *other* message,
+   * and purge its evidence.
+   *
+   * Chapter-scoped: an attachment's path lives under its chapter, and a report
+   * can only snapshot a message it was authorized to read in its own chapter.
+   * Not filtered by viewer — no one views this; it is the purge's question.
+   *
+   * Paged until a page comes back empty, never until a short one: PostgREST
+   * serves `min(limit, max_rows)`, so a short page can be the server's cap
+   * rather than the end, and a truncated answer here reads a held object as
+   * free and deletes it.
+   */
+  findHeldObjects(chapterId: string): Promise<StoredObjectRef[]>;
+
+  /**
+   * One report's evidence **as `reviewerUserId` may see it**, for the officer
+   * route that signs it: `null` for another chapter's report, a missing one,
+   * or one about the reviewer — the same three misses as {@link findById}.
+   */
+  findEvidence(
+    id: string,
+    chapterId: string,
+    reviewerUserId: string,
+  ): Promise<ReportEvidence | null>;
+
+  /**
+   * Of `ids`, the reports in this chapter whose evidence is still to release:
+   * no longer `open`, holding at least one object, and not yet stamped
+   * released. What a resolution path hands to the release straight after it
+   * closes reports.
+   */
+  findPendingRelease(
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<ReportEvidence[]>;
+
+  /**
+   * The sweep's read, across every chapter: up to `limit` reports resolved
+   * before `resolvedBefore` whose evidence is still to release, oldest first.
+   *
+   * `resolvedBefore` keeps the sweep off a removal still in flight, whose
+   * claim may yet be withdrawn back to `open`
+   * ({@link IChatMessageReportRepository.releaseClaim}).
+   */
+  listPendingRelease(
+    resolvedBefore: string,
+    limit: number,
+  ): Promise<ReportEvidence[]>;
+
+  /**
+   * Stamp one resolved report's evidence as released. Conditional on the
+   * report not being `open`: a removal whose claim was withdrawn meanwhile is
+   * holding again, and must not be marked released.
+   */
+  markEvidenceReleased(
+    id: string,
+    chapterId: string,
+    releasedAt: string,
+  ): Promise<void>;
 }
 
 export interface IChatMemberBlockRepository {

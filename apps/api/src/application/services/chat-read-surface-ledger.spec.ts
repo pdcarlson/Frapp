@@ -260,6 +260,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
     why: 'The officer queue. "A `channels:manage` holder reviewing a report sees the content as filed."',
   },
   ChatReportController_resolveReport_v1: OFFICER_MODERATION,
+  ChatReportController_listReportAttachments_v1: {
+    status: 'not-hidden',
+    why: "The officer queue's evidence (#2481): an open report's own snapshot of the reported message's attachments, served whatever the officer has blocked, as the text snapshot is. It opens no channel or message.",
+  },
   ChatReportController_removeReportedMessage_v1: OFFICER_MODERATION,
 
   // ── Blocks ─────────────────────────────────────────────────────────

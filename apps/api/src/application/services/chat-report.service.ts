@@ -8,12 +8,16 @@ import {
 } from '@nestjs/common';
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from '@repo/validation';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
-import type { IChatMessageReportRepository } from '#domain/repositories/chat-moderation.repository.interface';
+import type {
+  IChatMessageReportRepository,
+  ReportEvidence,
+} from '#domain/repositories/chat-moderation.repository.interface';
 import type {
   ChatMessageReportView,
   ChatReportReason,
   ChatReportResolutionStatus,
   ChatReportStatus,
+  ReportedAttachmentWithUrl,
 } from '#domain/entities/chat-moderation.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
@@ -55,6 +59,24 @@ export interface FileChatReportInput {
  * that answers them 403.
  */
 export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
+
+/**
+ * How long after a report resolves the sweep leaves its evidence alone
+ * (#2481). A removal claims its report (`actioned`) before it deletes the
+ * message, and withdraws the claim if the delete fails; a sweep landing in
+ * that window would find a report that is about to be open again. The
+ * resolution path releases the evidence itself, so the sweep only ever
+ * handles a release that did not finish, and a quarter of an hour late costs
+ * nothing.
+ */
+export const EVIDENCE_SWEEP_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * Reports one sweep tick releases at most. The backlog is releases that
+ * failed (a Storage outage at resolve time), so it is normally empty; the cap
+ * keeps one tick bounded after a long outage.
+ */
+export const EVIDENCE_SWEEP_BATCH = 100;
 
 /**
  * What `POST /v1/chat/reports/{id}/remove-message` answers with: the report as
@@ -155,6 +177,11 @@ export class ChatReportService {
    * purge later hard-deletes, leaving an officer with content and no author.
    * The content is {@link reportedContentSnapshot}: for a poll that is the
    * question *and* the option labels, which the member also wrote (#2724).
+   * The message's attachments are snapshotted too, by object (#2481): while
+   * the report is open no purge deletes them, so a sender deleting a reported
+   * photo leaves the officer something to review
+   * ({@link listReportEvidence}). A failed attachment read fails the report
+   * before anything is written, rather than file one that holds nothing.
    *
    * Idempotency is the repository's: a second report on the same message while
    * the first is still `open` returns that first report instead of surfacing the
@@ -205,6 +232,11 @@ export class ChatReportService {
       throw messageDeletedConflict();
     }
 
+    const reportedAttachments =
+      await this.chatService.reportedAttachmentsSnapshot(
+        input.message_id,
+        chapterId,
+      );
     const { report, created } = await this.reportRepo.create({
       chapter_id: chapterId,
       message_id: input.message_id,
@@ -212,6 +244,7 @@ export class ChatReportService {
       reported_content: reportedContentSnapshot(message),
       reported_sender_id: message.sender_id,
       reported_author_name: message.author_name ?? null,
+      reported_attachments: reportedAttachments,
       reason: input.reason,
       details: input.details ?? null,
     });
@@ -263,11 +296,15 @@ export class ChatReportService {
     if (state && !state.isDeleted) return false;
 
     try {
-      await this.reportRepo.closeForDeletedMessage(
+      const closed = await this.reportRepo.closeForDeletedMessage(
         reportId,
         chapterId,
         new Date().toISOString(),
       );
+      // Its snapshot held the objects from the moment it was written, so a
+      // purge that ran since may have left them for it. It never opened for
+      // an officer, so they go now.
+      if (closed) await this.releaseEvidence(chapterId, [reportId]);
     } catch (error) {
       logThrowable(
         this.logger,
@@ -496,13 +533,20 @@ export class ChatReportService {
       throw error;
     }
 
-    await this.reportRepo.resolveOpenForMessage(
+    const swept = await this.reportRepo.resolveOpenForMessage(
       chapterId,
       grant.messageId,
       'actioned',
       officerUserId,
       resolvedAt,
     );
+    // After the sweep, not after the delete: until every open report on the
+    // message is closed, each still holds the objects, and the delete's own
+    // purge left them (#2481).
+    await this.releaseEvidence(chapterId, [
+      claimed.id,
+      ...swept.map(({ id }) => id),
+    ]);
 
     return {
       ...claimed,
@@ -543,13 +587,17 @@ export class ChatReportService {
     if (!state) return { ...gone, channel_id: null };
     if (!state.isDeleted) throw reportNoLongerOpen();
 
-    await this.reportRepo.resolveOpenForMessage(
+    const swept = await this.reportRepo.resolveOpenForMessage(
       chapterId,
       report.message_id,
       'actioned',
       officerUserId,
       new Date().toISOString(),
     );
+    await this.releaseEvidence(chapterId, [
+      report.id,
+      ...swept.map(({ id }) => id),
+    ]);
     return { ...gone, channel_id: state.channelId };
   }
 
@@ -579,13 +627,17 @@ export class ChatReportService {
     }
     await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
     try {
-      await this.reportRepo.resolveOpenForMessage(
+      const swept = await this.reportRepo.resolveOpenForMessage(
         chapterId,
         messageId,
         'actioned',
         officerUserId,
         claimedAt,
       );
+      await this.releaseEvidence(chapterId, [
+        reportId,
+        ...swept.map(({ id }) => id),
+      ]);
     } catch (sweepError) {
       // Logged, not thrown: the caller rethrows the removal's own error, which
       // is the one worth seeing, and a retry's replay path sweeps again.
@@ -730,7 +782,123 @@ export class ChatReportService {
       new Date().toISOString(),
     );
     if (!resolved) throw reportNoLongerOpen();
+    await this.releaseEvidence(chapterId, [resolved.id]);
     return resolved;
+  }
+
+  /**
+   * The attachments an **open** report holds, signed for the officer who
+   * reviews it (#2481): `GET /v1/chat/reports/{id}/attachments`.
+   *
+   * **The report is the capability, as it is for a removal** (#2311). It is
+   * read through {@link IChatMessageReportRepository.findEvidence}, scoped to
+   * the caller's chapter and leaving out a report about the caller, so those
+   * and a missing report are one 404. What it opens is the report's own
+   * snapshot and nothing else: the objects the message carried when the
+   * report was filed, whether or not the message still exists. No channel,
+   * thread or message row is read, so a report about a DM still does not open
+   * the DM.
+   *
+   * **Open only (409 otherwise).** A resolved report's objects are released,
+   * so there may be nothing left to sign, and the queue's job is done.
+   *
+   * Returns the summary fields and a short-lived forced-download URL per
+   * object; never the storage location.
+   */
+  async listReportEvidence(
+    id: string,
+    chapterId: string,
+    reviewerUserId: string,
+  ): Promise<ReportedAttachmentWithUrl[]> {
+    const evidence = await this.reportRepo.findEvidence(
+      id,
+      chapterId,
+      reviewerUserId,
+    );
+    if (!evidence) throw new NotFoundException('Report not found');
+    if (evidence.status !== 'open') throw reportNoLongerOpen();
+    if (evidence.reported_attachments.length === 0) return [];
+    return this.chatService.signReportEvidence(
+      evidence.id,
+      evidence.reported_attachments,
+    );
+  }
+
+  /**
+   * Release the reports whose evidence did not release when they resolved
+   * (#2481): a Storage outage, a failed read, a process that died between the
+   * resolution and the release. Hourly, from `ScheduledJobsService`.
+   *
+   * Takes reports resolved more than {@link EVIDENCE_SWEEP_GRACE_MS} ago, at
+   * most {@link EVIDENCE_SWEEP_BATCH} a tick, oldest first. Safe on every
+   * replica at once: a release deletes only objects nothing holds, deleting a
+   * gone object succeeds, and the stamp is idempotent. One report's failure is
+   * logged and does not stop the rest. Answers how many it released.
+   */
+  async sweepPendingEvidenceReleases(now: Date): Promise<number> {
+    const pending = await this.reportRepo.listPendingRelease(
+      new Date(now.getTime() - EVIDENCE_SWEEP_GRACE_MS).toISOString(),
+      EVIDENCE_SWEEP_BATCH,
+    );
+    let released = 0;
+    for (const report of pending) {
+      try {
+        if (await this.releaseOne(report)) released += 1;
+      } catch (error) {
+        logThrowable(
+          this.logger,
+          'warn',
+          `Could not release the evidence of chat report ${report.id}; the next sweep retries`,
+          error,
+        );
+      }
+    }
+    return released;
+  }
+
+  /**
+   * Release the evidence of reports a resolution path just closed. Best
+   * effort: the resolution has already committed and its answer must not
+   * depend on Storage, so a failure is logged and the hourly sweep
+   * ({@link sweepPendingEvidenceReleases}) finishes the job. Reports still
+   * open, already released or holding nothing are skipped by the read.
+   */
+  private async releaseEvidence(
+    chapterId: string,
+    reportIds: readonly string[],
+  ): Promise<void> {
+    try {
+      const pending = await this.reportRepo.findPendingRelease(
+        chapterId,
+        reportIds,
+      );
+      for (const report of pending) await this.releaseOne(report);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not release the evidence of resolved chat reports ${reportIds.join(', ')}; the hourly sweep retries`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Delete what one resolved report held and nothing still needs, then stamp
+   * it. Unstamped when the release did not finish, so the sweep retries it.
+   */
+  private async releaseOne(report: ReportEvidence): Promise<boolean> {
+    const finished = await this.chatService.releaseReportEvidence(
+      report.chapter_id,
+      report.reported_attachments,
+    );
+    if (!finished) return false;
+    await this.reportRepo.markEvidenceReleased(
+      report.id,
+      report.chapter_id,
+      new Date().toISOString(),
+    );
+    return true;
   }
 
   /**
