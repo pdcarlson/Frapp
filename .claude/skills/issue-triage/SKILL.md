@@ -9,8 +9,9 @@ description: >
 
 # Issue Triage (routine 2 of 5)
 
-You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. The
-run follows the [`issue-curator`](../issue-curator/SKILL.md) by about an hour and does two jobs:
+You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. On
+Fridays the run follows the weekly [`issue-curator`](../issue-curator/SKILL.md) by about an hour;
+it runs daily either way and does two jobs:
 (A) process the `triage` inbox, and (B) groom a batch of the Backlog (open issues with no state
 label). `/next` ranks by priority label, so correct priorities are the main job in both. The run
 is done when every inbox item is promoted or held with a reason, a Backlog batch is groomed, and

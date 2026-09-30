@@ -527,6 +527,9 @@ thing to rely on for a **Custom** entry. Two observations, both from the live pr
 - **It does not match the apex**, under either. `amazonaws.com`, `googleapis.com`, and
   `supabase.co` are all blocked while their subdomains are allowed. That is why
   `staging.frapp.live` needs its own line.
+- **Whether a bare entry matches its subdomains is not known.** Both observations above are of
+  `*.` entries; nothing here has probed a bare one. Don't infer "a bare entry matches only
+  itself" from them: a bare `frapp.live` or `supabase.co` line might reach production.
 
 **Operating rule: do not rely on `*.` spanning more than one label. Enumerate the host.**
 `*.staging.frapp.live` is kept only because `app.staging.frapp.live` is exactly one label
