@@ -1,6 +1,7 @@
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
-import { InternalServerErrorException } from '@nestjs/common';
+import { ExecutionContext, InternalServerErrorException } from '@nestjs/common';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
 import { RbacService } from '../../application/services/rbac.service';
@@ -28,6 +29,8 @@ describe('ChatController', () => {
       requestChatUploadUrl: jest.fn(),
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
+      sendMessage: jest.fn(),
+      recordMessageAction: jest.fn(),
     };
 
     const module: TestingModule = await createUnguardedTestingModule({
@@ -188,6 +191,71 @@ describe('ChatController', () => {
         'chan-1',
         'ch-1',
         'user-2',
+      );
+    });
+  });
+
+  // A poll is written through the chat send route and voted on through the
+  // actions route, neither of which carries `@RequireModule`, so the service
+  // gates them from the chapter's `enabled_modules` (#2993). These pin that
+  // the handlers read it off the request and hand it on.
+  describe('module gate threading (#2993)', () => {
+    const enabledModules = { polls: false };
+
+    /** What each handler's decorated parameters resolve to for one request. */
+    const resolveParams = (handler: keyof ChatController) => {
+      const request = { enabledModules, chapterId: 'ch-1' };
+      const ctx = {
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as ExecutionContext;
+      const args = Reflect.getMetadata(
+        ROUTE_ARGS_METADATA,
+        ChatController,
+        handler,
+      ) as Record<
+        string,
+        { factory?: (data: unknown, ctx: ExecutionContext) => unknown }
+      >;
+      return Object.values(args)
+        .filter((arg) => typeof arg.factory === 'function')
+        .map((arg) => arg.factory!(undefined, ctx));
+    };
+
+    it('reads enabled_modules off the request on send and on actions', () => {
+      expect(resolveParams('sendMessage')).toContain(enabledModules);
+      expect(resolveParams('recordMessageAction')).toContain(enabledModules);
+    });
+
+    it('hands enabled_modules to sendMessage', async () => {
+      await controller.sendMessage('chan-1', 'ch-1', 'user-1', enabledModules, {
+        content: 'Formal venue?',
+        client_message_id: '11111111-1111-1111-1111-111111111111',
+        kind: 'poll',
+      });
+
+      expect(service.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'poll',
+          enabled_modules: enabledModules,
+        }),
+      );
+    });
+
+    it('hands enabled_modules to recordMessageAction', async () => {
+      await controller.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        enabledModules,
+        { action_type: 'vote', payload: { option_id: 'opt-a' } },
+      );
+
+      expect(service.recordMessageAction).toHaveBeenCalledWith(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'vote', payload: { option_id: 'opt-a' } },
+        enabledModules,
       );
     });
   });

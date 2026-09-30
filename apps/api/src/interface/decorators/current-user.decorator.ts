@@ -40,3 +40,17 @@ export const CurrentMember = createParamDecorator(
     return ctx.switchToHttp().getRequest<RequestContext>().member;
   },
 );
+
+/**
+ * The chapter's `enabled_modules`, as `ChapterGuard` read it for this request.
+ * For a service that gates a module write by what the request carries rather
+ * than by route metadata (see `assertModuleEnabled`). `null` when the guard
+ * didn't run or the chapter stores no toggles, which reads as every module on.
+ */
+export const CurrentEnabledModules = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): Record<string, boolean> | null => {
+    return (
+      ctx.switchToHttp().getRequest<RequestContext>().enabledModules ?? null
+    );
+  },
+);

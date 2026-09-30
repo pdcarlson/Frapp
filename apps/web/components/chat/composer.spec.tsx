@@ -426,6 +426,104 @@ function fakeEditor(initial: string) {
 }
 
 /**
+ * #2993 — a command typed out in full and sent with Enter used to skip the
+ * module gate: only the palette read `isModuleEnabled`, so `/poll` posted a
+ * poll card in a chapter that had switched Polls off. The typed path now asks
+ * the same gate, through the same `slashRefusal` the palette path uses.
+ */
+describe("Composer typed slash dispatch respects the module gate (#2993)", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send" });
+  const POLL = '/poll "Formal venue?" Lodge Riverside';
+
+  let editor: ReturnType<typeof fakeEditor>;
+  beforeEach(() => {
+    mockToast.mockClear();
+  });
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  function typeAndSend(text: string, overrides: Partial<ComposerProps> = {}) {
+    editor = fakeEditor(text);
+    editorDouble.current = editor;
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onSend = vi.fn();
+    render(
+      <Composer
+        {...baseProps({ draft: text, onSlashDispatch, onSend, ...overrides })}
+      />,
+    );
+    fireEvent.click(sendButton());
+    return { onSlashDispatch, onSend };
+  }
+
+  it("refuses /poll while Polls is off, and keeps the member's text", async () => {
+    const { onSlashDispatch, onSend } = typeAndSend(POLL, {
+      isModuleEnabled: (key) => key !== "polls",
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "/poll is turned off",
+        description: expect.stringMatching(/switched off Polls/),
+        variant: "destructive",
+      }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    // Not sent as a text message either: the refusal is the whole outcome.
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(POLL);
+  });
+
+  it("dispatches /poll while Polls is on", async () => {
+    const { onSlashDispatch } = typeAndSend(POLL, {
+      isModuleEnabled: () => true,
+    });
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "destructive" }),
+    );
+  });
+
+  it("refuses with its own copy while the modules are still loading", async () => {
+    const { onSlashDispatch } = typeAndSend(POLL, {
+      isModuleEnabled: () => false,
+      slashCommandsStatus: "loading",
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "/poll isn't ready yet" }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(POLL);
+  });
+
+  it("refuses with its own copy once the modules failed to load", async () => {
+    const { onSlashDispatch } = typeAndSend(POLL, {
+      isModuleEnabled: () => false,
+      slashCommandsStatus: "error",
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't check /poll" }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("never gates a command with no module (/announce)", async () => {
+    // `/announce` belongs to an always-on module, so an unresolved gate has
+    // nothing to say about it.
+    const { onSlashDispatch } = typeAndSend("/announce Chapter at 7", {
+      isModuleEnabled: () => false,
+      slashCommandsStatus: "loading",
+    });
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
+  });
+});
+
+/**
  * #1728 — a send the outbox refused must not cost the member their message.
  *
  * `submit()` used to `void` the send and clear unconditionally, so an

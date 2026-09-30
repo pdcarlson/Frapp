@@ -385,6 +385,7 @@ module back on ([#2393](https://github.com/pdcarlson/Frapp/issues/2393)).
 | Surface | Description |
 |---|---|
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
+| Poll vote (chat card) | `Voting is turned off for your chapter right now. An officer can turn polls back on.` Shown in the thread's action-error banner when a vote is refused ([#2993](https://github.com/pdcarlson/Frapp/issues/2993)). |
 | Study | The two *Module off* rows in *Study session (mobile, s10)* below. |
 
 ### Study session (mobile, s10)

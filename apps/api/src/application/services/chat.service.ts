@@ -73,6 +73,7 @@ import {
   ChannelAccessService,
   type ReportedMessageGrant,
 } from './channel-access.service';
+import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import { ChatBlockService } from './chat-block.service';
 import {
   isFromBlockedSender,
@@ -162,6 +163,13 @@ export interface SendMessageInput {
   reply_to_id?: string | null;
   metadata?: Record<string, any>;
   /**
+   * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
+   * client send: it is what refuses a card kind whose module is off
+   * ({@link MODULE_GATED_KINDS}). Absent or `null` reads as every module on,
+   * the same as a chapter with no toggles stored.
+   */
+  enabled_modules?: EnabledModules;
+  /**
    * Internal-only: set by trusted server callers (e.g. `PointsService` posting
    * a `points` card after a committed ledger write) to bypass the
    * server-originated-kind guard. Never present on `SendMessageDto`, so a
@@ -192,6 +200,21 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   // would have a message that never notifies and never appears live.
   'imported',
 ]);
+
+/**
+ * Client-postable kinds that are a toggleable module's artifact, keyed to that
+ * module. `sendMessage` refuses one while its module is off, with the same
+ * refusal `ChapterGuard` returns for the module's own routes (#2993): the chat
+ * send route is an always-on module's, so route metadata can't gate it.
+ *
+ * The server-only kinds need no entry: their only writers are the modules' own
+ * services, reached through controllers that carry `@RequireModule`. Nor does
+ * `dues`, deliberately: member-invoice writes stay ungated because paying dues
+ * is how a locked chapter recovers (`spec/product/modules.md`).
+ */
+const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
+  poll: 'polls',
+};
 
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
 const VOTE_ACTION_TYPE = 'vote';
@@ -916,6 +939,13 @@ export class ChatService {
       );
     }
 
+    // Before the channel lookup, like the kind check above: the refusal depends
+    // only on the chapter and the kind, so it costs no query.
+    const gatedModule = input.kind ? MODULE_GATED_KINDS[input.kind] : undefined;
+    if (gatedModule) {
+      assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
+    }
+
     const channel = await this.assertChannelAccess(
       input.channel_id,
       input.chapter_id,
@@ -1603,6 +1633,7 @@ export class ChatService {
     chapterId: string,
     userId: string,
     input: { action_type: string; payload?: Record<string, unknown> | null },
+    enabledModules: EnabledModules,
   ): Promise<{
     action: ChatMessageAction;
     deduplicated: boolean;
@@ -1624,6 +1655,13 @@ export class ChatService {
     // are shared with `PollService.vote`; only the encoding differs, since this
     // side addresses options by id rather than by index.
     if (isVote && message.kind === 'poll') {
+      // A vote is a write to the Polls module, so it is frozen with the module
+      // (#2993), exactly as `POST /v1/polls/:id/vote` is by its controller's
+      // `@RequireModule('polls')`. Reading the card and its tally is not
+      // gated, and neither is an emoji reaction on it, which belongs to chat.
+      // Before the poll rules, so a closed poll in a disabled module reports
+      // the module rather than a deadline nobody can act on.
+      assertModuleEnabled(enabledModules, 'polls');
       assertCardPollVoteAllowed(message.payload, payload);
     }
 

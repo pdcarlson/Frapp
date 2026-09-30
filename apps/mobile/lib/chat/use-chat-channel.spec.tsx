@@ -163,6 +163,8 @@ vi.mock("./use-chat-runtime", () => ({
 }));
 
 import { useChatChannel } from "./use-chat-channel";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { moduleDisabledMessage } from "@repo/validation";
 
 type MockClient = { GET: ReturnType<typeof vi.fn> };
 
@@ -1049,6 +1051,25 @@ describe("act() failure surfacing (#528/#999)", () => {
 
     expect(result.current.actionError).toBe("Poll is closed");
     expect(result.current.reactionError).toBeNull();
+  });
+
+  it("shows a member's own copy when Polls is off, not the guard's sentence to an officer (#2993)", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.act("msg-1", "vote", { option_id: "opt-1" });
+    });
+
+    const onError = captureOnError(mocks.actOnCard);
+    act(() =>
+      onError!({
+        title: "Couldn't record action",
+        description: moduleDisabledMessage("polls"),
+      }),
+    );
+
+    expect(result.current.actionError).toBe(MODULE_REFUSAL_COPY.pollVote);
   });
 
   it("clears via clearActionError", async () => {

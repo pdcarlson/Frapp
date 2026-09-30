@@ -6,7 +6,11 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
-import { canAccessChannel, MAX_UPLOAD_BYTES } from '@repo/validation';
+import {
+  canAccessChannel,
+  MAX_UPLOAD_BYTES,
+  moduleDisabledMessage,
+} from '@repo/validation';
 import { ChatService, tombstoneMetadata } from './chat.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
@@ -2337,6 +2341,64 @@ describe('ChatService', () => {
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
+    describe('module gate on card kinds (#2993)', () => {
+      const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Formal venue?',
+          kind: 'poll',
+          payload: { question: 'Formal venue?', options: [] },
+          enabled_modules,
+        });
+
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      it('refuses a poll while Polls is off, with the guard refusal, and writes nothing', async () => {
+        const refusal = await sendPoll({ polls: false }).catch(
+          (error: unknown) => error,
+        );
+
+        expect(refusal).toBeInstanceOf(ForbiddenException);
+        expect((refusal as ForbiddenException).getResponse()).toEqual({
+          code: 'chapter.module.disabled',
+          message: moduleDisabledMessage('polls'),
+        });
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('posts a poll while Polls is on', async () => {
+        await sendPoll({ polls: true });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: 'poll' }),
+        );
+      });
+
+      it('posts a poll when the chapter has no Polls key (enabled unless explicitly false)', async () => {
+        await sendPoll({ events: false });
+        await sendPoll(null);
+
+        expect(mockMessageRepo.create).toHaveBeenCalledTimes(2);
+      });
+
+      it('leaves a text message alone while Polls is off', async () => {
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'hello',
+          enabled_modules: { polls: false },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalled();
+      });
+    });
+
     it('allows server-originated kinds when system_originated is set', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
@@ -3447,9 +3509,15 @@ describe('ChatService', () => {
         created_at: '2026-01-01T12:00:00.000Z',
       });
 
-      await service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
-        action_type: 'reaction:👍',
-      });
+      await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        {
+          action_type: 'reaction:👍',
+        },
+        null,
+      );
 
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
       expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
@@ -4427,11 +4495,75 @@ describe('ChatService', () => {
         },
       };
 
-      const vote = (payload: Record<string, unknown>) =>
-        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
-          action_type: 'vote',
-          payload,
+      const vote = (
+        payload: Record<string, unknown>,
+        enabledModules: Record<string, boolean> | null = null,
+      ) =>
+        service.recordMessageAction(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          {
+            action_type: 'vote',
+            payload,
+          },
+          enabledModules,
+        );
+
+      // A vote is a Polls write, frozen with the module like
+      // `POST /v1/polls/:id/vote` (#2993); reading the card is not gated.
+      it('refuses a vote while Polls is off, before the poll rules run', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          payload: {
+            ...pollMessage.payload,
+            closes_at: '2020-01-01T00:00:00.000Z',
+          },
         });
+
+        const refusal = await vote(
+          { option_id: 'opt-a' },
+          {
+            polls: false,
+          },
+        ).catch((error: unknown) => error);
+
+        expect(refusal).toBeInstanceOf(ForbiddenException);
+        expect((refusal as ForbiddenException).getResponse()).toEqual({
+          code: 'chapter.module.disabled',
+          message: moduleDisabledMessage('polls'),
+        });
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('records a vote while Polls is on or has no key', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
+        mockActionRepo.create.mockResolvedValue({
+          ...baseAction,
+          action_type: 'vote',
+        });
+
+        await vote({ option_id: 'opt-a' }, { polls: true });
+        await vote({ option_id: 'opt-a' }, { events: false });
+
+        expect(mockActionRepo.create).toHaveBeenCalledTimes(2);
+      });
+
+      it('still takes a reaction on a poll card while Polls is off', async () => {
+        // A reaction belongs to chat, which can't be switched off.
+        mockMessageRepo.findById.mockResolvedValue(pollMessage);
+        mockActionRepo.create.mockResolvedValue(baseAction);
+
+        await expect(
+          service.recordMessageAction(
+            'msg-1',
+            'ch-1',
+            'user-1',
+            { action_type: 'reaction:👍' },
+            { polls: false },
+          ),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
 
       it('rejects a vote on a closed poll', async () => {
         mockMessageRepo.findById.mockResolvedValue({
@@ -4485,9 +4617,15 @@ describe('ChatService', () => {
         mockActionRepo.create.mockResolvedValue(baseAction);
 
         await expect(
-          service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
-            action_type: 'reaction:👍',
-          }),
+          service.recordMessageAction(
+            'msg-1',
+            'ch-1',
+            'user-1',
+            {
+              action_type: 'reaction:👍',
+            },
+            null,
+          ),
         ).resolves.toMatchObject({ deduplicated: false });
       });
     });
@@ -4500,6 +4638,7 @@ describe('ChatService', () => {
         'ch-1',
         'user-1',
         { action_type: 'reaction:👍' },
+        null,
       );
 
       expect(result).toEqual({ action: baseAction, deduplicated: false });
@@ -4515,9 +4654,15 @@ describe('ChatService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
 
       await expect(
-        service.recordMessageAction('msg-1', 'ch-1', 'outsider', {
-          action_type: 'reaction:👍',
-        }),
+        service.recordMessageAction(
+          'msg-1',
+          'ch-1',
+          'outsider',
+          {
+            action_type: 'reaction:👍',
+          },
+          null,
+        ),
       ).rejects.toThrow(ForbiddenException);
       expect(mockActionRepo.create).not.toHaveBeenCalled();
     });
@@ -4533,6 +4678,7 @@ describe('ChatService', () => {
         'ch-1',
         'user-1',
         { action_type: 'reaction:👍' },
+        null,
       );
 
       expect(result).toEqual({ action: baseAction, deduplicated: true });
@@ -4561,6 +4707,7 @@ describe('ChatService', () => {
         'ch-1',
         'user-1',
         { action_type: 'vote', payload: { option: 2 } },
+        null,
       );
 
       expect(result).toEqual({
@@ -4589,10 +4736,16 @@ describe('ChatService', () => {
       mockActionRepo.updateForVote.mockResolvedValue(null);
 
       await expect(
-        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
-          action_type: 'vote',
-          payload: { option: 2 },
-        }),
+        service.recordMessageAction(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          {
+            action_type: 'vote',
+            payload: { option: 2 },
+          },
+          null,
+        ),
       ).rejects.toBe(duplicate);
       expect(mockActionRepo.findOne).not.toHaveBeenCalled();
     });
@@ -4601,9 +4754,15 @@ describe('ChatService', () => {
       mockActionRepo.create.mockRejectedValue(new Error('schema mismatch'));
 
       await expect(
-        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
-          action_type: 'reaction:👍',
-        }),
+        service.recordMessageAction(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          {
+            action_type: 'reaction:👍',
+          },
+          null,
+        ),
       ).rejects.toThrow('schema mismatch');
     });
   });
