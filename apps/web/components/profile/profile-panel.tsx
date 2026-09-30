@@ -11,6 +11,7 @@ import {
   useUpdateUser,
   useUpdateUserSettings,
   useUserSettings,
+  type UserSettings as StoredUserSettings,
 } from "@repo/hooks";
 import {
   isNotificationCategoryKey,
@@ -71,13 +72,16 @@ type CurrentUser = {
 /**
  * The quiet-hour fields `PATCH /v1/settings` accepts and this screen edits.
  *
- * `theme` is deliberately absent. See the Preferences card below.
+ * `theme` is deliberately absent. See the Preferences card below. Picked from
+ * the contract's type, so renaming one of these fields there fails to compile
+ * here rather than seeding an empty input.
  */
-type UserSettings = {
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
-  quiet_hours_tz?: string | null;
-};
+type UserSettings = Partial<
+  Pick<
+    StoredUserSettings,
+    "quiet_hours_start" | "quiet_hours_end" | "quiet_hours_tz"
+  >
+>;
 
 /**
  * The offline note under the notification switches, referenced by every one of
@@ -150,7 +154,7 @@ export function ProfilePanel() {
     if (updateSettings.isPending || updateSettings.isError) return;
     if (settingsQuery.data) {
       /* eslint-disable react-hooks/set-state-in-effect -- re-seed settings draft from the query except while a save is in flight or failed */
-      setSettingsDraft(settingsQuery.data as UserSettings);
+      setSettingsDraft(settingsQuery.data);
       // The draft is being replaced wholesale — a refetch on window focus can do
       // this while an error is showing — so the message must go with the value
       // it was about. Otherwise the field reverts to its stored (valid) zone
@@ -260,8 +264,7 @@ export function ProfilePanel() {
       // A value the member actually edited is ours to check (blank = clear, so
       // someone holding an unusable zone can always save their way out of it).
       const rawTz = settingsDraft.quiet_hours_tz;
-      const serverTz = (settingsQuery.data as UserSettings | undefined)
-        ?.quiet_hours_tz;
+      const serverTz = settingsQuery.data?.quiet_hours_tz;
       let tz: string | null | undefined;
       if (rawTz === undefined || rawTz === serverTz) {
         tz = undefined;
