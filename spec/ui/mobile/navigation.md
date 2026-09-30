@@ -269,7 +269,7 @@ parser and plugins rather than a second parser that would disagree with web on e
 Both were already hoisted for `apps/web`, so the lockfile changed only in `apps/mobile`'s
 entry. The renderer that imports them lands in the next PR. That lag is not the #1045
 hazard above: neither package carries native code, a config plugin or a permission.
-`app/_layout.tsx` loads Figtree's italic faces at 400 and 700, and `lib/theme.tsx` names
-them (`italicFontFamilyFor`). An italic has to be a face of its own. Without one,
-`fontStyle: "italic"` stays upright on iOS and falls back to the system sans on Android;
-that helper's docblock says why.
+`app/_layout.tsx` now loads `FIGTREE_FACES` from `lib/theme.tsx`, which adds Figtree's
+400 and 700 italic faces (`italicFontFamilyFor`); the three chat styles that set
+`fontStyle: "italic"` moved to the face. Why an italic has to be a face of its own:
+[`packages/theme/README.md` § Fonts](../../../packages/theme/README.md#fonts).

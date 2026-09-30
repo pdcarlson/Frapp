@@ -26,6 +26,7 @@ import {
 import {
   avatarRadius,
   fontFamilyFor,
+  italicFontFamilyFor,
   typeRole,
   useFrappTheme,
 } from "@/lib/theme";
@@ -783,8 +784,8 @@ function createStyles(tokens: SignetTokens) {
     ownLineMarkers: { marginTop: tokens.spacing.xs },
     deleted: {
       ...typeRole(tokens.typography.role.body),
+      fontFamily: italicFontFamilyFor(400),
       color: tokens.color.text.mutedForeground,
-      fontStyle: "italic",
     },
     metaText: {
       ...typeRole(tokens.typography.role.caption),

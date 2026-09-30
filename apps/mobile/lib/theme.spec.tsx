@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import React from "react";
 import { Platform } from "react-native";
 import { renderHook } from "@testing-library/react";
@@ -6,6 +8,9 @@ import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import {
   avatarRadius,
+  FIGTREE_FACES,
+  FIGTREE_FAMILY,
+  FIGTREE_ITALIC_FAMILY,
   fontFamilyFor,
   FrappThemeProvider,
   italicFontFamilyFor,
@@ -84,9 +89,27 @@ describe("token helpers", () => {
     expect(fontFamilyFor(700)).toBe("Figtree_700Bold");
   });
 
-  it("italicFontFamilyFor maps to the italic faces the root layout loads", () => {
+  it("italicFontFamilyFor maps to Figtree's italic faces", () => {
     expect(italicFontFamilyFor(400)).toBe("Figtree_400Regular_Italic");
     expect(italicFontFamilyFor(700)).toBe("Figtree_700Bold_Italic");
+  });
+
+  // A style that names a face nobody loaded draws in the system font, with no
+  // error. The types keep the family maps inside FIGTREE_FACES; these keep the
+  // root layout loading that map rather than a list of its own.
+  it("the family maps name only faces in FIGTREE_FACES", () => {
+    const loaded = Object.keys(FIGTREE_FACES);
+    for (const family of [
+      ...Object.values(FIGTREE_FAMILY),
+      ...Object.values(FIGTREE_ITALIC_FAMILY),
+    ]) {
+      expect(loaded).toContain(family);
+    }
+  });
+
+  it("FIGTREE_FACES is what the root layout loads", () => {
+    const layout = readFileSync(join(process.cwd(), "app/_layout.tsx"), "utf8");
+    expect(layout).toContain("useFonts(FIGTREE_FACES)");
   });
 
   it("mono resolves to a native system stack, never a bundled font", () => {

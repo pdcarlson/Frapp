@@ -6,14 +6,7 @@ import * as Sentry from "@sentry/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import {
-  Figtree_400Regular,
-  Figtree_400Regular_Italic,
-  Figtree_600SemiBold,
-  Figtree_700Bold,
-  Figtree_700Bold_Italic,
-  useFonts,
-} from "@expo-google-fonts/figtree";
+import { useFonts } from "@expo-google-fonts/figtree";
 import * as SplashScreen from "expo-splash-screen";
 import { AppRuntime } from "@/components/app-runtime";
 import { ClientPolicyGate } from "@/components/client-policy-gate";
@@ -23,7 +16,11 @@ import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { ObservabilityIdentityProvider } from "@/lib/observability-identity-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
 import { KeyboardProviderGuarded } from "@/lib/keyboard";
-import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
+import {
+  FIGTREE_FACES,
+  FrappThemeProvider,
+  useFrappTheme,
+} from "@/lib/theme";
 import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "@/lib/posthog/client";
 import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
@@ -95,15 +92,7 @@ function RootLayoutContent() {
 }
 
 function RootLayout() {
-  // The italics are chat markdown's `*italic*` and `***bold italic***`
-  // (#2861). Each is a face of its own; see `FIGTREE_ITALIC_FAMILY`.
-  const [fontsLoaded, fontError] = useFonts({
-    Figtree_400Regular,
-    Figtree_400Regular_Italic,
-    Figtree_600SemiBold,
-    Figtree_700Bold,
-    Figtree_700Bold_Italic,
-  });
+  const [fontsLoaded, fontError] = useFonts(FIGTREE_FACES);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

@@ -11,7 +11,7 @@ import {
   TOMBSTONE_TEXT,
 } from "@repo/chat-core/block-copy";
 import type { MaskedRefreshState } from "@repo/chat-core/blocks";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { italicFontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * What the thread draws in place of a message from a member the viewer blocked
@@ -137,8 +137,8 @@ function createStyles(tokens: SignetTokens) {
     gutter: { width: 32 },
     text: {
       ...typeRole(tokens.typography.role.caption),
+      fontFamily: italicFontFamilyFor(400),
       color: tokens.color.text.mutedForeground,
-      fontStyle: "italic",
       flexShrink: 1,
     },
     action: {
