@@ -194,4 +194,4 @@ selects `json`.
 
 ## Chat Integration
 
-Chat integration (slash commands, rich renderers): see [`integrations.md`](integrations.md).
+Reports has no slash command and no rich renderer, by design: nothing it produces belongs in a message ([`integrations.md` § Integration Pattern](integrations.md#integration-pattern), #2468).
