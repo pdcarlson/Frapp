@@ -207,7 +207,8 @@ export const DEPLOY_STAGING_CONFIG = {
  * after a live ship reds the run's summary, and `production-release-pin.yml`
  * raises its own P1 when the hosts are left untagged.
  *
- * P1, like every production alert in ALERT_ROUTING.md.
+ * P1, like every alert in ALERT_ROUTING.md that production is down or
+ * drifting. (The source-map alerts are P2: minified stack traces, nothing down.)
  */
 export const DEPLOY_PRODUCTION_CONFIG = {
   name: "deploy-production",
