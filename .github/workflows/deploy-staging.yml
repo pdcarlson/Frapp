@@ -125,6 +125,19 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: node scripts/ci/deploy-alert.mjs
 
+      # One alert per Sentry project whose build this run checked (#2489),
+      # from the deploy job's `sourcemaps` report. Only after a successful
+      # deploy: a failed one is the alert above, and its report is incomplete.
+      # `!cancelled()` so a failed step above can't skip it. Exits 0 on every
+      # handled outcome, so it never reds this job.
+      - name: Alert on missing Sentry source maps
+        if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCEMAPS: ${{ needs.deploy.outputs.sourcemaps }}
+        run: node scripts/ci/sentry-sourcemaps-alert.mjs
+
   # ── Keep a fixed number of staging deployments (#2865) ─────────────────────
   # Every upload is a new deployment of both Vercel projects, and Vercel keeps
   # each one against the Hobby team's Function Storage, which production

@@ -340,6 +340,20 @@ jobs:
           HEAD_SHA: ${{ needs.validate.outputs.sha }}
         run: node scripts/ci/deploy-alert.mjs
 
+      # One alert per Sentry project (#2489), from the deploy job's
+      # `sourcemaps` report. Only on a real `full` run that succeeded: a dry
+      # run and a `migrations-only` run build nothing, and a failed run is the
+      # alert above. The checkout's condition covers every run this one
+      # reaches. Exits 0 on every handled outcome, so the summary below still
+      # decides this job's colour.
+      - name: Alert on missing Sentry source maps
+        if: ${{ !cancelled() && !inputs.dry_run_only && inputs.scope != 'migrations-only' && needs.deploy.result == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCEMAPS: ${{ needs.deploy.outputs.sourcemaps }}
+        run: node scripts/ci/sentry-sourcemaps-alert.mjs
+
       # Last, because it exits 1 on a failed deploy or tag, which would skip
       # any step after it. `always()`, so a failed alert step can't cost the
       # summary too.
