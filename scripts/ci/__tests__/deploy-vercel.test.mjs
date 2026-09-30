@@ -398,6 +398,26 @@ describe("pollVercelDeployment", () => {
     assert.ok(!calls[0].url.includes("projectId"));
   });
 
+  it("reads `readyState`, the only state field the single-deployment endpoint returns", async () => {
+    // Vercel's `GET /v13/deployments/:id` documents `readyState` and `status`,
+    // no top-level `state` (read 2026-09-30). The fixtures above spell it
+    // `state`, so without this case a poll that stopped going through
+    // `vercelDeploymentState` would pass here and time out on every real deploy.
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_1", readyState: "BUILDING" }),
+      okJson({ id: "dpl_1", readyState: "READY", status: "READY" }),
+    ]);
+    const result = await pollVercelDeployment({
+      apiKey: API_KEY,
+      deploymentId: "dpl_1",
+      teamId: TEAM_ID,
+      clock: makeFakeClock(),
+      fetchImpl,
+      logger: quiet,
+    });
+    assert.equal(result.status, "success");
+  });
+
   it("fails on ERROR", async () => {
     const { fetchImpl } = makeFetchStub([okJson({ id: "dpl_1", state: "ERROR" })]);
     const result = await pollVercelDeployment({
