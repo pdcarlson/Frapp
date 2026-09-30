@@ -26,7 +26,15 @@ export interface NotificationPreference {
   updated_at: string;
 }
 
-export type Theme = 'light' | 'dark' | 'system';
+/**
+ * Every value `user_settings.theme` holds, as its check constraint lists them.
+ * The settings DTOs take both their published enum and their validation from
+ * this one list, so the contract and the API cannot disagree about which themes
+ * exist. The check constraint is the other copy, and moves in a migration.
+ */
+export const THEMES = ['light', 'dark', 'system'] as const;
+
+export type Theme = (typeof THEMES)[number];
 
 export interface UserSettings {
   id: string;

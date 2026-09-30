@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -30,6 +31,17 @@ export const notificationKeys = {
 export const userSettingsKey = ["settings"] as const;
 
 /**
+ * What `GET` and `PATCH /v1/settings` answer: every field, always, including
+ * for a member who has never saved (#2885).
+ *
+ * Taken from the contract, not restated, so a screen that derives its own
+ * shape from it (`Pick<UserSettings, …>`) stops compiling when a field is
+ * renamed. A hand-written all-optional copy would not: TypeScript accepts any
+ * object sharing one property with it.
+ */
+export type UserSettings = components["schemas"]["UserSettingsDto"];
+
+/**
  * The quiet-hour and theme fields `PATCH /v1/settings` accepts.
  *
  * `null` clears a field; **omitting** it preserves the stored value. Both
@@ -37,12 +49,8 @@ export const userSettingsKey = ["settings"] as const;
  * rather than echoing a zone this browser's tzdata may not resolve — which is
  * why the optimistic merge below drops `undefined` instead of spreading it.
  */
-export interface UpdateUserSettingsBody {
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
-  quiet_hours_tz?: string | null;
-  theme?: "light" | "dark" | "system";
-}
+export type UpdateUserSettingsBody =
+  components["schemas"]["UpdateUserSettingsDto"];
 
 export interface UpdateNotificationPreferenceBody {
   chapter_id: string;

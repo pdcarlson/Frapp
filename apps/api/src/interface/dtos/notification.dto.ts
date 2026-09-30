@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -16,9 +17,10 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
-import type {
-  Theme,
-  UserSettingsValues,
+import {
+  THEMES,
+  type Theme,
+  type UserSettingsValues,
 } from '#domain/entities/notification.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
@@ -176,14 +178,11 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description: 'Theme preference',
-    enum: ['light', 'dark', 'system'],
+    enum: THEMES,
   })
   @IsOptional()
-  @IsString()
-  @Matches(/^(light|dark|system)$/, {
-    message: 'theme must be light, dark, or system',
-  })
-  theme?: 'light' | 'dark' | 'system';
+  @IsIn(THEMES, { message: `theme must be one of: ${THEMES.join(', ')}` })
+  theme?: Theme;
 }
 
 /**
@@ -219,7 +218,7 @@ export class UserSettingsDto implements UserSettingsValues {
 
   @ApiProperty({
     description: 'Theme preference. `system` until the member saves one.',
-    enum: ['light', 'dark', 'system'],
+    enum: THEMES,
   })
   theme: Theme;
 }

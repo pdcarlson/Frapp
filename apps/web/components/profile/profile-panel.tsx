@@ -11,6 +11,7 @@ import {
   useUpdateUser,
   useUpdateUserSettings,
   useUserSettings,
+  type UserSettings as StoredUserSettings,
 } from "@repo/hooks";
 import {
   isNotificationCategoryKey,
@@ -71,13 +72,16 @@ type CurrentUser = {
 /**
  * The quiet-hour fields `PATCH /v1/settings` accepts and this screen edits.
  *
- * `theme` is deliberately absent. See the Preferences card below.
+ * `theme` is deliberately absent. See the Preferences card below. Picked from
+ * the contract's type, so renaming one of these fields there fails to compile
+ * here rather than seeding an empty input.
  */
-type UserSettings = {
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
-  quiet_hours_tz?: string | null;
-};
+type UserSettings = Partial<
+  Pick<
+    StoredUserSettings,
+    "quiet_hours_start" | "quiet_hours_end" | "quiet_hours_tz"
+  >
+>;
 
 /**
  * The offline note under the notification switches, referenced by every one of

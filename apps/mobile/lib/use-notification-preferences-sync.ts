@@ -6,6 +6,7 @@ import {
   useUpdateNotificationPreference,
   useUpdateUserSettings,
   useUserSettings,
+  type UserSettings,
 } from "@repo/hooks";
 import {
   defaultNotificationCategoryState,
@@ -132,11 +133,15 @@ export type QuietHoursWindow = {
 
 export type SyncIndicator = "synced" | "pending" | "cached" | "retry";
 
-type ServerSettings = {
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
-  quiet_hours_tz?: string | null;
-};
+/**
+ * The quiet-hour fields of `GET /v1/settings`. Picked from the contract's type
+ * rather than restated, so renaming one there fails to compile here instead of
+ * reading every member's window as "off".
+ */
+type ServerSettings = Pick<
+  UserSettings,
+  "quiet_hours_start" | "quiet_hours_end" | "quiet_hours_tz"
+>;
 
 /** What lives under {@link PREFERENCE_STORAGE_KEY}. */
 type CachedPreferences = {
