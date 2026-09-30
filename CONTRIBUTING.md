@@ -191,7 +191,7 @@ CI validates migration filenames, and `check:migration-safety` fails a new migra
 - **Never** commit secrets (`.env*`, credentials, private keys).
 - **Never** log secrets.
 - **Never** use placeholder secrets in CI/CD workflows.
-- All secrets are managed in Infisical. Which providers it syncs to, and how CI gets its secrets instead: [`SECRETS_MANAGEMENT.md` § 5](docs/internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). EAS is not synced: an `EXPO_PUBLIC_*` a device build needs must also be set in the EAS dashboard, or as a non-secret `eas.json` `build.<profile>.env` entry ([§ 4](docs/internal/environment/SECRETS_MANAGEMENT.md#4-add-references)).
+- All secrets are managed in Infisical. Which providers it syncs to, and how CI gets its secrets instead: [`SECRETS_MANAGEMENT.md` § 5](docs/internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). Mobile `EXPO_PUBLIC_*` values are the exception: none lives in Infisical, and EAS is not synced, so a device build's values are set in the EAS dashboard or as a non-secret `eas.json` `build.<profile>.env` entry ([§ 4](docs/internal/environment/SECRETS_MANAGEMENT.md#4-add-references)).
 - See **[`docs/internal/environment/ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 - See **[`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md)** for the Infisical setup guide and rotation policy.
 

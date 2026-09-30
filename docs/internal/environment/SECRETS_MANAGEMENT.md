@@ -30,9 +30,8 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │                                                                   │
 │  References (resolve to canonical):                               │
 │    NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}                     │
-│    EXPO_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}                     │
 │    NEXT_PUBLIC_API_URL = ${API_URL}                               │
-│    ...                                                            │
+│    ...  (web and landing only; no EXPO_PUBLIC_* lives here)       │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
 │  Syncs: Render ×2; Vercel none (builds inject Infisical) — §5     │
@@ -82,8 +81,8 @@ value. Start with `staging`, then repeat for `prod` and `dev`.
 
 Add the reference rows from
 [`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names):
-the required ones in every environment, the optional ones in each environment where the feature
-should be on. The value string you type is identical in every environment; only the canonical value
+the required ones in every environment, and the optional ones as that section describes (some
+turn a feature off when unset, one falls back to a default). The value string you type is identical in every environment; only the canonical value
 it resolves to changes. Two rows there are **literals**, not `${…}` references: the web and landing
 Sentry DSNs.
 

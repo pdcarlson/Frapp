@@ -62,11 +62,11 @@ npm run dev:mobile
 
 Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
-Infisical `dev` carries no `EXPO_PUBLIC_*` name
+Infisical `dev` holds no `EXPO_PUBLIC_*` name, by rule
 ([`ENV_REFERENCE.md` § References](./ENV_REFERENCE.md#references--framework-specific-names)), so
-write the mobile values to `apps/mobile/.env.local` first;
-[`demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup) lists them. `127.0.0.1` in
-those URLs means the device the app runs on, so a phone needs an address that reaches your machine.
+write the mobile values to `apps/mobile/.env.local` first:
+[`docs/mobile/testing.md` § Provide the environment](../../mobile/testing.md#1-provide-the-environment)
+lists them and says what a phone needs instead of `127.0.0.1`.
 
 ## Fallback without Infisical
 
