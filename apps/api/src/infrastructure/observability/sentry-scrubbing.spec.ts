@@ -560,6 +560,38 @@ describe('scrubSentryTransaction', () => {
     expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
   });
 
+  // The push worker's fan-out span (#2507) is a transaction with no request
+  // behind it: its name and its three counts are the whole payload, and
+  // ADR-09's watermark is read from its duration.
+  it('keeps the push fan-out transaction name and counts', () => {
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        transaction: 'chat.push.fanout',
+        contexts: {
+          trace: {
+            trace_id: 'trace123',
+            span_id: 'root0000',
+            op: 'chat.push',
+            data: {
+              'chat.push.recipients': 12,
+              'chat.push.sent': 9,
+              'chat.push.presence_channels': 41,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(scrubbed?.transaction).toBe('chat.push.fanout');
+    const trace = scrubbed?.contexts?.trace as Record<string, unknown>;
+    expect(trace.op).toBe('chat.push');
+    expect(trace.data).toEqual({
+      'chat.push.recipients': 12,
+      'chat.push.sent': 9,
+      'chat.push.presence_channels': 41,
+    });
+  });
+
   it('carries the dynamic sampling context the SDK reads back after the hook', () => {
     // `createEventEnvelopeHeaders` reads this *after* beforeSendTransaction
     // returns, so a rebuilt event that omits it silently costs every

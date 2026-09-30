@@ -6,10 +6,10 @@ import {
 import {
   CORS_ALLOWED_ORIGINS,
   CORS_EXPOSED_HEADERS,
-  CORS_OPTIONS,
+  corsOptionsFor,
 } from './cors.options';
 
-describe('CORS_OPTIONS', () => {
+describe('corsOptionsFor', () => {
   it('exposes request-id and Sentry trace headers to browser JS', () => {
     expect(CORS_EXPOSED_HEADERS).toEqual(
       expect.arrayContaining([
@@ -18,7 +18,11 @@ describe('CORS_OPTIONS', () => {
         BAGGAGE_HEADER,
       ]),
     );
-    expect(CORS_OPTIONS.exposedHeaders).toEqual([...CORS_EXPOSED_HEADERS]);
+    for (const environment of ['production', 'staging', 'local'] as const) {
+      expect(corsOptionsFor(environment).exposedHeaders).toEqual([
+        ...CORS_EXPOSED_HEADERS,
+      ]);
+    }
   });
 
   it('keeps request-id distinct from Sentry trace headers', () => {
@@ -39,14 +43,25 @@ describe('CORS_OPTIONS', () => {
     );
   });
 
-  it('allowlists local web/Expo-web and *.frapp.live with credentials', () => {
-    expect(CORS_ALLOWED_ORIGINS).toEqual(
-      expect.arrayContaining([
+  // Exact strings only (#2507): a pattern is how production came to admit
+  // the staging dashboard and every other `*.frapp.live` host.
+  it('allowlists exact origins per deployment, with credentials', () => {
+    expect(CORS_ALLOWED_ORIGINS).toEqual({
+      production: ['https://app.frapp.live'],
+      staging: [
+        'https://app.staging.frapp.live',
         'http://localhost:3000',
         'http://localhost:3002',
-      ]),
-    );
-    expect(CORS_OPTIONS.credentials).toBe(true);
-    expect(CORS_OPTIONS.origin).toBe(CORS_ALLOWED_ORIGINS);
+      ],
+      local: ['http://localhost:3000', 'http://localhost:3002'],
+    });
+    for (const environment of ['production', 'staging', 'local'] as const) {
+      const options = corsOptionsFor(environment);
+      expect(options.credentials).toBe(true);
+      expect(options.origin).toEqual(CORS_ALLOWED_ORIGINS[environment]);
+      expect(options.origin.every((origin) => typeof origin === 'string')).toBe(
+        true,
+      );
+    }
   });
 });
