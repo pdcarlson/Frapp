@@ -11,6 +11,12 @@
 export const PG_UNIQUE_VIOLATION = '23505';
 
 /**
+ * Postgres `foreign_key_violation` (SQLSTATE 23503): an insert or update named
+ * a parent row that does not exist, typically one deleted a moment earlier.
+ */
+export const PG_FOREIGN_KEY_VIOLATION = '23503';
+
+/**
  * Whether an unknown throwable is a Postgres unique violation.
  *
  * Use this where the caught value is untyped — a rejected repository promise,
