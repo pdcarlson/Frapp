@@ -28,12 +28,14 @@
 //   node scripts/storage-backup-run.mjs rehearse [--prefix storage]
 //   node scripts/storage-backup-run.mjs verify   [--prefix storage]
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 
 import {
+  DEFAULT_BUDGET_MINUTES,
   DEFAULT_RETENTION_DAYS,
   REHEARSAL_BUCKET,
   REHEARSAL_CONTENT_TYPE,
@@ -48,12 +50,18 @@ import {
   listBucketObjects,
   listBuckets,
   mirrorDestination,
+  objectId,
   parseOffsiteListing,
   planSync,
+  runPool,
+  settleManifest,
   sha256,
+  TRANSFER_CONCURRENCY,
   uploadObject,
   verifyOffsiteMirror,
 } from "./storage-backup.mjs";
+
+const execFileAsync = promisify(execFile);
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -64,23 +72,39 @@ function requireEnv(name) {
   return v;
 }
 
+const AWS_EXEC_OPTIONS = {
+  encoding: "utf8",
+  // Node's default is 1 MiB, and the offsite listing grows with the
+  // corpus; past the limit the call dies with ENOBUFS on every run.
+  maxBuffer: 512 * 1024 * 1024,
+};
+
+// stderr, not the thrown object: the AWS CLI puts the actionable message
+// there, and the Error's own message is just the exit code. Kept on the
+// error too, so a caller can tell a missing key from a failed read.
+function awsFailure(args, err) {
+  const failure = new Error(`aws ${args[0]} ${args[1] ?? ""} failed: ${err.stderr || err.message}`);
+  failure.stderr = String(err.stderr ?? "");
+  return failure;
+}
+
 function aws(args, { endpoint, allowFailure = false } = {}) {
   try {
-    return execFileSync("aws", [...args, "--endpoint-url", endpoint], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      // Node's default is 1 MiB, and the offsite listing grows with the
-      // corpus; past the limit the call dies with ENOBUFS on every run.
-      maxBuffer: 512 * 1024 * 1024,
-    });
+    return execFileSync("aws", [...args, "--endpoint-url", endpoint], { ...AWS_EXEC_OPTIONS, stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
     if (allowFailure) return null;
-    // stderr, not the thrown object: the AWS CLI puts the actionable message
-    // there, and the Error's own message is just the exit code. Kept on the
-    // error too, so a caller can tell a missing key from a failed read.
-    const failure = new Error(`aws ${args[0]} ${args[1] ?? ""} failed: ${err.stderr || err.message}`);
-    failure.stderr = String(err.stderr ?? "");
-    throw failure;
+    throw awsFailure(args, err);
+  }
+}
+
+/** `aws` without blocking the event loop, so the transfer pool can overlap calls. */
+async function awsAsync(args, { endpoint, allowFailure = false } = {}) {
+  try {
+    const { stdout } = await execFileAsync("aws", [...args, "--endpoint-url", endpoint], AWS_EXEC_OPTIONS);
+    return stdout;
+  } catch (err) {
+    if (allowFailure) return null;
+    throw awsFailure(args, err);
   }
 }
 
@@ -224,11 +248,20 @@ async function runBackup(opts) {
   const s3Bucket = requireEnv("BACKUP_S3_BUCKET");
   const endpoint = requireEnv("BACKUP_S3_ENDPOINT");
   const retentionDays = Number(process.env.BACKUP_RETENTION_DAYS || DEFAULT_RETENTION_DAYS);
+  // `|| ` would read an explicit 0 as unset; 0 is a real budget (start nothing).
+  const budgetRaw = process.env.STORAGE_BACKUP_BUDGET_MINUTES;
+  const budgetMinutes = budgetRaw === undefined || budgetRaw === "" ? DEFAULT_BUDGET_MINUTES : Number(budgetRaw);
 
   if (!Number.isFinite(retentionDays) || retentionDays < 0) {
     console.error(`::error::BACKUP_RETENTION_DAYS must be a non-negative number, got '${process.env.BACKUP_RETENTION_DAYS}'.`);
     process.exit(1);
   }
+  if (!Number.isFinite(budgetMinutes) || budgetMinutes < 0) {
+    console.error(`::error::STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number, got '${budgetRaw}'.`);
+    process.exit(1);
+  }
+  // From process start, not from here: the listings spend the same job timeout.
+  const overBudget = () => process.uptime() >= budgetMinutes * 60;
 
   const tmp = mkdtempSync(join(tmpdir(), "storage-backup-"));
   try {
@@ -284,33 +317,48 @@ async function runBackup(opts) {
     // The record of what was actually written, which the offsite check below
     // compares with: Storage's listed `size` can go stale if the object
     // changes between the listing and the download.
-    const records = new Map(plan.manifest.objects.map((o) => [`${o.bucket}\u0000${o.path}`, o]));
+    const records = new Map(plan.manifest.objects.map((o) => [objectId(o), o]));
     let bytes = 0;
-    for (const obj of plan.upload) {
+    // Re-uploads of what R2 lost go first: a budget that runs out leaves
+    // new objects for tomorrow before it leaves a known gap in the mirror.
+    const recovering = new Set(plan.missingOffsite.filter((gap) => gap.recovered).map((gap) => objectId(gap.record)));
+    const uploads = [
+      ...plan.upload.filter((o) => recovering.has(objectId(o))),
+      ...plan.upload.filter((o) => !recovering.has(objectId(o))),
+    ];
+    const pool = { limit: TRANSFER_CONCURRENCY, shouldStop: overBudget };
+    const uploadedObjects = await runPool(uploads, pool, async (obj, slot) => {
       let body;
+      const scratch = join(tmp, `obj-${slot}`);
       try {
         body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
-        writeFileSync(join(tmp, "obj"), body);
-        aws(
-          ["s3", "cp", join(tmp, "obj"), `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"],
+        writeFileSync(scratch, body);
+        await awsAsync(
+          ["s3", "cp", scratch, `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"],
           { endpoint },
         );
       } catch (err) {
         throw withheld(err, obj.path, encodeURIComponent(obj.path));
       }
-      records.get(`${obj.bucket}\u0000${obj.path}`).backed_up_bytes = body.length;
+      records.get(objectId(obj)).backed_up_bytes = body.length;
       bytes += body.length;
-    }
+    });
 
-    for (const obj of plan.prune) {
-      aws(["s3", "rm", `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"], {
+    const prunedObjects = await runPool(plan.prune, pool, (obj) =>
+      awsAsync(["s3", "rm", `s3://${s3Bucket}/${backupKey(opts.prefix, obj.bucket, obj.path)}`, "--only-show-errors"], {
         endpoint,
         allowFailure: true,
-      });
-    }
+      }),
+    );
+
+    const uploaded = new Set(uploadedObjects.map(objectId));
+    const pruned = new Set(prunedObjects.map(objectId));
+    const next = settleManifest({ plan, previous: manifest, uploaded, pruned });
+    const deferredUploads = plan.upload.length - uploaded.size;
+    const deferredPrunes = plan.prune.length - pruned.size;
 
     const manifestPath = join(tmp, "manifest.next.json");
-    const written = JSON.stringify(plan.manifest, null, 2);
+    const written = JSON.stringify(next, null, 2);
     writeFileSync(manifestPath, written);
     aws(["s3", "cp", manifestPath, `s3://${s3Bucket}/${opts.prefix}/manifest.json`, "--only-show-errors"], { endpoint });
 
@@ -326,12 +374,14 @@ async function runBackup(opts) {
     }
 
     // Then prove the objects themselves are there, not just the index.
-    const checked = verifyOffsite({ manifest: plan.manifest, bucket: s3Bucket, prefix: opts.prefix, endpoint });
+    const checked = verifyOffsite({ manifest: next, bucket: s3Bucket, prefix: opts.prefix, endpoint });
 
     console.log(
-      `Uploaded ${plan.upload.length} object(s), ${bytes} byte(s). Manifest read back byte for byte; ` +
+      `Uploaded ${uploaded.size} object(s), ${bytes} byte(s). Manifest read back byte for byte; ` +
         `all ${checked} manifest object(s) found offsite, at the written size where recorded.`,
     );
+
+    const failures = [];
     // The mirror is whole again, but it wasn't: fail this run so the loss is
     // seen. The next run finds nothing missing and passes.
     if (plan.missingOffsite.length > 0) {
@@ -340,23 +390,38 @@ async function runBackup(opts) {
           record: gap.record,
           text:
             `${PROBLEM_TEXT[gap.kind]}; ` +
-            (gap.recovered ? "re-uploaded from Storage" : "deleted from Storage too, so it is unrecoverable"),
+            (!gap.recovered
+              ? "deleted from Storage too, so it is unrecoverable"
+              : uploaded.has(objectId(gap.record))
+                ? "re-uploaded from Storage"
+                : "not re-uploaded yet (budget ran out); the next run will"),
         })),
       );
-      throw new Error(
+      failures.push(
         `${plan.missingOffsite.length} object(s) the previous manifest listed were not offsite as written. ` +
           `Something other than this job changed them (an R2 lifecycle rule, a hand deletion). Every one ` +
           `Storage still has is offsite again; the rest are unrecoverable. The manifest records which ` +
           `(last_offsite_loss; \`verify\` prints it). Find what changed them:\n${lines}`,
       );
     }
+    // Progress is kept, the gap is not hidden: the manifest holds what was
+    // written, and the run fails so a mirror that is behind never looks green.
+    if (deferredUploads > 0 || deferredPrunes > 0) {
+      failures.push(
+        `The ${budgetMinutes}-minute budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out: uploaded ${uploaded.size} of ` +
+          `${plan.upload.length} object(s) and pruned ${pruned.size} of ${plan.prune.length}. The manifest records ` +
+          `only what was written, so the next run starts with the ${deferredUploads} upload(s) and ` +
+          `${deferredPrunes} prune(s) left. Re-run the workflow to continue now.`,
+      );
+    }
+    if (failures.length > 0) throw new Error(failures.join("\n\n"));
 
     // A run that would take a mirror from live objects to none was refused
     // above (checkDeletionSanity) unless it was allowed. So an empty mirror
     // here either never held an object (production before launch) or was
     // emptied by an allowed run, and from then on further empty runs pass
     // too. A warning rather than a failure that would stay red until launch.
-    if (plan.manifest.object_count === 0) {
+    if (next.object_count === 0) {
       console.log(
         "::warning::The mirror holds no live objects because Storage listed none. Expected only while " +
           "the project has no uploads, or after a deletion someone allowed with storage_allow_mass_delete.",
@@ -507,7 +572,7 @@ async function runVerify(opts) {
         describeObjects(
           loss.objects.map((o) => ({
             record: o,
-            text: `${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : "unrecoverable"}`,
+            text: `${PROBLEM_TEXT[o.kind]}; ${o.recovered ? "re-uploaded" : o.deferred ? "not re-uploaded yet (budget ran out)" : "unrecoverable"}`,
           })),
         ),
       );

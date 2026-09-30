@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  DEFAULT_BUDGET_MINUTES,
   DEFAULT_RETENTION_DAYS,
   REHEARSAL_BUCKET,
   REHEARSAL_CONTENT_TYPE,
@@ -28,6 +29,9 @@ import {
   parseOffsiteListing,
   planSync,
   projectRefFromSupabaseUrl,
+  runPool,
+  settleManifest,
+  TRANSFER_CONCURRENCY,
   verifyOffsiteMirror,
 } from "../../storage-backup.mjs";
 
@@ -948,6 +952,163 @@ test("the GHA action uses the same assertStorageBackupTarget fence as the CLI", 
   assert.equal((yml.match(/actions\/setup-node@v4/g) || []).length, 1, "one Setup Node step, not a leftover duplicate");
 });
 
+// -- Throughput and the budget (#2916) ---------------------------------------
+
+test("runPool never runs more than `limit` at once, and runs every item", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const items = Array.from({ length: 20 }, (_, i) => i);
+  const done = await runPool(items, { limit: 3 }, async () => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 2));
+    inFlight -= 1;
+  });
+  assert.equal(peak, 3);
+  assert.deepEqual([...done].sort((a, b) => a - b), items);
+});
+
+test("runPool starts nothing new once told to stop, and finishes what is in flight", async () => {
+  const started = [];
+  let finished = 0;
+  const done = await runPool(
+    Array.from({ length: 10 }, (_, i) => i),
+    { limit: 2, shouldStop: () => started.length >= 4 },
+    async (i) => {
+      started.push(i);
+      await new Promise((r) => setTimeout(r, 2));
+      finished += 1;
+    },
+  );
+  assert.equal(started.length, 4);
+  assert.equal(finished, 4, "the in-flight items completed before runPool returned");
+  assert.equal(done.length, 4);
+});
+
+test("runPool rethrows the first failure only after in-flight work has finished", async () => {
+  let finished = 0;
+  const started = [];
+  await assert.rejects(
+    runPool([0, 1, 2, 3, 4, 5], { limit: 2 }, async (i) => {
+      started.push(i);
+      if (i === 0) throw new Error("boom 0");
+      await new Promise((r) => setTimeout(r, 5));
+      finished += 1;
+    }),
+    /boom 0/,
+  );
+  assert.deepEqual(started, [0, 1], "no item starts after the failure");
+  assert.equal(finished, 1, "the sibling in flight completed first");
+});
+
+test("runPool hands each worker a stable slot, so two never share a scratch file", async () => {
+  const busy = new Set();
+  await runPool(Array.from({ length: 12 }, (_, i) => i), { limit: 4 }, async (_i, slot) => {
+    assert.ok(slot >= 0 && slot < 4);
+    assert.equal(busy.has(slot), false, `slot ${slot} used by two items at once`);
+    busy.add(slot);
+    await new Promise((r) => setTimeout(r, 1));
+    busy.delete(slot);
+  });
+});
+
+test("runPool with nothing to do, or told to stop from the start, runs nothing", async () => {
+  assert.deepEqual(await runPool([], { limit: 4 }, () => assert.fail("ran")), []);
+  assert.deepEqual(await runPool([1, 2], { limit: 4, shouldStop: () => true }, () => assert.fail("ran")), []);
+  await assert.rejects(runPool([1], { limit: 0 }, () => {}), /positive integer/);
+});
+
+test("the default budget and concurrency are real numbers the job can use", () => {
+  assert.ok(Number.isInteger(TRANSFER_CONCURRENCY) && TRANSFER_CONCURRENCY > 1);
+  assert.ok(DEFAULT_BUDGET_MINUTES > 0);
+});
+
+const settle = (plan, previous, { uploaded = plan.upload, pruned = plan.prune } = {}) =>
+  settleManifest({
+    plan,
+    previous,
+    uploaded: new Set(uploaded.map((o) => `${o.bucket}\u0000${o.path}`)),
+    pruned: new Set(pruned.map((o) => `${o.bucket}\u0000${o.path}`)),
+  });
+
+test("a run that did everything it planned writes planSync's manifest untouched", () => {
+  const previous = manifestOf([recorded("docs", "a.pdf")]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf", { etag: "new" }), obj("docs", "b.pdf")], manifest: previous, nowMs: NOW, retentionMs });
+  assert.equal(settle(plan, previous), plan.manifest);
+});
+
+test("THE POINT (#2916): a new object the run never reached is left out, so the next run uploads it", () => {
+  const previous = manifestOf([recorded("docs", "a.pdf")]);
+  const remote = [obj("docs", "a.pdf"), obj("chat-archive", "1.png"), obj("chat-archive", "2.png")];
+  const plan = planSync({ remote, manifest: previous, nowMs: NOW, retentionMs });
+  const first = plan.upload.find((o) => o.path === "1.png");
+  const settled = settle(plan, previous, { uploaded: [first] });
+  assert.deepEqual(settled.objects.map((o) => o.path).sort(), ["1.png", "a.pdf"]);
+  assert.equal(settled.object_count, 2);
+
+  const nextPlan = planSync({ remote, manifest: settled, nowMs: NOW + DAY, retentionMs });
+  assert.deepEqual(nextPlan.upload.map((o) => o.path), ["2.png"], "only what was left is replanned");
+});
+
+test("a changed object the run never reached keeps its previous record: its old bytes are still offsite", () => {
+  const old = recorded("docs", "a.pdf", { backed_up_bytes: 1024 });
+  const previous = manifestOf([old]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf", { etag: "edited", size: 2048 })], manifest: previous, nowMs: NOW, retentionMs });
+  const settled = settle(plan, previous, { uploaded: [] });
+  assert.deepEqual(settled.objects, [old]);
+  assert.equal(planSync({ remote: [obj("docs", "a.pdf", { etag: "edited", size: 2048 })], manifest: settled, nowMs: NOW, retentionMs }).upload.length, 1);
+});
+
+test("a re-created object the run never reached keeps its tombstone", () => {
+  const tomb = recorded("docs", "a.pdf", { deleted_at: "2026-08-20T00:00:00Z" });
+  const previous = manifestOf([tomb]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs });
+  const settled = settle(plan, previous, { uploaded: [] });
+  assert.deepEqual(settled.objects, [tomb]);
+  assert.equal(settled.object_count, 0);
+  assert.equal(settled.tombstone_count, 1);
+});
+
+test("a prune the run never reached keeps its tombstone, so the next run prunes it", () => {
+  const expired = recorded("docs", "old.pdf", { deleted_at: new Date(NOW - retentionMs - DAY).toISOString() });
+  const previous = manifestOf([recorded("docs", "a.pdf"), expired]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs });
+  assert.equal(plan.prune.length, 1);
+  const settled = settle(plan, previous, { pruned: [] });
+  assert.deepEqual(settled.objects.map((o) => o.path), ["a.pdf", "old.pdf"]);
+  assert.equal(settled.tombstone_count, 1);
+  assert.equal(planSync({ remote: [obj("docs", "a.pdf")], manifest: settled, nowMs: NOW, retentionMs }).prune.length, 1);
+});
+
+test("a lost object the run didn't re-upload is marked deferred in this run's loss, not recovered", () => {
+  const kept = recorded("docs", "a.pdf", { backed_up_bytes: 1024 });
+  const previous = manifestOf([kept]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs, prefix: "storage", offsite: new Map() });
+  assert.equal(plan.upload.length, 1);
+  const settled = settle(plan, previous, { uploaded: [] });
+  assert.deepEqual(settled.objects, [kept], "the record stays, so the offsite check after the write names it");
+  assert.deepEqual(settled.last_offsite_loss.objects, [{ bucket: "docs", path: "a.pdf", kind: "missing", recovered: false, deferred: true }]);
+});
+
+test("an earlier run's loss is carried forward untouched by a deferral", () => {
+  const earlier = { found_at: "2026-08-01T00:00:00Z", objects: [{ bucket: "docs", path: "new.pdf", kind: "missing", recovered: true }] };
+  const previous = { ...manifestOf([]), last_offsite_loss: earlier };
+  const plan = planSync({ remote: [obj("docs", "new.pdf")], manifest: previous, nowMs: NOW, retentionMs, prefix: "storage", offsite: new Map() });
+  assert.deepEqual(settle(plan, previous, { uploaded: [] }).last_offsite_loss, earlier);
+});
+
+test("both Storage jobs leave the budget at least 15 minutes to write before the job timeout", () => {
+  const workflow = readFileSync(".github/workflows/db-backup.yml", "utf8");
+  for (const job of ["backup-staging-storage", "backup-production-storage"]) {
+    const start = workflow.indexOf(`  ${job}:`);
+    const next = workflow.indexOf("\n  backup-", start + 1);
+    const block = workflow.slice(start, next === -1 ? undefined : next);
+    const timeout = Number(block.match(/timeout-minutes: (\d+)/)?.[1]);
+    assert.ok(timeout >= DEFAULT_BUDGET_MINUTES + 15, `${job}: timeout ${timeout} vs budget ${DEFAULT_BUDGET_MINUTES}`);
+    assert.doesNotMatch(block, /STORAGE_BACKUP_BUDGET_MINUTES/, `${job} overrides the budget; keep the check above in step with it`);
+  }
+});
+
 // -- The CLI and the workflow wire the #2335 checks --------------------------
 // storage-backup-run.mjs runs its mode on import, so these read it as source.
 
@@ -964,7 +1125,10 @@ test("the backup checks the destination before listing, and the offsite mirror a
   assert.match(src, /verify: runVerify/);
   // The offsite listing grows with the corpus; Node's 1 MiB default buffer
   // turns it into ENOBUFS on every run once a prefix holds a few thousand keys.
-  assert.match(src.slice(src.indexOf("function aws("), src.indexOf("function parseArgs")), /maxBuffer: 512 \* 1024 \* 1024/);
+  // Both the blocking and the pooled call take it from one options object.
+  assert.match(src.slice(src.indexOf("const AWS_EXEC_OPTIONS"), src.indexOf("function awsFailure")), /maxBuffer: 512 \* 1024 \* 1024/);
+  const callers = src.slice(src.indexOf("function aws("), src.indexOf("function parseArgs"));
+  assert.equal((callers.match(/AWS_EXEC_OPTIONS/g) || []).length, 2, "aws and awsAsync both pass AWS_EXEC_OPTIONS");
 });
 
 test("a failed manifest read is a failure; only a missing key is 'no manifest'", () => {
@@ -1193,4 +1357,48 @@ test("e2e: in CI a failed download names the bucket, never the object's path", (
   assert.equal(res.status, 1, res.out);
   assert.match(res.out, /Downloading documents\/<path withheld> failed: HTTP 404/);
   assert.doesNotMatch(res.out, /member-file|chapter-1/);
+});
+
+test("e2e (#2916): a run out of budget keeps what it wrote, fails, and the next run finishes the rest", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+
+  const MORE = { documents: { "chapter-1/a.txt": "hello", "b.txt": "WORLD!", "c.txt": "new" }, profiles: {} };
+  const out = box.run("backup", MORE, { STORAGE_BACKUP_BUDGET_MINUTES: "0" });
+  assert.equal(out.status, 1, out.out);
+  assert.match(out.out, /budget \(STORAGE_BACKUP_BUDGET_MINUTES\) ran out: uploaded 0 of 2 object\(s\)/);
+  const manifest = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.deepEqual(manifest.objects.map((o) => o.path).sort(), ["b.txt", "chapter-1/a.txt"], "the new object is not claimed");
+  assert.equal(manifest.objects.find((o) => o.path === "b.txt").backed_up_bytes, 5, "the changed one keeps its old record");
+  assert.equal(readFileSync(box.offsite("storage/documents/b.txt"), "utf8"), "world", "and its old bytes");
+  assert.equal(existsSync(box.offsite("storage/documents/c.txt")), false);
+
+  const rest = box.run("backup", MORE);
+  assert.equal(rest.status, 0, rest.out);
+  assert.match(rest.out, /Plan: 2 to upload, 1 unchanged/);
+  assert.equal(readFileSync(box.offsite("storage/documents/b.txt"), "utf8"), "WORLD!");
+  assert.equal(readFileSync(box.offsite("storage/documents/c.txt"), "utf8"), "new");
+  assert.equal(box.run("verify", MORE).status, 0);
+});
+
+test("e2e: a first mirror out of budget starts empty rather than claiming what it never copied", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const out = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true", STORAGE_BACKUP_BUDGET_MINUTES: "0" });
+  assert.equal(out.status, 1, out.out);
+  assert.doesNotMatch(out.out, /::warning::The mirror holds no live objects/);
+  assert.equal(JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8")).object_count, 0);
+  const rest = box.run("backup", TWO);
+  assert.equal(rest.status, 0, rest.out);
+  assert.match(rest.out, /Uploaded 2 object\(s\)/);
+});
+
+test("e2e: a budget that isn't a number is refused before anything is written", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const out = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true", STORAGE_BACKUP_BUDGET_MINUTES: "forty" });
+  assert.equal(out.status, 1, out.out);
+  assert.match(out.out, /STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number, got 'forty'/);
+  assert.equal(existsSync(box.offsite("storage/manifest.json")), false);
 });

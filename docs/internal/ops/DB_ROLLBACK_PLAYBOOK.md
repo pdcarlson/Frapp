@@ -389,6 +389,18 @@ acting. Read the job's `::error::` line and match it:
 - **"does not hold what its manifest lists"** after a write. The upload or the
   destination is broken in a way the run couldn't repair. Run `verify` (below)
   to see the list.
+- **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out".** More changed in Storage
+  than one run can copy: a Discord import can add thousands of objects to
+  `chat-archive` in one go. The run copies 8 objects at a time
+  (`TRANSFER_CONCURRENCY`). After 40 minutes it starts no new copy and writes a
+  manifest listing only what it actually wrote, so no progress is lost (#2916).
+  New objects it didn't reach are not in the backup yet. Changed ones keep their
+  previous copy, and prunes it didn't reach keep their tombstone. Re-run
+  **Nightly Backup** to continue now, or leave it for the next night. Each run
+  picks up where the last stopped, and the job passes once one run finishes
+  inside the budget. If every night runs out on the same work, don't raise the
+  budget toward the job's `timeout-minutes: 60`: a run cut off by the timeout
+  writes no manifest at all. Find out why the transfers are slow.
 
 ### Restore
 

@@ -72,6 +72,7 @@
 //                                 optional; a backup the deletion guard
 //                                 (`checkDeletionSanity`) refuses proceeds
 //                                 with this
+//   STORAGE_BACKUP_BUDGET_MINUTES optional, default 40 (`DEFAULT_BUDGET_MINUTES`)
 
 import { createHash } from "node:crypto";
 
@@ -87,6 +88,110 @@ export const STORAGE_BACKUP_PREFIXES = {
 };
 
 export const DEFAULT_RETENTION_DAYS = 30;
+
+// -- Throughput, and a run that can't finish ---------------------------------
+// Each transfer is a Storage download plus an `aws` process, and Python start-up
+// alone holds one at a time to a few objects a second. One import put 11,628
+// objects in staging's `chat-archive`, and the serial loop hit the job's
+// 60-minute timeout (#2916). Worse, the manifest was written only at the end, so
+// the cancelled run recorded none of what it had uploaded and every later night
+// replanned the same set and died at the same place.
+//
+// So transfers run `TRANSFER_CONCURRENCY` at a time, and a run past its budget
+// starts no new transfer, finishes the ones in flight, writes a manifest of what
+// actually happened (`settleManifest`) and fails. The next run carries on from
+// there. The budget is counted from process start, because listing Storage and
+// R2 spends the same job timeout, and it sits well inside `timeout-minutes: 60`
+// (db-backup.yml) so the manifest write and the offsite check always get to run.
+export const TRANSFER_CONCURRENCY = 8;
+export const DEFAULT_BUDGET_MINUTES = 40;
+
+/** The key a manifest record and a Storage listing entry are matched on. */
+export function objectId(o) {
+  return `${o.bucket}\u0000${o.path}`;
+}
+
+/**
+ * Run `fn(item, slot)` over `items`, at most `limit` at once, in order.
+ *
+ * Once `shouldStop()` returns true no new item starts; the ones in flight
+ * finish. The first error does the same, and is rethrown once they have, so
+ * nothing is still writing when the caller reports it. `slot` (0..limit-1) is
+ * stable per worker, for a scratch file that two workers must not share.
+ *
+ * Returns the items that completed, in completion order.
+ */
+export async function runPool(items, { limit, shouldStop = () => false }, fn) {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error(`runPool: limit must be a positive integer, got ${limit}`);
+  const done = [];
+  let next = 0;
+  let failure = null;
+  const worker = async (slot) => {
+    while (failure === null && next < items.length && !shouldStop()) {
+      const item = items[next];
+      next += 1;
+      try {
+        await fn(item, slot);
+        done.push(item);
+      } catch (err) {
+        failure ??= err;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, (_, slot) => worker(slot)));
+  if (failure !== null) throw failure;
+  return done;
+}
+
+/**
+ * The manifest a run writes when some of its planned transfers never ran.
+ *
+ * `planSync`'s manifest assumes every upload and prune happened. For one that
+ * didn't, it must describe what is really offsite:
+ *   - an upload that didn't run: the previous record where there is one (a
+ *     changed object's old bytes are still at its key, untouched), and no
+ *     record at all for a new object, so the next run plans it again;
+ *   - a prune that didn't run: its tombstone stays, so the next run prunes it.
+ *
+ * A re-upload of something R2 lost (`missingOffsite`, `recovered: true`) that
+ * didn't run keeps its previous record too. Its bytes are still missing, so the
+ * offsite check after the write names it and fails the run, and this run's
+ * `last_offsite_loss` marks it `deferred` rather than recovered: Storage still
+ * has it, so the next run finds the gap again and re-uploads it. The run
+ * uploads those first, so only a budget that runs out inside them leaves one
+ * behind.
+ *
+ * `uploaded` and `pruned` are Sets of `objectId`s. With both complete this
+ * returns `plan.manifest` unchanged.
+ */
+export function settleManifest({ plan, previous, uploaded, pruned }) {
+  const prior = new Map((previous?.objects ?? []).map((o) => [objectId(o), o]));
+  const skipped = new Set(plan.upload.map(objectId).filter((id) => !uploaded.has(id)));
+  const unpruned = plan.prune.filter((o) => !pruned.has(objectId(o)));
+  if (skipped.size === 0 && unpruned.length === 0) return plan.manifest;
+
+  const objects = [];
+  for (const record of plan.manifest.objects) {
+    const id = objectId(record);
+    if (!skipped.has(id)) objects.push(record);
+    else if (prior.has(id)) objects.push(prior.get(id));
+  }
+  objects.push(...unpruned);
+
+  // Only this run's loss can name an upload this run skipped; a carried-forward
+  // one describes an earlier run and is left as that run wrote it.
+  const loss = plan.manifest.last_offsite_loss;
+  const lossThisRun = loss !== null && plan.missingOffsite.length > 0;
+  return {
+    ...plan.manifest,
+    last_offsite_loss: lossThisRun
+      ? { ...loss, objects: loss.objects.map((o) => (skipped.has(objectId(o)) ? { ...o, recovered: false, deferred: true } : o)) }
+      : loss,
+    object_count: objects.filter((o) => !o.deleted_at).length,
+    tombstone_count: objects.filter((o) => o.deleted_at).length,
+    objects,
+  };
+}
 
 // The rehearsal writes a canary object. Both constants are load-bearing and are
 // exported so a test can hold them against the bucket's real declaration.
