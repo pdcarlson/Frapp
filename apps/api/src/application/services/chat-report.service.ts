@@ -74,15 +74,13 @@ export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
  */
 export const EVIDENCE_CLAIM_WINDOW_MS = 15 * 60 * 1000;
 
-/** Reports per page of the sweep's read. */
-export const EVIDENCE_SWEEP_BATCH = 100;
-
 /**
- * Pages one sweep tick reads at most. The backlog is releases that failed (a
- * Storage outage at resolve time), so it is normally empty; the cap keeps one
- * tick bounded after a long outage, and the next tick carries on.
+ * Reports one sweep tick releases at most: one page of the sweep's read. The
+ * backlog is releases that failed (a Storage outage at resolve time), so it is
+ * normally empty; the cap keeps a tick bounded after a long outage, and the
+ * next tick carries on from where this one stopped.
  */
-export const EVIDENCE_SWEEP_MAX_PAGES = 10;
+export const EVIDENCE_SWEEP_BATCH = 100;
 
 /**
  * What `POST /v1/chat/reports/{id}/remove-message` answers with: the report as
@@ -146,6 +144,14 @@ export const REPORT_FILED_NOTIFICATION: NotifyPayload = {
 @Injectable()
 export class ChatReportService {
   private readonly logger = new Logger(ChatReportService.name);
+
+  /**
+   * Where the evidence sweep's next tick starts: the id of the last report
+   * the previous tick read, or `undefined` to start from the lowest
+   * ({@link sweepPendingEvidenceReleases}). Per instance, like the cron that
+   * drives it, and lost on restart, which only means starting over.
+   */
+  private evidenceSweepCursor: string | undefined;
 
   constructor(
     @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
@@ -837,48 +843,59 @@ export class ChatReportService {
    * resolution and the release, or an object a report that had just resolved
    * was still holding. Hourly, from `ScheduledJobsService`.
    *
-   * Takes reports resolved more than {@link EVIDENCE_CLAIM_WINDOW_MS} ago, a
-   * page at a time in `id` order, up to {@link EVIDENCE_SWEEP_MAX_PAGES}
-   * pages a tick, and releases each page a chapter at a time
-   * ({@link releaseBatch}). By key rather than oldest first, so a report
-   * whose release keeps failing can't take up the window every tick and starve
-   * the rest. Safe on every replica at once: a release deletes only objects
-   * nothing holds, deleting a gone object succeeds, and the stamp is
-   * idempotent. One chapter's failure is logged and does not stop the rest.
-   * Answers how many reports it released.
+   * Each tick reads one page of up to {@link EVIDENCE_SWEEP_BATCH} reports
+   * resolved more than {@link EVIDENCE_CLAIM_WINDOW_MS} ago, in `id` order
+   * from where the last tick stopped ({@link evidenceSweepCursor}), and
+   * releases it a chapter at a time ({@link releaseBatch}). At the end of the
+   * backlog it starts over from the lowest id. Carrying the cursor across
+   * ticks is what keeps reports whose release keeps failing from taking the
+   * page every tick and starving the rest: every pending report is read
+   * within a bounded number of ticks, however many are stuck.
+   *
+   * Safe on every replica at once: a release deletes only objects nothing
+   * holds, deleting a gone object succeeds, and the stamp is idempotent. One
+   * chapter's failure is logged and does not stop the rest; a failed read
+   * throws before anything is released. Answers how many reports it
+   * released.
    */
   async sweepPendingEvidenceReleases(now: Date): Promise<number> {
     const resolvedBefore = new Date(
       now.getTime() - EVIDENCE_CLAIM_WINDOW_MS,
     ).toISOString();
-    let released = 0;
-    let after: string | undefined;
-    for (let page = 0; page < EVIDENCE_SWEEP_MAX_PAGES; page++) {
-      const pending = await this.reportRepo.listPendingRelease(
+    let pending = await this.reportRepo.listPendingRelease(
+      resolvedBefore,
+      EVIDENCE_SWEEP_BATCH,
+      this.evidenceSweepCursor,
+    );
+    if (pending.length === 0 && this.evidenceSweepCursor !== undefined) {
+      // Past the end: start over, in this tick rather than idling one.
+      this.evidenceSweepCursor = undefined;
+      pending = await this.reportRepo.listPendingRelease(
         resolvedBefore,
         EVIDENCE_SWEEP_BATCH,
-        after,
       );
-      if (pending.length === 0) break;
-      after = pending[pending.length - 1].id;
+    }
+    // Only an empty page ends the backlog: a short one may be a server row
+    // cap, and treating it as the end would start over every tick.
+    this.evidenceSweepCursor = pending.at(-1)?.id;
 
-      const byChapter = new Map<string, ReportEvidence[]>();
-      for (const report of pending) {
-        const reports = byChapter.get(report.chapter_id) ?? [];
-        reports.push(report);
-        byChapter.set(report.chapter_id, reports);
-      }
-      for (const [chapterId, reports] of byChapter) {
-        try {
-          released += await this.releaseBatch(chapterId, reports, now);
-        } catch (error) {
-          logThrowable(
-            this.logger,
-            'warn',
-            `Could not release the evidence of chat reports ${reports.map(({ id }) => id).join(', ')}; the next sweep retries`,
-            error,
-          );
-        }
+    const byChapter = new Map<string, ReportEvidence[]>();
+    for (const report of pending) {
+      const reports = byChapter.get(report.chapter_id) ?? [];
+      reports.push(report);
+      byChapter.set(report.chapter_id, reports);
+    }
+    let released = 0;
+    for (const [chapterId, reports] of byChapter) {
+      try {
+        released += await this.releaseBatch(chapterId, reports, now);
+      } catch (error) {
+        logThrowable(
+          this.logger,
+          'warn',
+          `Could not release the evidence of chat reports ${reports.map(({ id }) => id).join(', ')}; the next sweep retries`,
+          error,
+        );
       }
     }
     return released;

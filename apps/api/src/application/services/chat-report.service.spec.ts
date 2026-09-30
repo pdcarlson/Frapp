@@ -1628,6 +1628,8 @@ describe('ChatReportService', () => {
         await expect(service.sweepPendingEvidenceReleases(NOW)).resolves.toBe(
           2,
         );
+        // One page a tick.
+        expect(reportRepo.listPendingRelease).toHaveBeenCalledTimes(1);
         expect(reportRepo.listPendingRelease).toHaveBeenCalledWith(
           RESOLVED_BEFORE,
           100,
@@ -1649,13 +1651,14 @@ describe('ChatReportService', () => {
         ).toEqual(['report-1', 'report-2']);
       });
 
-      it('pages on from the last id it read, past reports that keep failing, until a page comes back empty', async () => {
+      it('carries on from where the last tick stopped, past reports that keep failing, and starts over at the end', async () => {
         reportRepo.listPendingRelease
           .mockResolvedValueOnce([pending('report-1'), pending('report-2')])
           .mockResolvedValueOnce([pending('report-3')])
-          .mockResolvedValueOnce([]);
-        // The first page's reports never finish: they must not hold the
-        // sweep on page one.
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([pending('report-1'), pending('report-2')]);
+        // report-1 and report-2 never finish: they must not take every
+        // tick's page.
         chatService.releaseReportEvidence.mockImplementation(
           async (_chapterId: string, reports: readonly { id: string }[]) =>
             new Set(
@@ -1664,31 +1667,53 @@ describe('ChatReportService', () => {
         );
 
         await expect(service.sweepPendingEvidenceReleases(NOW)).resolves.toBe(
+          0,
+        );
+        await expect(service.sweepPendingEvidenceReleases(NOW)).resolves.toBe(
           1,
         );
+        await expect(service.sweepPendingEvidenceReleases(NOW)).resolves.toBe(
+          0,
+        );
+
         expect(reportRepo.listPendingRelease.mock.calls).toEqual([
           [RESOLVED_BEFORE, 100, undefined],
           [RESOLVED_BEFORE, 100, 'report-2'],
+          // Past the end: the same tick starts over from the lowest id.
           [RESOLVED_BEFORE, 100, 'report-3'],
+          [RESOLVED_BEFORE, 100, undefined],
         ]);
-        expect(reportRepo.markEvidenceReleased).toHaveBeenCalledWith(
-          'report-3',
-          CHAPTER,
-          expect.any(String),
-        );
+        expect(
+          reportRepo.markEvidenceReleased.mock.calls.map(([id]) => id),
+        ).toEqual(['report-3']);
       });
 
-      it('reads at most ten pages a tick, leaving the rest to the next', async () => {
-        let page = 0;
-        reportRepo.listPendingRelease.mockImplementation(async () => {
-          page += 1;
-          return [pending(`report-${page}`)];
-        });
-
+      it('reads once when there is nothing to release', async () => {
         await expect(service.sweepPendingEvidenceReleases(NOW)).resolves.toBe(
-          10,
+          0,
         );
-        expect(reportRepo.listPendingRelease).toHaveBeenCalledTimes(10);
+        expect(reportRepo.listPendingRelease).toHaveBeenCalledTimes(1);
+        expect(chatService.releaseReportEvidence).not.toHaveBeenCalled();
+      });
+
+      it('releases nothing when the read fails, and reads the same page next tick', async () => {
+        reportRepo.listPendingRelease
+          .mockResolvedValueOnce([pending('report-1')])
+          .mockRejectedValueOnce(new Error('postgrest down'))
+          .mockResolvedValueOnce([pending('report-2')]);
+
+        await service.sweepPendingEvidenceReleases(NOW);
+        await expect(service.sweepPendingEvidenceReleases(NOW)).rejects.toThrow(
+          'postgrest down',
+        );
+        expect(chatService.releaseReportEvidence).toHaveBeenCalledTimes(1);
+        await service.sweepPendingEvidenceReleases(NOW);
+
+        expect(reportRepo.listPendingRelease.mock.calls.at(-1)).toEqual([
+          RESOLVED_BEFORE,
+          100,
+          'report-1',
+        ]);
       });
 
       it("keeps going past one chapter's failure", async () => {

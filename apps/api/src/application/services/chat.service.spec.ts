@@ -2953,6 +2953,43 @@ describe('ChatService', () => {
         );
       });
 
+      it('leaves a report unfinished when any one of its objects failed, though the rest were deleted', async () => {
+        mockStorageProvider.deleteFiles.mockImplementation(
+          async (bucket: string) => {
+            if (bucket === 'chat-archive') throw new Error('archive down');
+          },
+        );
+
+        await expect(
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held, archived)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set());
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          held.storage_path,
+        ]);
+      });
+
+      it('leaves a report unfinished when any one of its objects must wait', async () => {
+        mockReportRepo.findHeldObjects.mockResolvedValue([
+          holder(archived, false, RECENT),
+        ]);
+
+        await expect(
+          service.releaseReportEvidence(
+            'ch-1',
+            [report('report-1', held, archived)],
+            WINDOW_START,
+          ),
+        ).resolves.toEqual(new Set());
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledTimes(1);
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          held.storage_path,
+        ]);
+      });
+
       it('finishes a report that held nothing without touching anything', async () => {
         await expect(
           service.releaseReportEvidence(

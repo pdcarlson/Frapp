@@ -685,6 +685,37 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
     ]);
   });
 
+  it('findHeldObjects dates an object by its latest-resolved holder, whatever order their ids read in', async () => {
+    // Ids are random, so the holder read last is not the one that resolved
+    // last: here the lower id (PENDING) resolved later. A last-read-wins
+    // merge would date the clip 01:00 and let a release delete it while
+    // PENDING's claim could still be withdrawn.
+    const swapped = createTenantHarness({
+      tables: {
+        chat_message_reports: [
+          [PENDING, resolved('2026-02-02T05:00:00.000Z')],
+          [LATE, resolved('2026-02-02T01:00:00.000Z')],
+        ].flatMap(([id, overrides]) => [
+          inA(row({ id, ...(overrides as object) })),
+          inB(row({ id: twin(id as string), ...(overrides as object) })),
+        ]),
+      },
+    });
+
+    await expect(
+      new SupabaseChatMessageReportRepository(swapped.client).findHeldObjects(
+        CHAPTER_A,
+      ),
+    ).resolves.toEqual([
+      {
+        bucket: 'chat-archive',
+        storage_path: clip.storage_path,
+        heldOpen: false,
+        pendingSince: '2026-02-02T05:00:00.000Z',
+      },
+    ]);
+  });
+
   it('findHeldObjects leaves out the reports a release is releasing', async () => {
     const held = await repo.findHeldObjects(CHAPTER_A, [
       PENDING,

@@ -307,9 +307,9 @@ export interface IChatMessageReportRepository {
    * before `resolvedBefore` whose evidence is still to release, in `id` order
    * after `afterId` (a page cursor; omit it for the first page).
    *
-   * Paged by key rather than taking the oldest few, so a report whose release
-   * keeps failing cannot hold a window every tick and starve the rest.
-   * `resolvedBefore` keeps the sweep off a removal still in flight, whose
+   * Paged by key, so the sweep can carry on each tick from where the last
+   * one stopped rather than re-reading the same first page, which reports
+   * whose release keeps failing would otherwise fill. `resolvedBefore` keeps the sweep off a removal still in flight, whose
    * claim may yet be withdrawn back to `open`
    * ({@link IChatMessageReportRepository.releaseClaim}).
    */
