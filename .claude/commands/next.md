@@ -287,7 +287,8 @@ for the next candidate of your lane walk.
   top and must still clear §0.2 conditions 3, 4, and 5, so a dead session's claim can't launder a
   `[human]` item past the hold. Nor can it launder a `parked` one: an issue parked while its claim
   was live isn't reclaimable, so change nothing on it and name it in your run report for the owner.
-  Take a reclaimable one with `AGENT-RECLAIM`, then wait a full read cycle and re-read before
+  A dead `Batch:` claim that lists one is reported, not taken over, like one listing a
+  `routine-state` issue. Take a reclaimable one with `AGENT-RECLAIM`, then wait a full read cycle and re-read before
   mutating anything.
 - No claim comment at all, no PR that §0.2 condition 4 disqualifies on, `updated_at` older than
   `ORPHAN_AGE`: post
