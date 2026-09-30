@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  DEFAULT_BUDGET_MINUTES,
   DEFAULT_RETENTION_DAYS,
   REHEARSAL_BUCKET,
   REHEARSAL_CONTENT_TYPE,
@@ -22,12 +23,20 @@ import {
   isMissingObjectError,
   isRehearsalCanary,
   isUnchanged,
+  knownGapIds,
   listBucketObjects,
+  MAX_TRANSFER_FAILURES,
+  objectId,
   mirrorDestination,
   parseObjectPage,
   parseOffsiteListing,
   planSync,
   projectRefFromSupabaseUrl,
+  runPool,
+  settleManifest,
+  stillListed,
+  TRANSFER_CONCURRENCY,
+  uploadOrder,
   verifyOffsiteMirror,
 } from "../../storage-backup.mjs";
 
@@ -317,6 +326,22 @@ test("listing recurses into folders", async () => {
   });
 
   assert.deepEqual(out.map((o) => o.path), ["nested/deep.pdf"]);
+});
+
+test("stillListed asks for the object's folder filtered to its name, and matches the name exactly", async () => {
+  const bodies = [];
+  const fetchImpl = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return { ok: true, json: async () => [{ name: "a.txt.bak", id: "1", metadata: {} }] };
+  };
+  assert.equal(await stillListed({ supabaseUrl: "https://x.supabase.co", serviceKey: "k", bucket: "chat-archive", path: "ch/1/a.txt", fetchImpl }), false);
+  assert.equal(bodies.length, 1, "one request, not a walk of the folder");
+  assert.equal(bodies[0].prefix, "ch/1");
+  assert.equal(bodies[0].search, "a.txt");
+  const hit = async () => ({ ok: true, json: async () => [{ name: "a.txt", id: "1", metadata: {} }] });
+  assert.equal(await stillListed({ supabaseUrl: "https://x.supabase.co", serviceKey: "k", bucket: "b", path: "a.txt", fetchImpl: hit }), true);
+  const denied = async () => ({ ok: false, status: 403 });
+  await assert.rejects(stillListed({ supabaseUrl: "https://x.supabase.co", serviceKey: "k", bucket: "b", path: "a.txt", fetchImpl: denied }), /HTTP 403/);
 });
 
 test("a failed listing throws rather than reporting an empty bucket", async () => {
@@ -948,6 +973,210 @@ test("the GHA action uses the same assertStorageBackupTarget fence as the CLI", 
   assert.equal((yml.match(/actions\/setup-node@v4/g) || []).length, 1, "one Setup Node step, not a leftover duplicate");
 });
 
+// -- Throughput and the budget (#2916) ---------------------------------------
+
+test("runPool never runs more than `limit` at once, and runs every item", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const items = Array.from({ length: 20 }, (_, i) => i);
+  const { done, failures } = await runPool(items, { limit: 3 }, async () => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 2));
+    inFlight -= 1;
+  });
+  assert.equal(peak, 3);
+  assert.deepEqual([...done].sort((a, b) => a - b), items);
+  assert.deepEqual(failures, []);
+});
+
+test("runPool starts nothing new once told to stop, and finishes what is in flight", async () => {
+  const started = [];
+  let finished = 0;
+  const { done } = await runPool(
+    Array.from({ length: 10 }, (_, i) => i),
+    { limit: 2, shouldStop: () => started.length >= 4 },
+    async (i) => {
+      started.push(i);
+      await new Promise((r) => setTimeout(r, 2));
+      finished += 1;
+    },
+  );
+  assert.equal(started.length, 4);
+  assert.equal(finished, 4, "the in-flight items completed before runPool returned");
+  assert.equal(done.length, 4);
+});
+
+test("runPool stops at maxFailures, lets in-flight work finish, and returns what completed", async () => {
+  let finished = 0;
+  const started = [];
+  const { done, failures } = await runPool([0, 1, 2, 3, 4, 5], { limit: 2 }, async (i) => {
+    started.push(i);
+    if (i === 0) throw new Error("boom 0");
+    await new Promise((r) => setTimeout(r, 5));
+    finished += 1;
+  });
+  assert.deepEqual(started, [0, 1], "with the default of 1, no item starts after the failure");
+  assert.equal(finished, 1, "the sibling in flight completed first");
+  assert.deepEqual(done, [1], "and is returned, so the caller can still record it");
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].item, 0);
+  assert.match(failures[0].error.message, /boom 0/);
+});
+
+test("THE POINT (#2916 review): under a higher maxFailures a failure doesn't stop the rest", async () => {
+  const { done, failures } = await runPool([0, 1, 2, 3, 4, 5], { limit: 2, maxFailures: 3 }, async (i) => {
+    if (i % 2 === 0) throw new Error(`boom ${i}`);
+  });
+  assert.deepEqual([...done].sort(), [1, 3, 5]);
+  assert.deepEqual(failures.map((f) => f.item).sort(), [0, 2, 4]);
+});
+
+test("runPool hands each worker a stable slot, so two never share a scratch file", async () => {
+  const busy = new Set();
+  await runPool(Array.from({ length: 12 }, (_, i) => i), { limit: 4 }, async (_i, slot) => {
+    assert.ok(slot >= 0 && slot < 4);
+    assert.equal(busy.has(slot), false, `slot ${slot} used by two items at once`);
+    busy.add(slot);
+    await new Promise((r) => setTimeout(r, 1));
+    busy.delete(slot);
+  });
+});
+
+test("runPool with nothing to do, or told to stop from the start, runs nothing", async () => {
+  assert.deepEqual(await runPool([], { limit: 4 }, () => assert.fail("ran")), { done: [], failures: [] });
+  assert.deepEqual(await runPool([1, 2], { limit: 4, shouldStop: () => true }, () => assert.fail("ran")), { done: [], failures: [] });
+  await assert.rejects(runPool([1], { limit: 0 }, () => {}), /positive integer/);
+});
+
+test("the default budget, concurrency and failure cap are real numbers the job can use", () => {
+  assert.ok(Number.isInteger(TRANSFER_CONCURRENCY) && TRANSFER_CONCURRENCY > 1);
+  assert.ok(DEFAULT_BUDGET_MINUTES > 0);
+  assert.ok(Number.isInteger(MAX_TRANSFER_FAILURES) && MAX_TRANSFER_FAILURES > 1);
+});
+
+test("uploads go recoveries first, then listing order", () => {
+  const previous = manifestOf([recorded("docs", "lost.pdf", { backed_up_bytes: 1024 })]);
+  const remote = [obj("chat-archive", "1.png"), obj("chat-archive", "2.png"), obj("docs", "lost.pdf")];
+  const plan = planSync({ remote, manifest: previous, nowMs: NOW, retentionMs, prefix: "storage", offsite: new Map() });
+  assert.deepEqual(uploadOrder(plan).map((o) => o.path), ["lost.pdf", "1.png", "2.png"]);
+});
+
+test("knownGapIds skips only unfinished re-uploads of lost bytes and unfinished prunes, never a changed object", () => {
+  const expired = recorded("docs", "old.pdf", { deleted_at: new Date(NOW - retentionMs - DAY).toISOString() });
+  const lost = recorded("docs", "lost.pdf", { backed_up_bytes: 1024 });
+  const changed = recorded("docs", "changed.pdf", { backed_up_bytes: 1024 });
+  const previous = manifestOf([lost, changed, expired]);
+  const offsite = new Map([["storage/docs/changed.pdf", 1024], ["storage/docs/old.pdf", 1024]]);
+  const remote = [obj("docs", "lost.pdf"), obj("docs", "changed.pdf", { etag: "edited" }), obj("docs", "new.pdf")];
+  const plan = planSync({ remote, manifest: previous, nowMs: NOW, retentionMs, prefix: "storage", offsite });
+  const ids = knownGapIds({ plan, uploaded: new Set(), pruned: new Set() });
+  assert.deepEqual([...ids].sort(), [objectId(lost), objectId(expired)].sort());
+  assert.deepEqual([...knownGapIds({ plan, uploaded: new Set([objectId(lost)]), pruned: new Set([objectId(expired)]) })], []);
+});
+
+const settle = (plan, previous, { uploaded = plan.upload, pruned = plan.prune, deferred = [], vanished = [] } = {}) =>
+  settleManifest({
+    plan,
+    previous,
+    uploaded: new Set(uploaded.map(objectId)),
+    pruned: new Set(pruned.map(objectId)),
+    deferred: new Set(deferred.map(objectId)),
+    vanished: new Set(vanished.map(objectId)),
+  });
+
+test("a run that did everything it planned writes planSync's manifest untouched", () => {
+  const previous = manifestOf([recorded("docs", "a.pdf")]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf", { etag: "new" }), obj("docs", "b.pdf")], manifest: previous, nowMs: NOW, retentionMs });
+  assert.equal(settle(plan, previous), plan.manifest);
+});
+
+test("THE POINT (#2916): a new object the run never reached is left out, so the next run uploads it", () => {
+  const previous = manifestOf([recorded("docs", "a.pdf")]);
+  const remote = [obj("docs", "a.pdf"), obj("chat-archive", "1.png"), obj("chat-archive", "2.png")];
+  const plan = planSync({ remote, manifest: previous, nowMs: NOW, retentionMs });
+  const first = plan.upload.find((o) => o.path === "1.png");
+  const settled = settle(plan, previous, { uploaded: [first] });
+  assert.deepEqual(settled.objects.map((o) => o.path).sort(), ["1.png", "a.pdf"]);
+  assert.equal(settled.object_count, 2);
+
+  const nextPlan = planSync({ remote, manifest: settled, nowMs: NOW + DAY, retentionMs });
+  assert.deepEqual(nextPlan.upload.map((o) => o.path), ["2.png"], "only what was left is replanned");
+});
+
+test("a changed object the run never reached keeps its previous record: its old bytes are still offsite", () => {
+  const old = recorded("docs", "a.pdf", { backed_up_bytes: 1024 });
+  const previous = manifestOf([old]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf", { etag: "edited", size: 2048 })], manifest: previous, nowMs: NOW, retentionMs });
+  const settled = settle(plan, previous, { uploaded: [] });
+  assert.deepEqual(settled.objects, [old]);
+  assert.equal(planSync({ remote: [obj("docs", "a.pdf", { etag: "edited", size: 2048 })], manifest: settled, nowMs: NOW, retentionMs }).upload.length, 1);
+});
+
+test("a re-created object the run never reached keeps its tombstone", () => {
+  const tomb = recorded("docs", "a.pdf", { deleted_at: "2026-08-20T00:00:00Z" });
+  const previous = manifestOf([tomb]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs });
+  const settled = settle(plan, previous, { uploaded: [] });
+  assert.deepEqual(settled.objects, [tomb]);
+  assert.equal(settled.object_count, 0);
+  assert.equal(settled.tombstone_count, 1);
+});
+
+test("a prune the run never reached keeps its tombstone, so the next run prunes it", () => {
+  const expired = recorded("docs", "old.pdf", { deleted_at: new Date(NOW - retentionMs - DAY).toISOString() });
+  const previous = manifestOf([recorded("docs", "a.pdf"), expired]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs });
+  assert.equal(plan.prune.length, 1);
+  const settled = settle(plan, previous, { pruned: [] });
+  assert.deepEqual(settled.objects.map((o) => o.path), ["a.pdf", "old.pdf"]);
+  assert.equal(settled.tombstone_count, 1);
+  assert.equal(planSync({ remote: [obj("docs", "a.pdf")], manifest: settled, nowMs: NOW, retentionMs }).prune.length, 1);
+});
+
+test("an unpruned object that left Storage this same run is written back as a tombstone, not live", () => {
+  const previous = manifestOf([recorded("docs", "a.pdf"), recorded("docs", "b.pdf")]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs: 0 });
+  assert.equal(plan.prune.length, 1);
+  const settled = settle(plan, previous, { pruned: [] });
+  const b = settled.objects.find((o) => o.path === "b.pdf");
+  assert.equal(b.deleted_at, new Date(NOW).toISOString());
+  assert.equal(settled.object_count, 1);
+  assert.equal(settled.tombstone_count, 1);
+});
+
+test("a lost object the run didn't re-upload says why in this run's loss: deferred, failed or vanished", () => {
+  const kept = recorded("docs", "a.pdf", { backed_up_bytes: 1024 });
+  const previous = manifestOf([kept]);
+  const plan = planSync({ remote: [obj("docs", "a.pdf")], manifest: previous, nowMs: NOW, retentionMs, prefix: "storage", offsite: new Map() });
+  assert.equal(plan.upload.length, 1);
+  const base = { bucket: "docs", path: "a.pdf", kind: "missing", recovered: false };
+  const deferred = settle(plan, previous, { uploaded: [], deferred: plan.upload });
+  assert.deepEqual(deferred.objects, [kept], "the record stays, bytes still missing");
+  assert.deepEqual(deferred.last_offsite_loss.objects, [{ ...base, deferred: true }]);
+  assert.deepEqual(settle(plan, previous, { uploaded: [] }).last_offsite_loss.objects, [{ ...base, failed: true }]);
+  assert.deepEqual(settle(plan, previous, { uploaded: [], vanished: plan.upload }).last_offsite_loss.objects, [base]);
+});
+
+test("an earlier run's loss is carried forward untouched by a deferral", () => {
+  const earlier = { found_at: "2026-08-01T00:00:00Z", objects: [{ bucket: "docs", path: "new.pdf", kind: "missing", recovered: true }] };
+  const previous = { ...manifestOf([]), last_offsite_loss: earlier };
+  const plan = planSync({ remote: [obj("docs", "new.pdf")], manifest: previous, nowMs: NOW, retentionMs, prefix: "storage", offsite: new Map() });
+  assert.deepEqual(settle(plan, previous, { uploaded: [] }).last_offsite_loss, earlier);
+});
+
+test("both Storage jobs leave the budget at least 15 minutes to write before the job timeout", () => {
+  const workflow = readFileSync(".github/workflows/db-backup.yml", "utf8");
+  for (const job of ["backup-staging-storage", "backup-production-storage"]) {
+    const start = workflow.indexOf(`  ${job}:`);
+    const next = workflow.indexOf("\n  backup-", start + 1);
+    const block = workflow.slice(start, next === -1 ? undefined : next);
+    const timeout = Number(block.match(/timeout-minutes: (\d+)/)?.[1]);
+    assert.ok(timeout >= DEFAULT_BUDGET_MINUTES + 15, `${job}: timeout ${timeout} vs budget ${DEFAULT_BUDGET_MINUTES}`);
+    assert.doesNotMatch(block, /STORAGE_BACKUP_BUDGET_MINUTES/, `${job} overrides the budget; keep the check above in step with it`);
+  }
+});
+
 // -- The CLI and the workflow wire the #2335 checks --------------------------
 // storage-backup-run.mjs runs its mode on import, so these read it as source.
 
@@ -964,7 +1193,22 @@ test("the backup checks the destination before listing, and the offsite mirror a
   assert.match(src, /verify: runVerify/);
   // The offsite listing grows with the corpus; Node's 1 MiB default buffer
   // turns it into ENOBUFS on every run once a prefix holds a few thousand keys.
-  assert.match(src.slice(src.indexOf("function aws("), src.indexOf("function parseArgs")), /maxBuffer: 512 \* 1024 \* 1024/);
+  // Both the blocking and the pooled call take it from one options object.
+  assert.match(src.slice(src.indexOf("const AWS_EXEC_OPTIONS"), src.indexOf("function awsFailure")), /maxBuffer: 512 \* 1024 \* 1024/);
+  const callers = src.slice(src.indexOf("function aws("), src.indexOf("function parseArgs"));
+  assert.equal((callers.match(/AWS_EXEC_OPTIONS/g) || []).length, 2, "aws and awsAsync both pass AWS_EXEC_OPTIONS");
+});
+
+test("the backup uploads in uploadOrder, no refusal inside any mode exits the process, and the rehearsal always cleans up", () => {
+  const src = readFileSync("scripts/storage-backup-run.mjs", "utf8");
+  const backup = src.slice(src.indexOf("async function runBackup"), src.indexOf("async function runRestore"));
+  assert.match(backup, /runPool\(uploadOrder\(plan\), pool\(\)/);
+  // The rehearsal deletes its canary in a `finally`; process.exit would skip it.
+  const modes = src.slice(src.indexOf("async function runBackup"), src.indexOf("const opts = parseArgs"));
+  assert.doesNotMatch(modes, /process\.exit/);
+  assert.doesNotMatch(src.slice(src.indexOf("function requireEnv"), src.indexOf("function awsFailure")), /process\.exit/);
+  const rehearsal = src.slice(src.indexOf("async function runRehearsal"), src.indexOf("async function runVerify"));
+  assert.match(rehearsal, /try \{[\s\S]*await runBackup\(opts\)[\s\S]*5\/5 verifying[\s\S]*\} finally \{[\s\S]*deleteCanary\(\)/);
 });
 
 test("a failed manifest read is a failure; only a missing key is 'no manifest'", () => {
@@ -1016,8 +1260,8 @@ function e2eSandbox() {
   spawnSync("mkdir", ["-p", bin, s3]);
   writeFileSync(join(bin, "aws"), `#!/bin/sh\nexec "${process.execPath}" "${join(FIXTURES, "fake-aws.mjs")}" "$@"\n`);
   chmodSync(join(bin, "aws"), 0o755);
+  const storageFile = join(dir, "storage.json");
   const run = (mode, storage, env = {}) => {
-    const storageFile = join(dir, "storage.json");
     writeFileSync(storageFile, JSON.stringify(storage));
     const res = spawnSync(
       process.execPath,
@@ -1039,7 +1283,9 @@ function e2eSandbox() {
     return { status: res.status, out: `${res.stdout}${res.stderr}` };
   };
   const offsite = (key) => join(s3, "bk", key);
-  return { run, offsite, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  // What the last run left in Storage (the fake writes uploads and deletes back).
+  const storage = () => JSON.parse(readFileSync(storageFile, "utf8"));
+  return { run, offsite, storage, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 const TWO = { documents: { "chapter-1/a.txt": "hello", "b.txt": "world" }, profiles: {} };
@@ -1188,9 +1434,238 @@ test("e2e: a mirror that never held an object passes, with a warning", (t) => {
 test("e2e: in CI a failed download names the bucket, never the object's path", (t) => {
   const box = e2eSandbox();
   t.after(box.cleanup);
-  const gone = { documents: { "chapter-1/member-file.pdf": null }, profiles: {} };
-  const res = box.run("backup", gone, { STORAGE_BACKUP_NEW_DESTINATION: "true", GITHUB_ACTIONS: "true" });
+  const broken = { documents: { "chapter-1/member-file.pdf": false }, profiles: {} };
+  const res = box.run("backup", broken, { STORAGE_BACKUP_NEW_DESTINATION: "true", GITHUB_ACTIONS: "true" });
   assert.equal(res.status, 1, res.out);
-  assert.match(res.out, /Downloading documents\/<path withheld> failed: HTTP 404/);
+  assert.match(res.out, /Downloading documents\/<path withheld> failed: HTTP 500/);
   assert.doesNotMatch(res.out, /member-file|chapter-1/);
+});
+
+test("e2e (#2916): a run out of budget keeps what it wrote, fails, and the next run finishes the rest", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+
+  const MORE = { documents: { "chapter-1/a.txt": "hello", "b.txt": "WORLD!", "c.txt": "new" }, profiles: {} };
+  const out = box.run("backup", MORE, { STORAGE_BACKUP_BUDGET_MINUTES: "0" });
+  assert.equal(out.status, 1, out.out);
+  assert.match(out.out, /budget \(STORAGE_BACKUP_BUDGET_MINUTES\) ran out: uploaded 0 of 2 object\(s\)/);
+  const manifest = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.deepEqual(manifest.objects.map((o) => o.path).sort(), ["b.txt", "chapter-1/a.txt"], "the new object is not claimed");
+  assert.equal(manifest.objects.find((o) => o.path === "b.txt").backed_up_bytes, 5, "the changed one keeps its old record");
+  assert.equal(readFileSync(box.offsite("storage/documents/b.txt"), "utf8"), "world", "and its old bytes");
+  assert.equal(existsSync(box.offsite("storage/documents/c.txt")), false);
+
+  const rest = box.run("backup", MORE);
+  assert.equal(rest.status, 0, rest.out);
+  assert.match(rest.out, /Plan: 2 to upload, 1 unchanged/);
+  assert.equal(readFileSync(box.offsite("storage/documents/b.txt"), "utf8"), "WORLD!");
+  assert.equal(readFileSync(box.offsite("storage/documents/c.txt"), "utf8"), "new");
+  assert.equal(box.run("verify", MORE).status, 0);
+});
+
+test("e2e: a first mirror out of budget starts empty rather than claiming what it never copied", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const out = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true", STORAGE_BACKUP_BUDGET_MINUTES: "0" });
+  assert.equal(out.status, 1, out.out);
+  assert.doesNotMatch(out.out, /::warning::The mirror holds no live objects/);
+  assert.equal(JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8")).object_count, 0);
+  const rest = box.run("backup", TWO);
+  assert.equal(rest.status, 0, rest.out);
+  assert.match(rest.out, /Uploaded 2 object\(s\)/);
+});
+
+test("e2e: a budget that isn't a number is refused before anything is written", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const out = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true", STORAGE_BACKUP_BUDGET_MINUTES: "forty" });
+  assert.equal(out.status, 1, out.out);
+  assert.match(out.out, /STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number, got 'forty'/);
+  assert.equal(existsSync(box.offsite("storage/manifest.json")), false);
+});
+
+test("e2e (#2916 review): a deferred re-upload of lost bytes is named, alongside the budget, not as a broken mirror", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const MORE = { documents: { ...TWO.documents, "c.txt": "new" }, profiles: {} };
+
+  const cut = box.run("backup", MORE, { STORAGE_BACKUP_BUDGET_MINUTES: "0" });
+  assert.equal(cut.status, 1, cut.out);
+  assert.doesNotMatch(cut.out, /does not hold what its manifest lists/);
+  assert.match(cut.out, /documents\/b\.txt: not offsite; not re-uploaded yet \(the run stopped first\); the next run will/);
+  assert.match(cut.out, /budget \(STORAGE_BACKUP_BUDGET_MINUTES\) ran out: uploaded 0 of 2 object\(s\)/);
+  assert.match(cut.out, /\(1 known gap\(s\), named below, not re-checked\)/);
+
+  // The loss is reported once more by the run that repairs it, then it's over.
+  const repair = box.run("backup", MORE);
+  assert.equal(repair.status, 1, repair.out);
+  assert.match(repair.out, /documents\/b\.txt: not offsite; re-uploaded from Storage/);
+  assert.equal(readFileSync(box.offsite("storage/documents/b.txt"), "utf8"), "world");
+  assert.equal(box.run("backup", MORE).status, 0);
+});
+
+test("e2e (#2916 review): a failed download keeps the rest of the run, and the next run passes", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  // More objects than TRANSFER_CONCURRENCY, the broken one first: every
+  // object after the pool's first round starts only if the failure didn't
+  // stop the run.
+  const rest = Object.fromEntries(Array.from({ length: TRANSFER_CONCURRENCY + 4 }, (_, i) => [`f${String(i).padStart(2, "0")}.txt`, `n${i}`]));
+  const withBroken = { documents: { "0-broken.txt": false, ...rest }, profiles: {} };
+  const res = box.run("backup", withBroken, { STORAGE_BACKUP_NEW_DESTINATION: "true" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /1 transfer\(s\) failed\. The rest of the run went ahead\. The next run retries them/);
+  assert.match(res.out, /Downloading documents\/0-broken\.txt failed: HTTP 500/);
+  assert.doesNotMatch(res.out, /never started|Re-run the workflow|ran out/, "a failure is not a deferral");
+  const manifest = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.deepEqual(manifest.objects.map((o) => o.path).sort(), Object.keys(rest), "every other object uploaded and is recorded");
+
+  const retried = box.run("backup", { documents: { "0-broken.txt": "fixed", ...rest }, profiles: {} });
+  assert.equal(retried.status, 0, retried.out);
+  assert.match(retried.out, new RegExp(`Plan: 1 to upload, ${Object.keys(rest).length} unchanged`));
+});
+
+test("e2e (#2916 review): prunes stop at the budget too, and an unpruned tombstone R2 already lost fails nothing extra", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const ONE = { documents: { "chapter-1/a.txt": "hello" }, profiles: {} };
+
+  const cut = box.run("backup", ONE, { STORAGE_BACKUP_BUDGET_MINUTES: "0", BACKUP_RETENTION_DAYS: "0" });
+  assert.equal(cut.status, 1, cut.out);
+  assert.doesNotMatch(cut.out, /does not hold what its manifest lists/);
+  assert.match(cut.out, /pruned 0 of 1/);
+  const tomb = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8")).objects.find((o) => o.path === "b.txt");
+  assert.ok(tomb?.deleted_at, "the unpruned record stays as a tombstone");
+
+  const pruned = box.run("backup", ONE, { BACKUP_RETENTION_DAYS: "0" });
+  assert.equal(pruned.status, 0, pruned.out);
+  const after = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.deepEqual(after.objects.map((o) => o.path), ["chapter-1/a.txt"]);
+});
+
+test("e2e: a blank budget means the default, not zero", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const res = box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true", STORAGE_BACKUP_BUDGET_MINUTES: "  " });
+  assert.equal(res.status, 0, res.out);
+  assert.match(res.out, /Uploaded 2 object\(s\)/);
+});
+
+test("e2e (#2916 review): an object deleted after the listing is skipped, not a failure", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const res = box.run("backup", { documents: { "a.txt": "one", "gone.txt": null }, profiles: {} }, { STORAGE_BACKUP_NEW_DESTINATION: "true" });
+  assert.equal(res.status, 0, res.out);
+  assert.match(res.out, /1 object\(s\) were deleted from Storage after the listing/);
+  const manifest = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.deepEqual(manifest.objects.map((o) => o.path), ["a.txt"]);
+});
+
+test("e2e (#2916 review): MAX_TRANSFER_FAILURES stops the run, prunes included, and says so", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  const total = MAX_TRANSFER_FAILURES + TRANSFER_CONCURRENCY + 5;
+  const broken = Object.fromEntries(Array.from({ length: total }, (_, i) => [`x${String(i).padStart(2, "0")}.txt`, false]));
+  // b.txt left Storage; with retention 0 it is due for pruning this run.
+  const res = box.run("backup", { documents: { "chapter-1/a.txt": "hello", ...broken }, profiles: {} }, { BACKUP_RETENTION_DAYS: "0" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /which reached MAX_TRANSFER_FAILURES, so the run started no more/);
+  assert.match(res.out, /The run reached MAX_TRANSFER_FAILURES and stopped: uploaded 0 of \d+ object\(s\) and pruned 0 of 1/);
+  const failed = Number(res.out.match(/(\d+) transfer\(s\) failed/)[1]);
+  assert.ok(failed >= MAX_TRANSFER_FAILURES && failed < total, `${failed} of ${total} attempted`);
+  assert.ok(existsSync(box.offsite("storage/documents/b.txt")), "the prune never ran");
+});
+
+test("e2e (#2916 review): a failed prune keeps its tombstone and fails the run", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  const ONE = { documents: { "chapter-1/a.txt": "hello" }, profiles: {} };
+  const res = box.run("backup", ONE, { BACKUP_RETENTION_DAYS: "0", FAKE_AWS_FAIL_RM: "1" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /1 transfer\(s\) failed/);
+  const manifest = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8"));
+  assert.ok(manifest.objects.find((o) => o.path === "b.txt")?.deleted_at, "the tombstone stays for the next run to prune");
+  assert.equal(box.run("backup", ONE, { BACKUP_RETENTION_DAYS: "0" }).status, 0);
+});
+
+test("e2e (#2916 review): a deferred changed object whose old bytes R2 lost is still named by the offsite check", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const EDITED = { documents: { "chapter-1/a.txt": "hello", "b.txt": "edited" }, profiles: {} };
+  const res = box.run("backup", EDITED, { STORAGE_BACKUP_BUDGET_MINUTES: "0" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /does not hold what its manifest lists[\s\S]*documents\/b\.txt: not offsite/);
+  assert.match(res.out, /budget \(STORAGE_BACKUP_BUDGET_MINUTES\) ran out/, "and the budget is still reported");
+});
+
+test("e2e: a rehearsal writes, backs up, deletes, restores and cleans up its canary", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  const res = box.run("rehearse", TWO);
+  assert.equal(res.status, 0, res.out);
+  assert.match(res.out, /5\/5 verifying the bytes/);
+  assert.deepEqual(Object.keys(box.storage()[REHEARSAL_BUCKET]).sort(), Object.keys(TWO.documents).sort(), "no canary left behind");
+});
+
+test("e2e (#2916 review): a rehearsal whose backup refuses still deletes its canary", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  const res = box.run("rehearse", TWO, { STORAGE_BACKUP_BUDGET_MINUTES: "forty" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /1\/5 writing canary/);
+  assert.match(res.out, /STORAGE_BACKUP_BUDGET_MINUTES must be a non-negative number/);
+  const left = Object.keys(box.storage()[REHEARSAL_BUCKET]).filter((p) => p.startsWith(REHEARSAL_PREFIX));
+  assert.deepEqual(left, [], "the canary was deleted");
+});
+
+test("e2e (#2916 review): an object still listed but not downloadable is a failure, not a deletion", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  const res = box.run("backup", { documents: { "a.txt": "one", "no-bytes.txt": true }, profiles: {} }, { STORAGE_BACKUP_NEW_DESTINATION: "true" });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /1 transfer\(s\) failed\. The rest of the run went ahead/);
+  assert.match(res.out, /Downloading documents\/no-bytes\.txt failed: HTTP 400/);
+  assert.doesNotMatch(res.out, /deleted from Storage after the listing/);
+});
+
+test("e2e (#2916 review): a lost object whose re-upload fails is reported as failed, here and by verify", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const BROKEN = { documents: { "chapter-1/a.txt": "hello", "b.txt": { bytes: "world", download: 500 } }, profiles: {} };
+  const res = box.run("backup", BROKEN);
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /documents\/b\.txt: not offsite; re-upload failed \(listed above\); the next run retries it/);
+  const verify = box.run("verify", BROKEN);
+  assert.match(verify.out, /documents\/b\.txt: not offsite; re-upload failed; the next run retries it/);
+  assert.equal(box.run("backup", TWO).status, 1, "the retry that repairs it reports the loss once");
+  assert.equal(box.run("backup", TWO).status, 0);
+});
+
+test("e2e (#2916 review): a lost object deleted before its re-upload is marked lost at once, and the next run passes", (t) => {
+  const box = e2eSandbox();
+  t.after(box.cleanup);
+  assert.equal(box.run("backup", TWO, { STORAGE_BACKUP_NEW_DESTINATION: "true" }).status, 0);
+  unlinkSync(box.offsite("storage/documents/b.txt"));
+  const res = box.run("backup", { documents: { "chapter-1/a.txt": "hello", "b.txt": { bytes: "world", download: "vanish" } }, profiles: {} });
+  assert.equal(res.status, 1, res.out);
+  assert.match(res.out, /documents\/b\.txt: not offsite; deleted from Storage too, so it is unrecoverable/);
+  const b = JSON.parse(readFileSync(box.offsite("storage/manifest.json"), "utf8")).objects.find((o) => o.path === "b.txt");
+  assert.ok(b.lost_offsite_at, "marked lost by this run");
+  const ONE = { documents: { "chapter-1/a.txt": "hello" }, profiles: {} };
+  const next = box.run("backup", ONE);
+  assert.equal(next.status, 0, next.out);
+  assert.match(box.run("verify", ONE).out, /documents\/b\.txt: not offsite; unrecoverable/);
 });
