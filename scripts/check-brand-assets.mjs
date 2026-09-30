@@ -2,45 +2,53 @@
 /**
  * The CI gate over the committed Signet brand assets.
  *
- * Five independent properties, because before #2153 this script checked only
- * the first one and it proved nothing about the mark:
+ * Seven independent properties, numbered as the sections below are, because
+ * before #2153 this script checked only parity and it proved nothing about
+ * the mark:
  *
- *   1. PARITY — synced Next app icons are byte-identical to their canonical
- *      source. Catches a hand-edited copy or a forgotten `sync:brand-assets`.
- *
- *   2. VECTORS — every shipped SVG paints the locked pair and nothing else,
+ *   1. VECTORS — every shipped SVG paints the locked pair and nothing else,
  *      in the shared coordinate frame. Not just the two the rasters render
  *      from: `signet-emblem-B-rounded.svg` and `frapp-lockup.svg` are
  *      `@repo/brand-assets` exports that reach consumers directly, and no
  *      raster check can see them.
  *
- *   3. PIXELS — the committed rasters are drawn in the locked pair, carry the
- *      channel shape their consumer requires, every glyph layer is non-empty,
- *      and the rasters are still a render of the committed vector.
+ *   2. PARITY — synced Next app icons are byte-identical to their canonical
+ *      source. Catches a hand-edited copy or a forgotten `sync:brand-assets`.
  *
- *   4. CONTAINMENT — `favicon.ico` is a container, and every payload in it is
+ *   3. PIXELS — the committed rasters are drawn in the locked pair, carry the
+ *      channel shape their consumer requires, and every glyph layer is
+ *      non-empty.
+ *
+ *   4. STALENESS — the rasters are still a render of the committed vector.
+ *
+ *   5. CONTAINMENT — `favicon.ico` is a container, and every payload in it is
  *      the canonical raster of its size plus an opaque alpha channel: same
  *      paint, same artwork, in the RGBA shape Turbopack's ICO decoder requires.
  *      Nothing above can see inside an `.ico`, which is how
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
- *   5. STORE GRAPHICS — the Google Play icon and feature graphic under
+ *   6. IOS ICON — the Icon Composer bundle `expo.ios.icon` names is exactly
+ *      what `scripts/lib/ios-icon.mjs` writes: its `icon.json`, and a crest
+ *      whose path is the glyph vector's in the locked gold. No raster exists
+ *      until Xcode compiles it, so there are no pixels to check instead.
+ *
+ *   7. STORE GRAPHICS — the Google Play icon and feature graphic under
  *      `apps/mobile/store/graphics/` are the shape Play takes, the icon is
  *      still a render of the vector, and the feature graphic is what the
  *      renderer draws today. The audits live in `scripts/lib/store-graphics.mjs`,
  *      shared with `rasterize-brand-assets.mjs`.
  *
- * Hash parity is blind to 2, 3 and 4: every file could agree perfectly with
- * every other file and still be the wrong colour, which is exactly the state
- * #2153 found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
- * ZERO pixels while this script reported success.
+ * Hash parity (2) is blind to every other property: every file could agree
+ * perfectly with every other file and still be the wrong colour, which is
+ * exactly the state #2153 found — a full pixel census of the pre-#2153 masters
+ * returned `#DDB844` in ZERO pixels while this script reported success.
  *
  * This reads pixels rather than trusting a re-run of `rasterize:brand-assets`,
  * because the gate has to hold for whatever is committed — including a file
  * someone dropped in by hand.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +69,14 @@ import {
   glyphCoverage,
   maskIou,
 } from "./lib/brand-pixels.mjs";
+import {
+  IOS_ICON_CREST,
+  IOS_ICON_DIR,
+  IOS_ICON_JSON,
+  crestSvg,
+  glyphPath,
+  iconJson,
+} from "./lib/ios-icon.mjs";
 import {
   PLAY_FEATURE_GRAPHIC,
   PLAY_ICON,
@@ -90,7 +106,7 @@ const vectors = SHIPPED_VECTORS.map(({ name, requireField }) => ({
 /**
  * Opaque RGB rasters. All of them, not a sample: the 16px favicon is the one
  * most likely to lose the mark to antialiasing, and the mobile `icon.png` is
- * the one that reaches an app store.
+ * the full-bleed tile Expo uses wherever no platform-specific icon is set.
  */
 const opaqueRasters = [
   "packages/brand-assets/assets/signet-emblem-B-16.png",
@@ -177,7 +193,7 @@ for (const rel of opaqueRasters) {
     const { data, info, meta } = await decode(rel);
     if (meta.channels !== 3) {
       throw new Error(
-        `${rel}: has ${meta.channels} channels — must be opaque RGB, Apple rejects an alpha channel on a store icon (spec/ui/assets.md §7)`,
+        `${rel}: has ${meta.channels} channels — must be opaque RGB, the full-bleed tile (spec/ui/assets.md §7)`,
       );
     }
     assertLockedPair(
@@ -262,7 +278,7 @@ if (existsSync(repo(MASTER_SVG)) && existsSync(repo(MASTER_RASTER))) {
 // Two properties, because the container cannot simply re-use the canonical
 // buffers. Turbopack's ICO decoder requires RGBA payloads and fails the web
 // production build on anything else, while the canonical rasters must stay
-// opaque RGB for the store icon. So the payloads carry the same paint with an
+// opaque RGB, the full-bleed tile. So the payloads carry the same paint with an
 // opaque alpha channel, and this asserts exactly that: the RGBA SHAPE the
 // toolchain needs, and RGB PLANE equality with the canonical raster of the same
 // size — which is what a census alone can never prove, since the locked pair
@@ -320,7 +336,48 @@ if (
   }
 }
 
-// ── 6. Store graphics ───────────────────────────────────────────────────────
+// ── 6. The iOS icon bundle ──────────────────────────────────────────────────
+// Exact equality with what `rasterize-brand-assets.mjs` writes, rather than a
+// looser shape check: the document has no pixels to measure, and a hand edit
+// to it (or to the crest's copy of the path) is exactly the drift this gate
+// exists for. Stray files in `Assets/` fail too: Xcode compiles what it finds.
+// Line endings are compared as LF, so a Windows checkout with `core.autocrlf`
+// does not read as drift; `glyphPath` refuses a glyph `crest.svg` cannot copy.
+const lf = (text) => text.replace(/\r\n/g, "\n");
+if (present(IOS_ICON_JSON, "run npm run rasterize:brand-assets")) {
+  if (lf(readFileSync(repo(IOS_ICON_JSON), "utf8")) !== iconJson()) {
+    fail(
+      `drift: ${IOS_ICON_JSON} is not what scripts/lib/ios-icon.mjs writes\n  run: npm run rasterize:brand-assets`,
+    );
+  }
+}
+if (present(IOS_ICON_CREST, "run npm run rasterize:brand-assets")) {
+  try {
+    const committed = lf(readFileSync(repo(IOS_ICON_CREST), "utf8"));
+    assertSvgLocked(committed, IOS_ICON_CREST, { requireField: false });
+    const glyph = readFileSync(
+      repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg"),
+      "utf8",
+    );
+    if (committed !== crestSvg(glyphPath(glyph, "signet-emblem-B-glyph.svg"))) {
+      fail(
+        `stale: ${IOS_ICON_CREST} does not draw signet-emblem-B-glyph.svg's path\n  run: npm run rasterize:brand-assets`,
+      );
+    }
+    // Dotfiles are skipped: a Finder `.DS_Store` is gitignored and never
+    // reaches CI or Xcode, and re-running the rasterizer cannot remove it.
+    const assets = readdirSync(repo(`${IOS_ICON_DIR}/Assets`)).filter(
+      (name) => !name.startsWith("."),
+    );
+    if (assets.length !== 1 || assets[0] !== "crest.svg") {
+      fail(`${IOS_ICON_DIR}/Assets: holds ${assets.join(", ")}; it holds crest.svg only`);
+    }
+  } catch (error) {
+    fail(String(error.message ?? error));
+  }
+}
+
+// ── 7. Store graphics ───────────────────────────────────────────────────────
 // Nothing ships these in a binary: the owner uploads them in Play Console. They
 // are gated anyway because the Play icon IS the mark, and a listing that shows
 // an old crest beside a new app is the same drift #2153 was.
@@ -354,5 +411,6 @@ console.log(
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
     `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA; ` +
+    `the iOS icon bundle draws the glyph; ` +
     `the Play icon and feature graphic are the shape Play takes and current`,
 );

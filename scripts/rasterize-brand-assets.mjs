@@ -41,6 +41,13 @@ import {
   glyphCoverage,
 } from "./lib/brand-pixels.mjs";
 import {
+  IOS_ICON_CREST,
+  IOS_ICON_JSON,
+  crestSvg,
+  glyphPath,
+  iconJson,
+} from "./lib/ios-icon.mjs";
+import {
   PLAY_FEATURE_GRAPHIC,
   PLAY_ICON,
   PLAY_ICON_SIZE,
@@ -88,7 +95,7 @@ async function renderVector(path) {
     .toBuffer();
 }
 
-/** Opaque RGB. Apple rejects an alpha channel on a store icon. */
+/** Opaque RGB: the full-bleed tile, with nothing behind it to show through. */
 async function opaque(source, size) {
   return sharp(source)
     .resize(size, size, { fit: "fill" })
@@ -104,7 +111,7 @@ async function opaque(source, size) {
  * Only the favicon container wants this. Next builds `app/favicon.ico` through
  * Turbopack, whose ICO decoder refuses a non-RGBA PNG payload and fails the
  * production build, while `spec/ui/assets.md` §7 requires the canonical rasters
- * to stay opaque RGB for the store icon. The two constraints are both real, so
+ * to stay opaque RGB, the full-bleed tile. The two constraints are both real, so
  * the container gets its own render rather than either one bending.
  */
 async function opaqueRgba(source, size) {
@@ -223,7 +230,7 @@ async function audit(buffer, label, kind) {
   if (kind === "opaque") {
     if (meta.channels !== 3) {
       throw new Error(
-        `${label}: has ${meta.channels} channels — must be opaque RGB, Apple rejects an alpha channel on a store icon (spec/ui/assets.md §7)`,
+        `${label}: has ${meta.channels} channels — must be opaque RGB, the full-bleed tile (spec/ui/assets.md §7)`,
       );
     }
     assertLockedPair(stats, label, { edge: info.width });
@@ -343,6 +350,18 @@ async function main() {
     await monochrome(launcher),
     "monochrome",
   );
+
+  // ── iOS: the Icon Composer bundle `expo.ios.icon` names ───────────────────
+  // Not a raster: iOS renders the bundle itself, in Liquid Glass, and derives
+  // its dark, clear and tinted appearances from it. What is written here is the
+  // document and the crest it draws, copied from the glyph vector; why each
+  // field is what it is lives in `lib/ios-icon.mjs`.
+  const crest = crestSvg(
+    glyphPath(readFileSync(GLYPH_SVG, "utf8"), "signet-emblem-B-glyph.svg"),
+  );
+  assertSvgLocked(crest, IOS_ICON_CREST, { requireField: false });
+  await write(IOS_ICON_JSON, Buffer.from(iconJson()));
+  await write(IOS_ICON_CREST, Buffer.from(crest));
 
   // ── Google Play listing: apps/mobile/store/graphics ───────────────────────
   // Not read by any build: the owner uploads them in Play Console. Rendered
