@@ -181,7 +181,7 @@ mv .gitleaks-baseline.json .gitleaks-baseline.json.bak
 ```
 
 > **Do not "align" this command with `buildGitleaksArgs`.** Full mode adds `--baseline-path` whenever
-> the file exists (`scan-secrets.mjs:448`), and a generator run with that flag filters every finding
+> the file exists (`buildGitleaksArgs` in `scripts/scan-secrets.mjs`), and a generator run with that flag filters every finding
 > against the baseline already on disk and writes **`[]`** — with `--exit-code 0` suppressing any
 > complaint. Committing that empty array silently un-accepts all five findings. Moving the file aside
 > first (above) makes the run independent of whatever is already committed. Otherwise the flags must

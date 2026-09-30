@@ -140,7 +140,7 @@ divergent lists until #1635.
 ### 4. Address feedback
 
 - Fix any CI failures.
-- Address Claude review findings as needed and push follow-up commits for re-review.
+- Address review comments and push follow-up commits.
 - All required checks must pass before merging.
 
 ### 5. Merge via squash merge

@@ -42,18 +42,19 @@ Two things keep the required gate from passing vacuously, and both are load-bear
 set under `CI`, so a committed `test.only` cannot narrow the gate to one route while still exiting 0.
 And Playwright exits **1** when a run collects no tests, so an emptied suite reddens the job rather
 than silently asserting nothing. That was verified by running it, not assumed — against the 1.62.1
-`npm ci` resolves today; `apps/web/package.json` asks for `^1.62.1`, so re-check on any upgrade that
-moves the lockfile.
+`npm ci` resolved at the time; the lockfile now resolves 1.63.0 (`apps/web/package.json` asks for
+`^1.63.0`), so re-check on any upgrade that moves the lockfile.
 
-**That second guard narrowed when the snapshot suite went away, and the narrowing is the thing to
-know.** `test:floor` now runs the whole `apps/web/tests/visual/` directory instead of `--grep @floor`.
-Directory selection is the safer default for *adding* a spec — a new one joins the required job rather
-than falling into no job at all, which is why a `--grep` filter must not come back without a second
-job catching what it excludes. But it keys on the collected-test count, where the tag version fired
-whenever the floor suite specifically went missing. Deleting today's only spec still reddens the job.
-What stops being caught is the two-spec case: add a second spec, then delete or rename the floor spec,
-and the run passes on the survivor while the floor goes unmeasured. Adding a second spec to that
-directory means taking that on deliberately.
+**The second guard narrowed when the snapshot suite went away, and a second spec has since
+replaced it.** `test:floor` runs the whole `apps/web/tests/visual/` directory instead of
+`--grep @floor`. Directory selection is the safer default for *adding* a spec: a new one joins the
+required job rather than falling into no job at all, which is why a `--grep` filter must not come
+back without a second job catching what it excludes. But it keys on the collected-test count, and
+with two specs there, deleting or renaming the floor spec would pass on the survivor. So
+`pre-auth-floor.spec.ts` asserts that `responsive-floor.spec.ts` still exists and that
+`DASHBOARD_ROUTES` still holds its exact entry count
+([`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)). Deleting the pre-auth
+spec instead leaves the floor spec running, so the job still measures the floor.
 
 ---
 
@@ -170,7 +171,7 @@ together, and read `api-tests` as the check that actually exercises the module g
 ### Why the baseline is ours rather than `--ignore-known`
 
 depcruise's native `--ignore-known` matches the paths a run reports, which here are
-workspace-relative — so `src/index.ts` is ambiguous across 17 workspaces and one shared file cannot
+workspace-relative — so `src/index.ts` is ambiguous across the workspaces and one shared file cannot
 express which it meant. Paths are normalised to repo-root-relative and matched in the runner instead,
 which keeps one greppable baseline and makes the matching unit-testable
 ([`check-dep-cruiser.test.mjs`](../../scripts/ci/__tests__/check-dep-cruiser.test.mjs)). The
