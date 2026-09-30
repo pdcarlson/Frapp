@@ -30,7 +30,7 @@
     "@playwright/test": "^1.63.0",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "^9.39.5",
