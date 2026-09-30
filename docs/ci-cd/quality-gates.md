@@ -53,8 +53,10 @@ back without a second job catching what it excludes. But it keys on the collecte
 with two specs there, deleting or renaming the floor spec would pass on the survivor. So
 `pre-auth-floor.spec.ts` asserts that `responsive-floor.spec.ts` still exists and that
 `DASHBOARD_ROUTES` still holds its exact entry count
-([`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)). Deleting the pre-auth
-spec instead leaves the floor spec running, so the job still measures the floor.
+([`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)). That guard runs one
+way only: it lives in the pre-auth spec, and nothing guards that spec. Deleting or renaming
+`pre-auth-floor.spec.ts` passes on the floor spec, silently dropping the pre-auth routes from the
+375px check and the `DASHBOARD_ROUTES` count guard with them.
 
 ---
 
