@@ -189,9 +189,14 @@ test("withoutComments drops comments and empties strings, and keeps the code aro
   assert.equal(withoutComments('a("x\\"y"); b(`t ${c} \\` d`);'), 'a(""); b(``);');
 });
 
-test("a /* or // inside a string or a line comment can't swallow a live requester call", () => {
-  // Each once opened a fake comment running to the next */ or line end.
-  for (const before of ['const ACCEPT = ["image/*"];', 'const cdn = "//cdn.frapp.live/x";', "// see lib/*.ts"]) {
+test("a /* or // inside a string, a line comment, or JSX text can't swallow a live requester call", () => {
+  // Each once opened a fake comment or string running past the call.
+  for (const before of [
+    'const ACCEPT = ["image/*"];',
+    'const cdn = "//cdn.frapp.live/x";',
+    "// see lib/*.ts",
+    "const Hint = () => <Text>Can't scan? Ask an officer.</Text>;",
+  ]) {
     const source = `/** Picks a photo. */\n${before}\nexport async function pick() {\n  await requestMediaLibraryPermissionsAsync();\n}\n/** Next helper. */\n`;
     assert.ok(withoutComments(source).includes("requestMediaLibraryPermissionsAsync("), before);
   }

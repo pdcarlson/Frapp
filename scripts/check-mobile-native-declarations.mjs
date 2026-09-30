@@ -280,8 +280,10 @@ export function backgroundModeProblems(infoPlist, modes = IOS_BACKGROUND_MODES) 
  * Source text with its JS comments dropped and its string literals emptied, so
  * a call left in a comment or a string isn't read as a live one, and a `/*` or
  * `//` inside a string (`"image/*"`, `"//cdn…"`) can't swallow the code after
- * it. A lexer, not a parser: a regex literal holding `//` or `/*` still reads
- * as a comment, which can only hide a call on that line and fail the gate.
+ * it. A lexer, not a parser: a `'` or `"` string ends at its line, as JS
+ * requires, so an apostrophe in JSX text (`Can't scan`) or a regex literal
+ * holding a quote, `//` or `/*` can hide a call on that line only, and then
+ * fails the gate rather than passing it.
  */
 export function withoutComments(source) {
   let out = "";
@@ -297,9 +299,12 @@ export function withoutComments(source) {
     } else if (source[i] === '"' || source[i] === "'" || source[i] === "`") {
       const quote = source[i];
       let j = i + 1;
-      while (j < source.length && source[j] !== quote) j += source[j] === "\\" ? 2 : 1;
+      while (j < source.length && source[j] !== quote && (quote === "`" || source[j] !== "\n")) {
+        j += source[j] === "\\" ? 2 : 1;
+      }
       out += quote + quote;
-      i = j + 1;
+      // A closing quote is consumed; a newline that ended an unclosed string isn't.
+      i = source[j] === quote ? j + 1 : j;
     } else {
       out += source[i];
       i += 1;
