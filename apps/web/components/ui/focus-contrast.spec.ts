@@ -5,8 +5,15 @@ import {
   ratio,
   SEEDS,
   SURFACE,
+  tint,
 } from "@/tests/signet-contrast";
-import { FOCUS_RING, FOCUS_RING_OFFSET } from "./focus";
+import { buttonVariants } from "./button";
+import {
+  FOCUS_RING,
+  FOCUS_RING_ALWAYS,
+  FOCUS_RING_OFFSET,
+  FOCUS_RING_WITHIN,
+} from "./focus";
 
 /**
  * The defect this file exists for.
@@ -21,20 +28,25 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "./focus";
  * (The engine has held accent-9 to 3:1 since #2541, but without the headroom
  * this recipe needs; see the last test in the first block.)
  *
- * The guard measures **the token the recipe actually ships**, parsed out of the
- * exported class string, rather than a hard-coded role name. A guard that
+ * The bordered recipes (`FOCUS_RING`, `FOCUS_RING_ALWAYS`, `FOCUS_RING_WITHIN`)
+ * had no contrast assertion at all until #2398 (lock L-07), which is half of
+ * why their accent-9 border shipped under 3:1 on 9 of 19 seeds. They are
+ * measured in the second block.
+ *
+ * The guards measure **the token the recipe actually ships**, parsed out of
+ * the exported class string, rather than a hard-coded role name. A guard that
  * restated the token would go green against a constant that no longer ships —
  * which is the whole failure mode `shared/elevation-contrast.spec.ts` was
  * written against.
  */
 
 /**
- * The CSS custom property behind a Tailwind `ring-*` utility.
+ * The CSS custom property behind a Tailwind `ring-*` or `border-*` utility.
  *
  * Only the roles these recipes can legally draw in; anything else should fail
  * loudly here rather than be silently skipped.
  */
-const RING_ROLE: Record<string, string> = {
+const ACCENT_ROLE: Record<string, string> = {
   ring: "--ring",
   primary: "--primary",
   "accent-text": "--accent-text",
@@ -48,13 +60,45 @@ function ringRoleOf(recipe: string): string {
     .filter((n) => n !== "offset-2" && !n.startsWith("offset-"));
 
   expect(names).toHaveLength(1);
-  const role = RING_ROLE[names[0]!];
+  const role = ACCENT_ROLE[names[0]!];
   expect(
     role,
-    `unrecognized ring token "${names[0]}" — add it to RING_ROLE and check its contrast`,
+    `unrecognized ring token "${names[0]}" — add it to ACCENT_ROLE and check its contrast`,
   ).toBeDefined();
   return role!;
 }
+
+/**
+ * Pull `foo` out of the `<variant>:border-foo` in a bordered recipe, whichever
+ * of the three variants it is spelled with.
+ */
+function borderRoleOf(recipe: string): string {
+  const names = [
+    ...recipe.matchAll(/(?:focus-visible|focus-within|focus):border-([a-z-]+)/g),
+  ].map((m) => m[1]!);
+
+  expect(names).toHaveLength(1);
+  const role = ACCENT_ROLE[names[0]!];
+  expect(
+    role,
+    `unrecognized border token "${names[0]}" — add it to ACCENT_ROLE and check its contrast`,
+  ).toBeDefined();
+  return role!;
+}
+
+/** Every ladder step a bordered control can be painted on. */
+const LADDER = [
+  SURFACE.background,
+  SURFACE.surface1,
+  SURFACE.card,
+  SURFACE.popover,
+] as const;
+
+const BORDERED = {
+  FOCUS_RING,
+  FOCUS_RING_ALWAYS,
+  FOCUS_RING_WITHIN,
+} as const;
 
 describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 alone", () => {
   it("draws in a token that clears the non-text floor on every seeded accent", () => {
@@ -156,12 +200,107 @@ describe("the offset band fixes the surface the measurement assumes", () => {
   });
 });
 
+describe("FOCUS_RING, FOCUS_RING_ALWAYS and FOCUS_RING_WITHIN carry focus on their border", () => {
+  it("all three swap the border to the same token", () => {
+    // One recipe spelled three ways (`focus-visible`, `focus`, `focus-within`).
+    // A token moved in one and not the others is the drift this pins.
+    const roles = Object.values(BORDERED).map(borderRoleOf);
+    expect(new Set(roles).size).toBe(1);
+  });
+
+  it.each(Object.entries(BORDERED))(
+    "%s's border clears the non-text floor on every seed over every ladder step",
+    (_name, recipe) => {
+      const role = borderRoleOf(recipe);
+
+      const failures = SEEDS.flatMap((seed) =>
+        LADDER.filter(
+          (surface) =>
+            ratio(accentRolesFor(seed)[role]!, surface) < AA_NON_TEXT,
+        ).map((surface) => `${seed} on ${surface}`),
+      );
+
+      expect(failures).toEqual([]);
+    },
+  );
+
+  it("keeps real headroom over the floor, not the bare 3:1 the engine guarantees accent-9", () => {
+    const role = borderRoleOf(FOCUS_RING);
+
+    const worst = Math.min(
+      ...SEEDS.flatMap((seed) =>
+        LADDER.map((surface) => ratio(accentRolesFor(seed)[role]!, surface)),
+      ),
+    );
+
+    // accent-11's tightest pair is `#BF0A30` over `--popover`, at 6.81:1.
+    // accent-9's, the token this replaced, is `#800000` over `--popover` at
+    // 3.78:1: conforming since #2541, but only because the engine lifts the
+    // fill to the floor. The bound sits well under the measurement for the
+    // reason the offset recipe's margin test gives.
+    expect(worst).toBeGreaterThan(6);
+    expect(
+      Math.min(
+        ...SEEDS.flatMap((seed) =>
+          LADDER.map((surface) =>
+            ratio(accentRolesFor(seed)["--primary"]!, surface),
+          ),
+        ),
+      ),
+    ).toBeLessThan(4);
+  });
+
+  it("needs the border, because the diluted ring alone fails everywhere", () => {
+    // `ring-ring/25` composited over each step: 1.18–1.31:1, 0 of 76 pairs
+    // clear 3:1. This is why the border is the load-bearing half, and why a
+    // host with no border to swap has no indicator (#2965).
+    expect(FOCUS_RING).toContain("focus-visible:ring-ring/25");
+    const passing = SEEDS.flatMap((seed) =>
+      LADDER.filter((surface) => {
+        const halo = tint(accentRolesFor(seed)["--ring"]!, surface, 0.25);
+        return ratio(halo, surface) >= AA_NON_TEXT;
+      }),
+    );
+    expect(passing).toEqual([]);
+  });
+
+  it("draws an edge on a primary button, where a --primary border drew nothing", () => {
+    // The case the 2026-09-18 decision asked to measure. The default button
+    // is filled `bg-primary` over a reserved `border-transparent`, so a border
+    // swapped to `--primary` was the fill's own colour: the edge did not move,
+    // and the 25% halo above was the whole indicator.
+    const primary = buttonVariants({ variant: "default" });
+    expect(primary).toContain("bg-primary");
+    expect(primary).toContain("border-transparent");
+    expect(primary).toContain(FOCUS_RING);
+
+    const role = borderRoleOf(FOCUS_RING);
+    expect(role).not.toBe("--primary");
+
+    // Against the fill itself accent-11 is weak (1.09–2.07:1 across the
+    // seeds, the reason `signet.css` rejects it for `::selection`), so the
+    // fill is not what the edge reads against. It reads against the surface
+    // outside the button, which the per-step test above already holds to 3:1.
+    // Pinned so nobody cites the fill side as the conformance argument.
+    const againstFill = Math.min(
+      ...SEEDS.map((seed) =>
+        ratio(accentRolesFor(seed)[role]!, accentRolesFor(seed)["--primary"]!),
+      ),
+    );
+    expect(againstFill).toBeLessThan(AA_NON_TEXT);
+  });
+});
+
 describe("the two recipes differ on purpose", () => {
   it("leaves FOCUS_RING's border swap as the half that carries it", () => {
     // `--ring` at 25% composites to ~1.3:1, so the solid border is the signal
     // there. That is why FOCUS_RING may dilute its ring and this one may not.
-    expect(FOCUS_RING).toContain("focus-visible:border-primary");
+    expect(FOCUS_RING).toContain("focus-visible:border-accent-text");
     expect(FOCUS_RING).toContain("focus-visible:ring-ring/25");
+  });
+
+  it("draws both recipes' signal in the same token", () => {
+    expect(borderRoleOf(FOCUS_RING)).toBe(ringRoleOf(FOCUS_RING_OFFSET));
   });
 
   it("gives FOCUS_RING_OFFSET no border swap to depend on", () => {

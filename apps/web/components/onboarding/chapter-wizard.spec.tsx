@@ -409,7 +409,7 @@ describe("the archetype card, at the call site", () => {
     expect(selected.className).not.toMatch(/bg-(?:primary|accent|secondary)\//);
     expect(selected.className).not.toMatch(/(?:^|\s)bg-primary\b/);
     // Anchored to the start of a class rather than a word boundary: the card
-    // legitimately carries `focus-visible:border-primary` from `FOCUS_RING`,
+    // legitimately carries `focus-visible:border-accent-text` from `FOCUS_RING`,
     // and that is the indicator the test below pins.
     expect(selected.className).not.toMatch(/(?:^|\s)border-primary\b/);
   });
@@ -427,7 +427,7 @@ describe("the archetype card, at the call site", () => {
     fireEvent.click(screen.getByRole("button", { name: "Manual entry" }));
 
     for (const card of screen.getAllByRole("radio")) {
-      expect(card.className).toMatch(/focus-visible:border-primary/);
+      expect(card.className).toMatch(/focus-visible:border-accent-text/);
     }
   });
 

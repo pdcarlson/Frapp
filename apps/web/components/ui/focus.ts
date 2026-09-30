@@ -1,13 +1,13 @@
 /**
  * The Signet focus recipes, spelled once.
  *
- * `spec/ui/design-system/foundations.md` §10: a 3px ring of the accent ring
- * step (`--ring`, accent-8) at ~25% opacity, with the control's border
- * switching to the accent solid (`--primary`, accent-9). components.md §2
- * applies it to *every* focusable control, which is why these are constants
- * rather than strings copied into a dozen `cva` bases — the copies drift, and a
- * focus indicator missing on one control is an accessibility release gate
- * failure (README §6), not a cosmetic one.
+ * `spec/ui/design-system/components.md` §2: a 3px ring of the accent ring step
+ * (`--ring`, accent-8) at ~25% opacity, with the control's border switching to
+ * the accent text step (`--accent-text`, accent-11). It applies to *every*
+ * focusable control, which is why these are constants rather than strings
+ * copied into a dozen `cva` bases — the copies drift, and a focus indicator
+ * missing on one control is an accessibility release gate failure (README §6),
+ * not a cosmetic one.
  *
  * ## The border swap is the load-bearing half
  *
@@ -18,28 +18,43 @@
  * README §6's 3:1 floor for non-text UI. It is the border going solid accent
  * that makes focus visible. The ring is the halo around it, not the signal.
  *
- * How strong that border is depends on the chapter, and the figure this comment
- * used to give ("8.7:1 and up") was the house seed's, stated as if it were
- * everyone's. Solid `--primary` against the ladder step behind it ranges
- * 3.78–18.71:1 across the 19 seeds (the house seed's is 7.88–9.81: 7.88 on
- * `--popover`, 8.70 on `--card`). The bottom of that range was 1.50:1 until
- * #2541 and 3.01:1 until #2586: the engine now holds accent-9 and its hover to
- * 3:1 on every ladder step (`accent-engine.md` §8), which lifts a dark fill
- * past the floor on its own, so the border half of `FOCUS_RING` conforms for
- * every palette written since (`accent-engine.md` §4 covers stored ones). The
- * guarantee is pinned in `packages/chapter-theme/src/signet.spec.ts`, not in
- * `focus-contrast.spec.ts`, which guards only the offset recipe.
+ * ## Why the border is accent-11 and not `--primary` (L-07, closed 2026-09-30)
+ *
+ * The border drew in `--primary` (accent-9) until #2398, which is what the
+ * committed framework board draws ("gold border"). Paul's 2026-09-18 decision
+ * moved it to `--accent-text`, the token `FOCUS_RING_OFFSET` below already
+ * uses, for two reasons that `focus-contrast.spec.ts` pins:
+ *
+ * - **A primary button had no focus border at all.** `buttonVariants` gives
+ *   every variant `border-transparent`, and on the `default` variant the fill
+ *   is `bg-primary`, so swapping the border to `--primary` repainted it in the
+ *   fill's own colour. The edge did not move, and the 25% halo was the whole
+ *   indicator. accent-11 draws an edge the surface outside the button can be
+ *   told apart from.
+ * - **Headroom.** accent-9 used to fail 3:1 on 9 of 19 seeds over `--popover`.
+ *   Since #2541 the engine holds it to 3:1 on every ladder step, but 3:1 is all
+ *   the floor guarantees (3.78:1 at the worst seed). accent-11 is the engine's
+ *   text role, gated at 4.5:1 as text, and its worst seed × ladder step is
+ *   6.81:1. One token for both recipes also means one number to watch.
+ *
+ * The one surface accent-11 does not stand out on is accent-9 itself
+ * (1.09–2.07:1 across the 19 seeds, the reason `signet.css` rejects it for
+ * `::selection`). That is the fill *inside* a primary button, so there the
+ * edge reads against the surface outside the button, at 6.81:1 or better, and
+ * not against the fill.
  *
  * That is also why `FOCUS_RING` is wrong for a control whose border already
  * encodes something. On a `Switch` the border carries on/off, and on a
  * `TabsTrigger` the bottom border IS the selected indicator — so swapping it on
  * focus either loses the state or, worse, paints the exact visual that means
  * "selected", leaving a keyboard user unable to tell focus from selection.
- * Those controls take `FOCUS_RING_OFFSET`, which puts an accent step in an
- * offset ring *around* the control and leaves its border alone. It uses
- * `--accent-text` (accent-11) at full opacity rather than `--primary` or
- * `--ring`, because with no border to swap the ring has to clear the 3:1 floor
- * by itself on every chapter seed — see that constant.
+ * Those controls take `FOCUS_RING_OFFSET`, which puts the same accent-11 in an
+ * offset ring *around* the control and leaves its border alone — see that
+ * constant.
+ *
+ * The swap only draws where there is a border to swap. A host with no border
+ * class (`border-0`) gets the diluted ring alone, which is no indicator — give
+ * it `border border-transparent`, as `buttonVariants` does.
  *
  * `focus-visible` rather than `focus`: a pointer click on a button should not
  * leave a ring behind it. Controls that are focusable but not clickable — the
@@ -50,15 +65,15 @@
  * ## Why these are not `disabled:`-safe on their own
  *
  * Tailwind breaks same-specificity ties by its own fixed variant sort order,
- * not by the order classes appear in the string. `focus-visible:border-primary`
- * and a `data-[state=…]:border-…` are both one class plus one
- * pseudo-class/attribute, so the `data-` rule — emitted later — wins silently.
- * Anywhere a state variant touches a property one of these recipes also
- * touches, the state variant must be scoped with `enabled:` (mutually
- * exclusive, so no tie can arise) rather than left to source order.
+ * not by the order classes appear in the string.
+ * `focus-visible:border-accent-text` and a `data-[state=…]:border-…` are both
+ * one class plus one pseudo-class/attribute, so the `data-` rule — emitted
+ * later — wins silently. Anywhere a state variant touches a property one of
+ * these recipes also touches, the state variant must be scoped with `enabled:`
+ * (mutually exclusive, so no tie can arise) rather than left to source order.
  */
 export const FOCUS_RING =
-  "focus-visible:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/25";
+  "focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25";
 
 /**
  * For controls whose own border encodes state — `Switch` (on/off) and
@@ -129,7 +144,7 @@ export const FOCUS_RING_OFFSET =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export const FOCUS_RING_ALWAYS =
-  "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25";
+  "focus:outline-none focus:border-accent-text focus:ring-[3px] focus:ring-ring/25";
 
 /**
  * `FOCUS_RING_OFFSET`'s recipe, delegated to a container the way
@@ -184,7 +199,7 @@ export const FOCUS_RING_OFFSET_WITHIN =
  * replaced it), and that is a README §6 release-gate failure.
  */
 export const FOCUS_RING_WITHIN =
-  "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25";
+  "focus-within:border-accent-text focus-within:ring-[3px] focus-within:ring-ring/25";
 
 /**
  * A "Skip to X" link: invisible until it is the focused element, then pinned
@@ -196,17 +211,21 @@ export const FOCUS_RING_WITHIN =
 /**
  * The shell's focus recipe: the ring alone, with no border swap.
  *
- * `FOCUS_RING` is the house recipe and would normally be the one to reach for,
- * but its `focus-visible:border-primary` half is unguarded and non-conforming
- * on several chapter seeds (open lock L-07) — and several shell controls
- * (the nav row, the Ask pill, the account avatar) already encode state in
- * their border, so a border swap would fight that state rather than add to it.
+ * Several shell controls (the nav row, the Ask pill, the account avatar)
+ * already encode state in their border, so `FOCUS_RING`'s border swap would
+ * fight that state rather than add to it.
+ *
+ * **This is not a conforming indicator.** The diluted ring is 1.18–1.31:1 on
+ * every ladder step (see the top-of-file comment), and it is all this recipe
+ * draws. It predates L-07, whose closing moved `FOCUS_RING`'s border to
+ * accent-11 and left this recipe alone. #2965 tracks giving the shell a real
+ * indicator, most likely `FOCUS_RING_OFFSET`'s solid accent-11 ring.
  *
  * Exported because the greenfield shell needs it in six places. The literal was
  * hand-copied into each of them first, which is exactly what the top-of-file
- * comment says this module exists to prevent: when L-07 is resolved and the
- * recipe moves, a grep for `FOCUS_RING` has to find every consumer, and six
- * anonymous string copies are invisible to that grep.
+ * comment says this module exists to prevent: when the recipe moves, a grep
+ * for `FOCUS_RING` has to find every consumer, and six anonymous string copies
+ * are invisible to that grep.
  */
 export const FOCUS_RING_SHELL =
   "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25";
