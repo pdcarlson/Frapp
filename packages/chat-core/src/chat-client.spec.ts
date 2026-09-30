@@ -27,7 +27,11 @@ import {
   UNCONFIRMED_NOTICE_TTL_MS,
 } from "./heavy-command-notices";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
-import { assertContentFreeProperties } from "@repo/validation";
+import {
+  assertContentFreeProperties,
+  moduleDisabledMessage,
+} from "@repo/validation";
+import { memberFacingRefusal, POLLS_OFF_COPY } from "./polls";
 import { chatMessagesKey, type ChannelCache } from "./types";
 import { emptyCache, mergeServerRows, selectMessages } from "./cache";
 import { memoryStore } from "./test/memory-store";
@@ -715,6 +719,52 @@ describe("outbox analytics", () => {
       OUTBOX_ANALYTICS_EVENTS.failedTransient,
       expect.anything(),
     );
+  });
+
+  it("gives a member their own copy for the Polls refusal: toast, failed row and outbox (#2993)", async () => {
+    // The module gate's sentence tells an officer to re-enable Polls in
+    // Settings, which a member can't do. Every place chat-core surfaces the
+    // server's message carries the member's row instead.
+    const toast = vi.fn() as ToastFn;
+    const outbox = stubOutbox();
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          code: "chapter.module.disabled",
+          message: moduleDisabledMessage("polls"),
+        },
+        response: { status: 403 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+      toast,
+    });
+
+    await sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "Formal venue?",
+      kind: "poll",
+    });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Message rejected",
+        description: POLLS_OFF_COPY,
+      }),
+    );
+    expect(outbox.markFailed).toHaveBeenCalledWith(
+      expect.any(String),
+      POLLS_OFF_COPY,
+    );
+    const cache = ctx.queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(selectMessages(cache!).map((m) => m._error)).toEqual([
+      POLLS_OFF_COPY,
+    ]);
   });
 
   it("emits failed-network (not failed-4xx) on a transient/network error", async () => {
@@ -1572,5 +1622,21 @@ describe("deleteMessage on a row the window doesn't hold (#2775)", () => {
     ) as ChannelCache;
     expect(cache.order).toEqual(["msg-new"]);
     expect(cache.byId["msg-old"]).toBeUndefined();
+  });
+});
+
+describe("memberFacingRefusal", () => {
+  it("replaces the Polls refusal with the member's row", () => {
+    expect(memberFacingRefusal(moduleDisabledMessage("polls"))).toBe(
+      POLLS_OFF_COPY,
+    );
+  });
+
+  it("passes every other message through untouched", () => {
+    expect(memberFacingRefusal("Poll has expired")).toBe("Poll has expired");
+    // Another module's refusal belongs to that module's own surface.
+    expect(memberFacingRefusal(moduleDisabledMessage("events"))).toBe(
+      moduleDisabledMessage("events"),
+    );
   });
 });

@@ -39,6 +39,4 @@ export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
 export const MODULE_REFUSAL_COPY = {
   checkIn:
     "Check-in is turned off for your chapter right now. An officer can turn events back on.",
-  polls:
-    "Polls are turned off for your chapter right now. An officer can turn them back on.",
 } as const;

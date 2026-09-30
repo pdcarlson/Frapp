@@ -28,7 +28,6 @@ import {
   useChapterRoster,
   useMemberDisplayNames,
   useMyPermissions,
-  useCurrentChapter,
   useBookmarks,
   useBookmarkedMessageIds,
   useBookmarkMessage,
@@ -58,7 +57,8 @@ import {
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
-import { getArchetype, VOCABULARY_DEFAULTS } from "@repo/org-archetypes";
+import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
+import { vocab } from "@/lib/vocabulary";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -194,29 +194,6 @@ function ChannelHeaderMark({
 }
 
 
-/** The two member-view fields the recruitment word is resolved from. */
-type MemberViewVocabulary = {
-  org_archetype?: string | null;
-  vocabulary?: { recruitment?: string } | null;
-};
-
-/**
- * The chapter's recruitment word (`/intake`, `/recruitment`, …) from the member
- * view. The member view carries the stored `vocabulary` column as-is, so this
- * applies the merge `ChapterConfigService.getConfig` does for the config read:
- * the stored word first, then the archetype's default. `undefined` until the
- * read answers, which the palette shows as the canonical `/rush`.
- */
-export function chapterRecruitmentWord(
-  chapter: MemberViewVocabulary | undefined,
-): string | undefined {
-  if (!chapter) return undefined;
-  return (
-    chapter.vocabulary?.recruitment ??
-    VOCABULARY_DEFAULTS[getArchetype(chapter.org_archetype ?? "ifc").key]
-      .recruitment
-  );
-}
 
 /**
  * The chat surface: channels column, then thread and composer.
@@ -286,17 +263,14 @@ export function ChatShell({
     whether the live window has landed.
   */
   const { userId: liveUserId } = useFrappUser();
-  // The member view (`GET /v1/chapters/current`), the same query and cache
-  // entry the slash gate reads below. Not `useOrgConfig()`: that read needs
+  // From the member view, like the slash gate below: `useOrgConfig()` needs
   // `chapter-config:view`, which no seeded role below President holds (#2957),
   // so members got `/rush` in place of their chapter's recruitment word.
-  const currentChapter = useCurrentChapter({
-    chapterId: activeChapterId,
-    enabled: !!activeChapterId,
-  });
-  const recruitmentVocab = chapterRecruitmentWord(
-    currentChapter.data as MemberViewVocabulary | undefined,
-  );
+  // `undefined` until the read answers, which the palette shows as `/rush`.
+  const chapterVocabulary = useChapterVocabulary();
+  const recruitmentVocab = chapterVocabulary
+    ? vocab("recruitment", chapterVocabulary)
+    : undefined;
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();

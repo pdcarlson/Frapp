@@ -385,7 +385,7 @@ module back on ([#2393](https://github.com/pdcarlson/Frapp/issues/2393)).
 | Surface | Description |
 |---|---|
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
-| Poll (chat card, web and mobile) | `Polls are turned off for your chapter right now. An officer can turn them back on.` Replaces the guard's sentence when a poll card's vote, or a `/poll` sent past a stale client gate, is refused ([#2993](https://github.com/pdcarlson/Frapp/issues/2993)): in mobile's thread action-error banner, and in the web chat toast. |
+| Poll (chat card, web and mobile) | `Polls are turned off for your chapter right now. An officer can turn them back on.` Replaces the guard's sentence when a poll card's vote, or a `/poll` sent past a stale client gate, is refused ([#2993](https://github.com/pdcarlson/Frapp/issues/2993)). `@repo/chat-core` maps it once (`memberFacingRefusal`), so it reaches every surface that shows the server's message: the web toast, a failed poll row's inline error, and mobile's thread action-error banner. |
 | Study | The two *Module off* rows in *Study session (mobile, s10)* below. |
 
 ### Study session (mobile, s10)

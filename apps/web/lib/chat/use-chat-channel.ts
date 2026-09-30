@@ -30,7 +30,6 @@ import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { useToast } from "@/hooks/use-toast";
-import { moduleRefusalFromServerMessage } from "@repo/validation";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import {
   chatMessagesKey,
@@ -158,28 +157,6 @@ export interface UseChatChannelResult {
   ) => Promise<void>;
 }
 
-/**
- * Member copy for the Polls module refusal (`spec/ui/design-system/writing.md`
- * § Module off, "Poll (chat card)"; mobile's `MODULE_REFUSAL_COPY.polls`).
- */
-export const POLLS_OFF_COPY =
-  "Polls are turned off for your chapter right now. An officer can turn them back on.";
-
-/**
- * chat-core toasts a refused send or card action with the server's message
- * as-is. For a poll sent or voted on while Polls is off (#2993) that is the
- * guard's sentence to an officer ("Re-enable it in Settings → Modules"), which
- * a member can't act on, so it is swapped for their own row. Every other
- * message passes through.
- */
-export function memberFacingDescription(
-  description: string | undefined,
-): string | undefined {
-  return moduleRefusalFromServerMessage(description)?.moduleKey === "polls"
-    ? POLLS_OFF_COPY
-    : description;
-}
-
 export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
@@ -240,7 +217,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     (input) =>
       rawToast({
         title: input.title,
-        description: memberFacingDescription(input.description),
+        description: input.description,
         variant: input.variant,
       }),
     [rawToast],

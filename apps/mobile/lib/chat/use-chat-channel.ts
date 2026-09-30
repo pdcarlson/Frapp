@@ -94,8 +94,6 @@ import {
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { useFrappClient } from "@repo/hooks";
-import { moduleRefusalFromServerMessage } from "@repo/validation";
-import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 
 import { getSupabaseClient } from "@/lib/supabase";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
@@ -514,16 +512,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
             ) {
               return;
             }
-            // A vote on a poll card is refused while Polls is off (#2993),
-            // with the guard's sentence to an officer. A member can't act on
-            // it, so they get their own row (`writing.md` § Module off).
-            // `actOnCard` passes the server's message through as-is.
-            const refusal = moduleRefusalFromServerMessage(input.description);
-            setActionError(
-              refusal?.moduleKey === "polls"
-                ? MODULE_REFUSAL_COPY.polls
-                : (input.description ?? input.title),
-            );
+            setActionError(input.description ?? input.title);
           },
         },
         args,

@@ -778,7 +778,7 @@ vi.mock("./message-timeline", async () => {
 });
 
 import { blockClearance } from "@repo/chat-core/blocks";
-import { ChatShell, chapterRecruitmentWord } from "./chat-shell";
+import { ChatShell } from "./chat-shell";
 
 /**
  * The notice for a jump target the channel's whole history did not hold. The
@@ -855,31 +855,6 @@ beforeEach(() => {
   mockBookmarkIsError.mockReturnValue(false);
   mockBookmarkReset.mockClear();
   mockUnbookmarkReset.mockClear();
-});
-
-describe("chapterRecruitmentWord", () => {
-  // The member view carries the raw `vocabulary` column, so the archetype's
-  // default has to be applied here, as `ChapterConfigService` does for the
-  // config read. Otherwise a chapter with no stored word loses its /intake.
-  it("prefers the chapter's stored word", () => {
-    expect(
-      chapterRecruitmentWord({
-        org_archetype: "nphc",
-        vocabulary: { recruitment: "Induction" },
-      }),
-    ).toBe("Induction");
-  });
-
-  it("falls back to the archetype's word when none is stored", () => {
-    expect(
-      chapterRecruitmentWord({ org_archetype: "nphc", vocabulary: null }),
-    ).toBe("Intake");
-    expect(chapterRecruitmentWord({ org_archetype: null })).toBe("Rush");
-  });
-
-  it("says nothing until the read answers", () => {
-    expect(chapterRecruitmentWord(undefined)).toBeUndefined();
-  });
 });
 
 describe("ChatShell slash-command module gate (#2957, #2993)", () => {
