@@ -83,6 +83,13 @@ export const FAIR_TRANSFER_WINDOW_MS = 90_000;
  */
 export const START_BYTE_BUDGET = 256 * 1024 * 1024;
 
+/**
+ * How long Auth gets to vouch for a caller whose key the function doesn't hold
+ * byte for byte ({@link callerVerdict}). Past it the request answers 503, which
+ * the API retries, rather than 401, which would stop the import.
+ */
+export const AUTH_CHECK_TIMEOUT_MS = 10_000;
+
 /** One attachment to copy. */
 export interface CopyItem {
   /** The attachment's CDN URL, straight from Discord's API response. */
@@ -142,6 +149,7 @@ export interface Limits {
   startByteBudget: number;
   cdnResponseTimeoutMs: number;
   fairTransferWindowMs: number;
+  authCheckTimeoutMs: number;
 }
 
 const DEFAULT_LIMITS: Limits = {
@@ -151,6 +159,7 @@ const DEFAULT_LIMITS: Limits = {
   startByteBudget: START_BYTE_BUDGET,
   cdnResponseTimeoutMs: CDN_RESPONSE_TIMEOUT_MS,
   fairTransferWindowMs: FAIR_TRANSFER_WINDOW_MS,
+  authCheckTimeoutMs: AUTH_CHECK_TIMEOUT_MS,
 };
 
 /**
@@ -193,7 +202,8 @@ export function isSafeObjectPath(path: string): boolean {
 }
 
 /**
- * Whether `presented` is one of this project's service credentials.
+ * Whether `presented` is byte for byte one of the service credentials the
+ * platform gives this function: the no-network half of {@link callerVerdict}.
  *
  * Accepts the legacy `service_role` JWT and any of the newer `sb_secret_…`
  * keys, because the API's `SUPABASE_SERVICE_ROLE_KEY` holds the former today
@@ -216,6 +226,85 @@ export async function isServiceCredential(
   }
   return matched;
 }
+
+/**
+ * Whether the caller holds a service credential for this project.
+ *
+ * - `service`: it does. A key the function holds byte for byte
+ *   ({@link isServiceCredential}) needs no network. Any other key is sent to
+ *   Auth's admin API, which answers 200 to a service credential and to nothing
+ *   else.
+ * - `refused`: no key, or Auth answered 401 or 403. The request gets a 401.
+ * - `unconfirmed`: Auth answered anything else, the call threw, or it timed
+ *   out. `reason` says which, and the request's 503 carries it, so the API,
+ *   which retries a 503, logs the cause with each attempt.
+ *
+ * The byte match can't be the whole check (#2981). On staging the API's key
+ * matched neither of the function's, and every copy was refused, though the
+ * same key served every other call the API made. Auth judges a key by its
+ * signature and role rather than its bytes, and knows the `sb_secret_…` keys
+ * too. The function still writes to Storage with its own key
+ * (`storageHeaders`), never the caller's.
+ */
+export async function callerVerdict(
+  presented: string,
+  deps: HandlerDeps,
+  timeoutMs: number,
+): Promise<CallerVerdict> {
+  if (presented.length === 0) return { verdict: "refused" };
+  if (await isServiceCredential(presented, deps.env)) {
+    return { verdict: "service" };
+  }
+  // No URL, no Auth to ask. The platform always sets it, and refusing keeps
+  // today's answer for a key the function doesn't hold.
+  const supabaseUrl = deps.env("SUPABASE_URL");
+  if (!supabaseUrl) return { verdict: "refused" };
+
+  // A JWT goes on both headers, as supabase-js sends one. An opaque `sb_…` key
+  // goes on `apikey` alone, which is where the gateway reads it; as a Bearer
+  // token with no `apikey` it is refused.
+  const headers: Record<string, string> = { apikey: presented };
+  if (!presented.startsWith("sb_")) {
+    headers.authorization = `Bearer ${presented}`;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("Timed out.", "TimeoutError")),
+    timeoutMs,
+  );
+  try {
+    const response = await deps.fetch(
+      `${
+        supabaseUrl.replace(/\/+$/, "")
+      }/auth/v1/admin/users?page=1&per_page=1`,
+      { headers, redirect: "error", signal: controller.signal },
+    );
+    // The body is a user record; nothing here reads it.
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status === 200) return { verdict: "service" };
+    if (response.status === 401 || response.status === 403) {
+      return { verdict: "refused" };
+    }
+    return { verdict: "unconfirmed", reason: `answered ${response.status}` };
+  } catch (error) {
+    const timedOut = error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError");
+    return {
+      verdict: "unconfirmed",
+      reason: timedOut
+        ? "timed out"
+        : `failed: ${describe(error).slice(0, 200)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** What {@link callerVerdict} decided about the caller. */
+export type CallerVerdict =
+  | { verdict: "service" }
+  | { verdict: "refused" }
+  | { verdict: "unconfirmed"; reason: string };
 
 /** The project's service credentials, legacy JWT first. */
 function serviceKeys(env: HandlerDeps["env"]): string[] {
@@ -512,8 +601,20 @@ export async function handleCopyRequest(
   if (request.method !== "POST") {
     return json(405, { error: "Use POST." });
   }
-  if (!(await isServiceCredential(presentedCredential(request), deps.env))) {
+  const caller = await callerVerdict(
+    presentedCredential(request),
+    deps,
+    limits.authCheckTimeoutMs,
+  );
+  if (caller.verdict === "refused") {
     return json(401, { error: "Not authorized." });
+  }
+  if (caller.verdict === "unconfirmed") {
+    return json(503, {
+      error:
+        `Auth could not confirm the caller's credential: it ${caller.reason}.`,
+      retryable: true,
+    });
   }
 
   const supabaseUrl = deps.env("SUPABASE_URL");

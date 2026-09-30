@@ -319,7 +319,7 @@ Both run under `npm run test -w apps/api`. The chat hot path has no Deno tier.
 
 ## 5b. Edge Function tests (ADR-26)
 
-`supabase/functions/` holds one function, `discord-attachment-copy`, which copies Discord bot-import attachments from Discord's CDN into Storage (#2848). Its logic is a pure handler (`handler.ts`) that takes `fetch`, the clock and the environment as arguments, so `handler.test.ts` runs it against a fake CDN and a fake Storage with no network.
+`supabase/functions/` holds one function, `discord-attachment-copy`, which copies Discord bot-import attachments from Discord's CDN into Storage (#2848). Its logic is a pure handler (`handler.ts`) that takes `fetch`, the clock and the environment as arguments, so `handler.test.ts` runs it against a fake CDN, a fake Storage and a fake Auth admin API with no network.
 
 - **Run:** `npm run check:edge-functions` (`scripts/check-edge-functions.sh`) runs `deno fmt --check`, `deno lint`, `deno check` and `deno test` from `supabase/functions/`. On first use it installs its pinned Deno from the npm registry into `.cache/deno/`, so it needs nothing on `PATH` and runs in the cloud sandbox too.
 - **In CI:** the same script is a step of the required `lint-and-typecheck` job, so the Deno version lives only in the script.
