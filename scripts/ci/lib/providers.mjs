@@ -71,9 +71,10 @@ export function vercelDeploymentCreatedAt(deployment) {
  *  endpoint `deploy-vercel.mjs` polls (`GET /v13/deployments/:id`) returns
  *  `readyState` and no `state` at all, so there the fallback is the whole read.
  *  Neither is documented as legacy, and fixtures here carry either spelling,
- *  so read `state` and fall back to `readyState`. That is the order four of the five copies this replaced
- *  used (#1778); `production-release-pin.mjs` read `readyState` first, which
- *  differs only for a row whose two fields disagree, and none has been seen.
+ *  so read `state` and fall back to `readyState`. That is the order four of
+ *  the five copies this replaced used (#1778); `production-release-pin.mjs`
+ *  read `readyState` first, which differs only for a row whose two fields
+ *  disagree, and none has been seen.
  *  Shared for the same reason as `vercelDeploymentCreatedAt`: an API change
  *  should be one edit, not one per caller. */
 export function vercelDeploymentState(deployment) {
