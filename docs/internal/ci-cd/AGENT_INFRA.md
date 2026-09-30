@@ -424,10 +424,14 @@ check:expo-sdk-line` checks it mechanically in the required `mobile-validate` jo
 
 - **The roster.** It fails on an `expo-*` package `apps/mobile` declares (in any dependency
   section) that the list doesn't name exactly, on a missing `expo` or `@expo/*` entry, and on an
-  `expo-*` entry for a package nothing declares or installs.
-- **The SDK line.** It fails on any copy of an `expo-*` or `@expo/*` package that `package-lock.json`
-  installs, transitive ones such as `expo-modules-core` included, whose version is outside the range
-  the installed `expo`'s `bundledNativeModules.json` gives it.
+  `expo-*` entry for a package `apps/mobile` doesn't declare and the SDK's map doesn't list (which
+  keeps `apps/api`'s `expo-server-sdk` out).
+- **The SDK line.** It fails on any copy `package-lock.json` installs, transitive ones such as
+  `expo-modules-core` included, of a package the installed `expo`'s `bundledNativeModules.json`
+  lists under `expo-*` or `@expo/*`, when its version is outside the range the map gives it.
+  Installed Expo packages the map doesn't list (`expo-modules-jsi`, `expo-modules-autolinking`, the
+  `@expo/*` tooling on its own version lines) aren't checked; `expo`'s own dependency ranges pin
+  them.
 
 It asserts SDK-line coherence only: a package inside its range can still fail to compile.
 `@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check

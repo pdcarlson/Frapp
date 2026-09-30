@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 // check-expo-sdk-line.mjs is a general-purpose gate under scripts/ (a peer of
 // the other check-*.mjs gates); its test lives here so the `test:ci-scripts`
 // glob runs it — hence the ../../ reach up.
+import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 import {
   declaredPackages,
   dependabotIgnoreNames,
@@ -272,7 +273,7 @@ const FULL_ROSTER = ["expo", "@expo/*"];
 test("an expo-* package Dependabot may bump is a violation, from any section", () => {
   const violations = rosterViolations({
     declared: { expo: "~57.0.13", "expo-camera": "~57.0.4", "expo-dev-client": "~57.0.1" },
-    installedNames: new Set(),
+    installedSdkNames: new Set(),
     ignoreNames: [...FULL_ROSTER, "expo-camera"],
   });
   assert.equal(violations.length, 1);
@@ -282,7 +283,7 @@ test("an expo-* package Dependabot may bump is a violation, from any section", (
 test("expo and the @expo/* glob are required", () => {
   const violations = rosterViolations({
     declared: { expo: "~57.0.13" },
-    installedNames: new Set(["@expo/metro-runtime"]),
+    installedSdkNames: new Set(["@expo/metro-runtime"]),
     ignoreNames: ["expo-camera-unrelated-but-installed"],
   });
   assert.match(violations.join("\n"), /^expo: not in/m);
@@ -292,17 +293,30 @@ test("expo and the @expo/* glob are required", () => {
 test("a stale expo-* entry is a violation; a transitive one and a non-expo one are not", () => {
   const violations = rosterViolations({
     declared: { expo: "~57.0.13", "expo-camera": "~57.0.4" },
-    installedNames: new Set(["expo-modules-core"]),
+    installedSdkNames: new Set(["expo-modules-core"]),
     ignoreNames: [...FULL_ROSTER, "expo-camera", "expo-modules-core", "expo-document-picker", "colorjs.io"],
   });
   assert.equal(violations.length, 1);
-  assert.match(violations[0], /^expo-document-picker: listed .* remove the stale entry/);
+  assert.match(violations[0], /^expo-document-picker: listed .* remove the entry/);
+});
+
+test("an entry for another workspace's expo-* package is refused, though it is installed", () => {
+  // main() passes only installed packages the SDK's map lists, and
+  // expo-server-sdk (apps/api's push client) is not one: listing it would
+  // freeze it silently.
+  const violations = rosterViolations({
+    declared: { expo: "~57.0.13" },
+    installedSdkNames: new Set(["expo-modules-core"]),
+    ignoreNames: [...FULL_ROSTER, "expo-server-sdk"],
+  });
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /^expo-server-sdk: listed/);
 });
 
 test("an expo-* glob is refused, because it would freeze expo-server-sdk", () => {
   const violations = rosterViolations({
     declared: { "expo-camera": "~57.0.4" },
-    installedNames: new Set(),
+    installedSdkNames: new Set(),
     ignoreNames: ["expo-*"],
   });
   assert.equal(violations.length, 2);
@@ -312,13 +326,13 @@ test("an expo-* glob is refused, because it would freeze expo-server-sdk", () =>
 
 // ── main, against a fixture tree ─────────────────────────────────────────────
 
-function fixtureTree({ dependencies, installed, bundled, dependabot }) {
+function fixtureTree({ dependencies, devDependencies, installed, bundled, dependabot }) {
   const root = mkdtempSync(join(tmpdir(), "expo-sdk-line-"));
   const write = (path, value) => {
     mkdirSync(join(root, path, ".."), { recursive: true });
     writeFileSync(join(root, path), typeof value === "string" ? value : JSON.stringify(value));
   };
-  write("apps/mobile/package.json", { dependencies });
+  write("apps/mobile/package.json", { dependencies, devDependencies });
   const packages = { "": { name: "root" } };
   for (const [name, version] of Object.entries(installed)) {
     packages[`node_modules/${name}`] = { version };
@@ -452,4 +466,60 @@ test("the CLI exits 1 on a violation and 0 on a coherent tree", () => {
     rmSync(coherent, { recursive: true, force: true });
     rmSync(bumped, { recursive: true, force: true });
   }
+});
+
+test("main refuses an ignore entry for an installed package the SDK's map doesn't list", () => {
+  const root = fixtureTree({
+    dependencies: { expo: "~57.0.13", "expo-camera": "~57.0.4" },
+    installed: { expo: "57.0.13", "expo-camera": "57.0.4", "expo-server-sdk": "7.2.0" },
+    bundled: { "expo-camera": "~57.0.3" },
+    dependabot: TREE_DEPENDABOT.replace(
+      '      - dependency-name: "expo-camera"\n',
+      '      - dependency-name: "expo-camera"\n      - dependency-name: "expo-server-sdk"\n',
+    ),
+  });
+  try {
+    const { violations } = main(root);
+    assert.equal(violations.length, 1);
+    assert.match(violations[0], /^expo-server-sdk: listed/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("main gates a devDependency and accepts an ignore entry for a transitive SDK package", () => {
+  const root = fixtureTree({
+    dependencies: { expo: "~57.0.13" },
+    devDependencies: { "expo-dev-client": "~57.0.1" },
+    installed: { expo: "57.0.13", "expo-dev-client": "58.0.0", "expo-modules-core": "57.0.11" },
+    bundled: { "expo-dev-client": "~57.0.1", "expo-modules-core": "~57.0.11" },
+    dependabot: TREE_DEPENDABOT.replace(
+      '      - dependency-name: "expo-camera"\n',
+      '      - dependency-name: "expo-modules-core"\n',
+    ),
+  });
+  try {
+    assert.deepEqual(main(root).violations, [
+      "expo-dev-client@58.0.0 is outside this SDK's line: expected ~57.0.1",
+      "expo-dev-client: not in .github/dependabot.yml's ignore list, so Dependabot can move it off the SDK line",
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ── the CI step ──────────────────────────────────────────────────────────────
+
+test("mobile-validate runs the gate right after npm ci, before expo export, unconditionally", () => {
+  const steps = workflowSteps(".github/workflows/ci.yml").filter(
+    (step) => step.jobId === "mobile-validate",
+  );
+  const at = (re) => steps.findIndex((step) => re.test(step.body));
+  const install = at(/^\s*-?\s*run:\s*npm\s+ci\s*$/m);
+  const gate = at(/^\s*-?\s*run:\s*npm\s+run\s+check:expo-sdk-line\s*$/m);
+  const bundle = at(/\bexpo\s+export\b/);
+  assert.ok(gate !== -1, "mobile-validate has no `npm run check:expo-sdk-line` step");
+  assert.equal(gate, install + 1, "the gate runs right after npm ci");
+  assert.ok(gate < bundle, "the gate runs before expo export, so its diagnosis prints when the bundle breaks too");
+  assert.doesNotMatch(steps[gate].body, /^\s*(if|continue-on-error):/m, "the gate must be able to fail the job");
 });

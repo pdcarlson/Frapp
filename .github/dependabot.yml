@@ -211,8 +211,10 @@ updates:
       # `npm run check:expo-sdk-line` (the mobile-validate CI job) enforces this
       # roster (#2330): an `expo-*` package apps/mobile declares that is missing
       # here, a missing `expo` or `@expo/*` entry, or an `expo-*` entry for a
-      # package nothing declares or installs, fails it. It also fails any
-      # installed Expo package that is off the SDK line, whatever this list says.
+      # package apps/mobile doesn't declare and the SDK's bundled module map
+      # doesn't list (expo-server-sdk included), fails it. It also fails any
+      # installed package that map lists when its version is off the SDK line,
+      # whatever this list says.
       #
       # These move only as a version-locked set via a planned SDK upgrade
       # (#2329), like the React family above.

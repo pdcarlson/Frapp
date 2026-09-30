@@ -17,10 +17,10 @@
 //
 // Two checks, both offline:
 //
-// 1. The SDK line. Every copy of an `expo-*` or `@expo/*` package that
-//    package-lock.json installs (declared or transitive, hoisted or nested)
-//    must satisfy the range the installed `expo`'s `bundledNativeModules.json`
-//    gives it. That file is the SDK's own statement of its native module set;
+// 1. The SDK line. Every copy package-lock.json installs (declared or
+//    transitive, hoisted or nested) of an `expo-*` or `@expo/*` package that the
+//    installed `expo`'s `bundledNativeModules.json` lists must satisfy the range
+//    the map gives it. That file is the SDK's own statement of its native module set;
 //    `npx expo install --check` reads the same map but only for declared
 //    packages, checks ones this gate deliberately leaves out (below), and needs
 //    `EXPO_OFFLINE=1` to stay off the network. Transitive copies matter most:
@@ -28,10 +28,15 @@
 //    lockfile rather than node_modules, because it is what `npm ci` installs
 //    and it lists nested copies. An `expo-*` / `@expo/*` package apps/mobile
 //    declares (in any dependency section) must also be in the map and installed.
+//    An installed Expo package the map doesn't list (`expo-modules-jsi`,
+//    `expo-modules-autolinking`, the `@expo/*` tooling, which has its own version
+//    lines) isn't checked: the map is the only SDK statement there is to check
+//    against, and `expo`'s own dependency ranges pin those.
 // 2. The roster. Every `expo-*` package apps/mobile declares has an exact
 //    `dependency-name` entry in the npm ignore list of .github/dependabot.yml,
 //    `expo` and the `@expo/*` glob are there, and every `expo-*` entry there
-//    names a package that is declared or installed. Exact names only: the list
+//    names a package apps/mobile declares or an installed one the map lists
+//    (so `expo-server-sdk`, installed for apps/api, can't be listed). Exact names only: the list
 //    must not collapse into an `expo-*` glob, which would also freeze
 //    `expo-server-sdk`, an apps/api dependency with no tie to the mobile SDK.
 //
@@ -235,20 +240,22 @@ export function dependabotIgnoreNames(text) {
 
 /**
  * The roster violations: an Expo package Dependabot is free to bump, and an
- * `expo-*` ignore entry for a package that is neither declared by apps/mobile
- * nor installed at all (a stale entry makes the list read as covering a
- * package it doesn't guard).
+ * `expo-*` ignore entry for a package that apps/mobile doesn't declare and
+ * that isn't an installed SDK package (`installedSdkNames`: installed copies
+ * the bundled map lists). A stale entry makes the list read as covering a
+ * package it doesn't guard; an entry for another workspace's `expo-*` package,
+ * such as apps/api's `expo-server-sdk`, freezes it silently.
  *
  * `expo` and the `@expo/*` glob are required by name: the glob is what keeps
  * Dependabot off every `@expo/*` package, declared or transitive, so dropping it
  * is the same gap as dropping an `expo-*` entry.
  */
-export function rosterViolations({ declared, installedNames, ignoreNames }) {
+export function rosterViolations({ declared, installedSdkNames, ignoreNames }) {
   const listed = new Set(ignoreNames);
   const required = Object.keys(declared)
     .filter((n) => n === "expo" || n.startsWith("expo-"))
     .sort();
-  if ([...Object.keys(declared), ...installedNames].some((n) => n.startsWith("@expo/"))) {
+  if ([...Object.keys(declared), ...installedSdkNames].some((n) => n.startsWith("@expo/"))) {
     required.push("@expo/*");
   }
   const violations = [];
@@ -264,9 +271,9 @@ export function rosterViolations({ declared, installedNames, ignoreNames }) {
       violations.push(
         `${name}: a glob in ${DEPENDABOT_CONFIG}'s ignore list; list Expo client packages by exact name (a glob also freezes expo-server-sdk)`,
       );
-    } else if (!(name in declared) && !installedNames.has(name)) {
+    } else if (!(name in declared) && !installedSdkNames.has(name)) {
       violations.push(
-        `${name}: listed in ${DEPENDABOT_CONFIG}'s ignore list but ${MOBILE_DIR} neither declares nor installs it; remove the stale entry`,
+        `${name}: listed in ${DEPENDABOT_CONFIG}'s ignore list but neither declared by ${MOBILE_DIR} nor an installed Expo SDK package; remove the entry`,
       );
     }
   }
@@ -312,7 +319,11 @@ export function main(root = process.cwd()) {
     checked: copies.filter((c) => isExpoPackage(c.name) && bundled[c.name] !== undefined).length,
     violations: [
       ...sdkLineViolations({ declared, bundled, copies }),
-      ...rosterViolations({ declared, installedNames: new Set(copies.map((c) => c.name)), ignoreNames }),
+      ...rosterViolations({
+        declared,
+        installedSdkNames: new Set(copies.map((c) => c.name).filter((n) => bundled[n] !== undefined)),
+        ignoreNames,
+      }),
     ],
   };
 }

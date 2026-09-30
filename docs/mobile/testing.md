@@ -165,8 +165,9 @@ where to move it, so `npm run test -w apps/mobile` catches this in seconds.
 It is a file-placement check, not an import check. A route module that reaches
 test tooling under some other name — a fixture, a render helper — still fails
 only at bundle time, as does a `lib/` or `components/` module that a screen
-imports. `mobile-validate` catches those: its first step after `npm ci` is a
-production iOS bundle, and it runs before the shared packages are built,
+imports. `mobile-validate` catches those: right after `npm ci` and the
+read-only Expo SDK-line check, it builds a production iOS bundle, before the
+shared packages are built,
 because the EAS worker never builds them (#2388). Metro resolves a `@repo/*`
 `import` to `src/`. A package whose `exports` send `require`, `default` or
 `main` to `dist/` (validation, formatting, color, org-archetypes,
