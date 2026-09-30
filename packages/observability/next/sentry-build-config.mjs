@@ -24,6 +24,31 @@
  */
 const GIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
 
+/**
+ * The Sentry `environment` tag for a Vercel build, from Vercel's `VERCEL_ENV`.
+ *
+ * Staging is a Vercel **preview** build: this repo deploys only `production`
+ * and `preview` (`scripts/ci/lib/vercel-cli.mjs`, `VERCEL_TARGET_PREVIEW`),
+ * and the preview build is what staging serves. Passing `VERCEL_ENV` through
+ * tagged every staging event `preview` while the API and mobile tag the same
+ * environment `staging`, so one environment read as two in Sentry (#2505).
+ * Unset (a laptop, a non-deploy CI build) is `development`, never
+ * `production`, which is what Sentry assumes when no environment is given.
+ * Any other value passes through, so a new Vercel environment shows up under
+ * its own name instead of hiding inside one of these.
+ *
+ * The caller passes `VERCEL_ENV` in; like the helper below, this reads no
+ * `process.env` itself.
+ *
+ * @param {string | undefined} vercelEnv
+ * @returns {string}
+ */
+export function sentryEnvironmentForVercelEnv(vercelEnv) {
+  if (!vercelEnv) return "development";
+  if (vercelEnv === "preview") return "staging";
+  return vercelEnv;
+}
+
 export function getAnonymousSentryBuildConfig({
   org = "frapp-live",
   project,

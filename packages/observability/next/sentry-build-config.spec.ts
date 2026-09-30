@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { getAnonymousSentryBuildConfig } from "./sentry-build-config.mjs";
+import {
+  getAnonymousSentryBuildConfig,
+  sentryEnvironmentForVercelEnv,
+} from "./sentry-build-config.mjs";
+
+describe("sentryEnvironmentForVercelEnv", () => {
+  it("names the preview build staging, the same name the API and mobile use", () => {
+    expect(sentryEnvironmentForVercelEnv("preview")).toBe("staging");
+  });
+
+  it("keeps production as production", () => {
+    expect(sentryEnvironmentForVercelEnv("production")).toBe("production");
+  });
+
+  it("reads unset or empty as development, never production", () => {
+    expect(sentryEnvironmentForVercelEnv(undefined)).toBe("development");
+    expect(sentryEnvironmentForVercelEnv("")).toBe("development");
+    expect(sentryEnvironmentForVercelEnv("development")).toBe("development");
+  });
+
+  it("passes an unknown Vercel environment through under its own name", () => {
+    expect(sentryEnvironmentForVercelEnv("qa")).toBe("qa");
+  });
+});
 
 describe("getAnonymousSentryBuildConfig", () => {
   it("always enables source maps / debug IDs and stays silent without a token", () => {
