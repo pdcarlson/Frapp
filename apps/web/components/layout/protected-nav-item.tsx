@@ -23,10 +23,12 @@ type Props = {
   collapsed?: boolean;
   focusClassName: string;
   /**
-   * Predicate from `useOrgConfig().data?.isModuleEnabled`. When provided and
-   * the item declares a `module`, the item is hidden if that module is
-   * disabled. Omitted (e.g. while the chapter config is still loading) means
-   * "don't module-gate" so items never flash out during the initial load.
+   * The chapter's module gate, from `useChapterModuleGate()` (the member-
+   * readable current chapter; never `useOrgConfig()`, which members cannot
+   * read, #1982). When provided and the item declares a `module`, the item
+   * hides if that module is off. Omitted while the chapter read is in flight,
+   * which means "don't module-gate", so items never flash out during the
+   * initial load. Once that read has failed the gate says every module is off.
    */
   isModuleEnabled?: (moduleKey: string) => boolean;
 };
@@ -55,7 +57,7 @@ function isGranted(
  *
  * Both gates are deliberately fail-open while their source is unresolved:
  * `permissions` is undefined until the query settles, and `isModuleEnabled` is
- * undefined until the chapter config loads. Showing a link one render early is
+ * undefined until the current-chapter read settles. Showing a link one render early is
  * harmless — the route itself is guarded server-side — whereas hiding one is a
  * visible flash of nav items disappearing. (`<Can>` fails closed instead,
  * because it guards actions rather than signposts.)
@@ -65,10 +67,14 @@ export function isNavItemVisible(
   permissions: readonly string[] | null | undefined,
   isModuleEnabled?: (moduleKey: string) => boolean,
 ): boolean {
-  if (permissions !== undefined && permissions !== null && !isGranted(item, permissions)) {
+  const resolved = permissions !== undefined && permissions !== null;
+  if (resolved && !isGranted(item, permissions)) {
     return false;
   }
   if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
+    return false;
+  }
+  if (resolved && item.showWhen && !item.showWhen(permissions, isModuleEnabled)) {
     return false;
   }
   return true;
@@ -84,8 +90,8 @@ export function isNavItemVisible(
  * the permissions query is loading — UI hides only when the fetch has
  * resolved and the caller definitively lacks access. This avoids a flash
  * of nav options during the initial load. Module gating (Chunk 06) layers
- * on top: an item tied to a disabled module is hidden once the chapter
- * config has loaded.
+ * on top: an item tied to a disabled module is hidden once the current-chapter
+ * read has settled.
  */
 export function ProtectedNavItem({
   item,

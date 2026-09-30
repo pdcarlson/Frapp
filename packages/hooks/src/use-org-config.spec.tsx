@@ -85,6 +85,86 @@ describe("usePatchOrgConfig optimistic cache", () => {
   });
 });
 
+// The web shell's module gate reads `enabled_modules` off the current-chapter
+// payload, because members cannot read the config endpoint (#1982). A toggle
+// that only moved the config cache left the nav up to five minutes behind.
+describe("usePatchOrgConfig and the current-chapter cache", () => {
+  const CHAPTER_KEY = ["chapters", "current", "chap-1"] as const;
+
+  beforeEach(() => {
+    mockPatch.mockReset();
+  });
+
+  it("writes a module toggle into the current chapter at once", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true } });
+    qc.setQueryData(CHAPTER_KEY, {
+      name: "Alpha",
+      enabled_modules: { reports: true, polls: true },
+    });
+    let seenDuringFlight: unknown;
+    mockPatch.mockImplementationOnce(async () => {
+      seenDuringFlight = qc.getQueryData(CHAPTER_KEY);
+      return { data: {}, error: undefined };
+    });
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ enabled_modules: { reports: false } });
+    });
+
+    expect(seenDuringFlight).toEqual({
+      name: "Alpha",
+      enabled_modules: { reports: false, polls: true },
+    });
+    // Settling re-reads it, so the server's answer wins in the end.
+    expect(qc.getQueryState(CHAPTER_KEY)?.isInvalidated).toBe(true);
+  });
+
+  it("puts the current chapter back when the PATCH fails", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true } });
+    qc.setQueryData(CHAPTER_KEY, { enabled_modules: { reports: true } });
+    mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ enabled_modules: { reports: false } })
+        .catch(() => undefined);
+    });
+
+    expect(qc.getQueryData(CHAPTER_KEY)).toEqual({
+      enabled_modules: { reports: true },
+    });
+  });
+
+  it("leaves the current chapter's data alone for a write with no module toggle", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { vocabulary: { recruitment: "Rush" } });
+    const chapter = { enabled_modules: { reports: true } };
+    qc.setQueryData(CHAPTER_KEY, chapter);
+    let seenDuringFlight: unknown;
+    mockPatch.mockImplementationOnce(async () => {
+      seenDuringFlight = qc.getQueryData(CHAPTER_KEY);
+      return { data: {}, error: undefined };
+    });
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ vocabulary: { recruitment: "Intake" } });
+    });
+
+    expect(seenDuringFlight).toBe(chapter);
+  });
+});
+
 describe("usePendingConfigKeys (#881)", () => {
   beforeEach(() => {
     mockPatch.mockReset();

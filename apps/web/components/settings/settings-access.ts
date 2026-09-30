@@ -10,9 +10,11 @@ import { can, canAny } from "@repo/validation";
  * already a Settings tab. The other four keep their own full-width pages and
  * are listed in the Settings rail as **tools**.
  *
- * The nav's Settings row (`nav-config.ts`), the Settings rail and the page's
- * "nothing here for you" state all read this module, so the question "can this
- * viewer open something in Settings?" has one answer.
+ * The nav's Settings row (`nav-config.ts`), the chapter switcher's "Chapter
+ * settings" link, the Settings rail and the page's "nothing here for you" state
+ * all read this module, so the question "can this viewer open something in
+ * Settings?" has one answer. The rules are owned by
+ * `spec/behavior/settings/README.md` § Who sees what.
  */
 
 /** Officer pages that live behind Settings but keep their own routes. */
@@ -64,29 +66,35 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
 ];
 
 /**
- * The chapter setup tabs read or write chapter config. `GET /chapters/:id/config`
- * needs `chapter-config:view`; a custom role can be minted with `manage` alone,
- * and such a holder keeps the tabs they had before (#2946 changes who reaches
- * Settings, not what a configurer sees there).
+ * The chapter setup tabs read or write chapter config, and
+ * `GET /chapters/:id/config` is guarded by `chapter-config:view` at class level
+ * (`chapter-config.controller.ts`), so even its PATCH needs `view`. A custom
+ * role holding `chapter-config:manage` alone can use none of them, and gets no
+ * door to them (`spec/behavior/rbac.md`).
  */
-const CHAPTER_SETUP_PERMISSIONS = [
-  "chapter-config:view",
-  "chapter-config:manage",
-] as const;
+const CHAPTER_CONFIG_VIEW = "chapter-config:view";
 
 /**
- * The Roles tab needs no config read (`customization.md` § Roles Tab), so a
- * `roles:manage` holder without `chapter-config:view` still gets it.
+ * Tabs a holder of something other than `chapter-config:view` can still use.
+ * The Roles tab needs no config read (`customization.md` § Roles Tab). The
+ * Semester tab's rollover card is gated on `semester:rollover` alone and is
+ * the only web surface for a rollover, a grant a custom role can carry on
+ * its own.
  */
-const ROLES_TAB_PERMISSIONS = ["roles:manage", ...CHAPTER_SETUP_PERMISSIONS] as const;
+const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  roles: ["roles:manage"],
+  semester: ["semester:rollover"],
+};
 
 /**
- * Holding any one of these means Settings has something to show the viewer,
- * so the nav's Settings row is gated on the set.
+ * Holding any one of these means Settings has a tab or a tool for the viewer.
+ * The nav's Settings row is gated on the set, and `hasSettingsDestination`
+ * then drops the row when the only tools behind it are switched off.
  */
 export const SETTINGS_ENTRY_PERMISSIONS: readonly string[] = Array.from(
   new Set([
-    ...ROLES_TAB_PERMISSIONS,
+    CHAPTER_CONFIG_VIEW,
+    ...Object.values(TAB_EXTRA_PERMISSIONS).flat(),
     ...SETTINGS_TOOLS.map((tool) => tool.permission),
   ]),
 );
@@ -100,19 +108,20 @@ export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
  * Whether a Settings tab shows for this viewer.
  *
  * Fails open while `permissions` is unresolved, like the nav: showing a tab one
- * render early is harmless, and hiding one is a visible flash. Every tab but
- * Roles reads chapter config or edits it, so it needs a `chapter-config`
- * permission. Before #2946 the nav's only door into Settings was gated on
- * `chapter-config:view`, so hiding these tabs from a viewer holding neither
- * removes nothing the nav could take them to.
+ * render early is harmless, and hiding one is a visible flash. Every tab reads
+ * or writes chapter config and needs `chapter-config:view`, except the ones in
+ * `TAB_EXTRA_PERMISSIONS`. Hiding a tab from a viewer who could only have seen
+ * it fail to load removes nothing they could use.
  */
 export function isSettingsTabVisible(
   tab: string,
   permissions: readonly string[] | null | undefined,
 ): boolean {
   if (permissions === undefined || permissions === null) return true;
-  if (tab === "roles") return canAny(ROLES_TAB_PERMISSIONS, permissions);
-  return canAny(CHAPTER_SETUP_PERMISSIONS, permissions);
+  return canAny(
+    [CHAPTER_CONFIG_VIEW, ...(TAB_EXTRA_PERMISSIONS[tab] ?? [])],
+    permissions,
+  );
 }
 
 /**
@@ -132,4 +141,25 @@ export function visibleSettingsTools(
     }
     return true;
   });
+}
+
+/**
+ * Whether Settings holds anything for this viewer: a tab, or a tool whose
+ * module is on. The nav's Settings row and the chapter switcher's "Chapter
+ * settings" link both ask this, so neither opens onto an empty page. A
+ * treasurer whose only tool is Reports loses the row when the chapter switches
+ * Reports off, the same way the Reports row used to hide (#2946).
+ *
+ * Fails open while permissions are unresolved, like every nav gate.
+ */
+export function hasSettingsDestination(
+  permissions: readonly string[] | null | undefined,
+  isModuleEnabled?: (moduleKey: string) => boolean,
+): boolean {
+  if (permissions === undefined || permissions === null) return true;
+  const anyTab = canAny(
+    [CHAPTER_CONFIG_VIEW, ...Object.values(TAB_EXTRA_PERMISSIONS).flat()],
+    permissions,
+  );
+  return anyTab || visibleSettingsTools(permissions, isModuleEnabled).length > 0;
 }

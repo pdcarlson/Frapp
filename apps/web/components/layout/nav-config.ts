@@ -16,6 +16,7 @@ import {
 import {
   SETTINGS_ENTRY_PERMISSIONS,
   SETTINGS_TOOL_ROUTES,
+  hasSettingsDestination,
 } from "@/components/settings/settings-access";
 
 /**
@@ -97,6 +98,16 @@ export type NavItem = {
    * from inside Settings still shows where it sits in the nav.
    */
   activeFor?: readonly string[];
+  /**
+   * A last check for a row whose destination depends on more than one
+   * permission or module: the row shows only when this returns true. It runs
+   * after the permission rule, and only once permissions have resolved, since
+   * every nav gate fails open until then (`isNavItemVisible`).
+   */
+  showWhen?: (
+    permissions: readonly string[],
+    isModuleEnabled?: (moduleKey: string) => boolean,
+  ) => boolean;
 } & NavPermissionRule;
 
 export type NavSection = {
@@ -268,13 +279,14 @@ export const DASHBOARD_NAV: NavSection[] = [
         description:
           "Chapter setup, roles, and officer tools: chat admin, Discord import, study zones, reports.",
         status: "available",
-        // Shown to anyone Settings has something for: chapter-config:view
-        // (the setup tabs), roles:manage (the Roles tab), or one of the
-        // officer tools' permissions. Settings hides whatever else the viewer
-        // cannot use (`settings-access.ts`). The fail-fast rule in
+        // Shown to anyone Settings has something for: a tab they can use, or
+        // an officer tool whose module is on (`settings-access.ts`). The
+        // permission set is the coarse gate; `showWhen` drops the row when
+        // the only tools behind it are switched off. The fail-fast rule in
         // `spec/ui/design-system/README.md` §5 is why the row is gated at all:
         // an entry point that opens onto nothing is the defect.
         requireAnyOf: SETTINGS_ENTRY_PERMISSIONS,
+        showWhen: hasSettingsDestination,
         activeFor: SETTINGS_TOOL_ROUTES,
       },
     ],

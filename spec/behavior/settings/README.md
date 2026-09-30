@@ -2,16 +2,6 @@
 
 The settings surface is the chapter's configuration home. It is organized as a **settings rail**, in the order board `4d` draws, with **Danger zone pinned last**. The rail's membership is `SETTINGS_TABS` in `apps/web/components/settings/settings-page.tsx` and is not restated here — a hand-copied list of ten tab names is how this paragraph came to name two that no longer exist. This file covers the cross-cutting behavior plus the **Chapter** (formerly Org), **Modules** and **Privacy** tabs; the customization-heavy tabs (Accent, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
 
-## Who sees what
-
-Settings is the one door to officer setup and officer tools. The web nav's six-row Admin group folded into its single Settings row so the nav fits a 1024×768 window ([#2946](https://github.com/pdcarlson/Frapp/issues/2946); [`../../ui/web-dashboard/README.md`](../../ui/web-dashboard/README.md) § Navigation map). So the page shows each viewer only what they can use. The rules live in `apps/web/components/settings/settings-access.ts`, which the nav's Settings row reads too:
-
-- **Tools**, above the tabs: Chat admin, Discord import, Study zones and Reports. They are links, not tabs: each keeps its own full-width route, and the nav's Settings row lights as the current section while one is open. Each shows to a holder of its permission (`channels:manage`, `channels:manage`, `geofences:manage`, `reports:export`), and Study zones and Reports hide when their module is off.
-- **Chapter setup tabs**: every tab except Roles shows to a holder of `chapter-config:view` or `chapter-config:manage`. They read or write chapter config, so for anyone else they could only fail to load.
-- **Roles tab**: `roles:manage` or either `chapter-config` permission ([`customization.md`](customization.md) § Roles Tab says why it needs no config read).
-- **Nothing to show**: a viewer who holds tools but no tabs, such as a treasurer with `reports:export`, gets the tools as the page. A viewer with neither gets an empty state that names who can grant a role. A `?tab=` deep link to a tab the viewer doesn't get lands on the first tab they do.
-- While the permission read is in flight, every tab and tool shows, the same fail-open rule the nav follows, so nothing flashes out.
-
 Two renames and one split landed with the greenfield Admin lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)), and the `?tab=` deep-link values did **not** change with the labels: **Org** is labelled "Chapter" (`?tab=org`), **Theme** is labelled "Accent" (`?tab=theme`), and Org's semester and billing/danger cards moved to their own **Semester** (`?tab=semester`) and **Danger zone** (`?tab=danger`) entries.
 
 Related canon lives in:
@@ -21,6 +11,16 @@ Related canon lives in:
 - [`../branding.md`](../branding.md) — chapter logo and accent color.
 - [`../billing.md`](../billing.md) — dues invoicing.
 - [`../data-retention.md`](../data-retention.md) — pseudonymous analytics + the chapter opt-out surfaced by the Privacy tab.
+
+## Who sees what
+
+Settings is the one door to officer setup and officer tools. The web nav's six-row Admin group folded into its single Settings row so the nav fits a 1024×768 window ([#2946](https://github.com/pdcarlson/Frapp/issues/2946); [`../../ui/web-dashboard/README.md`](../../ui/web-dashboard/README.md) § Navigation map). So the page shows each viewer only what they can use. This section owns those rules. In code they live in `apps/web/components/settings/settings-access.ts`, which the nav's Settings row and the chapter switcher's "Chapter settings" link read too:
+
+- **Tools**, above the tabs. They are links, not tabs: each keeps its own full-width route, and the nav's Settings row lights as the current section while one is open. Each shows to a holder of its own permission and hides when its module is off. `SETTINGS_TOOLS` lists them with their gates, which are the ones each had as a nav row.
+- **Setup tabs** need `chapter-config:view`. They read or write chapter config, and `ChapterConfigController` guards both its read and its PATCH on `view`, so `chapter-config:manage` alone opens none of them ([`../rbac.md`](../rbac.md)).
+- **Two tabs admit one more permission each.** The Roles tab admits `roles:manage`: it needs no config read ([`customization.md`](customization.md) § Roles Tab). The Semester tab admits `semester:rollover`: its rollover card is the only web surface for a rollover.
+- **The door hides when there is nothing behind it.** The nav row and the switcher link show only when the viewer has a tab, or a tool whose module is on. A viewer who holds tools but no tabs, such as a treasurer with `reports:export`, gets the tools as the page. Anyone reaching `/settings` with neither gets an empty state that names who can grant a role. A `?tab=` deep link to a tab the viewer doesn't get lands on the first tab they do.
+- **While the permission read is in flight**, every tab and tool shows. That is the same fail-open rule the nav follows, so nothing flashes out.
 
 ## Chapter Tab (`?tab=org`)
 

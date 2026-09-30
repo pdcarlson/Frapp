@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "./use-frapp-client";
+import { currentChapterQueryKey } from "./use-chapters";
 import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
 import { CHAPTER_POINTS_CONFIG_DEFAULTS } from "@repo/validation";
@@ -181,6 +182,7 @@ export function usePatchOrgConfig() {
   const chapterId = useActiveChapterId();
   const qc = useQueryClient();
   const queryKey = ["chapter-config", chapterId] as const;
+  const chapterKey = currentChapterQueryKey(chapterId);
 
   return useMutation({
     // Identifies this mutation to `usePendingConfigKeys` below, which needs to
@@ -205,21 +207,51 @@ export function usePatchOrgConfig() {
     // Optimistic update: write the merged config into the cache immediately so
     // module toggles and vocabulary edits feel instant, then roll back on error
     // (per the Chunk 06 brief — settings writes go through this mutation).
+    //
+    // A module toggle is also written into the current-chapter payload. The
+    // web shell's module gate (sidebar, drawer, Ask pill, Settings tools) reads
+    // `enabled_modules` from there, because members cannot read this config
+    // endpoint (#1982), and that query is cached for five minutes. Without this
+    // write, switching a module off would leave its nav row up until the cache
+    // went stale.
     onMutate: async (diff: PatchChapterConfig) => {
       await qc.cancelQueries({ queryKey });
       const previous = qc.getQueryData<OrgConfig>(queryKey);
       qc.setQueryData<OrgConfig>(queryKey, (old) => applyOptimistic(old, diff));
-      return { previous };
+
+      const modules = diff.enabled_modules;
+      if (!modules) return { previous };
+      await qc.cancelQueries({ queryKey: chapterKey });
+      const previousChapter = qc.getQueryData(chapterKey);
+      qc.setQueryData(chapterKey, (old: unknown) =>
+        old && typeof old === "object"
+          ? {
+              ...old,
+              enabled_modules: {
+                ...((old as { enabled_modules?: Record<string, boolean> })
+                  .enabled_modules ?? {}),
+                ...modules,
+              },
+            }
+          : old,
+      );
+      return { previous, previousChapter, patchedChapter: true };
     },
     onError: (_error, _diff, context) => {
       if (context && "previous" in context) {
         qc.setQueryData(queryKey, context.previous);
       }
+      if (context && "patchedChapter" in context) {
+        qc.setQueryData(chapterKey, context.previousChapter);
+      }
     },
     // Reconcile against the server (which deep-merges + recomputes derived
-    // fields such as theme_palette) once the write settles either way.
+    // fields such as theme_palette) once the write settles either way. The
+    // current chapter is re-read too: it carries `enabled_modules`, `branding`,
+    // `vocabulary` and `analytics_opt_out` from the same row.
     onSettled: () => {
       void qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({ queryKey: chapterKey });
     },
   });
 }

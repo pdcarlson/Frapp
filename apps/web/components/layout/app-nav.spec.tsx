@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
   useCurrentChapter: () => ({ data: undefined, isError: false }),
+  useMyPermissions: () => ({ data: undefined }),
 }));
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
@@ -99,6 +100,26 @@ describe("AppNav", () => {
     // A treasurer's reports:export was a Reports row of its own; now it is the
     // reason the Settings row shows at all.
     renderNav({ permissions: ["members:view", "reports:export"] });
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("drops Settings for a tools-only officer whose tools are all switched off", () => {
+    // A treasurer's only Settings destination is Reports. With the module off
+    // the row would open onto nothing, so it hides, as the Reports row did.
+    renderNav({
+      permissions: ["members:view", "reports:export"],
+      isModuleEnabled: (key: string) => key !== "reports",
+    });
+    expect(
+      screen.queryByRole("link", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps Settings for a chapter-config holder whatever the modules", () => {
+    renderNav({
+      permissions: ["chapter-config:view"],
+      isModuleEnabled: () => false,
+    });
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
   });
 

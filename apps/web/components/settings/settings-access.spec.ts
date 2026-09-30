@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SETTINGS_ENTRY_PERMISSIONS,
   SETTINGS_TOOLS,
+  hasSettingsDestination,
   isSettingsTabVisible,
   visibleSettingsTools,
 } from "./settings-access";
@@ -29,12 +30,12 @@ describe("SETTINGS_ENTRY_PERMISSIONS", () => {
   it("admits exactly the holders Settings has something for", () => {
     expect([...SETTINGS_ENTRY_PERMISSIONS].sort()).toEqual(
       [
-        "chapter-config:manage",
         "chapter-config:view",
         "channels:manage",
         "geofences:manage",
         "reports:export",
         "roles:manage",
+        "semester:rollover",
       ].sort(),
     );
   });
@@ -63,10 +64,23 @@ describe("isSettingsTabVisible", () => {
     expect(isSettingsTabVisible("roles", TREASURER)).toBe(false);
   });
 
-  it("keeps every tab for a chapter-config holder, as before #2946", () => {
+  it("keeps every tab for a chapter-config:view holder, as before #2946", () => {
     expect(isSettingsTabVisible("modules", ["chapter-config:view"])).toBe(true);
     expect(isSettingsTabVisible("roles", ["chapter-config:view"])).toBe(true);
-    expect(isSettingsTabVisible("semester", ["chapter-config:manage"])).toBe(true);
+    expect(isSettingsTabVisible("danger", ["chapter-config:view"])).toBe(true);
+  });
+
+  it("gives chapter-config:manage alone nothing, since the config read needs view", () => {
+    // ChapterConfigController guards the whole class on chapter-config:view,
+    // so without it even the PATCH is refused.
+    expect(isSettingsTabVisible("org", ["chapter-config:manage"])).toBe(false);
+    expect(isSettingsTabVisible("modules", ["chapter-config:manage"])).toBe(false);
+  });
+
+  it("gives a semester:rollover holder the Semester tab and no other", () => {
+    // The rollover card is the only web surface for a rollover.
+    expect(isSettingsTabVisible("semester", ["semester:rollover"])).toBe(true);
+    expect(isSettingsTabVisible("org", ["semester:rollover"])).toBe(false);
   });
 
   it("fails open while permissions are unresolved, like the nav", () => {
@@ -103,5 +117,27 @@ describe("visibleSettingsTools", () => {
 
   it("does not module-gate before the chapter read resolves", () => {
     expect(ids(visibleSettingsTools(["*"], undefined))).toContain("reports");
+  });
+});
+
+describe("hasSettingsDestination", () => {
+  it("is true for any viewer with a tab", () => {
+    expect(hasSettingsDestination(["chapter-config:view"], () => false)).toBe(true);
+    expect(hasSettingsDestination(["roles:manage"])).toBe(true);
+    expect(hasSettingsDestination(["semester:rollover"])).toBe(true);
+  });
+
+  it("follows a tools-only viewer's tool modules", () => {
+    expect(hasSettingsDestination(TREASURER, () => true)).toBe(true);
+    // Reports off: the treasurer's Settings would open onto nothing.
+    expect(hasSettingsDestination(TREASURER, (key) => key !== "reports")).toBe(false);
+  });
+
+  it("is false for an ordinary member", () => {
+    expect(hasSettingsDestination(MEMBER, () => true)).toBe(false);
+  });
+
+  it("fails open while permissions are unresolved, like the nav", () => {
+    expect(hasSettingsDestination(undefined, () => false)).toBe(true);
   });
 });

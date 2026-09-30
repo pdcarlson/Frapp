@@ -735,8 +735,8 @@ function SettingsPageContent() {
 
   /*
     Settings shows each viewer only what they can use (#2946). The nav's
-    Settings row admits anyone holding chapter-config:view, roles:manage, or an
-    officer tool's permission, so a treasurer who holds only reports:export
+    Settings row admits anyone Settings holds a tab or an officer tool for
+    (`hasSettingsDestination`), so a treasurer who holds only reports:export
     arrives here too. Before, every setup tab rendered for everyone and the
     config-gated ones answered a non-holder with "Couldn't load chapter
     configuration".
@@ -1102,14 +1102,15 @@ function SettingsPageContent() {
           </TabsContent>
 
           {/*
-            **Deliberately not `renderConfigGated`.** The nav's Roles row is
-            gated on `roles:manage` (`nav-config.ts`), but this page's config
-            read is gated on `chapter-config:view` — so a member holding the
-            first and not the second saw the Roles row, clicked it, and landed
-            on "Couldn't load chapter configuration". That combination is
-            freely constructible from the matrix below, and the board makes the
-            row a deep link into this tab (`4d` pin 1), so the deep link has to
-            actually arrive.
+            **Deliberately not `renderConfigGated`.** A `roles:manage` holder
+            without `chapter-config:view` reaches this tab: the nav's Settings
+            row admits `roles:manage` on its own (`settings-access.ts`), and
+            `/roles` redirects here. This page's config read is gated on
+            `chapter-config:view`, so gating the tab on it would land that
+            member on "Couldn't load chapter configuration", which is what
+            happened while the nav had a Roles row of its own (#2946 folded it
+            into Settings). That combination is freely constructible from the
+            matrix below.
 
             It does not need the gate: the matrix reads `useRoles` and
             `usePermissionsCatalog`, neither of which is chapter config. Only

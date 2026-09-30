@@ -57,12 +57,14 @@ export default defineConfig({
    * Note what that guard covers, because directory selection narrowed it. Under
    * `--grep @floor` it fired whenever no test carried the tag — that is,
    * whenever *the floor suite specifically* went missing. Selecting by directory
-   * it fires on the collected-test count instead, so it still catches deleting
-   * this spec today (nothing else here matches `testMatch`; `routes.ts` and
-   * `README.md` do not). What it stops catching is the two-spec case: add a
-   * second spec, then delete or rename the floor spec, and the run passes on the
-   * survivor and exits 0 with the floor silently unmeasured. Adding a second
-   * spec to this directory means taking that on deliberately.
+   * it fires on the collected-test count instead, so on its own it stops
+   * catching the multi-spec case: with more than one spec here, delete or
+   * rename the floor spec and the run passes on the survivors and exits 0 with
+   * the floor silently unmeasured. The directory holds three specs now
+   * (`responsive-floor`, `pre-auth-floor`, `nav-fit`), and that case was taken
+   * on deliberately: `pre-auth-floor.spec.ts` reads `responsive-floor.spec.ts`
+   * off disk and pins `DASHBOARD_ROUTES`' length, so deleting or hollowing out
+   * the floor spec turns this job red whatever else the directory holds.
    */
   forbidOnly: isCi,
   /**
