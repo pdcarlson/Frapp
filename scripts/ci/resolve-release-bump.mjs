@@ -95,6 +95,21 @@ export function highestBump(labelSets) {
   return best;
 }
 
+/**
+ * The bump a label scan may mint while releases are pre-1.0 (#2529).
+ *
+ * Nothing is a stable v1 yet (owner decision, 2026-09-23), so releases stay on
+ * `0.MINOR.PATCH` until v1 GA (#2523), and during 0.x a breaking API or database
+ * change is a minor bump. Left alone, the first PR labelled `release:major`
+ * would mint 1.0.0. So on a 0.x version a `major` becomes `minor`. Leaving 0.x
+ * is a decision taken by dispatching Release with `bump=major`, which never
+ * reaches this: an override skips the label scan.
+ */
+export function capBumpBeforeOne(currentVersion, bump) {
+  const major = Number.parseInt(String(currentVersion).split(".")[0], 10) || 0;
+  return major === 0 && bump === "major" ? "minor" : bump;
+}
+
 /** Apply a bump to `major.minor.patch`. */
 export function applyBump(currentVersion, bump) {
   const [major = 0, minor = 0, patch = 0] = String(currentVersion)
@@ -228,7 +243,13 @@ export async function resolveReleaseBump({
     return { bump: "patch", version: applyBump(currentVersion, "patch"), prNumbers: [] };
   }
 
-  const bump = highestBump(labelSets);
+  const asked = highestBump(labelSets);
+  const bump = capBumpBeforeOne(currentVersion, asked);
+  if (bump !== asked) {
+    logger.log?.(
+      `::notice::A release:major label on ${currentVersion} ships as a minor while releases are pre-1.0 (#2529). Leaving 0.x takes a Release dispatch with bump=major.`,
+    );
+  }
   return { bump, version: applyBump(currentVersion, bump), prNumbers: readPrNumbers };
 }
 

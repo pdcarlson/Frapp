@@ -217,6 +217,15 @@ patch, silently.
 The dispatch also takes an explicit `bump` input that overrides the label scan when you
 need to force a version.
 
+**Pre-1.0 (0.x).** Nothing is a stable v1 yet, so releases stay on `0.MINOR.PATCH` until
+v1 GA ([#2523](https://github.com/pdcarlson/Frapp/issues/2523)), and every production
+deploy is still tagged. During 0.x a breaking API or database change is a minor bump:
+while the latest tag's major is 0, a `release:major` label ships as a minor
+(`v0.4.0` → `v0.5.0`). Leaving 0.x takes a Release dispatch with `bump=major`. The
+existing `v1.x` tags are due to be renumbered to 0.x
+([#2529](https://github.com/pdcarlson/Frapp/issues/2529)); until they are, the latest tag
+is still a `v1.x` and the bullets above apply unchanged.
+
 ---
 
 ## Code Quality

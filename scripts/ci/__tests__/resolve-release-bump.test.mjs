@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyBump,
+  capBumpBeforeOne,
   fetchPrLabels,
   highestBump,
   prNumberFromSubject,
@@ -113,16 +114,57 @@ describe("applyBump", () => {
   it("survives a malformed version", () => assert.equal(applyBump("garbage", "patch"), "0.0.1"));
 });
 
+// #2529: releases are pre-1.0 until v1 GA, so a label can't leave 0.x.
+describe("capBumpBeforeOne", () => {
+  it("turns a major into a minor on 0.x", () =>
+    assert.equal(capBumpBeforeOne("0.4.0", "major"), "minor"));
+  it("leaves a minor or patch on 0.x alone", () => {
+    assert.equal(capBumpBeforeOne("0.4.0", "minor"), "minor");
+    assert.equal(capBumpBeforeOne("0.4.0", "patch"), "patch");
+  });
+  it("leaves a major alone from 1.x up", () =>
+    assert.equal(capBumpBeforeOne("1.4.0", "major"), "major"));
+});
+
 describe("resolveReleaseBump", () => {
   it("takes the highest label across every PR in range", async () => {
     const labels = { 10: ["release:minor"], 11: ["release:major"] };
     const result = await resolveReleaseBump({
-      currentVersion: "0.1.0",
+      currentVersion: "1.4.0",
       subjects: ["Merge pull request #10 from x", "thing (#11)"],
       repo: "o/r",
       token: "t",
       logger: quiet,
       fetchImpl: async (url) => okJson({ labels: labels[url.split("/").pop()].map((name) => ({ name })) }),
+    });
+    assert.equal(result.bump, "major");
+    assert.equal(result.version, "2.0.0");
+  });
+
+  it("a release:major label on 0.x mints a minor, not 1.0.0, and says so", async () => {
+    const lines = [];
+    const result = await resolveReleaseBump({
+      currentVersion: "0.4.0",
+      subjects: ["thing (#11)"],
+      repo: "o/r",
+      token: "t",
+      logger: { log: (line) => lines.push(line) },
+      fetchImpl: async () => okJson({ labels: [{ name: "release:major" }] }),
+    });
+    assert.equal(result.bump, "minor");
+    assert.equal(result.version, "0.5.0");
+    assert.ok(lines.some((line) => /pre-1\.0.*bump=major/.test(line)), lines.join("\n"));
+  });
+
+  it("an explicit bump=major on 0.x still leaves it", async () => {
+    const result = await resolveReleaseBump({
+      currentVersion: "0.4.0",
+      subjects: ["thing (#11)"],
+      repo: "o/r",
+      token: "t",
+      override: "major",
+      logger: quiet,
+      fetchImpl: async () => { throw new Error("must not be called"); },
     });
     assert.equal(result.bump, "major");
     assert.equal(result.version, "1.0.0");
