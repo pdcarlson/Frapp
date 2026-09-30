@@ -222,14 +222,17 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
       first.resolve({ data: {}, error: undefined });
       await reportsWrite;
     });
-    // A re-read now would return the row without Polls and flip it back on.
+    // A re-read now would return the row without Polls and flip it back on,
+    // in the nav's cache and in the Modules switch's alike.
     expect(qc.getQueryState(CHAPTER_KEY)?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(QUERY_KEY)?.isInvalidated).toBe(false);
 
     await act(async () => {
       second.resolve({ data: {}, error: undefined });
       await pollsWrite;
     });
     expect(qc.getQueryState(CHAPTER_KEY)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(QUERY_KEY)?.isInvalidated).toBe(true);
   });
 
   it("leaves the current chapter's data alone for a write with no module toggle", async () => {

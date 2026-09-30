@@ -260,16 +260,16 @@ export function usePatchOrgConfig() {
     // Reconcile against the server (which deep-merges + recomputes derived
     // fields such as theme_palette) once the write settles either way. The
     // current chapter is re-read too: it carries `enabled_modules`, `branding`,
-    // `vocabulary` and `analytics_opt_out` from the same row. That re-read
-    // waits for the last config write in flight: fetched while a later toggle
-    // is still queued, it would return the row without that toggle and
-    // overwrite its optimistic value. During `onSettled` this mutation still
-    // counts as pending, so 1 means "only this one".
+    // `vocabulary` and `analytics_opt_out` from the same row. Both re-reads
+    // wait for the last config write in flight: fetched while a later toggle
+    // is still queued, either would return the row without that toggle and
+    // overwrite its optimistic value, flicking the switch and its nav row
+    // back. During `onSettled` this mutation still counts as pending, so 1
+    // means "only this one".
     onSettled: () => {
+      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1) return;
       void qc.invalidateQueries({ queryKey });
-      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) <= 1) {
-        void qc.invalidateQueries({ queryKey: chapterKey });
-      }
+      void qc.invalidateQueries({ queryKey: chapterKey });
     },
   });
 }
