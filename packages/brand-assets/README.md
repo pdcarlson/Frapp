@@ -58,7 +58,7 @@ All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 un
 - **Next.js:** `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root updates `app/icon.png`, `app/apple-icon.png`, `public/brand/signet-emblem-B.png`, and `web`'s `app/favicon.ico`. Both apps also run sync on `prebuild`. What gets copied where is `SYNCED` in [`scripts/lib/brand-pixels.mjs`](../../scripts/lib/brand-pixels.mjs) — the sync script and the CI gate both walk that one list, so a destination cannot be copied without also being gated.
 - **Landing header:** `apps/landing/components/frapp-lockup.tsx` (crest on the page background, no tile, + Frapp word).
 - **Web auth:** `apps/web/components/auth/signet-mark.tsx`.
-- **Expo:** rasters under `apps/mobile/assets/images/` — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §7.
+- **Expo:** rasters under `apps/mobile/assets/images/`, and the iOS icon, an Icon Composer bundle at `apps/mobile/assets/frapp.icon` — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §7.
 - **Google Play listing:** `npm run rasterize:brand-assets` also renders the Play icon and feature graphic into `apps/mobile/store/graphics/`, for the owner to upload — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §4.
 
 ## Regenerating
