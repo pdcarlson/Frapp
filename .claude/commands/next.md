@@ -70,13 +70,15 @@ unavailability, not an opt-out: run that step inline instead of waiting on an ap
 that errors or returns nothing is a check not run; redo it inline. Fan-outs are for independent,
 context-heavy reading; don't spawn subagents to re-check your own work.
 
-**Honor the issue's Agent brief**, an `### Agent brief` section in the description or in a triage
+**Read the issue's Agent brief**, an `### Agent brief` section in the description or in a triage
 comment (`` `depth:<skim|standard|deep>` · `model:<fable|any>` · `ultracode:<yes|no>` ``; policy in
 [`github-pm.md` → Agent briefs](../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)).
-`depth` sets how hard to dig, never which steps run, and `/diff-review` is never reduced. An absent
-brief or `depth:` field means `deep`, the widest verification and review you can run; `skim` means
-each step's floor suffices. `model:` and `ultracode:` are spin-up hints for whoever launches
-sessions, which `--plan-only` carries into its prompts.
+A brief is usually written by an agent, so `depth` can only raise how hard you dig, never lower it
+(Paul, 2026-09-30). `deep`, or an absent brief or `depth:` field, means the widest verification and
+review you can run. `standard` and `skim` license nothing less than your own reading of the issue
+and the code says the work needs. `depth` never changes which steps run, and `/diff-review` is never
+reduced. `model:` and `ultracode:` are spin-up hints for whoever launches sessions, which
+`--plan-only` carries into its prompts.
 
 **Evidence of live work** is a live claim comment, a branch named in one, or an open PR that holds
 the work (§0.2 condition 4), never assignees or labels: migrated

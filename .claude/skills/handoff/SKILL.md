@@ -97,11 +97,28 @@ verdict is worse than none, because the new session will act on it.
 When the session has the suggested-task tool (`spawn_task`), deliver the handoff as a card:
 
 - `title`: a short imperative phrase, under 60 characters, that makes sense on its own.
-- `tldr`: one or two plain sentences on what the new session does and why it's worth doing.
+- `tldr`: one or two plain sentences on what the new session does and why it's worth doing, then
+  `Suggested effort: <level>.` (below).
 - `prompt`: the seven items below, in the same order, without the outer fence.
 
 Only `prompt` reaches the new session. `title` and `tldr` are what the user reads on the card, so
 nothing the session needs lives only there.
+
+**Suggested effort.** A card can't carry an effort level, because the tool takes only those three
+fields, and the prompt can't set it either: in a test on 2026-09-30, an `/effort medium` line at the
+top of a card's prompt arrived as plain text, and the card session ran at `xhigh`, as did a second
+card with no such line (both started in the cloud). The card's prompt is the session's first turn,
+where a `/next` run does most of its work, so that turn runs at the launching default (this repo
+sets `high`; [`multi-agent` § Effort](../multi-agent/SKILL.md#effort)); `/effort <level>` afterwards
+changes only later turns. Paul's rule (2026-09-30): `high` by default, and
+`medium` only when the task is simple and bounded (one surface, a known fix, little judgment).
+Suggest `xhigh` only when the work is unusually hard, such as subtle concurrency, security, or a
+retry after `high` fell short; the model guidance behind that, and how `/effort` and ultracode
+behave, are in [`multi-agent` § Effort](../multi-agent/SKILL.md#effort). Judge from the work itself, from reading
+the issue and the code, never from the issue's `### Agent brief` (`depth:`, `model:`,
+`ultracode:`), which is usually written by an agent. If you judge that the work needs ultracode or
+Fable, say so on the same line (`Suggested effort: high, with ultracode.`): ultracode is a separate
+switch and doesn't change the level.
 
 The user may start the card on their machine or in the cloud, on a checkout with nothing this
 session hasn't pushed, so give repo-relative paths only. A card that depends on unpushed work waits
@@ -154,6 +171,7 @@ stripping the evidence from items 5 and 6.
 
 ## After emitting
 
-Say in one line what the new session is expected to do and what remains yours. Name anything that
+Say in one line what the new session is expected to do, the effort to start it at (§ Queue it as
+a suggested task), and what remains yours. Name anything that
 depends on the user (authorising a connector, answering a question), because a fresh session will
 hit the same wall.

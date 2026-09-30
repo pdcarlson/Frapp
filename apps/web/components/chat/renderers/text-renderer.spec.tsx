@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CHAT_MESSAGE_CONTENT_MAX_LENGTH, extractMentionTokens } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { MAX_MESSAGE_MARKDOWN_DEPTH } from "./remark-depth-cap";
+import { MAX_MESSAGE_MARKDOWN_DEPTH } from "@repo/chat-core/markdown";
 import { TextRenderer } from "./text-renderer";
 
 // #369: the timeline used to render `message.content` as plain text, so a
