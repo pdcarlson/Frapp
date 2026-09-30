@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { moduleDisabledMessage } from "@repo/validation";
 
 /**
  * The s20 "Log service hours" sheet on a subscription refusal (#2410), the
@@ -15,7 +17,8 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * (`incomplete` until checkout) is refused on every submit. A refusal
  * withdraws Submit, because retrying is the one thing that cannot work until
  * an officer sorts out billing. An ordinary failed save keeps Submit and its
- * "try again" copy.
+ * "try again" copy. The module gate (`@RequireModule('hours')`, #2718) is the
+ * other refusal retrying can't win, and gets the same treatment.
  *
  * It renders `app/(tabs)/service-hours.tsx` but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
@@ -31,7 +34,19 @@ const REFUSED = {
 };
 
 /**
- * A 403 that is NOT the subscription gate. `service-entry.controller.ts`
+ * What `ChapterGuard` throws when an officer has switched `hours` off (#2718),
+ * shaped like the real filter output but without its `code`: only the message
+ * identifies it on installed builds and an API older than #1020.
+ */
+const MODULE_OFF = {
+  statusCode: 403,
+  error: "Forbidden",
+  message: moduleDisabledMessage("hours"),
+  requestId: "req_module_off",
+};
+
+/**
+ * A 403 that is NOT either gate. `service-entry.controller.ts`
  * carries a `@RequirePermissions` on this route, and a denial there recovers
  * once an officer grants the role, so it must keep its retry.
  */
@@ -124,11 +139,12 @@ function submitEntry(tree: ReactTestRenderer) {
   act(() => submitButton(tree).props.onPress());
 }
 
+beforeEach(() => {
+  mutate.mockClear();
+  writeBlockedReason = null;
+});
+
 describe("Service hours on a subscription refusal (#2410)", () => {
-  beforeEach(() => {
-    mutate.mockClear();
-    writeBlockedReason = null;
-  });
 
   it("explains the refusal and withdraws Submit", () => {
     failure = REFUSED;
@@ -155,7 +171,7 @@ describe("Service hours on a subscription refusal (#2410)", () => {
   // officer grants the role.
   it.each([
     ["an ordinary failure", FAILED],
-    ["a 403 that is not the subscription gate", DENIED],
+    ["a 403 that is neither gate", DENIED],
   ])("keeps Submit and its retry copy after %s", (_label, error) => {
     failure = error;
     const tree = render();
@@ -165,7 +181,9 @@ describe("Service hours on a subscription refusal (#2410)", () => {
     expect(screenText(tree)).not.toContain(
       SUBSCRIPTION_REFUSAL_COPY.serviceHours,
     );
+    expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.serviceHours);
     expect(submitButton(tree).props.disabled).toBe(false);
+    expect(submitButton(tree).props.accessibilityHint).toBeUndefined();
     act(() => tree.unmount());
   });
 
@@ -222,6 +240,40 @@ describe("Service hours on a subscription refusal (#2410)", () => {
     expect(screenText(tree)).not.toContain(
       SUBSCRIPTION_REFUSAL_COPY.serviceHours,
     );
+    expect(submitButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Service hours on a module-off refusal (#2718)", () => {
+  it("explains a module-off refusal in the member's terms and withdraws Submit", () => {
+    failure = MODULE_OFF;
+    const tree = render();
+    submitEntry(tree);
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.serviceHours);
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    // The guard's own words tell an officer to go to Settings → Modules.
+    expect(screenText(tree)).not.toContain(MODULE_OFF.message);
+    expect(submitButton(tree).props.disabled).toBe(true);
+    expect(submitButton(tree).props.accessibilityHint).toBe(
+      MODULE_REFUSAL_COPY.serviceHours,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("clears a module-off refusal when the sheet is opened again", () => {
+    // An officer may have turned hours back on since, and reopening is the
+    // member's deliberate second try, not a retry in place.
+    failure = MODULE_OFF;
+    const tree = render();
+    submitEntry(tree);
+    expect(submitButton(tree).props.disabled).toBe(true);
+
+    act(() => logButton(tree).props.onPress());
+
+    expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.serviceHours);
     expect(submitButton(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
   });

@@ -714,6 +714,17 @@ export default function StudyScreen() {
   // server-side regardless — this only avoids offering a surface a chapter
   // switched off.
   const hoursEnabled = isModuleEnabled(enabledModules, "hours");
+  /**
+   * The module-off empty state replaces the screen only when there is no
+   * session to show. A session already running when an officer switches
+   * `hours` off is still ACTIVE server-side, and turning the module back on
+   * before it goes stale credits it in full. So its card stays, and a refused
+   * pause, heartbeat or End explains itself with `MODULE_OFF_COPY.session`,
+   * the way a subscription refusal mid-session already does. Hiding the card
+   * instead left that sentence above "Study hours are turned off" with no
+   * session under either (#2718).
+   */
+  const moduleOffState = !hoursEnabled && !session;
 
   function renderBody() {
     // No `NoChapterState` branch. `GET /v1/study-sessions` resolves a sole
@@ -721,7 +732,7 @@ export default function StudyScreen() {
     // and `chapterId` is null whenever that claim is absent, so any such
     // branch would swallow every genuine fetch failure into "No chapter
     // selected", which carries no retry control.
-    if (!hoursEnabled) {
+    if (moduleOffState) {
       return (
         <EmptyState
           glyph="◷"
@@ -821,7 +832,11 @@ export default function StudyScreen() {
       subtitle="Tracked sessions inside your chapter's study zones."
     >
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {failure ? <Text style={styles.failure}>{failure}</Text> : null}
+      {/* A refused Start's copy is the module-off empty state's body word for
+          word, so it isn't said twice once the chapter payload catches up. */}
+      {failure && !(moduleOffState && failure === MODULE_OFF_COPY.start) ? (
+        <Text style={styles.failure}>{failure}</Text>
+      ) : null}
 
       {renderBody()}
 

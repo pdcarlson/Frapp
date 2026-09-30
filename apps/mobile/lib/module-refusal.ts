@@ -35,8 +35,17 @@ export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
  * Per-surface member copy (`writing.md` § Module off (mobile, cross-surface)).
  * Study's two rows live with its other copy, as `MODULE_OFF_COPY` in
  * `lib/study/errors.ts`.
+ *
+ * Each names the module as Settings → Modules labels it (`MODULE_CATALOG` in
+ * `@repo/org-archetypes`), because that is the switch the officer turns back
+ * on: `hours` is "Service hours", and check-in belongs to "Events".
  */
 export const MODULE_REFUSAL_COPY = {
   checkIn:
     "Check-in is turned off for your chapter right now. An officer can turn events back on.",
+  /** `POST /v1/tasks` (s19), under the controller's `@RequireModule('tasks')`. */
+  task: "Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.",
+  /** `POST /v1/service-entries` (s20), under `@RequireModule('hours')`. */
+  serviceHours:
+    "Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.",
 } as const;

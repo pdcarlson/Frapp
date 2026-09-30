@@ -62,7 +62,10 @@ const MIRROR_RETRY_MS = 15_000;
 /** `HEARTBEAT_INTERVAL_MS` in the screen. */
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
-const CHAPTER = { enabled_modules: { hours: true } };
+const HOURS_ON = { enabled_modules: { hours: true } };
+const HOURS_OFF = { enabled_modules: { hours: false } };
+/** The chapter payload `useCurrentChapter` answers with. */
+let chapter: unknown = HOURS_ON;
 const ZONES = [{ id: "zone-1", name: "Library", is_active: true }];
 const NO_SESSIONS: unknown[] = [];
 const LIVE_SESSION = [
@@ -87,7 +90,7 @@ let sessions: unknown[] = NO_SESSIONS;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useCurrentChapter: () => ({ data: CHAPTER }),
+  useCurrentChapter: () => ({ data: chapter }),
   useGeofences: () => ({
     data: ZONES,
     isPending: false,
@@ -172,7 +175,21 @@ function appStateListener(): (state: string) => void {
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   sessions = NO_SESSIONS;
+  chapter = HOURS_ON;
 });
+
+const endButton = (tree: ReactTestRenderer) =>
+  tree.root.findAll(
+    (node) =>
+      node.props.accessibilityLabel === "End session" &&
+      node.type === ("Pressable" as never),
+  );
+
+/** How many times `text` appears on screen. */
+const occurrences = (tree: ReactTestRenderer, text: string) =>
+  screenText(tree).split(text).length - 1;
+
+const MODULE_OFF_TITLE = "Study hours are turned off";
 
 describe("Study Start on a subscription refusal (#2297)", () => {
   it("explains the refusal and withdraws Start", async () => {
@@ -358,6 +375,98 @@ describe("Study on a module-off refusal (#2393)", () => {
       // under nothing but the "already closed" notice.
       expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
       expect(startButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    });
+  });
+});
+
+describe("Study with hours switched off (#2718)", () => {
+  it("shows the module-off empty state when no session is running", () => {
+    chapter = HOURS_OFF;
+    const tree = render();
+
+    expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+    expect(occurrences(tree, MODULE_OFF_COPY.start)).toBe(1);
+    act(() => tree.unmount());
+  });
+
+  it("does not repeat a refused Start's copy above the empty state it matches", async () => {
+    // Start refused while the cached payload still said `hours` was on; the
+    // payload then catches up. The failure line and the empty state's body are
+    // the same sentence.
+    api.start.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await tapStart(tree);
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.start);
+
+    chapter = HOURS_OFF;
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <StudyScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+
+    expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+    expect(occurrences(tree, MODULE_OFF_COPY.start)).toBe(1);
+    act(() => tree.unmount());
+  });
+
+  describe("with a session running", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      sessions = LIVE_SESSION;
+      chapter = HOURS_OFF;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("keeps the session's card and End instead of the empty state", () => {
+      // Still ACTIVE server-side, and credited in full if an officer turns
+      // hours back on before it goes stale.
+      const tree = render();
+
+      expect(endButton(tree)).toHaveLength(1);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+
+    it("explains a refused heartbeat beside the session, not above an empty state", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      expect(endButton(tree)).toHaveLength(1);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+
+    it("falls back to the empty state once the server says the session is gone", async () => {
+      api.heartbeat
+        .mockRejectedValueOnce(MODULE_OFF)
+        .mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      sessions = NO_SESSIONS;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      });
+
+      expect(endButton(tree)).toHaveLength(0);
+      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      // The in-session sentence went with the session it described.
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
       act(() => tree.unmount());
     });
   });
