@@ -42,13 +42,15 @@ once. On top of that:
 Start with the marker-count guard in
 [`github-pm.md`](../../../docs/ci-cd/github-pm.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
 Then list the open `suggestion` issues and give each exactly one action, grounded in current code
-and `spec/`. Two groups are different:
+and `spec/`. Three groups are different:
 
 - Skip issues whose marker starts `fp=pr-followup/` or `fp=human/` entirely. The weekly
   [`pr-followups`](../pr-followups/SKILL.md) routine owns them, and a human action can't be
   proven done from code.
-- `scope:production` issues are parked by owner decision (see the roster in routines.md), not
-  aging. Never mark them `stale`, raise their priority for age, or file duplicates of them.
+- `scope:production` issues are held by owner decision (the roster's `scope:production` entry in
+  routines.md), not aging. Never mark them `stale`, raise their priority for age, or file duplicates of them.
+- Issues labelled `parked` sit idle on purpose (the roster's `parked` entry, #2565). Never mark
+  them `stale` for age or raise their priority. A close you can prove still applies to them.
 
 | What you can prove from code or spec | Action |
 | --- | --- |

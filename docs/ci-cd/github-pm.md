@@ -96,9 +96,9 @@ open/closed + `state_reason` fields:
 **Promotion out of Triage requires setting a priority label** — mirroring Linear's "require
 explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` in the same update.
 
-**`parked` is a hold, not a state.** It overlays Triage or Backlog without changing either: `/next`
-skips a parked issue and issue-triage Pass B doesn't groom it, but its state and priority stay
-as they are. What it means and who sets it: [`routines.md` → Label roster](routines.md#label-roster).
+**`parked` is a hold, not a state.** It sits on top of whatever state an issue is in and changes
+neither that state nor its priority. What it means, what it holds and who sets it:
+[`routines.md` → Label roster](routines.md#label-roster).
 
 ## Labels and priority (lean taxonomy)
 
@@ -122,9 +122,10 @@ recognised form, for items predating the prefix (#908, and #765/#689 which carry
 all).
 
 **Epics ARE claimable, deliberately.** `/next` exists to always find an agent useful work, so its
-candidacy filter stays permissive: it excludes only what an agent genuinely cannot do. A parent
-issue is ordinary work — an agent picking up an epic and shipping a slice of it is a good outcome,
-not a failure mode, and there is **no epic filter in §0.2**. Do not add one, and do not add an
+candidacy filter stays permissive: it excludes only what an agent genuinely cannot do, plus the
+work the owner has deliberately taken off the path (`parked`, #2565). A parent issue is ordinary
+work — an agent picking up an epic and shipping a slice of it is a good outcome, not a failure
+mode, and there is **no epic filter in §0.2**. Do not add one, and do not add an
 `epic` label expecting it to gate anything.
 
 **What is guarded is closing an epic, not claiming one.** The real hazard is a single-slice PR

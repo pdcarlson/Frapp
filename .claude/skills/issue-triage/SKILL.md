@@ -134,8 +134,8 @@ owner's.
 - **Estimate:** an optional `Estimate:` line when scope is clear.
 - **Stale and duplicates:** add `stale` to obviously aging suggestions the curator missed. Close
   or dedup only `suggestion`-owned issues, and only with proof. Never mark a `scope:production`
-  issue `stale` or raise its priority for age; those are parked by owner decision (see the roster
-  in routines.md).
+  issue `stale` or raise its priority for age; those are held by owner decision (the roster's
+  `scope:production` entry in routines.md). Unlike `parked` issues, they are still groomed.
 - **Ownership:** on human and planning issues in the Backlog, only fill an absent priority. Don't
   re-bucket, re-prioritize, close, or re-body them, and don't restructure epics.
 
