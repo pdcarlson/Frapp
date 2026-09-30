@@ -55,6 +55,9 @@ Instead, the organization gets a warning and a grace period, and after that the 
 as on Free apply to both projects. Turning the cap off (organization **Billing → Cost Control**)
 bills the overage at the rates in the table instead. The cap does not cover add-ons such as
 point-in-time recovery. The organization's **Usage** page shows how close each quota is.
+`supabase-quota.yml` checks two of them daily and pages at 70%: each project's disk, and the
+organization's Storage size ([its alert](../ALERT_ROUTING.md#automated-github-issue-alerts)). Egress and
+Realtime peak connections have no API, so only the Usage page shows them.
 
 **Set up after the upgrade (2026-09-28):**
 
