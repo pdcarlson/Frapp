@@ -206,29 +206,43 @@ class ChatRealtimeManager {
     );
 
     /*
-      Two kinds of channel need an attach from here, and nothing else would
-      give them one (#3002):
+      What a (re)configure owes the channels already subscribed (#3002):
 
       - One subscribed while the manager had no `ctx`, before the first
-        `configure` or since a `destroy()`. `attachChannel` returned at its
-        `ctx` guard before taking a ticket, so `attachSeq` is still 0 and the
-        channel sat in `joining` with nothing scheduled. React runs a child's
-        effects before its parent's, so a thread's `subscribe` runs before the
-        provider's `configure` on any mount where the channel is already known.
-      - Every channel, when the viewer changed. `installChannel` tracks
-        presence for the viewer as of the attach, so a channel attached before
-        the viewer resolved is absent from the presence map the push worker
-        reads to skip members reading the thread (ADR-10), and one attached
-        under another member reports them.
+        `configure` or since a `destroy()`, gets its attach. `attachChannel`
+        returned at its `ctx` guard before taking a ticket, so `attachSeq` is
+        still 0 and the channel sat in `joining` with nothing scheduled. React
+        runs a child's effects before its parent's, so a thread's `subscribe`
+        runs before the provider's `configure` on any mount where the channel
+        is already known.
+      - A viewer that has only just resolved is told to presence. Nothing
+        else changed: the session that joined is this viewer's own, and web
+        joins before `GET /v1/users/me` answers on most cold loads. A joined
+        channel tracks them now (ADR-10: the push worker reads presence to
+        skip members reading the thread); one still joining reads the viewer
+        when its SUBSCRIBED lands (`trackViewer`).
+      - A different viewer gets every channel rejoined. A private channel's
+        join was authorised for the session that made it
+        (`can_read_chat_channel`), so re-tracking presence on it would keep
+        another member's authorisation behind this one's identity.
 
       `reopenChannel` takes a fresh ticket, so an attach already in flight
       for the same channel installs nothing.
     */
-    const viewerChanged =
-      previous !== null &&
-      (previous.viewerId ?? null) !== (ctx.viewerId ?? null);
+    const before = previous ? (previous.viewerId ?? null) : null;
+    const after = ctx.viewerId ?? null;
     for (const state of this.channels.values()) {
-      if (viewerChanged || state.attachSeq === 0) this.reopenChannel(state);
+      if (state.attachSeq === 0) {
+        this.reopenChannel(state);
+      } else if (previous === null || before === after) {
+        continue;
+      } else if (before === null) {
+        if (state.status === "live" && state.channel) {
+          this.trackViewer(state.channel);
+        }
+      } else {
+        this.reopenChannel(state);
+      }
     }
   }
 
@@ -602,7 +616,6 @@ class ChatRealtimeManager {
     });
 
     state.channel = channel;
-    const viewerId = this.ctx?.viewerId ?? null;
     channel.subscribe((subscribeStatus) => {
       // A channel we have since replaced can still deliver a late status —
       // notably `CLOSED` from its own teardown, which would otherwise book a
@@ -615,13 +628,7 @@ class ChatRealtimeManager {
           clearTimeout(state.retryTimer);
           state.retryTimer = null;
         }
-        // ADR-10: track the viewer in this channel's presence map so the
-        // push worker can skip them on the same topic. `track` is fire-and
-        // -forget; a failure here is harmless (worst case is one extra
-        // push) so we intentionally swallow.
-        if (viewerId) {
-          void channel.track({ userId: viewerId, ts: Date.now() });
-        }
+        this.trackViewer(channel);
         // Single gate for backfill — runs on both the initial join's first
         // SUBSCRIBED and every subsequent SUBSCRIBED after reconnect.
         void this.runBackfill(state.channelId);
@@ -636,6 +643,18 @@ class ChatRealtimeManager {
         this.emitStatus();
       }
     });
+  }
+
+  /**
+   * ADR-10: puts the viewer in this channel's presence map so the push worker
+   * can skip them on the same topic. The viewer is read now, not when the
+   * channel was installed, so a join that lands after the viewer resolved
+   * tracks them (#3002). `track` is fire-and-forget; a failure here is
+   * harmless (worst case is one extra push), so it is not awaited.
+   */
+  private trackViewer(channel: RealtimeChannel): void {
+    const viewerId = this.ctx?.viewerId ?? null;
+    if (viewerId) void channel.track({ userId: viewerId, ts: Date.now() });
   }
 
   private reopenChannel(state: PerChannelState): void {

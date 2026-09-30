@@ -5,13 +5,15 @@
  * only thing s05 touches: it hides the normalized cache, the realtime manager,
  * the outbox, and the drafts behind arrays and callbacks.
  *
- * The two are not one hook, on purpose (#1004). What they share is logic, and
- * the logic lives in `@repo/chat-core`, which stays framework-free: the history
- * pager and page fetcher, `olderHistoryView`, the realtime manager (including
- * the typing list's identity, and re-attaching channels when the viewer
- * changes), and the chat-client actions. Each hook holds only its client's
- * React wiring around those, so a fix to shared behaviour belongs in
- * chat-core, where both clients get it. What differs, and why:
+ * The two are not one hook, on purpose (#1004), and this header is where the
+ * relationship is written down; the web hook's points here. What they share is
+ * logic, and the logic lives in `@repo/chat-core`, which stays framework-free:
+ * the history pager and page fetcher, `olderHistoryView`, the realtime manager
+ * (the typing list's identity, and following the viewer: attaching a channel
+ * subscribed before `configure`, tracking a viewer who resolves after the
+ * join, rejoining on a switch), and the chat-client actions. Each hook holds
+ * only its client's React wiring around those, so a fix to shared behaviour
+ * belongs in chat-core, where both clients get it. What differs, and why:
  *
  * 1. **`ctx` comes from `useChatRuntime()`**, not from a provider. `app/_layout.tsx`
  *    is a frozen hotspot file, so the runtime is a hook the chat screens call
@@ -21,11 +23,12 @@
  * 2. **No `toast`.** `ChatActionContext.toast` is optional and mobile supplies
  *    none, so chat-core's failure toasts are silent no-ops. A terminal 4xx on
  *    `send` surfaces as `_status: "failed"` + `_error` in the cache, which the
- *    thread renders inline. Everything else reports through
- *    `ChatActionContext.onError`, the platform-neutral sink `chat-core` fires
- *    alongside (never instead of) `toast`, into state the screen draws:
- *    `reactionError` (#999), `actionError`, and `sendError` for an outbox that
- *    refused the row. `edit` and `remove` reject with the described message.
+ *    thread renders inline. An outbox that refused the row rejects `send`'s
+ *    `sendMessage`, and `send` catches that into `sendError`. The rest reports
+ *    through `ChatActionContext.onError`, the platform-neutral sink `chat-core`
+ *    fires alongside (never instead of) `toast`, wired per call: into
+ *    `reactionError` (#999) and `actionError`, which the screen draws, and into
+ *    the message `edit` and `remove` reject with.
  * 3. **No outbox `get`.** That is a web-only extra on the Dexie store; the
  *    port itself only offers `listForChannel`, so retry/discard look the row up
  *    through it.
@@ -299,13 +302,12 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   // so the viewer has no presence entry — and the push worker reads presence on
   // `chat:channel:<id>` to skip members currently in the channel (ADR-10), so
   // they would be pushed notifications for the thread they are reading. Since
-  // #3002 the runtime's `configure({viewerId})` reopens such a channel under the
-  // viewer, so an early attach no longer leaves presence wrong; it would still
-  // cost a join, a leave and a second join for nothing, which this ordering
-  // avoids. Both callbacks hang off one already-resolved promise and run in
-  // registration order, and the runtime's effect is declared first (it is
-  // called at the top of this hook), so its `configure` is guaranteed to land
-  // before this `subscribe`.
+  // #3002 the runtime's `configure({viewerId})` would also repair that, by
+  // tracking the viewer on the joined channel; this ordering still has the
+  // channel join under the viewer from the start. Both callbacks hang off one
+  // already-resolved promise and run in registration order, and the runtime's
+  // effect is declared first (it is called at the top of this hook), so its
+  // `configure` is guaranteed to land before this `subscribe`.
   /*
     Keyed on `channelId` and `viewerId`, deliberately NOT on `ctx`.
 
@@ -602,13 +604,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         queued = true;
         await drafts.clear(channelId);
       } catch (error) {
-        // `sendMessage` awaits `outbox.enqueue` *outside* its own try/catch, so
-        // a full or unavailable AsyncStorage rejects out of it having already
-        // drawn the optimistic bubble but queued nothing. There is no toast on
-        // this platform, so restoring the text and naming the failure is the
-        // only way the member learns their message did not go anywhere —
-        // but only onto the channel this send was actually for; see the
-        // generation/channel guard above.
+        // `sendMessage` rethrows when `outbox.enqueue` fails, after taking its
+        // optimistic bubble back out (#1718), so a full or unavailable
+        // AsyncStorage lands here with nothing queued and nothing on screen.
+        // There is no toast on this platform, so restoring the text and naming
+        // the failure is the only way the member learns their message did not
+        // go anywhere — but only onto the channel this send was actually for;
+        // see the generation/channel guard above.
         if (
           currentChannelIdRef.current === forChannelId &&
           sendGenerationRef.current === generation

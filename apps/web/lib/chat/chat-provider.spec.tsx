@@ -170,6 +170,22 @@ describe("ChatProvider rebinds the realtime manager without tearing it down (#30
     expect(chatRealtime.destroy).not.toHaveBeenCalled();
   });
 
+  it("re-configures for a different viewer without destroying, too", () => {
+    // An account switch with the surface still mounted. `configure` rejoins
+    // every channel for the new member itself; a `destroy()` would drop the
+    // open thread's subscription for good, as it did on resolve.
+    liveViewerId.current = "user-a";
+    const { rerenderProvider } = renderProvider();
+
+    liveViewerId.current = "user-b";
+    rerenderProvider();
+
+    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ viewerId: "user-b" }),
+    );
+    expect(chatRealtime.destroy).not.toHaveBeenCalled();
+  });
+
   it("destroys the manager when the chat surface unmounts", () => {
     liveViewerId.current = "user-live";
     const { unmount } = renderProvider();

@@ -620,6 +620,24 @@ describe("status subscription", () => {
     expect(result.current.typingUsers).toBe(two);
   });
 
+  it("shows nobody typing once no channel is open, not the last channel's typists", async () => {
+    const typists = ["user-7"];
+    mocks.getTypingUsers.mockImplementation(() => typists);
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string | null }) =>
+        useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL as string | null },
+        wrapper: createWrapper(createClient(), newQueryClient()),
+      },
+    );
+    await waitFor(() => expect(result.current.typingUsers).toBe(typists));
+
+    rerender({ channelId: null });
+
+    expect(result.current.typingUsers).toEqual([]);
+  });
+
   it("releases every status listener on unmount", async () => {
     // Both the connection pill and the typing line subscribe. Dropping either
     // returned unsubscriber leaks a listener per channel open, each of which

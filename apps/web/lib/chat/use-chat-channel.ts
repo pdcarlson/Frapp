@@ -8,13 +8,11 @@
  * outbox so components stay dumb (arrays + callbacks).
  *
  * Its mobile counterpart is `apps/mobile/lib/chat/use-chat-channel.ts`. The
- * two are not one hook, on purpose (#1004): what they share is logic, and the
- * logic lives in `@repo/chat-core`, which stays framework-free: the history
- * pager and page fetcher, `olderHistoryView`, the realtime manager (including
- * the typing list's identity), and the chat-client actions. Each hook holds
- * only its client's React wiring around those. A fix to shared behaviour
- * belongs in chat-core, where both clients get it. The header of the mobile
- * file lists what differs and why.
+ * two are not one hook, on purpose (#1004): what they share is logic, kept in
+ * framework-free `@repo/chat-core`, and each hook holds only its client's React
+ * wiring around it. A fix to shared behaviour belongs in chat-core, where both
+ * clients get it. The mobile file's header is the one place that lists what
+ * chat-core covers and what differs between the two, and why.
  */
 
 import {

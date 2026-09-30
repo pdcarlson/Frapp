@@ -1177,25 +1177,45 @@ describe("ChatRealtimeManager — configure attaches waiting channels and follow
     expect(backfill).toHaveBeenCalledWith("c1", null);
   });
 
-  test("a viewer that resolves after the attach reopens the channel and tracks them", async () => {
+  test("a viewer that resolves after the join is tracked on the joined channel, without a rejoin", async () => {
+    // Web's cold load: the thread joins before GET /v1/users/me answers. The
+    // session is the same one, so only presence needs telling who it is.
     chatRealtime.configure(ctx(null));
     chatRealtime.subscribe("c1");
     const first = current("c1")!;
     first.trigger("SUBSCRIBED");
     expect(first.track).not.toHaveBeenCalled();
+    expect(backfill).toHaveBeenCalledTimes(1);
 
     chatRealtime.configure(ctx(VIEWER));
+    await Promise.resolve();
 
-    await vi.waitFor(() => expect(current("c1")).not.toBe(first));
-    expect(first.teardown).toHaveBeenCalled();
-    const second = current("c1")!;
-    second.trigger("SUBSCRIBED");
-    expect(second.track).toHaveBeenCalledWith(
+    expect(current("c1")).toBe(first);
+    expect(first.unsubscribe).not.toHaveBeenCalled();
+    expect(first.track).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: VIEWER }),
+    );
+    expect(backfill).toHaveBeenCalledTimes(1);
+  });
+
+  test("a viewer that resolves while the join is in flight is tracked when it lands", () => {
+    chatRealtime.configure(ctx(null));
+    chatRealtime.subscribe("c1");
+    const ch = current("c1")!;
+
+    chatRealtime.configure(ctx(VIEWER));
+    expect(ch.track).not.toHaveBeenCalled();
+    ch.trigger("SUBSCRIBED");
+
+    expect(current("c1")).toBe(ch);
+    expect(ch.track).toHaveBeenCalledWith(
       expect.objectContaining({ userId: VIEWER }),
     );
   });
 
-  test("a different viewer reopens every channel under the new one", async () => {
+  test("a different viewer rejoins every channel and tracks the new one on each", async () => {
+    // A private channel's join was authorised for the session that made it,
+    // so another member's identity must not be tracked on it: it rejoins.
     chatRealtime.configure(ctx(VIEWER));
     chatRealtime.subscribe("c1");
     chatRealtime.subscribe("c2");
@@ -1210,10 +1230,32 @@ describe("ChatRealtimeManager — configure attaches waiting channels and follow
       expect(current("c1")).not.toBe(first1);
       expect(current("c2")).not.toBe(first2);
     });
-    current("c1")!.trigger("SUBSCRIBED");
-    expect(current("c1")!.track).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: OTHER }),
-    );
+    expect(first1.teardown).toHaveBeenCalled();
+    expect(first2.teardown).toHaveBeenCalled();
+    for (const id of ["c1", "c2"]) {
+      const ch = current(id)!;
+      ch.trigger("SUBSCRIBED");
+      expect(ch.track).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: OTHER }),
+      );
+      expect(ch.track).not.toHaveBeenCalledWith(
+        expect.objectContaining({ userId: VIEWER }),
+      );
+    }
+  });
+
+  test("a viewer going away rejoins every channel, tracking nobody", async () => {
+    chatRealtime.configure(ctx(VIEWER));
+    chatRealtime.subscribe("c1");
+    const first = current("c1")!;
+    first.trigger("SUBSCRIBED");
+
+    chatRealtime.configure(ctx(null));
+
+    await vi.waitFor(() => expect(current("c1")).not.toBe(first));
+    const second = current("c1")!;
+    second.trigger("SUBSCRIBED");
+    expect(second.track).not.toHaveBeenCalled();
   });
 
   test("re-configuring for the same viewer leaves live channels alone", async () => {

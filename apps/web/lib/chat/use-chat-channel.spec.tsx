@@ -933,17 +933,37 @@ describe("useChatChannel — the typing line (#1004)", () => {
     client?.clear();
   });
 
-  it("hands on the manager's own array, re-read on each status ping", async () => {
-    // The manager keeps the array's identity while the typists are unchanged
-    // (`realtime-manager.spec.ts`), which is what lets the thread skip the
-    // re-render. That only holds if this hook passes the array on as it is.
-    const { result } = await mountChannel();
+  it("hands on the manager's own array, and does not re-render while it is unchanged", async () => {
+    // The fix for #1004 is the manager's: it keeps the array's identity while
+    // the typists are unchanged (`realtime-manager.spec.ts`, which fails on
+    // the old manager). This pins the hook's half, that it passes that array
+    // on as it is and so renders nothing for a ping that changes nothing.
+    let renders = 0;
+    const view = renderHook(
+      () => {
+        renders += 1;
+        client = useQueryClient();
+        return useChatChannel(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+    await waitFor(() => expect(view.result.current.isLoading).toBe(false));
     const typists = ["user-7"];
     mocks.getTypingUsers.mockImplementation(() => typists);
 
     act(() => mocks.pingStatus());
+    expect(view.result.current.typingUsers).toBe(typists);
+    // React may render once more before an identical `setState` bails out
+    // (its eager bail-out needs a fiber with no update pending); count after.
+    act(() => mocks.pingStatus());
 
-    expect(result.current.typingUsers).toBe(typists);
+    const settled = renders;
+    act(() => {
+      mocks.pingStatus();
+      mocks.pingStatus();
+      mocks.pingStatus();
+    });
+    expect(renders).toBe(settled);
   });
 
   it("shows nobody typing once no channel is open, not the last channel's typists", async () => {
