@@ -2,7 +2,6 @@ import {
   IsArray,
   Max,
   MaxLength,
-  IsBoolean,
   IsEnum,
   IsInt,
   IsObject,
@@ -14,6 +13,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
@@ -80,7 +80,7 @@ export class BrandingDto {
       'The stored letters are kept.',
   })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   show_greek_letters?: boolean;
 
   @ApiPropertyOptional()
@@ -109,7 +109,7 @@ export class BrandingDto {
 export class BetaConfigDto {
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   enabled?: boolean;
 
   @ApiPropertyOptional({
@@ -126,7 +126,7 @@ export class WorkflowConfigDto {
   key!: string;
 
   @ApiPropertyOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   enabled!: boolean;
 
   @ApiPropertyOptional({
@@ -165,7 +165,7 @@ export class DuesConfigDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   installments_allowed?: boolean;
 
   @ApiPropertyOptional({ description: 'Number of installments (>= 1)' })
@@ -332,7 +332,7 @@ export class PatchChapterConfigDto {
       'When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous).',
   })
   @ValidateIf((_object, value) => value !== undefined)
-  @IsBoolean()
+  @IsStrictBoolean()
   analytics_opt_out?: boolean;
 
   /**

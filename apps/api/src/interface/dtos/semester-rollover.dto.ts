@@ -1,10 +1,5 @@
-import {
-  IsBoolean,
-  IsDateString,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsDateString, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RolloverDto {
@@ -27,6 +22,6 @@ export class RolloverDto {
     default: false,
   })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   promote_new_members?: boolean;
 }

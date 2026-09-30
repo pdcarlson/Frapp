@@ -1,7 +1,6 @@
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -15,6 +14,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -70,7 +70,7 @@ export class CreateChannelDto {
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_read_only?: boolean;
 }
 
@@ -111,7 +111,7 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @IsStrictBoolean()
   is_read_only?: boolean;
 
   // Nullable for the reason `category_id` is: `null` clears an officer's

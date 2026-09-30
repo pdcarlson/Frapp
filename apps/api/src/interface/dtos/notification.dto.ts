@@ -1,5 +1,4 @@
 import {
-  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -13,6 +12,7 @@ import {
   ValidatorConstraint,
   type ValidatorConstraintInterface,
 } from 'class-validator';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
@@ -115,7 +115,7 @@ export class UpdateNotificationPreferenceDto {
   @ApiProperty({
     description: 'Whether notifications for this category are enabled',
   })
-  @IsBoolean()
+  @IsStrictBoolean()
   is_enabled: boolean;
 }
 
