@@ -324,7 +324,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Delete an import and everything it brought in',
     description:
-      'Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.',
+      'Removes the imported messages, their attachments, the channels the import created once they hold nothing else, and the uploaded archive objects. The roles it created stay, and the job row survives as the record that it happened.',
   })
   purge(
     @Param('id', ParseUUIDPipe) id: string,

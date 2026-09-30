@@ -7153,7 +7153,7 @@
         ]
       },
       "delete": {
-        "description": "Removes the imported messages, their attachments, and the uploaded archive objects. The job row survives as the record that it happened.",
+        "description": "Removes the imported messages, their attachments, the channels the import created once they hold nothing else, and the uploaded archive objects. The roles it created stay, and the job row survives as the record that it happened.",
         "operationId": "DiscordImportController_purge_v1",
         "parameters": [
           {
