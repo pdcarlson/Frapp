@@ -337,6 +337,29 @@ agent triages red checks infra-vs-code exactly as for a human-authored PR. Commi
 `chore(deps): …` / `chore(deps-dev): …`; PRs are labelled `area:deps` and carry no release label, so
 they take the default `release:patch` bump.
 
+### Dependabot resolves with the root `packageManager` npm
+
+Dependabot brings no npm of its own. Its job runs `corepack npm@<pin> install <pkg>@<version>
+--workspace=<ws> --force --ignore-scripts --package-lock-only`, with `<pin>` taken from the root
+`package.json`'s `packageManager` field. The Dependabot Updates run that opened #2930 logs `corepack
+npm@11.6.2 install ws@8.22.0 --workspace=apps/api …` (2026-09-30). So the pin decides whether
+Dependabot's lockfiles install. No CI job or Dockerfile reads it: `npm ci` in CI uses whatever npm
+`setup-node`'s Node 24 bundles.
+
+At `npm@11.6.2` it broke #2930. The re-resolve dropped `node_modules/@emnapi/core` and
+`@emnapi/runtime`, which the optional `@img/sharp-wasm32` and `@unrs/resolver-binding-wasm32-wasi`
+need. It also stripped every `libc` field and nested `@types/node` under four workspaces, so `npm ci`
+failed with `Missing: @emnapi/runtime@1.11.3 from lock file`. Replaying Dependabot's three commands
+from the same base commit under 11.6.2 reproduces its lockfile byte for byte. Under 11.19.0 the diff
+is the three bumps alone (2026-09-30). `@dependabot recreate` can't repair such a lockfile, because
+it re-runs the same npm.
+
+**Keep the pin at the npm that CI's Node bundles**, so Dependabot, CI and a sandbox re-resolve with
+one npm. With Node 24.21.0 that's 11.19.0, as `setup-node`'s "Environment details" group prints.
+Before moving the pin, replay a bump from `main` with `npx npm@<candidate> install <pkg>@<version>
+--workspace=<ws> --force --ignore-scripts --package-lock-only`. The lockfile diff must be that bump
+alone: every `@emnapi/*` entry and `libc` field still present, and no new nested copy (#2723).
+
 ### A grouped bump of a peer-depended package can land a second copy, not an upgrade
 
 Dependabot [#2369](https://github.com/pdcarlson/Frapp/pull/2369) moved `apps/api` from
