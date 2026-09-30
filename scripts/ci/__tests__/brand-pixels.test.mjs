@@ -42,6 +42,7 @@ import {
   assertLockedPair,
   assertSvgLocked,
   buildIco,
+  svgPath,
   census,
   coverage,
   coverageMask,
@@ -308,8 +309,7 @@ test("every brand SVG reuses the master geometry verbatim", () => {
   // A rewritten path in one file is drift, which is how the superseded SVG came
   // to draw a different mark from the raster in the first place (#2153).
   const pathOf = (name) =>
-    readFileSync(join(ASSETS, name), "utf8")
-      .match(/ d="([^"]+)"/)[1]
+    svgPath(readFileSync(join(ASSETS, name), "utf8"), name)
       .replace(/\s+/g, " ")
       .trim();
   const master = pathOf("signet-emblem-B.svg");
@@ -538,4 +538,14 @@ test("no icon file in a Next app escapes the sync manifest", () => {
     [],
     "every icon file a Next app serves must be generated and gated — add it to SYNCED and to sync-brand-assets.mjs's source",
   );
+});
+
+test("svgPath refuses anything but exactly one path, and reads CRLF as LF", () => {
+  assert.throws(() => svgPath("<svg></svg>", "empty"), /has 0 <path> elements/);
+  assert.throws(
+    () => svgPath('<svg><path d="M0 0"/><path d="M1 1"/></svg>', "two"),
+    /has 2 <path> elements/,
+  );
+  assert.throws(() => svgPath('<svg><path fill="#DDB844"/></svg>', "no-d"), /no d attribute/);
+  assert.equal(svgPath('<svg><path d="M0 0\r\n  L1 1"/></svg>', "crlf"), "M0 0\n  L1 1");
 });

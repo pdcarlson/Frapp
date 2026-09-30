@@ -16,6 +16,7 @@
       "fallbackToCacheTimeout": 0
     },
     "ios": {
+      "icon": "./assets/frapp.icon",
       "supportsTablet": false,
       "bundleIdentifier": "live.frapp.mobile",
       "usesAppleSignIn": true,
