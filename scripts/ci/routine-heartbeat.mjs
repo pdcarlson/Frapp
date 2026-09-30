@@ -28,11 +28,7 @@
 // It never PUTs a Routine, a workflow or a comment on the heartbeat issue; its
 // only write is the alert. Tests: scripts/ci/__tests__/routine-heartbeat.test.mjs.
 
-import {
-  ALERT_LOOKUP_LABEL,
-  raiseAlert,
-  resolveAlert,
-} from "./lib/alert-issue.mjs";
+import { defineAlert, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -97,12 +93,13 @@ const MAX_COMMENT_PAGES = 10;
 // GitHub serves at most this many results from a filtered workflow-runs list.
 const MAX_LISTED_RUNS = 1000;
 
-export const ALERT_ISSUE_TITLE =
-  "A scheduled routine missed or stopped its run — the board is grooming itself less than it looks";
-export const ALERT_ISSUE_LOOKUP_LABEL = ALERT_LOOKUP_LABEL;
 // P2, not P1: nothing a member sees breaks, but the backlog quietly stops
 // being curated, triaged and swept.
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"];
+export const ALERT = defineAlert({
+  title:
+    "A scheduled routine missed or stopped its run — the board is grooming itself less than it looks",
+  labels: ["area:ci", "P2"],
+});
 
 /**
  * The latest instant at or before `at` that matches the schedule, in UTC.
@@ -335,9 +332,7 @@ export async function runWatchdog({
       token,
       repo,
       fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      labels: ALERT_ISSUE_LABELS,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+      alert: ALERT,
       buildIssueBody: () => buildAlertIssueBody({ verdict, repo, runUrl }),
       buildCommentBody: ({ reopened }) =>
         `${reopened ? "Reopened — " : ""}still failing: ${verdict.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
@@ -350,8 +345,7 @@ export async function runWatchdog({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    alert: ALERT,
     buildRecoveryBody: () =>
       `Every routine's latest scheduled run left a done record.${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });

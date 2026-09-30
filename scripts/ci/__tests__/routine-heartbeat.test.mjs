@@ -5,8 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  ALERT_ISSUE_LABELS,
-  ALERT_ISSUE_TITLE,
+  ALERT,
   HEARTBEAT_ISSUE,
   RECORD_PATTERN,
   ROUTINES,
@@ -596,8 +595,8 @@ describe("runWatchdog", () => {
     assert.equal(out.outcome, "fail");
     assert.equal(out.alert.action, "created");
     const created = JSON.parse(calls.find((c) => c.method === "POST").body);
-    assert.equal(created.title, ALERT_ISSUE_TITLE);
-    assert.deepEqual(created.labels, ALERT_ISSUE_LABELS);
+    assert.equal(created.title, ALERT.title);
+    assert.deepEqual(created.labels, ALERT.labels);
     assert.ok(created.labels.includes(ALERT_LOOKUP_LABEL));
     assert.ok(created.labels.includes("P2"));
     assert.deepEqual(created.assignees, [ALERT_ASSIGNEE]);
@@ -615,7 +614,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
       { method: "POST", path: "/comments", body: {} },
@@ -638,7 +637,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/comments", body: {} },
       { method: "PATCH", path: "/issues/42", body: { number: 42 } },
@@ -662,7 +661,7 @@ describe("runWatchdog", () => {
       {
         method: "GET",
         path: "/issues?state=all",
-        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+        body: [{ number: 42, title: ALERT.title, state: "open" }],
       },
       { method: "POST", path: "/comments", body: {} },
       { method: "PATCH", path: "/issues/42", status: 502, body: {} },
@@ -798,7 +797,7 @@ describe("wiring", () => {
       new RegExp(`issues/${HEARTBEAT_ISSUE}\\b`),
     );
     assert.ok(
-      readFileSync(ALERT_ROUTING, "utf8").includes(ALERT_ISSUE_TITLE),
+      readFileSync(ALERT_ROUTING, "utf8").includes(ALERT.title),
       "ALERT_ROUTING.md row",
     );
     assert.match(
