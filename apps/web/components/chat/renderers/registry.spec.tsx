@@ -2,18 +2,22 @@ import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CHAT_MESSAGE_KINDS } from "@repo/chat-core/types";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { MessageRenderer, rendersAsBubble } from "./index";
+import { isCardMessage } from "@repo/chat-core/message-actions";
+import { MessageRenderer } from "./index";
 
 /**
- * `rendersAsBubble` and the `MessageRenderer` switch are two statements of one
- * fact, and the row layout believes the first while the screen shows the second.
- * If they disagree, a card renders inside the right-aligned self-bubble column —
- * silently, because nothing type-checks the pair.
+ * `isCardMessage` and the `MessageRenderer` switch are two statements of one
+ * fact, and the row believes the first while the screen shows the second. If
+ * they disagree, a card's `(edited)` and Pinned markers go into a text body
+ * that never renders (and vanish), or a plain message's markers drop under it
+ * as if it were a card; and Edit is offered on, or withheld from, the wrong
+ * kinds (`canEditMessage` reads the same list). Nothing type-checks the pair.
  *
  * So rather than trusting the docstring's claim that the predicate "mirrors the
  * switch", this renders **every kind the wire contract allows** and checks that
- * a bubble appeared exactly when the predicate said one would. A new kind added
- * to `CHAT_MESSAGE_KINDS` and the switch, but not to `CARD_KINDS`, fails here.
+ * a text body appeared exactly when the predicate said it would. A new kind
+ * added to `CHAT_MESSAGE_KINDS` and the switch, but not to `CARD_KINDS`, fails
+ * here.
  */
 
 vi.mock("@/components/shared/subscription-gate", () => ({
@@ -94,14 +98,9 @@ function message(kind: string, overrides: Partial<ChatMessage> = {}): ChatMessag
   } as ChatMessage;
 }
 
-/**
- * The bubble names itself. It used to be found by the locked 18px radius, which
- * was "the only thing in the tree carrying it" until the inline editor began
- * standing in for the bubble at that same radius (#2235) — and the skeleton in
- * `message-timeline.tsx` already wore it before that.
- */
-function hasBubble(container: HTMLElement): boolean {
-  return container.querySelector('[data-slot="bubble"]') !== null;
+/** A plain message's text names itself; a card draws no such slot. */
+function hasTextBody(container: HTMLElement): boolean {
+  return container.querySelector('[data-slot="message-body"]') !== null;
 }
 
 describe("the renderer registry and the layout predicate agree", () => {
@@ -111,23 +110,29 @@ describe("the renderer registry and the layout predicate agree", () => {
         <MessageRenderer
           message={message(kind)}
           viewerId="11111111-1111-4111-8111-111111111111"
-          isSelf
           isConfirmed
           onAct={vi.fn()}
         />,
       );
-      expect(hasBubble(container)).toBe(rendersAsBubble(message(kind)));
+      expect(hasTextBody(container)).toBe(!isCardMessage(message(kind)));
     });
   }
 
-  it("a deleted message keeps the layout its kind had", () => {
-    // Deleting must not move a row across the thread: the body becomes a
-    // tombstone, the row does not change columns.
+  it("a deleted message of any kind draws the text placeholder", () => {
+    // `MessageRenderer` routes every deleted row to `TextRenderer`, so a
+    // deleted card is a placeholder line, not a card frame around nothing.
     for (const kind of CHAT_MESSAGE_KINDS) {
-      expect(
-        rendersAsBubble(message(kind, { is_deleted: true })),
-        `${kind} deleted`,
-      ).toBe(rendersAsBubble(message(kind)));
+      const { container, unmount } = render(
+        <MessageRenderer
+          message={message(kind, { is_deleted: true })}
+          viewerId="11111111-1111-4111-8111-111111111111"
+          isConfirmed
+          onAct={vi.fn()}
+        />,
+      );
+      expect(hasTextBody(container), `${kind} deleted`).toBe(true);
+      unmount();
     }
   });
+
 });

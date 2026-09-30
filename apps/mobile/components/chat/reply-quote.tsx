@@ -11,8 +11,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Quote chrome for a reply on s05. Re-implements the web rule against
  * mobile tokens — not a port of `QuotedMessage` (Tailwind / web type
- * treatment). A left rule plus author and preview, or the unavailable
- * line when the parent is outside the loaded window.
+ * treatment). Author and preview, or the unavailable line when the parent is
+ * outside the loaded window. It sits above the row's author line, after the
+ * elbow `MessageRowFrame` draws (`components.md` §11 § What rides the row), so
+ * it draws no rule of its own.
  *
  * Hidden on a deleted *reply* (the tombstone is not something anyone
  * said). A deleted *parent* still quotes: that tombstone is the honest
@@ -27,8 +29,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Tapping the quote scrolls to the parent (#2775) when the caller passes
  * `onPress`, which it does only for a parent that is loaded and shown. The
- * quote is not announced as a button: it sits inside the message's accessible
- * container, which carries the same jump as a named action.
+ * quote is not announced as a button. It sits above the row's author line, a
+ * focusable element of its own, and the row's body (or a poll card's own
+ * container) carries the same jump as a named action, "Go to the original
+ * message".
  */
 export function ReplyQuote({
   message,
@@ -36,8 +40,6 @@ export function ReplyQuote({
   hiddenText,
   nameFor,
   viewerId,
-  borderColor,
-  textColor,
   onPress,
   onLongPress,
 }: {
@@ -48,8 +50,6 @@ export function ReplyQuote({
   nameFor: (userId: string) => string | null;
   /** Resolved, like every row surface's (#2250): a null viewer mislabels the member's own quote. */
   viewerId: string;
-  borderColor: string;
-  textColor: string;
   /** Scrolls to the parent; omitted when there is nothing to scroll to. */
   onPress?: () => void;
   /** The row's long-press, since a pressable quote claims the touch. */
@@ -68,28 +68,21 @@ export function ReplyQuote({
       disabled={!onPress}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [
-        styles.rule,
-        { borderLeftColor: borderColor },
-        pressed ? styles.pressed : null,
-      ]}
+      style={({ pressed }) => [pressed ? styles.pressed : null]}
     >
       {placeholder !== null || !replyParent ? (
         <Text
-          style={[styles.preview, styles.unavailable, { color: textColor }]}
+          style={[styles.preview, styles.unavailable]}
           numberOfLines={1}
         >
           {placeholder ?? UNAVAILABLE_QUOTE}
         </Text>
       ) : (
         <View style={styles.row}>
-          <Text style={[styles.author, { color: textColor }]} numberOfLines={1}>
+          <Text style={styles.author} numberOfLines={1}>
             {resolveAuthorLabel(replyParent, nameFor, viewerId)}
           </Text>
-          <Text
-            style={[styles.preview, { color: textColor }]}
-            numberOfLines={1}
-          >
+          <Text style={styles.preview} numberOfLines={1}>
             {replyPreviewText(replyParent)}
           </Text>
         </View>
@@ -100,11 +93,6 @@ export function ReplyQuote({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    rule: {
-      borderLeftWidth: 2,
-      paddingLeft: tokens.spacing.sm,
-      marginBottom: tokens.spacing.xs,
-    },
     row: {
       flexDirection: "row",
       alignItems: "baseline",
@@ -116,10 +104,12 @@ function createStyles(tokens: SignetTokens) {
         ...tokens.typography.role.caption,
         weight: tokens.typography.weight.semibold,
       }),
+      color: tokens.color.text.foreground,
       flexShrink: 0,
     },
     preview: {
       ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
       flexShrink: 1,
     },
     unavailable: {

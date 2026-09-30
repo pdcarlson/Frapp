@@ -208,10 +208,10 @@ const config: Partial<Config> = {
         /*
          * "You were addressed". Both halves are needed: `mention` /
          * `mention-foreground` is the unread DM badge, and `chip` /
-         * `chip-text` is the in-bubble treatment, which is deliberately NOT
+         * `chip-text` is the in-body treatment, which is deliberately NOT
          * the mention red (§5 — red as text inside a bubble is the case that
          * pair exists for). All four are CSS-only tokens: `signetDarkTokens`
-         * is what `apps/mobile` reads, and mobile draws no in-bubble mention
+         * is what `apps/mobile` reads, and mobile draws no in-body mention
          * highlight, but mobile does not consume this preset — only the two
          * Next surfaces do, and since #2367 both draw the chip.
          */

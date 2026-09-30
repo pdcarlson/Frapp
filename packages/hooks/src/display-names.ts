@@ -223,7 +223,7 @@ export function directChannelDisplayName(
  *
  * Structural rather than an import of `@repo/chat-core`'s `ChatMessage`: this
  * module is deliberately dependency-free (see the header), and every caller —
- * the web timeline, the pins popover, the mobile bubble — passes a different
+ * the web timeline, the pins popover, the mobile message row — passes a different
  * concrete row shape.
  */
 export interface MessageAuthor {
@@ -300,7 +300,7 @@ export function authorInitialsFallback(author: MessageAuthor): string {
 }
 
 /**
- * The author label on a message's meta line.
+ * The author label on a message's author line.
  *
  * One definition for both platforms and all three surfaces (timeline, thread
  * panel, pins), because the fallback chain is where the null-sender bugs lived:
@@ -323,23 +323,4 @@ export function resolveAuthorLabel(
   if (name) return name;
   if (author.sender_id) return memberFallbackLabel(author.sender_id);
   return UNKNOWN_MEMBER;
-}
-
-/**
- * A stable identity key for "did the same person write both of these?".
- *
- * Consecutive messages from one author render as a single group with one header.
- * Comparing `sender_id` directly used to be enough; with nullable senders it
- * silently breaks, because `null === null` is true in JavaScript — so an
- * imported channel where twenty different Discord members spoke in turn would
- * collapse into one block under one name.
- *
- * The namespace prefixes matter: without them a Signet uuid and a Discord
- * snowflake could in principle collide, and the two are not the same person.
- */
-export function authorGroupingKey(author: MessageAuthor): string {
-  if (author.sender_id) return `user:${author.sender_id}`;
-  if (author.author_external_id) return `external:${author.author_external_id}`;
-  const name = author.author_name?.trim();
-  return name ? `name:${name}` : "unknown";
 }

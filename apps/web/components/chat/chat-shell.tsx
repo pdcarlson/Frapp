@@ -203,11 +203,12 @@ function ChannelHeaderMark({
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
- * specs the incoming bubble as `--card` with a hairline. A card on a card is
- * `#1E1B17` on `#1E1B17`: the bubble simply would not have existed. The
+ * then specced the incoming bubble as `--card` with a hairline, so a card on a
+ * card was `#1E1B17` on `#1E1B17` and the bubble simply did not exist. The
  * reference resolves it the other way round (`canvas-screens.dc.html` s05):
- * the thread sits on `--background`, the app floor, and the bubbles are the
- * step above it. The channels column is `--surface-1`, the ladder step foundations
+ * the thread sits on `--background`, the app floor. The bubble is gone since
+ * #2873, but the cards posted into the thread are still the step above it, and
+ * a hovered row lifts to `--surface-1`. The channels column is `--surface-1`, the ladder step foundations
  * §2 assigns to nav chrome, which is what the sidebar already uses.
  *
  * Every async branch renders an explicit state, and none of them replaces the
@@ -227,8 +228,8 @@ export function ChatShell({
     The viewer's `users.id` for painting — live once `GET /v1/users/me` answers,
     and the one cached beside the first chunk until then (#2249).
 
-    Every use of it on this surface is a paint: which side a bubble takes
-    (`viewerId` into the timeline), what a DM is called
+    Every use of it on this surface is a paint: whose a row is (`viewerId`
+    into the timeline, which says "You" in the accent), what a DM is called
     (`directChannelDisplayName`), whether the reply quote says "You", whether the
     live region says "You", and whether the `?message=` jump may run yet. None of
     them is a write, which is why the cached value is allowed to serve them —
@@ -1576,7 +1577,8 @@ export function ChatShell({
       </section>
 
       {/*
-        The thread column is the app floor, with bubbles stepped above it (s05).
+        The thread column is the app floor (s05); the cards posted into it are
+        the step above it, and a hovered message row lifts to `--surface-1`.
         No border of its own: the channels column's right hairline is the only
         division, and the composer pins to the bottom of this column, which is
         the bottom of the viewport.
