@@ -1346,6 +1346,23 @@ export interface paths {
         patch: operations["ChatReportController_resolveReport_v1"];
         trace?: never;
     };
+    "/v1/chat/reports/{id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachments an open report holds, with signed download URLs */
+        get: operations["ChatReportController_listReportAttachments_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat/reports/{id}/remove-message": {
         parameters: {
             query?: never;
@@ -3983,6 +4000,11 @@ export interface components {
             /** @description Optional free text from the reporter. */
             details?: string;
         };
+        ChatReportAttachmentSummaryDto: {
+            filename: string;
+            content_type: string | null;
+            byte_size: number | null;
+        };
         ChatReportDto: {
             /** Format: uuid */
             id: string;
@@ -4010,6 +4032,8 @@ export interface components {
             resolved_at: string | null;
             /** Format: uuid */
             resolved_by: string | null;
+            /** @description The message's attachments when the report was filed. Until the report is resolved and its files released, no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept. */
+            reported_attachments: components["schemas"]["ChatReportAttachmentSummaryDto"][];
         };
         ResolveChatReportDto: {
             /**
@@ -4017,6 +4041,13 @@ export interface components {
              * @enum {string}
              */
             status: "reviewed" | "actioned" | "dismissed";
+        };
+        ChatReportAttachmentDto: {
+            filename: string;
+            content_type: string | null;
+            byte_size: number | null;
+            /** @description Signed download URL, valid for an hour. It forces a download (Content-Disposition: attachment), so opening it saves the file; an <img> still renders an image from it. */
+            download_url: string;
         };
         ChatReportRemovalDto: {
             /** Format: uuid */
@@ -4045,6 +4076,8 @@ export interface components {
             resolved_at: string | null;
             /** Format: uuid */
             resolved_by: string | null;
+            /** @description The message's attachments when the report was filed. Until the report is resolved and its files released, no purge deletes them, so they stay reviewable after the sender deletes the message; once it resolves they are deleted unless another message or report still holds them. Empty for a message with none, and for reports filed before attachments were kept. */
+            reported_attachments: components["schemas"]["ChatReportAttachmentSummaryDto"][];
             /** @description True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way. */
             message_already_deleted: boolean;
             /**
@@ -8052,6 +8085,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatReportDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReportController_listReportAttachments_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReportAttachmentDto"][];
                 };
             };
             /** @description Error */
