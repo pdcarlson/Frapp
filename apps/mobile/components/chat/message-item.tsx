@@ -385,10 +385,13 @@ export function PinnedMarker({
 }
 
 /**
- * The trailing markers on a line of their own, where web draws them too: under
- * a card, or under an attachment-only message's photos, since neither has a
- * text line to trail (§11 § What rides the row). Nothing on a deleted message,
- * or one never edited or pinned.
+ * The trailing markers on a line of their own, under whatever the row draws
+ * when it has no text line to trail (§11 § What rides the row): a card, an
+ * attachment-only message's photos, or nothing at all for a body whose
+ * markdown draws nothing (`---`, a lone image). Web draws the first two the
+ * same way; for the last it keeps the markers in its body, which is empty, so
+ * they read the same. Nothing on a deleted message, or one never edited or
+ * pinned.
  */
 export function OwnLineMarkers({ message }: { message: ChatMessage }) {
   const { tokens } = useFrappTheme();
@@ -484,11 +487,16 @@ export function MessageItem({
   // text line they go on their own line under the photos (`OwnLineMarkers`).
   const edited = showsEditedMarker(message);
   const pinned = message.is_pinned && !message.is_deleted;
+  // Under a list, quote or code block the markers start a line of their own,
+  // so they lead with no space (`parsed.trailingOnOwnLine`).
+  const ownLine = parsed?.trailingOnOwnLine ?? false;
   const trailing =
     hasText && (edited || pinned) ? (
       <Text style={styles.trailing}>
-        {edited ? ` ${EDITED_MARKER}` : ""}
-        {pinned ? <PinnedMarker style={styles.trailing} /> : null}
+        {edited ? `${ownLine ? "" : " "}${EDITED_MARKER}` : ""}
+        {pinned ? (
+          <PinnedMarker style={styles.trailing} lead={edited || !ownLine} />
+        ) : null}
       </Text>
     ) : null;
 

@@ -83,17 +83,22 @@ function urlPrefixAt(content: string, index: number): boolean {
 }
 
 /**
- * The end (exclusive) of a bare URL starting at `start`: up to whitespace or
- * `<`, then trailing punctuation dropped, and a closing bracket dropped when
- * the URL does not open one (`(see https://x.test/a)` keeps its paren out,
- * `https://en.wikipedia.org/wiki/Frapp_(drink)` keeps it in). The bracket
- * counts are taken once and adjusted as characters drop, so a URL ending in a
- * long run of brackets is still one pass. `remarkBareUrls` also measures a URL
- * with it on the raw body, where the parser split it.
+ * The end (exclusive) of a bare URL starting at `start`: up to whitespace,
+ * `<` or `limit`, then trailing punctuation dropped, and a closing bracket
+ * dropped when the URL does not open one (`(see https://x.test/a)` keeps its
+ * paren out, `https://en.wikipedia.org/wiki/Frapp_(drink)` keeps it in). The
+ * bracket counts are taken once and adjusted as characters drop, so a URL
+ * ending in a long run of brackets is still one pass. `remarkBareUrls` also
+ * measures a URL with it on the raw body, where the parser split it, and caps
+ * it at the first thing a URL can't run through.
  */
-export function bareUrlEnd(content: string, start: number): number {
+export function bareUrlEnd(
+  content: string,
+  start: number,
+  limit = content.length,
+): number {
   let end = start;
-  while (end < content.length && !/[\s<]/.test(content[end]!)) end += 1;
+  while (end < limit && !/[\s<]/.test(content[end]!)) end += 1;
   let openParens = 0;
   let closeParens = 0;
   let openBrackets = 0;

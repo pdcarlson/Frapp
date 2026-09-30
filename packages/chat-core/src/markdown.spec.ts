@@ -119,23 +119,118 @@ describe("remarkBareUrls", () => {
     ).toEqual(["https://x.test/*a*b", "https://y.test"]);
   });
 
-  it("keeps the parse's split when the text is not its source verbatim", () => {
-    // An entity: the value no longer matches the body, so the URL is linked
-    // by the value it has.
-    const content = "https://x.test/&amp;__a__";
+  it("leaves what the URL cut from an emphasis as typed", () => {
+    // `bareUrlEnd` gives a trailing `_` back, as it would in plain text, so the
+    // closing `__` no longer closes anything and shows as typed.
+    const content = "https://x.test/pkg/__init__";
+    const open = content.indexOf("__");
     const paragraph: Node = {
       type: "paragraph",
       children: [
-        at(text("https://x.test/&"), 0, 20),
-        at({ type: "strong", children: [at(text("a"), 22, 23)] }, 20, 25),
+        at(text(content.slice(0, open)), 0, open),
+        at({ type: "strong", children: [at(text("init"), open + 2, open + 6)] }, open, content.length),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    const url = "https://x.test/pkg/__init";
+    expect(paragraph.children!.map((node) => ({ ...node, position: undefined }))).toEqual([
+      { type: "link", url, children: [text(url)] },
+      text("__"),
+    ]);
+  });
+
+  it.each([
+    ["inline code", { type: "inlineCode", value: "x" }, "`x`"],
+    ["a link", { type: "link", url: "https://y.test", children: [text("docs")] }, "[docs](https://y.test)"],
+  ])("stops the URL before %s, which keeps its own meaning", (_label, sibling, source) => {
+    const content = `https://x.test/*a*${source}`;
+    const open = content.indexOf("*");
+    const code = open + 3;
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text(content.slice(0, open)), 0, open),
+        at({ type: "emphasis", children: [at(text("a"), open + 1, open + 2)] }, open, code),
+        at(sibling as Node, code, content.length),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children!.map((node) => node.type)).toEqual(["link", "text", sibling.type]);
+    expect(paragraph.children![0]!.url).toBe("https://x.test/*a");
+  });
+
+  it("stops the URL before text that isn't its source verbatim", () => {
+    // `&#95;` decodes to `_`: an href built from the source would carry the
+    // entity, so the URL ends where the decoded text starts.
+    const content = "https://x.test/?q=*1*&#95;r=2";
+    const open = content.indexOf("*");
+    const close = open + 3;
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text(content.slice(0, open)), 0, open),
+        at({ type: "emphasis", children: [at(text("1"), open + 1, open + 2)] }, open, close),
+        at(text("_r=2"), close, content.length),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children![0]!.url).toBe("https://x.test/?q=*1");
+    expect(paragraph.children!.slice(1).map((node) => node.value)).toEqual(["*", "_r=2"]);
+  });
+
+  it("measures a URL whose node dropped a line's indent, from the node's end", () => {
+    // The parser drops a continuation line's indent from the value, so only
+    // the node's text from the URL on is compared with the body.
+    const content = "see\n   https://x.test/__a__.py";
+    const open = content.indexOf("__");
+    const close = open + 5;
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text("see\nhttps://x.test/"), 0, open),
+        at({ type: "strong", children: [at(text("a"), open + 2, open + 3)] }, open, close),
+        at(text(".py"), close, content.length),
+      ],
+    };
+    run({ type: "root", children: [paragraph] }, content);
+    expect(paragraph.children![1]).toMatchObject({ type: "link", url: "https://x.test/__a__.py" });
+  });
+
+  it("links by the value when the URL's own text isn't its source", () => {
+    // `&#00095;` decodes to `_`, seven characters shorter than its source.
+    // Measured anyway, the URL would be placed seven characters late in the
+    // body, where a second `http://` starts, and carry the entity raw.
+    const content = "http://http://x.test/&#00095;__a__.py";
+    const strong = content.indexOf("__");
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [
+        at(text("http://http://x.test/_"), 0, strong),
+        at({ type: "strong", children: [at(text("a"), strong + 2, strong + 3)] }, strong, strong + 5),
+        at(text(".py"), strong + 5, content.length),
       ],
     };
     run({ type: "root", children: [paragraph] }, content);
     expect(paragraph.children![0]).toEqual({
       type: "link",
-      url: "https://x.test/&",
-      children: [text("https://x.test/&")],
+      url: "http://http://x.test/",
+      children: [text("http://http://x.test/")],
     });
+  });
+
+  it("stays linear on a body of URLs split at emphasis", () => {
+    // `"http://a*b*"` repeated: each URL runs into the next, and a measurement
+    // that rescanned the rest of the body per node took seconds at this size.
+    const unit = "http://a*b*";
+    const content = unit.repeat(3_640);
+    const children: Node[] = [];
+    for (let i = 0; i < content.length; i += unit.length) {
+      children.push(at(text("http://a"), i, i + 8));
+      children.push(at({ type: "emphasis", children: [at(text("b"), i + 9, i + 10)] }, i + 8, i + 11));
+    }
+    const started = performance.now();
+    run({ type: "root", children: [{ type: "paragraph", children }] }, content);
+    expect(performance.now() - started).toBeLessThan(300);
   });
 
   it("walks a tree far deeper than the depth cap without recursing", () => {

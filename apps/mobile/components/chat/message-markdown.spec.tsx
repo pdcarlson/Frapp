@@ -196,6 +196,39 @@ describe("MessageMarkdown: links", () => {
     expect(links(render(content)).map(drawnText)).toEqual([url]);
   });
 
+  it.each([
+    ["after a line break", "line one\nhttps://x.test/pkg/__init__.py"],
+    ["after a trailing space and a line break", "see \nhttps://x.test/pkg/__init__.py"],
+    ["on an indented continuation line", "see\n   https://x.test/pkg/__init__.py"],
+    ["in a quote's second line", "> see\n> https://x.test/pkg/__init__.py"],
+    ["in a list item's second line", "- see\n  https://x.test/pkg/__init__.py"],
+  ])("links a split URL %s whole", (_label, content) => {
+    // Pins `remarkBareUrls` ahead of `remark-breaks`, whose split text nodes
+    // carry no positions to measure by.
+    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual([
+      "https://x.test/pkg/__init__.py",
+    ]);
+  });
+
+  it.each([
+    ["inline code", "https://x.test/`x`", ["https://x.test/"], 1],
+    ["a link", "https://x.test/[docs](https://y.test)", ["https://x.test/", "https://y.test"], 0],
+  ])("ends a bare URL before %s, which keeps its own meaning", (_label, content, hrefs, code) => {
+    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual(hrefs);
+    const tree = render(content);
+    expect(
+      texts(tree).filter((node) => fontOf(node) === MONO_FONT_FAMILY),
+    ).toHaveLength(code);
+  });
+
+  it("leaves what a URL cut from an emphasis as typed", () => {
+    const content = "https://x.test/pkg/__init__ is new";
+    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual([
+      "https://x.test/pkg/__init",
+    ]);
+    expect(drawn(content)).toBe(content);
+  });
+
   it("links the URL after one it had to measure on the raw body", () => {
     expect(
       parseMessageMarkdown("https://x.test/__a__.py and https://y.test").links.map(
@@ -204,13 +237,6 @@ describe("MessageMarkdown: links", () => {
     ).toEqual(["https://x.test/__a__.py", "https://y.test"]);
   });
 
-  it("keeps the parse's link when the raw URL would end inside emphasis", () => {
-    // `bareUrlEnd` gives trailing `_` back (for `__https://x.test__`), so the
-    // raw URL stops inside the bold; there is no whole URL to link instead.
-    expect(parseMessageMarkdown("https://x.test/__a__").links).toEqual([
-      { text: "https://x.test/", href: "https://x.test/" },
-    ]);
-  });
 
   it("names a link across a line break with a space, as a reader hears it", () => {
     const content = "[click\nhere](https://x.test)";
@@ -332,10 +358,17 @@ describe("MessageMarkdown: trailing markers", () => {
     ["a code block", "```\ncode\n```", "code"],
     ["a list", "- a\n- b", "a\nb"],
     ["a quote", "> quoted", "quoted"],
-    ["a heading", "text\n# Big", "text\n\nBig"],
   ])("take a line of their own after %s, as §11 says", (_label, content, body) => {
     const tree = render(content, { trailing: "(edited)" });
     expect(drawnText(texts(tree)[0]!)).toBe(`${body}\n(edited)`);
+  });
+
+  it.each([
+    ["a heading", "# Release notes", "Release notes"],
+    ["raw HTML", "<div>x</div>", "<div>x</div>"],
+  ])("trail %s on its line, as on web", (_label, content, body) => {
+    const tree = render(content, { trailing: " (edited)" });
+    expect(drawnText(texts(tree)[0]!)).toBe(`${body} (edited)`);
   });
 
   it("stay on the line after a paragraph that follows a list", () => {

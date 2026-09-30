@@ -727,6 +727,36 @@ describe("links in a message are tappable (#2775)", () => {
   });
 });
 
+describe("markers under a list (#2861)", () => {
+  it("start their own line with no leading space", () => {
+    const tree = renderItem(
+      message({
+        content: "- a\n- b",
+        edited_at: "2026-09-29T18:00:00Z",
+        is_pinned: true,
+      }),
+    );
+    const body = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        Array.isArray(node.props.style) &&
+        drawnText(node).startsWith("a"),
+    );
+    expect(drawnText(body)).toBe(`a\nb\n${EDITED_MARKER} · Pinned`);
+  });
+
+  it("drop the Pinned separator when Pinned starts the line", () => {
+    const tree = renderItem(message({ content: "- a", is_pinned: true }));
+    const body = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        Array.isArray(node.props.style) &&
+        drawnText(node).startsWith("a"),
+    );
+    expect(drawnText(body)).toBe("a\nPinned");
+  });
+});
+
 describe("a body whose markdown draws nothing (#2861)", () => {
   it("draws no text line, and puts the markers on a line of their own", () => {
     const tree = renderItem(

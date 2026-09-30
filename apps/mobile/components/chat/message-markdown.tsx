@@ -70,9 +70,10 @@ export interface ParsedMessageMarkdown {
    */
   empty: boolean;
   /**
-   * The body's last block is not a paragraph (a list, a quote, a heading, a
+   * The body ends in a block that keeps lines of its own (a list, a quote, a
    * code block), so the trailing markers take a line of their own under it
-   * (`components.md` §11 § What rides the row).
+   * rather than breaking it (`components.md` §11 § What rides the row). A
+   * heading or raw HTML reads as a line of text, and they trail it, as on web.
    */
   trailingOnOwnLine: boolean;
 }
@@ -94,6 +95,9 @@ const ALLOWED = new Set(MESSAGE_MARKDOWN_ELEMENTS);
 
 /** The elements web draws as blocks. Everything else flows inline. */
 const BLOCKS = new Set(["p", "pre"]);
+
+/** The blocks the trailing markers go under rather than after (§11). */
+const OWN_LINE_AFTER = new Set(["pre", "ul", "ol", "blockquote"]);
 
 /** Breaks between two blocks: web's `pre-wrap` shows a paragraph gap, one blank line. */
 const MAX_BREAKS = 2;
@@ -214,7 +218,8 @@ function rehypeTextFlow(result: TextFlowResult) {
   return (root: HastNode): void => {
     // Read before the allowlist unwraps the blocks it is asking about.
     const last = (root.children ?? []).filter((node) => !isSeparator(node)).pop();
-    result.trailingOnOwnLine = last !== undefined && !isElement(last, "p");
+    result.trailingOnOwnLine =
+      last?.type === "element" && OWN_LINE_AFTER.has(last.tagName ?? "");
     root.children = layOut(applyAllowlist(root.children ?? []));
     result.links = collectLinks(root);
     result.empty = textOf(root).trim() === "";
