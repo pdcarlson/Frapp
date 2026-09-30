@@ -22,7 +22,9 @@ import * as productionGuardrails from "../production-guardrails.mjs";
 import * as productionReleasePin from "../production-release-pin.mjs";
 import * as productionUptime from "../production-uptime.mjs";
 import * as routineHeartbeat from "../routine-heartbeat.mjs";
+import * as sentrySourcemapsAlert from "../sentry-sourcemaps-alert.mjs";
 import * as stagingConformance from "../staging-conformance.mjs";
+import * as supabaseQuota from "../supabase-quota.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
 
@@ -50,7 +52,8 @@ function codeLines(source) {
     .join("\n");
 }
 
-// One row per alert. deploy-alert.mjs serves two workflows from one table.
+// One row per alert. deploy-alert.mjs serves two workflows from one table, and
+// sentry-sourcemaps-alert.mjs one alert per project and environment.
 const FLAT = {
   "check-migration-drift": checkMigrationDrift,
   "pr-base-sync": prBaseSync,
@@ -63,6 +66,7 @@ const FLAT = {
   "production-uptime": productionUptime,
   "routine-heartbeat": routineHeartbeat,
   "staging-conformance": stagingConformance,
+  "supabase-quota": supabaseQuota,
 };
 const ALERTS = [
   ...Object.entries(FLAT).map(([script, mod]) => ({ name: script, script, alert: mod.ALERT })),
@@ -70,6 +74,12 @@ const ALERTS = [
     name: `deploy-alert:${config.name}`,
     script: "deploy-alert",
     alert: config.alert,
+  })),
+  // One alert per Sentry project and environment (#2489).
+  ...Object.entries(sentrySourcemapsAlert.ALERTS).map(([key, alert]) => ({
+    name: `sentry-sourcemaps-alert:${key}`,
+    script: "sentry-sourcemaps-alert",
+    alert,
   })),
 ];
 

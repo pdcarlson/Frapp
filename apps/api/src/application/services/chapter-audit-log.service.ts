@@ -25,8 +25,10 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
  * Not the type of {@link RecordAuditEntryInput.diff}, deliberately: that stays
  * the looser `Record<string, unknown>` because other writers record a flat
  * payload instead (`member.service.ts` a `user_id`, `rbac.service.ts` a
- * claiming member id). This alias is what a from/to caller declares its own
- * `diff` as, so the envelope stays checked where it is the contract —
+ * claiming member id), and `role_updated` records `permissions` as
+ * `{ added, removed }` rather than both arrays (#2599). This alias is what a
+ * from/to caller declares its own `diff` as, so the envelope stays checked
+ * where it is the contract —
  * `packages/chat-integrations/src/payloads.ts` documents it, nothing enforces
  * it at runtime, and `chapter_audit_log` is append-only, so a malformed row
  * cannot be corrected afterwards.
