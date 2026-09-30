@@ -1325,7 +1325,8 @@ describe("native permission declarations (#2296)", () => {
     "cameraPermission",
     // study zones, and the check-in location confirm
     "locationWhenInUsePermission",
-    // lib/chat/attachment-upload.ts → requestMediaLibraryPermissionsAsync()
+    // lib/chat/attachment-upload.ts → requestMediaLibraryPermissionsAsync(),
+    // reached from a chat photo and from lib/more/profile-photo.ts (s15)
     "photosPermission",
   ];
 
@@ -1376,7 +1377,7 @@ describe("native permission declarations (#2296)", () => {
       ["expo-image-picker:microphonePermission", false],
       [
         "expo-image-picker:photosPermission",
-        "Frapp uses your photo library so you can send photos in chapter chat.",
+        "Frapp uses your photo library so you can set your profile photo and send photos in chapter chat.",
       ],
       ["expo-location:locationAlwaysAndWhenInUsePermission", false],
       ["expo-location:locationAlwaysPermission", false],
