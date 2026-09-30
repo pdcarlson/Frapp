@@ -74,7 +74,7 @@ const ALERTS = [
 ];
 
 test("the lookup label and assignee are the ones ADR-24 decision 2 names", () => {
-  // AGENTS.md, /next §0.2 and GITHUB_PM.md skip issues by this label name, so
+  // AGENTS.md, /next §0.2 and github-pm.md skip issues by this label name, so
   // it cannot move without them.
   assert.equal(ALERT_LOOKUP_LABEL, "incident");
   assert.equal(ALERT_ASSIGNEE, "pdcarlson");

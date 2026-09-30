@@ -7,7 +7,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 > **For the complete variable list per app per environment, see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md).**
 > This document covers the Infisical setup, sync configuration, and operational procedures.
 >
-> **Keeping secrets out of git:** a `gitleaks` pre-commit + CI gate scans for accidentally committed secrets — see [`../ci-cd/SECRET_SCANNING.md`](../ci-cd/SECRET_SCANNING.md).
+> **Keeping secrets out of git:** a `gitleaks` pre-commit + CI gate scans for accidentally committed secrets — see [`../../ci-cd/secret-scanning.md`](../../ci-cd/secret-scanning.md).
 
 ## Key Design Principles
 
@@ -329,7 +329,7 @@ anyway. Real rotation is provider first, then Infisical — never Vercel.
 Add these as **environment** secrets (Settings → Environments → the environment → Environment
 secrets), never as repository secrets. Which environment holds which secret, and the `main`-only
 branch rule each environment needs first, is the roster in
-[`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets).
+[`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets).
 
 **Infisical bootstrap (permanent), one copy per environment that injects:**
 
@@ -359,7 +359,7 @@ end-to-end sign-in assertion reports **SKIPPED** rather than passing — it neve
 
 Worth knowing before treating that as optional: this is the **only behavioural** assertion the
 workflow makes — everything else in the 07:30 roster in
-[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md#scheduled-conformance-scriptscistaging-conformancemjs)
+[`agent-infra.md`](../../ci-cd/agent-infra.md#scheduled-conformance-scriptscistaging-conformancemjs)
 reads provider state. Migration
 parity is not among them: `check-migration-drift.yml` owns it, and the conformance table lists it
 only as a pointer. So an unprovisioned smoke user leaves the workflow asserting configuration and
@@ -383,7 +383,7 @@ much.
 
 **Not GitHub secrets — injected from Infisical at job time:**
 
-The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies of these values. That is still wrong, because Infisical serves them (#772). The only GitHub secrets are the credentials in the roster [`AGENT_INFRA.md` § GitHub environments and bootstrap secrets](../ci-cd/AGENT_INFRA.md#github-environments-and-bootstrap-secrets) lists.)
+The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies of these values. That is still wrong, because Infisical serves them (#772). The only GitHub secrets are the credentials in the roster [`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets) lists.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |
@@ -401,7 +401,7 @@ The table below describes the sites that **fail** on a missing credential: every
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| **Fails**, naming the secret           | `INFISICAL_MACHINE_IDENTITY_ID` and/or `INFISICAL_CLIENT_SECRET` is unset or empty in this scope | Add it as an environment secret on the environment the job names (`AGENT_INFRA.md` roster), never as a repository secret |
+| **Fails**, naming the secret           | `INFISICAL_MACHINE_IDENTITY_ID` and/or `INFISICAL_CLIENT_SECRET` is unset or empty in this scope | Add it as an environment secret on the environment the job names (`agent-infra.md` roster), never as a repository secret |
 | **Passes with a whitespace warning**, then 401 | A value carries a stray leading or trailing character — usually a newline picked up when pasting | Re-paste both secrets in GitHub *before* rotating anything in Infisical                    |
 | **Passes** cleanly, then injection 401s | The credentials exist and are well-formed, but Infisical rejected them | **Check whether they ever worked before rotating** — see below |
 

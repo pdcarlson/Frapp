@@ -45,7 +45,7 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
 Treat this guide as the target-state runbook plus current operational notes.
 For live rollout tracking, see **GitHub Issues** — work status is not a doc
 ([`DOCUMENTATION_CONVENTIONS.md`](../../DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives,
-[`GITHUB_PM.md`](../../ci-cd/GITHUB_PM.md)).
+[`github-pm.md`](../../../ci-cd/github-pm.md)).
 
 ---
 

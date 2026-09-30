@@ -4,7 +4,7 @@
 How it relates to code, and what to do when they disagree:
 [`AGENTS.md` § Spec vs code](../AGENTS.md#spec-vs-code). This tree is purely topical and canonical — work
 tracking and delivery sequencing live in **GitHub Issues** (see
-[`docs/internal/ci-cd/GITHUB_PM.md`](../docs/internal/ci-cd/GITHUB_PM.md)), not here. Developer
+[`docs/ci-cd/github-pm.md`](../docs/ci-cd/github-pm.md)), not here. Developer
 workflows and runbooks live under **`docs/`** — start at [`docs/README.md`](../docs/README.md) and
 [`docs/guides/README.md`](../docs/guides/README.md).
 
@@ -27,6 +27,6 @@ Security implementation notes live under [`docs/security/`](../docs/security/REA
 
 Initiatives that build on this spec — currently the **chat-rework** effort plus Analytics, Pricing &
 billing, and Agent-infrastructure — are tracked in **GitHub Issues** as `[Epic]` parent issues with
-sub-issues, not here. See [`docs/internal/ci-cd/GITHUB_PM.md`](../docs/internal/ci-cd/GITHUB_PM.md)
+sub-issues, not here. See [`docs/ci-cd/github-pm.md`](../docs/ci-cd/github-pm.md)
 for the model and how agents reach it (GitHub MCP). Status (shipped / queued) lives in the tracker;
 this index intentionally carries no status table.

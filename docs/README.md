@@ -1,13 +1,13 @@
 # Documentation index
 
-Developer guides and operator runbooks. Product and architecture truth lives in **[`spec/`](../spec/README.md)**; work tracking lives in **GitHub Issues** (see [`internal/ci-cd/GITHUB_PM.md`](internal/ci-cd/GITHUB_PM.md)).
+Developer guides and operator runbooks. Product and architecture truth lives in **[`spec/`](../spec/README.md)**; work tracking lives in **GitHub Issues** (see [`ci-cd/github-pm.md`](ci-cd/github-pm.md)).
 
 ## Folders
 
 Which directory owns which kind of change — across `docs/`, `docs/internal/` and `spec/` — is stated
 once, in [`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](internal/DOCUMENTATION_CONVENTIONS.md#where-things-go).
 This index does not restate it; it only routes:
-[`guides/`](guides/README.md), [`internal/`](internal/README.md), [`mobile/`](mobile/),
+[`guides/`](guides/README.md), [`internal/`](internal/README.md), [`ci-cd/`](ci-cd/), [`mobile/`](mobile/),
 [`performance/`](performance/README.md), [`security/`](security/README.md), [`hooks/`](hooks/README.md).
 
 The design system (tokens, components, iconography, microcopy, accent engine) lives in **[`spec/ui/design-system/`](../spec/ui/design-system/README.md)**.
@@ -16,10 +16,10 @@ The design system (tokens, components, iconography, microcopy, accent engine) li
 
 What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](internal/DOCUMENTATION_CONVENTIONS.md)**.
 
-The docs CI checks — what they do and do not enforce — are described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md). None of them require a PR to touch a doc.
+The docs CI checks — what they do and do not enforce — are described in [`ci-cd/docs-ci.md`](ci-cd/docs-ci.md). None of them require a PR to touch a doc.
 
 The other quality gates are in
-[`internal/ci-cd/QUALITY_GATES.md`](internal/ci-cd/QUALITY_GATES.md), which also records *why* each
+[`ci-cd/quality-gates.md`](ci-cd/quality-gates.md), which also records *why* each
 one is required, advisory, or `warn`. This index does not enumerate them — a second copy of that
 roster drifts, and the last one did: it dropped required gates and listed one that is not a gate.
 

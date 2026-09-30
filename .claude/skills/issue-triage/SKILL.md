@@ -20,8 +20,8 @@ the [board-health report](#board-health-report) is written.
 ## Ownership: organize freely, destroy narrowly
 
 The shared contract is
-[`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
-and [→ Tracker access](../../../docs/internal/ci-cd/ROUTINES.md#tracker-access-shared-by-all-routines):
+[`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
+and [→ Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines):
 GitHub MCP only (stop and report if it's unavailable), Linear is retired, no product code. Triage
 organizes the whole inbox, whoever filed it, but destroys only what agents own.
 
@@ -43,10 +43,10 @@ organizes the whole inbox, whoever filed it, but destroys only what agents own.
   [self-maintenance](#self-maintenance-update-yourself) PR.
 
 **Reading before a body edit.** Start each run with the marker-count guard in
-[`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
+[`github-pm.md`](../../../docs/ci-cd/github-pm.md#marker-count-guard-so-the-next-regression-surfaces-in-one-run).
 Whether a body edit may be sourced from an MCP read is a measurement that has flipped before, not
 a fixed fact: the table, the probe, and the fallback when it's red are in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+[`github-pm.md` → Reading a body you intend to rewrite](../../../docs/ci-cd/github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 A brief backfill touches many bodies, so before one, re-run the probe against fixture #1736 and
 record the result in the report. If a leg can't run (say, the direct REST read hits a rate limit),
 say so rather than reporting an unqualified green. When the probe is red, add a
@@ -69,7 +69,7 @@ List every open issue labeled `triage`. For each:
    clear.
 3. **Agent brief.** On `suggestion`-owned items, add a missing `### Agent brief` (format in the
    [curator skill](../issue-curator/SKILL.md#agent-brief), field policy in
-   [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode)),
+   [`github-pm.md`](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)),
    and correct one that's mis-calibrated (a schema-touching change marked `skim`) or out of
    roster. Test each value against the roster (`depth:skim|standard|deep`, `model:fable|any`,
    `ultracode:yes|no`) rather than a list of known-bad spellings, since new ones keep appearing.
@@ -92,7 +92,7 @@ List every open issue labeled `triage`. For each:
    - A child that names its parent (`Umbrella: #N`, `Epic: #N`) is evidence about #N even when #N
      has no epic title and no children yet. Attach on that claim: it flips `has_children`, which
      lets the `Fixes`-vs-`Part of` guard in
-     [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md) stop a single-slice PR from
+     [`github-pm.md`](../../../docs/ci-cd/github-pm.md) stop a single-slice PR from
      closing the whole umbrella. Never infer an umbrella from topic similarity.
    - `sub_issue_write` takes the parent's `issue_number` and the child's `sub_issue_id`, which is
      its internal id, not its number. Get it from an `issue_write` result or `issue_read get`;
@@ -130,13 +130,13 @@ keeps real work from being buried under suggestions in `/next`.
 - **Stale and duplicates:** add `stale` to obviously aging suggestions the curator missed. Close
   or dedup only `suggestion`-owned issues, and only with proof. Never mark a `scope:production`
   issue `stale` or raise its priority for age; those are parked by owner decision (see the roster
-  in ROUTINES.md).
+  in routines.md).
 - **Ownership:** on human and planning issues in the Backlog, only fill an absent priority. Don't
   re-bucket, re-prioritize, close, or re-body them, and don't restructure epics.
 
 ## Comment once, not once per run
 
-[`ROUTINES.md` rule 6](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+[`routines.md` rule 6](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
 is the canonical statement, and it binds every comment this routine writes: holds, brief
 corrections, Blocked-by notes, and their Pass B equivalents. Before commenting, read the issue's
 comments (`issue_read get_comments`). If a standing comment already says it and is still
@@ -154,9 +154,9 @@ genuinely new blocker to avoid a second comment is the worse failure.
 ## Self-maintenance (update yourself)
 
 At the end of the run, check this file and the shared config in
-[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md) against the live repo: label roster,
+[`routines.md`](../../../docs/ci-cd/routines.md) against the live repo: label roster,
 links, tool names. Act on drift at most once per run, under the contract in
-[`ROUTINES.md` → Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract),
+[`routines.md` → Self-maintenance](../../../docs/ci-cd/routines.md#self-maintenance-the-update-themselves-contract),
 which sets the allowed paths and limits: mechanical drift gets the docs-only PR, and
 judgment-laden drift gets a `suggestion` (`area:docs`).
 

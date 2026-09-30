@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 // against the run's ref and releases the environment's secrets only to a job
 // that passed it. So the secrets belong there, and every consumer names one of
 // those environments. The owner's #2583 set the policies and moved the secrets;
-// the live state is in AGENT_INFRA.md § No repository secrets.
+// the live state is in agent-infra.md § No repository secrets.
 //
 // This file cannot check the live settings (the policies, and whether the
 // repository-level copies are gone). They are an owner step, and the doc
@@ -49,7 +49,7 @@ import { fileURLToPath } from "node:url";
 // `secrets.GITHUB_TOKEN` is exempt: it is the job's own token, minted per run,
 // scoped by `permissions:`, and not a stored secret.
 //
-// Environments and their policies: docs/internal/ci-cd/AGENT_INFRA.md
+// Environments and their policies: docs/ci-cd/agent-infra.md
 // § GitHub environments and bootstrap secrets.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
