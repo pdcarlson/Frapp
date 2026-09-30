@@ -396,10 +396,9 @@ export class ChatReportService {
    *    what the report says:
    *    - **A 4xx** was decided before anything was written — the access check
    *      refused this caller ({@link decidedBeforeWrite}) — so the claim is
-   *      withdrawn ({@link releaseClaim}): this call removed nothing, and the
-   *      record must not say it did. A refusal is never an answer about the
-   *      message: an officer removed from the chapter mid-request must get the
-   *      403, not "already removed".
+   *      withdrawn ({@link releaseClaim}) whatever state the message is in. A
+   *      refusal is never an answer about the message: an officer removed
+   *      from the chapter mid-request must get the 403, not "already removed".
    *    - **Anything else** is not proof that nothing was written, because
    *      Postgres can commit the tombstone and the answer still be lost on the
    *      way back, so the message is read again
@@ -412,21 +411,6 @@ export class ChatReportService {
    *      over a removed message for a Dismiss to record as "left up". The
    *      client says the outcome is unknown and refetches, and a retry gets
    *      the report-level replay's 200.
-   *
-   *    **A withdrawn claim is checked once more** (#2748). While it stood,
-   *    the report was `actioned`, so another officer's removal through a
-   *    sibling report swept past it, and the sender may have deleted the
-   *    message too. So once the claim is withdrawn the message is read again
-   *    ({@link closeIfRemovedMeanwhile}) — after the withdrawal, so a racing
-   *    removal is always seen: its sweep runs after its delete, so either the
-   *    sweep closes this report or the delete is visible to the read. If the
-   *    message is soft-deleted, the report closes as `actioned` with **no
-   *    officer stamp**, the close a report filed onto a message deleted as it
-   *    landed gets. Nothing recorded says whose delete that was — the racing
-   *    officer's, the sender's, or this request's own late commit — so the
-   *    record credits nobody rather than guess. A hard-deleted message leaves
-   *    the report open with `message_id` NULL for an explicit Mark actioned,
-   *    like its siblings (below).
    * 3. **Sweep.** Every other open report on the message closes, in one
    *    conditional `UPDATE` stamped with this officer and the claim's
    *    timestamp. It runs *after* the delete so it also catches a report filed
@@ -590,11 +574,7 @@ export class ChatReportService {
           chapterId,
         );
     if (!state?.isDeleted) {
-      if (
-        await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt)
-      ) {
-        await this.closeIfRemovedMeanwhile(reportId, messageId, chapterId);
-      }
+      await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt);
       return;
     }
     await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
@@ -619,67 +599,14 @@ export class ChatReportService {
   }
 
   /**
-   * After a failed removal's claim is withdrawn: if the message has been
-   * soft-deleted by now, close the report as `actioned` with no officer stamp
-   * (`closeForDeletedMessage`, conditional on `open`), so it does not return to
-   * the queue over a message that is gone (#2748).
-   *
-   * No stamp, because nothing says whose delete it was: another officer's
-   * removal whose sweep skipped this report while the claim held it, the
-   * sender's own delete, or this request's own write committing after the
-   * first read. Crediting any officer would be a guess, and the moderation
-   * record must not guess. The removal's own error is still what the officer
-   * gets.
-   *
-   * Left open: a message still there (the ordinary retry state), one
-   * hard-deleted (`null` — see the hard-delete rule on
-   * {@link removeReportedMessage}), and a read or close that fails, which is
-   * logged. That leaves a report open over a deleted message, which an
-   * officer's Remove then closes idempotently as "already removed".
-   */
-  private async closeIfRemovedMeanwhile(
-    reportId: string,
-    messageId: string,
-    chapterId: string,
-  ): Promise<void> {
-    let state: ReportedMessageState | null;
-    try {
-      state = await this.chatService.reportedMessageState(messageId, chapterId);
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Could not re-read the message of chat report ${reportId} after withdrawing a failed removal's claim; the report stays open`,
-        error,
-      );
-      return;
-    }
-    if (!state?.isDeleted) return;
-    try {
-      await this.reportRepo.closeForDeletedMessage(
-        reportId,
-        chapterId,
-        new Date().toISOString(),
-      );
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Could not close chat report ${reportId}, whose message was deleted while a failed removal held it; the report stays open`,
-        error,
-      );
-    }
-  }
-
-  /**
    * The message as it stands after its removal reported a failure, read
    * chapter-scoped and without content ({@link ChatService.reportedMessageState}).
    *
    * Null when it cannot say the message is gone: the row no longer exists, or
    * the read itself failed. The caller then withdraws the claim, as it did
    * before this check existed — a report left `actioned` over a message still
-   * in place would refuse the retry (409) — and checks the message once more
-   * after the withdrawal ({@link closeIfRemovedMeanwhile}).
+   * in place would refuse the retry (409), where a reopened one over a message
+   * already removed is closed by it.
    */
   private async messageStateAfterFailedRemoval(
     reportId: string,
@@ -710,16 +637,13 @@ export class ChatReportService {
    * and the partial unique index refuses a second open one — is logged at
    * `error`, because the record now says `actioned` over a message that may
    * still be there, and a person has to look.
-   *
-   * Answers whether the report is `open` again, which is when the caller
-   * re-checks the message.
    */
   private async releaseClaim(
     reportId: string,
     chapterId: string,
     officerUserId: string,
     resolvedAt: string,
-  ): Promise<boolean> {
+  ): Promise<void> {
     try {
       const released = await this.reportRepo.releaseClaim(
         reportId,
@@ -733,7 +657,6 @@ export class ChatReportService {
           { reportId, chapterId },
         );
       }
-      return released;
     } catch (error) {
       logThrowable(
         this.logger,
@@ -741,7 +664,6 @@ export class ChatReportService {
         `Could not release the claim on chat report ${reportId} after a failed removal`,
         error,
       );
-      return false;
     }
   }
 

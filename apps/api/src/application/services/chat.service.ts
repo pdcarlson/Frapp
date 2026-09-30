@@ -1283,19 +1283,15 @@ export class ChatService {
    * channel delete or the import purge).
    *
    * **A state read, not an authorization.** It returns no content and grants
-   * nothing, and its callers are all in `ChatReportService`, each passing a
-   * message id it already holds by right: a message the reporter was just
-   * authorized to read (the re-check after a report is written); the message a
-   * chapter-scoped, reviewer-visible report names, for the removal route's
-   * answer to a report that is already `actioned`; and the same message after
-   * a removal of it failed, from a report that call had just claimed —
-   * `messageStateAfterFailedRemoval` on a 5xx or a lost response, and
-   * `closeIfRemovedMeanwhile` once the claim is withdrawn, 4xx included
-   * (#2748). That last one also runs for an officer the access check has just
-   * refused, which is safe only because this answers nothing but "deleted or
-   * not" and the channel id, and its one use is to close that report, with no
-   * officer stamp, when its message is already gone. The channel must
-   * still resolve inside `chapterId`, as every message path here requires.
+   * nothing, and it has exactly three callers in `ChatReportService`, each
+   * passing a message id it already holds by right: a message the reporter
+   * was just authorized to read (the re-check after a report is written); the
+   * message a chapter-scoped, reviewer-visible report names, for the removal
+   * route's answer to a report that is already `actioned`; and the same
+   * message after a removal of it failed on a 5xx or a lost response
+   * (`messageStateAfterFailedRemoval`), from a report that call had just
+   * claimed. The channel must still resolve inside `chapterId`, as every
+   * message path here requires.
    */
   async reportedMessageState(
     messageId: string,

@@ -194,11 +194,8 @@ export interface IChatMessageReportRepository {
    * For a report that landed on a message removed while it was being written
    * (`ChatReportService.fileReport`): the removal's sweep had already run, so
    * nothing else would close it, and leaving it open would page every officer
-   * about a message that is already gone. And for a report a failed removal
-   * just withdrew its claim from, whose message was soft-deleted while the
-   * claim held it (#2748): a sibling's removal swept past it, the sender
-   * deleted it, or the failed request's own write landed late — nothing says
-   * which. No officer is known to have decided it, so none is stamped. Scoped by chapter and conditional on `status = 'open'` like every
+   * about a message that is already gone. No officer decided it, so none is
+   * stamped. Scoped by chapter and conditional on `status = 'open'` like every
    * write here.
    */
   closeForDeletedMessage(
