@@ -83,9 +83,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     polling behind it. `configure` now follows the viewer itself: it tracks a
     viewer who resolves after the join on the channel already joined, and
     rejoins every channel for a different one, so presence names the right
-    member (ADR-10). Mobile's runtime already rebound this way. `supabase` is fixed for the mount and `queryClient` is
-    the app's one client, so a rebind never has to move a channel to another
-    client.
+    member (ADR-10). Mobile's runtime already rebound this way. `supabase` is
+    fixed for the mount and `queryClient` is the app's one client, so a rebind
+    never has to move a channel to another client.
   */
   useEffect(() => {
     chatRealtime.configure({
