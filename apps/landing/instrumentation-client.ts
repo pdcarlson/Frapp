@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { SENTRY_BROWSER_TRACING_OPTIONS } from "@repo/observability/next";
+import { sentryEnvelopeScrubIntegration } from "@repo/observability/next";
 import { initLandingPostHog } from "./lib/posthog/client";
 import { withPostHogSentryCorrelation } from "./lib/sentry/correlation";
 import {
@@ -25,11 +25,10 @@ if (dsn) {
   Sentry.init({
     ...options,
     beforeSend: withPostHogSentryCorrelation(options.beforeSend),
-    // Replaces the SDK's default instance to turn INP off. See
-    // `SENTRY_BROWSER_TRACING_OPTIONS`.
-    integrations: [
-      Sentry.browserTracingIntegration(SENTRY_BROWSER_TRACING_OPTIONS),
-    ],
+    // Scrubs what the SDK sends without an event: the standalone INP span,
+    // named after the clicked element's selector (#2736). See
+    // `sentryEnvelopeScrubIntegration`.
+    integrations: [sentryEnvelopeScrubIntegration()],
   });
 }
 

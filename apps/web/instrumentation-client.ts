@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { buildWebSentryOptions, webSentryDsn } from "@/lib/sentry/options";
-import { SENTRY_BROWSER_TRACING_OPTIONS } from "@repo/observability/next";
+import { sentryEnvelopeScrubIntegration } from "@repo/observability/next";
 import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
 import { initWebPostHog } from "@/lib/posthog/client";
 
@@ -32,16 +32,16 @@ if (dsn) {
     ...options,
     beforeSend: withPostHogSentryCorrelation(options.beforeSend),
     integrations: [
-      // Replaces the SDK's default instance (an app-supplied integration
-      // wins over the default of the same name), to turn INP off. See
-      // `SENTRY_BROWSER_TRACING_OPTIONS`.
-      Sentry.browserTracingIntegration(SENTRY_BROWSER_TRACING_OPTIONS),
       // Added to the defaults. SDK v11 moved `performance.mark`/`measure`
       // spans out of `browserTracingIntegration` into this opt-in
       // integration; without it the cold-load milestones in
       // `lib/chat/cold-load-marks.ts` stop reaching Sentry with no error
       // (#2722).
       Sentry.userTimingIntegration(),
+      // Scrubs what the SDK sends without an event: the standalone INP span,
+      // named after the clicked element's selector, member and channel
+      // names included (#2736). See `sentryEnvelopeScrubIntegration`.
+      sentryEnvelopeScrubIntegration(),
     ],
   });
 }
