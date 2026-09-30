@@ -118,6 +118,15 @@ the API.
 - **`verify_jwt = false`**, in `supabase/config.toml`, which the deploy reads. The function checks the
   caller's service credential itself, and that check also accepts the newer `sb_secret_…` keys, which
   the platform's JWT check refuses.
+- **How it checks the caller** (`callerVerdict` in `handler.ts`). A key that matches the function's own
+  `SUPABASE_SERVICE_ROLE_KEY` or one of its `SUPABASE_SECRET_KEYS` byte for byte is accepted with no
+  network call. Any other key goes to Auth's admin API (`/auth/v1/admin/users`, the exact query is in
+  `callerVerdict`) and is accepted only on a 200, which Auth gives a service credential and nothing else,
+  whatever its bytes. That second step exists because on staging the API's legacy key matched neither of
+  the function's, so every copy got a 401 (#2981). Auth answering 401 or 403 makes the request a 401.
+  Auth answering anything else, failing, or not answering within `AUTH_CHECK_TIMEOUT_MS` makes it a 503
+  that names the cause, which the API retries and logs. Storage writes always use the function's own
+  key, never the caller's.
 - **No secrets of its own.** It reads the platform's default `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
   and `SUPABASE_SECRET_KEYS`.
 - **No region pin.** `frapp-prod` is in `us-east-2`, which Edge Functions do not offer as an
