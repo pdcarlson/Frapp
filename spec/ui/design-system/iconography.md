@@ -178,18 +178,18 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Backwork | `BackworkGlyph` |
 | Directory | `DirectoryGlyph` |
 | Billing | `BillingGlyph` |
-| Roles | `RolesGlyph` |
-| Study Zones | `StudyZonesGlyph` |
-| Discord Import | `ImportGlyph` |
-| Chat Admin | `ChannelsGlyph` |
-| Reports | `ReportsGlyph` |
 | Settings | `SettingsGlyph` |
 | Search (top bar) | `SearchGlyph` |
 | Notifications (top bar) | `NotificationsGlyph` |
 | Mobile nav trigger (top bar) | `MenuGlyph` |
 
 Service hours and Reports are now distinct glyphs (heart vs. chart-in-frame) —
-the legacy nav's `FileText` double-duty is resolved. Utility glyphs inside the
+the legacy nav's `FileText` double-duty is resolved. The nav's Admin group
+(Roles, Study Zones, Discord Import, Chat Admin, Reports) folded into the
+Settings row in #2946, so those intents left this table. `RolesGlyph`,
+`StudyZonesGlyph` and `ReportsGlyph` survive in `nav-glyphs.tsx` because
+in-screen surfaces import them. `ImportGlyph` and `ChannelsGlyph` had no other
+consumer and were deleted. Utility glyphs inside the
 shell chrome (`ChevronRight` breadcrumb separator, `ChevronsUpDown`, `Check`,
 `Loader2`, `LogOut`, `User`, the notification drawer's internals) remain
 Lucide: control furniture, not nav intents.
