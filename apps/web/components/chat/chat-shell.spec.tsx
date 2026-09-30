@@ -1,4 +1,10 @@
-import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
 
@@ -165,6 +171,19 @@ const mockBookmarkIsError = vi.fn(() => false);
 const mockLeaveMutateAsync = vi.fn();
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
+const mockSetChannelPinned = vi.fn();
+const mockSetSectionCollapsed = vi.fn();
+const mockSetSidebarFilter = vi.fn();
+// #2877: what the shell hands the pin hook, and the levels the rail filters on.
+const sidebarState = {
+  pinOptions: undefined as { onError?: () => void } | undefined,
+  foldOptions: undefined as { onError?: () => void } | undefined,
+  filterOptions: undefined as { onError?: () => void } | undefined,
+  levelsError: false,
+  unreadError: false,
+  pinnedIds: new Set<string>(),
+  levels: [] as { channel_id: string; level: string }[],
+};
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
 // so the component renders from a controlled `channels`/message state
@@ -195,7 +214,14 @@ vi.mock("./use-unblock-flow", () => ({
   }),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The shared helpers run for real, so the shell's use of them is under test.
+  ...(await vi
+    .importActual<typeof import("@repo/hooks")>("@repo/hooks")
+    .then(({ sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
+      sidebarMutedChannelIds,
+      sidebarUnreadCounts,
+    }))),
   useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
@@ -213,7 +239,10 @@ vi.mock("@repo/hooks", () => ({
     nameFor: () => null,
     avatarFor: () => null,
   }),
-  useChannelNotificationPreferences: () => ({ data: [] }),
+  useChannelNotificationPreferences: () => ({
+    data: sidebarState.levels,
+    isError: sidebarState.levelsError,
+  }),
   useSetChannelNotificationLevel: () => ({
     isError: false,
     isPending: false,
@@ -222,7 +251,10 @@ vi.mock("@repo/hooks", () => ({
     mutate: vi.fn(),
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
-  useChannelUnreadCounts: () => ({ data: [], isError: false }),
+  useChannelUnreadCounts: () => ({
+    data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
+    isError: sidebarState.unreadError,
+  }),
   useOrgConfig: () => ({
     data: { isModuleEnabled: () => true },
     isError: false,
@@ -284,6 +316,27 @@ vi.mock("@repo/hooks", () => ({
   HIDE_CONVERSATION_FAILED_BODY: "Nothing changed.",
   HIDE_CONVERSATION_LABEL: "Hide conversation",
   HIDDEN_CONVERSATIONS_LABEL: "Hidden conversations",
+  // #2877: the member's own sidebar arrangement.
+  useSidebarPreferences: () => ({
+    pinnedIds: sidebarState.pinnedIds,
+    collapsed: new Set<string>(),
+    filters: { unreadOnly: false, hideMuted: false },
+  }),
+  useSetChannelPinned: (options?: { onError?: () => void }) => {
+    sidebarState.pinOptions = options;
+    return { mutate: mockSetChannelPinned };
+  },
+
+  useSetSidebarSectionCollapsed: (options?: { onError?: () => void }) => {
+    sidebarState.foldOptions = options;
+    return { mutate: mockSetSectionCollapsed };
+  },
+  useSetSidebarFilter: (options?: { onError?: () => void }) => {
+    sidebarState.filterOptions = options;
+    return { mutate: mockSetSidebarFilter };
+  },
+  SIDEBAR_SAVE_FAILED_TITLE: "Couldn't save your channel list",
+  SIDEBAR_SAVE_FAILED_BODY: "Nothing changed.",
 }));
 
 // Captured so the hide failure (#2303) is observable; no other case here
@@ -326,11 +379,32 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
+  ChannelFilters: ({
+    onChange,
+  }: {
+    onChange: (change: { hide_muted: boolean }) => void;
+  }) => (
+    <button
+      data-testid="filters-hide-muted"
+      onClick={() => onChange({ hide_muted: true })}
+    >
+      hide muted
+    </button>
+  ),
   ChannelList: ({
     onPick,
     onHide,
     categories,
+    sidebar,
+    unreadByChannelId,
   }: {
+    unreadByChannelId?: Map<string, unknown>;
+    sidebar?: {
+      mutedChannelIds: ReadonlySet<string> | undefined;
+      onSetPinned: (ch: { id: string }, pinned: boolean) => void;
+      onSetCollapsed: (sectionKey: string, collapsed: boolean) => void;
+      onClearFilters: () => void;
+    };
     onPick?: (ch: {
       id: string;
       hidden?: boolean;
@@ -340,6 +414,35 @@ vi.mock("./channel-list", () => ({
     categories?: { id: string; name: string }[];
   }) => (
     <div data-testid="channel-list">
+      {/* The rail's pin control and the muted set it filters with (#2877). */}
+      <button
+        data-testid="rail-pin"
+        onClick={() => sidebar?.onSetPinned({ id: "chan-1" }, true)}
+      >
+        rail pin
+      </button>
+      <button
+        data-testid="rail-fold"
+        onClick={() => sidebar?.onSetCollapsed("channels", true)}
+      >
+        rail fold
+      </button>
+      <button
+        data-testid="rail-clear-filters"
+        onClick={() => sidebar?.onClearFilters()}
+      >
+        rail clear filters
+      </button>
+      <span data-testid="rail-unread">
+        {unreadByChannelId === undefined
+          ? "unknown"
+          : [...unreadByChannelId.keys()].join(",")}
+      </span>
+      <span data-testid="rail-muted">
+        {sidebar?.mutedChannelIds === undefined
+          ? "unknown"
+          : [...sidebar.mutedChannelIds].join(",")}
+      </span>
       {/* The rail's Hide on a DM row, and a row from its Hidden conversations
           group (#2303): the shell confirms the first and reopens the second. */}
       <button
@@ -439,12 +542,14 @@ vi.mock("./composer", () => ({
       mockComposerMount(channelId);
       // Claimed here, not read in render — the real component calls this from
       // Tiptap's `onCreate`, and the claim is what makes it one-shot.
-      mockComposerMountProps({ draft, focusClaimed: claimShellFocus?.() ?? false });
+      mockComposerMountProps({
+        draft,
+        focusClaimed: claimShellFocus?.() ?? false,
+      });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
-      <div
-        data-testid="composer" data-draft={draft ?? ""}>
+      <div data-testid="composer" data-draft={draft ?? ""}>
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
             here (jsdom renders no ProseMirror view), so these expose the two
@@ -516,10 +621,15 @@ vi.mock("./channel-menu", () => ({
     onJumpToSearchHit,
     onJumpToBookmark,
     hideConversation,
+    pinToTop,
   }: {
+    pinToTop?: { pinned: boolean; onToggle: () => void };
     messages: Array<{ id: string }>;
     hiddenPins: { blocked: number; held: number };
-    onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
+    onJumpToSearchHit: (hit: {
+      message: { id: string };
+      channelId: string;
+    }) => void;
     onJumpToBookmark: (channelId: string, messageId: string) => void;
     hideConversation?: { name: string; onHide: () => void };
   }) => (
@@ -531,6 +641,15 @@ vi.mock("./channel-menu", () => ({
       <span data-testid="menu-hidden-pins">
         {`${hiddenPins.blocked}/${hiddenPins.held}`}
       </span>
+      {pinToTop ? (
+        <button
+          type="button"
+          data-testid="menu-pin"
+          onClick={pinToTop.onToggle}
+        >
+          {pinToTop.pinned ? "unpin" : "pin"}
+        </button>
+      ) : null}
       {hideConversation ? (
         <button
           type="button"
@@ -711,6 +830,135 @@ describe("ChatShell channel categories", () => {
   });
 });
 
+describe("ChatShell sidebar arrangement (#2877)", () => {
+  afterEach(() => {
+    sidebarState.pinnedIds = new Set();
+    sidebarState.levels = [];
+    sidebarState.levelsError = false;
+    sidebarState.unreadError = false;
+  });
+
+  it("hands the rail the unread counts, and none while their last read failed", () => {
+    // The stale rows are still there beside the error; drawing them, or
+    // filtering on them, would claim counts the rail cannot vouch for.
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-unread").textContent).toBe("chan-general");
+    unmount();
+
+    sidebarState.unreadError = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-unread").textContent).toBe("unknown");
+  });
+
+  it("hands the rail no muted set while the levels' last read failed", () => {
+    // Stale rows are still there beside the error; filtering on them could
+    // hide a channel the member has since unmuted.
+    sidebarState.levels = [{ channel_id: "chan-general", level: "off" }];
+    sidebarState.levelsError = true;
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("rail-muted").textContent).toBe("unknown");
+  });
+
+  it.each(["foldOptions", "filterOptions"] as const)(
+    "reports a failed write through the %s hook option too",
+    (options) => {
+      mockToast.mockClear();
+      render(<ChatShell initialChannelId="chan-general" />);
+
+      sidebarState[options]?.onError?.();
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Couldn't save your channel list",
+        description: "Nothing changed.",
+      });
+    },
+  );
+
+  it("hands the rail the channels whose level is off, and no others", () => {
+    sidebarState.levels = [
+      { channel_id: "chan-general", level: "off" },
+      { channel_id: "chan-random", level: "mentions" },
+    ];
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("rail-muted").textContent).toBe("chan-general");
+  });
+
+  it("pins from the rail, and reports failures through the hook's own onError", () => {
+    mockSetChannelPinned.mockClear();
+    mockToast.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-pin"));
+
+    expect(mockSetChannelPinned).toHaveBeenCalledWith({
+      channelId: "chan-1",
+      pinned: true,
+    });
+    // A hook option rather than `mutate`'s per-call option, which TanStack
+    // fires only for the latest write on the hook.
+    sidebarState.pinOptions?.onError?.();
+    expect(mockToast).toHaveBeenCalledWith({
+      title: "Couldn't save your channel list",
+      description: "Nothing changed.",
+    });
+  });
+
+  it("folds a section from the rail", () => {
+    mockSetSectionCollapsed.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-fold"));
+
+    expect(mockSetSectionCollapsed).toHaveBeenCalledWith({
+      sectionKey: "channels",
+      collapsed: true,
+    });
+  });
+
+  it("switches a filter from the header, sending only that filter", () => {
+    mockSetSidebarFilter.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("filters-hide-muted"));
+
+    expect(mockSetSidebarFilter).toHaveBeenCalledWith({ hide_muted: true });
+  });
+
+  it("clears both filters from the rail's empty state", () => {
+    mockSetSidebarFilter.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("rail-clear-filters"));
+
+    expect(mockSetSidebarFilter).toHaveBeenCalledWith({
+      unread_only: false,
+      hide_muted: false,
+    });
+  });
+
+  it("pins the open channel from the channel menu, and unpins it once pinned", () => {
+    mockSetChannelPinned.mockClear();
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("menu-pin"));
+    expect(mockSetChannelPinned).toHaveBeenLastCalledWith({
+      channelId: "chan-general",
+      pinned: true,
+    });
+    unmount();
+
+    sidebarState.pinnedIds = new Set(["chan-general"]);
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("menu-pin").textContent).toBe("unpin");
+    fireEvent.click(screen.getByTestId("menu-pin"));
+    expect(mockSetChannelPinned).toHaveBeenLastCalledWith({
+      channelId: "chan-general",
+      pinned: false,
+    });
+  });
+});
+
 describe("ChatShell deep-link targets", () => {
   it("shows an explicit empty state for a channel id that matches nothing, instead of silently falling back", () => {
     render(<ChatShell initialChannelId="does-not-exist" />);
@@ -841,9 +1089,7 @@ describe("ChatShell deep-link targets", () => {
     // nothing was said — a control that appears broken rather than a limit
     // that is stated. Search exists to reach messages beyond the loaded
     // window, so this is the common path, not an edge case.
-    expect(
-      await screen.findByText(NOT_IN_CHANNEL),
-    ).toBeTruthy();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
   });
 
@@ -904,7 +1150,11 @@ describe("ChatShell deep-link targets", () => {
     // `messages`, which is what re-runs the jump in the app.
     for (let round = 0; round < 30; round += 1) {
       mockUseChatChannel.mockReturnValue(
-        chatChannelResult({ hasOlder: true, loadOlder, messages: [...MESSAGES] }),
+        chatChannelResult({
+          hasOlder: true,
+          loadOlder,
+          messages: [...MESSAGES],
+        }),
       );
       rerender(<ChatShell initialChannelId="chan-general" />);
     }
@@ -1013,7 +1263,11 @@ describe("ChatShell deep-link targets", () => {
     for (let round = 0; round < 30; round += 1) {
       await act(async () => {});
       mockUseChatChannel.mockReturnValue(
-        chatChannelResult({ hasOlder: true, loadOlder, messages: [...MESSAGES] }),
+        chatChannelResult({
+          hasOlder: true,
+          loadOlder,
+          messages: [...MESSAGES],
+        }),
       );
       rerender(<ChatShell initialMessageId="msg-elsewhere" />);
     }
@@ -1023,7 +1277,9 @@ describe("ChatShell deep-link targets", () => {
     // channel has not been searched at all.
     fireEvent.click(screen.getByTestId("pick-random"));
 
-    await waitFor(() => expect(loadOlder.mock.calls.length).toBeGreaterThan(20));
+    await waitFor(() =>
+      expect(loadOlder.mock.calls.length).toBeGreaterThan(20),
+    );
   });
 
   it("holds follow while a jump works, and lets go once it settles on a notice", async () => {
@@ -1045,7 +1301,11 @@ describe("ChatShell deep-link targets", () => {
     // The channel runs out of history without it: the notice goes up, the
     // target stays pending, and new messages are followed again.
     mockUseChatChannel.mockReturnValue(
-      chatChannelResult({ hasOlder: false, loadOlder, messages: [...MESSAGES] }),
+      chatChannelResult({
+        hasOlder: false,
+        loadOlder,
+        messages: [...MESSAGES],
+      }),
     );
     rerender(<ChatShell initialChannelId="chan-general" />);
 
@@ -1123,9 +1383,7 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
 
     await waitFor(() => expect(searchHit).toHaveBeenCalled());
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).not.toBeInTheDocument();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
   });
 
@@ -1136,9 +1394,7 @@ describe("ChatShell deep-link targets", () => {
     });
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
-    expect(
-      await screen.findByText(NOT_IN_CHANNEL),
-    ).toBeTruthy();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
     // Switching channels from the rail must not leave #general's notice
     // standing in #random's header, claiming something about a message that
@@ -1148,9 +1404,7 @@ describe("ChatShell deep-link targets", () => {
     await waitFor(() => {
       expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
     });
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).toBeNull();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
   });
 
   it("retries when the same unreachable hit is picked again", async () => {
@@ -1160,9 +1414,7 @@ describe("ChatShell deep-link targets", () => {
     });
     render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
-    expect(
-      await screen.findByText(NOT_IN_CHANNEL),
-    ).toBeTruthy();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
     // The natural "did that work?" second click. Without a nonce in the effect
     // deps the target id is unchanged, so nothing re-runs: the notice clears
@@ -1170,9 +1422,7 @@ describe("ChatShell deep-link targets", () => {
     // this surface was fixed to stop producing.
     fireEvent.click(screen.getByTestId("search-jump"));
 
-    expect(
-      await screen.findByText(NOT_IN_CHANNEL),
-    ).toBeTruthy();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
   });
 
   it("keeps the unreachable notice dismissed when new messages arrive", async () => {
@@ -1182,14 +1432,10 @@ describe("ChatShell deep-link targets", () => {
     });
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
-    expect(
-      await screen.findByText(NOT_IN_CHANNEL),
-    ).toBeTruthy();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).toBeNull();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not
     // re-raise the notice — otherwise the button visibly un-dismisses itself.
@@ -1203,9 +1449,7 @@ describe("ChatShell deep-link targets", () => {
     );
     rerender(<ChatShell initialChannelId="chan-general" />);
 
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).toBeNull();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
   });
 
   it("clears the unreachable notice once the message actually arrives", async () => {
@@ -1215,9 +1459,7 @@ describe("ChatShell deep-link targets", () => {
     });
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     fireEvent.click(screen.getByTestId("search-jump"));
-    expect(
-      await screen.findByText(NOT_IN_CHANNEL),
-    ).toBeTruthy();
+    expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
     // The target stays pending, so a message that arrives later still gets its
     // jump — the deep-link behaviour #328 shipped, kept rather than traded away
@@ -1239,9 +1481,7 @@ describe("ChatShell deep-link targets", () => {
     await waitFor(() => {
       expect(mockScrollToMessage).toHaveBeenCalledWith("msg-late");
     });
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).toBeNull();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
   });
 
   it("scrolls to a supplied message once it is present in the loaded window", () => {
@@ -1453,7 +1693,7 @@ describe("ChatShell accessibility landmarks (#396)", () => {
     expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
   });
 
-  it("keeps announcing, and says \"You\", once identity settles", () => {
+  it('keeps announcing, and says "You", once identity settles', () => {
     /*
       The guard must not be a permanent mute. It returns *before* the seen-ref is
       written, so the resolve re-runs this effect with the ref still empty — and
@@ -2518,7 +2758,9 @@ describe("ChatShell narrow navigation (#2142)", () => {
     // App Router updates search params in place rather than remounting, so the
     // pane state survives the navigation. Jumping into a hidden column consumes
     // the target while nothing visibly happens.
-    rerender(<ChatShell initialChannelId="chan-random" initialMessageId="msg-2" />);
+    rerender(
+      <ChatShell initialChannelId="chan-random" initialMessageId="msg-2" />,
+    );
 
     await waitFor(() => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
@@ -2542,11 +2784,12 @@ describe("ChatShell narrow navigation (#2142)", () => {
     channelsQueryState.value = { isError: true, data: undefined };
     render(<ChatShell />);
 
-    expect(screen.queryByRole("button", { name: "Back to channels" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Back to channels" }),
+    ).toBeNull();
     expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
   });
 });
-
 
 /**
  * #2176: the composer shell, and its upgrade to the real editor.
@@ -2854,12 +3097,8 @@ describe("ChatShell block list (#2313)", () => {
 
     fireEvent.click(screen.getByTestId("search-jump"));
 
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/waiting on your block list/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).not.toBeInTheDocument();
+    expect(screen.getByText(/waiting on your block list/i)).toBeInTheDocument();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
 
     // The list reads: the row is drawn, and the pending jump lands on it.
@@ -2898,12 +3137,8 @@ describe("ChatShell block list (#2313)", () => {
     );
     rerender(<ChatShell initialChannelId="chan-general" />);
 
-    expect(
-      screen.queryByText(NOT_IN_CHANNEL),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/waiting on your block list/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(NOT_IN_CHANNEL)).not.toBeInTheDocument();
+    expect(screen.getByText(/waiting on your block list/i)).toBeInTheDocument();
   });
 
   it("says so above the timeline when the block list cannot be read", () => {

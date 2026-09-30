@@ -166,10 +166,12 @@ select c.relname
  order by c.relname;
 ```
 
-That returns **49** rows. The "API only" row of that table is those 49 plus the three `*`-marked
+That returns **51** rows. The "API only" row of that table is those 51 plus the three `*`-marked
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
-their own — **52**. Last re-derived 2026-09-15 against a local stack at
+their own — **54**. Last re-derived 2026-09-29 against a local stack at
+migration `20260929213000`, which added `chat_sidebar_pins` and
+`chat_sidebar_preferences` (#2877). Before that, re-derived 2026-09-15 at
 migration `20260915210100`, when it had drifted by four: `rush_candidates` and
 `rush_candidate_votes` (#494) had never been added, and `chat_member_blocks` /
 `chat_message_reports` (#2257) arrived with the same gap. Nothing in CI checks
@@ -185,7 +187,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_reports`, `discord_connections`, `discord_import_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 52 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_reports`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `discord_connections`, `discord_import_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 54 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 

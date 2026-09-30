@@ -572,6 +572,19 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-29: Each member's chat sidebar arrangement (#2877)
+
+### 20260929213000_chat_sidebar_preferences.sql
+
+- **Purpose**: Adds two per-member tables, both with RLS enabled and no policies. `public.chat_sidebar_preferences` has one row per (member, chapter) holding `unread_only`, `hide_muted` and `collapsed_sections text[]`. `public.chat_sidebar_pins` has one row per (member, channel), cascading from `chat_channels`. Adds `set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)`, which folds or unfolds one section atomically; EXECUTE is limited to `service_role`. Replaces `anonymize_user` with the 20260915210100 body plus two deletes, one for each new table. No existing row is rewritten, and a member with no row gets every default. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#sidebar-arrangement) § Sidebar arrangement.
+- **Checks**: After `db push`,
+  `select relname, relrowsecurity from pg_class where relname in ('chat_sidebar_preferences', 'chat_sidebar_pins');` returns both with `t`,
+  `select has_function_privilege('authenticated', 'public.set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)', 'execute');` returns `f`, and
+  `select prosrc like '%chat_sidebar_pins%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API that reads it. Against an unmigrated database the new `/v1/chat-sidebar` routes answer 500, and clients then show the default sidebar (no pins, nothing folded, filters off), so no channel disappears. An older API ignores both tables. Re-applying is idempotent (`create table if not exists`, `create or replace function`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-chat-sidebar-arrangement-20260929213000) § Rollback chat sidebar arrangement.
+
 ## 2026-09-29: An officer-set default push level per chat channel (#2771)
 
 ### 20260929190000_chat_channels_default_notification_level.sql

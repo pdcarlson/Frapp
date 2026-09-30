@@ -31,6 +31,10 @@ function mapMessage(
     resolveAssetPath: () => null,
     resolveReplyTarget: () => null,
     attachmentCount: 0,
+    mentionContext: {
+      roleName: () => null,
+      channel: () => null,
+    },
     ...overrides,
   });
 }
@@ -187,6 +191,65 @@ describe('toImportedMessage', () => {
     expect(mapMessage(byId('900000000000000007'))).toBeNull();
     const noId = part000().messages.find((m) => m.id === null)!;
     expect(mapMessage(noId)).toBeNull();
+  });
+
+  describe('Discord mention tokens (#2875)', () => {
+    const tokenMessage = (
+      overrides: Partial<DiscordExportMessage>,
+    ): DiscordExportMessage => ({
+      id: '910000000000000001',
+      timestamp: '2026-09-28T21:15:00.000+00:00',
+      author: { id: '1', name: 'Pinstripe' },
+      ...overrides,
+    });
+    const context = {
+      roleName: (id: string) =>
+        id === '750151182395244584' ? 'Brothers' : null,
+      channel: () => null,
+    };
+
+    it('writes the named text as content and keeps no copy of the original', () => {
+      const raw = '<@&750151182395244584> we need numbers now';
+      const row = mapMessage(tokenMessage({ content: raw }), {
+        mentionContext: context,
+      });
+      expect(row?.content).toBe('@Brothers we need numbers now');
+      // A delete clears `content` and leaves `payload`, so a copy there would
+      // outlive a moderator's removal.
+      expect(JSON.stringify(row?.payload)).not.toContain('750151182395244584');
+      // Named in prose, never resolved to anyone: an archive never notifies.
+      expect(row?.mentions).toEqual([]);
+    });
+
+    it('names a user by the name their mention entry carries', () => {
+      // DCE's `nickname` is what the server showed.
+      const upload = mapMessage(
+        tokenMessage({
+          content: '<@7>',
+          mentions: [{ id: '7', name: 'niravb', nickname: 'Nirav B' }],
+        }),
+        { mentionContext: context },
+      );
+      expect(upload?.content).toBe('@Nirav B');
+
+      // The bot path's REST mention carries the display name and no nickname.
+      const bot = mapMessage(
+        tokenMessage({
+          content: '<@8>',
+          mentions: [{ id: '8', name: 'Sam' }],
+        }),
+        { mentionContext: context },
+      );
+      expect(bot?.content).toBe('@Sam');
+    });
+
+    it('writes a user nothing names as unknown, not as the author fallback', () => {
+      const row = mapMessage(
+        tokenMessage({ content: '<@9>', mentions: [{ id: '9' }] }),
+        { mentionContext: context },
+      );
+      expect(row?.content).toBe('@unknown-user');
+    });
   });
 });
 

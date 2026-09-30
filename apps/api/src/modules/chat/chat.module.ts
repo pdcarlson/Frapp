@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { ChatReportService } from '../../application/services/chat-report.service';
+import { ChatSidebarService } from '../../application/services/chat-sidebar.service';
 import { ChatController } from '../../interface/controllers/chat.controller';
 import { ChatBookmarkController } from '../../interface/controllers/chat-bookmark.controller';
 import { ChatBlockController } from '../../interface/controllers/chat-block.controller';
 import { ChatReportController } from '../../interface/controllers/chat-report.controller';
+import { ChatSidebarController } from '../../interface/controllers/chat-sidebar.controller';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { SupabaseChatCategoryRepository } from '../../infrastructure/supabase/repositories/supabase-chat-category.repository';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
@@ -15,6 +17,7 @@ import { SupabaseMessageReactionRepository } from '../../infrastructure/supabase
 import { SupabaseReadReceiptRepository } from '../../infrastructure/supabase/repositories/supabase-read-receipt.repository';
 import { SupabaseChatMessageBookmarkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-bookmark.repository';
 import { SupabaseChatMessageReportRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-report.repository';
+import { SupabaseChatSidebarRepository } from '../../infrastructure/supabase/repositories/supabase-chat-sidebar.repository';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -26,6 +29,7 @@ import {
   CHAT_MESSAGE_BOOKMARK_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import { CHAT_SIDEBAR_REPOSITORY } from '#domain/repositories/chat-sidebar.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { NotificationModule } from '../notification/notification.module';
@@ -72,6 +76,9 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // injects `ChatBlockService` to mask what it serves.
     ChatReportController,
     ChatBlockController,
+    // A member's own sidebar arrangement (#2877), at its own root for the
+    // reason bookmarks are.
+    ChatSidebarController,
   ],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
@@ -90,6 +97,9 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // `ChatBlockModule` above, so the push worker and search resolve the same
     // instance of the same rule.
     ChatReportService,
+    // Sidebar arrangement (#2877): shares the channel-access seam and the
+    // category repository, nothing of the chat hot path.
+    ChatSidebarService,
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,
@@ -125,6 +135,10 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     {
       provide: CHAT_MESSAGE_REPORT_REPOSITORY,
       useClass: SupabaseChatMessageReportRepository,
+    },
+    {
+      provide: CHAT_SIDEBAR_REPOSITORY,
+      useClass: SupabaseChatSidebarRepository,
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],

@@ -194,17 +194,3 @@ export function threadHeaderTitle(input: {
   const name = displayChannelName(channel, input.viewerId, input.names);
   return isDirectChannel(channel) ? name : `#${name}`;
 }
-
-/** `channel_id` → counts, so a row lookup is O(1) rather than a scan per row. */
-export function indexUnread(
-  rows: { channel_id: string; unread_count: number; mention_count: number }[],
-): Record<string, { unread: number; mentions: number }> {
-  const index: Record<string, { unread: number; mentions: number }> = {};
-  for (const row of rows) {
-    index[row.channel_id] = {
-      unread: row.unread_count,
-      mentions: row.mention_count,
-    };
-  }
-  return index;
-}

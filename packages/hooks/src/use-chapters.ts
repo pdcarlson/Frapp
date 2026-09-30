@@ -3,6 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { markLegalAcceptanceRecorded } from "./legal-acceptance";
+import { putSignedUpload } from "./put-signed-upload";
+import { readSignedUpload } from "@repo/validation";
 
 export interface ChapterMembershipSummary {
   chapter_id: string;
@@ -98,6 +100,8 @@ export interface OnboardChapterInput {
   directory_id?: string;
   branding?: {
     greek_letters?: string;
+    short_name?: string;
+    show_greek_letters?: boolean;
     designation?: string;
     school_short?: string;
     founded_at?: number;
@@ -158,10 +162,22 @@ export function useActivateChapter() {
   });
 }
 
+/**
+ * What every write to the current chapter does on success: refetch the
+ * chapter queries, so the shell (the nav tile, the accent) repaints. The
+ * `["chapters"]` prefix covers `["chapters", "current", id]` and the
+ * memberships list alike.
+ */
+function useInvalidateCurrentChapter() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+  };
+}
+
 export function useUpdateChapter() {
   const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const activeChapterId = useActiveChapterId();
+  const invalidate = useInvalidateCurrentChapter();
   return useMutation({
     mutationFn: async (body: {
       name?: string;
@@ -175,11 +191,67 @@ export function useUpdateChapter() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-      queryClient.invalidateQueries({
-        queryKey: chapterQueryKey("current", activeChapterId ?? null),
+    onSuccess: invalidate,
+  });
+}
+
+/** A logo file, already through `inspectUploadFile("image", …)`. */
+export interface ChapterLogoUpload {
+  body: Blob;
+  filename: string;
+  /** The type `inspectUploadFile` resolved, not the browser's `file.type`. */
+  contentType: string;
+}
+
+
+/**
+ * Upload or replace the active chapter's logo (#2591): mint a signed URL, PUT
+ * the bytes, then confirm the path, which is the step that changes what the
+ * chapter shows and writes the audit row.
+ *
+ * Every mint is a fresh key (#2592), so a replacement never collides with the
+ * logo it replaces and the PUT needs no upsert; confirm deletes the old object.
+ * A failure at any step leaves the current logo in place. On success the
+ * current-chapter query is invalidated, so the shell repaints with the new
+ * signed `logo_url`, a different URL from the old one because the key changed.
+ */
+export function useUploadChapterLogo() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateCurrentChapter();
+  return useMutation({
+    mutationFn: async ({ body, filename, contentType }: ChapterLogoUpload) => {
+      const { data: signed, error: mintError } = await client.POST(
+        "/v1/chapters/current/logo-url",
+        { body: { filename, content_type: contentType } },
+      );
+      if (mintError) throw mintError;
+      const { signedUrl, storagePath } = readSignedUpload(signed);
+      await putSignedUpload({
+        signedUrl,
+        body,
+        contentType,
+        describeRejection: (status) => `Logo upload failed (${status})`,
       });
+      const { data, error } = await client.POST("/v1/chapters/current/logo", {
+        body: { storage_path: storagePath },
+      });
+      if (error) throw error;
+      return data;
     },
+    onSuccess: invalidate,
+  });
+}
+
+/** Remove the active chapter's logo; the mark falls back to its text. */
+export function useRemoveChapterLogo() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateCurrentChapter();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.DELETE("/v1/chapters/current/logo");
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
   });
 }

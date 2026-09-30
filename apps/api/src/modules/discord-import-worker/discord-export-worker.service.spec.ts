@@ -27,6 +27,11 @@ import type {
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
 import { snowflakeAtOrAfter } from '#domain/utils/discord-snowflake';
+import {
+  toImportedMessage,
+  type DiscordExportMessage,
+  type ImportMentionContext,
+} from '#domain/utils/discord-export';
 
 const NOW = new Date('2026-08-24T12:00:00Z');
 const CHAPTER = 'chapter-1';
@@ -256,6 +261,14 @@ function runArgs(
   return {
     job: job(),
     deadline: Date.now() + 45_000,
+    roleName: jest.fn((id: string) =>
+      id === '750151182395244584' ? 'Brothers' : null,
+    ),
+    // The harness's merge target is a whole-chapter channel.
+    wholeChapterTargets: jest.fn(
+      async (): Promise<ReadonlyMap<string, boolean>> =>
+        new Map([[SIGNET_CHANNEL, true]]),
+    ),
     checkpoint: jest.fn(async () => true),
     resolveTargetChannel: jest.fn(async () => SIGNET_CHANNEL),
     importBatch: jest.fn(async (batch: { messages: unknown[] }) => ({
@@ -499,6 +512,274 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       messages: { id?: string | null; timestamp?: string | null }[];
     };
     expect(batch.messages[0].timestamp).toBe('2019-03-04T18:22:11.000+00:00');
+  });
+
+  it('names the tokens in a page (#2875)', async () => {
+    const harness = await build({
+      channels: [channel({ private_in_discord: true })],
+      pages: [
+        [
+          apiMessage('2', {
+            content: `<@42> <@&750151182395244584> see <#${DISCORD_CHANNEL}>`,
+            mentions: [
+              { id: '42', username: 'niravb', global_name: 'Nirav Banerji' },
+            ],
+          }),
+        ],
+      ],
+    });
+    const args = runArgs(harness);
+    await harness.worker.runSlice(args);
+
+    const batch = args.importBatch.mock.calls[0][0] as {
+      messages: DiscordExportMessage[];
+      mentionContext: ImportMentionContext;
+    };
+    const row = toImportedMessage({
+      message: batch.messages[0],
+      channelId: SIGNET_CHANNEL,
+      importId: IMPORT_ID,
+      resolveAssetPath: () => null,
+      resolveReplyTarget: () => null,
+      attachmentCount: 0,
+      mentionContext: batch.mentionContext,
+    });
+    expect(row?.content).toBe(
+      `@Nirav Banerji @Brothers see [#general](/chat?channel=${SIGNET_CHANNEL})`,
+    );
+  });
+
+  describe('creating the new channels first (#2875)', () => {
+    const later = () =>
+      channel({
+        id: 'mapping-2',
+        discord_channel_id: '900000000000000003',
+        discord_channel_name: 'rush-week',
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_type: 'PUBLIC',
+        position: 1,
+      });
+    // Mints a target the way the worker's real resolver does: onto the row.
+    const minting = () =>
+      jest.fn(async (mapping: DiscordImportChannel) => {
+        const target =
+          mapping.id === 'mapping-2' ? 'signet-rush-week' : SIGNET_CHANNEL;
+        mapping.target_channel_id = target;
+        return target;
+      });
+
+    it('links a mention of a channel the walk has not reached yet', async () => {
+      const harness = await build({
+        channels: [channel({ private_in_discord: false }), later()],
+        pages: [[apiMessage('2', { content: 'see <#900000000000000003>' })]],
+      });
+      // Named inside the batch writer, as production does, while the walk is
+      // still on the first channel.
+      const written: string[] = [];
+      const args = runArgs(harness, {
+        resolveTargetChannel: minting(),
+        importBatch: jest.fn(
+          async (batch: {
+            messages: DiscordExportMessage[];
+            mentionContext: ImportMentionContext;
+          }) => {
+            for (const message of batch.messages) {
+              const row = toImportedMessage({
+                message,
+                channelId: SIGNET_CHANNEL,
+                importId: IMPORT_ID,
+                resolveAssetPath: () => null,
+                resolveReplyTarget: () => null,
+                attachmentCount: 0,
+                mentionContext: batch.mentionContext,
+              });
+              if (row) written.push(row.content);
+            }
+            return {
+              imported: batch.messages.length,
+              skipped: 0,
+              attachmentsImported: 0,
+              attachmentsSkipped: 0,
+              warnings: [] as string[],
+            };
+          },
+        ),
+      });
+      await harness.worker.runSlice(args);
+
+      expect(written).toEqual([
+        'see [#rush-week](/chat?channel=signet-rush-week)',
+      ]);
+    });
+
+    it('makes ahead only the new channels a page mentions, a thread’s being its parent’s', async () => {
+      const harness = await build({
+        channels: [
+          channel({ private_in_discord: false }),
+          later(),
+          channel({
+            id: 'skip',
+            discord_channel_id: '900000000000000004',
+            mapping_action: 'skip',
+            target_channel_id: null,
+          }),
+          channel({
+            id: 'done',
+            discord_channel_id: '900000000000000005',
+            mapping_action: 'create_new',
+            target_channel_id: null,
+            status: 'completed',
+          }),
+          channel({
+            id: 'thread',
+            discord_channel_id: THREAD,
+            mapping_action: 'create_new',
+            target_channel_id: null,
+            parent_discord_channel_id: '900000000000000003',
+          }),
+          channel({
+            id: 'unmentioned',
+            discord_channel_id: '900000000000000006',
+            mapping_action: 'create_new',
+            target_channel_id: null,
+            position: 9,
+          }),
+        ],
+        pages: [
+          [
+            apiMessage('2', {
+              content: `<#${THREAD}> <#900000000000000004> <#900000000000000005>`,
+            }),
+          ],
+        ],
+      });
+      const resolveTargetChannel = minting();
+      const args = runArgs(harness, {
+        resolveTargetChannel,
+        // Stop after the first page, before the walk reaches anything else.
+        checkpoint: jest.fn(async () => false),
+      });
+      await harness.worker.runSlice(args);
+
+      const asked = resolveTargetChannel.mock.calls.map(([row]) => row.id);
+      expect(asked).not.toContain('skip');
+      expect(asked).not.toContain('done');
+      expect(asked).not.toContain('thread');
+      expect(asked).not.toContain('unmentioned');
+      // Asked before the first batch was written. (The walk asks again when
+      // it reaches the row, and gets the channel already made.)
+      expect(
+        resolveTargetChannel.mock.invocationCallOrder[
+          asked.indexOf('mapping-2')
+        ],
+      ).toBeLessThan(args.importBatch.mock.invocationCallOrder[0]);
+    });
+
+    const blank = (id: string) => ({
+      id,
+      channel_id: DISCORD_CHANNEL,
+      type: 0,
+      content: '',
+      timestamp: '2019-03-04T18:22:11.000+00:00',
+      author: { id: '2', username: 'paul' },
+      attachments: [],
+      embeds: [],
+    });
+
+    it('makes no other channel for a bot that cannot read message content', async () => {
+      const first = channel({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+      });
+      const harness = await build({
+        channels: [first, later()],
+        pages: [
+          Array.from({ length: EXPORT_PAGE_SIZE }, (_, i) => blank(String(i))),
+        ],
+      });
+      const resolveTargetChannel = minting();
+      const args = runArgs(harness, { resolveTargetChannel });
+
+      await expect(harness.worker.runSlice(args)).rejects.toThrow(
+        MISSING_MESSAGE_CONTENT_INTENT_ERROR,
+      );
+      // The channel being walked is made when the walk reaches it, as it
+      // always was; nothing else is.
+      expect(resolveTargetChannel.mock.calls.map(([row]) => row.id)).toEqual([
+        'mapping-1',
+      ]);
+    });
+
+    it('makes nothing ahead for a page that mentions no channel', async () => {
+      const harness = await build({
+        channels: [channel(), later()],
+        pages: [[1, 2, 3, 4, 5].map((n) => blank(String(n)))],
+      });
+      const resolveTargetChannel = minting();
+      const args = runArgs(harness, { resolveTargetChannel });
+      await harness.worker.runSlice(args);
+
+      const asked = resolveTargetChannel.mock.calls.map(([row]) => row.id);
+      const firstAsk =
+        resolveTargetChannel.mock.invocationCallOrder[
+          asked.indexOf('mapping-2')
+        ];
+      // Only the walk reached it, after the first page was written.
+      expect(firstAsk).toBeGreaterThan(
+        args.importBatch.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('links a mention in a slash-command reply as well', async () => {
+      const harness = await build({
+        channels: [channel({ private_in_discord: false }), later()],
+        pages: [
+          [
+            apiMessage('2', {
+              type: 20,
+              content: 'Read <#900000000000000003> first',
+            }),
+          ],
+        ],
+      });
+      const resolveTargetChannel = minting();
+      const args = runArgs(harness, { resolveTargetChannel });
+      await harness.worker.runSlice(args);
+
+      const asked = resolveTargetChannel.mock.calls.map(([row]) => row.id);
+      expect(
+        resolveTargetChannel.mock.invocationCallOrder[
+          asked.indexOf('mapping-2')
+        ],
+      ).toBeLessThan(args.importBatch.mock.invocationCallOrder[0]);
+    });
+
+    it('marks only the row it could not create failed, with the reason', async () => {
+      const harness = await build({
+        channels: [channel(), later()],
+        pages: [[apiMessage('2', { content: 'see <#900000000000000003>' })]],
+      });
+      const args = runArgs(harness, {
+        resolveTargetChannel: jest.fn(async (mapping: DiscordImportChannel) => {
+          if (mapping.id === 'mapping-2') throw new Error('name taken');
+          return SIGNET_CHANNEL;
+        }),
+      });
+
+      await expect(harness.worker.runSlice(args)).rejects.toThrow('name taken');
+      const failed = harness.repo.updateChannel.mock.calls.filter(
+        ([, , patch]) => (patch as { status?: string }).status === 'failed',
+      );
+      expect(failed).toEqual([
+        [
+          'mapping-2',
+          IMPORT_ID,
+          expect.objectContaining({ status: 'failed', error: 'name taken' }),
+        ],
+      ]);
+      expect(args.importBatch).not.toHaveBeenCalled();
+    });
   });
 });
 

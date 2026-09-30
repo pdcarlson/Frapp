@@ -8,6 +8,7 @@ import {
   ScrollView,
   Share,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -36,6 +37,7 @@ import {
   normalizeAccentInput,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
+import { CHAPTER_SHORT_NAME_MAX_LENGTH } from "@repo/validation";
 import {
   inviteTokenOf,
   onboardedChapterId,
@@ -107,6 +109,10 @@ export default function CreateChapter() {
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
+      // The directory knows letters, not whether an organization shows them,
+      // so these two keep whatever the founder already chose.
+      shortName: identity.shortName,
+      showGreekLetters: identity.showGreekLetters,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
@@ -549,6 +555,43 @@ function IdentityStep({
         styles={styles}
         tokens={tokens}
       />
+      {/*
+        The chapter mark (#2876). A logo is added from the web dashboard's
+        Settings → Chapter for now; picking one here is #2883.
+      */}
+      <Field
+        label="Short name (optional)"
+        value={identity.shortName}
+        onChangeText={(value) => set("shortName", value)}
+        placeholder="FIJI"
+        autoCapitalize="characters"
+        maxLength={CHAPTER_SHORT_NAME_MAX_LENGTH}
+        styles={styles}
+        tokens={tokens}
+      />
+      <View style={styles.switchRow}>
+        <View style={styles.switchText}>
+          <Text style={styles.inputLabel}>Show Greek letters</Text>
+          <Text style={styles.helperText}>
+            Turn off if your organization doesn&apos;t display its letters. Your
+            short name, or later a logo, stands in for them.
+          </Text>
+        </View>
+        <Switch
+          value={identity.showGreekLetters}
+          onValueChange={(value) => set("showGreekLetters", value)}
+          accessibilityLabel="Show Greek letters"
+          trackColor={{
+            false: tokens.color.border.input,
+            true: tint(tokens.color.gold.house, 0.3),
+          }}
+          thumbColor={
+            identity.showGreekLetters
+              ? tokens.color.gold.house
+              : tokens.color.surface.card
+          }
+        />
+      </View>
       <Field
         label="Chapter designation"
         value={identity.designation}
@@ -604,6 +647,7 @@ function Field({
   tokens,
   keyboardType,
   autoCapitalize,
+  maxLength,
   mono,
   swatch,
 }: {
@@ -615,6 +659,7 @@ function Field({
   tokens: SignetTokens;
   keyboardType?: "number-pad";
   autoCapitalize?: "characters" | "none";
+  maxLength?: number;
   mono?: boolean;
   swatch?: string;
 }) {
@@ -636,6 +681,7 @@ function Field({
           autoCapitalize={autoCapitalize ?? "sentences"}
           autoCorrect={false}
           keyboardType={keyboardType}
+          maxLength={maxLength}
           accessibilityLabel={label}
           style={[styles.input, styles.inputFlex, mono ? styles.mono : null]}
         />
@@ -789,6 +835,13 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
     },
+    switchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
+    },
+    switchText: { flex: 1, gap: tokens.spacing.xs },
     helperText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
