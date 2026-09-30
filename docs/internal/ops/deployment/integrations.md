@@ -256,6 +256,13 @@ scoped to the chapter is what activates it. So a Frapp officer cannot send their
 link to somebody else's Discord admin and end up reading that server. Do not
 "simplify" the flow by binding on the callback.
 
+**Members linking their own Discord account use the same application and the
+same redirect URI.** `/profile` → Discord history (#2878) sends a member
+through Discord's sign-in with the `identify` scope alone and comes back to the
+same `/v1/discord/connect/callback`, so it needs no extra portal setup: once
+the bot path is available, so is linking. It parks and confirms for the same
+reason as the bot path, so do not bind on its callback either.
+
 **Verify after setup — and know what the check does not cover.**
 `GET /v1/discord/availability` (as an officer with `channels:manage`) must answer
 `{"available": true}`. If it answers `false`, either one of the three secrets or

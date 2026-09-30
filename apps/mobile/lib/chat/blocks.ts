@@ -111,7 +111,8 @@ export function canOpenMessageActions(
  *   names its author in `author_name`, which the API snapshots into the report
  *   for exactly that.
  * - **Block needs a blockable sender not known to have left**: not the system
- *   actor, not an imported row, and not someone `isMember` positively knows
+ *   actor, not an imported row nobody has linked (a linked one carries the
+ *   member as its sender, #2878), and not someone `isMember` positively knows
  *   departed. A sender the cached roster does not list still gets Block: that
  *   is exactly what a brand-new member looks like, and App Review's block
  *   control must not vanish for them. If they did leave,

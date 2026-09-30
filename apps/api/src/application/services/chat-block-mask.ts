@@ -55,9 +55,11 @@ export interface MaskedChatMessage extends ChatMessage {
  * list is `blockedUserIds`.
  *
  * The one predicate every surface applies, so the rule that a `null` sender (an
- * imported archive row) is never masked lives in one place. That is correct
- * rather than a gap: blocks are keyed on `users.id`, so there is no user to have
- * blocked.
+ * imported archive row nobody has linked) is never masked lives in one place.
+ * That is correct rather than a gap: blocks are keyed on `users.id`, so there
+ * is no user to have blocked. It keys on the sender, never on `kind`: an
+ * imported row whose Discord author linked their account carries the member as
+ * its sender (#2878) and is masked like anything else they wrote.
  */
 export function isFromBlockedSender(
   senderId: string | null,
@@ -200,7 +202,7 @@ export function maskBlockedMessages(
  * and `GET /v1/polls/{messageId}` serve a poll's message reshaped with its
  * tallies, which {@link maskBlockedMessages} does not fit, for the reason
  * {@link maskBlockedBookmarkMessage} gives. What is shared is the same: the
- * sentinel, `isFromBlockedSender` (so an imported row is never masked), the
+ * sentinel, `isFromBlockedSender` (so an unlinked imported row is never masked), the
  * allowlist construction, and `sender_blocked` on every row.
  *
  * **Masked in place, not left out.** The tallies are chapter state, which a

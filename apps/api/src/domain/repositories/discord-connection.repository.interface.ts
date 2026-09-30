@@ -1,5 +1,6 @@
 import type {
   DiscordConnection,
+  DiscordOAuthPurpose,
   DiscordOAuthState,
 } from '../entities/discord-connection.entity';
 
@@ -13,6 +14,14 @@ export interface PendingDiscordConnectionInput {
   discord_user_id: string;
   discord_username: string | null;
   permissions: string;
+  scopes: string;
+  confirm_token: string;
+  confirm_expires_at: string;
+}
+
+export interface PendingDiscordAuthorLinkInput {
+  discord_user_id: string;
+  discord_username: string | null;
   scopes: string;
   confirm_token: string;
   confirm_expires_at: string;
@@ -66,6 +75,7 @@ export interface IDiscordConnectionRepository {
   // ── the OAuth handshake ───────────────────────────────────────────────────
   createState(input: {
     chapter_id: string;
+    purpose: DiscordOAuthPurpose;
     created_by: string | null;
     return_path: string | null;
     expires_at: string;
@@ -80,6 +90,15 @@ export interface IDiscordConnectionRepository {
    * zero rows and gets null.
    */
   consumeState(id: string, now: Date): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Where a handshake that could not be consumed (expired, spent) was going to
+   * return the browser, read without consuming anything. Only for choosing
+   * which page shows the "expired" sentence: a member's link attempt belongs
+   * back on `/profile`, not in the officer import wizard (#2878). Null when the
+   * state does not exist.
+   */
+  findStateReturnPath(id: string): Promise<string | null>;
 
   /**
    * Park what the callback learned, and mint the token that activates it.
@@ -108,6 +127,34 @@ export interface IDiscordConnectionRepository {
   consumeConfirmToken(
     token: string,
     chapterId: string,
+    now: Date,
+  ): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Park the Discord account a member's link handshake proved (#2878).
+   *
+   * Only onto an `author_link` handshake the callback just spent, and only
+   * once, like {@link attachPendingConnection}. Writes the account into the
+   * `pending_discord_*` columns and the confirm token; no guild.
+   */
+  attachPendingAuthorLink(
+    stateId: string,
+    input: PendingDiscordAuthorLinkInput,
+  ): Promise<DiscordOAuthState | null>;
+
+  /**
+   * Spend a link handshake's confirm token.
+   *
+   * Matches only an `author_link` handshake in `chapterId` that `userId`
+   * started. The user predicate is the one that matters: the callback is an
+   * unauthenticated redirect, so the browser holding the token may belong to
+   * somebody else, and binding their Discord account to the member who started
+   * the handshake would put that person's history under the wrong name.
+   */
+  consumeAuthorLinkConfirmToken(
+    token: string,
+    chapterId: string,
+    userId: string,
     now: Date,
   ): Promise<DiscordOAuthState | null>;
 
