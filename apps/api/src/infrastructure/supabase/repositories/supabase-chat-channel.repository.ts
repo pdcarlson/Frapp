@@ -8,6 +8,7 @@ import type {
 } from '../database.types';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { ChatChannel } from '#domain/entities/chat.entity';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
 @Injectable()
 export class SupabaseChatChannelRepository implements IChatChannelRepository {
@@ -93,6 +94,46 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
         [...ch.member_ids].sort().every((id, i) => id === sorted[i]),
     );
     return match ?? null;
+  }
+
+  /**
+   * Insert, and translate a hit on `chat_channels_dm_pair_key` into "here is
+   * the DM the other call created" (#2788).
+   *
+   * **Not an upsert, and it cannot be one.** The index is unique on
+   * `(chapter_id, least(member_ids[1], member_ids[2]),
+   * greatest(member_ids[1], member_ids[2]))` where `type = 'DM'`, and PostgREST
+   * will not use an expression or partial index as an `ON CONFLICT` arbiter
+   * (`SupabaseChatMessageReportRepository.create` hits the same limit).
+   *
+   * So: insert, and on `23505` re-select the pair. A DM insert names no id, and
+   * the pair index is the only other unique key on the table, so a `23505` here
+   * means this pair's DM exists. A null re-select means that DM was deleted
+   * between the failed insert and the read; surfacing the original error is
+   * the honest answer, and a retry then creates it.
+   */
+  async createDm(chapterId: string, memberIds: string[]): Promise<ChatChannel> {
+    const sorted = [...memberIds].sort();
+    const { data, error } = await this.supabase
+      .from('chat_channels')
+      .insert({
+        chapter_id: chapterId,
+        name: `dm-${sorted.join('-')}`,
+        type: 'DM',
+        member_ids: sorted,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === PG_UNIQUE_VIOLATION) {
+        const winner = await this.findDm(chapterId, sorted);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+
+    return data;
   }
 
   async create(data: TablesInsert<'chat_channels'>): Promise<ChatChannel> {
