@@ -46,7 +46,8 @@ import { validateEnv } from './config/env.validation';
     // Transaction names on HTTP spans. Does not replace AllExceptionsFilter —
     // 5xx still go through toReportableError, and 401/403/429 stay
     // security_event records. SentryGlobalFilter is deliberately not
-    // registered (it would capture raw PostgREST objects and double-report).
+    // registered (it would capture a non-Error throwable raw and
+    // double-report every 5xx).
     SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,

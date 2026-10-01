@@ -73,6 +73,7 @@ import {
 } from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 // Read from the real package, not the mock above: compared against the mocked
 // value, a mock that dropped the constant would make both sides `undefined`.
@@ -1398,11 +1399,16 @@ describe('ChapterConfigService default invite role (#422)', () => {
     const service = await buildService(supabase);
 
     try {
-      await expect(
-        service.patchConfig(CHAPTER_ID, 'user-1', {
+      const thrown: unknown = await service
+        .patchConfig(CHAPTER_ID, 'user-1', {
           default_invite_role_id: 'role-pledge',
-        }),
-      ).rejects.toEqual(expect.objectContaining({ details }));
+        })
+        .catch((error: unknown) => error);
+      // Thrown as the wrapper (#1264): the code survives, the row values in
+      // `details` never leave the query site.
+      expect(thrown).toBeInstanceOf(SupabaseQueryError);
+      expect(thrown).toMatchObject({ code: 'PGRST116' });
+      expect(thrown).not.toHaveProperty('details');
 
       expect(errorSpy).toHaveBeenCalled();
       const printed = errorSpy.mock.calls

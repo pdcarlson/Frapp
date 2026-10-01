@@ -137,7 +137,12 @@ describe('ChatPushDispatchRepository', () => {
       const { client } = fakeClient({ delete: { count: null, error } });
       const repo = new ChatPushDispatchRepository(client);
 
-      await expect(repo.purgeBefore(new Date())).rejects.toBe(error);
+      // Wrapped (#1264): the caller logs a real Error with its code.
+      await expect(repo.purgeBefore(new Date())).rejects.toMatchObject({
+        name: 'SupabaseQueryError',
+        code: '57014',
+        message: '57014: canceling statement',
+      });
     });
   });
 });
