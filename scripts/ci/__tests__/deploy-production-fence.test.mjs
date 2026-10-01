@@ -316,6 +316,24 @@ describe("the SHA-trim step (run 34234768094)", () => {
     assert.match(githubOutput, /^sha=abc def$/m);
   });
 
+  // Empty is the resolve mode (#3114): the output stays empty and the resolve
+  // step picks the commit.
+  it("passes an empty input through as empty", () => {
+    const { code, githubOutput } = runTrim("");
+    assert.equal(code, 0);
+    assert.match(githubOutput, /^sha=$/m);
+  });
+
+  // `run-name` read a whitespace-only input as a pasted SHA, so resolving it
+  // would ship a commit the title never said the run would pick.
+  it("fails an input that is only whitespace, rather than resolve it", () => {
+    for (const raw of [" ", "\n", " \t "]) {
+      const { code, output } = runTrim(raw);
+      assert.equal(code, 1, JSON.stringify(raw));
+      assert.match(output, /only whitespace\. Leave it empty/);
+    }
+  });
+
   // Later jobs must consume the trimmed output. Assigning `inputs.sha` again
   // would reintroduce the trailing space that killed 34234768094. Inside
   // `_deploy.yml`, `inputs.sha` IS the trimmed value (its own input), so the
@@ -339,6 +357,94 @@ describe("the SHA-trim step (run 34234768094)", () => {
   // (read from that script's own table, so the two cannot drift), across every
   // workflow that invokes it. The exact #2265 case is pinned by name there.
   // Kept as a pointer rather than a second copy: one canonical owner per fact.
+});
+
+// ── An empty `sha` resolves to the newest green main commit (#3114) ─────────
+//
+// What it resolves to is `resolve-deploy-sha.test.mjs`'s. This pins the wiring:
+// the pick happens in the unscoped `validate` job, then takes the same
+// "Validate the commit" step a paste does, and leaves through the same `sha`
+// output, so nothing downstream can tell the two modes apart.
+describe("an empty sha resolves inside validate (#3114)", () => {
+  const validateSteps = () => workflowSteps(CALLER).filter((s) => s.jobId === "validate");
+  const validateStep = (name) => {
+    const found = validateSteps().find((s) => s.name === name);
+    assert.ok(found, `validate has no step named "${name}"`);
+    return found;
+  };
+  const NAME_STEP = "Name the commit to deploy";
+  const RESOLVE_STEP = "Resolve the newest green main commit";
+
+  function runName(pasted, resolved) {
+    const path = join(workspace, "name-sha.sh");
+    writeFileSync(path, extractStepScript(CALLER, NAME_STEP));
+    const outFile = join(workspace, "name-output.txt");
+    writeFileSync(outFile, "");
+    const result = spawnSync("bash", [path], {
+      encoding: "utf8",
+      env: { ...process.env, PASTED_SHA: pasted, RESOLVED_SHA: resolved, GITHUB_OUTPUT: outFile },
+    });
+    return { code: result.status, output: `${result.stdout}${result.stderr}`, githubOutput: readFileSync(outFile, "utf8") };
+  }
+
+  it("leaves sha optional, defaulting to empty", () => {
+    const text = readFileSync(CALLER, "utf8");
+    const input = text.slice(text.indexOf("      sha:"), text.indexOf("      confirm:"));
+    assert.match(input, /^\s+required: false$/m);
+    assert.match(input, /^\s+default: ""$/m);
+  });
+
+  // `run-name` is evaluated at dispatch, before `validate` picks anything, so
+  // the title can't name the SHA. It must say the run picks one, never end blank.
+  it("titles an empty-sha run as picking the newest green main", () => {
+    const title = workflowKeys(CALLER).get("run-name");
+    assert.ok(title.includes("${{ inputs.sha || '(newest green main)' }}"), title);
+  });
+
+  it("resolves only when the trimmed input is empty, from the trusted checkout, with tags fetched", () => {
+    const resolve = validateStep(RESOLVE_STEP);
+    assert.equal(resolve.if, "${{ steps.trim.outputs.sha == '' }}");
+    assert.match(resolve.body, /^\s+id: resolve$/m);
+    assert.match(resolve.body, /git fetch --no-tags origin '\+refs\/tags\/v\*:refs\/tags\/v\*'/);
+    assert.match(resolve.body, /node scripts\/ci\/resolve-deploy-sha\.mjs/);
+    assert.equal(resolve.env.get("GITHUB_TOKEN"), "${{ secrets.GITHUB_TOKEN }}");
+    const names = validateSteps().map((s) => s.name);
+    const at = (name) => names.indexOf(name);
+    assert.ok(at("Checkout (trusted ref)") < at(RESOLVE_STEP), "the resolver runs from the trusted ref");
+    assert.ok(at(RESOLVE_STEP) < at(NAME_STEP));
+    assert.ok(at(NAME_STEP) < at("Validate the commit"), "the pick is validated exactly as a paste is");
+  });
+
+  it("names one commit from the paste or the pick, and that is the job's sha output", () => {
+    const step = validateStep(NAME_STEP);
+    assert.match(step.body, /^\s+id: sha$/m);
+    assert.equal(step.env.get("PASTED_SHA"), "${{ steps.trim.outputs.sha }}");
+    assert.equal(step.env.get("RESOLVED_SHA"), "${{ steps.resolve.outputs.sha }}");
+    assert.equal(callerJob("validate").keys.get("outputs").get("sha"), "${{ steps.sha.outputs.sha }}");
+    assert.equal(callerJob("validate").keys.get("outputs").get("resolved"), "${{ steps.resolve.outcome == 'success' }}");
+  });
+
+  it("prefers the paste, takes the pick when there is none, and fails with neither", () => {
+    assert.match(runName(SHA, "").githubOutput, new RegExp(`^sha=${SHA}$`, "m"));
+    assert.match(runName("", SHA).githubOutput, new RegExp(`^sha=${SHA}$`, "m"));
+    const neither = runName("", "");
+    assert.equal(neither.code, 1);
+    assert.match(neither.output, /No SHA was pasted and none was resolved/);
+  });
+
+  // Job-level permissions replace the workflow's, so `contents: read` has to
+  // be restated, and nothing here may write.
+  it("reads the Deploy staging runs with a named read scope, and writes nothing", () => {
+    const permissions = callerJob("validate").keys.get("permissions");
+    assert.deepEqual(Object.fromEntries(permissions), { contents: "read", checks: "read", actions: "read" });
+  });
+
+  // The summary a dry run leaves is what the real run pastes from.
+  it("tells a dry run that picked its SHA to paste it for the real run", () => {
+    const summary = workflowSteps(CALLER).find((s) => s.jobId === "deploy-outcome" && s.name === "Summarise what actually happened");
+    assert.equal(summary.env.get("RESOLVED"), "${{ needs.validate.outputs.resolved }}");
+    assert.match(summary.body, /To ship exactly what was\s*"\s*\n\s*echo "> rehearsed, paste \\`\$SHA\\` into \\`sha\\` on the real run\./);
+  });
 });
 
 // ── The other half of the #2265 shape ──────────────────────────────────────

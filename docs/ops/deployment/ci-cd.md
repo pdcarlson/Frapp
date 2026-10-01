@@ -35,12 +35,14 @@
 > replaced both.
 
 **Production** is gated behind a person, and runs only when asked. Dispatch **Deploy
-production** with a commit SHA. After `validate`, it calls the same `_deploy.yml` job staging
+production** with a commit SHA, or with `sha` empty to ship the newest `main` commit whose CI and
+Deploy staging run are both green (step 2). After `validate`, it calls the same `_deploy.yml` job staging
 does, with `environment: production` ([#2805](https://github.com/pdcarlson/Frapp/issues/2805)); its
 layers are that job's steps named `inputs.environment == 'production'`:
 
 1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked in an unscoped `validate` job before any secret is read and before GitHub asks anyone to Approve.
 2. **Commit validation** — trim, then the SHA must be an ancestor of `main` _and_ have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`). Still unscoped. A bad paste fails here with no reviewer request (run 34234768094 sat on Approve, then died at Validate).
+   With `sha` empty, `scripts/ci/resolve-deploy-sha.mjs` picks the commit first (#3114): the newest commit on `main` above production's newest `v*` tag whose required checks pass (the same `validateDeploySha`) and whose newest Deploy staging run concluded `success`. The pick then takes the same validation as a paste, and leaves `validate` through the same `sha` output, so `deploy`, `release` and `deploy-outcome` treat both alike. The job summary names the pick and every newer commit skipped, with the reason, before the approval. The run title reads `(newest green main)` because `run-name` is set at dispatch. Deploy staging titles each run with the commit it deploys (`staging <sha>`), since a `workflow_run` run's own `head_sha` is `main`'s tip when it fired, not the commit it deploys. What counts as staging success, and the rollback floor, are in [`promotion.md`](../database/promotion.md#production-one-path-two-scopes).
 3. **Environment approval** — the shipping job (`deploy`, `_deploy.yml`'s) pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires after `validate` succeeds, on a run that names the commit. Do not put `environment: production` on `validate`.
 4. **Installs, then the trusted window** — `npm ci` and the Vercel CLI install on the deployed commit before any secret is injected (#2801). Then the job moves to the trusted ref (the dispatched `main`) for the local actions, the provider ids (from `.github/environments.json`, so a rollback ships to the services today's config names), the preflight below and the Infisical `prod` injection, and checks the deployed commit back out.
 5. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the _absence_ of a Git link, so a **present** link is the violation.

@@ -46,8 +46,9 @@ merging into a branch never named a commit, and Render's auto-deploy-on-commit
 meant a push shipped whatever was at the tip without waiting for CI.
 
 **`Deploy production`.** Actions → _Deploy production_ → Run workflow. Give it
-the commit SHA you want live and type `DEPLOY TO PRODUCTION`. It refuses any SHA
-that is not an ancestor of `main` or whose CI was not green, **rehearses the
+the commit SHA you want live, or leave `sha` empty (below), and type `DEPLOY TO
+PRODUCTION`. It refuses any SHA that is not an ancestor of `main` or whose CI
+was not green, **rehearses the
 migration against production's live applied state**, fences the working tree,
 applies it — and then, depending on `scope`:
 
@@ -58,6 +59,41 @@ applies it — and then, depending on `scope`:
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
 without applying anything, under either scope.
+
+**Two ways to name the commit (#3114):**
+
+| `sha`  | What ships |
+| ------ | ---------- |
+| pasted | Exactly that commit, once it passes the ancestry and CI checks |
+| empty  | The newest commit on `main`, above production's newest `vX.Y.Z` tag, whose required checks passed **and** whose **Deploy staging** run succeeded. It then passes the same checks a pasted SHA does |
+
+An empty `sha` titles the run `<scope> (newest green main)`, because the title
+is set at dispatch, before the commit is chosen. The `validate` job's summary
+names the commit it picked, its subject and Deploy staging run, and every newer
+commit it skipped with the reason. That summary exists before GitHub asks for
+the approval, so read it before you approve. Two limits, both deliberate:
+
+- **It never picks a rollback.** Only commits newer than the newest `v*` tag
+  (what production runs) are candidates. When none qualifies, or that tag
+  isn't on `main`, the run fails before the approval and you paste a SHA. A
+  live ship whose tag failed is the one gap: production then runs a commit
+  newer than its tag, and `deploy-outcome` and `production-release-pin.yml`
+  both go red.
+- **"Staging succeeded" means the newest Deploy staging run for that commit
+  concluded `success`.** When GitHub replaces a run's deploy job while it is
+  still queued, that job ends `cancelled` and the run doesn't succeed
+  (`deploy-outcome` reports it as a failure). That commit is skipped, and the
+  newer commit whose run replaced it is normally picked instead. A successful
+  run counts whatever its plan, including `stale`, which deployed no API for
+  its own commit because staging already served something at or past it. The
+  plan isn't readable from the runs API. Deploy staging titles each run with
+  the commit it deploys, because a `workflow_run` run's own `head_sha` is
+  `main`'s tip when it fired. Runs from before #3114 have no SHA in their
+  title, so their commits never qualify.
+
+`main` can move between a dry run and the real one, and an empty `sha` picks
+again. To ship exactly what you rehearsed, paste the SHA the dry run's summary
+names.
 
 > **`migrations-only` leaves production running the previous code against the new
 > schema.** That is the ordering invariant the whole pipeline rests on —
@@ -186,6 +222,8 @@ touches the database.
 ```text
 Actions → Deploy production → Run workflow
   sha           <full 40-char SHA, already merged to main and CI-green>
+                (or empty: the newest main commit with green CI and a green
+                Deploy staging run; for the real run, paste what the dry run picked)
   confirm       DEPLOY TO PRODUCTION
   dry_run_only  ✔ first pass, ✗ for the real one
   scope         full (or migrations-only — see below)
@@ -295,7 +333,9 @@ Post-apply production checks:
   its **Deploy staging** run go green, then deploy that commit to production.
 - Deploy the commit you validated on staging. `Deploy production` takes a SHA
   rather than a branch precisely so "what we tested" and "what shipped" are the
-  same object — `main` may have moved on since.
+  same object — `main` may have moved on since. An empty `sha` keeps that
+  property: it picks only a commit whose own Deploy staging run succeeded, and
+  names it before the approval.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `db-rollback-playbook.md`.
 - **Reference data reaches a hosted project only by migration.** `chapter_directory`'s
