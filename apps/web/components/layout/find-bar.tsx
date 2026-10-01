@@ -36,7 +36,7 @@ import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
  * virtualized, the browser's own in-page find searches only what happens to be
  * mounted. Escape closes and returns the page. The keyboard hint in the field
  * says `⌘F`, so the binding is advertised where it is used rather than being
- * folklore — `components.md` §5 bans a hint for a binding that is not wired,
+ * folklore — `components.md` §7 bans a hint for a binding that is not wired,
  * and this one is.
  *
  * **Ranking is Channels, then Members, then Messages** (`1d` pins 2-4), with
