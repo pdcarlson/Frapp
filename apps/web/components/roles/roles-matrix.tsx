@@ -190,7 +190,7 @@ export function RolesMatrix({
       >
         <div
           role="row"
-          className="grid h-16 items-end gap-1 bg-card py-2.5 pl-4"
+          className="grid min-h-16 items-end gap-1 bg-card py-2.5 pl-4"
           style={{ gridTemplateColumns }}
         >
           <span
