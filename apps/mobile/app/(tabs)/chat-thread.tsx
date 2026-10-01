@@ -353,9 +353,10 @@ export default function ChatThreadScreen() {
         );
         // The member left this channel while the PUT was in flight. The bytes
         // are in the bucket under the old channel's prefix; abandoning the
-        // claim leaves an unreferenced object for the retention pass, which is
-        // the same trade the composer already makes for a removed chip — and
-        // far better than staging a claim the send would reject forever.
+        // claim leaves an unreferenced object behind (nothing sweeps the
+        // `chat` bucket yet, #2197), which is the same trade the composer
+        // already makes for a removed chip — and far better than staging a
+        // claim the send would reject forever.
         if (attachChannelRef.current !== forChannelId) return;
         if (result.status === "attached") {
           addAttachment(result.attachment);

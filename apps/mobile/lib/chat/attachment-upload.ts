@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
   MAX_UPLOAD_LABEL,
   inspectUploadFile,
@@ -37,8 +38,8 @@ import {
  * The object is in the bucket the moment this resolves, which is why the
  * return value is a *claim* and not a file. Dropping the chip before sending
  * drops the claim, not the object, and an abandoned composer leaves the object
- * unreferenced for the storage retention pass. Web took this trade
- * deliberately (`composer.tsx`, "Files uploaded and waiting to be claimed by
+ * unreferenced. Nothing sweeps those out of the `chat` bucket yet (#2197), so
+ * each one stays as an orphan. Web took this trade deliberately (`composer.tsx`, "Files uploaded and waiting to be claimed by
  * the next send") because the alternative it replaced was worse: the only
  * record of the file was a string the sender could edit out of the body.
  *
@@ -214,31 +215,16 @@ export const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.
  * The sentence to show for a failed request.
  *
  * `@repo/hooks` mutations throw the API's error body, a plain object carrying
- * the `statusCode` and a `message`. A 4xx refusal's message is the API's reason
- * for a member to read. A 429's and a 5xx's are framework text
- * ("ThrottlerException: Too Many Requests", "Internal server error"), and a
- * thrown `Error` is a native networking failure or a parse error in platform
- * jargon, so each of those reads as the generic sentence.
+ * the `statusCode` and a `message`. A definitive refusal's message is the API's
+ * reason for a member to read, read by the same `definitiveRefusalMessage` the
+ * web composer uses, so one response reads the same on both (#2199). A 429's
+ * and a 5xx's are framework text ("ThrottlerException: Too Many Requests",
+ * "Internal server error"), and a thrown `Error` is a native networking failure
+ * or a parse error in platform jargon, so each of those reads as the generic
+ * sentence.
  */
 export function uploadFailureReason(err: unknown): string {
-  if (!err || typeof err !== "object" || err instanceof Error) {
-    return UPLOAD_FAILED;
-  }
-  const { statusCode, message } = err as {
-    statusCode?: unknown;
-    message?: unknown;
-  };
-  const refusal =
-    typeof statusCode === "number" &&
-    statusCode >= 400 &&
-    statusCode < 500 &&
-    statusCode !== 429;
-  if (!refusal) return UPLOAD_FAILED;
-  if (typeof message === "string" && message.length > 0) return message;
-  if (Array.isArray(message) && typeof message[0] === "string") {
-    return message[0];
-  }
-  return UPLOAD_FAILED;
+  return definitiveRefusalMessage(err) ?? UPLOAD_FAILED;
 }
 
 async function pickAndUploadImageUnguarded(

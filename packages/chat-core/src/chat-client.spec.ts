@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
   classifyChatError,
+  definitiveRefusalMessage,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -402,6 +403,42 @@ describe("editMessage", () => {
       title: "Couldn't edit message",
       description: "You can only edit your own messages",
     });
+  });
+
+  // A ValidationPipe 400 carries `message` as an array. `throwApiError` used to
+  // read strings only, so the member saw the fallback instead of the reason.
+  it("shows a validation refusal's reasons, not the fallback", async () => {
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          statusCode: 400,
+          error: "Bad Request",
+          message: ["content must be shorter than or equal to 4000 characters"],
+        },
+        response: { status: 400 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      editMessage(ctx, {
+        channelId: "chan-1",
+        messageId: "msg-1",
+        content: "edited body",
+      }),
+    ).rejects.toThrow();
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't edit message",
+        description: "content must be shorter than or equal to 4000 characters",
+      }),
+    );
   });
 
   it("is a no-op with no userId, and never calls onError", async () => {
@@ -1764,5 +1801,46 @@ describe("classifyChatError", () => {
       status: undefined,
       message: "Failed to fetch",
     });
+  });
+});
+
+describe("definitiveRefusalMessage", () => {
+  it("gives a definitive refusal's own reason", () => {
+    expect(
+      definitiveRefusalMessage({
+        statusCode: 403,
+        message: "You do not have access to this channel",
+      }),
+    ).toBe("You do not have access to this channel");
+  });
+
+  it("is null for a 429, whose body is the throttler's framework text", () => {
+    expect(
+      definitiveRefusalMessage({
+        statusCode: 429,
+        message: "ThrottlerException: Too Many Requests",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["a 5xx", { statusCode: 500, message: "Internal server error" }],
+    ["a proxy 408", { statusCode: 408, message: "Request Timeout" }],
+    ["a body with no status", { message: "something" }],
+    ["a refusal with no message", { statusCode: 400, message: "" }],
+    ["a thrown Error, even with a status", Object.assign(new Error("Upload failed (413)"), { status: 413 })],
+    ["a text body openapi-fetch couldn't parse", "<html>Bad Gateway</html>"],
+    ["nothing", undefined],
+  ])("is null for %s", (_label, err) => {
+    expect(definitiveRefusalMessage(err)).toBeNull();
+  });
+
+  it("gives the member the Polls-off sentence, as the send path does", () => {
+    expect(
+      definitiveRefusalMessage({
+        statusCode: 403,
+        message: moduleDisabledMessage("polls"),
+      }),
+    ).toBe(POLLS_OFF_COPY);
   });
 });

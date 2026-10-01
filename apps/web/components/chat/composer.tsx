@@ -38,7 +38,7 @@ import {
 } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
-import { classifyChatError } from "@repo/chat-core/chat-client";
+import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // Imported, never restated. A structural copy of this shape is assignable even
 // when it is missing a field, so a hand-written `{ ok, error? }` silently erases
 // any outcome added later — which is exactly what happened at the
@@ -725,13 +725,11 @@ export function notifyDispatchOutcome(
  * The description on the "Couldn't upload file" toast (#2199).
  *
  * The mint (`useRequestChatUploadUrl`) rethrows the API's parsed error body, a
- * plain object, so the send path's classifier reads it. A definitive 4xx is the
- * server telling the member why, and retrying can't change it. That covers a
- * member who lost posting rights inside the channel list's staleTime (the mint
- * authorizes as a post) and a file the API refuses. A 429 is the exception: its
- * body is the throttler's framework text ("ThrottlerException: Too Many
- * Requests"), and waiting is the remedy. A 5xx, a proxy 408 or no status at all
- * is transient.
+ * plain object, and `definitiveRefusalMessage` reads it the way mobile's photo
+ * upload does. A definitive refusal is the server telling the member why, and
+ * retrying can't change it: a member who lost posting rights inside the channel
+ * list's staleTime (the mint authorizes as a post), or a file the API refuses.
+ * Anything a retry could fix (a 429, a 5xx, no status) gets retry advice.
  *
  * A thrown `Error` is not an API body (`readSignedUpload`'s contract error, the
  * storage PUT's `SignedUploadError`, a network failure) and keeps the message
@@ -739,8 +737,7 @@ export function notifyDispatchOutcome(
  */
 export function uploadFailureDescription(err: unknown): string {
   if (err instanceof Error) return err.message;
-  const { terminal, status, message } = classifyChatError(err);
-  return terminal && status !== 429 ? message : "Retry in a moment.";
+  return definitiveRefusalMessage(err) ?? "Retry in a moment.";
 }
 
 /**
@@ -1403,8 +1400,11 @@ export function Composer({
   // (`spec/behavior/alumni.md`), and the read-only case (no
   // `announcements:post`). The first never reaches this composer: the list
   // leaves archived channels out (`filterAccessibleChannels`), and this
-  // renders only for a channel in it. So two explanations cover every case
-  // here, and a list that starts carrying archived channels needs a third.
+  // renders only for a channel in it. Of the other two, the alumni rule is
+  // checked first, which `isReadOnly` can't see: an alumnus who holds
+  // `announcements:post` is refused in a read-only channel as an alumnus but
+  // shown the read-only sentence, until the row says which rule refused
+  // (#3074).
   //
   // `canPost` defaults to `!isReadOnly`, not to `true` unconditionally: a
   // caller that only passes `isReadOnly` (predating this prop, or a channel

@@ -384,6 +384,13 @@ describe("uploadFailureReason", () => {
         message: ["filename must be a string"],
       }),
     ).toBe("filename must be a string");
+    // Every reason, joined, as web shows the same body (#2199).
+    expect(
+      uploadFailureReason({
+        statusCode: 400,
+        message: ["filename must be a string", "content_type is not allowed"],
+      }),
+    ).toBe("filename must be a string, content_type is not allowed");
   });
 
   it.each([

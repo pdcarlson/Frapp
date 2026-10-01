@@ -203,14 +203,6 @@ export function isDefinitiveClientError(status: number): boolean {
   );
 }
 
-function extractMessage(value: unknown): string | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = (value as { message?: unknown }).message;
-  return typeof candidate === "string" && candidate.length > 0
-    ? candidate
-    : null;
-}
-
 /**
  * Distinguishes terminal client errors (4xx — bad request / forbidden) from
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
@@ -224,8 +216,8 @@ function extractMessage(value: unknown): string | null {
  *     `message` that a validation failure sends as an array
  *
  * Exported so a chat surface outside the outbox reads an API failure the way
- * the send path does, instead of with a second copy of this split. The web
- * composer's attachment upload is one (#2199).
+ * the send path does, instead of with a second copy of this split. The upload
+ * surfaces reach it through `definitiveRefusalMessage` below (#2199).
  */
 export function classifyChatError(error: unknown): {
   terminal: boolean;
@@ -262,6 +254,30 @@ export function classifyChatError(error: unknown): {
 }
 
 /**
+ * The server's reason for a definitive refusal, for a member to read, or
+ * `null` when a retry could help.
+ *
+ * For a surface that shows the API's refusal and otherwise its own sentence:
+ * the web composer and mobile's photo upload both read their upload-URL mint
+ * through this, so one response can't read two ways (#2199). It is
+ * `classifyChatError`'s terminal split with one more transient case: a 429's
+ * body is the throttler's framework text ("ThrottlerException: Too Many
+ * Requests"), and waiting is the remedy. It is also `null` for a refusal with
+ * no message, so the caller's sentence stands in for an empty line.
+ *
+ * Reads API bodies only. A thrown `Error` is `null` here, because what one
+ * says is the surface's call: web shows its own Errors' text, while mobile's
+ * are native networking failures in platform jargon.
+ */
+export function definitiveRefusalMessage(error: unknown): string | null {
+  if (error instanceof Error) return null;
+  const { terminal, status } = classifyChatError(error);
+  if (!terminal || status === 429) return null;
+  const message = serverMessageOf(error);
+  return message === null ? null : memberFacingRefusal(message);
+}
+
+/**
  * Normalize an openapi-fetch `{ data, error }` response into the same
  * thrown-Error shape `classifyChatError` understands. NestJS error bodies look
  * like `{ statusCode, message, error }`; openapi-fetch exposes the raw
@@ -272,7 +288,7 @@ function throwApiError(
   response: { status: number } | undefined,
   fallback: string,
 ): never {
-  const msg = extractMessage(error) ?? fallback;
+  const msg = serverMessageOf(error) ?? fallback;
   const wrapped = new Error(msg) as FunctionsErrorWithStatus;
   if (response) wrapped.response = { status: response.status };
   wrapped.context = { status: response?.status, response };
