@@ -325,7 +325,7 @@ runs:
         echo "Using the snapshot published by ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${RUN_ID} (started ${RUN_STARTED}; ${SINCE_TEXT})"
 
     - name: Download the snapshot
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: migration-snapshot
         run-id: ${{ steps.find.outputs.run-id }}
