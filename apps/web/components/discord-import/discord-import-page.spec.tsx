@@ -663,6 +663,31 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
+  // Offline, a read either pauses (it read as loading until reconnect) or,
+  // with the API unreachable, fails; both are offline.
+  it.each([
+    ["paused", { data: undefined, isPending: true, fetchStatus: "paused" }],
+    ["failed", { data: undefined, isPending: false, isError: true }],
+  ])(
+    "says the channels are unavailable offline when the read %s",
+    (_, read) => {
+      hooks.offline = true;
+      hooks.progress.mockReturnValue({ ...read, refetch: vi.fn() });
+      const { container } = render(<DiscordImportPage />);
+      const running = rowOf("Running server");
+      fireEvent.click(running.getByRole("button", { name: "Watch" }));
+
+      expect(
+        running.getByText("Channels unavailable offline"),
+      ).toBeInTheDocument();
+      expect(running.queryByText("Loading the import’s channels…")).toBeNull();
+      expect(
+        running.queryByText("Couldn’t load the import’s channels"),
+      ).toBeNull();
+      expect(cardFilledContainers(container)).toEqual([]);
+    },
+  );
+
   it("says when the channels could not be loaded, and retries", () => {
     const refetch = vi.fn();
     hooks.progress.mockReturnValue({

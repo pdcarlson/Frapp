@@ -264,6 +264,12 @@ describe("ChatAdminPage — the channel structure's states", () => {
       true,
       /Offline — can.t load the permission list/,
     ],
+    [
+      "is paused offline",
+      { isPending: true, fetchStatus: "paused" },
+      true,
+      /Offline — can.t load the permission list/,
+    ],
   ])(
     "says so when a role-gated channel's catalog %s, on the page surface",
     (_, read, offline, text) => {
@@ -340,6 +346,18 @@ describe("ChatAdminPage — a channel's pins", () => {
     expect(screen.getByText("Loading pins...")).toBeInTheDocument();
     expect(screen.queryByText("Nothing pinned")).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says the pins are unavailable offline when the read failed offline", () => {
+    // The API unreachable, or a page restored offline: the read fails rather
+    // than pausing, and must not blame the officer's chapter access.
+    mockOffline.value = true;
+    reads.pins = empty({ isError: true });
+    render(<ChatAdminPage />);
+    selectExec();
+
+    expect(screen.getByText("Pins unavailable offline")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load pins")).toBeNull();
   });
 
   it("says the pins are unavailable offline when the read is paused", () => {

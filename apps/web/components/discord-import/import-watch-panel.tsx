@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { useDiscordImportProgress } from "@repo/hooks";
-import { NestedError, NestedLoading } from "@/components/shared/nested-states";
+import { anyReadUncached } from "@/components/shared/async-states";
+import {
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
 
 /** One channel or thread, as `GET :id/progress` names it. */
@@ -66,10 +72,26 @@ export function ImportWatchPanel({
   active: boolean;
 }) {
   const progress = useDiscordImportProgress(importId, { active });
+  const { isOffline } = useNetwork();
 
   // A failed poll keeps the last good read (TanStack Query keeps `data`),
   // flagged as not current below; only a panel with nothing to show falls
   // back to the error.
+  // Offline with nothing read, either way a read goes offline
+  // (`anyReadUncached` in async-states.tsx): paused, it read as loading until
+  // the link came back; failed (the API unreachable), as a failure.
+  if (
+    (isOffline && anyReadUncached(progress)) ||
+    (progress.isPending && progress.fetchStatus === "paused")
+  ) {
+    return (
+      <NestedOffline
+        title="Channels unavailable offline"
+        description="Reconnect to see this import’s channels."
+        onRetry={() => void progress.refetch()}
+      />
+    );
+  }
   if (!progress.data && progress.isPending) {
     return <NestedLoading message="Loading the import’s channels…" lines={2} />;
   }

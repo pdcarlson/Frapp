@@ -969,18 +969,23 @@ function ChatAdminBody() {
                       behind a failed read was told the channel had no pins.
                       The nested family, so the three states in this slot
                       read as one, and Retry is the family's 44px control.
+                      Offline first, and both ways a read goes offline
+                      (`anyReadUncached` in async-states.tsx): it pauses, or,
+                      with the API unreachable or a page restored offline, it
+                      fails, which would otherwise blame chapter access.
                     */}
-                    {pinsQuery.isLoading ? (
-                      <p className="text-xs text-muted-foreground">
-                        Loading pins...
-                      </p>
-                    ) : pinsQuery.data === undefined &&
-                      pinsQuery.fetchStatus === "paused" ? (
+                    {(isOffline && anyReadUncached(pinsQuery)) ||
+                    (pinsQuery.data === undefined &&
+                      pinsQuery.fetchStatus === "paused") ? (
                       <NestedOffline
                         title="Pins unavailable offline"
                         description="Reconnect to load this channel's pins."
                         onRetry={() => void pinsQuery.refetch()}
                       />
+                    ) : pinsQuery.isLoading ? (
+                      <p className="text-xs text-muted-foreground">
+                        Loading pins...
+                      </p>
                     ) : pinsQuery.isError && pinsQuery.data === undefined ? (
                       <NestedError
                         title="Couldn't load pins"

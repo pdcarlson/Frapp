@@ -501,14 +501,19 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
 | Stale (pins) | — | `Couldn't refresh the pins. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded pins stay) |
 | Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
-| Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` |
+| Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
+| Loading (permission grid) | — | `Loading permissions…` |
+| Unavailable (permission grid) | — | `Couldn't load the permission catalog. You may be missing the members:view permission it requires. Existing selections are unaffected; ask your chapter president for access to change them.` (nothing loaded; a failed refresh keeps the loaded grid) |
+| Offline (permission grid) | — | `Offline — can't load the permission list. Existing selections are unaffected; reconnect to change them.` |
 | Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
 | Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
 | Permission denied | — | `Managing channels and categories needs the channels:manage permission. Ask your chapter president to grant access.` |
 
-Implementation: inline in `apps/web/components/chat-admin/chat-admin-page.tsx`.
+The permission grid is the role-gated channel's, shared with the import wizard's channel step, which shows the same three lines.
+
+Implementation: inline in `apps/web/components/chat-admin/chat-admin-page.tsx`; the permission grid's in `apps/web/components/shared/permission-checkbox-grid.tsx`.
 
 ### Chat Admin — reported messages (dashboard)
 
@@ -560,12 +565,13 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Permission denied | — | `Importing a Discord archive needs channel management permission.` |
 | Loading (channel panel) | — | `Loading the import’s channels…` |
 | Error (channel panel) | `Couldn’t load the import’s channels` | `The import itself is unaffected and keeps running. Try again in a moment.` · `Retry` |
+| Offline (channel panel) | `Channels unavailable offline` | `Reconnect to see this import’s channels.` (whether the read paused or failed while offline) |
 | Stale (channel panel) | — | `Couldn’t refresh the channels. This is the last update that loaded.` · `Try again` (a poll of the panel failed; the channels it last showed stay) |
 | Empty (channel panel) | — | `Waiting for the first channel to start.` (still running) · `No channel was imported.` (finished) |
 | Channel panel groups | `Importing now` / `Stopped at` (running / stopped) · `Finished last` / `Finished` · `Failed` | A failed channel without a reason: `No reason was recorded.` Under the groups: `Imported messages don’t appear live in chat. Open a channel to see what has landed so far.` |
 | Loading (wizard, connect step) | — | `Checking whether Discord is connected…` · `Confirming your Discord server…` (the returned authorization is being confirmed) |
 | Error (wizard, connect step) | `Couldn't check the Discord connection` | `Retry to see whether your server is connected.` |
-| Offline (wizard, connect step) | `Can't check Discord offline` | `Reconnect to check whether your server is connected.` |
+| Offline (wizard, connect step) | `Can't check Discord offline` | `Reconnect to check whether your server is connected.` (whether the read paused or failed while offline) |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
 | Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
 | Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |

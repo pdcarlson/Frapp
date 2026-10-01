@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { cardFilledContainers } from "@/tests/card-surfaces";
+import { networkMock } from "@/tests/network";
 
 // `vi.hoisted` runs before the hoisted `vi.mock` factory, so the spies exist
 // when the factory wires them in.
@@ -24,6 +25,8 @@ const {
   permissionsFail,
   catalogStale,
   connectionRead,
+  confirmPending,
+  mockOffline,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -45,6 +48,9 @@ const {
   catalogStale: { value: false },
   // The connection read's state, over a settled one, for its async states.
   connectionRead: { value: {} as Record<string, unknown> },
+  // A confirm in flight.
+  confirmPending: { value: false },
+  mockOffline: { value: false },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general", type: "PUBLIC" }] as unknown,
@@ -148,7 +154,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useConfirmDiscordConnect: () => ({
     mutateAsync: confirmConnect,
-    isPending: false,
+    isPending: confirmPending.value,
   }),
   useDiscoverDiscordChannels: () => ({
     mutateAsync: discoverChannels,
@@ -162,6 +168,7 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { ImportWizard } from "./import-wizard";
 import { SourceStep } from "./source-step";
@@ -1690,6 +1697,8 @@ describe("ConnectStep — its async states, on the page surface (#2500)", () => 
   });
   afterEach(() => {
     connectionRead.value = {};
+    confirmPending.value = false;
+    mockOffline.value = false;
   });
 
   function renderConnect() {
@@ -1725,6 +1734,40 @@ describe("ConnectStep — its async states, on the page surface (#2500)", () => 
 
     expect(screen.getByText("Can't check Discord offline")).toBeInTheDocument();
     expect(screen.queryByText(/Checking whether Discord/)).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  // Offline, a read either pauses or (the API unreachable, a page restored
+  // offline) fails; both are offline, not a failure to check.
+  it("says it can't check offline when the read failed while offline", () => {
+    mockOffline.value = true;
+    connectionRead.value = { data: undefined, isError: true };
+    renderConnect();
+
+    expect(screen.getByText("Can't check Discord offline")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't check the Discord connection"),
+    ).toBeNull();
+  });
+
+  it("keeps the last answer through a refetch that fails", () => {
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    connectionRead.value = { isError: true };
+    renderConnect();
+
+    expect(screen.getByText(/Connected to Tau Nu/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't check the Discord connection"),
+    ).toBeNull();
+  });
+
+  it("announces the confirm while it runs", () => {
+    confirmPending.value = true;
+    const { container } = renderConnect();
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Confirming your Discord server…",
+    );
     expect(cardFilledContainers(container)).toEqual([]);
   });
 

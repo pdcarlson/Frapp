@@ -18,7 +18,9 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { anyReadUncached } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
 
 /**
@@ -74,15 +76,18 @@ export function ConnectStep({
   /**
    * Whether the wizard should stop passing the token. `true` the moment the
    * confirm is sent: Back unmounts this step, and a fresh one would post it
-   * again. `false` if the confirm then failed without the server spending it
-   * (anything but its 400, such as a 503 while Discord is withdrawn or a
-   * request that never arrived), so a later visit to this step can send it
-   * again rather than make the admin authorize from the start.
+   * again. `false` if the confirm then failed with anything but the API's
+   * 400, so a later visit to this step can send it again rather than make the
+   * admin authorize from the start. A 503 (Discord withdrawn) is refused
+   * before the token is touched. A 5xx from linking the server, or a response
+   * lost on the way back, may follow a spent token; resending one costs only
+   * a refused 400, and a connection that did commit shows as connected.
    */
   onHandshakeSpent?: (spent: boolean) => void;
 }) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
+  const { isOffline } = useNetwork();
   const availability = useDiscordAvailability();
   const beginConnect = useBeginDiscordConnect();
   const confirmConnect = useConfirmDiscordConnect();
@@ -112,7 +117,8 @@ export function ConnectStep({
       .then(() => setConfirmError(null))
       .catch((error: unknown) => {
         // The API answers a spent, expired or other chapter's token with one
-        // 400; every other failure returned before it touched the token.
+        // 400, which only a fresh authorization gets past. Any other failure
+        // may have left the token unspent (see `onHandshakeSpent`).
         if (statusOf(error) !== 400) onHandshakeSpent?.(false);
         setConfirmError(
           getErrorMessage(
@@ -154,9 +160,15 @@ export function ConnectStep({
     return <NestedLoading sole message="Confirming your Discord server…" />;
   }
 
-  // Offline with nothing read yet, the query is paused rather than loading,
-  // and used to sit on "Checking…" for as long as the connection was down.
-  if (connection.isPending && connection.fetchStatus === "paused") {
+  // Offline with nothing read, both ways a read goes offline
+  // (`anyReadUncached` in async-states.tsx): it pauses, and used to sit on
+  // "Checking…" for as long as the link was down; or, with the API
+  // unreachable, it fails, which read as a failure to check rather than as
+  // being offline.
+  if (
+    (isOffline && anyReadUncached(connection)) ||
+    (connection.isPending && connection.fetchStatus === "paused")
+  ) {
     return (
       <NestedOffline
         title="Can't check Discord offline"
@@ -177,7 +189,9 @@ export function ConnectStep({
   // fell through to the "not connected" pitch — telling a chapter that IS
   // connected to add the bot again, with no retry and no sign anything failed.
   // It used `ErrorState`'s defaults, "Unable to load data", which name nothing.
-  if (connection.isError) {
+  // Only with nothing read: `staleTime: 0` refetches on every mount, and a
+  // refetch that fails keeps the last answer, which the branches below show.
+  if (connection.isError && connection.data === undefined) {
     return (
       <NestedError
         title="Couldn't check the Discord connection"
