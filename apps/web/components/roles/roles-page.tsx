@@ -47,7 +47,13 @@ import { RolesGlyph } from "@/components/layout/nav-glyphs";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  cn,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { signetDarkTokens } from "@repo/theme/signet";
 
@@ -231,9 +237,7 @@ export function RolesAndPermissionsPage() {
         body: {
           name: nameDraft || undefined,
           color: colorDraft || undefined,
-          display_order: displayOrderDraft
-            ? Number(displayOrderDraft)
-            : undefined,
+          display_order: parseGuardedInt(displayOrderDraft),
           // **No `permissions` key.** This form no longer edits them, and
           // sending the draft anyway would post whatever the role held when it
           // was selected — so renaming a role after flipping its cells in the
@@ -524,10 +528,12 @@ export function RolesAndPermissionsPage() {
                     <Input
                       id="role-display-order"
                       type="number"
+                      min={0}
                       value={displayOrderDraft}
-                      onChange={(event) =>
-                        setDisplayOrderDraft(event.target.value)
-                      }
+                      onChange={(event) => {
+                        const next = guardIntDraft(event.target.value);
+                        if (next !== undefined) setDisplayOrderDraft(next);
+                      }}
                     />
                   </div>
                   <div className="grid gap-1">

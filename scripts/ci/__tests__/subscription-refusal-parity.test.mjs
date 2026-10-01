@@ -34,7 +34,8 @@
 // `apps/mobile/lib/events/check-in-screen.spec.tsx`,
 // `apps/mobile/lib/study/study-screen.spec.tsx`,
 // `apps/mobile/components/tasks/new-task-sheet.spec.tsx` (the three #2297
-// named) and `apps/mobile/lib/more/service-hours-screen.spec.tsx` (#2410).
+// named), `apps/mobile/lib/more/service-hours-screen.spec.tsx` (#2410) and
+// `apps/mobile/lib/tasks/tasks-screen.spec.tsx` (the status toggle, #2710).
 // Copy wording itself is asserted in `apps/mobile/lib/subscription-refusal.spec.ts`
 // (no price/plan/link, names an officer, never says "try again"). Reads are
 // deliberately NOT in scope: the gate returns early for GET/HEAD/OPTIONS, so a read surface has no

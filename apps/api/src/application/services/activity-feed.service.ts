@@ -8,6 +8,7 @@ import { ChatService } from './chat.service';
 import type { MaskedChatMessage } from './chat-block-mask';
 import { RbacService } from './rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export type ActivityFeedItemType =
   | 'event_created'
@@ -171,8 +172,11 @@ export class ActivityFeedService {
 
     const items = domains.flatMap((result, index) => {
       if (result.status === 'fulfilled') return result.value;
-      this.logger.warn(
-        `Activity feed domain '${domainNames[index]}' failed for chapter ${chapterId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Activity feed domain '${domainNames[index]}' failed for chapter ${chapterId}`,
+        result.reason,
       );
       return [];
     });
@@ -338,8 +342,11 @@ export class ActivityFeedService {
         );
       } catch (error) {
         if (page === 0) throw error;
-        this.logger.warn(
-          `Activity feed announcements stopped at page ${page + 1} for chapter ${chapterId}: ${error instanceof Error ? error.message : String(error)}`,
+        logThrowable(
+          this.logger,
+          'warn',
+          `Activity feed announcements stopped at page ${page + 1} for chapter ${chapterId}`,
+          error,
         );
         break;
       }

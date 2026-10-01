@@ -97,6 +97,7 @@ import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-wo
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import { resolveLevel } from '../../modules/chat-push-worker/push-rules';
 import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -417,10 +418,12 @@ export class ChatService {
     try {
       return await this.readReceiptRepo.findHiddenChannelIds(chapterId, userId);
     } catch (error) {
-      this.logger.warn('Could not read hidden channels; showing them all', {
-        chapterId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not read hidden channels for chapter ${chapterId}; showing them all`,
+        error,
+      );
       return new Set();
     }
   }
@@ -597,10 +600,12 @@ export class ChatService {
         await this.readReceiptRepo
           .unhideChannel(existing.id, openedBy)
           .catch((error: unknown) => {
-            this.logger.warn('Could not unhide a reopened DM', {
-              chapterId: input.chapter_id,
-              error: error instanceof Error ? error.message : String(error),
-            });
+            logThrowable(
+              this.logger,
+              'warn',
+              `Could not unhide reopened DM ${existing.id} in chapter ${input.chapter_id}`,
+              error,
+            );
           });
       }
       return existing;
@@ -1147,10 +1152,12 @@ export class ChatService {
 
       return resolveMentions(content, candidates);
     } catch (error) {
-      this.logger.warn('Failed to resolve mentions; sending without them', {
-        chapterId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to resolve mentions in chapter ${chapterId}; sending without them`,
+        error,
+      );
       return [];
     }
   }
@@ -1455,10 +1462,12 @@ export class ChatService {
         chapterId,
       );
     } catch (error) {
-      this.logger.warn('Could not read attachments to purge', {
-        messageId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not read attachments to purge for message ${messageId}`,
+        error,
+      );
       return;
     }
     if (attachments.length === 0) return;
@@ -1476,11 +1485,12 @@ export class ChatService {
       // Fail closed: an unanswerable "is this shared?" must not be read as
       // "no". Keeping an orphan costs storage; guessing wrong destroys a live
       // message's file.
-      this.logger.warn('Could not check shared attachments; keeping objects', {
-        messageId,
-        attachmentCount: attachments.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check shared attachments for message ${messageId} (${attachments.length} attachments); keeping objects`,
+        error,
+      );
       return;
     }
 
@@ -1502,13 +1512,11 @@ export class ChatService {
         // Fail closed, as the shared check does: an unanswerable "does a
         // report hold this?" must not be read as "no". An orphan costs
         // storage; a wrong guess destroys the evidence a report exists for.
-        this.logger.warn(
-          'Could not check reported attachments; keeping objects',
-          {
-            messageId,
-            attachmentCount: unshared.length,
-            error: error instanceof Error ? error.message : String(error),
-          },
+        logThrowable(
+          this.logger,
+          'warn',
+          `Could not check reported attachments for message ${messageId} (${unshared.length} attachments); keeping objects`,
+          error,
         );
         return;
       }
@@ -1553,12 +1561,12 @@ export class ChatService {
         // Per bucket, and naming the paths: an operator reconciling orphans by
         // hand needs to know which objects survived.
         failed.add(bucket);
-        this.logger.warn('Failed to purge chat attachment objects', {
-          ...context,
-          bucket,
-          paths,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logThrowable(
+          this.logger,
+          'warn',
+          `Failed to purge chat attachment objects ${JSON.stringify({ ...context, bucket, paths })}`,
+          error,
+        );
       }
     }
     return failed;
@@ -1643,13 +1651,11 @@ export class ChatService {
         );
         heldBy = new Map(held.map((object) => [objectKey(object), object]));
       } catch (error) {
-        this.logger.warn(
-          'Could not check report evidence before releasing it',
-          {
-            chapterId,
-            attachmentCount: objects.length,
-            error: error instanceof Error ? error.message : String(error),
-          },
+        logThrowable(
+          this.logger,
+          'warn',
+          `Could not check report evidence before releasing it in chapter ${chapterId} (${objects.length} attachments)`,
+          error,
         );
         return finished;
       }
@@ -2395,16 +2401,11 @@ export class ChatService {
         // Best effort. If even this fails the message keeps a count it cannot
         // satisfy, so say so loudly rather than losing it inside the original
         // error the caller is about to see.
-        this.logger.error(
-          'Failed to clear attachment_count after a failed attachment write',
-          {
-            messageId,
-            channelId,
-            error:
-              cleanupError instanceof Error
-                ? cleanupError.message
-                : String(cleanupError),
-          },
+        logThrowable(
+          this.logger,
+          'error',
+          `Failed to clear attachment_count on message ${messageId} (channel ${channelId}) after a failed attachment write`,
+          cleanupError,
         );
       }
       throw error;
@@ -2531,13 +2532,11 @@ export class ChatService {
           // A whole-bucket failure must not take every other bucket's objects
           // down with it, the same guarantee `allSettled` gave a single dead
           // row before signing was batched.
-          this.logger.warn(
-            'Could not sign a batch of chat attachments; omitting them',
-            {
-              ...context,
-              bucket,
-              error: error instanceof Error ? error.message : String(error),
-            },
+          logThrowable(
+            this.logger,
+            'warn',
+            `Could not sign a batch of chat attachments ${JSON.stringify({ ...context, bucket })}; omitting them`,
+            error,
           );
           return;
         }
@@ -2620,13 +2619,11 @@ export class ChatService {
       // A whole-batch failure must not 500 the request — every message just
       // degrades to its initials fallback, same as an avatar that was never
       // requested.
-      this.logger.warn(
-        'Could not sign a batch of author avatars; omitting them',
-        {
-          channelId,
-          chapterId,
-          error: error instanceof Error ? error.message : String(error),
-        },
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not sign a batch of author avatars for channel ${channelId} in chapter ${chapterId}; omitting them`,
+        error,
       );
       return {};
     }
