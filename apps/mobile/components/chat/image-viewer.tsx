@@ -203,8 +203,9 @@ function ViewerBody({
   );
 
   // Opening hides the image that had a screen reader's focus, which clears
-  // that focus rather than moving it, so put it on the viewer's title.
-  useFocusOnOpen(titleRef);
+  // that focus rather than moving it, so put it on the viewer's title. Open
+  // for as long as this is mounted: `ImageViewer` draws it only while open.
+  useFocusOnOpen(titleRef, true);
 
   // A refetch that no longer lists the image (the attachment was removed)
   // closes the viewer rather than leaving it open on nothing.

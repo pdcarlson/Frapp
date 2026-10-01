@@ -170,6 +170,10 @@ describe("opening and closing", () => {
     expect(tree.toJSON()).toBeNull();
   });
 
+  // What a back press does, and when focus is sent, are `lib/overlay.spec.tsx`'s
+  // to pin. These pin that the viewer hands the hooks the right node and the
+  // right open state.
+
   it("closes on Android's back button instead of leaving the thread", () => {
     const tree = render();
     openOn([image(1)], 0);
@@ -180,23 +184,36 @@ describe("opening and closing", () => {
       expect.any(Function),
     );
     const handler = addListener.mock.calls.at(-1)![1];
-    let handled: boolean | null | undefined;
     act(() => {
-      handled = (handler as () => boolean)();
+      (handler as () => boolean)();
     });
 
-    expect(handled).toBe(true);
     expect(tree.toJSON()).toBeNull();
   });
 
-  it("moves a screen reader's focus onto its title, once it is mounted", () => {
+  it("holds the back button only while an image is open", () => {
+    // Held while closed, it would swallow every back press on the thread.
+    const tree = render();
+    const addListener = vi.mocked(BackHandler.addEventListener);
+    expect(addListener).not.toHaveBeenCalled();
+
+    openOn([image(1)], 0);
+    expect(addListener).toHaveBeenCalledTimes(1);
+    const subscription = addListener.mock.results[0]!.value as {
+      remove: ReturnType<typeof vi.fn>;
+    };
+
+    act(() => button(tree, "Close image").props.onPress());
+    expect(subscription.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves a screen reader's focus onto its title", () => {
     // Opening hides the image that had focus, which clears it rather than
-    // moving it. The send itself is `lib/overlay.spec.tsx`'s to pin.
+    // moving it.
     vi.useFakeTimers();
     try {
       render({ nodes: true });
       openOn([image(1), image(2)], 1);
-      expect(AccessibilityInfo.sendAccessibilityEvent).not.toHaveBeenCalled();
 
       act(() => {
         vi.runAllTimers();

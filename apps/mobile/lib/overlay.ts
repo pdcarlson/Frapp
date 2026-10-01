@@ -4,9 +4,11 @@ import { AccessibilityInfo, BackHandler } from "react-native";
 /**
  * The two effects an in-tree overlay needs while it is up
  * (`spec/ui/mobile/patterns.md` § Overlays): Android's back button closes it,
- * and a screen reader's focus moves onto it. Every overlay takes them from
- * here, so a change to either (#2641 will change the focus half) reaches all
- * of them at once rather than one copy.
+ * and a screen reader's focus moves onto it. Every overlay that can close
+ * takes them from here, so a change to either (#2641 will change the focus
+ * half) reaches all of them at once rather than one copy. The update gate
+ * (`components/client-policy-gate.tsx`) is the exception: it can't close, so
+ * it holds back and announces with effects of its own.
  */
 
 type FocusTarget = Parameters<
@@ -34,7 +36,9 @@ export function useBackToClose(open: boolean, close: () => void): void {
 }
 
 /**
- * When `open` turns true, moves a screen reader's focus onto `ref`. Opening an
+ * When `open` turns true, moves a screen reader's focus onto `ref`. `open` is
+ * required: an overlay that stays mounted while closed and passed nothing would
+ * focus once at mount, while its ref is still empty, and never on an open. Opening an
  * overlay hides the control that had focus, which clears that focus rather
  * than moving it.
  *
@@ -45,7 +49,7 @@ export function useBackToClose(open: boolean, close: () => void): void {
  */
 export function useFocusOnOpen(
   ref: RefObject<FocusTarget | null>,
-  open = true,
+  open: boolean,
 ): void {
   useEffect(() => {
     if (!open) return;
