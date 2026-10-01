@@ -243,9 +243,11 @@ export class ChapterService {
   ): Promise<Chapter> {
     const { name, university, config } = data;
     // `config` carries the customization columns (archetype, branding, palette,
-    // enabled_modules, …) the onboarding flow sets. Onboarding is the only way
-    // to create a chapter since the config-less `POST /v1/chapters` was deleted
-    // (#2608), so a chapter is never stored without them.
+    // enabled_modules, …) the onboarding flow sets. Onboarding is the API's
+    // only caller since the config-less `POST /v1/chapters` was deleted
+    // (#2608). The type still accepts `{}`, and the demo seed inserts chapters
+    // outside the API with no palette, so readers keep their no-palette
+    // fallbacks.
     const chapter = await this.chapterRepo.create({
       name,
       university,

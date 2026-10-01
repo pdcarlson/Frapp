@@ -124,7 +124,7 @@ Every route that returns or touches chapter data needs a permission decorator, r
 
 `AuthSyncInterceptor` goes only where the first request must create the `users` row. It is
 class-level on the user, invite, notification and analytics controllers, and per-route on the
-pre-chapter chapter routes (create, onboard, list, activate). Grep
+pre-chapter chapter routes (onboard, list, activate). Grep
 `@UseInterceptors(AuthSyncInterceptor)` for the current list.
 
 ### Custom decorators
