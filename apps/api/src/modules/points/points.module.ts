@@ -9,14 +9,23 @@ import { NotificationModule } from '../notification/notification.module';
 import { ChatModule } from '../chat/chat.module';
 import { AuthModule } from '../auth/auth.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
+import { ChapterModule } from '../chapter/chapter.module';
 
 @Module({
   // ChatModule → ChatService (posts the /points card); AuthModule → USER_REPOSITORY
   // (resolves actor/recipient display names embedded in the card payload);
   // ChapterConfigModule → ChapterPointsConfigService (the chapter-configurable
   // anti-fraud limits `adjustPoints` enforces), the same way ServiceEntryModule
-  // reaches ChapterServiceConfigService for its minutes-per-point rate.
-  imports: [NotificationModule, ChatModule, AuthModule, ChapterConfigModule],
+  // reaches ChapterServiceConfigService for its minutes-per-point rate;
+  // ChapterModule → MEMBER_REPOSITORY (`adjustPoints` refuses a target outside
+  // the chapter, #3092).
+  imports: [
+    NotificationModule,
+    ChatModule,
+    AuthModule,
+    ChapterConfigModule,
+    ChapterModule,
+  ],
   controllers: [PointsController],
   providers: [
     PointsService,

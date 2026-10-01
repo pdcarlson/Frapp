@@ -2,7 +2,7 @@
 
 ## Alumni Role
 
-Alumni is a system role seeded on chapter creation with limited default permissions: read access to chat (cannot post in most channels) and view member directory — the seeded set is stated exactly below. No points accumulation, no event check-in, no study hours.
+Alumni is a system role seeded on chapter creation with limited default permissions: read access to chat (cannot post in most channels) and view member directory — the seeded set is stated exactly below. No study hours and no event check-in, the two paths where a member earns points without an officer signing off. An officer can still adjust an alumnus's points ([`points.md` § Admin Adjustments](points.md#admin-adjustments)).
 
 ### Enforcement
 

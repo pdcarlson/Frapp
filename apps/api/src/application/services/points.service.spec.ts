@@ -23,6 +23,11 @@ import {
   USER_REPOSITORY,
   IUserRepository,
 } from '#domain/repositories/user.repository.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '#domain/repositories/member.repository.interface';
+import type { Member } from '#domain/entities/member.entity';
 import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
@@ -81,6 +86,9 @@ describe('PointsService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockUserRepo: jest.Mocked<IUserRepository>;
+  let mockMemberRepo: jest.Mocked<
+    Pick<IMemberRepository, 'findByUserAndChapter'>
+  >;
   let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
   let mockChapterPointsConfig: jest.Mocked<
     Pick<ChapterPointsConfigService, 'getConfig'>
@@ -125,6 +133,23 @@ describe('PointsService', () => {
     metadata: {},
     created_at: '2026-02-26T18:00:00.000Z',
   };
+
+  const memberRow = (
+    userId: string,
+    chapterId: string,
+    overrides: Partial<Member> = {},
+  ): Member => ({
+    id: `member-${userId}`,
+    user_id: userId,
+    chapter_id: chapterId,
+    role_ids: ['role-member'],
+    custom_role_ids: [],
+    has_completed_onboarding: true,
+    dismissed_ops_nudges: [],
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  });
 
   /**
    * Give the chapter these transactions. The repository mock then aggregates
@@ -173,6 +198,15 @@ describe('PointsService', () => {
       anonymize: jest.fn(),
     };
 
+    // Default posture: every target is a member of the chapter it is adjusted
+    // in, so the tests written before the membership check (#3092) exercise
+    // what they always did. The membership tests override this per-case.
+    mockMemberRepo = {
+      findByUserAndChapter: jest.fn((userId: string, chapterId: string) =>
+        Promise.resolve(memberRow(userId, chapterId)),
+      ),
+    };
+
     mockChatService = {
       sendMessage: jest
         .fn()
@@ -196,6 +230,7 @@ describe('PointsService', () => {
           useValue: mockSemesterArchiveRepo,
         },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChatService, useValue: mockChatService },
         {
@@ -482,6 +517,131 @@ describe('PointsService', () => {
       ).rejects.toThrow('Admins cannot adjust their own points');
 
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+    });
+
+    describe('the target must be a member of the chapter (#3092)', () => {
+      const committed: PointTransaction = {
+        id: 'pt-committed',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: -5,
+        category: 'FINE',
+        description: 'late to chapter',
+        metadata: { adjusted_by: 'admin-1', reason: 'late to chapter' },
+        client_message_id: 'cmid-fine',
+        channel_id: 'chan-1',
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+
+      // A FINE from chat carrying a key and a channel: the shape that reaches
+      // every side effect (replay, rate limit, insert, push, card).
+      const fine = () =>
+        service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: -5,
+          category: 'FINE',
+          reason: 'late to chapter',
+          channelId: 'chan-1',
+          clientMessageId: 'cmid-fine',
+        });
+
+      const expectNothingWritten = () => {
+        expect(mockPointTxnRepo.findByClientMessageId).not.toHaveBeenCalled();
+        expect(mockChapterPointsConfig.getConfig).not.toHaveBeenCalled();
+        expect(mockPointTxnRepo.countRecentAdjustments).not.toHaveBeenCalled();
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      };
+
+      it('refuses a target outside the chapter with 404, before any side effect', async () => {
+        // A user in another chapter and an id that names nobody look the same
+        // from here: no `members` row in this chapter.
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+        const refusal = fine();
+        await expect(refusal).rejects.toBeInstanceOf(NotFoundException);
+        await expect(refusal).rejects.toThrow('Member not found');
+
+        // Pin the argument ORDER: both are strings, so swapping them
+        // typechecks and would look up a member whose user id is the chapter's.
+        expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+          'user-2',
+          'ch-1',
+        );
+        expectNothingWritten();
+      });
+
+      it('a non-member gets the same 404 whatever the key names', async () => {
+        // This key was used for another member's adjustment, which a member
+        // target would get a 409 for. A non-member never reaches the replay
+        // check, so the answer can't be used to probe the chapter's keys.
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue({
+          ...committed,
+          user_id: 'user-3',
+        });
+
+        await expect(fine()).rejects.toBeInstanceOf(NotFoundException);
+        expectNothingWritten();
+      });
+
+      it('a departed member is refused, and so is a retry of their committed adjustment', async () => {
+        // Leaving deletes the `members` row; the ledger keeps their history.
+        // The retry gets the 404 rather than the original row: the ordering
+        // above, chosen so no key reaches the replay path for a non-member.
+        // The row itself is untouched in the ledger.
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(committed);
+
+        await expect(fine()).rejects.toThrow('Member not found');
+        expectNothingWritten();
+      });
+
+      it('a member target still gets the row, the push and the card', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(committed);
+
+        const result = await fine();
+
+        expect(result).toEqual({ ...committed, card_posted: true });
+        expect(mockPointTxnRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'user-2',
+          'ch-1',
+          expect.objectContaining({ title: 'Points Deducted' }),
+        );
+        expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('a replay of a member’s committed adjustment still returns the original row', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(committed);
+
+        const result = await fine();
+
+        expect(result).toEqual({ ...committed, card_posted: true });
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('an alumnus is still a member, so they stay adjustable', async () => {
+        // Alumni is a role on a `members` row, not a departure. The alumni
+        // rule restricts what they earn themselves (study, check-in), and the
+        // leaderboard and roster keep them; a wrong grant on someone who just
+        // graduated must stay correctable in an append-only ledger.
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+          memberRow('user-2', 'ch-1', { role_ids: ['role-alumni'] }),
+        );
+        mockPointTxnRepo.create.mockResolvedValue(committed);
+
+        await expect(fine()).resolves.toEqual({
+          ...committed,
+          card_posted: true,
+        });
+        expect(mockPointTxnRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('should set flagged in metadata when amount >= 100', async () => {

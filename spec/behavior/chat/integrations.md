@@ -10,7 +10,7 @@ Slash commands turn chat into the dispatcher for the ops modules that have a mes
 | --- | --- | --- | --- | --- |
 | `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member; `ChatService.sendMessage` refuses `kind: "poll"` with `403 chapter.module.disabled` while `polls` is off, and so does a card vote ([`../../product/modules.md` § Module disabling behavior](../../product/modules.md#module-disabling-behavior)) | current channel |
 | `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
-| `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust`, re-checked on `POST /v1/points/adjust` (no self-adjust, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud) | current channel |
+| `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust`, re-checked on `POST /v1/points/adjust` (no self-adjust, target must be a chapter member, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud) | current channel |
 | `/task "<title>" @assignee <YYYY-MM-DD> [points]` | yes | `tasks` | `tasks:manage`, re-checked on `POST /v1/tasks` (assignee must be a chapter member) | current channel |
 | `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]` | yes | `events` | `events:create`, re-checked on `POST /v1/events` | current channel |
 | `/hours log <duration> <description>` | yes | `hours` | `service:log`, re-checked on `POST /v1/service-entries` (receipt policy `wf_hours_receipt` still applies — chat cannot attach proof) | current channel |
