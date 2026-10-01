@@ -506,13 +506,18 @@ before it was fixed:
   green. For `anon`, `service_role` and `supabase_auth_admin` (#1557), a `revoke … from anon` that
   names the wrong function signature passed here and then aborted `supabase db push` on the hosted
   project.
-- **`auth.role()` is varied per scenario**, not pinned to `'authenticated'`. Otherwise the
-  "no JWT" reader is merely a signed-in reader with a null `uid`, and a policy spelled
-  `using (auth.role() = 'anon')` reads as default-deny here while being world-readable in
-  production.
-- **Every table is also read as the anon key** (#1556, #1557). The "no JWT" reader keeps the
-  `authenticated` grant, so a policy spelled `to anon` never binds it. `rls_probe_anon` binds
-  exactly what the anon key binds on hosted.
+- **The readers with no uid come in three shapes**, each stubbing `auth.uid()` *and*
+  `auth.role()`, because each binds a different set of policies (#423, #1556, #1557):
+  - The chat tiers' "no JWT" reader is a signed-in session with a null `uid`. It is the only one
+    that reaches a null-uid branch inside a `to authenticated` policy, such as
+    `… and (can_read_chat_message(id) or auth.uid() is null)`.
+  - The default-deny tier's anonymous reader carries the anon claim through the `authenticated`
+    grant. With `auth.role()` pinned to `'authenticated'`, a policy spelled
+    `using (auth.role() = 'anon')` would read as default-deny here while being world-readable in
+    production.
+  - **Every table is also read as the anon key**: `rls_probe_anon`, a member of `anon` and not of
+    `authenticated`. Both readers above hold the `authenticated` grant, so a policy spelled
+    `to anon` binds only this one, exactly as it binds the anon key on hosted.
 - **Every probe read runs in its own savepoint** (#1556). A policy that reads a table the probe
   cannot read raises `permission denied` instead of returning rows, and the error aborts the open
   transaction. Before, one such policy in the first tier unwound the whole block: the log showed
@@ -523,6 +528,13 @@ before it was fixed:
 RLS-enabled tables changes no assertion in the harness; the every-public-table invariant covers
 `relrowsecurity` only, not what the policies do. `chat_notification_preferences` is the known gap —
 it carries a client-reachable `SELECT` policy with no black-box coverage (tracked separately).
+
+**Grants that come from hosted's default privileges are not modelled.** Hosted Supabase grants
+`anon` and `authenticated` access to new tables and functions through `ALTER DEFAULT PRIVILEGES`,
+and the harness does not replay those defaults. So its `anon` EXECUTE assertions catch an explicit
+`grant … to anon`, but not a drop/recreate that forgets its `revoke … from anon`, which on hosted
+hands the grant back. The `has_function_privilege('anon', …)` checks in `DB_PROMOTION_RUNBOOK.md`
+cover that at promotion time.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
 own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over

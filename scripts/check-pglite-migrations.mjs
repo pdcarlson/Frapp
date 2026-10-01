@@ -743,15 +743,17 @@ const RLS_SMOKE = [
     },
   },
   {
-    name: "chat_viewer_has_blocked() EXECUTE is revoked from PUBLIC",
-    // Same reasoning, and the same PUBLIC-only limitation, as the
+    name: "chat_viewer_has_blocked() EXECUTE is revoked from PUBLIC and anon",
+    // Same reasoning, and the same default-privileges limitation, as the
     // can_read_chat_message() assertion below. The helper answers only about
     // the caller's own block list, so an RPC call leaks nothing today; the
     // revoke keeps it that way if a later edit adds a parameter.
-    sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
+    sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+                 has_function_privilege('anon', p.oid, 'EXECUTE') as anon_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'chat_viewer_has_blocked'`,
-    ok: (rows) => rows.length === 1 && rows[0].public_exec === false,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].public_exec === false && rows[0].anon_exec === false,
   },
   {
     name: "users stays default-deny to client roles (the invariant that closes the action-write path)",
@@ -779,22 +781,25 @@ const RLS_SMOKE = [
     ok: (rows) => rows.length === 1 && rows[0].n === 0,
   },
   {
-    name: "can_read_chat_message() EXECUTE is revoked from PUBLIC (not a wide-open PostgREST RPC oracle)",
+    name: "can_read_chat_message() EXECUTE is revoked from PUBLIC and anon (not a wide-open PostgREST RPC oracle)",
     // The helper is SECURITY DEFINER and answers "may I read this message?", so
     // exposing it as an RPC hands out a membership oracle. A later `drop function;
     // create function` silently restores the default PUBLIC grant, so pin it.
     //
-    // LIMITATION: this checks the PUBLIC bit only. The `anon` role exists here
-    // (#1557), but hosted Supabase grants it EXECUTE *directly* via ALTER
-    // DEFAULT PRIVILEGES, not through PUBLIC, and this harness does not replay
-    // those defaults. So `anon` never holds a grant here for a drop/recreate to
-    // restore, and asserting `has_function_privilege('anon', ...)` would pass
-    // vacuously. The same check in DB_PROMOTION_RUNBOOK.md is what covers it;
-    // it is a promotion-time check, not a CI one.
-    sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
+    // `anon` is checked directly too, now that the role exists here (#1557):
+    // that catches an explicit `grant execute ... to anon` in a migration.
+    // LIMITATION: hosted Supabase also grants `anon` EXECUTE through ALTER
+    // DEFAULT PRIVILEGES, and this harness does not replay those defaults. So a
+    // drop/recreate that restores anon's grant on hosted (by forgetting the
+    // `revoke ... from anon`) still leaves this green. The check in
+    // DB_PROMOTION_RUNBOOK.md covers that case; it is a promotion-time check,
+    // not a CI one.
+    sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
+                 has_function_privilege('anon', p.oid, 'EXECUTE') as anon_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'can_read_chat_message'`,
-    ok: (rows) => rows.length === 1 && rows[0].public_exec === false,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].public_exec === false && rows[0].anon_exec === false,
   },
   {
     name: "can_read_chat_message() is SECURITY DEFINER with search_path pinned to exactly `public, pg_temp`",
@@ -1549,26 +1554,30 @@ try {
 //     `TO` clause binds. RLS skips superusers and table owners, so a
 //     black-box read needs a non-owner probe role at all.
 //
-// The tiers used to stub `auth.uid()` per scenario and leave `auth.role()` at
-// a tier-wide 'authenticated', which made every "no JWT" scenario a signed-in
-// reader who happened to have no uid. A policy spelled `using (auth.role() =
-// 'anon')` then reads as default-deny here and hands the table to every
-// unauthenticated client on hosted (#423 found it in the deny tier). Building
-// every reader from these three is what keeps the parts consistent.
+// Every reader is built here, and setAuth() stubs both auth functions for it,
+// so no scenario inherits the previous one's role. There are three null-uid
+// readers because each binds a different set of policies, and none of them
+// covers what the other two do.
 const signedIn = (uid) => ({ uid, jwtRole: "authenticated", dbRole: "rls_probe" });
 
-// The claims of a request with no JWT, read through the `authenticated` grant.
-// Hosted never receives this exact request (PostgREST runs a keyless request
-// as `anon`, below). It is kept because it is the stricter reader for
-// predicates: it binds every `to authenticated` policy, so a predicate that
-// admits a missing uid or the anon claim fails here even where the `TO`
-// clause would stop it on hosted.
-const NO_JWT = { uid: null, jwtRole: "anon", dbRole: "rls_probe" };
+// A signed-in session with no `sub`. GoTrue never mints one, so hosted never
+// receives this request. It is the chat tiers' "no JWT" reader because it is
+// the only one that reaches a null-uid branch inside a `to authenticated`
+// policy. Both chat policies conjoin `auth.role() = 'authenticated'`, so a
+// predicate spelled `... and (can_read_chat_message(id) or auth.uid() is null)`
+// leaks every row to this reader and to neither of the two below.
+const NULL_SUB = { uid: null, jwtRole: "authenticated", dbRole: "rls_probe" };
 
-// The anon key as hosted runs it: no uid, the anon claim, and the read made as
-// a member of `anon` and not of `authenticated` (#1557 created the role). This
-// is the reader a `to anon` or `to public` policy binds. NO_JWT cannot see such
-// a policy when it is spelled `to anon`.
+// The anon claim, read through the `authenticated` grant: the deny tier's
+// anonymous reader (#423). With `auth.role()` left at 'authenticated' it would
+// be NULL_SUB under another name, and a policy spelled `using (auth.role() =
+// 'anon')` would read as default-deny.
+const ANON_CLAIM = { uid: null, jwtRole: "anon", dbRole: "rls_probe" };
+
+// The anon key as hosted runs it (#1557 created the role): no uid, the anon
+// claim, and the read made as a member of `anon` and not of `authenticated`.
+// It is the only reader a policy spelled `to anon` binds, since the two above
+// hold the `authenticated` grant instead. Every tier reads as it.
 const ANON_KEY = { uid: null, jwtRole: "anon", dbRole: "rls_probe_anon" };
 
 const firstLine = (e) => String(e?.message ?? e).split("\n")[0];
@@ -1590,7 +1599,8 @@ async function setAuth({ uid, jwtRole }) {
 }
 
 // One black-box read as `who`, in its own savepoint. Returns `{ rows, failure }`
-// and never throws for the read itself.
+// and does not throw: a bad reader (a non-fixture uid) comes back as that
+// scenario's failure too, so the verdict names the scenario to fix.
 //
 // The savepoint is the point (#1556). A policy that references a table the
 // probe cannot read raises `permission denied` instead of returning rows, and
@@ -1601,7 +1611,11 @@ async function setAuth({ uid, jwtRole }) {
 // transaction usable, so each scenario reports its own verdict and the tiers
 // after it still run.
 async function probeAs(who, sql) {
-  await setAuth(who);
+  try {
+    await setAuth(who);
+  } catch (e) {
+    return { rows: null, failure: firstLine(e) };
+  }
   await db.exec("savepoint probe;");
   let rows = null;
   let failure = null;
@@ -1662,7 +1676,7 @@ function expectSet(name, probe, visible, labelOf) {
 }
 
 async function canReadAs(authUid, messageId) {
-  await setAuth(authUid === null ? NO_JWT : signedIn(authUid));
+  await setAuth(authUid === null ? NULL_SUB : signedIn(authUid));
   const res = await db.query(
     `select public.can_read_chat_message('${messageId}'::uuid) as ok`,
   );
@@ -1782,7 +1796,7 @@ if (readSeeded) {
     // userA: chapter A, in member_ids of PRIVATE/DM/GROUP_DM, holds chat:secret.
     // userC: chapter A, no privileges, in no member list -> PUBLIC only.
     // userB: chapter B -> its own chapter's row only. No JWT, read either way
-    // (NO_JWT, ANON_KEY) -> nothing.
+    // (NULL_SUB, ANON_KEY) -> nothing.
     //
     // FRA-321 moved both non-zero counts down by one, and the row that left each
     // is the same one: the ROLE_GATED channel with an empty requirement list.
@@ -1812,7 +1826,7 @@ if (readSeeded) {
         visible: [F.msgPublicB] },
       { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", as: signedIn(F.userCAuth),
         visible: [F.msgPublic] },
-      { name: "no JWT (null auth.uid()) sees nothing", as: NO_JWT, visible: [] },
+      { name: "no JWT (null auth.uid()) sees nothing", as: NULL_SUB, visible: [] },
       { name: "the anon key (role anon, no JWT) sees nothing", as: ANON_KEY, visible: [] },
     ];
 
@@ -2034,7 +2048,7 @@ if (readSeeded) {
         as: signedIn(F.userDAuth),
         visible: [F.msgPublic, F.msgRoleGated, F.msgRoleGatedOpen],
       },
-      { who: "no JWT (null auth.uid())", as: NO_JWT, visible: [] },
+      { who: "no JWT (null auth.uid())", as: NULL_SUB, visible: [] },
       { who: "the anon key (role anon, no JWT)", as: ANON_KEY, visible: [] },
     ];
 
@@ -2148,7 +2162,7 @@ if (readSeeded) {
     // can be right for the wrong reason (a policy hiding chapterB/PUBLIC from
     // userB while exposing one imported row keeps the total at 1).
     const POST_ARCHIVE = [
-      { who: "no JWT (null auth.uid())", as: NO_JWT, visible: [] },
+      { who: "no JWT (null auth.uid())", as: NULL_SUB, visible: [] },
       { who: "the anon key (role anon, no JWT)", as: ANON_KEY, visible: [] },
       {
         who: "cross-chapter member",
@@ -2302,7 +2316,7 @@ if (readSeeded) {
       // Null uid AND auth.role() = 'anon'. Stubbing only the uid would leave
       // this indistinguishable from a signed-in reader, which is how an
       // `auth.role() = 'anon'` policy stays invisible.
-      { who: "an anonymous reader (no JWT, auth.role() = 'anon')", as: NO_JWT },
+      { who: "an anonymous reader (no JWT, auth.role() = 'anon')", as: ANON_CLAIM },
       { who: "the anon key (role anon, no JWT)", as: ANON_KEY },
     ];
 
@@ -4386,18 +4400,25 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     const again = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}')`);
     check("a second call deletes nothing more", again.length === 0, { again });
 
-    // This harness creates `authenticated` but no `anon` role; the revoke from
-    // PUBLIC is what keeps both out.
+    // Both client roles exist here, so each is checked directly. That catches
+    // a revoke from PUBLIC going missing and an explicit grant to either role.
+    // It cannot catch a forgotten `revoke ... from anon` alone, since hosted's
+    // ALTER DEFAULT PRIVILEGES grant is not replayed here (see the
+    // can_read_chat_message() EXECUTE assertion).
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as authed,
              has_function_privilege('authenticated', 'public.discord_import_channel_holds_anything(uuid, uuid)', 'execute') as authed_check,
+             has_function_privilege('anon', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as anon,
+             has_function_privilege('anon', 'public.discord_import_channel_holds_anything(uuid, uuid)', 'execute') as anon_check,
              (select relrowsecurity from pg_class where oid = 'public.discord_import_created_channels'::regclass) as rls,
              (select count(*)::int from pg_indexes
                where indexname in ('idx_point_transactions_channel', 'idx_discord_import_channels_target')) as indexes
     `);
     check(
-      "a signed-in client may call neither function, the created-channel table has RLS on, and both indexes exist",
-      guard[0]?.authed === false && guard[0]?.authed_check === false && guard[0]?.rls === true && guard[0]?.indexes === 2,
+      "neither a signed-in client nor the anon key may call either function, the created-channel table has RLS on, and both indexes exist",
+      guard[0]?.authed === false && guard[0]?.authed_check === false &&
+        guard[0]?.anon === false && guard[0]?.anon_check === false &&
+        guard[0]?.rls === true && guard[0]?.indexes === 2,
       guard[0],
     );
   } catch (e) {
