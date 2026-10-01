@@ -79,6 +79,14 @@ export const TERMS_PROMPT_COPY = {
 
 // ── Chapter branding schema (Chunk 02: chapters.branding jsonb) ──────────────
 
+/**
+ * The branding block's shape. No product code parses with it: it is the type
+ * source for the config PATCH body (`PatchChapterConfig`) and the API's
+ * `ChapterBrandingInput`, and the API's `BrandingDto` is what enforces values.
+ * A client reads a stored `branding` as the contract types it, loose jsonb
+ * values, and skips one that doesn't fit (`chapter-mark.ts`): a read that
+ * refused one value would blank every field beside it (#2844).
+ */
 export const ChapterBrandingSchema = z
   .object({
     greek_letters: z.string().optional(),
@@ -89,8 +97,8 @@ export const ChapterBrandingSchema = z
     // No `.max()` here, deliberately. The cap (`CHAPTER_SHORT_NAME_MAX_LENGTH`)
     // is enforced by the DTO, whose class-validator count differs from zod's:
     // it drops variation selectors, so "❤️❤️❤️❤️" is 4 to the API and 8 to zod.
-    // A zod cap would refuse names the API accepts; the inputs' `maxLength` is
-    // the client-side cap.
+    // A zod cap would state a stricter limit than the one enforced; the inputs'
+    // `maxLength` is the client-side cap.
     short_name: z.string().optional(),
     show_greek_letters: z.boolean().optional(),
     designation: z.string().optional(),

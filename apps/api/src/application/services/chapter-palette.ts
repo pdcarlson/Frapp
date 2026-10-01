@@ -31,7 +31,8 @@ export type ChapterBrandColors = { accent?: string };
  *
  * **Known divergence, not introduced here:** `ChapterBrandingSchema` accepts a
  * 3-digit hex accent (`#ABC`); `BrandingColorsDto`'s `HEX_COLOR_PATTERN`
- * requires 6. A client that validates locally against the schema can therefore
+ * requires 6. No client parses with the schema today (#2844), so the looser
+ * regex reaches no request; a client that started validating against it could
  * send an accent the API rejects with a 400. The shapes agree, so this type
  * reuse is sound; the regexes are a separate decision about which spellings
  * Frapp accepts.

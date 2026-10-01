@@ -17,8 +17,8 @@ const UUID = "11111111-1111-4111-8111-111111111111";
  * Dependabot 3 → 4 bump failed CI on `z.record`'s TypeScript arity
  * (`tsc` on `index.ts`); these cases do not catch that (specs are
  * excluded from the package `tsc`), but they would trip if `.uuid()`,
- * `.email()`, `.default()`, `.passthrough()`, `.strict()`, or record
- * *runtime* parsing stopped matching the v3 shapes callers still send.
+ * `.email()`, `.default()`, `.strict()`, or record *runtime* parsing
+ * stopped matching the v3 shapes callers still send.
  */
 describe("Zod 4 schema smoke", () => {
   describe("z.record(key, value)", () => {
