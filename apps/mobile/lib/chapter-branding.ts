@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useCurrentChapter } from "@repo/hooks";
-import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { chapterTextMark } from "@repo/validation";
 import { useFrappTheme } from "./theme";
 
@@ -9,26 +8,18 @@ export type ChapterBranding = {
    * The accent to paint chapter-scoped UI with. Never null, so call sites need
    * no fallback of their own.
    *
-   * Normally this is `--signet-accent-text` — step 11 of the generated scale —
-   * read from the chapter's served palette. It falls back to the legacy
-   * per-surface resolver only for a chapter whose palette has not been
-   * recomputed since the Signet map landed.
+   * This is `--signet-accent-text` — step 11 of the generated scale — read
+   * from the chapter's served palette, or Signet's house gold when the palette
+   * lacks it (no chapter resolved yet, or a row inserted without a palette
+   * since the API's hourly sweep last ran).
    */
   accent: string;
-  /**
-   * True when the legacy fallback ran *and* the chapter's own colour failed AA,
-   * so the brand token stood in. Always false on the engine path: step 11 is
-   * contrast-correct by construction (accent-engine.md §8), so there is nothing
-   * for a runtime check to catch.
-   */
-  accentFallbackApplied: boolean;
   /**
    * The solid-fill accent — `--signet-accent-primary` (step 9), for a surface
    * that paints its own background rather than sitting on a neutral one (a
    * poll's chosen option; the chat self bubble was the first consumer until
    * the compact layout removed it, #2873). Falls back to Signet's house
-   * gold for a chapter whose palette predates the Signet map, same as
-   * {@link accent}.
+   * gold for a palette without the pair, same as {@link accent}.
    */
   accentPrimary: string;
   /**
@@ -71,9 +62,10 @@ function readString(
  * no component references the seed hex; only generated roles paint (§8 gates
  * the text roles, the solid fill and its hover shade, not the rest).
  * This used to paint `chapters.accent_color` — the seed itself — through a
- * runtime contrast check. That check existed because the API only validates an accent
- * against a *light* background, so a legal stored accent could still be
- * unreadable on the dark card surface.
+ * runtime contrast check, because the API never checks a stored accent's
+ * contrast on the dark card surface (it validates the format only;
+ * `spec/behavior/branding.md`), so a legal stored accent could be unreadable
+ * there.
  *
  * ## Step 11, not step 9
  *
@@ -99,16 +91,17 @@ function readString(
  * with `--signet-accent-on-primary`, which is contrast-corrected for exactly
  * that pairing.
  *
- * The legacy resolver stays as the fallback for exactly one case — a chapter
- * whose `theme_palette` lacks the Signet map and has not been recomputed. It
- * outlived `derivePalette`, which the #920 slice-9 cutover deleted: the two
- * were independent all along, since this path re-validates `accent_color` and
- * never read that engine's token map. The API's stale-palette sweep recomputes
- * every such row within the hour (#1165), so once production has run it, the
- * branch serves only a row inserted without a palette since the last tick: a
- * demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`. Deleting
- * it, and letting those rows show the default accent for that hour, is
- * #2595.
+ * ## A palette without the Signet map paints house gold
+ *
+ * The API's hourly stale-palette sweep recomputes every row an older engine
+ * wrote (#1165), and production has run it, so the only palette that lacks
+ * the map is a row inserted without one since the sweep's last successful
+ * tick: a demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`.
+ * Such a row shows the house tokens until the next successful tick, normally
+ * within the hour; web applies nothing to it either (`use-chapter-theme.ts`'s
+ * all-or-nothing gate). The legacy branch
+ * that re-validated the raw `accent_color` for those rows
+ * (`resolveChapterAccentColor`) was deleted in #2595.
  *
  * `accentPrimary`/`accentOnPrimary` are gated **together**, both-or-neither —
  * not chained off `generatedAccent`'s own presence check, and not defaulted
@@ -126,12 +119,10 @@ export function useChapterBranding(): ChapterBranding {
   const { data } = useCurrentChapter();
   const { tokens } = useFrappTheme();
 
-  const surface = tokens.color.surface.card;
   const brandAccent = tokens.color.gold.house;
   const brandOnAccent = tokens.color.gold.onHouse;
   // `|| null` rather than `??`: an empty string means unset, as it does for
   // the palette's roles below.
-  const accentColor = data?.accent_color || null;
   const logoUrl = data?.logo_url || null;
   const chapterName = data?.name || null;
   const textMark =
@@ -154,42 +145,23 @@ export function useChapterBranding(): ChapterBranding {
       ? generatedAccentOnPrimary
       : brandOnAccent;
 
-  return useMemo(() => {
-    if (generatedAccent) {
-      return {
-        accent: generatedAccent,
-        accentFallbackApplied: false,
-        accentPrimary,
-        accentOnPrimary,
-        logoUrl,
-        chapterName,
-        textMark,
-      };
-    }
-
-    const resolved = resolveChapterAccentColor(accentColor ?? undefined, {
-      background: surface,
-      fallbackAccent: brandAccent,
-    });
-
-    return {
-      accent: resolved.resolvedAccent,
-      accentFallbackApplied: resolved.fallbackApplied,
+  return useMemo(
+    () => ({
+      accent: generatedAccent ?? brandAccent,
       accentPrimary,
       accentOnPrimary,
       logoUrl,
       chapterName,
       textMark,
-    };
-  }, [
-    accentColor,
-    accentOnPrimary,
-    accentPrimary,
-    brandAccent,
-    chapterName,
-    generatedAccent,
-    logoUrl,
-    surface,
-    textMark,
-  ]);
+    }),
+    [
+      accentOnPrimary,
+      accentPrimary,
+      brandAccent,
+      chapterName,
+      generatedAccent,
+      logoUrl,
+      textMark,
+    ],
+  );
 }
