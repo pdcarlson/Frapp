@@ -143,7 +143,9 @@ export default function DirectoryScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Text style={styles.title}>Directory</Text>
+      <Text accessibilityRole="header" style={styles.title}>
+        Directory
+      </Text>
       <Text style={styles.subtitle}>Actives and alumni.</Text>
 
       <SearchField
@@ -240,7 +242,12 @@ export default function DirectoryScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    // Every edge: the tab layout draws no navigator header (#2485), so the
+    // list's own title is the top of the screen.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <FlatList
         data={rows}
         keyExtractor={(row) => row.userId}
