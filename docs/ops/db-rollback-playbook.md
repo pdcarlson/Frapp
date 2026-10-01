@@ -2550,3 +2550,15 @@ A CHECK on `chat_channels`, `chat_channels_dm_two_members`, and a partial unique
 drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
 ```
+
+## Rollback the role_mapping comment (20261001024000)
+
+* **Migration**: `20261001024000_discord_import_role_mapping_comment.sql`
+
+One `COMMENT ON COLUMN public.discord_imports.role_mapping` (#2887). No column, index, constraint, policy or row changed, and no code reads the comment, so no API or web revert depends on it.
+
+**There is nothing to roll back in normal operation.** Keep the migration file in the tree whatever else is reverted: deleting it leaves production's ledger with a version the repo lacks, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. To remove the comment anyway, do it in a later forward migration, not by hand:
+
+```sql
+comment on column public.discord_imports.role_mapping is null;
+```
