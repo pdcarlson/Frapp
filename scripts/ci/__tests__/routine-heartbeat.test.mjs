@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING as ALERT_ROUTING_DOC } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -33,13 +34,7 @@ const REPO_ROOT = join(
 );
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", WORKFLOW_FILE);
 const ROUTINES_DOC = join(REPO_ROOT, "docs", "ci-cd", "routines.md");
-const ALERT_ROUTING = join(
-  REPO_ROOT,
-  "docs",
-  "internal",
-  "ops",
-  "ALERT_ROUTING.md",
-);
+const ALERT_ROUTING = join(REPO_ROOT, ALERT_ROUTING_DOC);
 const AGENT_INFRA = join(REPO_ROOT, "docs", "ci-cd", "agent-infra.md");
 
 const HOUR = 60 * 60 * 1000;
@@ -798,7 +793,7 @@ describe("wiring", () => {
     );
     assert.ok(
       readFileSync(ALERT_ROUTING, "utf8").includes(ALERT.title),
-      "ALERT_ROUTING.md row",
+      "alert-routing.md row",
     );
     assert.match(
       readFileSync(AGENT_INFRA, "utf8"),

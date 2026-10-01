@@ -161,7 +161,7 @@ that take a heavy lock on a live table. The rest is review:
 
 - RLS enabled on each new table in the same migration that creates it.
 - No destructive operation without a rollback plan in
-  [`DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md).
+  [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md).
 - Foreign keys have deliberate `ON DELETE` behavior.
 - Indexes on frequently queried columns.
 - An `update_updated_at` trigger on tables with an `updated_at` column.
@@ -211,7 +211,7 @@ also applies, because npm swallows the flag and the script sees no arguments. Ap
 protection is a human step with an admin PAT; an audit never applies.
 
 The script reads `GITHUB_PAT` (aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`); see
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+[`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md).
 `:verify` exits non-zero and names each divergence from `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the comparand. The human-readable
 roster is the runbook's § Required Status Checks.

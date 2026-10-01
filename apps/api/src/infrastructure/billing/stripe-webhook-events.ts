@@ -13,7 +13,7 @@
  * copies typed into the Stripe dashboard by hand: every endpoint registered
  * before 2026-09-28 lacked at least one of these six (#1978, #2285), because the
  * runbook used to name none of them. That is why the six are now named in
- * `docs/internal/ops/deployment/integrations.md` § 7.1, at the step where an
+ * `docs/ops/deployment/integrations.md` § 7.1, at the step where an
  * endpoint is created.
  *
  * What each endpoint subscribes to today is dashboard state, not a repo fact:

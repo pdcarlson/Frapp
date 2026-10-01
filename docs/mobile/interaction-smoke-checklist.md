@@ -96,7 +96,7 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 ## 5) Push notifications — **not verifiable in Expo Go**
 
 Exercise remote push on an installed build that meets the prerequisites in
-[Mobile (EAS) Setup](../internal/ops/deployment/mobile.md#61-initial-setup). Project linkage
+[Mobile (EAS) Setup](../ops/deployment/mobile.md#61-initial-setup). Project linkage
 alone is not evidence that token registration or delivery works; record actual
 device results before checking off remote-push behavior.
 

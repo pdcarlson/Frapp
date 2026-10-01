@@ -15,7 +15,7 @@
 #
 # db-backup.yml schedules it against `frapp-staging` (since 2026-08-27) and
 # `frapp-prod` (since 2026-09-06, #1435) through the db-offsite-backup action.
-# See DB_ROLLBACK_PLAYBOOK.md § Backup reality.
+# See db-rollback-playbook.md § Backup reality.
 #
 # Three files, per Supabase's documented backup recipe (same link, and
 # /guides/platform/migrating-within-supabase/backup-restore). They are separate
@@ -37,7 +37,7 @@
 # guide, "Database backups do not include objects you store via the Storage API,
 # as the database only includes metadata about these objects." This repo has eight
 # buckets; a restore from these files yields rows that reference objects this
-# backup never captured. See DB_ROLLBACK_PLAYBOOK.md § What this backup does not
+# backup never captured. See db-rollback-playbook.md § What this backup does not
 # cover.
 #
 # Usage:
@@ -150,7 +150,7 @@ $SUPABASE db dump "${SOURCE_ARGS[@]}" -f "$DEST/schema.sql"
 #     database. A dump cannot carry the objects, so restoring their metadata
 #     yields rows pointing at files that are not there — worse than omitting it.
 #
-# Both were observed for real; see DB_ROLLBACK_PLAYBOOK.md § Rehearsal log.
+# Both were observed for real; see db-rollback-playbook.md § Rehearsal log.
 # `--schema` (an include-list) rather than `-x` (an exclude-list): `-x` takes
 # explicit `schema.table` entries and does NOT accept wildcards, so `-x storage.*`
 # silently matches nothing and ships the storage rows anyway — verified during the

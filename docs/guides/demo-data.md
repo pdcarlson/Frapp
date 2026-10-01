@@ -208,9 +208,9 @@ Store set, at the store's size, into `screenshots/app-store/`, with no Ask or
 Dues shot and a hard stop if any Ask surface is on screen. It needs the Expo
 server started **without** `EXPO_PUBLIC_ASK_ENABLED`. The procedure, and which
 size and why, are in
-[`mobile.md` § 6.4](../internal/ops/deployment/mobile.md#64-app-store-screenshots).
+[`mobile.md` § 6.4](../ops/deployment/mobile.md#64-app-store-screenshots).
 `--google-play` is the same set at Play's size, into `screenshots/google-play/`
-([§ 6.5](../internal/ops/deployment/mobile.md#65-google-play-screenshots)).
+([§ 6.5](../ops/deployment/mobile.md#65-google-play-screenshots)).
 
 Output lands in `screenshots/`, which is **gitignored**. There is no sanctioned
 home for generated marketing binaries

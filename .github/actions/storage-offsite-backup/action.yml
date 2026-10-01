@@ -158,10 +158,10 @@ runs:
           echo "- Destination: \`$BACKUP_S3_BUCKET/${STORAGE_PREFIX}/\`"
           echo "- Manifest read back from the bucket byte for byte, and every object it"
           echo "  lists found offsite at its recorded size. What fails the job instead:"
-          echo "  DB_ROLLBACK_PLAYBOOK.md § If the backup job fails (#2335)."
+          echo "  db-rollback-playbook.md § If the backup job fails (#2335)."
           echo
           echo "Incremental: unchanged objects are not re-fetched. Deleted objects are"
           echo "tombstoned and stay restorable for \`BACKUP_RETENTION_DAYS\` (default 30)."
           echo
-          echo "Restore: DB_ROLLBACK_PLAYBOOK.md section 'Restoring Storage objects'."
+          echo "Restore: db-rollback-playbook.md section 'Restoring Storage objects'."
         } >> "$GITHUB_STEP_SUMMARY"
