@@ -88,7 +88,8 @@ describe("AccountMenu", () => {
   it("links notification settings at the section that actually exists", async () => {
     // Notification preferences are a section of the profile screen, not a route
     // of their own. A `?tab=` link would be a dead affordance the screen would
-    // silently ignore (components.md §5), so this must stay an anchor.
+    // silently ignore (spec/ui/design-system/README.md §5, rule 2), so this
+    // must stay an anchor.
     const user = userEvent.setup();
     render(<AccountMenu variant="topbar" />);
 
