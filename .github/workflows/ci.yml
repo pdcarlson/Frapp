@@ -1241,7 +1241,9 @@ jobs:
   # to what the reskin boards commit to — the 1440x900 fold on `HeroB.dc.html`
   # and the 390 phone board D6 pins, at 390x844 — plus the two motion
   # properties a still page cannot show: that a scroll which JUMPS past a reveal
-  # still finishes it, and that reduced motion arms nothing.
+  # still finishes it, and that reduced motion arms nothing. It also sweeps both
+  # chat frames from 320 to 1440 wide: no row cropped, the composer inside the
+  # frame, the frame inside its column (#2893).
   #
   # It serves a PRODUCTION build, which the config explains at length and is not
   # a preference: under `next dev` the stylesheet arrives after hydration, every
