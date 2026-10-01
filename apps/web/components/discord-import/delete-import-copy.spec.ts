@@ -13,6 +13,11 @@ const row = (overrides: Partial<ImportRow>): ImportRow => ({
   warnings: [],
   error: null,
   created_at: "2026-09-28T18:06:33Z",
+  source: "upload",
+  messages_after: null,
+  purged_messages: 0,
+  channels_total: null,
+  channels_done: null,
   ...overrides,
 });
 

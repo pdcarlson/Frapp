@@ -9215,7 +9215,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9243,7 +9250,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordImportWithProgressResponseDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9283,7 +9300,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportWithProgressResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9321,7 +9345,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9654,7 +9685,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9801,7 +9839,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9840,7 +9885,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9880,7 +9932,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -14660,6 +14719,198 @@
         },
         "required": [
           "consent_acknowledged"
+        ]
+      },
+      "DiscordImportResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "purging",
+              "purged"
+            ],
+            "description": "`running` and `purging` are the two states the background worker advances; every other change is an admin action."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "bot"
+            ],
+            "description": "`upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server."
+          },
+          "guild_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Discord server name, for display only."
+          },
+          "total_messages": {
+            "type": "number",
+            "description": "Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads."
+          },
+          "imported_messages": {
+            "type": "number"
+          },
+          "messages_skipped": {
+            "type": "number"
+          },
+          "attachments_imported": {
+            "type": "number"
+          },
+          "warnings": {
+            "description": "The most recent warnings for the admin, at most 50.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why a failed import stopped."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messages_after": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history."
+          },
+          "purged_messages": {
+            "type": "number",
+            "description": "Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "guild_name",
+          "total_messages",
+          "imported_messages",
+          "messages_skipped",
+          "attachments_imported",
+          "warnings",
+          "error",
+          "created_at",
+          "messages_after",
+          "purged_messages"
+        ]
+      },
+      "DiscordImportWithProgressResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "purging",
+              "purged"
+            ],
+            "description": "`running` and `purging` are the two states the background worker advances; every other change is an admin action."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "bot"
+            ],
+            "description": "`upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server."
+          },
+          "guild_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Discord server name, for display only."
+          },
+          "total_messages": {
+            "type": "number",
+            "description": "Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads."
+          },
+          "imported_messages": {
+            "type": "number"
+          },
+          "messages_skipped": {
+            "type": "number"
+          },
+          "attachments_imported": {
+            "type": "number"
+          },
+          "warnings": {
+            "description": "The most recent warnings for the admin, at most 50.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why a failed import stopped."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messages_after": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history."
+          },
+          "purged_messages": {
+            "type": "number",
+            "description": "Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished."
+          },
+          "channels_total": {
+            "type": "number",
+            "nullable": true,
+            "description": "Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled."
+          },
+          "channels_done": {
+            "type": "number",
+            "nullable": true,
+            "description": "Of those, how many are finished (imported, or skipped because Discord no longer showed them to the bot). Null when `channels_total` is."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "guild_name",
+          "total_messages",
+          "imported_messages",
+          "messages_skipped",
+          "attachments_imported",
+          "warnings",
+          "error",
+          "created_at",
+          "messages_after",
+          "purged_messages",
+          "channels_total",
+          "channels_done"
         ]
       },
       "DiscordImportProgressCountsDto": {
