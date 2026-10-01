@@ -3,7 +3,7 @@
 ## Every migration owes a recipe here
 
 `check:migration-safety` asserts **per-migration** coverage in this file *and*
-in [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) — both, not either. It
+in [`db-promotion-runbook.md`](db-promotion-runbook.md) — both, not either. It
 reads the entry **shape**, so naming a migration in prose does not satisfy it.
 Any of these counts, anywhere in the file:
 
@@ -30,7 +30,7 @@ gets a recipe — say so in an `* **Action**:` bullet; "not reversible, restore
 from backup" is a legitimate recipe and the honest one.
 
 Migrations that predate the gate are grandfathered in `UNLEDGERED` in
-[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).
+[`scripts/check-migration-safety.mjs`](../../scripts/check-migration-safety.mjs).
 That list is **shrink-only** and enforced by a version ceiling, so a migration
 created after the gate cannot be added to it.
 
@@ -132,8 +132,8 @@ Pro, which changed the plan and backup rows below; the project rows are unchange
 | Point-in-Time Recovery | **Not enabled.** A paid add-on on Pro (about $100 a month per project for 7 days), which needs at least the Small compute size |
 
 > **Rotating either project touches every file that names its ref — `git grep` the old ref.** Among other places, the ref is recorded in
-> [`.github/environments.json`](../../../.github/environments.json) as well as in Infisical, in this table, and in
-> [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
+> [`.github/environments.json`](../../.github/environments.json) as well as in Infisical, in this table, and in
+> [`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
 > compares the injected `SUPABASE_PROJECT_REF` against the committed file and **refuses to run** when they
 > disagree — deliberately, so a staging label can never write to production — so a rotation that updates
 > Infisical and not the file blocks every production migration. The migration snapshot publisher also
@@ -161,11 +161,11 @@ backups. The two now do different jobs:
 
 | | |
 | --- | --- |
-| Producer | [`.github/workflows/db-backup.yml`](../../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
-| Script | [`scripts/db-backup.sh`](../../../scripts/db-backup.sh) |
+| Producer | [`.github/workflows/db-backup.yml`](../../.github/workflows/db-backup.yml) — nightly 06:30 UTC, plus `workflow_dispatch` |
+| Script | [`scripts/db-backup.sh`](../../scripts/db-backup.sh) |
 | Contents | three gzipped SQL files — roles, schema, data — plus a manifest carrying a SHA-256 per file. **A recovery pairs a database prefix with its Storage prefix**: `staging/<label>/` with `storage/`, `production/<label>/` with `storage-production/` |
-| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. The org moved to Pro on 2026-09-28 (#1403); point-in-time recovery is not enabled. #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
-| Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets for today's shared bucket and the separate-production-bucket target (do not copy the staging token into `prod`). The production jobs read the same four from `staging` (injected first) and their source credentials from `prod` (injected second). Empty `prod` `BACKUP_S3_*` values keep the staging destination (`preserve-nonempty` on that inject in `db-backup.yml`); non-empty prod values still win. Storage mirrors: `storage/` (staging) and `storage-production/` |
+| Scope | **Both projects** since 2026-09-06. `frapp-staging` under the `staging/` prefix (jobs `backup-staging`, `backup-staging-storage`, `environment: staging`) and `frapp-prod` under `production/` (jobs `backup-production`, `backup-production-storage`). The production jobs run under a **`production-backup`** GitHub environment, not `production`; why, and how that environment must stay configured, is [`agent-infra.md` § GitHub environments and bootstrap secrets](../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets). Both environments share one code path: the [`db-offsite-backup`](../../.github/actions/db-offsite-backup/action.yml) and [`storage-offsite-backup`](../../.github/actions/storage-offsite-backup/action.yml) composite actions, each of which asserts the injected project ref / URL against `.github/environments.json` before touching anything, so a dump can never be filed under the wrong label. The org moved to Pro on 2026-09-28 (#1403); point-in-time recovery is not enabled. #1421 (hosted staging Storage restore rehearsal) passed 2026-09-07; a hosted production database restore is still unrehearsed. |
+| Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) § Offsite Backup Secrets for today's shared bucket and the separate-production-bucket target (do not copy the staging token into `prod`). The production jobs read the same four from `staging` (injected first) and their source credentials from `prod` (injected second). Empty `prod` `BACKUP_S3_*` values keep the staging destination (`preserve-nonempty` on that inject in `db-backup.yml`); non-empty prod values still win. Storage mirrors: `storage/` (staging) and `storage-production/` |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
 | First verified run | Staging: [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects. **Production: `production/2026-09-06T22-22-57Z/`, taken 2026-09-06 by hand from an agent session** with the same `scripts/db-backup.sh --linked` the nightly job runs, uploaded with read-back (4 objects, manifest byte-identical to the local copy), plus the Storage mirror manifest under `storage-production/` (0 objects — production Storage was empty). That dump held 54 ledger rows and one `public.users` row (the migration-seeded system sender) and nothing else: production had no sign-ups yet. It exists so that the first scheduled production run (#1794) is not also the first production backup |
 
@@ -265,7 +265,7 @@ hosted project has the defaults; a hand-recreated local schema does not.
 replaces the contents of the database it is pointed at, and the difference
 between a rehearsal and an outage is one mistyped host. `--force` is not
 enough for production: if `--db-url` names the production project in
-[`.github/environments.json`](../../../.github/environments.json), the script
+[`.github/environments.json`](../../.github/environments.json), the script
 also refuses unless `DB_RESTORE_ALLOW_PRODUCTION=true`. Staging still uses
 `--force` alone. Storage restore of prefix `storage-production` has the same
 second hop (`STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true`).
@@ -273,15 +273,15 @@ second hop (`STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true`).
 ## Restoring Storage objects
 
 Storage is backed up by the `backup-staging-storage` and `backup-production-storage`
-jobs in [`db-backup.yml`](../../../.github/workflows/db-backup.yml), which run
-[`scripts/storage-backup-run.mjs`](../../../scripts/storage-backup-run.mjs) through
-the [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml)
+jobs in [`db-backup.yml`](../../.github/workflows/db-backup.yml), which run
+[`scripts/storage-backup-run.mjs`](../../scripts/storage-backup-run.mjs) through
+the [`storage-offsite-backup`](../../.github/actions/storage-offsite-backup/action.yml)
 action. **The two environments live under two prefixes — `storage/` is staging,
 `storage-production/` is production** — and every command below takes the prefix
 explicitly (`--prefix`). Restoring `storage/` into `frapp-prod` would overlay the
 staging corpus onto production; read the prefix twice.
 Rationale for every design choice is in the header of
-[`scripts/storage-backup.mjs`](../../../scripts/storage-backup.mjs).
+[`scripts/storage-backup.mjs`](../../scripts/storage-backup.mjs).
 
 ### What is offsite, and in what shape
 
@@ -322,7 +322,7 @@ that every object the manifest names is there, at the size written where the
 record kept it. That is a presence-and-length check, not a content hash. A
 record from before the written size was kept adopts the offsite size on the
 first run where it matches Storage's, and is length-checked from then on. So the
-freshness watch's P1 ([`ALERT_ROUTING.md`](ALERT_ROUTING.md)) reads a job that
+freshness watch's P1 ([`alert-routing.md`](alert-routing.md)) reads a job that
 mirrored nothing, or mirrored into the wrong bucket, as the failure it is.
 
 Two gaps are deliberate:
@@ -499,7 +499,7 @@ Record each run in the rehearsal log below.
 ## Rehearsal log
 
 A backup you have never restored is a rumor. Re-run
-[`scripts/db-restore-rehearsal.sh`](../../../scripts/db-restore-rehearsal.sh)
+[`scripts/db-restore-rehearsal.sh`](../../scripts/db-restore-rehearsal.sh)
 after changing any dump flag, the restore order, or a migration that creates an
 object inside a Supabase-managed schema — it backs up the local stack and then
 runs both restore shapes above against a wiped database: pass A replays the dump
@@ -527,7 +527,7 @@ known limitation of a dump-only restore.
 
 ## Verification after rollback/recovery
 
-- [ ] `GET /health/ready` answers `200`, or its `503` `message` reads `database: connected` (it probes fresh; `/health`'s fields can be up to 60 s old, [Health Check](../../../spec/behavior/observability.md#health-check))
+- [ ] `GET /health/ready` answers `200`, or its `503` `message` reads `database: connected` (it probes fresh; `/health`'s fields can be up to 60 s old, [Health Check](../../spec/behavior/observability.md#health-check))
 - [ ] critical API routes pass smoke checks
 - [ ] Stripe webhook endpoint processes signed test event
 - [ ] no ongoing elevated error alerts (Sentry/logs)
@@ -537,7 +537,7 @@ known limitation of a dump-only restore.
 After any rollback event:
 
 - file the incident notes as a **GitHub issue** — work status is not a doc
-  ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives)
+  ([`../internal/DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives)
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
@@ -705,7 +705,7 @@ After any rollback event:
   fails the `pglite-migrations` job by design. That job is on the required roster (#2538):
   `validate-deploy-sha` will not deploy the commit to production, and once live protection
   enforces it the PR cannot merge either (whether it does yet:
-  [branch protection runbook § Required Status Checks](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)).
+  [branch protection runbook § Required Status Checks](github-branch-protection-runbook.md#required-status-checks)).
   This rollback is an emergency `ALTER` applied directly to the hosted database, never a
   migration. CI does not catch a direct `ALTER` — so file the follow-up immediately,
   because the next `db reset` silently re-applies the fix and the two environments drift.
@@ -1269,7 +1269,7 @@ After any rollback event:
   ```
 * **Order**: no coordinated redeploy required *if the bucket is unused*. Once an
   import has run, the objects in it are the only copy of the archive's media —
-  `chat_message_attachments.external_url` is **always null** for imported rows (why: [`spec/architecture/README.md` § Communications](../../../spec/architecture/README.md#communications)) and the only recovery handle is `discord_import_files` plus the admin's original export — so
+  `chat_message_attachments.external_url` is **always null** for imported rows (why: [`spec/architecture/README.md` § Communications](../../spec/architecture/README.md#communications)) and the only recovery handle is `discord_import_files` plus the admin's original export — so
   treat deletion as destructive.
 * **Note**: additive bucket only. Nothing else references it, and the live `chat`
   bucket is untouched. Re-applying the migration recreates it with the same id
@@ -1354,7 +1354,7 @@ After any rollback event:
   committed as a *migration* fails the `pglite-migrations` job by design. That job is on the
   required roster (#2538): `validate-deploy-sha` will not deploy the commit to production, and
   once live protection enforces it the PR cannot merge either (whether it does yet:
-  [branch protection runbook § Required Status Checks](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)).
+  [branch protection runbook § Required Status Checks](github-branch-protection-runbook.md#required-status-checks)).
   Run the Action's `create or replace function` statements directly on the hosted database
   and file the follow-up, or relax the smoke tier in the same PR if the rollback is meant to
   be permanent.
@@ -1697,7 +1697,7 @@ Migration is additive (one new table with its own indexes, policy, and trigger).
 DROP TABLE IF EXISTS chat_notification_preferences;
 ```
 
-**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md).
+**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md).
 
 ## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
 
@@ -2055,7 +2055,7 @@ DROP TABLE IF EXISTS chat_member_blocks;
 
 Order between the two does not matter — neither references the other.
 
-**Redeploy the API first**, to a build without the #2257 report and block modules. At the time of writing no such build exists in the other direction: these tables ship ahead of the API slice that reads them, so until that slice lands every build is already "without", and this step is a no-op. Once the API slice has shipped, treat it as load-bearing — whatever routes read these tables will fail while the tables are gone, and the member-facing degradation is whatever that slice specified, which is written in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#report-and-block) § Report and block rather than guessed at here.
+**Redeploy the API first**, to a build without the #2257 report and block modules. At the time of writing no such build exists in the other direction: these tables ship ahead of the API slice that reads them, so until that slice lands every build is already "without", and this step is a no-op. Once the API slice has shipped, treat it as load-bearing — whatever routes read these tables will fail while the tables are gone, and the member-facing degradation is whatever that slice specified, which is written in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#report-and-block) § Report and block rather than guessed at here.
 
 Roll back `20260915210100` **first** if it has been applied: `anonymize_user` references `chat_member_blocks`, and plpgsql resolves the table at execution time, so dropping the table under the newer function leaves account deletion failing at runtime with `relation "chat_member_blocks" does not exist` — with nothing failing at migration time to warn you.
 
@@ -2083,7 +2083,7 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 -- supabase/migrations/20260902160000_anonymize_user_purge_bookmarks.sql
 ```
 
-**Rolling this back is a data-retention regression, not a feature rollback.** Without these lines, a deleted member's own block list and their rush ballots both survive account deletion. The FKs' `on delete cascade` do **not** cover either: `anonymize_user` tombstones the `users` row rather than deleting it, so nothing ever cascades. What each table retains and why is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion. Only roll back alongside dropping `chat_member_blocks` itself — and in that order, per the note above.
+**Rolling this back is a data-retention regression, not a feature rollback.** Without these lines, a deleted member's own block list and their rush ballots both survive account deletion. The FKs' `on delete cascade` do **not** cover either: `anonymize_user` tombstones the `users` row rather than deleting it, so nothing ever cascades. What each table retains and why is owned by [`spec/behavior/data-retention.md`](../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion. Only roll back alongside dropping `chat_member_blocks` itself — and in that order, per the note above.
 
 **Re-applying is safe** and idempotent; each delete is a no-op for a user with no such rows, and re-running the whole function on an already-tombstoned user is the documented retry path.
 
@@ -2093,7 +2093,7 @@ To roll back, re-apply the previous definition from `20260902160000_anonymize_us
 * **Action**: Two Deploy production runs, in this order, and no hand DDL.
   1. Take the API off the column with a forward revert, not a redeploy of an older commit: land a commit on `main` that reverts #1165's API code but **keeps both migration files** (`20260923170000_…` and `20260923170100_…`), and ship it. A commit from before #1165 can't be deployed once these migrations are on production: Deploy production rehearses migrations against production's applied ledger (`scripts/ci/check-migration-replay.mjs`), and a tree missing an applied migration fails that rehearsal as `foreign-migrations` before anything reaches Render.
   2. Once that API is live, drop the column with a **new** forward migration (`alter table public.chapters drop column if exists theme_palette_engine_version;`) and ship it in a second run. Not in the first run: Deploy production applies migrations before it deploys to Render, so the column would go while the #1165 API is still serving. Not by hand: production's ledger would go on recording `20260923170000` as applied, and nothing compares production's columns to the repo's (the replay rebuilds its baseline from the repo's files, and the drift gate compares versions only). A later re-land would then apply nothing and ship an API that writes a column production lacks.
-* **Note**: Order matters. The #1165 API names the column in every palette write and in every config PATCH that carries `branding`: onboarding's insert, the Settings accent save, the config PATCH (which clears the stamp), `POST /v1/chapters/:id/theme-palette` and the sweep (whose read filters on it). With the column gone, PostgREST rejects each of those statements, so onboarding, accent saves, branding PATCHes and the recompute route fail outright, and the sweep logs `palette sweep: chapter lookup failed` every tick. Reverting only the API code is safe on its own: code without #1165 neither reads nor writes the column, and its engine is the same `SIGNET_ENGINE_VERSION` 1. Dropping the column loses only the stamps. Palettes the sweep already recomputed stay recomputed, and they are correct: they are the current engine's output. The pre-sweep palettes (the stale fills) exist nowhere but a backup, and there is no reason to restore them. Re-landing #1165 later needs its own new migration that re-adds the column, because `20260923170000` is recorded as applied and never runs again; every row then reads `NULL`, and the sweep recomputes them all once more, which is harmless. Run the promotion runbook's one-time re-queue after that re-land too ([`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) § 2026-09-23), since the instance it replaces writes palettes without a stamp. Rolling back a **later** engine bump, one that raised `SIGNET_ENGINE_VERSION` above 1, is different, because the sweep never moves a row backwards. That procedure is in [`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence) (the Engine rollback row).
+* **Note**: Order matters. The #1165 API names the column in every palette write and in every config PATCH that carries `branding`: onboarding's insert, the Settings accent save, the config PATCH (which clears the stamp), `POST /v1/chapters/:id/theme-palette` and the sweep (whose read filters on it). With the column gone, PostgREST rejects each of those statements, so onboarding, accent saves, branding PATCHes and the recompute route fail outright, and the sweep logs `palette sweep: chapter lookup failed` every tick. Reverting only the API code is safe on its own: code without #1165 neither reads nor writes the column, and its engine is the same `SIGNET_ENGINE_VERSION` 1. Dropping the column loses only the stamps. Palettes the sweep already recomputed stay recomputed, and they are correct: they are the current engine's output. The pre-sweep palettes (the stale fills) exist nowhere but a backup, and there is no reason to restore them. Re-landing #1165 later needs its own new migration that re-adds the column, because `20260923170000` is recorded as applied and never runs again; every row then reads `NULL`, and the sweep recomputes them all once more, which is harmless. Run the promotion runbook's one-time re-queue after that re-land too ([`db-promotion-runbook.md`](db-promotion-runbook.md) § 2026-09-23), since the instance it replaces writes palettes without a stamp. Rolling back a **later** engine bump, one that raised `SIGNET_ENGINE_VERSION` above 1, is different, because the sweep never moves a row backwards. That procedure is in [`accent-engine.md` § 4](../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence) (the Engine rollback row).
 
 ## Rollback the branding accent mirror repair (20260923170100)
 

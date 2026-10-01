@@ -52,7 +52,7 @@ async function bootstrap() {
  * this block is safe to add. `./instrument` is the first import in this file, so
  * Sentry is live before `bootstrap()` runs, and its default
  * `onUnhandledRejectionIntegration` was what reported a failed boot — routed per
- * `docs/internal/ops/ALERT_ROUTING.md`. Handling the rejection here means that
+ * `docs/ops/alert-routing.md`. Handling the rejection here means that
  * listener never fires. Without the two lines below, this change would trade a
  * paged alert for a prettier deploy log nobody is watching: strictly worse for
  * exactly the incident it was written for.
