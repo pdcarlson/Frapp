@@ -85,7 +85,9 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-1 top-1 rounded-xs border border-transparent p-1 text-muted opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100",
+      // `--muted-foreground`, for the reason `ui/dialog.tsx`'s close gives:
+      // this glyph sits on the default toast's `--popover` too.
+      "absolute right-1 top-1 rounded-xs border border-transparent p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus:opacity-100 group-hover:opacity-100",
       "group-[.destructive]:text-destructive-text group-[.destructive]:hover:text-destructive-text",
       FOCUS_RING,
       className
@@ -94,6 +96,8 @@ const ToastClose = React.forwardRef<
     {...props}
   >
     <X className="h-4 w-4" />
+    {/* The X is aria-hidden, so without this the button has no name. */}
+    <span className="sr-only">Close</span>
   </ToastPrimitives.Close>
 ))
 ToastClose.displayName = ToastPrimitives.Close.displayName

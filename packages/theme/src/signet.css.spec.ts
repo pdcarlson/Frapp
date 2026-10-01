@@ -412,6 +412,10 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--warning-tint",
     "--destructive-tint",
     "--destructive-tint-hover",
+    // A card-filled control's hover is a neutral lift above the ladder, the
+    // same in every chapter: the Secondary button sits on error surfaces,
+    // where components.md §10 bars the chapter accent (#1220).
+    "--card-hover",
     "--gold-house",
     "--gold-on-house",
     "--gold-ask-fill",
