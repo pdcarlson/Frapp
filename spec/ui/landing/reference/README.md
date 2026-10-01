@@ -35,7 +35,7 @@ canvas `https://claude.ai/artifact/3VDnuMFjA38HuLiat85Zaz` on the owner's person
 which sessions on the Frapp work account can't open (checked 2026-09-30); `canvas/` is a
 copy of that canvas's own `project/` files as of the commit that added them. When the canvas is
 edited, re-copy: the files are what an implementer reads, and the same rule that put
-[`../../web-greenfield/reference/web-framework.dc.html`](../../web-greenfield/reference/web-framework.dc.html)
+[`../../web-dashboard/reference/web-framework.dc.html`](../../web-dashboard/reference/web-framework.dc.html)
 in the tree applies here: the commit is what makes a board a source of truth.
 
 | File | Contents |
@@ -59,7 +59,7 @@ image assets: the crest is the single path from
 [`packages/brand-assets/assets/signet-emblem-B-glyph.svg`](../../../../packages/brand-assets/assets/signet-emblem-B-glyph.svg),
 inlined verbatim, filled `#DDB844`.
 
-Two things to know before reading values off them:
+Three things to know before reading values off them:
 
 - `{{accent}}`, `{{accentOn}}`, `{{accentText}}`, `{{accentSubtle}}` and `{{accentBorder}}` on the
   page boards are canvas template holes. The `data-dc-script` block at the foot of each board resolves
@@ -67,12 +67,17 @@ Two things to know before reading values off them:
   `#EFB63B` with the house-gold roles. Which gold the landing ships is decision D1.
 - Type and spacing inside the two product frames are transcribed from
   [`canvas-screens.dc.html`](../../design-system/reference/canvas-screens.dc.html) and
-  [`web-framework.dc.html`](../../web-greenfield/reference/web-framework.dc.html), re-pitched onto the
+  [`web-framework.dc.html`](../../web-dashboard/reference/web-framework.dc.html), re-pitched onto the
   current ladder in [`../../design-system/foundations.md`](../../design-system/foundations.md) §2.
   Landing chrome is on the scale and the grid; frame internals are not, on purpose.
   The chat thread's rows are the exception: they follow
   [`components.md` § Chat messages](../../design-system/components.md#chat-messages-compact-layout),
   not these boards' bubbles (the sixth standing exception above).
+- `Spec.dc.html`'s "No em dashes" note extends "the web-greenfield product-copy lock". That
+  directory was folded into `spec/ui/web-dashboard/` and deleted
+  ([#2743](https://github.com/pdcarlson/Frapp/issues/2743), 2026-10-01). The board keeps the text it
+  was copied with, and the lock now lives at
+  [`../../web-dashboard/README.md` § No em dashes in product copy](../../web-dashboard/README.md#no-em-dashes-in-product-copy).
 
 ## What is decided and what is not
 

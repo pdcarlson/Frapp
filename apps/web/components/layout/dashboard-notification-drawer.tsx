@@ -231,10 +231,20 @@ export function DashboardNotificationDrawer({
                         void handleMarkRead(notification);
                         onOpenChange(false);
                       }}
-                      className={`block rounded-md border p-3 transition hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 ${
+                      // Each rest fill takes its own hover, because the sheet
+                      // is `--popover` and a shared one painted every row in
+                      // the sheet's own colour (#1208). A read row is card
+                      // filled, so it lifts to `--card-hover` like a Secondary
+                      // button; §2's accent tint would sit within 1.03:1 of the
+                      // sheet on four seeds (`#1F4E79` at 1.000:1). An unread
+                      // row is tinted, so it takes §3's tinted lift to
+                      // accent-4. Both are measured in
+                      // `components/shared/elevation-contrast.spec.ts`, and
+                      // `elevation-call-sites.spec.ts` pins these two hovers.
+                      className={`block rounded-md border p-3 transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 ${
                         isRead
-                          ? "border-border bg-card"
-                          : "border-accent-border bg-accent-subtle"
+                          ? "border-border bg-card hover:bg-card-hover"
+                          : "border-accent-border bg-accent-subtle hover:bg-accent-subtle-hover"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
