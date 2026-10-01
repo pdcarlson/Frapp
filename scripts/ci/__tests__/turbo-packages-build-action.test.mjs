@@ -4,6 +4,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { usesLocalAction } from "./helpers/workflow-yaml.mjs";
+
 // Pins the cutover half of stage 4's composite-action extraction (#1382).
 //
 // The `.turbo` cache key from ADR-15 lever (A) used to be written out verbatim in
@@ -26,13 +28,12 @@ const ACTIONS = join(REPO, ".github", "actions");
 const ACTION_DIR = "turbo-packages-build";
 const ACTION = join(ACTIONS, ACTION_DIR, "action.yml");
 
-// Tolerates every legal spelling of the same step: the name-less `- uses:`
-// form, a quoted path, and a trailing comment. A stricter regex here is not
-// "safer" -- it silently fails OPEN on the negative assertions, so a
-// `- uses: ./...` added to `clean-checkout-typecheck` would disarm the
-// cold-build canary with the suite still green.
-const USES_RE =
-  /^\s*(-\s+)?uses:\s*["']?\.\/\.github\/actions\/turbo-packages-build["']?\s*(#.*)?$/;
+// Tolerates every legal spelling of the same step (the shared helper's: the
+// name-less `- uses:` form, quotes, a trailing `/` and a trailing comment). A
+// stricter regex here is not "safer" -- it silently fails OPEN on the negative
+// assertions, so a `- uses: ./...` added to `clean-checkout-typecheck` would
+// disarm the cold-build canary with the suite still green.
+const USES_RE = usesLocalAction("turbo-packages-build");
 
 // `turbo build` is Turborepo's documented shorthand for `turbo run build`, and
 // the flag may be separated by a line continuation inside a `run: |` block, so

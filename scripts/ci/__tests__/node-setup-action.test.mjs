@@ -7,6 +7,8 @@ import {
   ACTION_DIR,
   actionFiles,
   nodeSetupInstall,
+  runsInstall,
+  usesLocalAction,
   USES_NODE_SETUP,
   WORKFLOW_DIR,
   workflowFiles,
@@ -66,70 +68,6 @@ const scalar = (raw) =>
 const SETUP_NODE_RE = /^\s*(-\s+)?uses:\s*["']?actions\/setup-node@/i;
 const NODE_VERSION_RE = /^\s*node-version:\s*(.+)$/;
 
-// npm flags that take their value as the NEXT word; that word is not a package
-// name (`npm install --prefix ../..` installs the lockfile). A flag missing
-// here makes its value read as a package, which fails open, so add to it
-// rather than trim it.
-const VALUE_FLAGS = new Set([
-  "--prefix",
-  "-C",
-  "--workspace",
-  "-w",
-  "--omit",
-  "--include",
-  "--install-strategy",
-  "--registry",
-  "--cache",
-  "--userconfig",
-  "--loglevel",
-  "--tag",
-  "--before",
-  "--script-shell",
-]);
-const CI_VERBS = new Set(["ci", "clean-install", "ic", "install-clean", "isntall-clean"]);
-const INSTALL_VERBS = new Set([
-  "install",
-  "i",
-  "in",
-  "ins",
-  "inst",
-  "insta",
-  "instal",
-  "isnt",
-  "isnta",
-  "isntal",
-  "isntall",
-  "add",
-]);
-
-/**
- * Whether a line runs a dependency install the action owns: any spelling of
- * `npm ci`, or an `npm install` that names no package (which installs the
- * lockfile, the same job). `npm install --global vercel@x` installs a tool and
- * is not one. Global flags may come before the verb (`npm --prefix x ci`), and
- * quotes delimit nothing here (`run: "npm ci"` is `npm ci`).
- */
-export function runsInstall(line) {
-  const text = line.replace(/["'`]/g, " ");
-  for (const command of text.split(/&&|\|\||[;|&()]/)) {
-    const tokens = command.trim().split(/\s+/).filter(Boolean);
-    const at = tokens.findIndex((t) => t === "npm" || t.endsWith("/npm"));
-    if (at === -1) continue;
-    let i = at + 1;
-    while (i < tokens.length && tokens[i].startsWith("-")) i += VALUE_FLAGS.has(tokens[i]) ? 2 : 1;
-    const verb = tokens[i];
-    if (CI_VERBS.has(verb)) return true;
-    if (!INSTALL_VERBS.has(verb)) continue;
-    let packages = 0;
-    for (let j = i + 1; j < tokens.length; j++) {
-      if (!tokens[j].startsWith("-")) packages += 1;
-      else if (VALUE_FLAGS.has(tokens[j])) j += 1;
-    }
-    if (packages === 0) return true;
-  }
-  return false;
-}
-
 /** Every workflow file, as `{ name, text }`. */
 const workflows = () =>
   workflowFiles().map((name) => ({ name, text: readFileSync(join(WORKFLOW_DIR, name), "utf8") }));
@@ -163,6 +101,30 @@ function compositeSteps(text) {
 }
 
 const actionText = () => readFileSync(ACTION, "utf8");
+
+/** A step's `run: |` block, de-indented, trailing blank lines dropped. */
+function scriptOf(step) {
+  const lines = step.split("\n");
+  const at = lines.findIndex((l) => /^\s*(-\s+)?run:\s*\|\s*$/.test(l));
+  if (at === -1) return null;
+  const body = lines.slice(at + 1);
+  const indent = Math.min(...body.filter((l) => l.trim()).map((l) => l.match(/^\s*/)[0].length));
+  return body
+    .map((l) => l.slice(indent))
+    .join("\n")
+    .replace(/\s+$/, "");
+}
+
+// The mode check, whole. Its accepted modes are INSTALL_MODES.
+const CHECK_SCRIPT = [
+  'case "$INSTALL" in',
+  "  ci | omit-dev | none) ;;",
+  "  *)",
+  `    echo "::error::node-setup: install must be ci, omit-dev or none (got '$INSTALL')"`,
+  "    exit 1",
+  "    ;;",
+  "esac",
+].join("\n");
 
 /** The single `node-version` the action pins. */
 function actionVersion() {
@@ -216,15 +178,12 @@ describe("node-setup composite action", () => {
     const runOf = (step) => step.match(/^\s*(-\s+)?run:\s*(.+)$/m)?.[2]?.trim() ?? null;
 
     // The runner doesn't enforce `required: true` for a composite action, and a
-    // value no `if:` matches would skip the install with the step green.
+    // value no `if:` matches would skip the install with the step green. Its
+    // script is pinned whole: a line added to it runs for every caller too.
     assert.equal(uses(check), undefined, "the mode check is a shell step");
     assert.equal(ifOf(check), null, "the mode check always runs");
     assert.match(check, /INSTALL:\s*\$\{\{\s*inputs\.install\s*\}\}/, "the check must read the input");
-    assert.match(check, /^\s+case\s+"\$INSTALL"\s+in\s*$/m, "the check must switch on the input");
-    const accepted = check.match(/^\s*([a-z-]+(?:\s*\|\s*[a-z-]+)*)\)\s*;;\s*$/m)?.[1];
-    assert.ok(accepted, "the check must list the accepted modes as one case arm");
-    assert.deepEqual(accepted.split("|").map((s) => s.trim()).sort(), INSTALL_MODES);
-    assert.match(check, /\*\)[\s\S]*exit 1/, "anything else must fail the step");
+    assert.equal(scriptOf(check), CHECK_SCRIPT, "the mode check runs exactly its case statement");
 
     assert.match(uses(setup) ?? "", /^actions\/setup-node@/, "the second step sets up Node");
     assert.equal(ifOf(setup), null, "Node is always set up");
@@ -272,7 +231,11 @@ describe("node-setup call sites", () => {
       }
       // The same workspace reading the local-action guard uses, so the two can't
       // disagree about a job: `untrusted` is the reason this is an exception.
-      for (const call of workspaceTrust(text, (line) => SETUP_NODE_RE.test(line))) {
+      // A path-limited overlay (`git checkout <ref> -- <paths>`, release.yml's
+      // classifier) doesn't count here: it leaves `.github/actions` where it
+      // was, so it alone would not stop node-setup from loading.
+      const withoutOverlays = text.replace(/^.*\bgit\b.*\bcheckout\b.*\s--(?:\s.*)?$/gm, "");
+      for (const call of workspaceTrust(withoutOverlays, (line) => SETUP_NODE_RE.test(line))) {
         assert.equal(
           call.state,
           "untrusted",
@@ -294,6 +257,7 @@ describe("node-setup call sites", () => {
 
   /** `{ where, install, holdsSecrets }` for every node-setup call. */
   function calls() {
+    const secretCallers = [];
     const fromWorkflows = workflowFiles().flatMap((file) => {
       const path = join(WORKFLOW_DIR, file);
       const steps = workflowSteps(path);
@@ -307,6 +271,7 @@ describe("node-setup call sites", () => {
           .filter((s) => /\bsecrets\./.test(s.body) || [...s.env.values()].some((v) => /\bsecrets\./.test(v)))
           .map((s) => s.jobId),
       );
+      secretCallers.push(...steps.filter((s) => secretJobs.has(s.jobId) || environments.has(s.jobId)));
       return steps
         .filter((s) => s.body.split("\n").some((l) => USES_NODE_SETUP.test(l)))
         .map((s) => ({
@@ -315,11 +280,32 @@ describe("node-setup call sites", () => {
           holdsSecrets: secretJobs.has(s.jobId) || environments.has(s.jobId),
         }));
     });
-    const fromActions = otherActions().flatMap((a) =>
+    // A composite action runs in its caller's job, so it holds whatever the
+    // callers hold, through any depth of nesting.
+    const actions = actionFiles().filter((a) => a.name !== NAME);
+    const calls = (text, name) => text.split("\n").some((l) => usesLocalAction(name).test(l));
+    const holding = new Set(
+      actions.filter((a) => secretCallers.some((step) => calls(step.body, a.name))).map((a) => a.name),
+    );
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const a of actions) {
+        if (holding.has(a.name)) continue;
+        if (actions.some((b) => holding.has(b.name) && calls(b.text, a.name))) {
+          holding.add(a.name);
+          grew = true;
+        }
+      }
+    }
+    const fromActions = actions.flatMap((a) =>
       a.text
         .split(/^(?= {4}- )/m)
         .filter((s) => s.split("\n").some((l) => USES_NODE_SETUP.test(l)))
-        .map((s) => ({ where: a.name, install: nodeSetupInstall(codeLines(s).join("\n")), holdsSecrets: null })),
+        .map((s) => ({
+          where: `.github/actions/${a.name}/${a.file}`,
+          install: nodeSetupInstall(codeLines(s).join("\n")),
+          holdsSecrets: holding.has(a.name),
+        })),
     );
     return [...fromWorkflows, ...fromActions];
   }
@@ -370,6 +356,14 @@ describe("runsInstall", () => {
       "        run: npm install --prefix ../..",
       "        run: npm i --omit dev",
       "        run: npm i -w apps/web",
+      "        run: npm cit",
+      "        run: npm install-ci-test",
+      "        run: npm it",
+      "        run: npm ci>/dev/null",
+      "        run: npm --fetch-retries 5 ci",
+      "        run: npm --globalconfig x ci",
+      "        run: npm install --location project",
+      "        run: npm install --cpu x64",
     ]) {
       assert.ok(runsInstall(line), line);
     }
@@ -383,6 +377,8 @@ describe("runsInstall", () => {
       "        run: npm run test:ci-scripts",
       "        install: ci",
       "        run: npx npm-check",
+      "        run: npm run ci",
+      "        run: npm exec -- ci",
     ]) {
       assert.ok(!runsInstall(line), line);
     }

@@ -16,10 +16,10 @@ description: >
 #     `release.yml` (checks out the deployed SHA) keep a hand-written
 #     `actions/setup-node` for that reason, pinned to the same version below by
 #     `scripts/ci/__tests__/node-setup-action.test.mjs`.
-#   - Reach every job. A few dependency-free jobs set up no Node at all and run
-#     on the runner's preinstalled one (`ci-wake.yml`, `pr-base-sync.yml`,
-#     both deploy workflows' `deploy-outcome`, `docs.yml`'s `env-slugs`,
-#     `db-backup.yml`'s `backup-production`), so a bump here doesn't move them.
+#   - Reach every job. A job that sets up no Node, but runs `node` itself or
+#     through a composite action that does (`db-offsite-backup`), runs on the
+#     runner's preinstalled Node, so a bump here doesn't move it (#3081 lists
+#     them).
 #
 # Every step below is pinned by that test, in order: the per-job guards (the
 # cold-build jobs, mobile-validate's bundle order, the watchdogs' "no npm ci")

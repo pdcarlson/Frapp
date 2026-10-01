@@ -33,9 +33,9 @@ action file is not on disk yet when the runner resolves it.
   `node-setup`'s version. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on any
   other copy, on an exception whose version differs or that no longer checks out another
   commit first, on an `install:` value the action doesn't accept, on any step added to the
-  action beyond its four, and on a job that holds a secret calling it with an installing
-  mode (those jobs run dependency-free scripts, so `npm ci`'s lifecycle scripts never run
-  beside a credential).
+  action or line added to its mode check, and on an installing mode in a job that holds a
+  secret, directly or through a composite action it calls (those jobs run dependency-free
+  scripts, so `npm ci`'s lifecycle scripts never run beside a credential).
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`

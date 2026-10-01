@@ -773,8 +773,10 @@ export const JOB_KEY_RE = /^ {2}["']?([A-Za-z0-9_-]+)["']?:\s*(#.*)?$/;
 // broad and it must STAY broad: unlike `usesLocalAction`, a miss here fails
 // OPEN. `git checkout` alone was not enough: `git switch --detach
 // "$DEPLOY_SHA"` is a one-word modernization that silently disarmed the guard
-// in testing.
-export const WORKSPACE_REWRITE_RE = /\bgit\s+(checkout|switch|worktree)\b|\bgit\s+reset\s+--hard\b/;
+// in testing, and git's global options (`git -c advice.detachedHead=false
+// checkout`, `git -C dir switch`) may sit between `git` and the subcommand.
+const GIT = String.raw`\bgit(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+`;
+export const WORKSPACE_REWRITE_RE = new RegExp(String.raw`${GIT}(?:checkout|switch|worktree)\b|${GIT}reset\s+--hard\b`);
 
 const TRUSTED_MOVE = /^\s*git checkout --force --detach "\$TRUSTED_SHA"\s*$/;
 const TRUSTED_REF = /^\s*TRUSTED_SHA:\s*\$\{\{\s*github\.sha\s*\}\}\s*$/;
@@ -826,12 +828,16 @@ export function workspaceTrust(text, isCall, { initial = "none", jobs = true } =
     if (STEP_START.test(line)) stepStart = i;
     if (/uses:\s*["']?actions\/checkout@/i.test(line)) {
       // The step's own `ref:`, if any: the whole step, since `with:` may come
-      // before `uses:`, bounded by the next step.
-      const ref = lines
-        .slice(stepStart, stepEnd(i))
-        .map((l) => l.match(/^\s+ref:\s*(.+?)\s*$/)?.[1])
-        .find(Boolean);
-      const own = !ref || /^\$\{\{\s*github\.sha\s*\}\}$/.test(ref);
+      // before `uses:`, bounded by the next step, and in block or flow form
+      // (`with: { ref: … }`). A `repository:` or `path:` puts other content, or
+      // the same content somewhere else, where `./.github/actions` resolves.
+      const step = lines.slice(stepStart, stepEnd(i)).join("\n");
+      const refs = [
+        ...step.matchAll(/(?:^|[\s{,])ref:\s*["']?(\$\{\{[^}]*\}\}|[^,}"'\n]*?)["']?\s*(?=[,}\n]|$)/gm),
+      ].map((m) => m[1]);
+      const own =
+        refs.every((ref) => /^\$\{\{\s*github\.sha\s*\}\}$/.test(ref)) &&
+        !/(?:^|[\s{,])(?:repository|path):/m.test(step);
       // Only the FIRST checkout can establish trust; a later one moves the
       // workspace like `git checkout --detach` does, and must read that way.
       if (state === "none" && own) state = "trusted";
@@ -879,12 +885,78 @@ export function installsDependencies(step) {
   return step.body.split("\n").some((l) => USES_NODE_SETUP.test(l)) && nodeSetupInstall(step.body) === "ci";
 }
 
+// npm flags that take their value as the NEXT word, so that word is neither the
+// verb nor a package. Before the verb, an unknown flag's value is skipped
+// anyway unless it happens to spell a command; after an install verb, an
+// unversioned value reads as "names nothing", which fails closed.
+const VALUE_FLAGS = new Set([
+  "--prefix", "-C", "--workspace", "-w", "--omit", "--include", "--install-strategy", "--registry",
+  "--cache", "--userconfig", "--globalconfig", "--loglevel", "--tag", "--before", "--script-shell",
+  "--location", "--cpu", "--os", "--libc", "--fetch-retries", "--fetch-timeout", "--maxsockets",
+]);
+// `npm ci` and every alias, `npm install-ci-test` (a clean install, then test) included.
+const CI_VERBS = new Set(["ci", "clean-install", "ic", "install-clean", "isntall-clean", "cit", "install-ci-test", "clean-install-test", "sit"]);
+const INSTALL_VERBS = new Set([
+  "install", "i", "in", "ins", "inst", "insta", "instal", "isnt", "isnta", "isntal", "isntall", "add",
+  "it", "install-test",
+]);
+// Every other npm command a workflow plausibly runs: the first of these after
+// `npm` means the line isn't an install, however its later words read.
+const OTHER_VERBS = new Set([
+  "run", "run-script", "rum", "urn", "exec", "x", "test", "tst", "t", "start", "stop", "restart",
+  "publish", "pack", "version", "view", "v", "info", "show", "ls", "list", "ll", "la", "audit",
+  "outdated", "update", "up", "upgrade", "uninstall", "remove", "rm", "r", "un", "unlink", "link",
+  "ln", "config", "c", "set", "get", "init", "create", "cache", "prune", "rebuild", "rb", "dedupe",
+  "ddp", "explain", "why", "fund", "help", "query", "pkg", "doctor", "ping", "whoami", "login",
+  "logout", "token", "owner", "access", "search", "deprecate", "dist-tag", "docs", "prefix", "root",
+  "sbom", "diff", "approve", "install-scripts",
+]);
+
+/** A word naming something to install: `name@ver`, `@scope/name`, a path, a URL or a tarball. */
+const isPackageSpec = (word) =>
+  /\S@\S/.test(word) || /^@[^/\s]+\/\S+/.test(word) || /^(\.{0,2}\/|git\+|https?:|file:)/.test(word) || /\.tgz$/.test(word);
+
 /**
- * Whether workflow TEXT installs dependencies anywhere: a hand-written `npm ci`,
- * or a node-setup `install:` that installs (`ci`, `omit-dev`). For the
- * watchdog guards that promise "no npm ci", which a text match for `npm ci`
- * alone stopped keeping once the install moved into the action.
+ * Whether a line runs the lockfile install node-setup owns: any spelling of
+ * `npm ci`, or an `npm install` that names nothing to install. A tool install
+ * names a versioned spec (`npm install --global vercel@59.11.7`), which this
+ * repo pins everywhere, so an unversioned bare name reads as an install and
+ * fails closed. Global flags may come before the verb (`npm --prefix x ci`),
+ * quotes delimit nothing here (`run: "npm ci"` is `npm ci`), and a redirection
+ * may be glued to the verb (`npm ci>/dev/null`).
+ */
+export function runsInstall(line) {
+  const text = line.replace(/["'`]/g, " ");
+  for (const command of text.split(/&&|\|\||[;|&()<>]/)) {
+    const words = command.trim().split(/\s+/).filter(Boolean);
+    const at = words.findIndex((w) => w === "npm" || w.endsWith("/npm"));
+    if (at === -1) continue;
+    // The verb is the first word after `npm` that names a command; a word
+    // that names none is an unknown flag's value.
+    let i = at + 1;
+    while (i < words.length && !CI_VERBS.has(words[i]) && !INSTALL_VERBS.has(words[i]) && !OTHER_VERBS.has(words[i])) {
+      i += VALUE_FLAGS.has(words[i]) ? 2 : 1;
+    }
+    const verb = words[i];
+    if (CI_VERBS.has(verb)) return true;
+    if (!INSTALL_VERBS.has(verb)) continue;
+    const named = words.slice(i + 1).filter((w, j, rest) => !w.startsWith("-") && !VALUE_FLAGS.has(rest[j - 1]));
+    if (!named.some(isPackageSpec)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether workflow TEXT installs dependencies anywhere: a hand-written lockfile
+ * install (`runsInstall`), or a node-setup `install:` that installs (`ci`,
+ * `omit-dev`). For the watchdog guards that promise "no npm ci", which a text
+ * match for `npm ci` alone stopped keeping once the install moved into the
+ * action. Comments don't count: those guards' own workflows say "no npm ci".
  */
 export function installsDependenciesIn(text) {
-  return /npm ci/.test(text) || /^\s*install:\s*["']?(ci|omit-dev)["']?\s*(#.*)?$/m.test(text);
+  const code = text
+    .split(/\r?\n/)
+    .filter((l) => !/^\s*#/.test(l))
+    .map((l) => l.replace(/\s#.*$/, ""));
+  return code.some(runsInstall) || code.some((l) => /^\s*install:\s*["']?(ci|omit-dev)["']?\s*$/.test(l));
 }
