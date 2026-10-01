@@ -111,6 +111,8 @@ const config: Partial<Config> = {
         card: {
           DEFAULT: colorVar("--card"),
           foreground: colorVar("--card-foreground"),
+          // A card-filled control's hover (components.md §3); `signet.css`.
+          hover: colorVar("--card-hover"),
         },
         popover: {
           DEFAULT: colorVar("--popover"),
@@ -139,9 +141,12 @@ const config: Partial<Config> = {
           foreground: colorVar("--muted-foreground"),
         },
         /*
-         * Present because the ShadCN scaffold's `secondary` variants use it and
-         * ~20 call sites use those variants. Without this key the classes
-         * compiled to nothing (#1145).
+         * The ShadCN aliases: `--secondary` is `--card` and `--accent` is
+         * `--popover` (`signet.css`). Nothing paints them any more, and
+         * `apps/web/components/shared/elevation-call-sites.spec.ts` bans them
+         * in both Next surfaces, because the names hid that `hover:bg-accent`
+         * was the elevated step itself. Deleting these keys and the variables
+         * behind them is #3036.
          */
         secondary: {
           DEFAULT: colorVar("--secondary"),
