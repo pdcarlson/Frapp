@@ -33,7 +33,7 @@ Database rollback and restore are their own procedures:
 
 ### Recovery checklist
 
-- [ ] Roll back Render deploy if latest release caused outage
+- [ ] If the latest release caused the outage, roll the API back through **Deploy production**, never the Render dashboard: the previous release's SHA when no migration has shipped since, otherwise a forward revert ([`db-rollback-playbook.md` § 3) Undo one migration](db-rollback-playbook.md#3-undo-one-migration))
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
