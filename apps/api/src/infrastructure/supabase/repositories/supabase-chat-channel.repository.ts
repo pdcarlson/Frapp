@@ -9,6 +9,7 @@ import type {
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { ChatChannel } from '#domain/entities/chat.entity';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * A DM's member ids as Postgres returns a `uuid[]`: lowercase, sorted. The
@@ -35,7 +36,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -45,7 +46,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -82,7 +83,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .in('id', ids);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -97,7 +98,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId)
       .eq('type', 'DM')
       .contains('member_ids', sorted);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const match = (data as ChatChannel[])?.find(
       (ch) =>
         ch.member_ids &&
@@ -141,7 +142,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
         const winner = await this.findDm(chapterId, sorted);
         if (winner) return winner;
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     return data;
@@ -153,7 +154,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -169,7 +170,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -179,7 +180,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   /**
@@ -201,7 +202,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       p_chapter_id: chapterId,
       p_user_id: userId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? [])[0] ?? null;
   }
 
@@ -220,7 +221,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       'add_private_channel_member',
       { p_channel_id: channelId, p_chapter_id: chapterId, p_user_id: userId },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? [])[0] ?? null;
   }
 
@@ -237,7 +238,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       'remove_private_channel_member',
       { p_channel_id: channelId, p_chapter_id: chapterId, p_user_id: userId },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? [])[0] ?? null;
   }
 
@@ -249,7 +250,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       'remove_user_from_private_channels',
       { p_chapter_id: chapterId, p_user_id: userId },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 }

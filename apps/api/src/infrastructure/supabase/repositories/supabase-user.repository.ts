@@ -8,6 +8,7 @@ import type {
 import { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { User, UserDisplayIdentity } from '#domain/entities/user.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseUserRepository implements IUserRepository {
@@ -22,7 +23,7 @@ export class SupabaseUserRepository implements IUserRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -32,7 +33,7 @@ export class SupabaseUserRepository implements IUserRepository {
       .from('users')
       .select('*')
       .in('id', ids);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -53,7 +54,7 @@ export class SupabaseUserRepository implements IUserRepository {
     );
     const rows: UserDisplayIdentity[] = [];
     for (const { data, error } of pages) {
-      if (error) throw error;
+      if (error) throw new SupabaseQueryError(error);
       rows.push(...(data ?? []));
     }
     return rows;
@@ -65,7 +66,7 @@ export class SupabaseUserRepository implements IUserRepository {
       .select('*')
       .eq('supabase_auth_id', authId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -75,7 +76,7 @@ export class SupabaseUserRepository implements IUserRepository {
       .insert(userData)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -92,7 +93,7 @@ export class SupabaseUserRepository implements IUserRepository {
       .is('deleted_at', null)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -101,7 +102,7 @@ export class SupabaseUserRepository implements IUserRepository {
       p_user_id: id,
       p_rescan_cards: rescanCards,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
   }
