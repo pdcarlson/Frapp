@@ -70,7 +70,9 @@ describe('validateEnv', () => {
 
   // An empty or whitespace value is rejected exactly as an absent key is —
   // a name present in Infisical with a blank value still fails at boot.
-  // docs/ops/database/promotion.md's pre-promotion checklist depends on this.
+  // The deploy's config check (scripts/ci/check-deploy-config.mjs, #3112) runs
+  // this function to refuse a blank secret before anything is applied, and
+  // docs/ops/database/promotion.md tells the operator it does.
   it.each([
     ['an empty string', ''],
     ['whitespace only', '   '],
