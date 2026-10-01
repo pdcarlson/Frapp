@@ -5,6 +5,7 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { buildOpenApiConfig } from './openapi-config';
+import { toReportableError } from './infrastructure/observability/reportable-error';
 
 // No Supabase placeholders here, deliberately: assigning to `process.env` in this
 // file's body is always too late. `import { AppModule }` is hoisted above every
@@ -57,9 +58,12 @@ exportOpenApi().catch((err) => {
   // The failure it hides is the expensive kind: `NestFactory.create` bootstraps
   // the real container, so a missing provider surfaces here and nowhere else
   // (unit tests supply their own), and a silent exit 1 gives no clue which.
+  // Normalized first: a plain thrown object handed to `console.error` is
+  // `util.inspect`ed, `details` (row values) and all (#2460).
+  const reportable = toReportableError(err);
   console.error(
     '[OpenAPIExport] failed:',
-    err instanceof Error ? err.stack : err,
+    reportable.stack ?? reportable.message,
   );
   process.exit(1);
 });

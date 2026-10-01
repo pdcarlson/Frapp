@@ -2535,7 +2535,7 @@ export class ChatService {
           logThrowable(
             this.logger,
             'warn',
-            `Could not sign a batch of chat attachments; omitting them ${JSON.stringify({ ...context, bucket })}`,
+            `Could not sign a batch of chat attachments ${JSON.stringify({ ...context, bucket })}; omitting them`,
             error,
           );
           return;
