@@ -209,9 +209,11 @@ curl -X POST http://127.0.0.1:54321/auth/v1/signup -H "apikey: <ANON_KEY>" \
   -H "Content-Type: application/json" -d '{"email":"test@example.com","password":"Password123!"}'
 curl http://localhost:3001/v1/users/me -H "Authorization: Bearer <token>"   # creates the users row
 
-# Create a chapter. The DTO whitelist rejects any extra key with a 400
-curl -X POST http://localhost:3001/v1/chapters -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" -d '{"name":"Test Chapter","university":"Test University"}'
+# Create a chapter through onboarding, the only create route. accept_terms_privacy must be the
+# JSON true; the DTO whitelist rejects any extra key with a 400
+curl -X POST http://localhost:3001/v1/chapters/onboard -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test Chapter","university":"Test University","accept_terms_privacy":true}'
 
 # Chapter-scoped call
 curl http://localhost:3001/v1/events -H "Authorization: Bearer <token>" -H "x-chapter-id: <chapter_id>"
