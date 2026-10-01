@@ -1,9 +1,14 @@
-# Foundation tokens
+# Web tokens
 
-What lane 1 ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)) landed in the theme package,
-and what is still open. Token **values** stay canonical in
-[`../design-system/foundations.md`](../design-system/foundations.md); this page is the lane record
-and does not restate them.
+The web surface's token record: what the [#2140](https://github.com/pdcarlson/Frapp/issues/2140)
+rebuild's first lane ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)) landed in the theme
+package, where the framework board and the theme package disagree, and the locks the rebuild raised,
+L-01 to L-09, open and closed. Token **values** stay canonical in
+[`../design-system/foundations.md`](../design-system/foundations.md); this page records decisions and
+the measurements behind them, and does not restate values. Lock IDs are stable because code comments
+cite them: close a lock in place, never renumber or delete it. *Moved here from
+`spec/ui/web-greenfield/tokens.md` by [#2743](https://github.com/pdcarlson/Frapp/issues/2743),
+2026-10-01, when that directory folded into this one.*
 
 ---
 
@@ -115,7 +120,7 @@ carry the same value. Reaching for the more obvious-looking one reintroduces a b
 
 ### What lane 7 added
 
-One value, and it is the only token this directory records that the framework board does not draw:
+One value, and it is the only token this page records that the framework board does not draw:
 `::selection`, which had no Signet value anywhere in the repo, so every surface fell through to the
 user agent's system blue.
 
@@ -142,8 +147,8 @@ Two things that are this file's to record, because they are about the *lane* rat
 
 ## 2. Open locks
 
-Each needs the framework artifact in [`reference/`](reference/README.md), a decision, or its own
-issue. **A lane that trips over one of these should resolve it here, not in passing.**
+Each open one needs a decision, a measurement or its own issue. **A change that trips over one
+resolves it here, not in passing.**
 
 L-01 is **closed** as of 2026-09-11 and kept in place rather than deleted: it is what the framework
 board settles, three other locks cite it, and the comparison it now carries is the only record of
@@ -153,17 +158,18 @@ which only restated the spec. **L-05 is closed as of 2026-09-13** by lane 7
 ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), in the direction that leaves its tokens
 standing. **L-02 is closed as of 2026-09-23** by the stale-palette sweep
 ([#1165](https://github.com/pdcarlson/Frapp/issues/1165)), which takes its recompute option. L-03,
-L-04, L-06 and L-09 are open. **L-07 is closed as of 2026-09-30** by
+L-06 and L-09 are open. **L-07 is closed as of 2026-09-30** by
 [#2398](https://github.com/pdcarlson/Frapp/issues/2398), which moved `FOCUS_RING`'s border to
-`accent-11`.
+`accent-11`. **L-04 is closed as of 2026-10-01** by
+[#2743](https://github.com/pdcarlson/Frapp/issues/2743), which retired the directory it was about.
 
 L-06, L-07, L-08 and L-09 reached past this epic, so they carry issues —
 [#2399](https://github.com/pdcarlson/Frapp/issues/2399),
 [#2398](https://github.com/pdcarlson/Frapp/issues/2398),
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153), now closed, and
-[#2154](https://github.com/pdcarlson/Frapp/issues/2154) — and outlive this directory, which is
-due for retirement now that [#2140](https://github.com/pdcarlson/Frapp/issues/2140) has closed. The rest are lane-1
-consequences that a greenfield lane resolves here.
+[#2154](https://github.com/pdcarlson/Frapp/issues/2154) — and outlived
+[#2140](https://github.com/pdcarlson/Frapp/issues/2140). The rest were lane-1 consequences, resolved
+here.
 
 ### L-01 — CLOSED 2026-09-11. The ladder is artifact-backed, and the board agrees
 
@@ -195,7 +201,7 @@ board established. See those entries, and
 
 Twelve roles. **None is a ladder or seed value, and none is actionable in a token PR** — which is why
 L-01 closes rather than reopening §1. They are recorded because the board outranks this file, so a
-lane that reaches one should know the board already has a position on it.
+change that reaches one should know the board already has a position on it.
 
 **Seven are accent-engine output, not authored values.**
 
@@ -309,28 +315,39 @@ replace it.
 
 ### L-03 — Danger text on `--popover`
 
-Solid `--destructive` now measures 4.482:1 on `--popover`, just under the gate (it was 4.717). The
-call sites that land on a dialog, sheet, popover or menu have been migrated to `--destructive-text`
-in this lane; the remainder sit on `--background`, `--surface-1` or `--card`, where the solid still
-clears. Count the rest with `grep -rn 'text-destructive\b' apps/web --include='*.tsx' | grep -v spec`
-rather than trusting a number written here. The rule is stated in
+Solid `--destructive` now measures 4.482:1 on `--popover`, just under the gate (it was 4.717). So
+danger **text** that lands on a dialog, sheet, popover or menu takes `--destructive-text`; on
+`--background`, `--surface-1` or `--card` the solid still clears. The rule is stated in
 [`foundations.md`](../design-system/foundations.md) §5 and pinned in
-`apps/web/components/billing/status-contrast.spec.ts`. The call-site migration is **not** done and
-is too broad for this lane.
+`apps/web/components/billing/status-contrast.spec.ts`. Lane 1 migrated the overlay call sites.
 
-### L-04 — Directory naming
+**Checked 2026-10-01 ([#2743](https://github.com/pdcarlson/Frapp/issues/2743)): it holds.** None of
+the solid `text-destructive` sites left in `apps/web`
+(`grep -rn 'text-destructive\b' apps/web --include='*.tsx' | grep -v spec | grep -v destructive-text`)
+puts danger **text** on `--popover`. Each was read against its nearest enclosing container: page
+surfaces, `CardContent`, and two full-screen overlays (`terms-prompt.tsx`, `chapter-wizard.tsx`)
+whose content sits on `--background`. One is a **glyph** on `--popover`: the wizard's
+directory-search error icon, inside the `Command` primitive, which paints `--popover`. A glyph is
+held to the 3:1 non-text floor, which 4.482:1 clears. What keeps this lock open is that **nothing
+guards it**: a text site that moves into a dialog keeps passing every test.
+[`components.md`](../design-system/components.md) §10's contrast claim for `PermissionsOffline`'s
+glyph is [#2694](https://github.com/pdcarlson/Frapp/issues/2694).
 
-The epic names the commit target `spec/ui/web-shell/`; this is `web-greenfield/`. One of the two
-should win. See [`README.md`](README.md) §3.
+### L-04 — CLOSED 2026-10-01. Directory naming
+
+The epic named its commit target `spec/ui/web-shell/`, and the directory shipped as
+`spec/ui/web-greenfield/`. Neither name won:
+[#2743](https://github.com/pdcarlson/Frapp/issues/2743) folded the directory into
+`spec/ui/web-dashboard/`, the surface's one spec, and deleted it.
 
 ### L-05 — CLOSED 2026-09-13. The `gold-ask-*` family kept its only consumer
 
-If lane 3 or 7 removes the Ask pill, three tokens go with it — `--gold-ask-fill`, `--gold-ask-border`
-and `--gold-ask-text`. Tracked on the [deletion checklist](deletion-checklist.md) §4 rather than
-pre-emptively removed here.
+If lane 3 or 7 removed the Ask pill, three tokens would have gone with it — `--gold-ask-fill`,
+`--gold-ask-border` and `--gold-ask-text`. They were tracked on the lane checklist rather than
+pre-emptively removed.
 
 **Neither lane removed it.** Lane 2 rebuilt the pill to the board's 34px/r10 top-bar geometry and
-kept it on `--gold-ask-*` (§4), and lane 7 had no reason to revisit that. The lock closes in the
+kept it on `--gold-ask-*` ([`README.md` § Top bar](README.md#top-bar) records the pill as it ships), and lane 7 had no reason to revisit that. The lock closes in the
 direction that leaves the family standing.
 
 Lane 7 did change the family's *status*, though, and in the opposite direction from deletion: L-01's
@@ -338,8 +355,8 @@ warning that the board's Ask family and its `--accent-*` family are identical **
 tenant is the house tenant** was a live trap with nothing enforcing it. It is now a test.
 `signet.css.spec.ts` asserts that every fixed token is a self-contained colour rather than a read of
 anything, and that `signetAccentSemanticVars`' key set is disjoint from that family — which is the
-single edit that would retint all of them at once. See
-[deletion-checklist.md](deletion-checklist.md) §12.
+single edit that would retint all of them at once. The lock that test enforces is in
+[`README.md` § Brand and copy locks](README.md#brand-and-copy-locks).
 
 ---
 
@@ -592,7 +609,7 @@ matches the spec and a screen that matches the utilities can disagree, with noth
 
 ---
 
-## 3. What this lane deliberately did not do
+## 3. What lane 1 deliberately did not do
 
 - **No component or screen was restyled.** The ladder moved under the existing UI; every surface
   picked up the new values through the tokens it already consumed.

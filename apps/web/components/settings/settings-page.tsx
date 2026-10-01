@@ -127,7 +127,8 @@ const RAIL_DANGER_TRIGGER_CLASS =
 // - **No `joincode`.** The board draws a Join code tab. `apps/web` has no
 //   join-code surface at all — a repo-wide grep for `join_code`, `joinCode`
 //   and `invite_code` returns nothing outside the API SDK. Building one is a
-//   capability, and this lane is chrome (`deletion-checklist.md` §8).
+//   capability, and this lane is chrome (`spec/ui/web-dashboard/README.md`
+//   § Settings).
 // - **No `subscription`.** The board puts plan status behind this rail, but
 //   `/billing` is a route a member reaches to pay their own invoice — see the
 //   note in `billing-page.tsx`, which is why `4d`'s "Members never see this
