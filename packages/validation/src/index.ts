@@ -49,6 +49,13 @@ export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
   "Agree to the Terms of Service and Privacy Policy to continue.";
 
 /**
+ * The 404 code on `GET /v1/channels/{id}/messages` when its `since` cursor
+ * names no message in the channel (#2807). The chat backfill reads it to tell
+ * a cursor it should drop from a channel it can't read, which answers 404 too.
+ */
+export const CHAT_SINCE_NOT_FOUND_CODE = "chat.since_not_found";
+
+/**
  * The API's 410 message for a request from an account that has been deleted
  * but whose session hasn't ended yet. Shared so a client can tell it apart
  * from the other 410s it can meet on the same route (an expired invite).

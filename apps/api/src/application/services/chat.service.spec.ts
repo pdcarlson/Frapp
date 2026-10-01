@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   canAccessChannel,
+  CHAT_SINCE_NOT_FOUND_CODE,
   MAX_UPLOAD_BYTES,
   moduleDisabledMessage,
 } from '@repo/validation';
@@ -19,6 +20,7 @@ import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   ChatMessageActionDuplicateError,
+  ChatMessageCursorNotFoundError,
   ChatMessageDuplicateError,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
@@ -1550,6 +1552,46 @@ describe('ChatService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
       expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('passes a since cursor through to the repository', async () => {
+      mockMessageRepo.findByChannel.mockResolvedValue([]);
+
+      await service.getMessages('ch-chan-1', 'ch-1', 'user-1', {
+        since: 'msg-cursor',
+        limit: 100,
+      });
+
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', {
+        since: 'msg-cursor',
+        limit: 100,
+      });
+    });
+
+    it('answers a since cursor that names no message in the channel with a coded 404 (#2807)', async () => {
+      // Coded because "Channel not found" is a 404 on this route too, and the
+      // backfill drops its cursor for this one only.
+      mockMessageRepo.findByChannel.mockRejectedValue(
+        new ChatMessageCursorNotFoundError('ch-chan-1', 'msg-purged'),
+      );
+
+      const refusal = await service
+        .getMessages('ch-chan-1', 'ch-1', 'user-1', { since: 'msg-purged' })
+        .catch((error: unknown) => error);
+
+      expect(refusal).toBeInstanceOf(NotFoundException);
+      expect((refusal as NotFoundException).getResponse()).toEqual(
+        expect.objectContaining({ code: CHAT_SINCE_NOT_FOUND_CODE }),
+      );
+    });
+
+    it('rethrows any other repository failure as it is', async () => {
+      const failure = new Error('connection reset');
+      mockMessageRepo.findByChannel.mockRejectedValue(failure);
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1', { since: 'm1' }),
+      ).rejects.toBe(failure);
     });
 
     it('clamps an oversized limit before the repository', async () => {

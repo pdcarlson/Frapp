@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   allowsInThreadReplies,
+  CHAT_SINCE_NOT_FOUND_CODE,
   extractMentionTokens,
   isAllowedUploadExtension,
   isAllowedUploadMime,
@@ -27,6 +28,7 @@ import {
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
+  ChatMessageCursorNotFoundError,
   ChatMessageDuplicateError,
   ChatMessageActionDuplicateError,
 } from '#domain/repositories/chat.repository.interface';
@@ -897,10 +899,22 @@ export class ChatService {
     await this.assertChannelAccess(channelId, chapterId, userId);
     instantOrThrow('before', options?.before);
     const [messages, blockedUserIds] = await Promise.all([
-      this.messageRepo.findByChannel(channelId, {
-        ...options,
-        limit: clampListLimit(options?.limit),
-      }),
+      this.messageRepo
+        .findByChannel(channelId, {
+          ...options,
+          limit: clampListLimit(options?.limit),
+        })
+        .catch((error: unknown) => {
+          // Coded, because "Channel not found" is a 404 on this route too and
+          // the backfill drops its cursor only for this one (#2807).
+          if (error instanceof ChatMessageCursorNotFoundError) {
+            throw new NotFoundException({
+              code: CHAT_SINCE_NOT_FOUND_CODE,
+              message: 'The since message is not in this channel',
+            });
+          }
+          throw error;
+        }),
       this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
     return maskBlockedMessages(messages, blockedUserIds);

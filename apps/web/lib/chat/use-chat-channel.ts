@@ -312,14 +312,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     What arrived after the newest loaded row (#1571 review), for a jump whose
     target may be newer than the cache rather than older.
 
-    The API's `since` read returns the newest `limit` rows after the pivot,
-    not the ones right after it (#2807), so a full page may sit on the far
-    side of a hole. Merged, it would draw the hole as silence and put a target
-    inside it out of reach of paging back. A full page is therefore folded in
-    the way the channel query folds its newest page: it becomes the thread's
-    newest page, and the older rows it is not contiguous with go
+    The API's `since` read is the newest `limit` rows after the pivot, not the
+    ones right after it (#2807), so a full page may sit on the far side of a
+    hole. Merged, it would draw the hole as silence and put a target inside it
+    out of reach of paging back. A full page is therefore folded in the way
+    the channel query folds its newest page: it becomes the thread's newest
+    page, and the older rows it is not contiguous with go
     (`reconcileNewestPage`), so paging back runs contiguously through the
-    hole. No second request: the rows in hand already are that page.
+    hole. No second request: the rows in hand already are that page. The
+    reconnect backfill follows the same rule (`mergeSincePage`); this read
+    rebuilds from the page instead because it carries the page's reactions.
 
     Heavy-command cards it delivers settle their persisted notices, as every
     other path that delivers a server card does (`mergePersistedNotices`), or
