@@ -12,10 +12,10 @@ name: Deploy
 #     with `environment: production`, `dry_run` and `scope` (#2805).
 #
 # ── The order ───────────────────────────────────────────────────────────────
-#   install (no secrets yet) → move to the trusted ref → local actions,
-#   provider ids, preflight, env baseline, inject Infisical → back to the
-#   deployed commit →
-#   plan (staging) / rehearse (production) → migration dry run → BUILD web +
+#   install and build the API (no secrets yet) → move to the trusted ref →
+#   local actions, provider ids, preflight, env baseline, inject Infisical →
+#   back to the deployed commit → plan (staging) → check the config (#3112) →
+#   rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
 #   the API by commit → verify it serves the commit → UPLOAD web + landing →
 #   point the staging hosts at them → ask Sentry for the source maps (reports,
@@ -295,6 +295,17 @@ jobs:
         if: ${{ inputs.scope != 'migrations-only' }}
         run: npm install --global vercel@59.11.7
 
+      # The API and the packages it imports, compiled from this commit for the
+      # config check below (#3112), which runs this commit's boot check
+      # (`validateEnv`) because that is what will boot. The same builds the
+      # Render image runs (`apps/api/Dockerfile`). Here, before any secret, for
+      # the installs' reason (#2801): no build tool runs with the store in its
+      # environment. The output is gitignored, so neither checkout below
+      # touches it. A migrations-only run deploys no API, so it builds none.
+      - name: Build the API, for its boot check
+        if: ${{ inputs.scope != 'migrations-only' }}
+        run: npx --no-install turbo run build --filter=api
+
       # `github.sha` is the commit this file was loaded from: for production the
       # dispatched `main`, for staging `main`'s tip when CI's run finished. It
       # is an ancestor of `origin/main`, so the full-history checkout already
@@ -377,8 +388,9 @@ jobs:
       # tree, it would also set a floor on rollbacks: a commit from before the
       # script existed (#2505) could ship its API and then fail here. The script
       # and its `lib/` imports are Node built-ins only, so the copy needs no
-      # install. The source-map check at the end of the job (#2489) runs from
-      # this copy for the same reasons, and so does production's rehearsal
+      # install. The source-map check at the end of the job (#2489) and the
+      # config check (#3112) run from this copy for the same reasons, and so
+      # does production's rehearsal
       # stack start (`supabase-start-disposable.sh`, bash, #2609), which runs on
       # every production run, migrations-only included. So the copy takes all
       # of `scripts/ci` and has no condition. The step keeps its name, which
@@ -457,6 +469,48 @@ jobs:
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
         run: node scripts/ci/plan-staging-deploy.mjs
+
+      # ── Refuse a config this run would fail on later (#3112) ─────────────
+      # Before anything is written, dry runs included. Each of these otherwise
+      # fails after the apply, with the schema already moved:
+      #   * the API's boot check, this commit's `validateEnv` (built above), on
+      #     the names Infisical injected, when the run deploys the API;
+      #   * `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, when it deploys a function;
+      #   * `API_HEALTHCHECK_URL`, when it checks the commit the API serves.
+      # Each environment's flags restate the `if:` of the steps they stand in
+      # for, so the check asks for nothing the run won't use. Names only, never
+      # values; the boot check runs in a child process with no store in its
+      # environment. The script header has both.
+      #
+      # It proves what Infisical holds, the source the Render sync copies. It
+      # can't see a sync that failed or lags (SECRETS_MANAGEMENT.md § 5), or
+      # anything the API checks against a provider once it is up, such as the
+      # Stripe price lookup.
+      #
+      # From the trusted copy, like the served-commit check, so a rollback to a
+      # commit from before the script still runs it. A commit with no
+      # `env.validation.ts` skips the boot check with a warning.
+      - name: Check the config before anything is written (staging)
+        if: inputs.environment == 'staging'
+        env:
+          CHECK_API_BOOT: ${{ steps.plan.outputs.deploy }}
+          DEPLOYS_FUNCTIONS: ${{ steps.plan.outputs.plan != 'stale' }}
+          VERIFIES_API: ${{ steps.plan.outputs.verify_sha != '' }}
+          ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: node "$TRUSTED_CI/check-deploy-config.mjs"
+
+      # A dry run checks what its real run would need: the API and the
+      # functions on a `full` run, and the served commit on every run.
+      - name: Check the config before anything is written (production)
+        if: inputs.environment == 'production'
+        env:
+          CHECK_API_BOOT: ${{ inputs.scope != 'migrations-only' }}
+          DEPLOYS_FUNCTIONS: ${{ inputs.scope != 'migrations-only' }}
+          VERIFIES_API: "true"
+          ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: node "$TRUSTED_CI/check-deploy-config.mjs"
 
       # ── Production: rehearse the migration before touching the database ──
       # The same stack migration-drift-gate.yml's `migration-replay` starts,
@@ -700,6 +754,11 @@ jobs:
             echo "applied state, and the pending set is listed in the **Run migrations (dry-run)**"
             echo "step's log. Named, not \"the previous step\": on a \`full\` run the build steps sit"
             echo "between that step and this summary."
+            echo ""
+            echo "The config check passed: the secrets the real run reads after the apply are set in"
+            echo "Infisical \`prod\`, and on a \`full\` run the API's boot check (this commit's"
+            echo "\`validateEnv\`) accepts its values. It can't see whether the Render sync has"
+            echo "copied them."
             if [ "$SCOPE" != "migrations-only" ]; then
               echo ""
               echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"
