@@ -155,15 +155,17 @@ permission `expo-camera` contributes and wrote `tools:node="remove"` into the ma
 silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
 declining-a-permission half is the reusable lesson: a plugin option that declines a
 permission is not inert, it overrides other plugins, so it can only be set for a
-permission nothing in the app requests. `app.config.spec.ts` pins both halves against
-the resolved config — the Android permission set at the effect level, the declined
-options and iOS purpose strings at the cause level — so re-adding this picker the same
-way fails a test rather than shipping. It is not an airtight fence: an option left
-*omitted* still inherits its plugin's default purpose string, and a vendor option
-spelled something other than `*Permission`/`*UsageDescription` is not scanned. Closing
-those needs the introspected config in CI, filed as #2343. Re-add the
-dependency and its plugin entry in the slice that actually builds a picker surface —
-which is what #1045 should have been.
+permission nothing in the app requests. `scripts/check-mobile-native-declarations.mjs`
+pins both halves in `mobile-validate`. It reads the Info.plist and AndroidManifest that
+`expo config --type introspect` resolves, rather than `app.json`: the exact iOS purpose
+strings, and no `tools:node="remove"` on a permission a screen requests. So re-adding
+this picker the same way fails CI rather than shipping. *Updated 2026-09-30 (#2343):*
+the `app.json`-level assertions in `app.config.spec.ts` that this replaced weren't an
+airtight fence. An option left *omitted* inherits its plugin's default purpose string,
+and a vendor option spelled something other than `*Permission`/`*UsageDescription`
+wasn't scanned. The introspected gate sees both, because it reads what the mods write.
+Re-add the dependency and its plugin entry in the slice that actually builds a picker
+surface — which is what #1045 should have been.
 
 **`expo-image-picker` came back (#2464), with the surface this time** — chat photo
 upload, `apps/mobile/lib/chat/attachment-upload.ts`, which is the importer #1045 never
@@ -203,8 +205,9 @@ key at all**. Each of those three is load-bearing:
   another plugin contributes, because `expo-camera` sets `recordAudioAndroid: false`
   and so never adds RECORD_AUDIO either.
 - `photosPermission` is set explicitly rather than left to the plugin default, per the
-  unread-pin note above, and is now in `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME`
-  list so a future decline of it fails a test.
+  unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
+  in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
+  *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
@@ -213,6 +216,8 @@ surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
 `signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
 prompt floor from two to three with this slice, which is exactly what that file's block on
 the floor going three to two (#2296) and back to three (#2464) said the raise was for.
+*2026-09-30 (#2343):* the floor is gone. The introspected gate pins which prompts exist,
+and the copy lock asserts only that they name Frapp.
 
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated
