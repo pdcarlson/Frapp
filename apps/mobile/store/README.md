@@ -747,6 +747,10 @@ install it, in a PR that adds one entry per build:
   the check rather than being skipped.
 - An iOS and an Android build from the same commit are two entries, and are compared once.
 
+The newest entry per platform is also what each deploy's client check asks the API about
+([`ci-cd.md` § Deploy verification](../../../docs/ops/deployment/ci-cd.md#deploy-verification)): a
+production minimum above it fails the deploy, so record a build before raising the minimum to it.
+
 **Drop an entry only once production's minimum for its platform is above it**, that is,
 `MOBILE_MIN_VERSION_IOS` or `MOBILE_MIN_VERSION_ANDROID` on `frapp-api-prod` names a later build
 ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings), so
