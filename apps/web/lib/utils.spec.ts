@@ -1,5 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { downloadBlob, downloadCsv, getErrorMessage } from "./utils";
+import {
+  downloadBlob,
+  downloadCsv,
+  getErrorMessage,
+  guardDecimalDraft,
+  guardIntDraft,
+  parseGuardedDecimal,
+  parseGuardedInt,
+} from "./utils";
 
 /**
  * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
@@ -92,5 +100,80 @@ describe("downloadCsv", () => {
 
     expect(clickSpy).toHaveBeenCalledTimes(1);
     clickSpy.mockRestore();
+  });
+});
+
+/**
+ * The guards `apps/web`'s numeric inputs go through (#2206). A
+ * `type="number"` input reports text it can't parse as `""`, but these take
+ * the raw text anyway, so a field that isn't `type="number"` is covered too.
+ */
+describe("parseGuardedInt", () => {
+  it.each([
+    ["", undefined],
+    ["   ", undefined],
+    ["abc", undefined],
+    ["-3", undefined],
+    ["1.5", undefined],
+    ["1e999", undefined],
+    ["NaN", undefined],
+    // Past 2^53 an integer can't be held exactly: this one reads as ...992.
+    ["9007199254740993", undefined],
+    ["0", 0],
+    [" 42 ", 42],
+  ])("reads %j as %j", (raw, expected) => {
+    expect(parseGuardedInt(raw)).toBe(expected);
+  });
+
+  it("refuses an integer under the floor it is given", () => {
+    expect(parseGuardedInt("0", 1)).toBeUndefined();
+    expect(parseGuardedInt("1", 1)).toBe(1);
+  });
+});
+
+describe("parseGuardedDecimal", () => {
+  it.each([
+    ["", undefined],
+    ["abc", undefined],
+    ["-0.5", undefined],
+    ["1e999", undefined],
+    ["1e300", undefined],
+    ["1.5", 1.5],
+    [".5", 0.5],
+    ["2", 2],
+  ])("reads %j as %j", (raw, expected) => {
+    expect(parseGuardedDecimal(raw)).toBe(expected);
+  });
+});
+
+describe("guardIntDraft", () => {
+  it("keeps a cleared field cleared, rather than reading it as 0", () => {
+    expect(guardIntDraft("")).toBe("");
+    expect(guardIntDraft("  ")).toBe("");
+  });
+
+  it.each(["abc", "-3", "1.5", "1e999"])(
+    "refuses %j, so the caller keeps its previous draft",
+    (raw) => {
+      expect(guardIntDraft(raw)).toBeUndefined();
+    },
+  );
+
+  it("commits an accepted integer as its trimmed text", () => {
+    expect(guardIntDraft(" 12 ")).toBe("12");
+  });
+
+  // Deleting the 3 of "30" leaves "0" on the way to "45": a field's own floor
+  // is checked at submit, not mid-edit.
+  it("keeps a transient 0", () => {
+    expect(guardIntDraft("0")).toBe("0");
+  });
+});
+
+describe("guardDecimalDraft", () => {
+  it("keeps a decimal and a cleared field, and refuses a negative", () => {
+    expect(guardDecimalDraft("1.5")).toBe("1.5");
+    expect(guardDecimalDraft("")).toBe("");
+    expect(guardDecimalDraft("-1")).toBeUndefined();
   });
 });

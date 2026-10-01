@@ -55,7 +55,12 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 import {
   ASSIGNMENT_TYPES,
   DOCUMENT_VARIANTS,
@@ -101,6 +106,9 @@ function uploadRejectionDescription(reason: "type" | "size"): string {
 // Sentinel used by Radix Select, which rejects empty-string values. Maps to
 // "no filter" / "no selection" in local state before we hit the API.
 const ANY = "__any__";
+
+/** The API's `@Min` on a Backwork resource's `year` (`backwork.dto.ts`). */
+const BACKWORK_YEAR_MIN = 1900;
 
 /** SHA-256 hex digest for the browser — matches the server's file_hash format. */
 async function sha256Hex(file: File): Promise<string> {
@@ -295,6 +303,25 @@ export function BackworkPage() {
     }
     setUploadError(null);
     const contentType = inspected.contentType;
+    // The floors the API checks on confirm, checked here before the file
+    // reaches storage, so a refusal can't leave an orphaned object. This is a
+    // toast, not the inline error the comment above prescribes, because a
+    // browser never gets here: the inputs' own min stops its submit first,
+    // and the metadata fields carry no error slot (`UploadField`). It covers
+    // a programmatic submit.
+    const year = parseGuardedInt(uploadDraft.year, BACKWORK_YEAR_MIN);
+    const assignmentNumber = parseGuardedInt(uploadDraft.assignment_number, 1);
+    if (
+      (uploadDraft.year !== "" && year === undefined) ||
+      (uploadDraft.assignment_number !== "" && assignmentNumber === undefined)
+    ) {
+      toast({
+        title: "Check the year and assignment number",
+        description: `The year starts at ${BACKWORK_YEAR_MIN}, and assignment numbers start at 1.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setUploading(true);
     try {
@@ -320,16 +347,14 @@ export function BackworkPage() {
         department_code: uploadDraft.department_code.trim() || undefined,
         course_number: uploadDraft.course_number.trim() || undefined,
         professor_name: uploadDraft.professor_name.trim() || undefined,
-        year: uploadDraft.year ? Number(uploadDraft.year) : undefined,
+        year,
         semester: uploadDraft.semester
           ? (uploadDraft.semester as (typeof SEMESTERS)[number])
           : undefined,
         assignment_type: uploadDraft.assignment_type
           ? (uploadDraft.assignment_type as (typeof ASSIGNMENT_TYPES)[number])
           : undefined,
-        assignment_number: uploadDraft.assignment_number
-          ? Number(uploadDraft.assignment_number)
-          : undefined,
+        assignment_number: assignmentNumber,
         document_variant: uploadDraft.document_variant
           ? (uploadDraft.document_variant as (typeof DOCUMENT_VARIANTS)[number])
           : undefined,
@@ -522,12 +547,13 @@ export function BackworkPage() {
                           max={2100}
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.year}
-                          onChange={(event) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              year: event.target.value,
-                            }))
-                          }
+                          onChange={(event) => {
+                            // Its floor waits for submit: a guard at 1900
+                            // would refuse the "2" of "2026".
+                            const next = guardIntDraft(event.target.value);
+                            if (next === undefined) return;
+                            setUploadDraft((prev) => ({ ...prev, year: next }));
+                          }}
                         />
                       </UploadField>
                       <UploadField id="bw-semester" label="Semester">
@@ -596,15 +622,19 @@ export function BackworkPage() {
                         <Input
                           id="bw-assignment-number"
                           type="number"
-                          min={0}
+                          min={1}
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.assignment_number}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            // Its floor of 1 waits for submit, so deleting
+                            // the 1 of "10" isn't refused mid-edit.
+                            const next = guardIntDraft(event.target.value);
+                            if (next === undefined) return;
                             setUploadDraft((prev) => ({
                               ...prev,
-                              assignment_number: event.target.value,
-                            }))
-                          }
+                              assignment_number: next,
+                            }));
+                          }}
                         />
                       </UploadField>
                       <UploadField id="bw-variant" label="Document variant">
