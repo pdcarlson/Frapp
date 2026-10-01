@@ -26,9 +26,8 @@
  * size a defect):
  *
  * - s01 wordmark 30/700 → `display` (32/700)
- * - s02 title 26/700 → `headline` (24/700). Deliberately 700 where the thirteen
- *   dashboard page headings are 600: those sit under a breadcrumb inside the
- *   shell, this is the screen's only anchor (§8 item 3).
+ * - s02 title 26/700 → `headline` (24/700), the screen's only anchor (§8
+ *   item 3).
  * - s01/s02 body 15.5–16 → `body` (16) in `--muted-foreground`
  * - s01 footer 14.5 → `label` (14)
  * - s02's "‹ Back" 15 → `label` (14), the nearest step. It is the one size the
@@ -90,7 +89,7 @@ export function AuthScreen({
             // s01's wordmark is the display step; s02's screen title is the
             // headline step. The mark's presence is what distinguishes an
             // entry screen from a step within the flow.
-            mark ? "text-display leading-tight" : "text-2xl",
+            mark ? "text-display leading-tight" : "text-headline",
           )}
         >
           {title}

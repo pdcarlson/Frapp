@@ -2,6 +2,7 @@
 
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
+import { EYEBROW } from "@/components/ui/typography";
 import {
   EmojiPicker as Frimousse,
   type EmojiPickerListCategoryHeaderProps,
@@ -67,7 +68,7 @@ function CategoryHeader({ category, ...rest }: EmojiPickerListCategoryHeaderProp
   return (
     <div
       {...rest}
-      className="bg-popover px-2 pb-1 pt-2 text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+      className={cn("bg-popover px-2 pb-1 pt-2 text-muted-foreground", EYEBROW)}
     >
       {category.label}
     </div>

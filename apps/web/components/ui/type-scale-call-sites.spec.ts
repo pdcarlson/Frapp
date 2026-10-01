@@ -1,11 +1,14 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, sep } from "node:path";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { classSourceText, productSourceFiles, REPO } from "@/tests/source-scan";
 
 /**
- * #2842: `apps/web` writes no font size as an arbitrary px literal. Text takes
- * a foundations §7 role key (`text-caption`, `text-label`, …).
+ * #2842: `apps/web` writes no font size as an arbitrary px literal. A size the
+ * foundations §7 scale names takes its role key (`text-caption`, `text-label`,
+ * …), and a drawn size the scale lacks rounds onto the adjacent role.
  *
  * The keys exist so a screen never has to write `text-[12.5px]`. Web wrote it
  * 174 times beside one `text-caption`, so a change to the caption role would
@@ -15,42 +18,21 @@ import { describe, expect, it } from "vitest";
  * onto the adjacent §7 step and transcribes only the weight and the relation
  * between sizes, and §7 calls an off-scale size in screen code a defect.
  *
+ * Only arbitrary literals are matched. Tailwind's own size keys (`text-xs`,
+ * `text-sm`, …) are a second spelling of the scale this guard cannot see yet;
+ * #3075 maps them and then extends the guard.
+ *
  * What remains is listed in {@link EXCEPTIONS} with its count, so the list is a
  * ratchet: a new literal fails, a new copy of a listed one fails, and an entry
  * whose sites have gone fails until it is deleted.
  */
 
-const WEB = join(__dirname, "..", "..");
-/** Where product code lives; `tests/` is harness code. */
-const ROOTS = ["app", "components", "hooks", "lib"];
-const SOURCE = /\.tsx?$/;
-const SPEC = /\.(spec|test)\.tsx?$/;
-
+const WEB = join(REPO, "apps", "web");
 /**
- * `withFileTypes`, as in `lib/date-call-sites.spec.ts`, so a dangling symlink
- * is skipped rather than crashing the suite. A root that stops existing throws
- * instead of being skipped, because a scan of nothing passes forever.
+ * Every file Tailwind can read a class from: scripts and MDX through the
+ * content globs, and `app/globals.css` through `@apply`.
  */
-function walk(dir: string): string[] {
-  const found: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name === ".next") continue;
-      found.push(...walk(path));
-    } else if (entry.isFile() && SOURCE.test(entry.name) && !SPEC.test(entry.name)) {
-      found.push(path);
-    }
-  }
-  return found;
-}
-
-/** Comments dropped first: prose may quote a literal to explain it. */
-function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
+const SCANNED = /\.(tsx?|jsx?|mdx|css)$/;
 
 /**
  * An arbitrary font size in px, after any variant prefix (`hover:`,
@@ -77,8 +59,8 @@ const DRAWN_MARK =
 
 /**
  * Every arbitrary size `apps/web` still writes, with how many times and why.
- * A glyph sized to a fixed box is not text on the scale. #3075 owns the two
- * board-drawn sizes that are grandfathered rather than reasoned.
+ * A glyph sized to a fixed box is not text on the scale. The entries marked
+ * "Grandfathered" are board-drawn sizes held for #3075 to decide.
  */
 const EXCEPTIONS: { file: string; literal: string; count: number; reason: string }[] = [
   {
@@ -136,18 +118,21 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
   },
 ];
 
-/** `file → literal → count` over every product source file. */
+/** Every `text-[Npx]` literal in some text, normalised. */
+function literalsIn(text: string): string[] {
+  return [...text.matchAll(ARBITRARY_SIZE)].map((m) => normalise(m[0]));
+}
+
+/** `file → literal → count` over every `apps/web` product file. */
 function literalsByFile(): Map<string, Map<string, number>> {
   const found = new Map<string, Map<string, number>>();
-  for (const root of ROOTS) {
-    for (const path of walk(join(WEB, root))) {
-      for (const match of code(path).matchAll(ARBITRARY_SIZE)) {
-        const file = relative(WEB, path);
-        const literal = normalise(match[0]);
-        const counts = found.get(file) ?? new Map<string, number>();
-        counts.set(literal, (counts.get(literal) ?? 0) + 1);
-        found.set(file, counts);
-      }
+  for (const path of productSourceFiles(SCANNED)) {
+    if (!path.startsWith(WEB + sep)) continue;
+    const file = relative(WEB, path).split(sep).join("/");
+    for (const literal of literalsIn(classSourceText(path))) {
+      const counts = found.get(file) ?? new Map<string, number>();
+      counts.set(literal, (counts.get(literal) ?? 0) + 1);
+      found.set(file, counts);
     }
   }
   return found;
@@ -174,17 +159,62 @@ describe("type scale call sites (#2842)", () => {
   });
 
   it("matches a px size in every spelling a class list can carry it", () => {
-    const literals = (text: string) =>
-      [...text.matchAll(ARBITRARY_SIZE)].map((m) => normalise(m[0]));
-    expect(literals("px-2 text-[12.5px] font-semibold")).toEqual(["text-[12.5px]"]);
-    expect(literals("hover:text-[11px] !text-[15px] text-[18px]!")).toEqual([
+    expect(literalsIn("px-2 text-[12.5px] font-semibold")).toEqual(["text-[12.5px]"]);
+    expect(literalsIn("hover:text-[11px] !text-[15px] text-[18px]!")).toEqual([
       "text-[11px]",
       "text-[15px]",
       "text-[18px]",
     ]);
-    expect(literals("[&_[cmdk-group-heading]]:text-[13px]")).toEqual(["text-[13px]"]);
-    expect(literals("text-[length:24px]")).toEqual(["text-[24px]"]);
-    expect(literals("text-caption text-muted-foreground h-[13px]")).toEqual([]);
+    expect(literalsIn("[&_[cmdk-group-heading]]:text-[13px]")).toEqual(["text-[13px]"]);
+    expect(literalsIn("text-[length:24px]")).toEqual(["text-[24px]"]);
+    expect(literalsIn("text-caption text-muted-foreground h-[13px]")).toEqual([]);
+  });
+
+  describe("reads class strings, not comments, in every file kind it scans", () => {
+    const dir = mkdtempSync(join(tmpdir(), "type-scale-"));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const scan = (name: string, body: string) => {
+      const path = join(dir, name);
+      writeFileSync(path, body);
+      return literalsIn(classSourceText(path));
+    };
+
+    it("is not blinded by a comment marker inside a string", () => {
+      // A regex stripper reads `"image/*"` as the start of a comment that runs
+      // to the next `*/`, and a `//` in a template as a line comment.
+      expect(
+        scan(
+          "strings.tsx",
+          [
+            'export const A = <input accept="image/*" />;',
+            'export const B = "text-[12.5px]";',
+            "/** end */",
+            "export const C = `${base}//x text-[13px]`;",
+            '<a href="//cdn.example.com" className="text-[15px]" />;',
+          ].join("\n"),
+        ),
+      ).toEqual(["text-[12.5px]", "text-[13px]", "text-[15px]"]);
+    });
+
+    it("ignores a literal a comment only names", () => {
+      expect(
+        scan(
+          "comments.tsx",
+          [
+            "/** Not `text-[12.5px]`: the caption role. */",
+            "// text-[11px] was the board's size",
+            '{/* text-[15px] */}',
+            'export const A = "text-caption";',
+          ].join("\n"),
+        ),
+      ).toEqual([]);
+    });
+
+    it("reads @apply in CSS, past its comments", () => {
+      expect(
+        scan("globals.css", "/* text-[11px] */\n.x { @apply text-[12.5px]; }"),
+      ).toEqual(["text-[12.5px]"]);
+    });
   });
 
   it("writes no font size as an arbitrary literal outside the ledger", () => {

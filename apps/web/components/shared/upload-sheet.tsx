@@ -60,11 +60,11 @@ import { cn } from "@/lib/utils";
 export const UPLOAD_FIELD_CLASS = "h-11";
 
 /**
- * The sheet's own buttons, at the board's 44px / r12 / 15px.
- *
- * Not `size="sm"`: that is 44px too, but it also drops the label to `text-sm`,
- * and the board draws the footer at 15px. Spelling the height here rather than
- * adding a `size` variant keeps the change inside this lane.
+ * The sheet's own buttons: the board's 44px / r12 footer, its 15px label
+ * rounded onto the `label` role (14), as `components.md` rounds a drawn size
+ * (#2842). That leaves it one step from `size="sm"` (44px, `px-3.5`,
+ * `text-sm`): the board pads the footer 16px, and `text-label` is the role
+ * where `text-sm` is Tailwind's own 14px.
  */
 export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-label";
 

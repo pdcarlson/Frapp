@@ -39,6 +39,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
 import { Skeleton } from "@/components/shared/async-states";
 import { cn, initials } from "@/lib/utils";
+import { EYEBROW } from "@/components/ui/typography";
 
 export interface ChatChannel {
   id: string;
@@ -515,7 +516,10 @@ export function ChannelList({
                 onClick={() =>
                   sidebar.onSetCollapsed(section.key, !section.collapsed)
                 }
-                className="flex w-full items-center gap-1 px-2 pb-1 text-left text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+                className={cn(
+                  "flex w-full items-center gap-1 px-2 pb-1 text-left text-muted-foreground hover:text-foreground",
+                  EYEBROW,
+                )}
               >
                 {section.collapsed ? (
                   <ChevronRight
@@ -543,7 +547,7 @@ export function ChannelList({
             ) : (
               <p
                 id={headerId}
-                className="px-3 pb-1 text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                className={cn("px-3 pb-1 text-muted-foreground", EYEBROW)}
               >
                 {section.label}
               </p>
@@ -573,7 +577,10 @@ export function ChannelList({
             onClick={() => setShowHidden((open) => !open)}
             aria-expanded={showHidden}
             aria-controls="channel-section:hidden"
-            className="w-full px-3 pb-1 text-left text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+            className={cn(
+              "w-full px-3 pb-1 text-left text-muted-foreground hover:text-foreground",
+              EYEBROW,
+            )}
           >
             {`${HIDDEN_CONVERSATIONS_LABEL} (${hiddenDms.length})`}
           </button>
