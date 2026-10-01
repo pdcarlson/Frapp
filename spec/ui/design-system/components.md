@@ -175,7 +175,7 @@ Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — 
 
 **Any control that exists only below `lg`** — the drawer trigger, and every nav row inside the drawer — is on the touch tier by construction and takes the 44px floor (§2, foundations §9), not the 34px pointer geometry above.
 
-There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F and advertises `⌘F` in the field itself; §5's ban on unwired keybinding hints is what makes that advertisement legitimate. An `aria-label` MUST NOT spell out a shortcut the surface does not bind.
+There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F and advertises `⌘F` in the field itself, which is legitimate only because the binding is wired: no keybinding hint, visible or in an `aria-label`, may name a shortcut the surface does not bind. *(Corrected 2026-10-01: this sentence used to attribute the ban on unwired hints to §5, which is Badges and chips and has no such rule. It is stated here now, beside the `aria-label` half this paragraph already carried.)*
 
 ## 8. Cards
 

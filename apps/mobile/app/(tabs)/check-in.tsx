@@ -346,7 +346,8 @@ export default function CheckInScreen() {
             <Text style={styles.error}>{status.message}</Text>
           ) : null}
 
-          {/* Stated, not just implied by a greyed button (components.md §5). */}
+          {/* Stated, not just implied by a greyed button
+              (spec/ui/design-system/README.md §5, rule 2). */}
           {writeBlockedReason ? (
             <Text style={styles.error}>{writeBlockedReason}</Text>
           ) : null}

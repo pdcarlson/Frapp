@@ -159,7 +159,8 @@ export function AccountMenu({
            * Notification preferences are a section of the profile screen, not a
            * route of their own, so this links to that section's anchor. A
            * `?tab=` param would have been a dead affordance: the profile screen
-           * has no tabs and would ignore it (`components.md` §5).
+           * has no tabs and would ignore it (`spec/ui/design-system/README.md`
+           * §5).
            */}
           <Link href="/profile#notification-settings" onClick={onNavigate}>
             <Bell className="h-4 w-4" aria-hidden="true" />

@@ -72,7 +72,7 @@ The **publisher is the dashboard shell, not this screen** ([`apps/web/lib/provid
 A 48px bar ([`top-bar.tsx`](../../../apps/web/components/layout/top-bar.tsx)): the mobile nav trigger (`lg:hidden`), a centered find field, notifications, the ✦ Ask entry, and the account avatar. The page title lives in the main pane (`page-header.tsx`), not here.
 
 - **Find** ([`find-bar.tsx`](../../../apps/web/components/layout/find-bar.tsx)) is a visible field on Cmd/Ctrl+F over channels, members and messages. It replaced the ⌘K `cmdk` palette, which is deleted ([`../web-greenfield/deletion-checklist.md`](../web-greenfield/deletion-checklist.md)).
-- **Ask** (`ask-pill.tsx`) is a shell. It opens a dialog stating that Ask cannot answer yet and pointing at the find field and Documents — a control that silently did nothing would be the dead end [`../design-system/components.md`](../design-system/components.md) §5 bans. No retrieval, no corpus, no model call. It paints in Signet's fixed gold family (the `gold-ask-*` tokens, 34px height / 10px radius in `ask-pill.tsx`; see [`../design-system/components.md`](../design-system/components.md) §7) — house gold, never the chapter accent.
+- **Ask** (`ask-pill.tsx`) is a shell. It opens a dialog stating that Ask cannot answer yet and pointing at the find field and Documents — a control that silently did nothing would be the dead end [`../design-system/README.md`](../design-system/README.md) §5 bans. No retrieval, no corpus, no model call. It paints in Signet's fixed gold family (the `gold-ask-*` tokens, 34px height / 10px radius in `ask-pill.tsx`; see [`../design-system/components.md`](../design-system/components.md) §7) — house gold, never the chapter accent.
 
 ## Gating & routing semantics
 

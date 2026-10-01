@@ -89,7 +89,7 @@ export function NotificationLevelPanel({
 }) {
   const unknown = level === null;
   // No channel to act on, or no level read yet: there is nothing to change, and
-  // components.md §5 bans a control that silently no-ops.
+  // `spec/ui/design-system/README.md` §5 bans a control that silently no-ops.
   const locked = disabled || unknown;
 
   return (
