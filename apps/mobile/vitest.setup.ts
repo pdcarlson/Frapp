@@ -62,68 +62,12 @@ vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("react-native", () => ({
-  Platform: {
-    OS: "ios",
-    select: vi.fn((opts) => opts.ios),
-  },
-  AppState: {
-    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
-    removeEventListener: vi.fn(),
-    currentState: "active",
-  },
-  // s10 confirms "End session" through the native dialog, because
-  // `spec/ui/mobile/README.md` names ending a session early as an action that
-  // needs one and bans `window.confirm` outright. A spec that drives that path
-  // reads the buttons off this mock rather than tapping an in-product dialog
-  // that does not exist.
-  Alert: {
-    alert: vi.fn(),
-  },
-  // Outcomes a sighted member reads off the screen are announced to VoiceOver
-  // through this, because `accessibilityLiveRegion` is Android-only. A spec
-  // asserting on it clears it itself (`clearMocks` is off, see the config).
-  AccessibilityInfo: {
-    announceForAccessibility: vi.fn(),
-    // An overlay moves a screen reader's focus onto itself as it appears
-    // (spec/ui/mobile/patterns.md § Overlays).
-    sendAccessibilityEvent: vi.fn(),
-  },
-  // Enough of the styling/layout surface for Signet token factories and
-  // component tests; string stand-ins render fine under react-test-renderer.
-  StyleSheet: {
-    create: <T>(styles: T) => styles,
-    flatten: (style: unknown) => style,
-    hairlineWidth: 1,
-  },
-  useColorScheme: () => "dark",
-  View: "View",
-  Text: "Text",
-  Pressable: "Pressable",
-  // Added with the chat attachment renderer (#1229), which previews image
-  // attachments inline.
-  Image: "Image",
-  ScrollView: "ScrollView",
-  TextInput: "TextInput",
-  // The chat thread windows its messages with a FlatList. As a string stand-in
-  // it renders its props but never invokes `renderItem`, so a test that needs
-  // to assert on rows should call the screen's row component directly rather
-  // than reaching into rendered output.
-  FlatList: "FlatList",
-  ActivityIndicator: "ActivityIndicator",
-  KeyboardAvoidingView: "KeyboardAvoidingView",
-  Share: {
-    share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
-  },
-  // The update gate (#2526) holds Android's back button while it blocks and
-  // dismisses any open keyboard when it appears.
-  BackHandler: {
-    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
-  },
-  Keyboard: {
-    dismiss: vi.fn(),
-  },
-}));
+// `test/react-native-stub.ts` holds the stand-ins, so a spec can extend them
+// (its `RenderingFlatList` draws rows) rather than restate the whole module.
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("./test/react-native-stub");
+  return reactNativeStub;
+});
 
 // expo-router ships untranspiled source, so importing any screen or any
 // component that navigates fails to parse under vitest. Mocked suite-wide for
@@ -315,9 +259,9 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   // The Ask sheet (s17, C7) is the first sheet in the app to draw the scrim the
   // reference has always shown, so this stand-in arrives with it.
   BottomSheetBackdrop: "BottomSheetBackdrop",
-  // Like `FlatList` above, this is a string stand-in that renders its props but
-  // never invokes `renderItem` — a spec needing a row should render that row's
-  // component directly.
+  // Like `FlatList` (`test/react-native-stub.ts`), a string stand-in that
+  // renders its props but never invokes `renderItem` — a spec needing a row
+  // should render that row's component directly.
   BottomSheetFlatList: "BottomSheetFlatList",
 }));
 
