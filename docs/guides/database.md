@@ -10,7 +10,7 @@ Frapp uses **Supabase Cloud** for staging/production and **Supabase CLI** + Dock
 - Supabase provides **Auth**, **Storage**, and **Realtime** on top of Postgres.
 - The schema lives in `supabase/migrations/`. How a new migration is applied locally:
   [`CONTRIBUTING.md` § Database Migrations](../../CONTRIBUTING.md#database-migrations);
-  `npx supabase db reset` is the full rebuild-from-scratch path described below,
+  `npm run supabase -- db reset` is the full rebuild-from-scratch path described below,
   not the way a single migration is applied.
 
 ## 2. Schema location
@@ -22,7 +22,7 @@ Frapp uses **Supabase Cloud** for staging/production and **Supabase CLI** + Dock
 To reset your local database:
 
 ```bash
-npx supabase db reset
+npm run supabase -- db reset
 ```
 
 This drops and recreates the database, applies all migrations, and reruns `seed.sql`.
@@ -130,7 +130,7 @@ Examples:
 1. Create a new migration:
 
 ```bash
-npx supabase migration new add_polls
+npm run supabase -- migration new add_polls
 ```
 
 2. Edit the generated SQL file in `supabase/migrations/`:
@@ -151,10 +151,10 @@ alter table public.polls enable row level security;
 3. Apply the migration locally:
 
 ```bash
-npx supabase db push --local
+npm run supabase -- db push --local
 ```
 
-   Use `npx supabase db reset` only when you want the full rebuild described in
+   Use `npm run supabase -- db reset` only when you want the full rebuild described in
    § 2 Schema location — it drops the reference data with it.
 
 4. Update:

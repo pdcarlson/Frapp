@@ -12,7 +12,7 @@ looking for the command to push migrations to staging, there isn't one any more
 
 | Environment    | How migrations get applied                                                                                                                                                                                                                                       | Who triggers it                           |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| **Local**      | `npx supabase db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
+| **Local**      | `npm run supabase -- db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
 | **Staging**    | **Automatic.** The migration steps of the shared `deploy` job ([`_deploy.yml`](../../.github/workflows/_deploy.yml), which [`deploy-staging.yml`](../../.github/workflows/deploy-staging.yml) calls) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
 | **Production** | **Manual.** The [`Deploy production`](../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations _without_ shipping code, for recovery and backlogs | A human, deliberately                     |
 
@@ -377,8 +377,8 @@ Two other refusals, both deliberate:
 ## Local validation
 
 ```bash
-npx supabase start
-npx supabase db push --local
+npm run supabase -- start
+npm run supabase -- db push --local
 ```
 
 Then run:

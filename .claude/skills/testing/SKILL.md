@@ -40,7 +40,7 @@ The root has no `test` script and `turbo.json` has no `test` task, so `npm run l
 | Node only | `npm install` | Lint, type-check, `nest build`, every unit suite, API E2E (mocked Supabase), `check:api-contract`, `check:migration-safety`, `check:pglite-migrations` (Postgres in WASM), `test:ci-scripts`, `check:dep-cruiser` (after `packages/*` are built) |
 | + Chromium | `npx playwright install chromium` | `test:floor -w apps/web`, `test:fold -w apps/landing`. Each starts its own app server with stand-in env |
 | + Docker | A running Docker daemon | `docker build -f apps/api/Dockerfile .` |
-| + local Supabase | Docker, then `npx supabase start` and `npx supabase db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
+| + local Supabase | Docker, then `npm run supabase -- start` and `npm run supabase -- db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
 | Staging | none locally | The [`live-verification`](../live-verification/SKILL.md) skill |
 
 To run the apps, prefer Infisical-injected env: `npm run dev:api` (port 3001) and `npm run dev:web`

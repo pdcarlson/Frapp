@@ -90,16 +90,24 @@ select 'grant:public.'||table_name||':'||grantee||'='||string_agg(privilege_type
 order by 1;"
 managed() { psql "$DB_URL" -tAc "$MANAGED_SQL" 2>/dev/null | sed '/^$/d'; }
 
-# Pass B's `db push --local` runs the repo's pinned CLI, the build CI backs up
-# and deploys with, through the resolver the sandbox and laptop bootstraps share
+# Both halves run the repo's pinned CLI, the build CI backs up and deploys with,
+# through the resolver the sandbox and laptop bootstraps share
 # (scripts/lib/supabase-cli.sh, #723): it reuses the copy bringup installed into
 # .cache/supabase-cli/. Never a `supabase` that merely happens to be on PATH: a
 # global install of another version would rehearse a code path the backup never
-# used. FRAPP_SUPABASE_CLI_VERSION overrides the version, as it does there.
+# used. Pass B calls it directly. The backup half is db-backup.sh, which takes
+# the `supabase` on PATH (in CI, the pin setup-cli put there), so it runs with
+# the pinned copy's directory first on PATH. FRAPP_SUPABASE_CLI_VERSION overrides
+# the version for both, as it does in the lib.
 FRAPP_SUPABASE_CLI_LOG_PREFIX='[restore-rehearsal]'
 # shellcheck source=scripts/lib/supabase-cli.sh
 . "$ROOT/scripts/lib/supabase-cli.sh"
 SUPABASE=frapp_supabase
+frapp_supabase --version >/dev/null || {
+  echo "Error: the pinned Supabase CLI could not be installed or run — see .cache/supabase-cli/install.log." >&2
+  exit 1
+}
+PINNED_CLI_PATH="$ROOT/.cache/supabase-cli/node_modules/.bin:$PATH"
 
 destroy() {
   # This is the simulated disaster, and it is also the closest local equivalent of
@@ -180,7 +188,7 @@ echo "    $(grep -c '=' "$WORK/baseline.txt") non-empty tables"
 
 echo "═══ 2. Backup ═══"
 rm -rf "$WORK/backups"
-./scripts/db-backup.sh --db-url "$DB_URL" --out-dir "$WORK/backups" --label rehearsal >/dev/null
+PATH="$PINNED_CLI_PATH" ./scripts/db-backup.sh --db-url "$DB_URL" --out-dir "$WORK/backups" --label rehearsal >/dev/null
 echo "    ok"
 
 echo "═══ 3. Pass A — destroy, then restore from the dump alone ═══"

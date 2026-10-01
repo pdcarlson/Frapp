@@ -11,6 +11,7 @@ import {
   readSupabaseCliPin,
   resolveSupabaseCli,
 } from "../lib/supabase-cli-pin.mjs";
+import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -144,15 +145,99 @@ test("the scan itself catches each unpinned form", () => {
 });
 
 // Which resolver each local-run script goes through. A script that went back to "whatever
-// `supabase` is on PATH" would pass the scan above.
-test("the local-run scripts resolve the CLI through the pinned resolvers", () => {
-  const read = (path) => readFileSync(join(REPO, path), "utf8");
-  for (const path of ["scripts/local-dev-setup.sh", "scripts/db-restore-rehearsal.sh"]) {
-    const text = read(path);
-    assert.match(text, /^\. "\$ROOT\/scripts\/lib\/supabase-cli\.sh"$/m, `${path} must source the shared resolver`);
-    assert.match(text, /frapp_supabase/, `${path} must run the CLI through frapp_supabase`);
+// `supabase` is on PATH" would pass the npx scan above, so the code lines (comments and quoted
+// strings stripped, since both name the CLI in prose) must hold no bare `supabase <command>`.
+function codeOnly(text) {
+  const kept = [];
+  let heredoc = null; // a heredoc body is text to print, like a quoted string
+  for (const line of text.split("\n")) {
+    if (heredoc) {
+      if (line.trim() === heredoc) heredoc = null;
+      continue;
+    }
+    if (/^\s*#/.test(line)) continue;
+    heredoc = line.match(/<<-?\s*['"]?(\w+)['"]?/)?.[1] ?? null;
+    kept.push(line.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""'));
   }
+  return kept.join("\n");
+}
+const BARE_CLI = /(^|[\s;|&(!])supabase\s+[a-z]/m;
+
+test("the local-run shell scripts call the CLI only through the pinned resolver", () => {
+  for (const path of [
+    "scripts/local-dev-setup.sh",
+    "scripts/db-restore-rehearsal.sh",
+    "scripts/cloud-sandbox-up.sh",
+    "scripts/cloud-sandbox-setup.sh",
+  ]) {
+    const code = codeOnly(readFileSync(join(REPO, path), "utf8"));
+    const bare = code.split("\n").filter((line) => BARE_CLI.test(line));
+    assert.deepEqual(bare, [], `${path} runs a bare \`supabase\`; use frapp_supabase / cs_supabase`);
+  }
+  // Raw text here: these calls carry quoted arguments, which codeOnly blanks.
+  const setup = readFileSync(join(REPO, "scripts/local-dev-setup.sh"), "utf8");
+  assert.match(setup, /^\. "\$ROOT\/scripts\/lib\/supabase-cli\.sh"$/m, "local-dev-setup.sh must source the shared resolver");
+  for (const call of [/frapp_supabase start/, /^frapp_supabase db push --local$/m, /frapp_repair_local_acls "\$ROOT" frapp_supabase/]) {
+    assert.match(setup, call, `local-dev-setup.sh no longer runs ${call} through the pinned resolver`);
+  }
+  const rehearsal = readFileSync(join(REPO, "scripts/db-restore-rehearsal.sh"), "utf8");
+  assert.match(rehearsal, /^SUPABASE=frapp_supabase$/m, "pass B must run the pinned resolver");
+  // Its backup half is db-backup.sh, which takes the `supabase` on PATH: the pinned copy goes first.
+  assert.match(rehearsal, /^PINNED_CLI_PATH="\$ROOT\/\.cache\/supabase-cli\/node_modules\/\.bin:\$PATH"$/m);
+  assert.match(rehearsal, /^PATH="\$PINNED_CLI_PATH" \.\/scripts\/db-backup\.sh /m, "the backup half must run the pinned CLI");
+});
+
+test("the bare-CLI scan sees a call and ignores prose", () => {
+  for (const line of ["supabase start", "  supabase db push --local", "x && supabase stop || true"]) {
+    assert.match(codeOnly(line), BARE_CLI, line);
+  }
+  for (const line of [
+    "frapp_supabase start",
+    "cs_supabase db push --local",
+    'log_err "supabase start failed."',
+    "# supabase stop --no-backup",
+    "$SUPABASE db push --local",
+  ]) {
+    assert.doesNotMatch(codeOnly(line), BARE_CLI, line);
+  }
+  assert.doesNotMatch(codeOnly("cat <<'EOF'\n  --reset  Run supabase stop first\nEOF\nfrapp_supabase start"), BARE_CLI);
+});
+
+test("the JS scripts pick their CLI through resolveSupabaseCli", () => {
   for (const path of ["scripts/run-migration.mjs", "scripts/ci/check-migration-replay.mjs"]) {
-    assert.match(read(path), /resolveSupabaseCli\(/, `${path} must pick its CLI through resolveSupabaseCli`);
+    assert.match(readFileSync(join(REPO, path), "utf8"), /resolveSupabaseCli\(/, `${path} must pick its CLI through resolveSupabaseCli`);
   }
+});
+
+// ── The drift gate rehearses a CLI change (#723) ────────────────────────────
+// Against production's real state a CLI bump usually finds nothing pending, and the replay then
+// runs neither `db reset` nor `migration up` on the new build. The wiring that makes it do so
+// lives only in the workflow.
+test("a change to the CLI or the replay makes the drift gate run both replay phases", () => {
+  const steps = workflowSteps(join(REPO, ".github", "workflows", "migration-drift-gate.yml")).filter(
+    (step) => step.jobId === "migration-replay",
+  );
+  const touched = steps.find((step) => step.name === "Does this change touch migrations?");
+  const replay = steps.find((step) => step.name === "Replay pending migrations against production's applied state");
+  assert.ok(touched && replay, "the migration-replay job's touched or replay step was renamed or removed");
+
+  const cliPaths = touched.body.match(/CLI_PATHS='([^']+)'/)?.[1];
+  assert.ok(cliPaths, "the touched step no longer names the CLI paths");
+  const cli = new RegExp(cliPaths);
+  for (const path of [
+    ".github/actions/supabase-cli/action.yml",
+    "scripts/ci/supabase-start-disposable.sh",
+    "scripts/ci/check-migration-replay.mjs",
+  ]) {
+    assert.match(path, cli, `${path} must count as a CLI change`);
+  }
+  assert.doesNotMatch("supabase/migrations/20260101000000_x.sql", cli);
+  assert.match(touched.body, /grep -qE "\$CLI_PATHS" "\$CHANGED"; then\s*\n\s*echo "cli=true" >> "\$GITHUB_OUTPUT"/);
+  assert.match(touched.body, /\|\| grep -qE "\$CLI_PATHS" "\$CHANGED"; then\s*\n\s*echo "run=true"/, "a CLI change must start the replay at all");
+
+  assert.equal(replay.env.get("CLI_TOUCHED"), "${{ steps.touched.outputs.cli }}");
+  assert.match(
+    replay.body,
+    /if \[ "\$\{CLI_TOUCHED:-\}" = "true" \]; then[\s\S]*?node scripts\/ci\/check-migration-replay\.mjs --rehearse-newest [1-9]/,
+  );
 });
