@@ -12,7 +12,6 @@ import { FrappThemeProvider } from "@/lib/theme";
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#F4CB63",
-    accentFallbackApplied: false,
     logoUrl: null,
     chapterName: null,
   }),

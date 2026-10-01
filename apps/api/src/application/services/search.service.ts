@@ -12,6 +12,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
 import type { ChatMessage, ChannelType } from '#domain/entities/chat.entity';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export interface SearchMemberResult {
   id: string;
@@ -137,9 +138,11 @@ async function withinBudget<T>(
 
   void work.catch((error: unknown) => {
     if (settled) return;
-    logger.error(
+    logThrowable(
+      logger,
+      'error',
       `search source "${source}" failed after the ${SEARCH_TIMEOUT_MS}ms budget; reported to the caller as a timeout`,
-      error instanceof Error ? error.stack : String(error),
+      error,
     );
   });
 

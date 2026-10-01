@@ -19,7 +19,11 @@ import { useChapterBranding } from "./chapter-branding";
 
 /** The crimson `spec/behavior/branding.md` uses as its worked example. */
 const CRIMSON = "#8B0000";
-/** An accent light enough to clear AA on the dark card surface. */
+/**
+ * A seed light enough to clear AA on the dark card surface: the deleted
+ * legacy resolver would have painted it as-is, so a test feeding it in tells
+ * that resolver's return apart from the house-token fallthrough.
+ */
 const DARK_LEGIBLE_ACCENT = "#7FD1AE";
 const BRAND = signetDarkTokens.color.gold.house;
 const BRAND_ON = signetDarkTokens.color.gold.onHouse;
@@ -61,32 +65,6 @@ function renderBranding(
 }
 
 describe("useChapterBranding", () => {
-  it("uses a chapter accent that is legible on the dark card surface", async () => {
-    const { result } = renderBranding(
-      { "chapter-1": { name: "Tau Nu", accent_color: DARK_LEGIBLE_ACCENT } },
-      "chapter-1",
-    );
-
-    await waitFor(() =>
-      expect(result.current.accent).toBe(DARK_LEGIBLE_ACCENT),
-    );
-    expect(result.current.accentFallbackApplied).toBe(false);
-    expect(result.current.chapterName).toBe("Tau Nu");
-  });
-
-  it("substitutes house gold when the accent fails on the dark surface", async () => {
-    // Crimson clears AA on white, so the API's light-mode gate stores it
-    // happily — on the dark card it is unreadable and must not be painted.
-    const { result } = renderBranding(
-      { "chapter-1": { name: "Tau Nu", accent_color: CRIMSON } },
-      "chapter-1",
-    );
-
-    await waitFor(() => expect(result.current.chapterName).toBe("Tau Nu"));
-    expect(result.current.accent).toBe(BRAND);
-    expect(result.current.accentFallbackApplied).toBe(true);
-  });
-
   it("exposes the chapter mark's text through the shared precedence (#2876)", async () => {
     const { result } = renderBranding(
       {
@@ -120,7 +98,9 @@ describe("useChapterBranding", () => {
     expect(optedOut.result.current.textMark).toBeNull();
 
     const letters = renderBranding(
-      { letters: { name: "California Eta", branding: { greek_letters: "ΣΦΕ" } } },
+      {
+        letters: { name: "California Eta", branding: { greek_letters: "ΣΦΕ" } },
+      },
       "letters",
     );
     await waitFor(() => expect(letters.result.current.textMark).toBe("ΣΦΕ"));
@@ -131,7 +111,6 @@ describe("useChapterBranding", () => {
       {
         "chapter-1": {
           name: "Tau Nu",
-          accent_color: DARK_LEGIBLE_ACCENT,
           logo_url: "https://storage.example/signed/logo.png",
         },
       },
@@ -144,10 +123,7 @@ describe("useChapterBranding", () => {
       ),
     );
 
-    const bare = renderBranding(
-      { "chapter-2": { name: "Beta", accent_color: DARK_LEGIBLE_ACCENT } },
-      "chapter-2",
-    );
+    const bare = renderBranding({ "chapter-2": { name: "Beta" } }, "chapter-2");
     await waitFor(() => expect(bare.result.current.chapterName).toBe("Beta"));
     expect(bare.result.current.logoUrl).toBeNull();
   });
@@ -177,7 +153,6 @@ describe("useChapterBranding", () => {
     const { result } = renderBranding({}, null);
 
     await waitFor(() => expect(result.current.accent).toBe(BRAND));
-    expect(result.current.accentFallbackApplied).toBe(true);
     expect(result.current.chapterName).toBeNull();
     expect(result.current.logoUrl).toBeNull();
   });
@@ -185,10 +160,13 @@ describe("useChapterBranding", () => {
   it("re-resolves branding when the active chapter changes", async () => {
     const { result, rerender, active } = renderBranding(
       {
-        "chapter-1": { name: "Tau Nu", accent_color: CRIMSON },
+        "chapter-1": {
+          name: "Tau Nu",
+          theme_palette: { "--signet-accent-text": "#FF907F" },
+        },
         "chapter-2": {
           name: "Beta",
-          accent_color: DARK_LEGIBLE_ACCENT,
+          theme_palette: { "--signet-accent-text": DARK_LEGIBLE_ACCENT },
           logo_url: "https://storage.example/signed/beta.png",
         },
       },
@@ -196,6 +174,7 @@ describe("useChapterBranding", () => {
     );
 
     await waitFor(() => expect(result.current.chapterName).toBe("Tau Nu"));
+    expect(result.current.accent).toBe("#FF907F");
 
     active.chapterId = "chapter-2";
     rerender();
@@ -213,8 +192,8 @@ describe("useChapterBranding", () => {
 // `accent-engine.md` §1 and `spec/ui/mobile/README.md` both forbid painting the
 // raw seed: only generated scale steps may reach a screen. The served palette
 // carries step 11 as `--signet-accent-text`, so that is what the hook reads (see
-// "the accent role this hook reads" below) — the legacy per-surface resolver
-// survives only for a chapter whose palette predates the Signet map.
+// "the accent role this hook reads" below), and a palette without it paints the
+// house tokens rather than the seed.
 describe("useChapterBranding accent source", () => {
   /** Step 11 of a generated scale — not equal to any seed we pass in. */
   const GENERATED_ACCENT_TEXT = "#FF907F";
@@ -238,39 +217,17 @@ describe("useChapterBranding accent source", () => {
     expect(result.current.accent).not.toBe(CRIMSON);
   });
 
-  it("reports no fallback on the engine path", async () => {
-    // Generated steps are contrast-correct by construction (§8), so the runtime
-    // substitution the legacy resolver performs has nothing to catch — claiming
-    // otherwise would surface a "contrast adjusted" notice that is not true.
+  it("paints the house tokens, never the seed, when the palette has no Signet map", async () => {
+    // `--side-bg` stands for "a row exists but has no Signet roles": the legacy
+    // key real pre-#1147 rows held, and the state a row inserted without a
+    // palette is in until the API's hourly sweep stamps it (#1165). The seed
+    // clears AA on the dark card, so the deleted `resolveChapterAccentColor`
+    // branch would have painted it (#2595); the house tokens must win instead.
     const { result } = renderBranding(
       {
         "chapter-1": {
           id: "chapter-1",
-          // A seed that WOULD fail the legacy dark-surface check.
-          accent_color: CRIMSON,
-          theme_palette: { "--signet-accent-text": GENERATED_ACCENT_TEXT },
-        },
-      },
-      "chapter-1",
-    );
-
-    await waitFor(() => {
-      expect(result.current.accent).toBe(GENERATED_ACCENT_TEXT);
-    });
-    expect(result.current.accentFallbackApplied).toBe(false);
-  });
-
-  it("falls back to the legacy resolver when the palette has no Signet map", async () => {
-    // `--side-bg` is a sentinel, not a dependency: it stands for "a row exists
-    // but predates the Signet map". Rows like this are exactly what the #920
-    // slice-9 cutover left behind — it deleted the engine that wrote them
-    // without migrating the stored jsonb, so this fallback is the reason that
-    // was safe. Any non-Signet key would serve; this one is what real stale
-    // rows actually hold.
-    const { result } = renderBranding(
-      {
-        "chapter-1": {
-          id: "chapter-1",
+          name: "Tau Nu",
           accent_color: DARK_LEGIBLE_ACCENT,
           theme_palette: { "--side-bg": "#171512" },
         },
@@ -278,21 +235,10 @@ describe("useChapterBranding accent source", () => {
       "chapter-1",
     );
 
-    await waitFor(() => {
-      expect(result.current.accent).toBe(DARK_LEGIBLE_ACCENT);
-    });
-  });
-
-  it("still substitutes house gold on that legacy path when the seed fails AA", async () => {
-    const { result } = renderBranding(
-      { "chapter-1": { id: "chapter-1", accent_color: CRIMSON } },
-      "chapter-1",
-    );
-
-    await waitFor(() => {
-      expect(result.current.accent).toBe(BRAND);
-    });
-    expect(result.current.accentFallbackApplied).toBe(true);
+    await waitFor(() => expect(result.current.chapterName).toBe("Tau Nu"));
+    expect(result.current.accent).toBe(BRAND);
+    expect(result.current.accentPrimary).toBe(BRAND);
+    expect(result.current.accentOnPrimary).toBe(BRAND_ON);
   });
 });
 
@@ -366,22 +312,6 @@ describe("useChapterBranding solid-fill pair (accentPrimary/accentOnPrimary)", (
       expect(result.current.accentPrimary).toBe(GENERATED_ACCENT_PRIMARY),
     );
     expect(result.current.accentOnPrimary).toBe(GENERATED_ACCENT_ON_PRIMARY);
-  });
-
-  it("falls back to house gold on the legacy path (no Signet map)", async () => {
-    const { result } = renderBranding(
-      {
-        "chapter-1": {
-          id: "chapter-1",
-          accent_color: DARK_LEGIBLE_ACCENT,
-          theme_palette: { "--side-bg": "#171512" },
-        },
-      },
-      "chapter-1",
-    );
-
-    await waitFor(() => expect(result.current.accentPrimary).toBe(BRAND));
-    expect(result.current.accentOnPrimary).toBe(BRAND_ON);
   });
 
   it("falls back to house gold with no chapter resolved", async () => {

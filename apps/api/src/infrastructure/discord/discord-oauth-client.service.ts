@@ -13,6 +13,7 @@ import {
   type IDiscordOAuthClient,
 } from '#domain/adapters/discord.interface';
 import { asRecord, asString } from '#domain/utils/json-guards';
+import { logThrowable } from '../observability/log-throwable';
 
 const DISCORD_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 const DISCORD_TOKEN_URL = 'https://discord.com/api/v10/oauth2/token';
@@ -227,8 +228,11 @@ export class DiscordOAuthClientService implements IDiscordOAuthClient {
       // Best-effort by design. The token is never stored and expires on its
       // own; failing the connection over a failed revoke would turn a hygiene
       // step into an outage.
-      this.logger.warn(
-        `Could not revoke the Discord user token: ${error instanceof Error ? error.message : String(error)}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not revoke the Discord user token`,
+        error,
       );
     }
   }

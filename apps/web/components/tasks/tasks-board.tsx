@@ -64,7 +64,12 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { actionStatus } from "@/lib/task-action-status";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 
 type Task = {
   id: string;
@@ -205,9 +210,7 @@ export function TasksBoard() {
         description: draft.description.trim() || undefined,
         assignee_id: draft.assignee_id,
         due_date: draft.due_date,
-        point_reward: draft.point_reward
-          ? Number(draft.point_reward)
-          : undefined,
+        point_reward: parseGuardedInt(draft.point_reward),
       });
       toast({
         title: "Task created",
@@ -498,12 +501,11 @@ export function TasksBoard() {
                       type="number"
                       min={0}
                       value={draft.point_reward}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          point_reward: event.target.value,
-                        }))
-                      }
+                      onChange={(event) => {
+                        const next = guardIntDraft(event.target.value);
+                        if (next === undefined) return;
+                        setDraft((prev) => ({ ...prev, point_reward: next }));
+                      }}
                     />
                   </div>
                 </form>

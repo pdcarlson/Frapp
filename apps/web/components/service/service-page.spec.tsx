@@ -3,6 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { MAX_UPLOAD_LABEL } from "@repo/validation";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
 const {
   mockCurrentChapter,
@@ -599,5 +603,88 @@ describe("ServiceHoursPage member labels", () => {
 
     expect(screen.getAllByText("Member u-1").length).toBeGreaterThan(0);
     expect(screen.queryByText("u-1", { exact: true })).toBeNull();
+  });
+});
+
+describe("ServiceHoursPage duration guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    chapter.active();
+    mockCreateEntry.mockResolvedValue(undefined);
+  });
+
+  async function openLog() {
+    render(<ServiceHoursPage />);
+    await userEvent.click(logTrigger());
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/what did you do/i), {
+      target: { value: "Campus cleanup" },
+    });
+    return {
+      hours: within(dialog).getByLabelText(/^hours$/i),
+      minutes: within(dialog).getByLabelText(/^minutes$/i),
+    };
+  }
+
+  const submitLog = () =>
+    fireEvent.submit(document.getElementById("service-log-form")!);
+
+  it("keeps the last whole number of minutes through a negative or a decimal", async () => {
+    const { minutes } = await openLog();
+    expectRefusedEntriesKeep(minutes, "30");
+  });
+
+  it("keeps the last hours through a negative, but takes a decimal, as mobile does", async () => {
+    const { hours } = await openLog();
+    fireEvent.change(hours, { target: { value: "2" } });
+    fireEvent.change(hours, { target: { value: "-3" } });
+    expect(hours).toHaveValue(2);
+    fireEvent.change(hours, { target: { value: "1.5" } });
+    expect(hours).toHaveValue(1.5);
+    // The specs submit with fireEvent.submit, which skips the browser's
+    // constraint validation, so pin it directly: without step="any" the
+    // default step of 1 makes 1.5 a stepMismatch and a real submit is refused.
+    expect((hours as HTMLInputElement).validity.stepMismatch).toBe(false);
+  });
+
+  it("reads an emptied or unparseable field as blank", async () => {
+    const { hours, minutes } = await openLog();
+    expectClearingEntriesEmpty(hours, "2");
+    expectClearingEntriesEmpty(minutes, "30");
+  });
+
+  it.each([
+    ["1.5", "", 90],
+    ["2", "15", 135],
+    // 1.33 hours is 79.8 minutes; the API stores whole minutes.
+    ["1.33", "", 80],
+  ])(
+    "submits %j hours and %j minutes as %i minutes, never NaN",
+    async (h, m, expected) => {
+      const { hours, minutes } = await openLog();
+      fireEvent.change(hours, { target: { value: h } });
+      fireEvent.change(minutes, { target: { value: m } });
+      submitLog();
+
+      await waitFor(() => expect(mockCreateEntry).toHaveBeenCalledTimes(1));
+      expect(mockCreateEntry.mock.calls[0]![0].duration_minutes).toBe(expected);
+    },
+  );
+
+  // Before #2206 an unparseable field summed to NaN, and `NaN === 0` is false,
+  // so this refusal let a NaN duration through to the API.
+  it("still refuses an empty duration, which NaN can no longer slip past", async () => {
+    const { hours, minutes } = await openLog();
+    fireEvent.change(hours, { target: { value: "" } });
+    fireEvent.change(minutes, { target: { value: "" } });
+    submitLog();
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Enter a duration" }),
+      ),
+    );
+    expect(mockCreateEntry).not.toHaveBeenCalled();
   });
 });

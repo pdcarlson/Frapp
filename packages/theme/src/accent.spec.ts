@@ -10,13 +10,13 @@ import { frappLightTokens } from "./tokens";
  * (`dashboard-shell.tsx`, `settings-page.tsx`), because `packages/theme` had no
  * test runner and no CI job — a spec placed beside the source would never have
  * executed. That is no longer true (#1144): the package now has both, so the
- * test sits with the code it tests, and `apps/mobile`, the other consumer, is
- * covered by the same run rather than by a suite it has nothing to do with.
+ * test sits with the code it tests. (`apps/mobile` was the other consumer until
+ * #2595 deleted its pre-Signet-map fallback.)
  */
 
 const LIGHT_SURFACE = frappLightTokens.color.surface.card;
 const LIGHT_BRAND = frappLightTokens.color.brand.bronze;
-/** The dark card and house gold both real callers pass (web settings, mobile branding). */
+/** The dark card and house gold the real caller passes (the web Settings preview). */
 const DARK_SURFACE = signetDarkTokens.color.surface.card;
 const DARK_BRAND = signetDarkTokens.color.gold.house;
 

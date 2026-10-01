@@ -762,7 +762,14 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     await service.handleCallback({ code: 'c', state: STATE });
 
     expect(logged).toHaveBeenCalledTimes(1);
-    const [message, cause] = logged.mock.calls[0] as [string, string];
+    // Since #2460 `logThrowable` puts the cause on the message line itself.
+    // The repository throws a real `SupabaseQueryError` since #1264, so the
+    // only thing after the line is its stack, in Nest's stack slot; the raw
+    // record never reaches ConsoleLogger to be inspected. The stack's first
+    // line is the same message, so it carries no handshake id either.
+    const [message, ...rest] = logged.mock.calls[0] as [string, ...unknown[]];
+    expect(rest).toEqual([PGRST_TABLE_MISSING.stack]);
+    expect(String(rest[0])).not.toContain(STATE);
 
     // This assertion was inverted by #1260, deliberately. It previously read
     // `expect(message).toContain(STATE)`. The state id is the CSRF token, and
@@ -776,8 +783,8 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     // the service's own comment notes this branch is a function of store health
     // alone and fires identically for every state id.
     expect(message).not.toContain(STATE);
-    expect(cause).toContain('PGRST205');
-    expect(cause).toContain('public.discord_oauth_states');
+    expect(message).toContain('PGRST205');
+    expect(message).toContain('public.discord_oauth_states');
     logged.mockRestore();
   });
 

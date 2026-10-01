@@ -23,6 +23,7 @@ import {
 } from '#domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 import {
   classifyApplicationFetchFailure,
@@ -103,35 +104,6 @@ export const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
  */
 const MANAGE_GUILD = 1n << 5n;
 const ADMINISTRATOR = 1n << 3n;
-
-/**
- * What to hand `Logger.error` as its second argument.
- *
- * The reasoning that put a helper here was right and is preserved in
- * `toReportableError`: `error instanceof Error ? error.stack : undefined` is
- * silently `undefined` for **every** error PostgREST actually produces, because
- * postgrest-js only builds a real `PostgrestError` under `shouldThrowOnError`
- * — which nothing here sets — so the client hands back the parsed body, and
- * until #1264 the repositories rethrew that plain object verbatim.
- * `String(error)` is no better: on a plain object it prints `[object Object]`.
- * The repositories now throw `SupabaseQueryError`, a real `Error` with the
- * query's own stack, and `toReportableError` passes it through untouched.
- *
- * It delegates now because the same defect blinds every 5xx the API raises, not
- * just this route, so the fix belongs at the reporting seam rather than in one
- * service. `hint` — the field that says *"Perhaps you meant the table
- * public.discord_oauth_states"*, i.e. the answer — still survives.
- *
- * The one behavior that changed in moving: `details` is no longer included.
- * That is the field Postgres fills with the offending ROW VALUES, and it was
- * reaching Sentry through the callback's swallowed-failure report. See
- * `reportable-error.ts` for why the free-text scrubber is not a sufficient
- * answer for it.
- */
-function describeError(error: unknown): string {
-  const reportable = toReportableError(error);
-  return reportable.stack ?? reportable.message;
-}
 
 export interface DiscordConnectionView {
   connected: boolean;
@@ -623,12 +595,14 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         //
         // It costs nothing diagnostically. As the comment above says, this
         // branch is a function of store health alone and fires identically for
-        // every state id; `describeError` plus the request id already identify
+        // every state id; the logged cause plus the request id already identify
         // the event, and the id would only distinguish handshakes in an
         // outage that by construction affects all of them.
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           'Could not consume Discord OAuth state',
-          describeError(error),
+          error,
         );
         this.reportSwallowedCallback(error, 'failed');
         // Same best-effort lookup as the `expired` branch below: a member's
@@ -744,9 +718,11 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         );
         return finish('failed', error.message);
       }
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Discord connect failed for chapter ${consumed.chapter_id}`,
-        describeError(error),
+        error,
       );
       // Same gap, pre-dating the one above: this arm already swallowed an
       // unexpected failure into a redirect, so it already had no alerting.
