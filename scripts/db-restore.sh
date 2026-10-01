@@ -243,6 +243,17 @@ if grep -q 'GRANT "postgres" TO "cli_login_postgres"' "$WORK/roles.sql"; then
   sed -i 's#^GRANT "postgres" TO "cli_login_postgres".*#-- & (removed by db-restore.sh)#' "$WORK/roles.sql"
 fi
 
+# The same class, from newer Supabase Postgres images (17.6.1.167, which the
+# local stack runs since the CLI pin moved to 2.117.0, #723): roles.sql carries
+# `GRANT SET ON PARAMETER "log_min_messages" TO "supabase_realtime_admin"`, which
+# only supabase_admin may issue, so it aborts the replay with "permission denied
+# for parameter". The grant comes from the image's own init for a platform role,
+# so a target on that image already holds it. Found by db-restore-rehearsal.sh.
+if grep -q '^GRANT SET ON PARAMETER .* TO "supabase_[a-z_]*"' "$WORK/roles.sql"; then
+  echo "==> Neutralising GRANT SET ON PARAMETER to Supabase platform roles (only supabase_admin may issue it)"
+  sed -i -E 's#^GRANT SET ON PARAMETER .* TO "supabase_[a-z_]+".*#-- & (removed by db-restore.sh)#' "$WORK/roles.sql"
+fi
+
 echo "==> Restoring into $SAFE_URL"
 psql \
   --single-transaction \

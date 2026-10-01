@@ -19,7 +19,7 @@ Bootstrap Supabase + deps: [`scripts/local-dev-setup.sh`](../../../scripts/local
 Root scripts wrap apps with `npx infisical run --env=dev --path=/` so secrets come from Infisical’s **`dev`** environment (shown as “Development” in the UI) — no committed `.env.local` files.
 
 1. **One-time CLI auth:** `npx infisical login` (from repo root is fine).
-2. **Populate `dev` in Infisical** with values that match local Supabase (`npx supabase status -o env`) plus Stripe/Sentry and other keys listed in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Full setup: [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md).
+2. **Populate `dev` in Infisical** with values that match local Supabase (`npm run -s supabase -- status -o env`) plus Stripe/Sentry and other keys listed in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Full setup: [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md).
 
 If `infisical run` fails (no session, wrong project, or API key without `dev` access), use the **fallback** below.
 
@@ -37,7 +37,7 @@ Git Bash rewrites an argument that looks like a POSIX path into a Windows path b
 | Landing         | 3002  | http://localhost:3002      |
 | Supabase Studio | 54323 | http://127.0.0.1:54323     |
 
-Studio is only up after `npx supabase start` (or `scripts/local-dev-setup.sh`).
+Studio is only up after `npm run supabase -- start` (or `scripts/local-dev-setup.sh`).
 
 ## Per-app commands (only if you are not using `dev:stack`)
 
@@ -70,7 +70,7 @@ lists them and says what a phone needs instead of `127.0.0.1`.
 
 ## Fallback without Infisical
 
-Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
+Build `.env.local` per app using `npm run -s supabase -- status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
 ## Cloud sandbox (Claude Code web)
 

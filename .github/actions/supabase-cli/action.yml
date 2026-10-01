@@ -30,4 +30,4 @@ runs:
     - name: Setup Supabase CLI
       uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
       with:
-        version: 2.77.0
+        version: 2.117.0
