@@ -1,8 +1,11 @@
 # Framework reference
 
-Staging area for the **Claude Design web framework** that governs [#2140](https://github.com/pdcarlson/Frapp/issues/2140).
-Rank 1 in the trust order in [`../README.md`](../README.md) §1: what lands here beats every written
-doc, including the rest of this directory.
+The committed **Claude Design web framework**, which [#2140](https://github.com/pdcarlson/Frapp/issues/2140)
+rebuilt this surface from. Rank 1 in
+[`../README.md` § Sources and precedence](../README.md#sources-and-precedence): what lands here beats
+every written doc, including the rest of this directory, except where § What this board settles
+below records that it no longer ships. *Moved here from `spec/ui/web-greenfield/reference/` by
+[#2743](https://github.com/pdcarlson/Frapp/issues/2743), 2026-10-01; the board's bytes are unchanged.*
 
 ## Status
 
@@ -16,8 +19,7 @@ sheet's "Bubbles r18 · tail 6", are superseded by the compact chat layout, an o
 chat.)*
 
 The numbered Design to Code packs, the backlog and the originating brief are still **not here**. A
-lane that needs one of those is in the position the whole directory used to be in, and should ask for
-the artifact rather than invent one.
+change that needs one of those should ask for the artifact rather than invent one.
 
 ## How the board got in
 
@@ -92,7 +94,7 @@ surface hexes and the same accent seed that lane 1 shipped in
 correction to it follows. The full comparison, including the twelve roles where the board and the
 theme package **do** differ, is in [`../tokens.md`](../tokens.md) § L-01.
 
-Two things the board does **not** settle, recorded so a later lane does not over-read it:
+Two things the board does **not** settle, recorded so a later change does not over-read it:
 
 - **L-06.** The board states `--card: #211E1A`, the shipped value. It does not adopt the `#232019`
   alternative L-06 floats, and it does not discuss adjacent-step pitch at all. L-06 stays open; the
@@ -104,14 +106,20 @@ Two things the board does **not** settle, recorded so a later lane does not over
   separately, by re-exporting the mark at the spec'd pair; the board's label is now true of the
   pixels for a reason outside the board.
 
-One thing the board draws that deliberately no longer ships (added 2026-09-30):
+Two things the board draws that deliberately no longer ship:
 
-- **The focus border.** The board draws the focus state as "gold border + 3px 25% ring" (`:387`,
-  `:1157`), which is `accent-9`. Since [#2398](https://github.com/pdcarlson/Frapp/issues/2398) the
+- **The chat bubbles** (added 2026-10-01; the decision is 2026-09-29's). The `#general` thread, the
+  pending self bubble, the skeleton's "r18 bubbles" and the token sheet's "Bubbles r18 · tail 6" are
+  superseded by the compact, bubble-free chat layout, an owner decision
+  ([#2873](https://github.com/pdcarlson/Frapp/issues/2873)) that
+  [`components.md`](../../design-system/components.md) §11 owns. The board stays truth for the rest
+  of chat.
+- **The focus border** (added 2026-09-30). The board draws the focus state as "gold border + 3px
+  25% ring" (`:387`, `:1157`), which is `accent-9`. Since [#2398](https://github.com/pdcarlson/Frapp/issues/2398) the
   border is `accent-11`, on the owner's decision of 2026-09-18. `accent-9` clears the 3:1 non-text
   floor with no headroom (the engine guarantees the floor and nothing more), and it drew nothing on a
-  primary button's `accent-9` fill. A board can't lower a WCAG floor, so this is the one place its
-  trust rank gives way. [`../tokens.md`](../tokens.md) § L-07 has the measurements.
+  primary button's `accent-9` fill. A board can't lower a WCAG floor, so here its trust rank gives
+  way. [`../tokens.md`](../tokens.md) § L-07 has the measurements.
 
 ## What goes here
 
@@ -126,7 +134,7 @@ Named to match the epic's source list, so a reader can tell which artifact they 
 
 The board arrived with its own design conversation (`chats/chat1.md` in the bundle). That transcript
 is **not** committed: it records how the board was reached, and the board is what the trust order
-ranks. If a lane needs to know why a screen looks the way it does and the board does not say, that is
+ranks. If a change needs to know why a screen looks the way it does and the board does not say, that is
 a question for the transcript, and getting it in is another run of the route above.
 
 ## Rules for adding an artifact

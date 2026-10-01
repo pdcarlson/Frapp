@@ -48,7 +48,7 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 > the next clean export against the spec it was meant to define. The source of truth is a vector
 > now, and `check:brand-assets` reads pixels, so this table and the rasters cannot silently part
 > again. History and the full census are in
-> [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08.
+> [`web-dashboard/tokens.md`](web-dashboard/tokens.md) L-08.
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 

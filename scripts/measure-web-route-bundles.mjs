@@ -5,7 +5,7 @@
  *
  * ## Why this measurement, and not a stopwatch
  *
- * The framework board's first-paint contract (`spec/ui/web-greenfield/reference/`,
+ * The framework board's first-paint contract (`spec/ui/web-dashboard/reference/`,
  * section `1s`) is written in milliseconds: shell visible ≤ 200ms, cached channel
  * readable ≤ 400ms, composer focusable ≤ 400ms. Those are the right budgets and
  * the wrong assertion. A wall-clock number measured on a shared CI runner varies

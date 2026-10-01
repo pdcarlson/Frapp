@@ -376,9 +376,10 @@
    * board (option `3a`) overrules both: it declares the bar at the root, calls
    * it chrome, and says scrollbars are "never hidden" — a persistent gold bar
    * is part of how the surface reads, not an accessibility nicety to be left
-   * to the platform. Committed HTML outranks written docs while #2140 is open
-   * (`spec/ui/web-greenfield/README.md` §1), and the class had ZERO call sites
-   * in the entire repo, so nothing regressed by retiring it. The concern about
+   * to the platform. Committed HTML outranks written docs
+   * (`spec/ui/web-dashboard/README.md` § Sources and precedence), and the
+   * class had ZERO call sites in the entire repo, so nothing regressed by
+   * retiring it. The concern about
    * third-party surfaces is now moot in the other direction: the thumb is an
    * opaque brand gold on an opaque track, so it no longer depends on guessing
    * what is underneath it.

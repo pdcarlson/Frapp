@@ -61,7 +61,7 @@ The six locked type roles are [`../design-system/foundations.md`](../design-syst
 
 **The values are not restated here.** `--text-hero`, `--text-display-lg` and `--text-lead`, their desktop and phone sizes, and which element takes each one live in [`../design-system/foundations.md`](../design-system/foundations.md#amendment-the-three-marketing-type-roles-landing-only) § Amendment. One canonical place per fact — a second copy on this page is a copy that drifts, and it did: it disagreed with the canonical table about the phone pricing figures before that was reconciled.
 
-Type inside the two product frames is transcribed from the design-system and web-greenfield boards and is deliberately **not** on this scale. Do not "correct" it.
+Type inside the two product frames is transcribed from the design-system and web framework boards and is deliberately **not** on this scale. Do not "correct" it.
 
 **The residual off-scale carve-out is spent, and page chrome is now on the scale.** The token cutover left roughly forty-five stock Tailwind sizes (`text-sm`, `text-xs`, `text-base`) in `page.tsx` because slice 2 was going to rewrite the file; it did, and they went with the sections that carried them. Every piece of **landing chrome** now takes a named role: `text-hero` on the H1, `text-display-lg` on section H2s and the desktop figures, `text-lead`, `text-title`, `text-body`, `text-label`, `text-caption`. A stock Tailwind size on page chrome is filable drift today, not a tracked residual.
 
@@ -71,7 +71,7 @@ Type inside the two product frames is transcribed from the design-system and web
 
 Copy for this surface obeys [`../design-system/writing.md`](../design-system/writing.md) and the full deck on the Spec sheet's §2. Two rules are owned here because they exist nowhere else:
 
-- **No em dashes in marketing copy.** This extends the web greenfield's product-copy lock ([`../web-greenfield/README.md`](../web-greenfield/README.md#scope-note-on-no-em-dashes)) from product copy to the marketing copy on this surface. It reaches rendered page strings only — headlines, leads, labels, captions, meta description, JSON-LD description. It does **not** reach this document or any other repository prose, which keeps the house style. Like the greenfield lock, no CI check enforces it; it is a review rule.
+- **No em dashes in marketing copy.** This extends the web dashboard's product-copy lock ([`../web-dashboard/README.md`](../web-dashboard/README.md#no-em-dashes-in-product-copy)) from product copy to the marketing copy on this surface. It reaches rendered page strings only — headlines, leads, labels, captions, meta description, JSON-LD description. It does **not** reach this document or any other repository prose, which keeps the house style. Like the greenfield lock, no CI check enforces it; it is a review rule.
 - **Sentence case on buttons and links** (D5). The CTA half is no longer owned here — slice 3 amended [`../design-system/writing.md`](../design-system/writing.md) §2, which now carries it for every Signet surface. What stays owned here is the **wider** scope: on this surface every link takes sentence case too, the footer's and the nav's included, and §2 governs CTAs only. Neither half is enforced by a test; both are review rules.
 
 ## Section inventory (as built)

@@ -1,16 +1,57 @@
-> **Rebuilt; fold-back pending.** [#2140](https://github.com/pdcarlson/Frapp/issues/2140) greenfielded
-> this surface from a Claude Design framework and closed with every lane landed. Its surviving truth
-> is meant to fold back into this page, which has not happened yet, so until it does
-> [`../web-greenfield/`](../web-greenfield/README.md) **outranks this page on anything visual or
-> structural**. What stays truth here: the navigation and permission map, gating and routing
-> semantics, the responsive contract, and the data contracts. Chrome this page describes that a
-> greenfield lane replaced may still be stale; don't file drift against it, since the fold-back is the fix.
->
-> **Active (Signet).** This surface ships the Signet design system since the #920 shell slice. Visuals are governed by [`../design-system/`](../design-system/README.md) and its committed reference boards; this page owns structure — navigation, gating, the responsive shell contract, data contracts — not palette. The #920 reskin is **complete**: per-screen-family truing-up landed with the Profile & pre-auth slice, and the legacy token engine was retired by the slice-9 cutover that followed it.
-
 # UI/UX Specification: Web Dashboard (app.frapp.live)
 
-> The chapter admin command center — secondary to chat in the chat-first product. This is the single surviving spec page for the surface: the navigation/permission map, gating and routing semantics, the responsive shell contract, and the data contracts that outlive the retired per-screen docs. Visual truth lives in [`../design-system/`](../design-system/README.md); the surface's stylesheet is [`packages/theme/src/signet.css`](../../../packages/theme/src/signet.css).
+> The chapter admin command center — secondary to chat in the chat-first product. This directory is the surface's spec: what its pages are built from, the navigation/permission map, gating and routing semantics, the responsive shell contract, and the data contracts that outlive the retired per-screen docs. Token values live in [`../design-system/`](../design-system/README.md); the surface's stylesheet is [`packages/theme/src/signet.css`](../../../packages/theme/src/signet.css).
+
+**Active (Signet).** The #920 slices reskinned this surface onto Signet, and [#2140](https://github.com/pdcarlson/Frapp/issues/2140) then rebuilt it from a committed Claude Design framework board. Both have closed, and the rules each settled that still bind are folded in here ([History](#history)). So this page is current truth for the web surface, and a gap between it and `apps/web` is drift to fix or file, as anywhere else in `spec/`.
+
+| File | Owns |
+| ---- | ---- |
+| `README.md` (this page) | Sources and precedence, brand and copy locks, navigation, page grammar, per-route decisions, gating and routing, the responsive contract, standing bans, data contracts |
+| [`tokens.md`](tokens.md) | The surface's token record: what the #2140 ladder moved, where the board and the theme package disagree, and the locks L-01 to L-09, open and closed. Token **values** stay in [`../design-system/foundations.md`](../design-system/foundations.md) |
+| [`reference/`](reference/README.md) | The committed framework board, [`web-framework.dc.html`](reference/web-framework.dc.html): how to read it, and where it no longer ships |
+
+## Sources and precedence
+
+Highest wins on anything visual or structural. This is the web half of [`../README.md` § Precedence](../README.md#precedence), which still binds above it.
+
+| Rank | Source | Why it ranks here |
+| ---- | ------ | ----------------- |
+| 1 | [`reference/web-framework.dc.html`](reference/web-framework.dc.html) | Committed HTML beats written docs, the rule `../README.md` applies to every board. Where it no longer ships (its chat bubbles and its focus border) is recorded in [`reference/README.md` § What this board settles](reference/README.md#what-this-board-settles). A shipped string's product name follows [`brand-identity.md` § 1](../brand-identity.md#1-identity), not the board |
+| 2 | This directory | What the board does not draw, and every place the product departs from it, with the reason |
+| 3 | [`../mobile/`](../mobile/README.md) | The shipped Signet consumer surface. Where the board and this directory are silent, mobile is the precedent, because the two read as one product |
+| 4 | [`../design-system/`](../design-system/README.md), [`../brand-identity.md`](../brand-identity.md), [`../assets.md`](../assets.md) | Tokens, components, accent engine, brand. Canonical for everything the board does not overrule |
+
+[`../../behavior/`](../../behavior/README.md) outranks all four: this tree governs presentation and never changes what the product does. Deleting a route, a permission or a data contract is a behavior change with its own issue, never part of a chrome cleanup.
+
+Two rules for reading the board, each learned by breaking it once:
+
+- **Transcribe it, never lift it.** Its CSS was written for one demo tenant in a design tool. Copied verbatim, its scrollbar rule renders none of what it specifies in Chromium 121 and later ([`tokens.md`](tokens.md) § L-01), its 404 crest at `opacity:.9` composites to a gold that is not the mark's, and its 24px radius and 40px buttons are off [`foundations.md`](../design-system/foundations.md)'s §8 radius map and §9 touch floor. Take its intent at this repo's tokens.
+- **Where the board draws a product this codebase does not have, the product wins.** It draws a two-tier plan with a price, seats and a card on file, and a Join code tab and a Subscription tab. None of those exists, so none is drawn ([Billing](#billing), [Settings](#settings)). Its demo tenant is also the house tenant, so a gold on the board may be the chapter accent, the fixed Ask family or the mark, and the board cannot say which: [`tokens.md`](tokens.md) § L-01 names that trap.
+
+## Brand and copy locks
+
+A routing table, not a second copy of the brand: every row but the last is owned elsewhere, and the values live at the link. Follow it before building anything that turns on a specific hex or an exact wording. One row restates its owner on purpose, and says so.
+
+| Lock | What a change needs to know | Owned by |
+| ---- | --------------------------- | -------- |
+| Emblem | Locked emblem B is the shipping mark, and how it may be *described in copy* is constrained by that section's opening rule. Read it before writing any product or marketing string about the mark. (The "Banned logo vocabulary" list under it governs future mark **exploration**, not copy) | [`brand-identity.md` § 2 The mark](../brand-identity.md#2-the-mark) |
+| Mark colors | Fixed gold on a fixed charcoal field. Do not sample them from a screenshot and do not restyle them piecemeal | [`assets.md` § 1 Status](../assets.md#1-status-locked-emblem-b), [`brand-identity.md` § 2](../brand-identity.md#2-the-mark) |
+| Mark never retints | The mark and logo **MUST NOT** take the chapter accent, ever. Chapter theming recolors product UI; the brand itself does not move. **This is a restatement**, kept because wiring the mark to `--primary` with everything else is the easiest way to break it on this surface. `signet.css.spec.ts` asserts the fixed families (`--gold-ask-*`, `--gold-house`, `--gold-on-house`, `--scrollbar-*`) are self-contained colours outside the accent bridge, and `crest-page.spec.tsx` that the crest carries no accent class or filter. If the rule is ever narrowed at its owner, narrow this copy with it | [`brand-identity.md` § 2](../brand-identity.md#2-the-mark) |
+| No legacy chrome | No legacy Frapp wordmark and no legacy bone/bronze/Geist visual. Since 2026-09-23 the product is named Frapp ([ADR-25](../../architecture/adr/adr-25.md)), so customer-facing copy says Frapp; code identifiers, `@repo/*` packages and `frapp.live` domains stay as they are. `frapp-web-copy.test.mjs` fails a copy line in `apps/web` that says the retired name, Signet. Three owners, not one | naming [§ 1](../brand-identity.md#1-identity) · Geist [§ 3](../brand-identity.md#3-decisions-recorded-as-of-this-doc) · bone/bronze [§ 5](../brand-identity.md#5-what-still-ships-legacy) |
+| No em dashes | The only row with no other home. Product copy on this surface uses no em dashes | [below](#no-em-dashes-in-product-copy) |
+
+### No em dashes in product copy
+
+This lock is about **product copy**: UI strings, empty states, error text, labels, tab titles, and anything else a member reads in the app. It is a de-slop rule, not a typographical purge. [`../landing/README.md`](../landing/README.md) extends it to the landing's marketing copy.
+
+It deliberately does **not** reach two places:
+
+- **Approved microcopy in [`../design-system/writing.md`](../design-system/writing.md) §7.** Several approved strings carry an em dash, including the shipped connection-state copy, and they ship on more than one surface. Rewriting one is a writing.md change with its own review, not a side effect of another change; a change that touches one rewrites it and updates §7 in the same diff.
+- **Repository prose.** Specs, ADRs, code comments and commit messages keep the house style.
+
+One known gap: `@repo/chat-core`'s dispatch notices carry em dashes and render on `/chat`, as a failed slash command's `message._error`. That package is shared with `apps/mobile`, which this lock does not reach, so rewriting them is a two-surface copy decision ([#2184](https://github.com/pdcarlson/Frapp/issues/2184)).
+
+No CI check enforces this lock; it is a review rule. A line grep for `—` over `apps/web` is mostly comment prose, so sweep with a JS/TSX-aware lexer that reads only string literals and JSX text.
 
 ## Navigation map
 
@@ -71,8 +112,84 @@ The **publisher is the dashboard shell, not this screen** ([`apps/web/lib/provid
 
 A 48px bar ([`top-bar.tsx`](../../../apps/web/components/layout/top-bar.tsx)): the mobile nav trigger (`lg:hidden`), a centered find field, notifications, the ✦ Ask entry, and the account avatar. The page title lives in the main pane (`page-header.tsx`), not here.
 
-- **Find** ([`find-bar.tsx`](../../../apps/web/components/layout/find-bar.tsx)) is a visible field on Cmd/Ctrl+F over channels, members and messages. It replaced the ⌘K `cmdk` palette, which is deleted ([`../web-greenfield/deletion-checklist.md`](../web-greenfield/deletion-checklist.md)).
+- **Find** ([`find-bar.tsx`](../../../apps/web/components/layout/find-bar.tsx)) is a visible field on Cmd/Ctrl+F over channels, members and messages. It replaced the ⌘K `cmdk` palette, which is deleted, and the chat channel list's own search field, which went with it. It carries **no navigation list**, so nav gating stays in one place (`nav-config.ts` and `isNavItemVisible`); a hand-maintained list of destinations here would be the defect the palette's derived list once fixed. One narrowing it carries: its Channels group matches the channel payload's `name`, which for a DM is not the participant's name, so typing a person finds the member but not the DM ([#2220](https://github.com/pdcarlson/Frapp/issues/2220)). `cmdk` stays a dependency, because the slash palette and the onboarding wizard still use `components/ui/command.tsx`.
 - **Ask** (`ask-pill.tsx`) is a shell. It opens a dialog stating that Ask cannot answer yet and pointing at the find field and Documents — a control that silently did nothing would be the dead end [`../design-system/components.md`](../design-system/components.md) §5 bans. No retrieval, no corpus, no model call. It paints in Signet's fixed gold family (the `gold-ask-*` tokens, 34px height / 10px radius in `ask-pill.tsx`; see [`../design-system/components.md`](../design-system/components.md) §7) — house gold, never the chapter accent.
+
+## Page grammar
+
+Every dashboard route but `/chat` (see [Full-bleed routes](#full-bleed-routes)) sits flush on the shell. The board draws few page bodies (`4d` for settings and billing, `4e` for roles, `4c` for the settings drawer, `1j` for the upload sheet, `1k` for 404 and error), so for the rest this grammar is **derived**: from `1f` pin 2 ("one toolbar row, no wrapper card, no description paragraph"), `1t`'s deletion list, and the table rule `4d` and `4e` share. A route that departs from it says why under [Surface decisions](#surface-decisions).
+
+- **No wrapper card and no narration paragraph.** The body sits on `--background`, and `PageHeader` supplies the title on every path, offline included. A paragraph explaining the page to someone already on it is deleted, not restyled. A line that reports state stays, moved onto the page surface: the Reports preview's row count and partial-export note are state, not a card describing itself. A `<Card>` paints `--card`, one rung up the ladder. Where the board frames a block it draws a hairline frame, never a `Card`: billing's plan panel is `--surface-1` at radius 16, and its plan matrix a radius-14 frame on the page surface.
+- **One toolbar row** carries the route's filters, search and primary action.
+- **Lists are flush.** A list is a `<ul>` on `denseListClassName` ([`components/shared/table-controls.ts`](../../../apps/web/components/shared/table-controls.ts)): top-border dividers, no zebra, no per-row fill, no `<Table>`. Rows come in two shapes, and the difference is deliberate:
+
+  | | `/documents`, `/backwork`, `/billing` invoices | `/members` (actives and alumni) |
+  | --- | --- | --- |
+  | Row is itself a control | No: text plus trailing controls | **Yes**: the row opens the member |
+  | Height | `min-h-11` (44) | `min-h-9`, and `pointer-coarse:min-h-11` (36, 44 on touch) |
+
+  `pointer-coarse` is [`components.md`](../design-system/components.md) §2's "compact 34px controls are web/pointer-only" carve-out in CSS: a mouse gets the board's density (`4a` draws a 34px member row), a finger the full 44. Trailing 32px row controls take `denseRowControlClassName` on the same rule. Rows **stack** on a narrow viewport (`flex-col`, becoming a row at `sm` or `md`) rather than hide fields, because `display:none` removes text from the accessibility tree too, and at the 375px floor a hidden meta line exists nowhere in the product.
+- **The checkbox column is gone; selection is not.** The checkbox is the row's leading element, and select-all sits in the list header whenever there are rows, never inside the selection bar. In the bar it would be a control conditioned on its own output: unreachable until a row is ticked, and unmounted by its own use, which drops keyboard focus to `<body>`.
+- **States are the nested family, with `sole`.** The whole-screen `EmptyState`, `ErrorState`, `LoadingState` and `OfflineState` paint `--card`, so on a flush route they redraw the card the route deleted; `elevation-contrast.spec.ts` names the assertion that fails if one comes back. The exception is a no-chapter branch that replaces the whole page rather than a list (alumni, Backwork).
+- **Empties split three ways**: empty, filtered and searched, per `3b` ("No results = neutral tile, names the query") and its six-word status budget. The strings live in [`../design-system/writing.md`](../design-system/writing.md) §7, which moves in the same change as any new state.
+- **An absent value is absent, not a glyph.** In a `·`-joined meta line an absent fact drops out of the line. In a label-over-value tile the value reads `Not set` or `Not recorded`, because a label over nothing names nothing. A lone `—` is a character a screen reader announces standing in for nothing.
+- **The upload sheet is `1j`** ([`components/shared/upload-sheet.tsx`](../../../apps/web/components/shared/upload-sheet.tsx)): radius 20, an 18/700 title, 44px fields, inline errors on touched fields, and no instructional paragraph. Upload stays enabled and a missing file is an inline error; only a subscription refusal disables it, because that is a verdict about the chapter rather than the form. The well collapses to a file row. Two things the board draws are **not built**: drag-and-drop, since a drop handler is behavior and a styled target that ignores a drop is worse than none; and an error slot on a metadata field, since no metadata field can be required yet, so the change that adds the first required one adds the recipe with it. A dialog with a genuine description (renaming a document folder re-files every document in it; a draft invoice is invisible to the member until it is sent) keeps it.
+- **Confirmations are dialogs.** Every destructive confirmation goes through `useConfirmDialog` ([`components/shared/confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx)); no live `window.confirm` or `window.prompt` is left in `apps/web`. A dialog rendered inside a query's success branch is safe across a refetch, because the host settles a pending `confirm()` to `null` when its caller stops rendering it; check that before restructuring a caller around it.
+- **The per-page settings drawer is `4c`**, built once as [`components/layout/page-settings-drawer.tsx`](../../../apps/web/components/layout/page-settings-drawer.tsx) because `4c` pin 1 says "same gear, same drawer, on every page". It is a right-side `Sheet` at 400px, the primitive Notifications already uses, rather than the board's in-layout rail: taking the rail literally would hand every settings-bearing route the full-bleed contract. A second adopter uses this shell and does not draw its own panel.
+- **Crest art appears in one place**: the 404 page and the root error page, through one recipe ([`components/shared/crest-page.tsx`](../../../apps/web/components/shared/crest-page.tsx), board `1k`). `crest-page.spec.tsx` asserts that inventory, so no empty state grows crest art. The dashboard's own error boundary (`app/(dashboard)/error.tsx`, [#2175](https://github.com/pdcarlson/Frapp/issues/2175)) draws [`components.md`](../design-system/components.md) §10's card for a failed region instead, since the shell around it still works.
+
+## Surface decisions
+
+Per-route decisions that still bind. Each is either the product declining to be what the board drew, or a call the board did not make. A later change may revisit one, but it reverses the reason stated here rather than rediscovering the question.
+
+### Chat
+
+- **Two flush columns, channels then thread, and no details rail** (`1t`). There is no thread panel: clicking the quote above a reply calls `onJumpToParent`, which scrolls the timeline to the message it quotes, the same machinery pins, saved messages and deep links use. The panel it replaced was a read-only copy of messages already in the timeline.
+- **The channel list has no search field and no "N channels" count.** The top bar's find field covers channels, members and messages (`1b` pin 8). A read-only channel says so only in its composer: the lock glyph it once carried in the list was dropped in [#2877](https://github.com/pdcarlson/Frapp/issues/2877), because it shared its glyph with the private-channel mark.
+- **Message search stays in the channel's `⋯` menu**, with Pins, Bookmarks and the notification level, per `1t`'s own wording, although `1b` pin 11's inventory of that menu omits it. Deleting it would remove a capability, not chrome.
+- **Not built, because each is a capability the board assumed**: the channels column's `+` (no create-channel surface exists for it to open); presence dots on DMs (no presence data reaches the channel list); a member count in the channel header (`ChatChannel` carries `member_ids` for DMs only, and the chapter roster size would be wrong for `PRIVATE` and `ROLE_GATED` channels). The ops-setup nudge stays until the nav's locked-module explainer (`1h`) exists to replace it.
+- **The message layout is bubble-free** since [#2873](https://github.com/pdcarlson/Frapp/issues/2873); [`components.md`](../design-system/components.md) §11 owns it and supersedes the board's bubbles.
+
+### Resources: Documents and Backwork
+
+- **Each page keeps its own search field.** It is a server-side search over that collection; the find bar navigates rather than narrowing a route, so deleting it would move a capability.
+- Backwork's one actionable instruction (unknown departments and professors are created on upload) is field help beside those two fields, not a dialog description.
+
+### Directory
+
+- **The row is the control.** Actives and alumni rows both open `MemberDetailSheet` (alumni since [#2484](https://github.com/pdcarlson/Frapp/issues/2484)). There is no trailing "View details" button: a 44px button inside a 36px row sets the row's height on its own.
+- **One sort `<select>`** in the toolbar row carries every (key, direction) pair, in place of sortable column headers.
+- **No card-grid view.** Its tile was a wrapper card per member, showed strictly less than the row, and made selection unreachable while the bulk bar still rendered. A second rendering of one list is chrome.
+- **The tab row is underlined, not a segmented toggle.** The board draws no horizontal tab bar; its two tab shapes are `4d`'s settings rail and `1f`'s view toggle between two renderings of one dataset, and actives and alumni are two datasets. [`components.md`](../design-system/components.md) §6 is explicit: underline only.
+- **The page keeps its search field.** It calls `GET /v1/members/search`, a server-side search over the whole roster; the find bar lands on `/members` without narrowing it.
+- **Invite sits at the trailing edge of the actives toolbar row**, not in `PageHeader`'s actions. The route has no `<Can>`, so a `PageHeader` trigger would mount `InviteMemberDialog`, and fire its `GET /v1/invites` (gated on `members:invite`), on every path and on the Alumni tab. The missing client permission gate on Invite, bulk assign and the row checkboxes is [#2170](https://github.com/pdcarlson/Frapp/issues/2170).
+
+### Billing
+
+`4d` and `4b` draw this page, so its grammar is taken rather than derived. What needs stating is where the board describes a product this codebase does not have.
+
+- **Omit, never placeholder.** `4d` draws a price, a seat count, a renewal date, a card's brand and last four, and a next charge. None has a source (no endpoint returns them, and `IBillingProvider` reads no subscription back from Stripe), so none renders: a row reading "Next charge" with no value claims there is one. Wiring them is a behavior issue. The plan panel's heading is derived from `subscription_status`, never written: `active` and `past_due` hold the subscription ("Pro"), `incomplete` and `canceled` hold none ("No subscription"), and an unresolved status names the section and asserts no plan.
+- **Sell nothing that cannot be bought.** There is one tier, so there is no "Upgrade to Pro". The panel's primary action is the recovery for the status the chapter is in ([#929](https://github.com/pdcarlson/Frapp/issues/929)): `past_due` opens the Customer Portal, `incomplete` and `canceled` start checkout, and `active` offers the Portal as a secondary.
+- **The plan matrix's rows are modules a member can reach**, not `tier === "paid"`. The catalog is the master plan's, and it lists paid modules with no route at all. The filter is the `module` keys in `nav-config.ts`, plus `dues` (its surface is this page's invoice list) and never `billing` (`BillingController` is subscription-exempt). `plan-matrix.spec.tsx` pins it against the catalog and the nav. Each verdict cell names its own column in visually hidden text, and the "not included" dash is `--muted-foreground`, because it is informational content, not a disabled control.
+- **One invoice list.** `GET /v1/invoices` returns the whole chapter to a `billing:view` holder and only the caller's own rows to everyone else, so the two lists the route once stacked were always the same data. The officer controls are gated on `billing:manage`, and so is the `useMembers` read that serves them (`enabled` on the same check), which would otherwise be a guaranteed 403 for every member.
+- **The PRO chip states an entitlement, so it takes the accent** ([`pro-chip.tsx`](../../../apps/web/components/billing/pro-chip.tsx), `4b`'s geometry). Never `--gold-ask-*`: the board's chip reads as fixed gold only because its tenant is the house tenant, and taking the Ask family would freeze it gold on every chapter. It goes only on a control gated by entitlement. A write blocked because the chapter is `past_due` or `canceled` is disabled without a chip, and `SubscriptionNotice` says why, because "not in your plan" is the wrong one of `4b`'s two kinds of locked.
+- **A lapsed chapter gets one line, at the top of this page and nowhere else** (`4d` note 4), keyed on `subscriptionStatusKind(status) === "destructive"`, so `canceled` as well as `past_due`. `incomplete` gets none, and an unresolved status gets nothing.
+- **"Ask an officer" is the `deniedFallback` only.** `fallback` stays `null`, so an officer is not told to ask an officer while their own permissions load, and `offlineFallback` stays the gate's control-slot state. An `active` chapter passes no copy at all.
+- **Stripe is blocking and nothing is optimistic.** Both actions await the mutation, disable their own button and hand off with `window.location.assign`. Neither moves the status chip, which reports the chapter record and nothing else; the bounded poll after checkout ([Surviving data contracts](#surviving-data-contracts)) exists to keep it that way.
+
+### Settings
+
+- **One page, a left rail** (`4d`): 200px, 34px rows at radius 10, a filled accent chip for the active tab, and Danger zone pinned last and drawn destructive. The tabs are `SETTINGS_TABS` in `settings-page.tsx`, and who sees which is owned by [`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what); neither is restated here. The board's rail is a simplified chapter's, not an inventory: this product's live tabs it does not draw are kept. Two board tabs are **not built**: Join code (`apps/web` has no join-code surface; invites are single-use tokens), and Subscription (`4d` captions it "Members never see this page", but a member reaches `/billing` to pay their own invoice, so it stays a route).
+- **Roles is one tab and one live matrix** (`4e`, [`components/roles/roles-matrix.tsx`](../../../apps/web/components/roles/roles-matrix.tsx)): a click flips a permission and saves it. `roles-page.tsx` keeps the role lifecycle (create, rename, recolour, reorder, delete, presidency transfer), and its save omits `permissions`, which the matrix owns. The tab does not wait on the chapter-config read, which needs `chapter-config:view`: the matrix reads roles and the permissions catalog, and only the default-invite-role control degrades without that read. Keyboard navigation of the matrix as an ARIA grid is [#2173](https://github.com/pdcarlson/Frapp/issues/2173).
+- **Custom roles stay a section, not matrix columns.** `4e` pin 1 says "Custom roles append as columns", but custom roles live in a different table and hold capabilities rather than permissions, enforced through the bridge in [`../../behavior/rbac.md`](../../behavior/rbac.md). Drawn as columns, the grid would show two incompatible grant models and imply the wrong one is editable.
+- **Study Zones' drawer has Access and nothing else.** `4c` pin 4 limits its other sections to knobs "the API already has". A zone's numbers are per-zone columns with no chapter-level config route, and no announcement-channel setting exists for the module, so Defaults and Posts to chat are not drawn. `study-zones-settings-drawer.spec.tsx` pins both absences.
+
+### Errors and tab titles
+
+- **404 and the root error page** are `1k`, through `CrestPage`. Transcribed, not lifted: the crest renders at full opacity, the panel at radius 20 rather than 24, and the buttons at the 44px `size="sm"` rather than 40.
+- **`app/error.tsx` reports to Sentry.** Before it existed every render error below the root layout reached `global-error`, which reports; catching them here without `captureException` would make the product look better and report less.
+- **The recovery prop is `retry`, not `reset`.** Next 16 has both, so `reset` from memory type-checks and ships a Retry that replays the same failed render against the same cache. `global-error.tsx` still takes `reset` ([#2219](https://github.com/pdcarlson/Frapp/issues/2219)).
+- **One title template.** The root layout's `title.template` is `"%s · Frapp"` and its default `"Frapp"`, so no route spells the product name. A `"use client"` page cannot export `metadata`, so it gets a `layout.tsx` whose only job is the title (`/points`). `scripts/ci/__tests__/frapp-web-titles.test.mjs` pins the template, the default, and that no route title says the retired name.
 
 ## Gating & routing semantics
 
@@ -99,6 +216,25 @@ Shell geometry as built. Source of truth: [`apps/web/components/layout/dashboard
 - **The content column MUST stay `min-w-0`.** It is a flex item, so its automatic minimum size is its min-content width: without the override it will not shrink below the widest unbreakable thing on the route, the header never gets a reason to collapse, and the page scrolls sideways. This is not a micro-optimisation — a missing `min-w-0` here was six of the seven routes reported in #1142 (`/documents` 426px, `/reports` 408, `/settings` 408, `/study` 392, `/service` 390, `/geofences` 383). It presents as per-route content overflow, and was filed that way, because page content is what supplies the min-content number; the shell measured clean on its own. Read a floor failure as a shell question first.
 - **In-page columns collapse on their own breakpoint.** Chat is flush columns (channels, then the thread) with no details rail ([`apps/web/components/chat/chat-shell.tsx`](../../../apps/web/components/chat/chat-shell.tsx)); its two panes are **not cards** — the thread sits on `--background`, so the `--card` cards posted into it read as the step above it and a hovered message row lifts to `--surface-1` (the message bubbles this once framed are gone since the compact layout, #2873), and the channels column takes `--surface-1`, the ladder step the sidebar already uses (rationale: [`../design-system/components.md`](../design-system/components.md) §2); Settings is a wrapped horizontal tab row below 1024px and a 200px vertical rail at `lg` ([`apps/web/components/settings/settings-page.tsx`](../../../apps/web/components/settings/settings-page.tsx)). Both tiers count as impacted responsive behavior for those routes.
 
+### Full-bleed routes
+
+`DashboardShell`'s `<main>` insets every route and owns its scroll. Chat cannot live inside that: the board draws it as flush columns at full height, with the channels column against the nav's right border and the composer pinned to the bottom of the viewport (`1b`), and an inset, scrolling `<main>` contradicts all three. So [`full-bleed-routes.ts`](../../../apps/web/components/layout/full-bleed-routes.ts) lists the routes that are handed the frame instead: `<main>` keeps its landmark, its `#main-content` id and its skip-link target, and drops its padding and its scroll. `/chat` is the only entry.
+
+- **A full-bleed route owns its own padding**, including on states that are not its main layout. Chat's no-chapter empty state carries its own inset for exactly this reason; without it, a centred card renders hard against the nav border.
+- **It is a route list, not a prop or a context.** The shell is a client component that already knows the pathname at first paint. A prop would have to be threaded from a server layout, and a context is readable only after an effect, which is one frame of padded chat before it snaps flush.
+
+## Standing bans
+
+Each held when last checked, by the command in its row. Only the shadow ban has a test behind it, so reintroducing any other is caught by the next reader rather than by CI: re-run a command rather than trust its result column.
+
+| Ban | Check | Last result |
+| --- | ----- | ----------- |
+| No `next-themes`, no theme switcher, no light palette: the surface is dark-only | `grep -rn next-themes --include=package.json .` and `grep -rnE "prefers-color-scheme\|data-theme" packages/theme/src/signet.css apps/web/app/globals.css` | No match, 2026-10-01 |
+| No live `dark:` variant | `grep -rnoE '(class\|className)="[^"]*\bdark:[a-z-]+' apps/web/components apps/web/app --include=*.tsx` | No match, 2026-10-01 |
+| No rendered shadow. Elevation is a lighter surface step | Every `boxShadow` key in the shared preset ([`packages/theme/src/tailwind.config.ts`](../../../packages/theme/src/tailwind.config.ts)) binds a `--shadow-*` token, every one of them `none` in `signet.css`, and `signet.css.spec.ts`'s shadow roster fails if a token is deleted. A key left **unbound** does not inherit `none`: it falls through to Tailwind's stock scale and compiles a real shadow, which is how `shadow-md` once shipped past this ban. For stray class text: `grep -rnoE '\bshadow-(xs\|sm\|md\|lg\|xl\|2xl\|inner)\b' apps/web/components apps/web/app --include=*.tsx \| grep -v '\.spec\.'` | Comment text only, 2026-10-01 ([#2743](https://github.com/pdcarlson/Frapp/issues/2743) deleted the last two inert classes) |
+| No legacy bone, bronze or Geist | `grep -rniE "\bbone\b\|\bbronze\b\|Geist" apps/web/components apps/web/app --include=*.tsx --include=*.ts --include=*.css` | Comment text only, 2026-10-01 |
+| No unused component under `apps/web/components/ui` | For each file, does anything outside it import `components/ui/<name>` | Every file has an importer, 2026-10-01. The check matches the import path string, so a component reached only through a re-export or a dynamic specifier reads as used |
+
 ## Surviving data contracts
 
 Per-screen truths that outlive the retired screen docs. Where a fact is canonical in `spec/behavior/`, the pointer is the fact — do not restate it here.
@@ -120,7 +256,17 @@ Per-screen truths that outlive the retired screen docs. Where a fact is canonica
 - **Points audit.** `GET /v1/points/transactions` (`points:view_all`, `limit` clamped 1–200, default 50) and anomaly flagging: [`spec/behavior/points.md`](../../behavior/points.md).
 - **Config, theme, archetype.** Config reads/writes go through `GET`/`PATCH /chapters/:id/config` and every write produces an audit row mirrored to `#chapter-audit`; the Settings accent save goes through `PATCH /v1/chapters/current`, which recomputes and stores the palette in the same write, and the refetched chapter repaints it without a reload (`POST /chapters/:id/theme-palette` recomputes on its own, but no client calls it). The engine persists **hex**, so any token it writes MUST be stored as a complete colour value and read as a bare `var()`, never wrapped in `hsl()` — the wrapper turns an injected `#C49A3A` into the invalid `hsl(#C49A3A)` and the chapter's branding silently does not paint (#1143). Every colour token in both stylesheets — [`packages/theme/src/signet.css`](../../../packages/theme/src/signet.css), which this surface and `apps/landing` both ship since #2366, and the legacy `packages/theme/src/globals.css`, deleted in that same cutover — is stored that way — one format, no per-token pairing rule — owned by [`../design-system/accent-engine.md`](../design-system/accent-engine.md) §6 and not restated here; [`packages/theme/src/tailwind.config.spec.ts`](../../../packages/theme/src/tailwind.config.spec.ts) and [`packages/theme/src/signet.css.spec.ts`](../../../packages/theme/src/signet.css.spec.ts) enforce both halves of it per stylesheet, including a repo-wide ban on hand-written `hsl(var(--token))` (#1151): [`spec/behavior/chapter-config.md`](../../behavior/chapter-config.md). Archetype switching resets modules/role pack/vocabulary and preserves identity, branding, and custom fields: [`spec/behavior/settings/README.md`](../../behavior/settings/README.md).
 
-## Reskin status
+## History
+
+Two series built this surface. Their rules that still bind are stated in the sections above; what follows is the record of how they got there, kept where a reason is not derivable from the code.
+
+### #2140 greenfield
+
+[#2140](https://github.com/pdcarlson/Frapp/issues/2140) rebuilt the surface from the framework board in [`reference/`](reference/README.md), one lane per PR: the spec lock and the token ladder ([#2152](https://github.com/pdcarlson/Frapp/pull/2152)), the shell and the ⌘K palette's deletion ([#2161](https://github.com/pdcarlson/Frapp/pull/2161)), chat ([#2163](https://github.com/pdcarlson/Frapp/pull/2163)), Documents and Backwork ([#2164](https://github.com/pdcarlson/Frapp/pull/2164)), Directory, Finance and Admin ([#2171](https://github.com/pdcarlson/Frapp/pull/2171), [#2172](https://github.com/pdcarlson/Frapp/pull/2172), [#2174](https://github.com/pdcarlson/Frapp/pull/2174)), chat cold load ([#2178](https://github.com/pdcarlson/Frapp/pull/2178)), and the chapter accent, 404 and copy ([#2179](https://github.com/pdcarlson/Frapp/pull/2179)). Its goal was a surface that reads dense, consumer-dark and FITFO: more content space, less generated chrome. A lane was done when the thing it replaced was gone, not when the new surface rendered.
+
+Its lane record lived in `spec/ui/web-greenfield/`, which outranked this page until [#2743](https://github.com/pdcarlson/Frapp/issues/2743) folded the rules that still bind into this page and [`tokens.md`](tokens.md), moved the board here, and deleted the rest. The per-lane narrative, including each corrected draft and the commands each lane ran, is in git: `git log --diff-filter=D -- spec/ui/web-greenfield/deletion-checklist.md` names the commit that deleted it.
+
+### #920 reskin
 
 The dashboard's Signet visual system — palette, type, radii, iconography, states — is specified in [`../design-system/`](../design-system/README.md). The #920 shell slice landed it: the surface ships [`packages/theme/src/signet.css`](../../../packages/theme/src/signet.css), Figtree, and a fully repainted shell (sidebar, top bar, account menu, ⌘K palette, drawer, onboarding chrome), with the Signet duotone nav glyphs in [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx). The primitives slice repainted `components/ui/**` and `components/shared/**`, and the **chat slice** trued up `components/chat/**` — bubbles, composer, rails, reactions, pins, and every renderer — with its own duotone glyph set ([`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx)). The **Directory & Finance slice** trued up `components/{members,alumni,billing,points}/**` together with the `/billing` and `/points` routes that are those screens, drawing them in [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx) and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx). It changed no billing data contract — the pay affordance gate, the subscription card rendering first, checkout only at `incomplete`, the bounded poll, and the two pessimistic writes all hold as written above.
 

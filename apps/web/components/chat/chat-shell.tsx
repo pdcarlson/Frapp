@@ -202,8 +202,8 @@ function ChannelHeaderMark({
  * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
  * deleted. Where threads went: the quote above a reply, which was the panel's
  * only remaining entry point, now scrolls this timeline to the message it
- * quotes (`MessageItem`'s `onJumpToParent`). The reasoning is recorded in
- * `spec/ui/web-greenfield/deletion-checklist.md` §2.
+ * quotes (`MessageItem`'s `onJumpToParent`). The decision is recorded in
+ * `spec/ui/web-dashboard/README.md` § Chat.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11

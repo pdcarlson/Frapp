@@ -58,7 +58,7 @@
        - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
      - *Specs and docs:*
        - the web half of `writing.md` § 7's Sign in title;
-       - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note;
+       - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note (*2026-10-01:* that file is deleted, and the rule it recorded is [`spec/ui/web-dashboard/README.md` § Errors and tab titles](../../ui/web-dashboard/README.md#errors-and-tab-titles), [#2743](https://github.com/pdcarlson/Frapp/issues/2743));
        - the onboarding welcome slide in `spec/ui/design-system/iconography.md`;
        - the Discord application and bot names and the consent screen in `docs/internal/ops/deployment/integrations.md`, `ENV_REFERENCE.md` (`DISCORD_BOT_TOKEN`), `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`;
        - the Services ID Description in `supabase.md` § Auth OAuth providers;

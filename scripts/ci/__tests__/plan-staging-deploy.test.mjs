@@ -555,7 +555,7 @@ describe("FRONTEND_BUILD_PATHS", () => {
   it("does not count what neither app is built from", () => {
     for (const path of [
       "docs/internal/ops/deployment/ci-cd.md",
-      "spec/ui/web-greenfield/tokens.md",
+      "spec/ui/web-dashboard/tokens.md",
       "apps/api/src/main.ts",
       "apps/mobile/app/index.tsx",
       "apps/web-old/x.ts",
