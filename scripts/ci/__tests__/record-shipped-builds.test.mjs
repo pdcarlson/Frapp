@@ -183,7 +183,8 @@ describe("the PR", () => {
 describe("recordShippedBuilds", () => {
   const env = (over = {}) => ({
     DEPLOY_SHA: SHA,
-    EAS_BUILDS: JSON.stringify([iosBuild(), androidBuild()]),
+    EAS_BUILDS_IOS: JSON.stringify([iosBuild()]),
+    EAS_BUILDS_ANDROID: JSON.stringify([androidBuild()]),
     BUILD_RESULT: "success",
     PLATFORM: "all",
     IOS_UPLOAD: "success",
@@ -245,6 +246,8 @@ describe("recordShippedBuilds", () => {
     assert.equal(pr.base, "main");
     assert.equal(pr.head, "shipped-builds/run-123-1");
     assert.match(pr.body, /api-contract-check/);
+    assert.match(pr.body, /If `api-contract-check` fails here,\*\* `main` has already changed the API/);
+    assert.doesNotMatch(pr.body, /nothing else needs review/);
     assert.doesNotMatch(pr.body, /\b(fixes|closes|resolves)\s+#/i);
     assert.match(text, /Recorded in https:\/\/github\.com\/pdcarlson\/Frapp\/pull\/9000/);
   });
@@ -263,7 +266,13 @@ describe("recordShippedBuilds", () => {
   });
 
   it("calls no API and passes when nothing was uploaded", async () => {
-    const { code, calls, text } = await run({ BUILD_RESULT: "failure", EAS_BUILDS: "", IOS_UPLOAD: "", ANDROID_UPLOAD: "" });
+    const { code, calls, text } = await run({
+      BUILD_RESULT: "failure",
+      EAS_BUILDS_IOS: "",
+      EAS_BUILDS_ANDROID: "",
+      IOS_UPLOAD: "",
+      ANDROID_UPLOAD: "",
+    });
     assert.equal(code, 0);
     assert.equal(calls.length, 0);
     assert.match(text, /Nothing was uploaded/);
@@ -295,6 +304,28 @@ describe("recordShippedBuilds", () => {
     assert.match(text, /eas submit --platform android --profile production --id android-build-1/);
   });
 
+  it("records one platform when the other's build listed nothing, and says so when it was asked for", async () => {
+    const failed = await run({ BUILD_RESULT: "failure", EAS_BUILDS_ANDROID: "", ANDROID_UPLOAD: "skipped" });
+    assert.equal(failed.code, 0);
+    const put = JSON.parse(failed.calls[3].body);
+    assert.deepEqual(parseRegistry(Buffer.from(put.content, "base64").toString("utf8")).builds.map((b) => b.platform), ["ios"]);
+    const green = await run({ EAS_BUILDS_ANDROID: "", ANDROID_UPLOAD: "skipped" });
+    assert.equal(green.code, 1, "a green build job that lists no Android build for `all` is a wiring fault");
+    assert.match(green.text, /Android was requested, and the build job reported no Android build/);
+  });
+
+  it("never tells anyone to upload a build it refused", async () => {
+    const { code, text } = await run({
+      PLATFORM: "ios",
+      EAS_BUILDS_IOS: JSON.stringify([iosBuild({ gitCommitHash: OTHER })]),
+      EAS_BUILDS_ANDROID: "",
+      IOS_UPLOAD: "failure",
+    });
+    assert.equal(code, 1);
+    assert.match(text, /Don't let testers install it/);
+    assert.doesNotMatch(text, /eas submit/);
+  });
+
   it("refuses a malformed DEPLOY_SHA before anything else", async () => {
     const { code, calls } = await run({ DEPLOY_SHA: SHA.slice(0, 8) });
     assert.equal(code, 1);
@@ -305,6 +336,6 @@ describe("recordShippedBuilds", () => {
 describe("summary", () => {
   it("says the ship is untouched, whatever happened here", () => {
     const text = summary({ sha: SHA, rows: [], entries: [], pr: null, problems: [] });
-    assert.match(text, /Production and the version tag don't depend on anything here/);
+    assert.match(text, /Production and the version tag don't depend on anything here: a failure leaves both as they are/);
   });
 });

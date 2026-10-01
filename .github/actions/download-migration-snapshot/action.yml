@@ -88,10 +88,13 @@ description: >
 #
 # ── What `wait` does not close ──────────────────────────────────────────────
 # A `Deploy production` run still in flight. It is not waited for, because its
-# one job ships for minutes after it migrates and would outlast the budget. The
+# shipping job runs for minutes after it migrates and would outlast the budget. The
 # staging row of the same snapshot usually already shows the migration, since
 # staging applied it at merge time. A live read had the same point-in-time
-# race, which was open until the apply.
+# race, which was open until the apply. A run that builds for the stores
+# (`mobile_build`) stays in flight for hours after that, so its
+# `_mobile-build.yml` dispatches a publish as the store build starts (#3111);
+# the race stays the minutes it was.
 #
 # ── Retries ─────────────────────────────────────────────────────────────────
 # Every Actions API read goes through `gh_api`, which follows

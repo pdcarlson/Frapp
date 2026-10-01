@@ -33,7 +33,9 @@ name: Migration snapshot
 # that apply migrations. Matched by workflow NAME: renaming either without
 # updating this list stops the refresh (`deploy-staging-workflow.test.mjs`
 # asserts the staging half). That is what keeps the snapshot current, because a
-# scheduled run here starts hours late. The 4-hourly schedule is a backstop
+# scheduled run here starts hours late. A Deploy production run that builds for
+# the stores stays in flight for hours after it migrates, so
+# `_mobile-build.yml` also dispatches this as its store build starts (#3111). The 4-hourly schedule is a backstop
 # for applies made outside those workflows (`docs/ops/database/drift-and-ordering.md` repairs).
 # Off `main`, the required gates wait for a snapshot newer than the latest
 # finished deploy, then refuse the stale one

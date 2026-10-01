@@ -253,8 +253,8 @@ promoting a Play track stay a human's clicks in the consoles.
 **Which commit.** Build a store binary from the commit production serves, which is the latest `v*`
 tag (`git tag --list 'v*' --sort=-version:refname | head -n1`), and never from `main`'s tip. A
 binary newer than production calls routes production doesn't serve yet (#2526); that is why the
-`v0.7.0` ship had to come before the 0.9.0 binary. The CI path builds the commit it just shipped
-and tagged, so it can't break this rule. The manual path keeps it by hand.
+`v0.7.0` ship had to come before the 0.9.0 binary. The CI path builds only the commit of the latest
+`v*` tag and refuses any other, a re-run included. The manual path keeps the rule by hand.
 
 **Record every upload.** Each build uploaded to TestFlight or a Play track gets a
 `shipped-builds.json` entry before any tester installs it, because that list arms the required
@@ -276,22 +276,34 @@ store build runs only on a `full`, non-dry-run ship, after the deploy **and** th
 succeed. A dry run or a `migrations-only` run never builds, whatever the input says. The `mobile`
 job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
 
-1. **`build`** checks out the validated SHA and nothing else, runs `npm ci` and installs eas-cli
-   **24.8.0** (pinned), and refuses to go on unless the tree is exactly that commit with nothing
-   changed: eas-cli uploads uncommitted changes with the build. Then it runs
-   `eas build --platform <choice> --profile production --non-interactive --wait --json`. Every
-   build that finished is uploaded by id with
+1. **`build`** checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
+   **24.8.0** with `--before=2026-10-01`, which freezes the resolution of eas-cli's own
+   dependencies at that date (it ships no lockfile). Then it refuses to go on unless the tree is
+   exactly that commit with nothing changed (eas-cli uploads uncommitted changes with the
+   build), and unless that commit is still the latest `v*` tag. Each platform is then its own
+   `eas build --platform <p> --profile production --non-interactive --wait --json`, iOS first.
+   `eas build --platform all` would start Android and then die on an iOS failure, leaving the
+   Android build running unreported. A build that finished is uploaded by id with
    `eas submit --platform <p> --profile production --id <build id> --non-interactive --wait`; iOS
-   also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. One platform's
-   failure doesn't stop the other's upload.
+   also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. One
+   platform's failure doesn't stop the other's build or upload.
 2. **`record`** opens the PR that adds one `shipped-builds.json` entry per uploaded build
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
    is the point. **Merge it before any tester installs the build.** A build EAS reports from any
    other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
    version, upload result, and whether it was recorded.
+   If that PR's `api-contract-check` fails, `main` has already changed the API in a way the new
+   build can't take: `main` is ahead of the tag, and nothing compared the change against this
+   build until it was listed. Fix it on `main` before the next production ship, or waive a route
+   no shipped binary calls ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
+   Don't merge around it.
+3. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
+   flight for as long as EAS takes, and the snapshot otherwise publishes only when a Deploy
+   production run completes, so the required PR migration gates would judge production against
+   the pre-ship state until then (`download-migration-snapshot`'s header).
 
-Both jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
+All three jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
 click ([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
 The build reads the same EAS `production` environment variables (§ 6.3) and credentials as a
 laptop build, so anything a hand build needs, this one needs too.
@@ -300,8 +312,14 @@ laptop build, so anything a hand build needs, this one needs too.
 goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
 says what finished, what uploaded, and the `eas submit … --id <build id>` that finishes an upload
 by hand. A build that uploaded but couldn't be recorded is listed there as the JSON entries to add.
-To retry, use **Re-run failed jobs** on the same run: the deploy and the tag succeeded and don't
-run again, and the retry builds a fresh build number.
+
+- **A build finished but its upload failed:** fix the cause, run that `eas submit` from
+  `apps/mobile`, and record the build by hand. Don't re-run: a re-run builds every platform the
+  run asked for again, so a platform that already uploaded would upload a second build and open
+  a second record PR.
+- **Nothing finished:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded
+  and don't run again, and the builds get fresh build numbers. The re-run refuses to build once a
+  later ship has tagged another commit; dispatch Deploy production for that one instead.
 
 **Before the first run.** These exist outside the repo, and a non-interactive run stops without
 each one:

@@ -12,7 +12,7 @@ action file is not on disk yet when the runner resolves it.
 
 | Action | What it does |
 | --- | --- |
-| [`node-setup`](./node-setup/action.yml) | `actions/setup-node` at the one pinned `node-version`, then the install the required `install:` input names: `ci` (`npm ci`), `omit-dev` (`npm ci --omit=dev`) or `none`. The two installing modes restore the `~/.npm` download cache, never `node_modules`. Every job that sets up Node calls it, except the two exceptions in the rules below (#1541). |
+| [`node-setup`](./node-setup/action.yml) | `actions/setup-node` at the one pinned `node-version`, then the install the required `install:` input names: `ci` (`npm ci`), `omit-dev` (`npm ci --omit=dev`) or `none`. The two installing modes restore the `~/.npm` download cache, never `node_modules`. Every job that sets up Node calls it, except the three exceptions in the rules below (#1541). |
 | [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`); the consumers are `CONSUMERS` in its test. |
 | [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. Optional `preserve-nonempty` restores named env vars this injection left empty (production backup `prod` inject only). Call-site roster: `EXPECTED` in `scripts/ci/__tests__/infisical-secrets-action.test.mjs`. |
 | [`db-offsite-backup`](./db-offsite-backup/action.yml) | Dump one Supabase project with the Supabase CLI, upload to the offsite bucket under `<environment>/<label>/`, read it back, prune past retention. Asserts the injected `SUPABASE_PROJECT_REF` against `.github/environments.json` before linking. 2 call sites (staging, production) in `db-backup.yml`. |
@@ -27,18 +27,19 @@ action file is not on disk yet when the runner resolves it.
   `packages/*` build command; `scripts/ci/__tests__/turbo-packages-build-action.test.mjs`
   fails if either reappears in a workflow *or* in another composite action.
 - **No workflow or other action hand-writes `actions/setup-node` or the install, except
-  `_deploy.yml` and `release.yml`.** Those two check out another commit before Node is set
-  up (the commit being deployed or tagged), so a local action there would load from that
-  tree (see the workspace rule below), and they keep a hand-written step pinned to
-  `node-setup`'s version. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on any
+  `_deploy.yml`, `release.yml` and `_mobile-build.yml`.** Those three check out another commit
+  before Node is set up (the commit being deployed, tagged, or built for the stores), so a
+  local action there would load from that tree (see the workspace rule below), and they keep
+  a hand-written step pinned to `node-setup`'s version. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on any
   other copy, on an exception whose version differs or that no longer checks out another
   commit first, on an `install:` value the action doesn't accept, on any step added to the
   action or line added to its mode check, and on an installing mode in a job that holds a
   secret, directly or through a composite action it calls (those jobs run dependency-free
   scripts, so no `node-setup` call runs `npm ci`'s lifecycle scripts beside a credential).
-  `_deploy.yml` is outside that rule: its hand-written `npm ci` runs in a job that already
-  holds its environment's secrets, before the Infisical injection, and #2824 tracks
-  isolating it.
+  `_deploy.yml` and `_mobile-build.yml` are outside that rule: each hand-written `npm ci`
+  runs in a job that holds its environment's secrets, before any step that uses them
+  (`_deploy.yml`'s Infisical injection, `_mobile-build.yml`'s `EXPO_TOKEN` steps), and #2824
+  tracks isolating `_deploy.yml`'s.
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`

@@ -42,9 +42,12 @@
 // exits 1.
 //
 // Env inputs:
-//   EAS_BUILDS        — `needs.build.outputs.builds`: a JSON array of
+//   EAS_BUILDS_IOS, EAS_BUILDS_ANDROID
+//                     — `needs.build.outputs.ios-builds` / `android-builds`:
+//                       each platform's `eas build --json` list, cut to
 //                       `{ id, platform, status, appVersion, appBuildVersion,
-//                       gitCommitHash }`, empty when no build was listed
+//                       gitCommitHash }`; empty when that build listed nothing
+//                       or didn't run
 //   BUILD_RESULT      — `needs.build.result`
 //   PLATFORM          — the requested platform: ios, android or all
 //   IOS_UPLOAD        — the iOS upload step's outcome, empty when it didn't run
@@ -74,7 +77,7 @@ const DISPLAY = Object.freeze({ ios: "iOS", android: "Android" });
 const STORE = Object.freeze({ ios: "TestFlight", android: "the Play internal track" });
 
 /**
- * `needs.build.outputs.builds` as an array, or null when there is no usable
+ * One platform's build list as an array, or null when there is no usable
  * list (empty, not JSON, not an array of objects).
  */
 export function parseBuilds(raw) {
@@ -108,14 +111,14 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
   }
   if (builds === null && buildResult === "success") {
     problems.push(
-      "The build job succeeded but handed over no build list (`needs.build.outputs.builds` is empty or not a JSON array). Nothing can be recorded from it; read the build job's log for the EAS build ids.",
+      "The build job succeeded but handed over no build list (`needs.build.outputs.ios-builds` and `android-builds` are empty or not JSON arrays). Nothing can be recorded from them; read the build job's log for the EAS build ids.",
     );
   }
 
   for (const store of requested) {
     const matches = (builds ?? []).filter((b) => b.platform === EAS_PLATFORM[store]);
     const upload = uploads[store] || "not run";
-    const row = { store, buildId: null, status: "not built", version: null, build: null, upload, recorded: false };
+    const row = { store, buildId: null, status: "not built", version: null, build: null, upload, recorded: false, refused: false };
     rows.push(row);
 
     if (matches.length > 1) {
@@ -139,6 +142,7 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
     // commit may be newer than production, and recording it would say the
     // opposite.
     if (found.gitCommitHash !== sha) {
+      row.refused = true;
       problems.push(
         `EAS built ${DISPLAY[store]} (${row.buildId ?? "no id"}) from ${found.gitCommitHash ?? "an unreported commit"}, not the validated ${sha}. Not recorded. Don't let testers install it: it may call routes production doesn't serve.`,
       );
@@ -199,7 +203,9 @@ export function prBody({ entries, rows, sha, runUrl, repo }) {
     "",
     `This adds one \`${REGISTRY_PATH}\` entry per uploaded build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). Merge it before any tester installs one of these builds: until then the gate doesn't protect them.`,
     "",
-    "Opened by `_mobile-build.yml`'s `record` job. The commit is the only change; nothing else needs review.",
+    `**If \`api-contract-check\` fails here,** \`main\` has already changed the API in a way these builds can't take (it is ahead of \`${sha}\`). Fix that on \`main\` before the next production ship, or waive a route no shipped binary calls as the README says, then re-run the check. Don't merge around it.`,
+    "",
+    "Opened by `_mobile-build.yml`'s `record` job; the registry entries are the only change.",
   ].join("\n");
 }
 
@@ -264,7 +270,7 @@ export function summary({ sha, rows, entries, pr, problems }) {
   }
   lines.push("");
   lines.push(
-    "> Production and the version tag don't depend on anything here: the builds are of the commit already live, and a failure leaves both as they are.",
+    "> Production and the version tag don't depend on anything here: a failure leaves both as they are.",
     "",
   );
   if (pr?.outcome === "opened") {
@@ -275,7 +281,7 @@ export function summary({ sha, rows, entries, pr, problems }) {
     lines.push("Nothing was uploaded, so nothing was recorded.", "");
   }
   for (const r of rows) {
-    if (r.recorded || r.status !== "FINISHED" || r.upload === "success" || !r.buildId) continue;
+    if (r.recorded || r.refused || r.status !== "FINISHED" || r.upload === "success" || !r.buildId) continue;
     lines.push(
       `- ${DISPLAY[r.store]} built but did not upload (\`${r.upload}\`). After fixing the cause, upload it by hand with \`eas submit --platform ${r.store} --profile production --id ${r.buildId}\` from \`apps/mobile\`, then record it as \`apps/mobile/store/README.md\` § Shipped builds says.`,
     );
@@ -303,7 +309,8 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
     log(`::error::DEPLOY_SHA must be a full 40-character commit SHA; got '${sha}'.`);
     return 1;
   }
-  const builds = parseBuilds(env.EAS_BUILDS);
+  const lists = [parseBuilds(env.EAS_BUILDS_IOS), parseBuilds(env.EAS_BUILDS_ANDROID)];
+  const builds = lists.every((l) => l === null) ? null : lists.flatMap((l) => l ?? []);
   const plan = planRecord({
     builds,
     platform: env.PLATFORM,

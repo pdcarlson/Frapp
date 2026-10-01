@@ -159,8 +159,8 @@ on:
         options: [auto, patch, minor, major]
       mobile_build:
         # A choice, not a box: Android can't upload until the Play account
-        # exists (#2556), and `--platform all` fails both platforms when either
-        # one's credentials do. `none` is the unticked box.
+        # exists (#2556), and an Android build until then would only spend EAS
+        # quota on a binary that fails its upload. `none` is the unticked box.
         description: "After a live 'full' ship and its tag, build this SHA on EAS, upload it to TestFlight / Play internal (not released), and open the shipped-builds.json PR. 'none' builds nothing."
         required: false
         default: none
@@ -322,8 +322,13 @@ jobs:
     needs: [validate, deploy, release]
     if: ${{ needs.deploy.result == 'success' && needs.release.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' && (inputs.mobile_build == 'ios' || inputs.mobile_build == 'android' || inputs.mobile_build == 'all') }}
     uses: ./.github/workflows/_mobile-build.yml
+    # A called job gets at most what its caller grants. `actions: write` is
+    # for the called `snapshot` job alone, which dispatches the migration
+    # snapshot publish; `build` and `record` each grant themselves
+    # `contents: read` only.
     permissions:
       contents: read
+      actions: write
     # EXPO_TOKEN and the base-sync App's pair are `automation` secrets, which
     # GitHub releases to a called job only with `inherit` (#2804).
     secrets: inherit

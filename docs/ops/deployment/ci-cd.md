@@ -55,9 +55,7 @@ layers are that job's steps named `inputs.environment == 'production'`:
    P1 *Deploy production failed* alert issue ([`alert-routing.md`](../alert-routing.md#automated-github-issue-alerts)).
 8. **Store builds, only when asked** — with `mobile_build` set to `ios`, `android` or `all`, and
    only after a `full` ship and its tag succeed, `_mobile-build.yml` builds the same commit on EAS,
-   uploads it to TestFlight and the Play internal track without releasing it, and opens the
-   `shipped-builds.json` PR. Its jobs name `automation`, so no second approval; a failure there
-   leaves production and the tag as they are and files no alert
+   uploads it without releasing it, and opens the `shipped-builds.json` PR
    ([`mobile.md` § 6.6](mobile.md#66-store-submission)).
 
 > **Corrected 2026-09-28 (#2805):** until #2805 production had its own copy of these steps in

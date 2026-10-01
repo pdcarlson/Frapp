@@ -12,7 +12,9 @@
 // listing name. The binary's permanent identifiers are
 // mobile-permanent-identifiers.test.mjs's, which lists them and says where
 // each one is decided. This lock doesn't assert extra.eas.projectId or an
-// iOS submit block. Do not run eas init.
+// iOS submit block; the store build's suite, deploy-production-mobile.test.mjs,
+// pins the `ascAppId` its non-interactive upload needs (#3111). Do not run
+// eas init.
 //
 // The first lock imported PRODUCTION_API_URL into every assert, so
 // rewriting the const and eas.json together to the staging host would

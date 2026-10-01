@@ -734,9 +734,11 @@ compared against nothing. Why it blocks, and how it fails:
 
 **Record a build when it is first uploaded to TestFlight or a Play track**, before any tester can
 install it, in a PR that adds one entry per build. When **Deploy production** uploads the build
-(its `mobile_build` input), its `record` job opens that PR, and merging it is all that's left
-([`mobile.md` § 6.6](../../../docs/ops/deployment/mobile.md#66-store-submission)). A build uploaded
-by hand is recorded by hand:
+(its `mobile_build` input), its `record` job opens that PR for you
+([`mobile.md` § 6.6](../../../docs/ops/deployment/mobile.md#66-store-submission)). If that PR's
+`api-contract-check` fails, `main` already breaks the build just uploaded: fix it on `main` before
+the next production ship, or waive the route as below. A build uploaded by hand is recorded by
+hand:
 
 ```json
 { "platform": "ios", "version": "0.9.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
