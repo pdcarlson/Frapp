@@ -51,9 +51,9 @@ import { expect, test } from "@playwright/test";
  *     every row is whole and the composer sits under the newest one, inside
  *     the frame, and its header row fits without clipping. Each frame also
  *     fits inside its section's content box, except the fold's from `lg` up,
- *     which bleeds off the right edge on purpose. Before #2893 a fixed height ran the newest
- *     rows under the composer at phone width, or pushed the composer out of
- *     the frame.
+ *     which bleeds off the right edge on purpose. Before #2893 a fixed height
+ *     ran the newest rows under the composer at phone width, or pushed the
+ *     composer out of the frame.
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
  * `/#pricing` load never arms an already-painted block — the flash slice 2 fixed
