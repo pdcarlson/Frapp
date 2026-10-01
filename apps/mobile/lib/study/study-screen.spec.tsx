@@ -311,6 +311,17 @@ describe("Study on a module-off refusal (#2393)", () => {
     act(() => tree.unmount());
   });
 
+  it("refetches the cached payload when Start is refused for hours being off", async () => {
+    // The refusal is the server saying hours is off; a payload that says on
+    // is stale, and refetching it is what hands the screen to module-off.
+    api.start.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await tapStart(tree);
+
+    expect(refetchChapter).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
   describe("with a session running", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -435,6 +446,53 @@ describe("Study when hours is switched off under a cached payload that says on (
 
     expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
     expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("refetches nothing when a write succeeds under a payload that already says on", async () => {
+    // A heartbeat every 5 minutes per live session would otherwise refetch
+    // the chapter each time, past the hook's 5-minute staleTime.
+    api.heartbeat.mockResolvedValue(LIVE_SESSION[0]);
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+
+    expect(api.heartbeat).toHaveBeenCalled();
+    expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("follows hours off and back on again within one mount", async () => {
+    // Mounted on, refused, refetched to off; then an officer turns hours back
+    // on and the next beat gets through. That beat must see the payload's
+    // current verdict, not the one the screen mounted with.
+    api.heartbeat
+      .mockRejectedValueOnce(MODULE_OFF)
+      .mockResolvedValue(LIVE_SESSION[0]);
+    refetchChapter
+      .mockImplementationOnce(async () => {
+        chapter = HOURS_OFF;
+      })
+      .mockImplementation(async () => {
+        chapter = HOURS_ON;
+      });
+    const tree = render();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+    rerender(tree);
+    expect(endButton(tree)).toHaveLength(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+    });
+    expect(refetchChapter).toHaveBeenCalledTimes(2);
+    rerender(tree);
+
+    expect(endButton(tree)).toHaveLength(1);
+    expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
     act(() => tree.unmount());
   });
 
