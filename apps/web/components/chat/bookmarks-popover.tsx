@@ -160,7 +160,7 @@ export function BookmarksPanel({
                   list, which silently resolves to #general and never scrolls
                   — a control that appears to work and quietly does the wrong
                   thing, which is worse than the dead ends
-                  spec/ui/design-system/README.md §5 already bans.
+                  spec/ui/design-system/README.md §5 rule 2 already bans.
                 */}
                 {available ? (
                   <button

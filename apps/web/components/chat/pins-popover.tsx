@@ -15,8 +15,8 @@ import { replyPreviewText } from "./reply-quote";
  *
  * **`onJump` is wired now.** It was optional and the shell never passed it, so
  * every row here was a `<button>` that did nothing — a control that silently
- * does nothing is the dead end `spec/ui/design-system/README.md` §5 bans, and
- * repainting it would only have made a prettier one. `MessageTimeline` exposes the scroll through
+ * does nothing is the dead end `spec/ui/design-system/README.md` §5 rule 2
+ * bans, and repainting it would only have made a prettier one. `MessageTimeline` exposes the scroll through
  * its ref; a pin older than the loaded window still cannot be reached, and the
  * timeline no-ops rather than pretending.
  */

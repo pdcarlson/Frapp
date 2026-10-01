@@ -74,7 +74,7 @@ describe("NotificationLevelPanel", () => {
       <NotificationLevelPanel level="mentions" onChange={onChange} disabled />,
     );
 
-    // spec/ui/design-system/README.md §5 bans dead-end controls: with no
+    // spec/ui/design-system/README.md §5 rule 2 bans dead-end controls: with no
     // channel selected there is nothing to mute, so every option says so
     // rather than silently no-oping.
     for (const option of screen.getAllByRole("button")) {

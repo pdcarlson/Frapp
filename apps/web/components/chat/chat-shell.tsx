@@ -968,8 +968,8 @@ export function ChatShell({
   // window, so for any target older than the backfill it did nothing at all,
   // said nothing, and left nothing pending to retry. Search exists to reach old
   // messages, so that was the common case, not the edge — an inert row of
-  // exactly the kind `spec/ui/design-system/README.md` §5 bans. One path for
-  // every case means the unreachable-target handling below covers them all.
+  // exactly the kind `spec/ui/design-system/README.md` §5 rule 2 bans. One path
+  // for every case means the unreachable-target handling below covers them all.
   const jumpToChannelMessage = useCallback(
     (channelId: string, messageId: string) => {
       if (channelId !== activeChannelId) {

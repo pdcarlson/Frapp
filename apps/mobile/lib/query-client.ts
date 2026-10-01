@@ -12,7 +12,7 @@ import { QueryClient } from "@tanstack/react-query";
  * on "Marking…", and the explicit "Try again" controls on s04/s06 would become
  * silent no-ops (a paused query leaves `isFetching` false, so the button neither
  * spins nor errors). That is the dead end `spec/ui/design-system/README.md` §5
- * bans, delivered by a default.
+ * rule 2 bans, delivered by a default.
  *
  * `"offlineFirst"` attempts the request once and lets it fail visibly, pausing
  * only the *retries* until connectivity returns. Every one of those surfaces

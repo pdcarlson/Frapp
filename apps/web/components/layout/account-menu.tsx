@@ -160,7 +160,7 @@ export function AccountMenu({
            * route of their own, so this links to that section's anchor. A
            * `?tab=` param would have been a dead affordance: the profile screen
            * has no tabs and would ignore it (`spec/ui/design-system/README.md`
-           * §5).
+           * §5, rule 2).
            */}
           <Link href="/profile#notification-settings" onClick={onNavigate}>
             <Bell className="h-4 w-4" aria-hidden="true" />
