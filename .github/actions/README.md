@@ -75,9 +75,10 @@ action file is not on disk yet when the runner resolves it.
   deprecation warning on each run, and is removing Node 20 from its runners.
   `scripts/ci/__tests__/action-runtime-floor.test.mjs` records each action's oldest
   release verified on node24 and fails on a ref below it, on an action with no recorded
-  floor, and on a commit pin without its `# vX.Y.Z` comment. Adding an action means reading
-  `runs.using` in its `action.yml` at the tag you pin, not its release notes, and recording
-  the floor there; a forward bump needs no edit.
+  floor, on a floor no ref uses any more, and on a ref that pins neither a version tag nor
+  a commit with its `# vX.Y.Z` comment (a branch, or a bare SHA). Adding an action means
+  reading `runs.using` in its `action.yml` at the tag you pin, not its release notes, and
+  recording the floor there; a forward bump needs no edit.
 
 - **`supabase-cli` takes no inputs on purpose.** A `version:` input would put the pin back
   at every call site. The production apply and the `migration-replay` rehearsal exist to be
