@@ -79,6 +79,7 @@ import { join } from "node:path";
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
+import { readSupabaseCliPin } from "./lib/supabase-cli-pin.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
@@ -101,8 +102,8 @@ const PARKED_DIR = join(process.cwd(), "supabase", ".migrations-replay-parked");
  * `backDated` is FATAL, and used to be merely reported. The comment that
  * justified staying silent said "`supabase db push` applies such a migration at
  * the END regardless of where its version sorts". That is false, and it is the
- * reason #1373 shipped. Measured against the pinned CLI 2.77.0 on 2026-08-29,
- * applying `20260102000000` to a database already holding `20260103000000`:
+ * reason #1373 shipped. Measured against CLI 2.77.0 on 2026-08-29, applying
+ * `20260102000000` to a database already holding `20260103000000`:
  *
  *   $ supabase migration up --db-url ...
  *   Connecting to local database...
@@ -117,10 +118,16 @@ const PARKED_DIR = join(process.cwd(), "supabase", ".migrations-replay-parked");
  * `--include-all` flag with the same description, so it refuses identically.
  * The CLI does not reorder; it stops.
  *
- * `db push` and `migration up` are not merely similar here: `internal/db/push`
- * calls `up.GetPendingMigrations`, the same entry point, and both bind
- * `--include-all` to the same flag. So the replay's phase 2 DOES reproduce the
- * refusal — this gate is not covering a hole in the rehearsal.
+ * `db push` and `migration up` are not merely similar here. On 2.77.0
+ * `internal/db/push` called `up.GetPendingMigrations`, the same entry point, and
+ * both bound `--include-all` to the same flag. 2.110.0, the pin since #723,
+ * reimplemented both outside that Go code, so the claim was re-measured rather
+ * than carried over (2026-10-01, a back-dated file against the full local
+ * ledger): `migration up --local` and `db push --local` each exit 1, apply
+ * nothing, and print the same message, now inside a JSON error envelope
+ * (`LegacyMigrationMissingRemoteError` / `LegacyDbPushMissingRemoteError`). So
+ * the replay's phase 2 DOES reproduce the refusal — this gate is not covering a
+ * hole in the rehearsal.
  *
  * It is decided here for three smaller reasons that still add up. The verdict
  * needs no Docker and no database rebuild. It carries the remedy, where the
@@ -212,12 +219,11 @@ export function decideOutcome({ partition, replay }) {
   }
 
   // Decided BEFORE the replay, on purpose. The replay would fail too — phase 2
-  // runs `migration up`, and `db push` calls that same `GetPendingMigrations`,
-  // so both refuse identically (CLI 2.77.0, pkg/migration/apply.go, whose own
-  // comment reads "Enforce migrations are applied in chronological order by
-  // default"). Deciding here spends no Docker and no database rebuild to reach
-  // a verdict already known, and reports an ordering fault as one — with the
-  // rename remedy attached — rather than as a failure "applying" a file.
+  // runs `migration up`, and `db push` refuses identically (measured on 2.77.0
+  // and again on 2.110.0; see `partitionMigrations` above). Deciding here
+  // spends no Docker and no database rebuild to reach a verdict already known,
+  // and reports an ordering fault as one — with the rename remedy attached —
+  // rather than as a failure "applying" a file.
   if (backDated.length > 0) {
     const files = backDated.map((m) => `  ~ ${m.file}`).join("\n");
     return {
@@ -345,12 +351,14 @@ function restoreParked() {
  */
 export function replayAgainstDisposable({
   pending,
-  // In CI the Supabase CLI is installed on PATH by `supabase/setup-cli`, which
-  // pins the version; `npx` is the local-developer fallback. Reading it from
-  // the environment keeps the pinned CI binary from being silently replaced by
-  // whatever `npx` decides to fetch.
+  // In CI the Supabase CLI is installed on PATH by `.github/actions/supabase-cli`,
+  // which pins the version, and the workflow names it in REPLAY_SUPABASE_CLI.
+  // Reading it from the environment keeps the pinned CI binary from being
+  // silently replaced by whatever `npx` decides to fetch. The local-developer
+  // fallback runs that same pin through npx (#723); it used to be bare
+  // `npx supabase`, i.e. `latest`, which rehearsed a CLI nothing deploys with.
   supabaseBin = process.env.REPLAY_SUPABASE_CLI ? process.env.REPLAY_SUPABASE_CLI : "npx",
-  supabaseArgs = process.env.REPLAY_SUPABASE_CLI ? [] : ["--yes", "supabase"],
+  supabaseArgs = process.env.REPLAY_SUPABASE_CLI ? [] : ["--yes", `supabase@${readSupabaseCliPin()}`],
 }) {
   const cli = (args, opts) => run(supabaseBin, [...supabaseArgs, ...args], opts);
 

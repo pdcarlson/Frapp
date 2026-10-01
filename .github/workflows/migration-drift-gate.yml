@@ -168,8 +168,8 @@ jobs:
   # Same trap the header of this file documents: a required check on a workflow
   # skipped by a workflow-level `paths:` filter never reports and sits Pending
   # forever. So the job always runs and decides for itself whether this change
-  # touches `supabase/migrations/**`; a PR that does not touch them passes in
-  # seconds without starting Docker.
+  # touches `supabase/migrations/**` or the CLI that applies them; a PR that
+  # touches neither passes in seconds without starting Docker.
   migration-replay:
     runs-on: ubuntu-latest
     permissions:
@@ -225,12 +225,16 @@ jobs:
             echo "::warning::Could not diff $RANGE. Replaying anyway rather than skipping the gate."
           fi
 
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED"; then
+          # The migrations, and what applies them: the pinned CLI and the two
+          # scripts that start the stack and replay onto it. A CLI bump changes
+          # what this rehearses as surely as a new migration does (#723), and
+          # the replay's only other runs are a production deploy and `main`.
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(supabase/migrations/|\.github/actions/supabase-cli/|scripts/ci/supabase-start-disposable\.sh$|scripts/ci/check-migration-replay\.mjs$)' "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Migrations touched (or the diff was unreadable) — running the replay."
+            echo "Migrations or the replay's CLI touched (or the diff was unreadable) — running the replay."
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No files under supabase/migrations/ changed — nothing to replay."
+            echo "No migration, CLI pin or replay script changed — nothing to replay."
           fi
 
       - name: Setup Node
@@ -293,7 +297,7 @@ jobs:
 
       - name: No migrations touched
         if: steps.touched.outputs.run != 'true'
-        run: echo "No files under supabase/migrations/ changed — replay not needed."
+        run: echo "No migration, CLI pin or replay script changed — replay not needed."
 
   # ── Migration ordering ──────────────────────────────────────────────────
   # REQUIRED check: does a migration this change INTRODUCES sort before a

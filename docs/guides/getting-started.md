@@ -31,8 +31,10 @@ With **Docker running** (`docker info` succeeds — e.g. Docker Desktop with WSL
 bash scripts/local-dev-setup.sh
 ```
 
-This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, **repairs the
-local Postgres default ACLs**, then optional typecheck and migration-safety checks.
+This runs `npm install`, `supabase start` and `supabase db push --local`, **repairs the
+local Postgres default ACLs**, then optional typecheck and migration-safety checks. It runs the
+repo's pinned Supabase CLI, the version CI deploys with, installing it into the gitignored
+`.cache/supabase-cli/` on first use (~200 MB), so a global `supabase` install is not used.
 
 The ACL repair is not optional and will stop the bootstrap if it fails: the pinned
 `supabase/postgres` image ships schema `public` without DML grants for the API's roles, so

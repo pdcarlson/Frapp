@@ -48,6 +48,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { getEnvironment, SUPABASE_PROJECT_REF_PATTERN } from "./ci/lib/environments.mjs";
+import { chooseSupabaseCli, readSupabaseCliPin } from "./ci/lib/supabase-cli-pin.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
@@ -190,16 +191,26 @@ function quoteArg(arg) {
 
 let cachedSupabaseCommand = null;
 
+/**
+ * Always the pinned CLI (#723): the one on PATH when it is the pin (CI, where
+ * `.github/actions/supabase-cli` installed it), otherwise the pin through npx.
+ * This used to fall back to bare `npx supabase`, so a laptop with no CLI on
+ * PATH applied production DDL with whatever `latest` was that day.
+ */
 function getSupabaseCommand(log) {
   if (cachedSupabaseCommand) return cachedSupabaseCommand;
+  let pathVersionOutput = null;
   try {
-    execFileSync("supabase", ["--version"], { stdio: "ignore" });
-    log("  Using Supabase CLI from PATH.");
-    cachedSupabaseCommand = { command: "supabase", prefixArgs: [] };
+    pathVersionOutput = execFileSync("supabase", ["--version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   } catch {
-    log("  Supabase CLI not found on PATH. Falling back to npx supabase.");
-    cachedSupabaseCommand = { command: "npx", prefixArgs: ["supabase"] };
+    pathVersionOutput = null;
   }
+  const { command, prefixArgs, note } = chooseSupabaseCli({ pin: readSupabaseCliPin(), pathVersionOutput });
+  log(`  ${note}`);
+  cachedSupabaseCommand = { command, prefixArgs };
   return cachedSupabaseCommand;
 }
 

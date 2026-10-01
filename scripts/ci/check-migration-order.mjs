@@ -19,11 +19,12 @@
 // it already existed: `check-migration-replay.mjs` computed exactly this set,
 // called it `backDated`, and threw it away.
 //
-// Measured against the pinned CLI 2.77.0 on 2026-08-29, so this is not inferred
-// from the docs: `supabase migration up` against a database holding
-// `20260103000000`, with `20260102000000` pending, exits **1**, applies
-// nothing, and leaves the ledger untouched. `db push` carries the same
-// `--include-all` flag with the same description and refuses identically.
+// Measured against CLI 2.77.0 on 2026-08-29, so this is not inferred from the
+// docs: `supabase migration up` against a database holding `20260103000000`,
+// with `20260102000000` pending, exits **1**, applies nothing, and leaves the
+// ledger untouched. `db push` carries the same `--include-all` flag with the
+// same description and refuses identically. Re-measured on 2.110.0, the pin
+// since #723, on 2026-10-01: both commands still exit 1 and apply nothing.
 //
 // ── Why it reads the CHANGE, not the whole pending set ──────────────────────
 // This is the design decision that makes the gate safe to require, and it is
