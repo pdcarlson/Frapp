@@ -35,7 +35,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Mobile UI requirements | `spec/ui/mobile/` |
 | Landing-site UI requirements | `spec/ui/landing/` |
 | Design-system (tokens, typography, icons, microcopy, accent engine) | `spec/ui/design-system/` |
-| Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
+| Visual design reference (committed design exports) | `spec/ui/design-system/reference/` for the boards every surface shares; a board that governs one surface sits in that surface's `reference/` (`spec/ui/landing/reference/`, `spec/ui/web-dashboard/reference/`) |
 | How to run locally / test / contribute, including the UI accessibility protocol | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](../ci-cd/pr-babysitting.md); Dependabot facts: [`dependency-updates.md`](../ci-cd/dependency-updates.md) |

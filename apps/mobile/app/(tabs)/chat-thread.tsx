@@ -88,7 +88,7 @@ const NO_DEPARTED: ReadonlySet<string> = new Set();
  * s05 — Chat thread.
  *
  * **This screen deliberately does not use `ScreenShell`.** The shell wraps its
- * children in a `ScrollView` (`components/screen-shell.tsx:33`), and a
+ * children in a `ScrollView` (`components/screen-shell.tsx`), and a
  * `FlatList` nested in a `ScrollView` loses windowing entirely — every message
  * ever loaded would mount at once, which is precisely the thing a thread cannot
  * afford. `app/(auth)/chapter-picker.tsx` is the existing precedent for opting
@@ -697,7 +697,12 @@ export default function ChatThreadScreen() {
           : "Reconnecting…";
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    // Every edge: the tab layout draws no navigator header (#2485), so the
+    // `‹ #name` bar below is the top of the screen.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         // `padding` is the correct iOS behavior; on Android the window already
