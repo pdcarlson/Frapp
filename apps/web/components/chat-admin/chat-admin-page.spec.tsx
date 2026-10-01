@@ -105,6 +105,9 @@ function empty(overrides: Record<string, unknown>) {
 const CHANNELS_STALE =
   "Couldn't refresh the channels. These are the last ones that loaded.";
 
+const PINS_STALE =
+  "Couldn't refresh the pins. These are the last ones that loaded.";
+
 const selectExec = () =>
   fireEvent.click(screen.getByRole("button", { name: /^#exec/ }));
 
@@ -336,11 +339,31 @@ describe("ChatAdminPage — a channel's pins", () => {
 
     expect(screen.getByText("Dues are due Friday")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load pins")).toBeNull();
-    expect(
-      screen.getByText(
-        "Couldn't refresh the pins. These are the last ones that loaded.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(PINS_STALE)).toBeInTheDocument();
+  });
+
+  it("has the pins notice's live region mounted before a refresh fails", () => {
+    const pinned = [
+      {
+        id: "m-1",
+        content: "Dues are due Friday",
+        sender_id: null,
+        author_name: "Treasurer",
+        created_at: "2026-09-30T12:00:00Z",
+        pinned_at: "2026-09-30T12:00:00Z",
+      },
+    ];
+    reads.pins = settled(pinned);
+    const { container, rerender } = render(<ChatAdminPage />);
+    selectExec();
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    reads.pins = { ...settled(pinned), isError: true };
+    rerender(<ChatAdminPage />);
+
+    expect(regions).toContain(
+      screen.getByText(PINS_STALE).closest('[role="status"]'),
+    );
   });
 
   it("says nothing is pinned when the read succeeded empty", () => {

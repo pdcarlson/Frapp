@@ -561,6 +561,11 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Loading (channel panel) | — | `Loading the import’s channels…` |
 | Error (channel panel) | `Couldn’t load the import’s channels` | `The import itself is unaffected and keeps running. Try again in a moment.` · `Retry` |
 | Stale (channel panel) | — | `Couldn’t refresh the channels. This is the last update that loaded.` · `Try again` (a poll of the panel failed; the channels it last showed stay) |
+| Empty (channel panel) | — | `Waiting for the first channel to start.` (still running) · `No channel was imported.` (finished) |
+| Channel panel groups | `Importing now` / `Stopped at` (running / stopped) · `Finished last` / `Finished` · `Failed` | A failed channel without a reason: `No reason was recorded.` Under the groups: `Imported messages don’t appear live in chat. Open a channel to see what has landed so far.` |
+| Loading (wizard, connect step) | — | `Checking whether Discord is connected…` · `Confirming your Discord server…` (the returned authorization is being confirmed) |
+| Error (wizard, connect step) | `Couldn't check the Discord connection` | `Retry to see whether your server is connected.` |
+| Offline (wizard, connect step) | `Can't check Discord offline` | `Reconnect to check whether your server is connected.` |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
 | Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
 | Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
@@ -570,9 +575,9 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 
 The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
-The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's; match them exactly when editing either.
+The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's, and the connect step's loading lines keep the ellipsis; match them exactly when editing any of them.
 
-Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the channel panel's in `apps/web/components/discord-import/import-watch-panel.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
+Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the channel panel's in `apps/web/components/discord-import/import-watch-panel.tsx`, the connect step's in `apps/web/components/discord-import/connect-step.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
 
 ### Billing (dashboard)
 

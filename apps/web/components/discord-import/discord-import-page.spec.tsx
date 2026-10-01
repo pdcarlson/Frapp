@@ -262,6 +262,29 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  // With no data, the detail read arms no poll, and the row falls back to the
+  // list's copy, which is not polling either.
+  it("says the polled import's row is stale when its first poll fails", () => {
+    hooks.rows = [row("moving", "running", "Running server")];
+    hooks.detail.mockImplementation((id) =>
+      id === "moving"
+        ? { data: undefined, isError: true, refetch: vi.fn() }
+        : { data: null },
+    );
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
+    );
+
+    expect(screen.getByText(IMPORTS_STALE)).toBeInTheDocument();
+  });
+
   // A resume is spent once its wizard closes, whichever way it closes.
   it.each([
     ["is cancelled", "Close wizard"],
@@ -655,6 +678,28 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(
       hooks.progress.mock.results.at(-1)?.value.refetch,
     ).toHaveBeenCalled();
+  });
+
+  it("has the panel notice's live region mounted before a poll fails", () => {
+    const { container, rerender } = render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
+    );
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    hooks.progress.mockReturnValue({
+      data: progress,
+      isPending: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    rerender(<DiscordImportPage />);
+
+    expect(regions).toContain(
+      screen
+        .getByText(/Couldn’t refresh the channels/)
+        .closest('[role="status"]'),
+    );
   });
 
   it("closes a bot import's panel when another row becomes the polled one", () => {

@@ -338,11 +338,10 @@ function DiscordImportList({
   // The polled import's row reads its own detail query, not the list, and the
   // list stops polling once nothing is deleting. So a detail poll that keeps
   // failing (the API down, say) froze that row's meter with nothing on screen
-  // to say so, while the list read stayed clean.
-  const activeStale =
-    active.isError &&
-    activeRow !== null &&
-    rows.some((row) => row.id === activeRow.id);
+  // to say so, while the list read stayed clean. Keyed on the id, not the
+  // detail's data: a first fetch that fails leaves no data and arms no poll,
+  // and the row then shows the list's last copy, which is just as stale.
+  const activeStale = active.isError && rows.some((row) => row.id === activeId);
 
   function retryReads() {
     void imports.refetch();

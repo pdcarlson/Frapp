@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 // `vi.hoisted` runs before the hoisted `vi.mock` factory, so the spies exist
 // when the factory wires them in.
@@ -22,6 +23,7 @@ const {
   rolesFail,
   permissionsFail,
   catalogStale,
+  connectionRead,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -41,6 +43,8 @@ const {
   permissionsFail: { value: null as null | "error" | "stale" },
   // A catalog refetch that failed with the last answer kept.
   catalogStale: { value: false },
+  // The connection read's state, over a settled one, for its async states.
+  connectionRead: { value: {} as Record<string, unknown> },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general", type: "PUBLIC" }] as unknown,
@@ -135,6 +139,8 @@ vi.mock("@repo/hooks", () => ({
   useDiscordConnection: () => ({
     data: connection.value,
     isPending: false,
+    refetch: () => Promise.resolve(),
+    ...connectionRead.value,
   }),
   useBeginDiscordConnect: () => ({
     mutateAsync: beginConnect,
@@ -1677,6 +1683,66 @@ describe("export preamble reader", () => {
   });
 });
 
+describe("ConnectStep — its async states, on the page surface (#2500)", () => {
+  beforeEach(() => {
+    availability.value = { available: true };
+    connection.value = { connected: false };
+  });
+  afterEach(() => {
+    connectionRead.value = {};
+  });
+
+  function renderConnect() {
+    return render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+      />,
+    );
+  }
+
+  it("says the connection could not be checked, naming it, with Retry", () => {
+    connectionRead.value = { data: undefined, isError: true };
+    const { container } = renderConnect();
+
+    expect(
+      screen.getByText("Couldn't check the Discord connection"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Unable to load data")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says it can't check offline, rather than checking for ever", () => {
+    connectionRead.value = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "paused",
+    };
+    const { container } = renderConnect();
+
+    expect(screen.getByText("Can't check Discord offline")).toBeInTheDocument();
+    expect(screen.queryByText(/Checking whether Discord/)).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("announces the check while it runs", () => {
+    connectionRead.value = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "fetching",
+    };
+    const { container } = renderConnect();
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Checking whether Discord is connected…",
+    );
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+});
+
 describe("ConnectStep — confirming what the callback parked", () => {
   beforeEach(() => {
     availability.value = { available: true };
@@ -1734,7 +1800,7 @@ describe("ConnectStep — confirming what the callback parked", () => {
 
   it("does not confirm again when Back and Continue bring the step back", async () => {
     // The step unmounts on Back, and the one Continue mounts is fresh; the
-    // token is one-time, so a second confirm can only be refused.
+    // token was spent, so a second confirm could only be refused.
     connection.value = { connected: true, guild_name: "Tau Nu" };
     render(
       <ImportWizard
@@ -1752,6 +1818,44 @@ describe("ConnectStep — confirming what the callback parked", () => {
     await waitFor(() => expect(screen.getByText(/Tau Nu/)).toBeInTheDocument());
     expect(confirmConnect).toHaveBeenCalledTimes(1);
   });
+
+  // The API answers a spent, expired or other chapter's token with one 400.
+  // Anything else (a 503 while Discord is withdrawn, a request that never
+  // arrived) returned before it touched the token, which can still connect.
+  it.each([
+    { refusal: "a 400, which spent it", error: { statusCode: 400 }, calls: 1 },
+    { refusal: "a 503, which did not", error: { statusCode: 503 }, calls: 2 },
+    {
+      refusal: "a request that never arrived",
+      error: new TypeError("Failed to fetch"),
+      calls: 2,
+    },
+  ])(
+    "after $refusal, Back and Continue leave $calls confirm(s) in all",
+    async ({ error, calls }) => {
+      confirmConnect.mockRejectedValueOnce(error);
+      render(
+        <ImportWizard
+          onStarted={() => {}}
+          onCancel={() => {}}
+          initialSource="bot"
+          initialStep="connect"
+          handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        />,
+      );
+      await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Back" })).toBeEnabled(),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(calls));
+      // Settled: no third attempt follows.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(confirmConnect).toHaveBeenCalledTimes(calls);
+    },
+  );
 
   it("withdraws Add to Server, with a reason, once the API has switched Connect off", async () => {
     // The API re-reads Discord before every connect, so it can withdraw the

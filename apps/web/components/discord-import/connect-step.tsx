@@ -7,8 +7,13 @@ import {
   useDiscordAvailability,
   useDiscordConnection,
 } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
 import { Button } from "@/components/ui/button";
-import { ErrorState, LoadingState } from "@/components/shared/async-states";
+import {
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
@@ -67,10 +72,14 @@ export function ConnectStep({
    */
   handshake?: string | null;
   /**
-   * Told the moment the confirm is sent, so the wizard stops passing the
-   * token: Back unmounts this step, and a fresh one would post it again.
+   * Whether the wizard should stop passing the token. `true` the moment the
+   * confirm is sent: Back unmounts this step, and a fresh one would post it
+   * again. `false` if the confirm then failed without the server spending it
+   * (anything but its 400, such as a 503 while Discord is withdrawn or a
+   * request that never arrived), so a later visit to this step can send it
+   * again rather than make the admin authorize from the start.
    */
-  onHandshakeSpent?: () => void;
+  onHandshakeSpent?: (spent: boolean) => void;
 }) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
@@ -97,11 +106,14 @@ export function ConnectStep({
   useEffect(() => {
     if (!handshake || attempted.current) return;
     attempted.current = true;
-    onHandshakeSpent?.();
+    onHandshakeSpent?.(true);
     confirmConnect
       .mutateAsync({ handshake })
       .then(() => setConfirmError(null))
       .catch((error: unknown) => {
+        // The API answers a spent, expired or other chapter's token with one
+        // 400; every other failure returned before it touched the token.
+        if (statusOf(error) !== 400) onHandshakeSpent?.(false);
         setConfirmError(
           getErrorMessage(
             error,
@@ -133,20 +145,46 @@ export function ConnectStep({
     }
   }
 
+  // The nested family: the wizard sits flush on /discord-import, where the
+  // whole-screen states would redraw the card the route deleted. `sole` on
+  // the spinners, which are the screen's only async state and were announced
+  // as `LoadingState`. The error and offline titles stay `<p>`s, under the
+  // step's own heading.
   if (confirmConnect.isPending) {
-    return <LoadingState message="Confirming your Discord server…" />;
+    return <NestedLoading sole message="Confirming your Discord server…" />;
+  }
+
+  // Offline with nothing read yet, the query is paused rather than loading,
+  // and used to sit on "Checking…" for as long as the connection was down.
+  if (connection.isPending && connection.fetchStatus === "paused") {
+    return (
+      <NestedOffline
+        title="Can't check Discord offline"
+        description="Reconnect to check whether your server is connected."
+        onRetry={() => void connection.refetch()}
+      />
+    );
   }
 
   if (connection.isPending) {
-    return <LoadingState message="Checking whether Discord is connected…" />;
+    return (
+      <NestedLoading sole message="Checking whether Discord is connected…" />
+    );
   }
 
   // `useDiscordConnection` sets `retry: false`, so a 500 or a dropped request
   // ends the query in `isError` rather than `isPending`. Without this branch it
   // fell through to the "not connected" pitch — telling a chapter that IS
   // connected to add the bot again, with no retry and no sign anything failed.
+  // It used `ErrorState`'s defaults, "Unable to load data", which name nothing.
   if (connection.isError) {
-    return <ErrorState onRetry={() => void connection.refetch()} />;
+    return (
+      <NestedError
+        title="Couldn't check the Discord connection"
+        description="Retry to see whether your server is connected."
+        onRetry={() => void connection.refetch()}
+      />
+    );
   }
 
   if (connected) {
