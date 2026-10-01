@@ -129,7 +129,11 @@ export default function HostCheckInScreen() {
         >
           <Text style={styles.endText}>✕ End</Text>
         </Pressable>
-        <Text numberOfLines={1} style={styles.headerTitle}>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          style={styles.headerTitle}
+        >
           {event?.name ?? "Host check-in"}
         </Text>
         <View style={styles.end} />

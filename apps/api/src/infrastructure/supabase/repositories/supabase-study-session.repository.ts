@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type { IStudySessionRepository } from '#domain/repositories/study.repository.interface';
 import type { StudySession } from '#domain/entities/study.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseStudySessionRepository implements IStudySessionRepository {
@@ -26,7 +27,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('chapter_id', chapterId)
       .eq('status', 'ACTIVE')
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -40,7 +41,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -51,7 +52,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -68,7 +69,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 }

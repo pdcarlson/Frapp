@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { Redirect, Tabs, useFocusEffect } from "expo-router";
+import { Redirect, useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
@@ -34,32 +34,18 @@ import { isAskAvailable } from "@/lib/ask/flag";
  * front of whoever followed `frapp://ask`, which is the placeholder the
  * decision removed. Chat home is where `+not-found` sends a stale link too.
  *
- * The redirect also hides this route's header. The frozen layout gives the
- * `ask` registration a title and leaves the tab navigator's header on, and
- * `Redirect` navigates from an effect, so without this the arrival paints one
- * frame of an empty screen under an "Ask" header before Chat home replaces it
- * — the same placeholder, briefly. `Tabs.Screen` inside a route sets that
- * route's own options from a layout effect (expo-router `views/Screen.js`),
- * which lands before the first paint and leaves `_layout.tsx` untouched.
+ * The redirect needs no header override of its own. `Redirect` navigates from
+ * an effect, so the arrival paints one frame of this route first, and while the
+ * tab layout still drew the navigator's header that frame was an empty screen
+ * under an "Ask" title. The layout draws no header on any screen now (#2485),
+ * so the frame is empty and untitled.
  */
 export default function AskScreen() {
   if (isAskAvailable()) {
     return <AskRoute />;
   }
-  return (
-    <>
-      <Tabs.Screen options={NO_HEADER} />
-      <Redirect href="/" />
-    </>
-  );
+  return <Redirect href="/" />;
 }
-
-/**
- * Hoisted so the options object keeps its identity: `Tabs.Screen` re-runs
- * `setOptions` whenever `options` changes, and an inline literal changes on
- * every render.
- */
-const NO_HEADER = { headerShown: false } as const;
 
 /**
  * The route with Ask switched on. Split out so its hooks run only on the path

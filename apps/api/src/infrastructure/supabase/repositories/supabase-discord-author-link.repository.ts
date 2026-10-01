@@ -8,6 +8,7 @@ import {
   type LinkedDiscordAuthor,
 } from '#domain/repositories/discord-author-link.repository.interface';
 import type { DiscordAuthorLink } from '#domain/entities/discord-connection.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * `discord_author_links` (#2878). RLS is on with no policies, so this service-
@@ -35,7 +36,7 @@ export class SupabaseDiscordAuthorLinkRepository implements IDiscordAuthorLinkRe
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -64,7 +65,7 @@ export class SupabaseDiscordAuthorLinkRepository implements IDiscordAuthorLinkRe
       if (ours && error.code === '42501') {
         throw new DiscordAuthorLinkNotMemberError();
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     const row = (data ?? [])[0];
     if (!row) {
@@ -80,7 +81,7 @@ export class SupabaseDiscordAuthorLinkRepository implements IDiscordAuthorLinkRe
       p_chapter_id: chapterId,
       p_user_id: userId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 }

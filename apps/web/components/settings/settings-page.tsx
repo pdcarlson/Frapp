@@ -21,11 +21,7 @@ import {
   type ChapterLogoUpload,
   type SemesterArchive,
 } from "@repo/hooks";
-import {
-  CurrentChapterPayloadSchema,
-  type CurrentChapterPayload,
-  type PatchChapterConfig,
-} from "@repo/validation";
+import { type PatchChapterConfig } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { AA_NORMAL, normalizeHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -110,9 +106,9 @@ type Branding = {
 // tab is product UI and retints.
 //
 // **`--accent-subtle`/`--accent-text` are that retinting family. Plain
-// `--accent` is not**: it is the neutral hover surface (`signet.css:103`,
-// `#2A2621`), so `bg-accent` would paint the active tab a dead grey on every
-// chapter, gold included.
+// `--accent` is not**: it is a ShadCN alias of `--popover` (`#2A2621`), so
+// `bg-accent` would paint the active tab a dead grey on every chapter, gold
+// included. No surface paints it (`components/shared/elevation-call-sites.spec.ts`).
 //
 // Below `lg` the rail is still a horizontal wrap row, so the chip reads the
 // same either way — there is no underline variant to keep in sync any more.
@@ -131,7 +127,8 @@ const RAIL_DANGER_TRIGGER_CLASS =
 // - **No `joincode`.** The board draws a Join code tab. `apps/web` has no
 //   join-code surface at all — a repo-wide grep for `join_code`, `joinCode`
 //   and `invite_code` returns nothing outside the API SDK. Building one is a
-//   capability, and this lane is chrome (`deletion-checklist.md` §8).
+//   capability, and this lane is chrome (`spec/ui/web-dashboard/README.md`
+//   § Settings).
 // - **No `subscription`.** The board puts plan status behind this rail, but
 //   `/billing` is a route a member reaches to pay their own invoice — see the
 //   note in `billing-page.tsx`, which is why `4d`'s "Members never see this
@@ -347,10 +344,10 @@ function SettingsPageContent() {
   const [promoteNewMembers, setPromoteNewMembers] = useState(false);
 
   useEffect(() => {
-    const parsed = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
-    if (!parsed.success) return;
+    const chapter = chapterQuery.data;
+    if (!chapter) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the accent draft from the chapter query
-    setAccentDraft(parsed.data.accent_color ?? "");
+    setAccentDraft(chapter.accent_color ?? "");
     // A resync (chapter switch, another tab's save, a background refetch) can
     // change the draft out from under a still-displayed warning, which would
     // otherwise describe a colour this render no longer shows (#1183).
@@ -420,18 +417,15 @@ function SettingsPageContent() {
     );
   }
 
-  const parsedChapter = CurrentChapterPayloadSchema.safeParse(
-    chapterQuery.data,
-  );
-  const chapterPayload = parsedChapter.success
-    ? (parsedChapter.data as CurrentChapterPayload & {
-        donation_url?: string | null;
-      })
-    : null;
+  // Read through the contract type, not a second schema: a whole-payload
+  // parse emptied the profile form whenever one field (a malformed `branding`
+  // key) failed it, and a DTO rename typechecked green and blanked a field
+  // (#2844).
+  const chapter = chapterQuery.data;
   const profile = {
-    name: chapterPayload?.name ?? "",
-    university: chapterPayload?.university ?? "",
-    donation_url: chapterPayload?.donation_url ?? "",
+    name: chapter?.name ?? "",
+    university: chapter?.university ?? "",
+    donation_url: chapter?.donation_url ?? "",
   };
 
   const config = orgConfigQuery.data;
@@ -1425,11 +1419,18 @@ function SettingsToolsOnly({ tools }: { tools: readonly SettingsTool[] }) {
       <p className={cn(EYEBROW, "text-muted")}>Tools</p>
       <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
         {tools.map((tool) => (
-          <li key={tool.id}>
+          <li key={tool.id} className="group">
             <Link
               href={tool.href}
               className={cn(
-                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent",
+                // A row in a card list hovers like a table row
+                // (`ui/table.tsx`): the accent tint, which moves hue where
+                // `bg-accent`, the elevated step, moved 1.105:1. The end rows
+                // take the list's inner radius (14px less its 1px border) so
+                // the visible tint stays inside its corners; clipping the list
+                // with `overflow-hidden` instead would clip the focus ring too.
+                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent-subtle",
+                "group-first:rounded-t-[13px] group-last:rounded-b-[13px]",
                 FOCUS_RING,
               )}
             >

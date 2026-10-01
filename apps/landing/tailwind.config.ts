@@ -45,7 +45,7 @@ const config: Config = {
        * and tracking as tokens, declared in `app/globals.css`. §7 states a line
        * height only for `body`, which is why the preset's five siblings carry
        * literals instead (tracked as L-09 in
-       * `spec/ui/web-greenfield/tokens.md`; do not settle it by editing one
+       * `spec/ui/web-dashboard/tokens.md`; do not settle it by editing one
        * literal in place).
        */
       fontSize: {

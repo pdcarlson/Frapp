@@ -190,8 +190,10 @@ export function InvoiceList({ id }: { id?: string }) {
    * "nothing is overdue" instead, which is the confidently-wrong signal #707
    * exists to fix, for most of the userbase. `isError` alone was never enough:
    * on every first paint the count asserted zero for the duration of the
-   * request, and offline the read is *paused* rather than failed, so it is
-   * `isPending` and never `isError`. `anyReadUncached` covers both.
+   * request, and offline the read may be *paused* rather than failed — then
+   * it is `isPending` and never `isError`. (Offline it can also fail outright,
+   * depending on how the dashboard got offline; `anyReadUncached` says when.)
+   * `isError || anyReadUncached` covers every case.
    */
   const overdueUnavailable =
     overdueQuery.isError || anyReadUncached(overdueQuery);
@@ -755,8 +757,8 @@ export function InvoiceList({ id }: { id?: string }) {
                   className={cn(
                     // Two lines and the row is not itself a control, so this is
                     // lane 4's flat `min-h-11` document row rather than
-                    // `/members`' 36/44 — see `deletion-checklist.md` §9's table
-                    // of the two geometries.
+                    // `/members`' 36/44 — see the table of the two row shapes
+                    // in `spec/ui/web-dashboard/README.md` § Page grammar.
                     "flex min-h-11 flex-col gap-2 py-2 md:flex-row md:items-center",
                     selected && "bg-accent-subtle-hover text-accent-text",
                   )}

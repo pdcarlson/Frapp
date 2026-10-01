@@ -6,7 +6,7 @@ import {
   greekLettersShown,
   resolveChapterMark,
 } from "./chapter-mark";
-import { ChapterBrandingSchema, CurrentChapterPayloadSchema } from "./index";
+import { ChapterBrandingSchema } from "./index";
 
 describe("resolveChapterMark (#2876)", () => {
   const everything = {
@@ -124,17 +124,11 @@ describe("chapterInitials", () => {
 });
 
 describe("ChapterBrandingSchema short_name", () => {
-  it("parses any stored short name, since the DTO owns the cap", () => {
+  it("parses any short name the API accepts, since the DTO owns the cap", () => {
     // class-validator counts this as 4 (it drops U+FE0F), so the API stores
-    // it; zod would count 8. A capped read schema would fail the whole chapter
-    // payload and blank the nav for every member.
+    // it; zod would count 8, so a zod cap would refuse it.
     expect(
-      CurrentChapterPayloadSchema.safeParse({
-        name: "Tau Nu",
-        university: "RPI",
-        subscription_status: "active",
-        branding: { short_name: "❤️❤️❤️❤️" },
-      }).success,
+      ChapterBrandingSchema.safeParse({ short_name: "❤️❤️❤️❤️" }).success,
     ).toBe(true);
     expect(ChapterBrandingSchema.safeParse({ short_name: "" }).success).toBe(
       true,

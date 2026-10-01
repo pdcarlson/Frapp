@@ -51,11 +51,6 @@ export const reactNativeStub = {
   // Added with the chat attachment renderer (#1229), which previews image
   // attachments inline.
   Image: "Image",
-  // Added with the chat header's spec (#2876), whose label is the
-  // `Animated.Text` React Navigation renders. Only the node is stubbed: no
-  // animation API (`Value`, `timing`) exists here, so a spec that drives one
-  // still fails loudly rather than animating nothing.
-  Animated: { Text: "Animated.Text" },
   ScrollView: "ScrollView",
   TextInput: "TextInput",
   // The chat thread windows its messages with a FlatList. As a string stand-in

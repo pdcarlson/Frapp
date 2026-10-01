@@ -334,11 +334,13 @@ describe('AllExceptionsFilter', () => {
   /**
    * The regression behind FRAPP-API-1.
    *
-   * `if (error) throw error` — how roughly two hundred repository methods end —
-   * throws a PLAIN OBJECT, because postgrest-js only constructs
-   * `PostgrestError` on the `.throwOnError()` path. The filter used to run that
-   * through `String()`, so both Sentry and the 5xx log recorded the literal
-   * text `[object Object]` and the actual fault was unrecoverable.
+   * `if (error) throw error` — how roughly two hundred repository methods
+   * ended before #1264 — throws a PLAIN OBJECT, because postgrest-js only
+   * constructs `PostgrestError` on the `.throwOnError()` path. The filter used
+   * to run that through `String()`, so both Sentry and the 5xx log recorded
+   * the literal text `[object Object]` and the actual fault was unrecoverable.
+   * The repositories throw `SupabaseQueryError` now; this pins the backstop
+   * for any non-Error that still reaches the filter.
    */
   it('reports a thrown PostgREST object legibly, not as [object Object]', () => {
     const postgrestError = {

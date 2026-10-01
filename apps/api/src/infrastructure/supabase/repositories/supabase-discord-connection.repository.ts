@@ -12,6 +12,7 @@ import type {
   DiscordOAuthPurpose,
   DiscordOAuthState,
 } from '#domain/entities/discord-connection.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRepository {
@@ -26,7 +27,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .select('*')
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -55,7 +56,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .upsert(row, { onConflict: 'chapter_id' })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -65,7 +66,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .delete()
       .eq('chapter_id', chapterId)
       .select('id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length > 0;
   }
 
@@ -88,7 +89,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .insert(row)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -107,7 +108,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .gt('expires_at', nowIso)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -117,7 +118,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .select('return_path')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data?.return_path ?? null;
   }
 
@@ -147,7 +148,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .is('confirm_token', null)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -172,7 +173,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .gt('confirm_expires_at', nowIso)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -194,7 +195,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .is('confirm_token', null)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -221,7 +222,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .gt('confirm_expires_at', nowIso)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -231,7 +232,7 @@ export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRe
       .delete()
       .lt('expires_at', before.toISOString())
       .select('id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length;
   }
 }

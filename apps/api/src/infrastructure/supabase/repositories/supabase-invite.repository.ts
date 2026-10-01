@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
@@ -21,7 +22,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -30,7 +31,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .from('invites')
       .insert(inviteData)
       .select();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -40,7 +41,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .select('*')
       .eq('token', token)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -50,7 +51,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -60,7 +61,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .insert(inviteData)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -72,7 +73,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .from('invites')
       .update(patch)
       .eq('id', id);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async markUsedAtomically(id: string): Promise<string | null> {
@@ -85,7 +86,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .eq('id', id)
       .is('used_at', null)
       .select('used_at');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const usedAt = Array.isArray(data) && data[0] ? data[0].used_at : null;
     return typeof usedAt === 'string' ? usedAt : null;
   }
@@ -100,7 +101,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .eq('id', id)
       .eq('used_at', claimedAt)
       .select('id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return Array.isArray(data) && data.length > 0;
   }
 }
