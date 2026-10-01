@@ -25,7 +25,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
  * Read from `@repo/theme/signet`, not `@repo/chapter-theme`'s `HOUSE_SEED`: that
  * package's `index.ts` re-exports through a `./signet.js` specifier Turbopack
  * cannot resolve from source, so the import passes vitest and fails `next build`
- * (`spec/ui/web-greenfield/tokens.md` § One duplicate removed).
+ * (`spec/ui/web-dashboard/tokens.md` § One duplicate removed).
  */
 export const DEFAULT_CHAPTER_ACCENT = signetDarkTokens.color.gold.seed;
 

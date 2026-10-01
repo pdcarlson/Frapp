@@ -84,8 +84,9 @@ export function BillingPage() {
           with no cards left that is the point rather than a technicality.
           `OfflineState` and its siblings paint `--card`; this lane just deleted
           the five `<Card>`s on this route, so rendering one here would put a
-          card back through the door the lane closed. Checklist §9 made the same
-          swap on `/members` and lane 4 on `/documents`. `sole` because while
+          card back through the door the lane closed. The Directory lane made
+          the same swap on `/members` and lane 4 on `/documents`
+          (`spec/ui/web-dashboard/README.md` § Page grammar). `sole` because while
           this is up it is the page's only async state, so it needs the live
           region and the heading the nested variant leaves off by default.
 
