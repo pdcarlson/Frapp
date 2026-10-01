@@ -55,17 +55,16 @@ the ones a later reader would otherwise re-litigate.
   nightly production dump job now exists (decision 2's amendment); the exposure closes on its first
   successful scheduled run. A hosted staging Storage restore rehearsal passed 2026-09-07 (#1421);
   a production database restore into a hosted project is still unrehearsed. `frapp-prod` is
-  `ACTIVE_HEALTHY` and held 54 migrations when the Management API was last read (2026-08-29) — so
-  this is a live exposure, not a hypothetical about a paused project. **"held 54 … when last read"
-  is a dated snapshot, not current state:** `main` has moved past the `20260829002000` high-water
-  mark that read recorded. Whether either project is behind *today* is **unverified** — the applied
-  counts have not been re-read, and a promotion may have happened since. No tree-side count is
-  quoted here on purpose: every merge moves it, so re-derive with
-  `ls supabase/migrations/*.sql | wc -l`. The dated reads of what each project actually holds live
-  in the promotion log, `docs/ops/database/promotion-log.md` (latest 2026-09-07), not here — one
-  home, so a promotion updates one place. (Corrected 2026-10-01: this said the latest read was
-  2026-09-06 and that #1620 tracked refreshing this paragraph and that block. The block also
-  carries a 2026-09-07 read, and #1620 closed on 2026-09-23 with neither refreshed.)
+  `ACTIVE_HEALTHY` and held 54 migrations when its ledger was last read (2026-09-07) — so this is a
+  live exposure, not a hypothetical about a paused project. **"held 54 … when last read" is a dated
+  snapshot, not current state:** `main` has moved past the `20260829002000` high-water mark those
+  reads recorded, and a promotion may have happened since. No tree-side count is quoted here on
+  purpose: every merge moves it, so re-derive with `ls supabase/migrations/*.sql | wc -l`. The dated
+  reads of what each project actually holds live in the promotion log,
+  `docs/ops/database/promotion-log.md` (2026-08-29, 2026-09-06 and 2026-09-07), not here — one home,
+  so a promotion updates one place. (Corrected 2026-10-01: this said the Management API was last
+  read on 2026-08-29 and that the counts had not been re-read. The promotion log records a
+  Management API re-read on 2026-09-06 and a SQL read on 2026-09-07, both 54 on `frapp-prod`.)
 - **Staging and production build differently on purpose.** Staging is verified through preview
   deployments; production is built through the API with `target: production`. `web-production-build`
   closes the type-check half of that gap in CI, not the deployment half.

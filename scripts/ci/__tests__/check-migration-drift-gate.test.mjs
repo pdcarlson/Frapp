@@ -17,7 +17,9 @@ import { join } from "node:path";
 
 import { getEnvironment } from "../lib/environments.mjs";
 import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
+import { DRIFT_AND_ORDERING, PROMOTION_RUNBOOK } from "../lib/ops-docs.mjs";
 import { makeFetchMock } from "./helpers.mjs";
+import { assertCitesSection } from "./helpers/doc-sections.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Modeled on the incident this gate exists for: two migrations merged to main
@@ -432,7 +434,7 @@ test("the summary names the missing migrations and how to fix them", async () =>
   assert.equal(summaries.length, 1);
   assert.match(summaries[0], /discord_import/);
   assert.match(summaries[0], /discord_bot_connection/);
-  assert.match(summaries[0], /docs\/ops\/database\/promotion\.md/);
+  assertCitesSection(summaries[0], PROMOTION_RUNBOOK, "Staging: do not push by hand");
 });
 
 test("the summary explains a foreign migration blocks db push", () => {
@@ -452,7 +454,7 @@ test("the summary explains a foreign migration blocks db push", () => {
 
   assert.match(summary, /blocks `supabase db push`/);
   assert.match(summary, /20260228000000/);
-  assert.match(summary, /drift-and-ordering\.md` § Reconciling a foreign migration row/);
+  assertCitesSection(summary, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
 });
 
 test("against a snapshot, grace runs from now, and a deploy since the capture makes a late migration unverifiable", () => {

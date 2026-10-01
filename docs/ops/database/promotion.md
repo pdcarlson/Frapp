@@ -97,9 +97,10 @@ dispatches queue instead of interleaving two `db push` runs against one database
 
 **Production's applied migrations are a provider read, not a fact this page
 keeps.** The dry run below lists what is pending before anything applies, and
-the daily `check-migration-drift.yml` compares production with the latest
-release tag ([`drift-and-ordering.md`](drift-and-ordering.md)). The hand reads
-taken from 2026-08-29 to 2026-09-07 are a dated entry in the
+the daily `check-migration-drift.yml` watches both projects' ledgers (what it
+judges each against:
+[`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
+The hand reads taken from 2026-08-29 to 2026-09-07 are a dated entry in the
 [promotion log](promotion-log.md#2026-09-07-productions-applied-migrations-read-by-hand).
 
 ## Preflight checklist
@@ -296,17 +297,15 @@ Post-apply production checks:
   same object — `main` may have moved on since.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `db-rollback-playbook.md`.
-- **Promoting migrations does not carry reference data.** `chapter_directory` is
-  populated from `supabase/seed/chapter_directory.csv` by
-  `scripts/load-chapter-directory.mjs`, which the local bootstrap scripts run and the
-  promotion path does not. A hosted project therefore has the table and its indexes
-  but **zero rows** until someone loads it — which is how it stayed empty in every
-  environment long enough to reach production onboarding (#840). Check
-  `select count(*) from chapter_directory` as part of post-apply verification;
-  populating staging is tracked in #902.
-
-  When you do load it, generate the SQL with `npm run load:chapter-directory` and read
-  it before applying. It is idempotent and **preserves row ids**, which matters here:
-  `chapters.directory_id` references `chapter_directory(id) on delete set null`, so a
-  delete-and-reload would silently detach every chapter already linked to a directory
-  entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
+- **Reference data reaches a hosted project only by migration.** `chapter_directory`'s
+  rows come from `supabase/seed/chapter_directory.csv`, and until
+  `20260907011500_chapter_directory_seed_rows.sql` only the local bootstrap scripts
+  loaded them, so both hosted projects had an empty table (#840). That migration loads
+  them everywhere, so a project it has reached returns 50 for
+  `select count(*) from chapter_directory where source = 'seed'`
+  ([promotion log](promotion-log.md#2026-09-07-chapter-directory-reference-rows-reach-every-environment-840)).
+  A changed CSV ships as a **new** migration generated with
+  `npm run load:chapter-directory`, never as an edit to that file or a hand load. What
+  the loader guarantees (idempotent, row ids preserved, only `source = 'seed'` rows
+  updated):
+  [`docs/guides/database.md` § Reference data](../../guides/database.md#reference-data-the-chapter-directory).

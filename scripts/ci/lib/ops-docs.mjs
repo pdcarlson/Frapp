@@ -1,10 +1,10 @@
 // Where the ops docs that scripts name live, as repo-relative paths.
 //
 // Gates, alert bodies and migration tooling point operators at these docs, and
-// the tests read them from disk. Each path is written here once, so moving a doc
-// is one edit here plus the links a grep finds. #1598's stage 7 moved these
-// docs out of docs/internal/ops/ and found them copied into a dozen scripts and
-// nine tests.
+// the tests read them from disk: `ops-docs.test.mjs` fails on any path git does
+// not track. Each path is written here once, so moving a doc is one edit here
+// plus the links a grep finds. #1598's stage 7 moved these docs out of
+// docs/internal/ops/ and found them copied into a dozen scripts and nine tests.
 
 /**
  * The dated log of what each hosted database was promoted to, and the ledger

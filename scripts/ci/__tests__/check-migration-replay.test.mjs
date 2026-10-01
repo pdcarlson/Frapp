@@ -16,7 +16,9 @@ import {
 import { readLocalMigrations } from "../check-migration-drift.mjs";
 import { resilientFetch } from "../lib/http.mjs";
 import { buildSnapshot, snapshotFetch } from "../lib/migration-snapshot.mjs";
+import { DRIFT_AND_ORDERING } from "../lib/ops-docs.mjs";
 import { makeFetchMock } from "./helpers.mjs";
+import { assertCitesSection } from "./helpers/doc-sections.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Modeled on the real incident: production sat at 51 applied migrations with
@@ -89,7 +91,7 @@ test("a foreign migration fails the gate before any replay is attempted", () => 
   assert.equal(outcome.ok, false);
   assert.equal(outcome.code, "foreign-migrations");
   // The reconciliation procedure lives there; the rollback playbook has none.
-  assert.match(outcome.message, /drift-and-ordering\.md § Reconciling a foreign migration row/);
+  assertCitesSection(outcome.message, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
 });
 
 test("nothing pending passes without a replay", () => {
@@ -264,7 +266,7 @@ test("a back-dated pending migration fails the gate", () => {
   assert.ok(warningAt < remedyAt, "the caveat must come before the remedy");
   assert.ok(strandAt < remedyAt, "the stranding warning must come before the remedy");
   // And where to go when renaming is the wrong move.
-  assert.match(outcome.message, /drift-and-ordering\.md/);
+  assertCitesSection(outcome.message, DRIFT_AND_ORDERING, "--include-all");
   // The check that has neither scope limit, so the reader knows where to look.
   assert.match(outcome.message, /migration-order/);
 });

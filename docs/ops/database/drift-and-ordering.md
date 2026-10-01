@@ -181,11 +181,15 @@ file in `supabase/migrations/` explains. `supabase db push` refuses to run
 against that database at all while one is there.
 
 **What finds one.** The daily `check-migration-drift.yml` watchdog (the table
-above) reports one on either project. On a PR, `migration-replay` fails outright
-when production holds one, and the `migration-drift` summary lists any on
-staging. None of them repairs anything: they send no SQL. Reconciling a foreign
-row is the manual procedure below, and applying a backlog of pending migrations
-is a deliberate promotion, not something a watchdog should do on its own.
+above) reports one on either project; what it judges each project against is
+[`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs).
+`migration-replay` fails outright when production holds one, but only on a run
+that replays: a PR that changes a file under `supabase/migrations/`, or a
+dispatch. A PR that touches no migration skips the replay and stays green
+whatever production holds. The `migration-drift` summary lists any on staging.
+None of them repairs anything: they send no SQL. Reconciling a foreign row is
+the manual procedure below, and applying a backlog of pending migrations is a
+deliberate promotion, not something a watchdog should do on its own.
 
 **The CLI's suggested fix is destructive.** When `db push` reports a remote
 version missing locally, the CLI suggests

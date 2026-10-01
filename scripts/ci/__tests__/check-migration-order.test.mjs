@@ -16,7 +16,9 @@ import {
   suggestVersion,
 } from "../check-migration-order.mjs";
 import { buildSnapshot } from "../lib/migration-snapshot.mjs";
+import { DRIFT_AND_ORDERING } from "../lib/ops-docs.mjs";
 import { makeFetchMock } from "./helpers.mjs";
+import { assertCitesSection } from "./helpers/doc-sections.mjs";
 
 const m = (version, name) => ({ version, name, file: `${version}_${name}.sql` });
 
@@ -164,7 +166,7 @@ test("one offending environment fails the whole gate and carries the remedy", ()
   assert.match(outcome.message, /20260829002001_<same_name>\.sql/);
   // The CLI's own words, so the failure is searchable against the real error.
   assert.match(outcome.message, /inserted before the last migration on remote database/);
-  assert.match(outcome.message, /drift-and-ordering\.md/);
+  assertCitesSection(outcome.message, DRIFT_AND_ORDERING, "--include-all");
 });
 
 // ── runOrderGate — end to end, offline ──────────────────────────────────────
@@ -431,6 +433,7 @@ test("removing a migration an environment has applied is fatal", () => {
   assert.equal(outcome.code, "stranded-migrations");
   assert.match(outcome.message, /FOREIGN row/);
   assert.match(outcome.message, /forward migration instead/);
+  assertCitesSection(outcome.message, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
 });
 
 test("removing a migration nothing has applied is fine", () => {
