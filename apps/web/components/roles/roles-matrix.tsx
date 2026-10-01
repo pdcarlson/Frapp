@@ -184,18 +184,18 @@ export function RolesMatrix({
   return (
     <div className="overflow-x-auto">
       <div
-        className="min-w-fit overflow-hidden rounded-[14px] border border-border text-[13.5px]"
+        className="min-w-fit overflow-hidden rounded-[14px] border border-border text-label font-normal"
         role="table"
         aria-label="Roles and permissions"
       >
         <div
           role="row"
-          className="grid h-16 items-end gap-1 bg-card py-2.5 pl-4"
+          className="grid min-h-16 items-end gap-1 bg-card py-2.5 pl-4"
           style={{ gridTemplateColumns }}
         >
           <span
             role="columnheader"
-            className="text-[12.5px] font-semibold text-muted-foreground"
+            className="text-caption font-semibold text-muted-foreground"
           >
             Permission
           </span>
@@ -243,7 +243,7 @@ export function RolesMatrix({
                 >
                   {role.name}
                 </span>
-                <span className="block text-[11px] text-muted-foreground">
+                <span className="block text-caption text-muted-foreground">
                   {count}
                 </span>
               </div>

@@ -9,6 +9,7 @@ import {
   ProtectedNavItem,
 } from "@/components/layout/protected-nav-item";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
+import { EYEBROW } from "@/components/ui/typography";
 
 /**
  * The flush-left navigation column: 220px expanded, 56px as an icon rail.
@@ -102,7 +103,7 @@ export function AppNav({
             />
           ) : null
         ) : section.anchor ? null : (
-          <p className="px-2.5 pb-1 pt-3.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+          <p className={cn("px-2.5 pb-1 pt-3.5 text-muted", EYEBROW)}>
             {section.label}
           </p>
         )}

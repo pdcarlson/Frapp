@@ -166,7 +166,7 @@ export function ChapterNavHeader({
     return (
       <div
         className={cn(
-          "flex h-10 items-center gap-2.5 rounded-[10px] px-1.5 text-[11px] text-muted-foreground",
+          "flex h-10 items-center gap-2.5 rounded-[10px] px-1.5 text-caption text-muted-foreground",
           collapsed && "justify-center px-0",
           className,
         )}
@@ -198,11 +198,11 @@ export function ChapterNavHeader({
           className,
         )}
       >
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+        <p className="flex items-center gap-1.5 text-caption font-semibold text-foreground">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
           {activeChapterId ? "Chapter unavailable" : "No chapter selected"}
         </p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-caption text-muted-foreground">
           {activeChapterId
             ? "You no longer have access to the chapter you were in. Pick one to continue:"
             : "Pick a chapter to continue:"}
@@ -223,7 +223,7 @@ export function ChapterNavHeader({
                  * re-pitching a ladder value to fix one call site.
                  */
                 className={cn(
-                  "w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-popover",
+                  "w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-caption text-foreground hover:bg-popover",
                   FOCUS_RING_SHELL,
                 )}
               >
@@ -299,11 +299,11 @@ export function ChapterNavHeader({
                     aria-hidden
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">
+                    <span className="block truncate text-label font-normal">
                       {membership.chapter?.name ?? "Untitled chapter"}
                     </span>
                     {membership.chapter?.university ? (
-                      <span className="block truncate text-[11px] text-muted-foreground">
+                      <span className="block truncate text-caption text-muted-foreground">
                         {membership.chapter.university}
                       </span>
                     ) : null}
