@@ -486,6 +486,24 @@ will retry (`apps/web/components/chat/composer.tsx`, `submit`).
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
 
+### Chat Admin — channels and categories (dashboard)
+
+The channel structure below the report queue on `/chat-admin`. Its states stand where both of its sections would be, so they name channels, not the page: the report queue above them reads and fails on its own.
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading channels...` |
+| Empty (channels) | `No channels yet` | `Create the first channel to get chapter chat structured.` |
+| Empty (categories) | `No categories yet` | `Channels without a category show up as uncategorized.` |
+| Nothing selected (edit pane) | `No channel selected` | `Pick a channel to edit its details, notifications and pins.` |
+| Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
+| Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
+| Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
+| Permission denied | — | `Managing channels and categories needs the channels:manage permission. Ask your chapter president to grant access.` |
+
+Implementation: inline in `apps/web/components/chat-admin/chat-admin-page.tsx`.
+
 ### Chat Admin — reported messages (dashboard)
 
 The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block). One empty row per status tab, because each tab is a different claim about the chapter.
@@ -521,10 +539,16 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 
 ### Discord Import (dashboard)
 
-Deleting an import from `/discord-import` ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
+The import list on `/discord-import`, and deleting an import from it ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
 
 | State | Title | Description |
 |---|---|---|
+| Loading | — | `Loading imports...` |
+| Empty | `No imports yet` | `Bring your chapter's Discord history in as read-only archive messages.` |
+| Error | `Couldn't load imports` | `Confirm your chapter access and retry.` |
+| Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
+| Permission denied | — | `Importing a Discord archive needs channel management permission.` |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
 | Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
 | Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
@@ -534,7 +558,7 @@ Deleting an import from `/discord-import` ([#2944](https://github.com/pdcarlson/
 
 The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
-Implementation: `apps/web/components/discord-import/delete-import-copy.ts`.
+Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
 
 ### Billing (dashboard)
 

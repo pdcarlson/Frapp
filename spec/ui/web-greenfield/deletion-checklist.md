@@ -848,6 +848,30 @@ The Preview card's description is **kept**, moved onto the page surface: it repo
 actually returned and whether the export is partial. `1t` deletes a card's description *of itself*,
 not a line of state.
 
+### Chat Admin and Discord Import, flush
+
+Left out of #2146's Admin slice, which named four routes, and flushed by
+[#2500](https://github.com/pdcarlson/Frapp/issues/2500). By then
+[#2961](https://github.com/pdcarlson/Frapp/pull/2961) had folded the Admin nav group into Settings,
+so both are reached from Settings → Tools. The board draws neither, so the grammar is §8's, derived
+from `1f` pin 2.
+
+| Route | Deleted | Kept, and why |
+| ----- | ------- | ------------- |
+| `/chat-admin` | The narration paragraph, "Create, edit, and delete channels; organize them into categories; and manage pinned messages". Four wrapper cards: the report queue's, Categories, Channels and the edit pane. The edit pane's description, "Type is set at creation and can't be changed here", and the two sentences behind "Pick a channel on the left…" | Each card's heading, as an `EYEBROW` section label. The edit pane shows the type as a badge beside its heading, which says what the sentence said. The report queue's line under its label, trimmed to its two facts (the text is the snapshot taken when reported; the reporter is never named), because a row can show neither |
+| `/discord-import` | The narration paragraph, "Bring your chapter's Discord history into Frapp as read-only archive messages", and the two cards: the list's and the open wizard's | The paragraph's sense, as the empty list's description, where the one admin who needs it is reading. The wizard's consent and legal copy, which is content |
+
+Both routes now use the nested state family with `sole`: the whole-screen states paint `--card`
+and would redraw the deleted card. Lists are on `denseListClassName`: a channel row selects the
+channel, so it takes §9's row-as-control height, and category and import rows take §8's 44px. Three
+defects on the way through were fixed rather than re-decided:
+
+- `/discord-import`'s list error took `ErrorState`'s defaults, "Unable to load data" and "Please
+  retry in a moment.", which `writing.md` §1 bans by name.
+- Its screen-level `<Can>` had no `offlineFallback`, so a paused permission read showed the
+  control-slot chip in place of the page, and `can-fallback.spec.tsx` did not list it.
+- The wizard rendered a second `<main>` inside the shell's.
+
 ### Left alone, deliberately
 
 | Not done | Why |
@@ -855,7 +879,6 @@ not a line of state.
 | `/study` | The Admin nav's "Study Zones" points at `/geofences`. `/study` is "Study hours" in the **Chapter** group — a member-facing surface for starting a tracked session, not an admin one. Out of this slice |
 | The `/roles` redirect shim | Already a seven-line `redirect("/settings?tab=roles")` from #538, and `proxy.ts` still needs the prefix listed for auth to apply before the redirect runs. Deleting a route is a behavior change |
 | Replacing `window.confirm` | **Already done.** There is not one live `window.confirm` call left in `apps/web`; every grep hit is a doc comment or a spec string, and every confirmation already routes through `useConfirmDialog`. The `4c`/`4e` brief's line item had no work in it |
-| `/chat-admin` and `/discord-import` | Also in the Admin nav group, and neither is named by #2146's Admin slice ("Roles / Study Zones / Reports / chapter settings"). Two more routes is a second PR, not a wider one |
 | Restyling the `Switch` primitive to `4c`'s 36×22 | A shared primitive used across every surface. Lane 2's, not a page lane's |
 | A `?subtab=` param | The Roles tab has no sub-tabs left to address |
 | Arrow-key navigation in the `4e` matrix | Every editable cell is a real `<button>`, so the matrix is keyboard-reachable and operable — but at 7 roles × 40 permissions that is ~280 Tab stops, and the WAI-ARIA **grid** pattern (roving `tabindex`, arrow keys, `role="gridcell"`) is what a data shape this size actually calls for. It is a self-contained follow-up on a surface this lane is otherwise done with, and the board says nothing about it. Filed as [#2173](https://github.com/pdcarlson/Frapp/issues/2173) rather than folded in |

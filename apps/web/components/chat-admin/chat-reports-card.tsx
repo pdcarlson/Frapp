@@ -23,11 +23,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { EYEBROW } from "@/components/ui/typography";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   anyReadUncached,
@@ -62,7 +62,7 @@ import type { ChatReportTab } from "./chat-report-copy";
  * The officer report queue (#2257) and its one destructive action (#2311).
  *
  * Contract: `spec/behavior/chat/README.md` § Report and block. Three rules from
- * it shape this card more than anything visual:
+ * it shape this queue more than anything visual:
  *
  * - **It shows the evidence, not the conversation.** Each row is the report's
  *   own snapshot (`reported_content`, `reported_sender_id` /
@@ -74,16 +74,16 @@ import type { ChatReportTab } from "./chat-report-copy";
  *   posts the report id alone, and the control only exists on an open report
  *   whose message is still there; a row whose message is gone offers Mark
  *   actioned instead. The server is idempotent on the message, so "already
- *   removed" is a success the card reports as such, never an error that blames
+ *   removed" is a success the queue reports as such, never an error that blames
  *   anyone for it. The confirmation says what the sender will see, and that in
  *   a DM they may deduce the reporter — the trade-off the owner accepted with
  *   this removal (`spec/behavior/chat/README.md` § Officer action).
  * - **A failure is described by what the server could have done.** Only a
  *   404 or 409 carries a refusal worth quoting — the API's own authored words,
  *   decided before anything changed. A 5xx or a transport failure is shown in
- *   this card's words, never as "Internal server error" or "Failed to fetch",
- *   and says the outcome is unknown, because it is: a removal or a resolution
- *   may have committed before its answer was lost
+ *   the queue's own words, never as "Internal server error" or "Failed to
+ *   fetch", and says the outcome is unknown, because it is: a removal or a
+ *   resolution may have committed before its answer was lost
  *   ({@link removalFailureMessage}, {@link resolutionFailureMessage}).
  *
  * The gate is `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) —
@@ -247,47 +247,55 @@ function ChatReportsQueue() {
   }
 
   return (
-    <Card>
+    // Flush, not carded: the route's other sections sit on the page surface,
+    // and this one is labelled the same way. The heading survives as the
+    // section label; the line under it is kept, because it is not the queue
+    // describing itself but the two facts a row cannot show — that its text is
+    // the snapshot taken at report time, and that the reporter is never named.
+    <section aria-labelledby="chat-reports-label" className="space-y-3">
       {confirmDialog}
-      <CardHeader>
-        <CardTitle className="text-lg">{copy.title}</CardTitle>
-        <CardDescription>{copy.description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Tabs
-          value={status}
-          onValueChange={(next) => setStatus(next as ChatReportStatus)}
+      <div className="space-y-1">
+        <h2
+          id="chat-reports-label"
+          className={`${EYEBROW} text-muted-foreground`}
         >
-          {/*
-            Four labels plus the primitive's 24px gaps run past a 375px card,
+          {copy.title}
+        </h2>
+        <p className="text-[12.5px] text-muted">{copy.description}</p>
+      </div>
+      <Tabs
+        value={status}
+        onValueChange={(next) => setStatus(next as ChatReportStatus)}
+      >
+        {/*
+            Four labels plus the primitive's 24px gaps run past a 375px page,
             so the rail scrolls in its own box rather than pushing the page
             (the `test:floor` rule). The wrapper scrolls, not the list: the
             active underline sits on the list's own hairline, and a scrolling
             list would clip it.
           */}
-          <div className="overflow-x-auto">
-            <TabsList className="min-w-max" aria-label="Report status">
-              {CHAT_REPORT_TABS.map((tab) => (
-                <TabsTrigger key={tab.status} value={tab.status}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          {CHAT_REPORT_TABS.map((tab) => (
-            <TabsContent key={tab.status} value={tab.status}>
-              {/* Radix unmounts inactive panels, so one slice is read at a time. */}
-              <ReportList
-                tab={tab}
-                busy={busy}
-                onResolve={(report, next) => void handleResolve(report, next)}
-                onRemove={(report, author) => void handleRemove(report, author)}
-              />
-            </TabsContent>
-          ))}
-        </Tabs>
-      </CardContent>
-    </Card>
+        <div className="overflow-x-auto">
+          <TabsList className="min-w-max" aria-label="Report status">
+            {CHAT_REPORT_TABS.map((tab) => (
+              <TabsTrigger key={tab.status} value={tab.status}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        {CHAT_REPORT_TABS.map((tab) => (
+          <TabsContent key={tab.status} value={tab.status}>
+            {/* Radix unmounts inactive panels, so one slice is read at a time. */}
+            <ReportList
+              tab={tab}
+              busy={busy}
+              onResolve={(report, next) => void handleResolve(report, next)}
+              onRemove={(report, author) => void handleRemove(report, author)}
+            />
+          </TabsContent>
+        ))}
+      </Tabs>
+    </section>
   );
 }
 

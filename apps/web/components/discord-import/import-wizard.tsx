@@ -618,7 +618,12 @@ export function ImportWizard({
         />
       </header>
 
-      <main className="mt-6 flex-1">
+      {/*
+        A `<div>`, not a `<main>`: the dashboard shell's `<main>` already holds
+        this page, and a second one is a second main landmark, which a screen
+        reader's landmark list offers as if it were a separate page region.
+      */}
+      <div className="mt-6 flex-1">
         {step === "source" ? (
           <SourceStep
             value={source}
@@ -718,7 +723,7 @@ export function ImportWizard({
             messagesSinceProblem={cutoff.problem}
           />
         ) : null}
-      </main>
+      </div>
 
       <footer className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-4">
         {step === "source" ? (

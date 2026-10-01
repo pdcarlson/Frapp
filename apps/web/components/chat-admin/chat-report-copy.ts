@@ -90,8 +90,12 @@ const REMOVE_CONFIRM_BODY =
 
 export const chatReportCopy = {
   title: "Reported messages",
+  /**
+   * Under the section label, and not narration: the two facts a row cannot
+   * show. "Messages members have reported", which led it, restated the label.
+   */
   description:
-    "Messages members have reported, as they read when reported. Who reported them is never shown.",
+    "Each report shows the message as it read when reported. Who reported it is never shown.",
   openHint:
     "Mark reviewed and Dismiss close a report and leave the message up. Only an open report can remove its message.",
   loading: "Loading reports...",

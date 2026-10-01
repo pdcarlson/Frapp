@@ -30,14 +30,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardDescription, CardHeader } from "@/components/ui/card";
+import { EYEBROW } from "@/components/ui/typography";
 import {
   Select,
   SelectContent,
@@ -55,15 +49,20 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  EmptyState,
-  ErrorState,
   anyReadUncached,
-  LoadingState,
-  OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { PageHeader } from "@/components/layout/page-header";
-import { NestedEmpty } from "@/components/shared/nested-states";
+import {
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import {
+  denseListClassName,
+  denseRowControlClassName,
+} from "@/components/shared/table-controls";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -503,23 +502,31 @@ function ChatAdminBody() {
     (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
     (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
 
+  // The nested family, not `async-states.tsx`'s: those paint `--card`, so on
+  // this flush route they would redraw the card the route deleted. `sole`
+  // because each is the only state the channel structure has, and it stands
+  // where both of its sections would be: its title is that region's heading
+  // and its loading line is that region's announcement. The report queue above
+  // keeps its own, separately.
   if (isOffline && anyReadUncached(channelsQuery, categoriesQuery)) {
     return (
-      <OfflineState
-        title="Chat Admin unavailable offline"
-        description="Reconnect to manage channels, categories, and pins."
+      <NestedOffline
+        sole
+        title="Channels unavailable offline"
+        description="Reconnect to manage channels, categories and pins."
         onRetry={retryQueries}
       />
     );
   }
   if (channelsQuery.isLoading || categoriesQuery.isLoading || paused) {
-    return <LoadingState message="Loading channels..." />;
+    return <NestedLoading sole message="Loading channels..." />;
   }
   if (channelsQuery.isError || categoriesQuery.isError) {
     return (
-      <ErrorState
-        title="Couldn't load Chat Admin"
-        description="Retry in a moment. This view requires the channels:manage permission."
+      <NestedError
+        sole
+        title="Couldn't load channels"
+        description="Confirm your chapter access and retry."
         onRetry={retryQueries}
       />
     );
@@ -536,355 +543,121 @@ function ChatAdminBody() {
     (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {confirmDialog}
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Create, edit, and delete channels; organize them into categories;
-            and manage pinned messages.
-          </p>
-        </div>
-        <Dialog
-          open={createDialogOpen}
-          onOpenChange={(open) => {
-            setCreateDialogOpen(open);
-            if (!open) resetCreateDraft();
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New channel
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Create a channel</DialogTitle>
-              <DialogDescription>
-                Public and private channels are visible to every member;
-                role-gated channels require at least one of the selected
-                permissions to read.
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              id="channel-create-form"
-              className="space-y-4"
-              onSubmit={handleCreateChannel}
+      {/*
+        Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
+        description paragraph"). Three `<Card>`s sat here — Channels,
+        Categories and the edit pane — and what survives of each is its
+        heading, as the section label the other flush routes use. Also gone:
+        the paragraph that opened the body, "Create, edit, and delete channels;
+        organize them into categories; and manage pinned messages", which
+        narrated the page to an officer who had just navigated to it.
+
+        Channels lead because they carry the route's primary action, New
+        channel, on their own toolbar row; the categories they file into
+        follow.
+      */}
+      <section aria-labelledby="ca-channels-label" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2
+              id="ca-channels-label"
+              className={`${EYEBROW} truncate text-muted-foreground`}
             >
-              <div className="grid gap-1">
-                <Label htmlFor="ca-create-name">Name</Label>
-                <Input
-                  id="ca-create-name"
-                  value={createName}
-                  onChange={(event) => setCreateName(event.target.value)}
-                  placeholder="announcements"
-                  required
-                />
-              </div>
-              <div className="grid gap-1">
-                <Label htmlFor="ca-create-description">Description</Label>
-                <Textarea
-                  id="ca-create-description"
-                  value={createDescription}
-                  onChange={(event) => setCreateDescription(event.target.value)}
-                  rows={2}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              Channels
+            </h2>
+            {channels.length > 0 ? (
+              <p className="shrink-0 text-[12.5px] text-muted">
+                {channels.length} channel{channels.length === 1 ? "" : "s"}
+              </p>
+            ) : null}
+          </div>
+          <Dialog
+            open={createDialogOpen}
+            onOpenChange={(open) => {
+              setCreateDialogOpen(open);
+              if (!open) resetCreateDraft();
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                New channel
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Create a channel</DialogTitle>
+                {/*
+                  Kept: it is the one place the three types are told apart,
+                  and the type cannot be changed after this. It used to say
+                  private channels are "visible to every member", which is
+                  the opposite of what one is (`spec/behavior/chat/README.md` §
+                  Channels): only the ids in `member_ids` read it, and the
+                  create route seeds that with its creator alone.
+                */}
+                <DialogDescription>
+                  Public channels are open to every member. A private channel is
+                  readable only by its members, and you are its first. A
+                  role-gated channel is readable by members holding at least one
+                  of the selected permissions.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                id="channel-create-form"
+                className="space-y-4"
+                onSubmit={handleCreateChannel}
+              >
                 <div className="grid gap-1">
-                  <Label htmlFor="ca-create-type">Type</Label>
-                  <Select
-                    value={createType}
-                    onValueChange={(value) =>
-                      setCreateType(value as (typeof CREATABLE_TYPES)[number])
-                    }
-                  >
-                    <SelectTrigger id="ca-create-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CREATABLE_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {CHANNEL_TYPE_LABEL[type]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="ca-create-category">Category</Label>
-                  <Select
-                    value={createCategoryId}
-                    onValueChange={setCreateCategoryId}
-                  >
-                    <SelectTrigger id="ca-create-category">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_CATEGORY}>Uncategorized</SelectItem>
-                      {categories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <label className="flex items-center gap-3">
-                <Switch
-                  checked={createReadOnly}
-                  onCheckedChange={setCreateReadOnly}
-                />
-                <span className="text-sm">
-                  Read-only (only officers with permission can post)
-                </span>
-              </label>
-              {createType === "ROLE_GATED" ? (
-                <div>
-                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Required permissions ({createPermissions.size})
-                  </Label>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    A member needs at least one of these to read or post.
-                  </p>
-                  <PermissionCheckboxGrid
-                    catalog={catalog}
-                    catalogLoading={catalogLoading}
-                    catalogUnavailable={catalogUnavailable}
-                    selected={createPermissions}
-                    holders={holders}
-                    onToggle={toggleCreatePermission}
+                  <Label htmlFor="ca-create-name">Name</Label>
+                  <Input
+                    id="ca-create-name"
+                    value={createName}
+                    onChange={(event) => setCreateName(event.target.value)}
+                    placeholder="announcements"
+                    required
                   />
                 </div>
-              ) : null}
-            </form>
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                onClick={() => setCreateDialogOpen(false)}
-                disabled={createChannel.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                form="channel-create-form"
-                type="submit"
-                disabled={
-                  createChannel.isPending ||
-                  !createName.trim() ||
-                  (createType === "ROLE_GATED" && createPermissions.size === 0)
-                }
-              >
-                {createChannel.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-                Create channel
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </header>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Categories</CardTitle>
-          <CardDescription>
-            {categories.length} categor{categories.length === 1 ? "y" : "ies"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {categories.length === 0 ? (
-            <NestedEmpty
-              title="No categories yet"
-              description="Channels without a category show up as uncategorized."
-            />
-          ) : (
-            <ul className="divide-y divide-border/70">
-              {[...categories]
-                .sort((a, b) => a.display_order - b.display_order)
-                .map((category) => (
-                  <li
-                    key={category.id}
-                    className="flex items-center justify-between gap-2 py-2"
-                  >
-                    {editingCategoryId === category.id ? (
-                      <>
-                        <Input
-                          value={categoryNameDraft}
-                          onChange={(event) =>
-                            setCategoryNameDraft(event.target.value)
-                          }
-                          className="h-8"
-                          autoFocus
-                        />
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            onClick={() => void handleSaveCategory(category)}
-                            disabled={updateCategory.isPending}
-                          >
-                            Save
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => setEditingCategoryId(null)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-sm font-medium">
-                          {category.name}
-                        </span>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Rename ${category.name}`}
-                            onClick={() => startEditCategory(category)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Delete ${category.name}`}
-                            onClick={() => void handleDeleteCategory(category)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </li>
-                ))}
-            </ul>
-          )}
-          <form
-            onSubmit={handleCreateCategory}
-            className="flex items-end gap-2 pt-2"
-          >
-            <div className="grid flex-1 gap-1">
-              <Label htmlFor="ca-new-category" className="text-xs">
-                New category
-              </Label>
-              <Input
-                id="ca-new-category"
-                value={newCategoryName}
-                onChange={(event) => setNewCategoryName(event.target.value)}
-                placeholder="Officers"
-                className="h-8"
-              />
-            </div>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={createCategory.isPending || !newCategoryName.trim()}
-            >
-              Add
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {channels.length === 0 ? (
-        <EmptyState
-          title="No channels yet"
-          description="Create the first channel to get chapter chat structured."
-        />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Channels</CardTitle>
-              <CardDescription>
-                {channels.length} channel{channels.length === 1 ? "" : "s"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <ul className="divide-y divide-border/70">
-                {channels.map((channel) => (
-                  <li
-                    key={channel.id}
-                    className="flex items-center justify-between py-2"
-                  >
-                    <button
-                      type="button"
-                      className={cn(
-                        "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left transition-colors",
-                        FOCUS_RING_OFFSET,
-                        selectedChannelId === channel.id
-                          ? "bg-accent-subtle-hover text-accent-text"
-                          : "hover:bg-accent-subtle",
-                      )}
-                      aria-pressed={selectedChannelId === channel.id}
-                      onClick={() => selectChannel(channel)}
-                    >
-                      <span className="truncate text-sm font-medium">
-                        #{channel.name}
-                      </span>
-                      <Badge variant="outline">
-                        {CHANNEL_TYPE_LABEL[channel.type]}
-                      </Badge>
-                      {channel.is_read_only ? (
-                        <Badge variant="secondary">Read-only</Badge>
-                      ) : null}
-                      {categoryName(channel.category_id) ? (
-                        <span className="ml-auto truncate text-xs text-muted-foreground">
-                          {categoryName(channel.category_id)}
-                        </span>
-                      ) : null}
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete #${channel.name}`}
-                      onClick={() => void handleDeleteChannel(channel)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">
-                {selectedChannel
-                  ? `Edit #${selectedChannel.name}`
-                  : "Select a channel to edit"}
-              </CardTitle>
-              <CardDescription>
-                {selectedChannel
-                  ? `Type is set at creation and can't be changed here.`
-                  : "Pick a channel on the left to edit its details, permissions, and pins."}
-              </CardDescription>
-            </CardHeader>
-            {selectedChannel ? (
-              <CardContent className="space-y-4">
+                <div className="grid gap-1">
+                  <Label htmlFor="ca-create-description">Description</Label>
+                  <Textarea
+                    id="ca-create-description"
+                    value={createDescription}
+                    onChange={(event) =>
+                      setCreateDescription(event.target.value)
+                    }
+                    rows={2}
+                  />
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1">
-                    <Label htmlFor="ca-name">Name</Label>
-                    <Input
-                      id="ca-name"
-                      value={nameDraft}
-                      onChange={(event) => setNameDraft(event.target.value)}
-                    />
+                    <Label htmlFor="ca-create-type">Type</Label>
+                    <Select
+                      value={createType}
+                      onValueChange={(value) =>
+                        setCreateType(value as (typeof CREATABLE_TYPES)[number])
+                      }
+                    >
+                      <SelectTrigger id="ca-create-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CREATABLE_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {CHANNEL_TYPE_LABEL[type]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="ca-category">Category</Label>
+                    <Label htmlFor="ca-create-category">Category</Label>
                     <Select
-                      value={categoryDraft}
-                      onValueChange={setCategoryDraft}
+                      value={createCategoryId}
+                      onValueChange={setCreateCategoryId}
                     >
-                      <SelectTrigger id="ca-category">
+                      <SelectTrigger id="ca-create-category">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -900,165 +673,452 @@ function ChatAdminBody() {
                     </Select>
                   </div>
                 </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="ca-description">Description</Label>
-                  <Textarea
-                    id="ca-description"
-                    value={descriptionDraft}
-                    onChange={(event) =>
-                      setDescriptionDraft(event.target.value)
-                    }
-                    rows={2}
-                  />
-                </div>
                 <label className="flex items-center gap-3">
                   <Switch
-                    checked={readOnlyDraft}
-                    onCheckedChange={setReadOnlyDraft}
+                    checked={createReadOnly}
+                    onCheckedChange={setCreateReadOnly}
                   />
                   <span className="text-sm">
                     Read-only (only officers with permission can post)
                   </span>
                 </label>
-                <div className="grid gap-1">
-                  <Label htmlFor="ca-default-level">
-                    Default notifications
-                  </Label>
-                  <Select
-                    value={defaultLevelDraft}
-                    onValueChange={setDefaultLevelDraft}
-                  >
-                    <SelectTrigger id="ca-default-level">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={BUILT_IN_DEFAULT_LEVEL}>
-                        {/* Read from the drafts, so renaming a channel to or
-                            from #general shows the default it would get. */}
-                        Standard (
-                        {
-                          DEFAULT_LEVEL_LABELS[
-                            builtInChannelDefault({
-                              name: nameDraft.trim(),
-                              type: selectedChannel.type,
-                              is_read_only: readOnlyDraft,
-                            })
-                          ]
-                        }
-                        )
-                      </SelectItem>
-                      {(
-                        Object.keys(
-                          DEFAULT_LEVEL_LABELS,
-                        ) as ChatNotificationLevel[]
-                      ).map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {DEFAULT_LEVEL_LABELS[level]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    What members get until they pick their own level for this
-                    channel. Their own choice always wins, and an @mention still
-                    reaches a member who muted it.
-                  </p>
-                </div>
-                {selectedChannel.type === "ROLE_GATED" ? (
+                {createType === "ROLE_GATED" ? (
                   <div>
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Required permissions ({permissionsDraft.size})
+                      Required permissions ({createPermissions.size})
                     </Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      A member needs at least one of these to read or post.
+                    </p>
                     <PermissionCheckboxGrid
                       catalog={catalog}
                       catalogLoading={catalogLoading}
                       catalogUnavailable={catalogUnavailable}
-                      selected={permissionsDraft}
+                      selected={createPermissions}
                       holders={holders}
-                      onToggle={togglePermission}
+                      onToggle={toggleCreatePermission}
                     />
                   </div>
                 ) : null}
-
-                <div className="space-y-2 border-t border-border pt-4">
-                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Pinned messages ({pins.length})
-                  </Label>
-                  {pinsQuery.isLoading ? (
-                    <p className="text-xs text-muted-foreground">Loading…</p>
-                  ) : pins.length === 0 ? (
-                    <NestedEmpty
-                      title="Nothing pinned"
-                      description="Officers can pin key messages from the channel timeline."
-                    />
-                  ) : (
-                    <ul className="max-h-56 space-y-2 overflow-y-auto">
-                      {pins.map((message) => (
-                        <li
-                          key={message.id}
-                          className="flex items-start justify-between gap-2 rounded-md border border-border p-2"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-foreground">
-                              {resolveAuthorLabel(message, nameFor, null)}
-                              <span className="ml-2 font-normal text-muted-foreground">
-                                {formatClock(
-                                  message.pinned_at ?? message.created_at,
-                                )}
-                              </span>
-                            </p>
-                            <p className="line-clamp-2 text-xs text-muted-foreground">
-                              {message.content}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Unpin message"
-                            onClick={() => void handleUnpin(message.id)}
-                            disabled={unpinMessage.isPending}
-                          >
-                            <PinOff className="h-4 w-4" />
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </CardContent>
-            ) : (
-              <CardContent className="text-sm text-muted-foreground">
-                Pick a channel on the left to see its details here.
-              </CardContent>
-            )}
-            {selectedChannel ? (
-              <CardFooter className="flex justify-end gap-2">
+              </form>
+              <DialogFooter>
                 <Button
                   variant="secondary"
-                  onClick={() => selectChannel(selectedChannel)}
-                  disabled={updateChannel.isPending}
+                  onClick={() => setCreateDialogOpen(false)}
+                  disabled={createChannel.isPending}
                 >
-                  Revert changes
+                  Cancel
                 </Button>
                 <Button
-                  onClick={() => void handleSaveChannel()}
+                  form="channel-create-form"
+                  type="submit"
                   disabled={
-                    updateChannel.isPending ||
-                    !nameDraft.trim() ||
-                    (selectedChannel.type === "ROLE_GATED" &&
-                      permissionsDraft.size === 0)
+                    createChannel.isPending ||
+                    !createName.trim() ||
+                    (createType === "ROLE_GATED" &&
+                      createPermissions.size === 0)
                   }
                 >
-                  {updateChannel.isPending ? (
+                  {createChannel.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  Save channel
+                  Create channel
                 </Button>
-              </CardFooter>
-            ) : null}
-          </Card>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
-      )}
+
+        {channels.length === 0 ? (
+          <NestedEmpty
+            title="No channels yet"
+            description="Create the first channel to get chapter chat structured."
+          />
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+            {/*
+              Each row is itself a control (it selects the channel), so it
+              takes the Directory's row height: 36 for a pointer, 44 for a
+              finger. The delete beside it is the trailing 32px control.
+            */}
+            <ul className={denseListClassName}>
+              {channels.map((channel) => (
+                <li key={channel.id} className="flex items-center gap-1 py-1">
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left transition-colors pointer-coarse:min-h-11",
+                      FOCUS_RING_OFFSET,
+                      selectedChannelId === channel.id
+                        ? "bg-accent-subtle-hover text-accent-text"
+                        : "hover:bg-accent-subtle",
+                    )}
+                    aria-pressed={selectedChannelId === channel.id}
+                    onClick={() => selectChannel(channel)}
+                  >
+                    <span className="truncate text-sm font-medium">
+                      #{channel.name}
+                    </span>
+                    {/* The name truncates; the badges don't wrap (375px). */}
+                    <Badge variant="outline" className="shrink-0">
+                      {CHANNEL_TYPE_LABEL[channel.type]}
+                    </Badge>
+                    {channel.is_read_only ? (
+                      <Badge variant="secondary" className="shrink-0">
+                        Read-only
+                      </Badge>
+                    ) : null}
+                    {categoryName(channel.category_id) ? (
+                      <span className="ml-auto truncate text-xs text-muted-foreground">
+                        {categoryName(channel.category_id)}
+                      </span>
+                    ) : null}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={denseRowControlClassName}
+                    aria-label={`Delete #${channel.name}`}
+                    onClick={() => void handleDeleteChannel(channel)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+
+            {/*
+              The edit pane is a column of the same section, divided from the
+              list by a hairline rather than lifted onto a card. Its heading
+              carries the channel's type as a badge: that replaces a
+              description that said "Type is set at creation and can't be
+              changed here", since a value shown beside the title and absent
+              from the form already says it.
+            */}
+            <div className="lg:border-l lg:border-border lg:pl-6">
+              {selectedChannel ? (
+                <section aria-labelledby="ca-edit-label" className="space-y-4">
+                  <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
+                    <h3
+                      id="ca-edit-label"
+                      className="min-w-0 truncate text-base font-bold"
+                    >
+                      Edit #{selectedChannel.name}
+                    </h3>
+                    <Badge variant="outline">
+                      {CHANNEL_TYPE_LABEL[selectedChannel.type]}
+                    </Badge>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-1">
+                      <Label htmlFor="ca-name">Name</Label>
+                      <Input
+                        id="ca-name"
+                        value={nameDraft}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="ca-category">Category</Label>
+                      <Select
+                        value={categoryDraft}
+                        onValueChange={setCategoryDraft}
+                      >
+                        <SelectTrigger id="ca-category">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_CATEGORY}>
+                            Uncategorized
+                          </SelectItem>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="ca-description">Description</Label>
+                    <Textarea
+                      id="ca-description"
+                      value={descriptionDraft}
+                      onChange={(event) =>
+                        setDescriptionDraft(event.target.value)
+                      }
+                      rows={2}
+                    />
+                  </div>
+                  <label className="flex items-center gap-3">
+                    <Switch
+                      checked={readOnlyDraft}
+                      onCheckedChange={setReadOnlyDraft}
+                    />
+                    <span className="text-sm">
+                      Read-only (only officers with permission can post)
+                    </span>
+                  </label>
+                  <div className="grid gap-1">
+                    <Label htmlFor="ca-default-level">
+                      Default notifications
+                    </Label>
+                    <Select
+                      value={defaultLevelDraft}
+                      onValueChange={setDefaultLevelDraft}
+                    >
+                      <SelectTrigger id="ca-default-level">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={BUILT_IN_DEFAULT_LEVEL}>
+                          {/* Read from the drafts, so renaming a channel to or
+                              from #general shows the default it would get. */}
+                          Standard (
+                          {
+                            DEFAULT_LEVEL_LABELS[
+                              builtInChannelDefault({
+                                name: nameDraft.trim(),
+                                type: selectedChannel.type,
+                                is_read_only: readOnlyDraft,
+                              })
+                            ]
+                          }
+                          )
+                        </SelectItem>
+                        {(
+                          Object.keys(
+                            DEFAULT_LEVEL_LABELS,
+                          ) as ChatNotificationLevel[]
+                        ).map((level) => (
+                          <SelectItem key={level} value={level}>
+                            {DEFAULT_LEVEL_LABELS[level]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      What members get until they pick their own level for this
+                      channel. Their own choice always wins, and an @mention
+                      still reaches a member who muted it.
+                    </p>
+                  </div>
+                  {selectedChannel.type === "ROLE_GATED" ? (
+                    <div>
+                      <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                        Required permissions ({permissionsDraft.size})
+                      </Label>
+                      <PermissionCheckboxGrid
+                        catalog={catalog}
+                        catalogLoading={catalogLoading}
+                        catalogUnavailable={catalogUnavailable}
+                        selected={permissionsDraft}
+                        holders={holders}
+                        onToggle={togglePermission}
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <h4 className={`${EYEBROW} text-muted-foreground`}>
+                      Pinned messages ({pins.length})
+                    </h4>
+                    {pinsQuery.isLoading ? (
+                      <p className="text-xs text-muted-foreground">Loading…</p>
+                    ) : pins.length === 0 ? (
+                      <NestedEmpty
+                        title="Nothing pinned"
+                        description="Officers can pin key messages from the channel timeline."
+                      />
+                    ) : (
+                      <ul
+                        className={cn(
+                          denseListClassName,
+                          "max-h-56 overflow-y-auto",
+                        )}
+                      >
+                        {pins.map((message) => (
+                          <li
+                            key={message.id}
+                            className="flex items-start justify-between gap-2 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-foreground">
+                                {resolveAuthorLabel(message, nameFor, null)}
+                                <span className="ml-2 font-normal text-muted-foreground">
+                                  {formatClock(
+                                    message.pinned_at ?? message.created_at,
+                                  )}
+                                </span>
+                              </p>
+                              <p className="line-clamp-2 text-xs text-muted-foreground">
+                                {message.content}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={denseRowControlClassName}
+                              aria-label="Unpin message"
+                              onClick={() => void handleUnpin(message.id)}
+                              disabled={unpinMessage.isPending}
+                            >
+                              <PinOff className="h-4 w-4" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => selectChannel(selectedChannel)}
+                      disabled={updateChannel.isPending}
+                    >
+                      Revert changes
+                    </Button>
+                    <Button
+                      onClick={() => void handleSaveChannel()}
+                      disabled={
+                        updateChannel.isPending ||
+                        !nameDraft.trim() ||
+                        (selectedChannel.type === "ROLE_GATED" &&
+                          permissionsDraft.size === 0)
+                      }
+                    >
+                      {updateChannel.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      Save channel
+                    </Button>
+                  </div>
+                </section>
+              ) : (
+                <NestedEmpty
+                  title="No channel selected"
+                  description="Pick a channel to edit its details, notifications and pins."
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="ca-categories-label" className="space-y-3">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2
+            id="ca-categories-label"
+            className={`${EYEBROW} truncate text-muted-foreground`}
+          >
+            Categories
+          </h2>
+          {categories.length > 0 ? (
+            <p className="shrink-0 text-[12.5px] text-muted">
+              {categories.length} categor
+              {categories.length === 1 ? "y" : "ies"}
+            </p>
+          ) : null}
+        </div>
+        {categories.length === 0 ? (
+          <NestedEmpty
+            title="No categories yet"
+            description="Channels without a category show up as uncategorized."
+          />
+        ) : (
+          <ul className={denseListClassName}>
+            {[...categories]
+              .sort((a, b) => a.display_order - b.display_order)
+              .map((category) => (
+                <li
+                  key={category.id}
+                  className="flex min-h-11 items-center justify-between gap-2 py-1"
+                >
+                  {editingCategoryId === category.id ? (
+                    <>
+                      <Input
+                        value={categoryNameDraft}
+                        onChange={(event) =>
+                          setCategoryNameDraft(event.target.value)
+                        }
+                        className="h-8"
+                        autoFocus
+                      />
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          onClick={() => void handleSaveCategory(category)}
+                          disabled={updateCategory.isPending}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setEditingCategoryId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="min-w-0 truncate text-sm font-medium">
+                        {category.name}
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={denseRowControlClassName}
+                          aria-label={`Rename ${category.name}`}
+                          onClick={() => startEditCategory(category)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={denseRowControlClassName}
+                          aria-label={`Delete ${category.name}`}
+                          onClick={() => void handleDeleteCategory(category)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </li>
+              ))}
+          </ul>
+        )}
+        <form
+          onSubmit={handleCreateCategory}
+          className="flex items-end gap-2 pt-2"
+        >
+          <div className="grid flex-1 gap-1">
+            <Label htmlFor="ca-new-category" className="text-xs">
+              New category
+            </Label>
+            <Input
+              id="ca-new-category"
+              value={newCategoryName}
+              onChange={(event) => setNewCategoryName(event.target.value)}
+              placeholder="Officers"
+              className="h-8"
+            />
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={createCategory.isPending || !newCategoryName.trim()}
+          >
+            Add
+          </Button>
+        </form>
+      </section>
     </div>
   );
 }
