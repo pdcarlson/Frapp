@@ -132,7 +132,7 @@ Every route that returns or touches chapter data needs a permission decorator, r
 
 `AuthSyncInterceptor` goes only where the first request must create the `users` row. It is
 class-level on the user, invite, notification and analytics controllers, and per-route on the
-pre-chapter chapter routes (create, onboard, list, activate). Grep
+pre-chapter chapter routes (onboard, list, activate). Grep
 `@UseInterceptors(AuthSyncInterceptor)` for the current list.
 
 ### Custom decorators
@@ -152,7 +152,7 @@ All live in `interface/decorators/`.
 - `/health` has no guards. `HealthController` injects `SUPABASE_CLIENT` itself.
 - `GET /v1/client-policy` has no guards: the mobile app asks it before sign-in whether its build is still
   served (#2526). It reads `X-Client-Version` and returns no chapter or user data.
-- `POST /v1/chapters` and the other pre-chapter routes use `SupabaseAuthGuard` +
+- `POST /v1/chapters/onboard` and the other pre-chapter routes use `SupabaseAuthGuard` +
   `AuthSyncInterceptor` only, because no chapter exists yet.
 - `POST /v1/webhooks/stripe` has no guard. `WebhookController.handleStripeWebhook` verifies the
   signature itself through `IBillingProvider.constructWebhookEvent` on the raw body and answers
@@ -161,10 +161,10 @@ All live in `interface/decorators/`.
 
 ## Database changes
 
-1. `npx supabase migration new my_change_name` creates
+1. `npm run supabase -- migration new my_change_name` creates
    `supabase/migrations/{14-digit timestamp}_{snake_case}.sql`.
 2. Enable RLS on every new table: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;`.
-3. Apply locally with `npx supabase db push --local`.
+3. Apply locally with `npm run supabase -- db push --local`.
 4. Add an entry for the migration to both
    [`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md) and
    [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), in the entry

@@ -96,7 +96,7 @@ function readString(
  * The API's hourly stale-palette sweep recomputes every row an older engine
  * wrote (#1165), and production has run it, so the only palette that lacks
  * the map is a row inserted without one since the sweep's last successful
- * tick: a demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`.
+ * tick: a demo seed (`scripts/demo/demo-seed.sql`).
  * Such a row shows the house tokens until the next successful tick, normally
  * within the hour; web applies nothing to it either (`use-chapter-theme.ts`'s
  * all-or-nothing gate). The legacy branch

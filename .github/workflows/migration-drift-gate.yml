@@ -96,8 +96,8 @@ concurrency:
   # nothing re-runs them, and `validate-deploy-sha.mjs` then refuses to deploy
   # that commit: a cancelled check asserted nothing, and `jobIdsAtRef` cannot
   # excuse it because the run exists. The commit is undeployable, which lands on
-  # exactly the operation that needs it — `db-rollback-playbook.md` recovery is
-  # redeploying an older commit.
+  # exactly the operation that needs it — a code-only rollback redeploys an
+  # older commit.
   #
   # Cancelling a PR run costs a re-push. Cancelling a main push run costs a
   # commit's deployability. Only the first is worth the minutes.
@@ -168,8 +168,8 @@ jobs:
   # Same trap the header of this file documents: a required check on a workflow
   # skipped by a workflow-level `paths:` filter never reports and sits Pending
   # forever. So the job always runs and decides for itself whether this change
-  # touches `supabase/migrations/**`; a PR that does not touch them passes in
-  # seconds without starting Docker.
+  # touches `supabase/migrations/**` or the CLI that applies them; a PR that
+  # touches neither passes in seconds without starting Docker.
   migration-replay:
     runs-on: ubuntu-latest
     permissions:
@@ -225,12 +225,22 @@ jobs:
             echo "::warning::Could not diff $RANGE. Replaying anyway rather than skipping the gate."
           fi
 
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED"; then
+          # The migrations, and what applies them: the pinned CLI and the two
+          # scripts that start the stack and replay onto it (#723). A change to
+          # those is `cli=true`, and the replay step then also rehearses the
+          # repo's newest migrations, because against production's real state
+          # a CLI change usually finds nothing pending and would exercise
+          # neither `db reset` nor `migration up` on the new build.
+          CLI_PATHS='^(\.github/actions/supabase-cli/|scripts/ci/supabase-start-disposable\.sh$|scripts/ci/check-migration-replay\.mjs$)'
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE "$CLI_PATHS" "$CHANGED"; then
+            echo "cli=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED" || grep -qE "$CLI_PATHS" "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Migrations touched (or the diff was unreadable) — running the replay."
+            echo "Migrations or the CLI that applies them touched (or the diff was unreadable) — running the replay."
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No files under supabase/migrations/ changed — nothing to replay."
+            echo "No migration, CLI pin or replay script changed — nothing to replay."
           fi
 
       - name: Setup Node
@@ -267,8 +277,9 @@ jobs:
       # A fixture run exercises the two-phase apply that a live run cannot when
       # production has nothing pending — which is its steady state, so on an
       # ordinary day the live path reports "nothing to replay" in about a second
-      # and never touches phase 1 or phase 2. The fixture is the only way to
-      # prove that body works in CI without waiting for a real migration PR.
+      # and never touches phase 1 or phase 2. The fixture proves that body works
+      # in CI without waiting for a real migration PR; a change to the CLI or
+      # the replay proves it too, through `--rehearse-newest` (#723).
       - name: Replay pending migrations against production's applied state
         if: steps.touched.outputs.run == 'true'
         env:
@@ -276,6 +287,7 @@ jobs:
           # state from the snapshot downloaded above.
           REPLAY_SUPABASE_CLI: supabase
           REPLAY_FIXTURE: ${{ inputs.replay_fixture }}
+          CLI_TOUCHED: ${{ steps.touched.outputs.cli }}
         run: |
           set -euo pipefail
 
@@ -291,9 +303,16 @@ jobs:
 
           node scripts/ci/check-migration-replay.mjs --snapshot "$MIGRATION_SNAPSHOT"
 
+          # The CLI or the replay changed: run both phases on it whatever
+          # production has pending (see the touched step).
+          if [ "${CLI_TOUCHED:-}" = "true" ]; then
+            echo "The CLI or the replay changed: also replaying the repo's newest 2 migrations onto the rest with it."
+            node scripts/ci/check-migration-replay.mjs --rehearse-newest 2
+          fi
+
       - name: No migrations touched
         if: steps.touched.outputs.run != 'true'
-        run: echo "No files under supabase/migrations/ changed — replay not needed."
+        run: echo "No migration, CLI pin or replay script changed — replay not needed."
 
   # ── Migration ordering ──────────────────────────────────────────────────
   # REQUIRED check: does a migration this change INTRODUCES sort before a

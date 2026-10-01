@@ -176,27 +176,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/chapters": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapters for current user */
-        get: operations["ChapterController_listForCurrentUser_v1"];
-        put?: never;
-        /**
-         * Create a new chapter
-         * @description Makes the caller its President. The caller must already have accepted the current Terms (`POST /v1/users/me/legal-acceptance`), or this is 403. No client uses this route; the wizard uses `POST /v1/chapters/onboard`, which records the acceptance itself.
-         */
-        post: operations["ChapterController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/chapters/onboard": {
         parameters: {
             query?: never;
@@ -208,6 +187,23 @@ export interface paths {
         put?: never;
         /** Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message) */
         post: operations["ChapterController_onboard_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapters for current user */
+        get: operations["ChapterController_listForCurrentUser_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3316,10 +3312,6 @@ export interface components {
         TrackEventResponseDto: {
             success: boolean;
         };
-        CreateChapterDto: {
-            name: string;
-            university: string;
-        };
         BrandingColorsDto: {
             /** @example #C9A56F */
             accent?: string;
@@ -5330,62 +5322,6 @@ export interface operations {
             };
         };
     };
-    ChapterController_listForCurrentUser_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    ChapterController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateChapterDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
     ChapterController_onboard_v1: {
         parameters: {
             query?: never;
@@ -5400,6 +5336,32 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterController_listForCurrentUser_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7458,7 +7420,7 @@ export interface operations {
                 limit?: number;
                 /** @description Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
                 before?: string;
-                /** @description Message UUID — returns messages created after this message (reconnect replay) */
+                /** @description Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id. */
                 since?: string;
             };
             header?: never;

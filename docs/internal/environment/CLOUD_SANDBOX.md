@@ -250,24 +250,21 @@ Out-of-range and non-integer values fall back to the defaults rather than aborti
 so a typo in a tuning variable cannot break bringup outright.
 
 `cs_supabase` is how both scripts invoke the Supabase CLI — never bare `npx supabase`. It
-resolves a **pinned** CLI (`CS_SUPABASE_CLI_VERSION`, override with
-`FRAPP_SUPABASE_CLI_VERSION`) from a gitignored `.cache/supabase-cli/`, installing it on
-first use. Same pinned-tooling pattern as gitleaks (`scripts/install-gitleaks.sh` →
-`.cache/gitleaks/`), and kept out of the repo's dependency tree deliberately: the v2 CLI's
-platform binary is ~200 MB, so as a root devDependency every `npm ci` in CI and the API
-image's dev-deps stage would download it for a tool only these two scripts call.
+resolves the repo's **pinned** CLI from a gitignored `.cache/supabase-cli/`, installing it on
+first use; override the version with `FRAPP_SUPABASE_CLI_VERSION` to try another one. Same
+pinned-tooling pattern as gitleaks (`scripts/install-gitleaks.sh` → `.cache/gitleaks/`), and
+kept out of the repo's dependency tree deliberately: the v2 CLI's platform binary is ~200 MB,
+so as a root devDependency every `npm ci` in CI and the API image's dev-deps stage would
+download it for a tool only the local bootstrap scripts call.
 
-> **Known version skew:** the sandbox pin is **not** the CLI version CI uses —
-> [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml) holds the
-> single `supabase/setup-cli` pin (**2.77.0**) that every CI step needing the CLI installs
-> from: the staging and production migration applies, the migration-replay rehearsal, and
-> `db-backup.yml`'s `pg_dump`. Until the composite-action extraction the same version was
-> written inline in **four** workflows; none names a version now. The
-> gap predates the pin (the scripts previously ran unpinned `npx supabase`, i.e. whatever
-> `latest` was that day), and the sandbox cannot simply match 2.77.0 — it fails to start
-> here because the realtime container aborts with `:listen_error, :eafnosupport` (IPv6
-> bind, unsupported in this sandbox). Closing the gap means moving *deploy* forward, which
-> needs staging verification and its own change.
+The resolver and the pin live in [`scripts/lib/supabase-cli.sh`](../../../scripts/lib/supabase-cli.sh),
+which the laptop bootstrap (`scripts/local-dev-setup.sh`) sources too, and the pin there equals
+the one in [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml)
+that every CI step needing the CLI installs from: the staging and production migration applies,
+the production rehearsal, the migration-replay gate, the nightly backup's `db dump`, and the Edge
+Function deploy. `scripts/ci/__tests__/infisical-secrets-action.test.mjs` fails if they diverge,
+so the sandbox, the laptop and CI run one CLI version (#723). Bump it in the action and in each
+copy that test names.
 
 ### Auto-bringup and how the agent waits
 
@@ -419,7 +416,7 @@ every session), so skim the log even when bringup succeeds.
 | `failed to start docker container "supabase_edge_runtime_*": error setting rlimit type 7: operation not permitted` | Sandbox denies the ulimit (`RLIMIT_NOFILE`) the Deno edge-runtime container sets, which aborts the whole `supabase start` | Already handled — bringup excludes edge-runtime (`supabase start -x edge-runtime`) since the API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12). The cost: the repo's one function, the Discord importer's attachment copy (ADR-26), does not run here, so a bot import in the sandbox fails at its copy step. Test that function with `npm run check:edge-functions` instead ([`testing.md` § 5b](../../guides/testing.md#5b-edge-function-tests-adr-26)). `FRAPP_SUPABASE_START_ARGS` can put edge-runtime back, but only in a sandbox that allows that rlimit |
 | `failed to bind host port 0.0.0.0:54322/tcp: address already in use`, or `port is already allocated`; sentinel says `(deterministic)` | Something already holds a Supabase port — **check `docker ps -a` first**, since which holder it is decides the remedy. A `supabase_*` container left by an earlier bringup in this session is the case the scripts can clear. It is **not** a second bringup racing the first: the SessionStart hook and a bringup run by hand take the same lock under the same `flock` and ask whether a bringup is running by one rule ([§ Auto-bringup and how the agent waits](#auto-bringup-and-how-the-agent-waits)), so neither starts a bringup beside a running one while the `flock` is available. A stopped bringup leaves its containers behind: `--stop` ends a hung `supabase start` with the script, but containers it had already started run under the Docker daemon and keep their ports, so this row's remedy still applies after it | **Clear the containers, then re-run** — `deterministic` is fail-fast, so `cs_retry`'s `supabase stop` cleanup never runs for this class and nothing clears them for you: `bash -c '. scripts/lib/cloud-sandbox-common.sh && cs_supabase stop'` — **plain `stop`, no `--no-backup`**: the port is the problem, the data is not, and `--no-backup` would discard the local database to free a socket. If containers survive that, `docker ps -aq --filter name=supabase_ \| xargs -r docker rm -f`. Then `bash scripts/cloud-sandbox-up.sh`. If `docker ps -a` is **empty** and the port is still held, the holder is outside this Docker daemon — report that, it is not something the scripts can fix |
 | `cannot connect to the docker daemon at unix:///var/run/docker.sock`; sentinel says `(deterministic)` | The daemon died *after* bringup started it. `cs_ensure_docker_daemon` runs first and `fail()`s with `Docker daemon did not start.` when it never comes up, so seeing this inside a `supabase start` log means it came up and then went away — usually the sandbox reclaiming it, or `dockerd` exiting on a privilege error | **Read `/tmp/dockerd.log` first** — it holds the reason, and the bringup log does not. If `dockerd` exited for lack of privileges, that is a **platform limit to report** — no web-UI field grants it, so a new session will not change it — and not a repo fix. Otherwise re-run `bash scripts/cloud-sandbox-up.sh`; a daemon that dies repeatedly in the same session is worth reporting rather than retrying |
-| `database files are incompatible with server`; sentinel says `(deterministic)` | A `supabase_db_*` data volume was initialised by a **different Postgres major version** than the pinned image now starting over it. Retrying cannot help; the volume is the problem | **Discard the volume** — nothing in the sandbox holds data worth keeping and every table is rebuilt from `supabase/migrations/` on the next `db push`; if you believe otherwise, stop and ask rather than deleting. Order matters: `bash -c '. scripts/lib/cloud-sandbox-common.sh && cs_supabase stop --no-backup'` deletes the volumes by itself, but a crash-looping db container often makes that stop fail — so if it errors, run `docker ps -aq --filter name=supabase_ \| xargs -r docker rm -f` **first** (`docker volume rm` refuses a volume still attached to a container, even a stopped one), then `docker volume ls -q --filter name=supabase_db \| xargs -r docker volume rm`. Then re-run bringup. Background on the mismatch: [`getting-started.md`](../../guides/getting-started.md#postgres-17-and-local-supabase-volumes) — its `scripts/local-dev-setup.sh --reset-supabase-data` is the laptop equivalent, but it drives `npx supabase`, so use the pinned CLI here |
+| `database files are incompatible with server`; sentinel says `(deterministic)` | A `supabase_db_*` data volume was initialised by a **different Postgres major version** than the pinned image now starting over it. Retrying cannot help; the volume is the problem | **Discard the volume** — nothing in the sandbox holds data worth keeping and every table is rebuilt from `supabase/migrations/` on the next `db push`; if you believe otherwise, stop and ask rather than deleting. Order matters: `bash -c '. scripts/lib/cloud-sandbox-common.sh && cs_supabase stop --no-backup'` deletes the volumes by itself, but a crash-looping db container often makes that stop fail — so if it errors, run `docker ps -aq --filter name=supabase_ \| xargs -r docker rm -f` **first** (`docker volume rm` refuses a volume still attached to a container, even a stopped one), then `docker volume ls -q --filter name=supabase_db \| xargs -r docker volume rm`. Then re-run bringup. Background on the mismatch: [`getting-started.md`](../../guides/getting-started.md#postgres-17-and-local-supabase-volumes) — its `scripts/local-dev-setup.sh --reset-supabase-data` is the laptop equivalent, on the same pinned CLI |
 | Every `turbo` gate dies with `sh: 1: turbo: not found` (`check-types`, `lint`, workspace tests) while the plain-node gates such as `check:npm-audit` and `check:migration-safety` pass; or the sentinel says `node_modules/.bin/turbo does not run (dependencies)` | `node_modules` is empty or half-populated. `cloud-sandbox-setup.sh` installs deps **non-fatally** on purpose and its warning goes to the web UI's environment setup log, which the session cannot read — so a failed install used to reach a green `.done` silently. The selective-looking split is the tell: only gates that shell out to `turbo` are affected | **Not a repo defect, and not `turbo.json`** — that is the wrong trail this row exists to close. Run **`npm ci`**, then **`npx turbo run build --filter='./packages/*'`**: bringup deliberately does not install for you (see *How it works*), and it skips the package build when turbo does not run. Bringup's last step checks the toolchain, so a `.failed` naming `(dependencies)` means turbo could not run. Note what `.done` does and does not promise: it means turbo ran, **not** that the tree is complete — a missing declared dependency only logs `WARN: 'npm ls --depth=0' reports a missing declared dependency` and still lands `.done`, so a later `Cannot find module` is worth tracing back here. **Read npm's own output before blaming the network** — `registry.npmjs.org` rides the **default list**, which this doc's own [network section](#whats-configured-in-the-web-ui) says is "enough for `npm ci`", so it is reachable under every policy sanctioned here. A genuine block means "include default list" is off or Network = None, **not** a missing `public.ecr.aws` entry; only then is it a report, and because setup's filesystem is cached ~7 days a NEW session inherits the same broken tree until it is fixed |
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
 | The hook says bringup "already finished", but `docker` cannot connect and `uptime` is minutes old | The VM restarted and the lock plus sentinel from before it were trusted. Since #2515 the hook detects a lock from an earlier boot (by boot id, or by age for a lock written before boot ids) and relaunches on its own, so this now means a host that exposes no boot id | `bash scripts/cloud-sandbox-up.sh` |
@@ -453,8 +450,9 @@ session for them to take effect.
 A registry outage that outlasts every retry sits outside all four: nobody's config is wrong,
 nothing local is in the way, and the only move is to try again later.
 
-Prefer the pinned CLI (`cs_supabase`) over `npx supabase` in any new script: unpinned npx
-re-resolves `latest` every session, so the toolchain can change under you between runs.
+Prefer the pinned CLI (`cs_supabase`, or `frapp_supabase` from `scripts/lib/supabase-cli.sh` outside
+the sandbox scripts) over `npx supabase` in any new script: unpinned npx re-resolves `latest`
+every session, so the toolchain can change under you between runs.
 
 ## Manual / fallback bringup
 

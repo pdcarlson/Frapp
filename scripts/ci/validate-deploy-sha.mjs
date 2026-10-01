@@ -33,11 +33,13 @@
 //
 // That is not theoretical and it is not new. `web-production-build` (#1374) did
 // it, and adding `migration-order` would have done it again. The failure lands
-// on the one operation that matters most when something is wrong:
-// `db-rollback-playbook.md` recovery is "redeploy the API at the pre-<X>
-// revision", i.e. deploying an OLDER commit — the exact thing a growing
+// on the one operation that matters most when something is wrong: rolling
+// the API back by deploying an OLDER commit — the exact thing a growing
 // required-check list makes impossible, and it fails at the moment you can
-// least afford to debug a gate.
+// least afford to debug a gate. (Once production has applied a migration that
+// commit lacks, the migration rehearsal refuses it anyway, and the rollback is
+// a forward revert: `db-rollback-playbook.md` § 3) Undo one migration. This
+// narrowing keeps the code-only rollback possible.)
 //
 // So the expected set is intersected with the jobs the deployed commit's own
 // workflows define (`jobIdsAtRef`). A check the tree never defined is reported
@@ -104,7 +106,7 @@ export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
  * "CI is not green" — a red-tests message for a commit whose tests never ran.
  * It is the same "an older commit became undeployable" class the narrowing
  * above fixes, arriving through a different door, and it lands on the same
- * operation: `db-rollback-playbook.md` recovery is redeploying an older commit.
+ * operation: a code-only rollback, which redeploys an older commit.
  *
  * Naming it is the fix that generalises. A cancelled run can be re-run from the
  * Actions UI for 30 days, which turns a dead end into one click.

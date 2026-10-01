@@ -8,8 +8,8 @@ This directory documents hook-level conventions and test coverage for
 Endpoints that return data for the active chapter must include the active
 chapter id in the TanStack Query cache key (see `useActiveChapterId` in
 `use-frapp-client.tsx`). For example, `useSearch` uses
-`["search", chapterId, query]` so the command palette and chat search cannot
-show results cached from another chapter after a switch.
+`["search", chapterId, query, channelId ?? null]` so the web find bar and chat
+search cannot show results cached from another chapter after a switch.
 
 Tasks use the `taskKeys` factory in `use-tasks.ts` — `taskKeys.lists(chapterId)`
 and `taskKeys.detail(chapterId, id)`. Two things it fixes are worth knowing

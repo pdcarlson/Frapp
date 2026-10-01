@@ -52,13 +52,14 @@ const MIGRATIONS_DIR = join(__dirname, "../../../../supabase/migrations");
 
 /**
  * What a hosted Supabase database has before the first migration, reduced to
- * what the migrations and these checks need. The `authenticated` and `anon`
- * roles must exist before the migrations run, because most of them grant,
- * revoke or create policies only `if exists (select 1 from pg_roles where
- * rolname = …)`, and a policy skipped here is one this test can't see.
+ * what the migrations and these checks need. Supabase's four roles must exist
+ * before the migrations run, because most of them grant, revoke or create
+ * policies only `if exists (select 1 from pg_roles where rolname = …)`, and a
+ * statement skipped here is one this test can't see. Attributes follow the
+ * local Supabase image, as in the other harness.
  * `scripts/check-pglite-migrations.mjs` builds its own, different substrate
- * (no `anon`, fixed `auth.*` answers) for its own tiers: a migration that needs
- * a new extension or role has to be registered in both.
+ * (`auth.*` stubbed per scenario, its own probe roles) for its own tiers: a
+ * migration that needs a new extension or role has to be registered in both.
  */
 const SUBSTRATE = `
   create schema auth;
@@ -70,6 +71,8 @@ const SUBSTRATE = `
     as $$ select '{}'::jsonb $$;
   create role authenticated nologin;
   create role anon nologin;
+  create role service_role nologin bypassrls;
+  create role supabase_auth_admin nologin noinherit createrole;
 
   create schema realtime;
   create table realtime.messages (

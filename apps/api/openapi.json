@@ -487,75 +487,6 @@
         ]
       }
     },
-    "/v1/chapters": {
-      "post": {
-        "description": "Makes the caller its President. The caller must already have accepted the current Terms (`POST /v1/users/me/legal-acceptance`), or this is 403. No client uses this route; the wizard uses `POST /v1/chapters/onboard`, which records the acceptance itself.",
-        "operationId": "ChapterController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateChapterDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a new chapter",
-        "tags": [
-          "Chapters"
-        ]
-      },
-      "get": {
-        "operationId": "ChapterController_listForCurrentUser_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapters for current user",
-        "tags": [
-          "Chapters"
-        ]
-      }
-    },
     "/v1/chapters/onboard": {
       "post": {
         "operationId": "ChapterController_onboard_v1",
@@ -591,6 +522,36 @@
           }
         ],
         "summary": "Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message)",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters": {
+      "get": {
+        "operationId": "ChapterController_listForCurrentUser_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapters for current user",
         "tags": [
           "Chapters"
         ]
@@ -3507,7 +3468,7 @@
             "name": "since",
             "required": false,
             "in": "query",
-            "description": "Message UUID — returns messages created after this message (reconnect replay)",
+            "description": "Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id.",
             "schema": {
               "format": "uuid",
               "type": "string"
@@ -10656,21 +10617,6 @@
         },
         "required": [
           "success"
-        ]
-      },
-      "CreateChapterDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "university": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "university"
         ]
       },
       "BrandingColorsDto": {
