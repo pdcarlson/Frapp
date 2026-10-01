@@ -55,7 +55,7 @@ type Props = {
 
 /**
  * Settings → Chapter → Chapter mark (#2876, #2591): what stands for the
- * chapter in the nav's chapter tile and the mobile chat header.
+ * chapter in the nav's chapter tile and on mobile Chat home's title row.
  *
  * Two writes with two gates, because they are two routes. The logo uploads
  * the moment a file is chosen (mint, PUT, confirm; `useUploadChapterLogo`),
@@ -138,8 +138,8 @@ export function SettingsChapterMarkCard({
       <CardHeader>
         <CardTitle>Chapter mark</CardTitle>
         <CardDescription>
-          What stands for your chapter in the nav and the mobile header: your
-          logo if you upload one, otherwise your short name, otherwise your
+          What stands for your chapter in the nav and at the top of the mobile
+          app&apos;s Chat home: your logo if you upload one, otherwise your short name, otherwise your
           Greek letters. Some organizations don&apos;t display their letters;
           turn them off and they appear nowhere.
         </CardDescription>
