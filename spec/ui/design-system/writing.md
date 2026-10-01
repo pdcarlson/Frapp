@@ -559,7 +559,7 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Loading | — | `Loading imports...` |
 | Empty | `No imports yet` | `Bring your chapter's Discord history in as read-only archive messages.` |
 | Error | `Couldn't load imports` | `Confirm your chapter access and retry.` |
-| Stale | — | `Couldn't refresh the imports. This is the last update that loaded.` · `Try again` (a background refresh of the list, or of the polled import's own row, failed; the loaded rows and their meters stay) |
+| Stale | — | `Couldn't refresh the imports. This is the last update that loaded.` · `Try again` (a background refresh of the list failed, or of the polled import's own row while that row still shows its copy; the loaded rows and their meters stay) |
 | Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
 | Permission denied | — | `Importing a Discord archive needs channel management permission.` |
@@ -572,6 +572,8 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Loading (wizard, connect step) | — | `Checking whether Discord is connected…` · `Confirming your Discord server…` (the returned authorization is being confirmed) |
 | Error (wizard, connect step) | `Couldn't check the Discord connection` | `Retry to see whether your server is connected.` |
 | Offline (wizard, connect step) | `Can't check Discord offline` | `Reconnect to check whether your server is connected.` (whether the read paused or failed while offline) |
+| Stale (wizard, connect step) | — | `Couldn't recheck the Discord connection. This is the last answer that loaded.` · `Try again` (a recheck failed; the last answer, connected or not, stays) |
+| Refused (wizard, connect step) | `Could not confirm that server` | The API's own message, or `That Discord authorization could not be confirmed for this chapter.` (kept across Back and Continue, since a refused authorization is not sent again) |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
 | Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
 | Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |

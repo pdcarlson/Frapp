@@ -363,8 +363,8 @@ export function anyReadUncached(
  * For a slot that owns a single read and draws its own offline state (a
  * channel's pins, the import wizard's connect step, the import channel panel,
  * the report queue's tab). Writing the two clauses out at each slot is how
- * they drift: one copy tested `data === undefined` where this note prescribes
- * `isPending`, which differs under placeholder data.
+ * they drift: one copy had already moved to `data === undefined` where this
+ * note prescribes `isPending`, harmless for that read but no longer the rule.
  */
 export function readIsOffline(
   isOffline: boolean,

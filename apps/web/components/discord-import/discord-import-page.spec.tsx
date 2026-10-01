@@ -296,6 +296,41 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
 
   // Both poll during a purge. A detail poll that keeps failing must not hold
   // the row on its last copy once the list has loaded a fresher one.
+  // The other half: the detail polls faster than the list, so while it is the
+  // freshest (or tied) the row moves with it, not with the list's last copy.
+  it.each([
+    ["after the list", 1_000, 2_000],
+    ["at the same time as the list", 2_000, 2_000],
+  ])(
+    "shows the polled row's detail copy when it loaded %s",
+    (_, listAt, detailAt) => {
+      const counts = (done: number) => ({
+        ...row("moving", "running", "Running server"),
+        channels_total: 10,
+        channels_done: done,
+      });
+      hooks.progress.mockReturnValue({
+        data: undefined,
+        isPending: true,
+        isError: false,
+        refetch: vi.fn(),
+      });
+      hooks.rows = [counts(2)];
+      hooks.listUpdatedAt = listAt;
+      hooks.detail.mockImplementation((id) =>
+        id === "moving"
+          ? { data: counts(7), dataUpdatedAt: detailAt, refetch: vi.fn() }
+          : { data: null },
+      );
+      render(<DiscordImportPage />);
+      const running = rowOf("Running server");
+      expect(running.getByText("20%")).toBeInTheDocument();
+
+      fireEvent.click(running.getByRole("button", { name: "Watch" }));
+      expect(rowOf("Running server").getByText("70%")).toBeInTheDocument();
+    },
+  );
+
   it("shows the list's copy of the polled row when the list loaded since", () => {
     hooks.progress.mockReturnValue({
       data: undefined,
@@ -329,6 +364,8 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
     expect(
       rowOf("Deleted server").getByRole("button", { name: /Clear/ }),
     ).toBeInTheDocument();
+    // The row is current, so the list doesn't call it the last that loaded.
+    expect(screen.queryByText(IMPORTS_STALE)).toBeNull();
   });
 
   // A resume is spent once its wizard closes, whichever way it closes.

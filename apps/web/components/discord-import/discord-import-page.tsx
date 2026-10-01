@@ -341,13 +341,19 @@ function DiscordImportList({
   // to say so, while the list read stayed clean. Keyed on the id, not the
   // detail's data: a first fetch that fails leaves no data and arms no poll,
   // and the row then shows the list's last copy, which is just as stale.
-  const activeStale = active.isError && rows.some((row) => row.id === activeId);
   // The polled import's row takes its detail copy, which polls faster than
   // the list, unless the list loaded since: both poll during a purge, and a
   // detail poll that keeps failing would otherwise hold the row on its last
   // copy (still "purging", no Clear) while the list already says "purged".
   const detailIsFreshest =
     (active.dataUpdatedAt ?? 0) >= (imports.dataUpdatedAt ?? 0);
+  // So the failure leaves the row stale only while the row shows that copy,
+  // or has no detail copy at all; once the list's fresher copy took over,
+  // saying "the last update that loaded" over it would be false.
+  const activeStale =
+    active.isError &&
+    (detailIsFreshest || activeRow === null) &&
+    rows.some((row) => row.id === activeId);
 
   function retryReads() {
     void imports.refetch();

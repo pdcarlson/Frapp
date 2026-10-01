@@ -1769,6 +1769,23 @@ describe("ConnectStep — its async states, on the page surface (#2500)", () => 
     ).not.toBeNull();
   });
 
+  it("says a 'not connected' answer is the last that loaded, too", () => {
+    // The bot may have been added since; the pitch to add it is then stale.
+    connectionRead.value = { isError: true };
+    renderConnect();
+
+    expect(
+      screen.getByRole("button", { name: /Add to Server/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByText(
+          "Couldn't recheck the Discord connection. This is the last answer that loaded.",
+        )
+        .closest('[role="status"]'),
+    ).not.toBeNull();
+  });
+
   it("announces the confirm while it runs", () => {
     confirmPending.value = true;
     const { container } = renderConnect();
