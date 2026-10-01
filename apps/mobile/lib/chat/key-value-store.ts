@@ -12,9 +12,11 @@
  *
  * That is safe **only for reads that may miss**, and only the
  * `chat:lastSeen:<channelId>` backfill cursor (`realtime-manager.ts`) is
- * hydrated. A missed cursor read widens the backfill window — the manager
- * refetches from further back and dedupes — rather than losing a message, so a
- * cold mirror costs bandwidth, not data. `chat-core` also reads heavy-command
+ * hydrated. A missed cursor read costs a re-read, not a message: the manager
+ * reads the channel's newest page instead (`readBackfill`), and whatever that
+ * page doesn't reach is read when the member scrolls back
+ * (`spec/ui/resilience/message-delivery.md` § Receiving Messages). So a cold
+ * mirror costs a re-read, not data. `chat-core` also reads heavy-command
  * notices through this port (`heavy-command-notices.ts`), which mobile never
  * writes because it has no slash dispatch, so those reads always miss
  * harmlessly. Do not add a consumer with stricter durability needs, or start
@@ -35,7 +37,7 @@ import type { KeyValueStore } from "@repo/chat-core/adapters";
  *
  * The mirror's whole soundness argument is that the only key it must serve
  * across a restart is the `chat:lastSeen:` backfill cursor, where a stale read
- * widens a backfill instead of losing data. A `"chat:"` sweep was harmless while that was the
+ * costs a re-read instead of losing data. A `"chat:"` sweep was harmless while that was the
  * only `chat:`-prefixed key — but #2228 put member-scoped drafts and queued
  * message bodies in the same namespace, and this hydrate would have copied
  * every member's unsent text into a process-wide `Map` with no scope, no
@@ -97,7 +99,7 @@ export function createAsyncStorageKeyValueStore(
         }
       } catch {
         // A failed hydration leaves the mirror empty, which reads as "no
-        // cursor" and widens the backfill. Degrading is correct here; throwing
+        // cursor" and a newest-page backfill. Degrading is correct here; throwing
         // would take down chat boot for a cache miss.
       }
     },
@@ -111,7 +113,7 @@ export function createAsyncStorageKeyValueStore(
       dirty.add(key);
       void storage.setItem(key, value).catch(() => {
         // Write-behind: the mirror already has it, so the running session is
-        // correct. Losing the disk write only widens the next boot's backfill.
+        // correct. Losing the disk write only costs the next boot a re-read.
       });
     },
 
