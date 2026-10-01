@@ -8,6 +8,7 @@ import {
   actionFiles,
   nodeSetupInstall,
   runsInstall,
+  shellLines,
   usesLocalAction,
   USES_NODE_SETUP,
   WORKFLOW_DIR,
@@ -64,8 +65,10 @@ const scalar = (raw) =>
 
 // Tolerant on purpose: these drive NEGATIVE assertions, and a regex that is
 // too tight fails open. Any ref (`@v4`, `@<sha>`), quoted or not, name-less
-// `- uses:` or not, and any case: GitHub resolves `owner/repo` case-insensitively.
-const SETUP_NODE_RE = /^\s*(-\s+)?uses:\s*["']?actions\/setup-node@/i;
+// `- uses:` or not, a whole step in flow form (`- { uses: actions/setup-node@v4,
+// with: { node-version: 22 } }`), and any case: GitHub resolves `owner/repo`
+// case-insensitively.
+const SETUP_NODE_RE = /(?:^|[\s{,-])uses:\s*["']?actions\/setup-node@/i;
 const NODE_VERSION_RE = /^\s*node-version:\s*(.+)$/;
 
 /** Every workflow file, as `{ name, text }`. */
@@ -252,7 +255,7 @@ describe("node-setup call sites", () => {
 
   it("nothing outside the action and the exceptions hand-writes the install", () => {
     const offenders = guardedFiles().flatMap((f) =>
-      codeLines(f.text)
+      shellLines(f.text)
         .filter(runsInstall)
         .map((l) => `${f.name}: ${l.trim()}`),
     );

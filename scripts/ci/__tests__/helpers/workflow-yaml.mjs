@@ -950,6 +950,43 @@ export function runsInstall(line) {
   return false;
 }
 
+/** A line with its trailing comment removed: a `#` after whitespace, outside quotes. */
+function withoutTrailingComment(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
+/**
+ * Workflow or action TEXT as the commands a shell would read: whole-line
+ * comments dropped, a trailing comment cut only outside quotes (`echo "retry
+ * #2" && npm ci` keeps its install), and a `\` continuation joined onto the
+ * next line (`npm \` then `ci` is one `npm ci`). For guards that scan for a
+ * command, where reading line by line fails open.
+ */
+export function shellLines(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .filter((l) => !/^\s*#/.test(l))
+    .map(withoutTrailingComment);
+  const joined = [];
+  for (const line of lines) {
+    const prev = joined.length - 1;
+    if (prev >= 0 && /\\\s*$/.test(joined[prev])) joined[prev] = joined[prev].replace(/\\\s*$/, " ") + line.trim();
+    else joined.push(line);
+  }
+  return joined;
+}
+
 /**
  * Whether workflow TEXT installs dependencies anywhere: a hand-written lockfile
  * install (`runsInstall`), or a node-setup `install:` that installs (`ci`,
@@ -958,9 +995,6 @@ export function runsInstall(line) {
  * action. Comments don't count: those guards' own workflows say "no npm ci".
  */
 export function installsDependenciesIn(text) {
-  const code = text
-    .split(/\r?\n/)
-    .filter((l) => !/^\s*#/.test(l))
-    .map((l) => l.replace(/\s#.*$/, ""));
+  const code = shellLines(text);
   return code.some(runsInstall) || code.some((l) => /^\s*install:\s*["']?(ci|omit-dev)["']?\s*$/.test(l));
 }

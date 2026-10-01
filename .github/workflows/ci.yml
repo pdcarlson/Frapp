@@ -30,7 +30,8 @@ concurrency:
 # non-required parent would be a hole. See scripts/ci/lib/required-checks.mjs.
 #
 # `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
-# and prebuilds nothing, so it alone exercises the bare `npm install` path.
+# and prebuilds nothing, so it alone exercises a clean `npm ci` with no prebuilt
+# packages.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -238,7 +239,8 @@ jobs:
         run: npm run check:edge-functions
 
       # ── Clean-checkout guard (fresh-install path) ───────────────────────────
-  # Reproduces a bare `npm install && npm run check-types` on a cold machine.
+  # Reproduces a clean `npm ci && npm run check-types` on a cold machine: no
+  # prebuilt packages/*/dist.
   # Deliberately has NO `needs: packages-build` and NO
   # `./.github/actions/turbo-packages-build` step (which is what restores the
   # turbo cache and builds `packages/*`) — the eight jobs that DO use it are

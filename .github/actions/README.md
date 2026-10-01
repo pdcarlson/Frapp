@@ -17,7 +17,7 @@ action file is not on disk yet when the runner resolves it.
 | [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. Optional `preserve-nonempty` restores named env vars this injection left empty (production backup `prod` inject only). Call-site roster: `EXPECTED` in `scripts/ci/__tests__/infisical-secrets-action.test.mjs`. |
 | [`db-offsite-backup`](./db-offsite-backup/action.yml) | Dump one Supabase project with the Supabase CLI, upload to the offsite bucket under `<environment>/<label>/`, read it back, prune past retention. Asserts the injected `SUPABASE_PROJECT_REF` against `.github/environments.json` before linking. 2 call sites (staging, production) in `db-backup.yml`. |
 | [`storage-offsite-backup`](./storage-offsite-backup/action.yml) | Mirror one project's Storage objects to a per-environment prefix, or run the restore rehearsal. Asserts the injected `SUPABASE_URL` against `.github/environments.json`. 2 call sites in `db-backup.yml`. |
-| [`supabase-cli`](./supabase-cli/action.yml) | Installs the Supabase CLI at the one pinned version. 4 call sites. Takes **no inputs** — see below. |
+| [`supabase-cli`](./supabase-cli/action.yml) | Installs the Supabase CLI at the one pinned version. Its call sites are counted in `scripts/ci/__tests__/infisical-secrets-action.test.mjs`. Takes **no inputs** — see below. |
 | [`download-migration-snapshot`](./download-migration-snapshot/action.yml) | Fetches the newest migration snapshot `migration-snapshot.yml` published from `main`, with `GITHUB_TOKEN` (the job needs `actions: read`), and exports its path, plus a staging-deploy state that `migration-drift` reads; the action's header defines both. How the credential-free PR gates learn what each database has applied (#2518). 3 call sites in `migration-drift-gate.yml`. |
 
 ## Rules that are enforced, not just documented
@@ -35,7 +35,10 @@ action file is not on disk yet when the runner resolves it.
   commit first, on an `install:` value the action doesn't accept, on any step added to the
   action or line added to its mode check, and on an installing mode in a job that holds a
   secret, directly or through a composite action it calls (those jobs run dependency-free
-  scripts, so `npm ci`'s lifecycle scripts never run beside a credential).
+  scripts, so no `node-setup` call runs `npm ci`'s lifecycle scripts beside a credential).
+  `_deploy.yml` is outside that rule: its hand-written `npm ci` runs in a job that already
+  holds its environment's secrets, before the Infisical injection, and #2824 tracks
+  isolating it.
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`
@@ -66,13 +69,14 @@ action file is not on disk yet when the runner resolves it.
   per-run `GITHUB_TOKEN` are outside it.
 
 - **`supabase-cli` takes no inputs on purpose.** A `version:` input would put the pin back
-  at four call sites. The production apply and the `migration-replay` rehearsal exist to be
+  at every call site. The production apply and the `migration-replay` rehearsal exist to be
   *the same CLI code path*; a rehearsal on a different build than the apply proves nothing,
   and the drift is silent — both runs go green. Change the pin in the action, for everybody.
   Enforced by `scripts/ci/__tests__/infisical-secrets-action.test.mjs` — one file guards both
   of the actions this stage extracted, so a `version:` input fails a test named after the
-  other one. It also pins `scripts/db-backup.sh`'s deliberate second copy of the version
-  (its no-CLI-on-PATH fallback) to this same pin.
+  other one. It also pins the version's two deliberate shell copies to this same pin:
+  `scripts/db-backup.sh`'s no-CLI-on-PATH fallback, and `scripts/lib/supabase-cli.sh`'s
+  `FRAPP_SUPABASE_CLI_PIN`, which the sandbox and laptop bootstraps resolve.
 
 - **A local action needs a checkout in the same job — and must not run after the workspace
   moves.** `uses: ./…` resolves against the runner workspace *at step-execution time*, so a

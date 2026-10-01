@@ -451,7 +451,7 @@ describe("supabase-cli composite action", () => {
   });
 
   it("takes no inputs, so the pin cannot be overridden per call site", () => {
-    // A `version:` input would put four copies back and defeat the point: the
+    // A `version:` input would put a copy back at every call site and defeat the point: the
     // production apply and the migration-replay rehearsal must run the SAME CLI
     // build, and drift between them fails silently -- both go green.
     assert.ok(
