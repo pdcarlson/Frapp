@@ -67,9 +67,15 @@ const DialogContent = React.forwardRef<
       aria-modal="true"
     >
       {children}
+      {/*
+        `--muted-foreground`, not `--muted`: §1 bars `--muted` as text anywhere
+        on the ladder, and this is an accessibly named control ("Close") that
+        measured 3.126:1 on the dialog's `--popover` against §6's 4.5:1 (#1208).
+        `ui/sheet.tsx` carries the same control.
+      */}
       <DialogPrimitive.Close
         className={cn(
-          "absolute right-4 top-4 rounded-xs border border-transparent p-1 text-muted transition-colors hover:text-foreground disabled:pointer-events-none",
+          "absolute right-4 top-4 rounded-xs border border-transparent p-1 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none",
           FOCUS_RING
         )}
       >
