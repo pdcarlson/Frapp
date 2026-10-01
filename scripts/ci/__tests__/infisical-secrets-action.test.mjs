@@ -118,13 +118,13 @@ describe("infisical-secrets composite action", () => {
     }
     assert.match(
       infisicalAction,
-      /uses:\s*Infisical\/secrets-action@a663da43e1541832614bfd9dcf9ab67381ea2b98 # v1\.0\.12$/m,
+      /uses:\s*Infisical\/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1\.0\.18$/m,
       "the pinned third-party action commit (#2647) must not drift silently",
     );
   });
 
   it("agrees with the version SECRETS_MANAGEMENT.md quotes", () => {
-    // That doc names `Infisical/secrets-action@v1.0.12` in prose — a second,
+    // That doc names `Infisical/secrets-action@v1.0.18` in prose — a second,
     // hand-maintained copy of a version that now lives in one place. Same
     // treatment as scripts/db-backup.sh's deliberate duplicate: keep the copy
     // (a reader debugging a 401 wants the version in front of them) and let a

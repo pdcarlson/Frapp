@@ -263,7 +263,7 @@ jobs:
       # The deployed commit, for the installs. Nothing trusted runs from this
       # tree until the detach below.
       - name: Checkout the commit to deploy
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
           # Full history: the move to the trusted ref below needs `github.sha`,
@@ -277,12 +277,14 @@ jobs:
 
       # Hand-written, not ./.github/actions/node-setup: a local action loads
       # from the tree on disk, which is the deployed commit here, so deploying
-      # a commit older than that action would fail. The version must match
-      # node-setup's (`node-setup-action.test.mjs`).
+      # a commit older than that action would fail. The action ref, the
+      # version and `package-manager-cache: false` must match node-setup's step,
+      # whose comment says why the opt-out is there (`node-setup-action.test.mjs`).
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
 
       # Before any secret is injected (#2801). `vercel build` runs each app's
       # own build, which needs the workspace's dependencies: both apps import

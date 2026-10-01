@@ -399,8 +399,8 @@ changes would break the first, and none should ever be made:**
    block in any workflow that holds secrets.
 4. Widening the App beyond this repository or beyond its two permissions.
 
-One exposure this review does not eliminate: `pr-base-sync.yml` pins `actions/checkout@v4` and
-`actions/create-github-app-token@v3` by **mutable major tag**, and the second is the action that
+One exposure this review does not eliminate: `pr-base-sync.yml` pins `actions/checkout` and
+`actions/create-github-app-token` by **mutable major tag**, and the second is the action that
 receives the private key. A compromised tag executes in exactly the job that holds it. Both are
 `actions/*`, and mutable major tags are this repo's prevailing convention (a handful of third-party
 actions aside — `docker/*`, `dorny/paths-filter`, `lycheeverse/lychee-action`), so this is not a

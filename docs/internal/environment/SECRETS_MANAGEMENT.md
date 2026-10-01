@@ -169,7 +169,7 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 #### GitHub Actions is not a sync
 
 There is no GitHub Actions sync — the Secret Syncs list holds exactly the two above. The workflows
-that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` (pinned to that tag's commit SHA, #2647) with
+that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.18` (pinned to that tag's commit SHA, #2647) with
 `method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
 `INFISICAL_CLIENT_SECRET` secrets, read through the GitHub environment each job names (§6). This is universal
 auth, not OIDC. Every workflow that calls the composite action below does this — today
