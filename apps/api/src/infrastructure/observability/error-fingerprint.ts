@@ -2,7 +2,7 @@
  * What tells two reported errors apart when their stacks cannot (#2131).
  *
  * Sentry groups an exception by its type and in-app stack, and stops reading
- * the message once the stack contributes. Two shapes this API reports defeat
+ * the message once the stack contributes. Three shapes this API reports defeat
  * that:
  *
  *  - A 5xx rethrown from a catch carries the provider error on `cause`, and
@@ -12,8 +12,11 @@
  *  - `toReportableError` builds its `NonErrorThrowable` inside itself, so
  *    every plain PostgREST object normalized at one site has the same stack,
  *    whatever its `code`.
+ *  - A `SupabaseQueryError` has the stack of the query that failed (#1264),
+ *    which tells one query from another but not a statement timeout from a
+ *    missing column at the same query.
  *
- * Either way, distinct faults collapse into one issue (FRAPP-API-4). The
+ * In each, distinct faults collapse into one issue (FRAPP-API-4). The
  * fingerprint extends Sentry's own grouping (`{{ default }}`) with one
  * `kind[:code]` part per error in the chain, so each fault gets an issue and
  * one fault keeps one. Only identifier-shaped tokens are read, never a
@@ -46,12 +49,21 @@ function partOf(error: Error): string {
 }
 
 /**
+ * Errors keyed by their `code` even when they arrive alone: the
+ * `NonErrorThrowable` and `SupabaseQueryError` shapes above, whose stack
+ * cannot separate faults with different codes. (The Stripe shape is a chain,
+ * keyed by the chain rule below.) Matched by `name`, which both set, so this
+ * module needs neither class.
+ */
+const CODE_KEYED = new Set(['NonErrorThrowable', 'SupabaseQueryError']);
+
+/**
  * The fingerprint for a reported error, or `undefined` to leave Sentry's
  * default grouping alone.
  *
- * Only a chain (an error with an `Error` cause) or a normalized non-Error
- * gets one: a fingerprint re-keys the issue it lands in, and an ordinary
- * error's stack already tells it apart.
+ * Only a chain (an error with an `Error` cause) or a {@link CODE_KEYED}
+ * error gets one: a fingerprint re-keys the issue it lands in, and an
+ * ordinary error's stack already tells it apart.
  */
 export function errorFingerprint(reported: Error): string[] | undefined {
   const chain: Error[] = [];
@@ -62,7 +74,7 @@ export function errorFingerprint(reported: Error): string[] | undefined {
   ) {
     chain.push(current);
   }
-  if (chain.length < 2 && reported.name !== 'NonErrorThrowable') {
+  if (chain.length < 2 && !CODE_KEYED.has(reported.name)) {
     return undefined;
   }
   return ['{{ default }}', ...chain.map(partOf)];

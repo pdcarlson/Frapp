@@ -447,7 +447,11 @@ describe('ScheduledJobsRepository', () => {
 
       await expect(
         repo.writeRecomputedPalette({ id: 'ch-1', seed: '#8B0000' }, columns),
-      ).rejects.toBe(failure);
+      ).rejects.toMatchObject({
+        name: 'SupabaseQueryError',
+        code: '57014',
+        message: '57014: boom',
+      });
     });
 
     it('refuses a non-integer engine version rather than interpolate it into a filter', async () => {
