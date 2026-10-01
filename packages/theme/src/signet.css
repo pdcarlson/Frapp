@@ -55,8 +55,8 @@
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
      * favor: `--muted` is muted TEXT (#78716A), not a fill. Subtle
-     * fills use `--secondary` / the surface ladder instead; the web
-     * reskin retargeted every `bg-muted` call site accordingly. */
+     * fills use the surface ladder (`--surface-1`, `--card`) instead;
+     * the web reskin retargeted every `bg-muted` call site accordingly. */
     --foreground: #EDEAE3;
     --muted-foreground: #A9A399;
     --muted: #78716A;
@@ -140,15 +140,36 @@
     --mention-chip-text: #FAA81A;
 
     /* ── Neutral interactive fills (ShadCN compat) ────────────────
-     * `secondary` is the Secondary-button recipe (components.md §3):
-     * card fill with the stronger input hairline. `accent` is the
-     * neutral hover/highlight fill for menus and undrawn primitives
-     * (components.md §2): one ladder step up. Chapter-accent tints
-     * are a different thing — `--accent-subtle` below. */
+     * `--secondary` and `--accent` are pure aliases of `--card` and
+     * `--popover`, kept only because the ShadCN scaffold named them.
+     * The alias is the trap: `hover:bg-accent` reads like a highlight
+     * and is the elevated step itself, so inside a dialog it painted a
+     * control in its container's own colour (#1208, #1220). Nothing in
+     * either Next app paints them any more, and
+     * `apps/web/components/shared/elevation-call-sites.spec.ts` keeps
+     * it that way; deleting them is #3036. A rest fill names its ladder
+     * step (`bg-card`, `bg-popover`). A hover takes a state above what
+     * it sits on (`--card-hover` below, or `--accent-subtle` for a row
+     * in a menu or table), never the surface it already sits on.
+     * Chapter-accent tints are a different thing: `--accent-subtle`. */
     --secondary: #211E1A;
     --secondary-foreground: #EDEAE3;
     --accent: #2A2621;
     --accent-foreground: #EDEAE3;
+
+    /* `--card-hover` is the hover of a card-filled control: the
+     * Secondary button (components.md §3) and a card-filled row or tile.
+     * It is `--popover` lifted 6% toward white, so it sits ABOVE the
+     * top of the ladder and stays distinct from every step a control can
+     * sit on, a dialog included, where the old elevated-step hover was
+     * the dialog's own fill. An opaque literal rather than a white alpha
+     * (which composites over the container, so on `--background` it
+     * landed on the card rest fill) or a `color-mix()` (which has a
+     * browser floor). It is never a resting surface: elevation is still
+     * the four steps above. `elevation-contrast.spec.ts` derives it from
+     * `--popover`, so a ladder change fails there instead of leaving
+     * this value behind. */
+    --card-hover: #37332E;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
      * deriveSignetPalette("#DDB844") output, pinned by signet.css.spec.ts.
