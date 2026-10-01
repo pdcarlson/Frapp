@@ -285,16 +285,35 @@ type CachedRead = {
  * ## Why it is variadic, which is the part that is easy to get wrong
  *
  * `query-provider.tsx` leaves queries on TanStack's `"online"` default (its
- * `networkMode: "always"` is scoped to mutations), so offline queries
- * **pause**. A paused query is neither `isLoading` nor `isError` — so every
- * loading and error guard *below* an offline branch is dead while offline.
- * Test that state as `isPending && fetchStatus === "paused"`, never as
+ * `networkMode: "always"` is scoped to mutations), so what an uncached read
+ * does while the surface is offline depends on how it got offline. TanStack's
+ * `onlineManager` starts `#online = true` and moves only on the window's
+ * `online`/`offline` events: it never reads `navigator.onLine`, and it knows
+ * nothing about `/health`. So there are two outcomes, not one:
+ *
+ * - **The link dropped after load.** The `offline` event fired and the read
+ *   **pauses**: `isPending && fetchStatus === "paused"`, neither `isLoading`
+ *   nor `isError`, and nothing settles it until reconnect. Every loading and
+ *   error guard *below* the offline branch is dead for it.
+ * - **The document mounted offline** (a bfcache restore, a restored tab), **or
+ *   the link is up and the API is not** (`useNetwork()` reports OFFLINE after
+ *   three failed `/health` probes). No `offline` event fired, so the read
+ *   runs, retries and **fails**: `isError` with no `data`.
+ *
+ * A surface handles both. One that covers only the pause leaves the failure to
+ * whatever error guard it happens to have below; one that covers only the
+ * failure renders a paused read as nothing, for as long as the outage lasts.
+ * Test the paused state as `isPending && fetchStatus === "paused"`, never as
  * `isPending && !isFetching`: a query that was never started is `"idle"` and
  * satisfies the second form too, which conflates "we could not ask" with
- * "we did not ask" (`spec/ui/design-system/README.md` § 4, State completeness standard). Those guards are
- * load-bearing: `members-directory.tsx` blocks on its roles and points reads
- * precisely because "the directory still looks healthy while those features
- * are quietly broken" without them.
+ * "we did not ask" (`spec/ui/design-system/README.md` § 4, State completeness standard).
+ *
+ * This predicate covers both without telling them apart, because it reads
+ * `data`, which is `undefined` in each. The pause is why it takes every read:
+ * a paused secondary read trips none of the guards below, and those guards
+ * are load-bearing — `members-directory.tsx` blocks on its roles and points
+ * reads precisely because "the directory still looks healthy while those
+ * features are quietly broken" without them.
  *
  * So a surface renders only when **every** read it needs to be truthful is
  * cached — not merely the one it maps over. Pass them all; `some` is

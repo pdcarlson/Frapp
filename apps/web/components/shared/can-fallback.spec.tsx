@@ -58,8 +58,17 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: activeChapter.value }),
 }));
 
+const { network } = vi.hoisted(() => ({
+  network: { isOffline: false },
+}));
+
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => network,
+}));
+
 beforeEach(() => {
   activeChapter.value = "chapter-1";
+  network.isOffline = false;
   refetch.mockClear();
 });
 
@@ -135,6 +144,45 @@ describe("a paused permission check is never silent", () => {
   });
 });
 
+describe("a check that failed offline is the paused state, reached the other way (#2267)", () => {
+  /*
+   * TanStack only pauses a query when its `onlineManager` saw the window's
+   * `offline` event. A document that mounted offline, or a link that is up in
+   * front of an API that is not (`useNetwork()` goes OFFLINE after three
+   * failed `/health` probes), runs the permissions fetch and fails it instead.
+   * Before #2267 that landed on the `isError && !data` branch and hid every
+   * gated control, which is the denial §5 rule 4 reserves for permissions the
+   * member will never hold.
+   */
+  const FAILED = { data: undefined, isPending: false, isError: true, fetchStatus: "idle" };
+
+  it("states the offline check, with the gate's own retry, instead of hiding the control", () => {
+    network.isOffline = true;
+    renderGate(FAILED, { deniedFallback: <p>Ask your chapter president</p> });
+    expect(screen.getByText(/can't check your access/i)).toBeInTheDocument();
+    expect(screen.queryByText(/ask your chapter president/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /create poll/i })).toBeNull();
+    screen.getByRole("button", { name: /^retry$/i }).click();
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("honours an explicit `null` here too", () => {
+    network.isOffline = true;
+    renderGate(FAILED, { offlineFallback: null });
+    expect(screen.queryByText(/can't check your access/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /create poll/i })).toBeNull();
+  });
+
+  it("still uses a cached answer when the refetch fails offline", () => {
+    network.isOffline = true;
+    renderGate({ ...FAILED, data: { permissions: ["polls:view_all"] } });
+    expect(
+      screen.getByRole("button", { name: /create poll/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/can't check your access/i)).toBeNull();
+  });
+});
+
 describe("the other two branches are unchanged, and still fail closed", () => {
   it("treats a disabled query as the entitlement branch, not as offline", () => {
     // §4 names this trap: swapping `isPending` for `isLoading` here renders
@@ -185,7 +233,9 @@ describe("a cached answer outlives the fetch that was refreshing it", () => {
     ).toBeInTheDocument();
   });
 
-  it("still fails closed when the fetch failed and there is nothing cached", () => {
+  it("still fails closed when the fetch failed online and there is nothing cached", () => {
+    // `network.isOffline` is false: a failure the connection does not explain
+    // is a denial, not the offline state above.
     renderGate(
       { data: undefined, isPending: false, isError: true, fetchStatus: "idle" },
       { deniedFallback: <p>Ask your chapter president</p> },

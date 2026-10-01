@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useMyPermissions } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { can, canAll, canAny } from "@repo/validation";
 import { PermissionsOffline } from "@/components/shared/async-states";
 
@@ -21,8 +22,12 @@ type BaseProps = {
    */
   fallback?: ReactNode;
   /**
-   * Rendered when the permission query is **paused with nothing cached** —
-   * offline, first visit this session, no answer to be stale about.
+   * Rendered when the permission check **could not run for want of a
+   * connection, with nothing cached** — first visit this session, no answer to
+   * be stale about. That is a paused query, or one that failed while
+   * `useNetwork()` reports OFFLINE: offline, a query either pauses or fails
+   * depending on whether TanStack saw the `offline` event
+   * (`anyReadUncached` in `async-states.tsx` has the two cases).
    *
    * Unlike the other two, this defaults to something rather than to `null`.
    * The default is the control-slot member of the §10 offline family, which is
@@ -95,14 +100,20 @@ type CanProps = BaseProps &
  *   the Resources & Reporting slice found on two data queries.
  * - **Paused, nothing cached** → `offlineFallback`. Never `null`: an
  *   unanswerable check is a recoverable state, and §5 rule 4 reserves hiding
- *   for "permissions the user will never hold".
+ *   for "permissions the user will never hold". **Failed while OFFLINE,
+ *   nothing cached** is the same state and takes the same branch. A query only
+ *   pauses when TanStack saw the window's `offline` event; a document that
+ *   mounted offline, or a link that is up in front of an API that is not,
+ *   runs the fetch and fails it instead (#2267). A failure while the
+ *   connection is fine is still a denial, below.
  * - **Idle, nothing cached** → `fallback`, and the gate still **fails closed**.
  *   Swapping `isPending` for `isLoading` here would render gated content to a
  *   viewer whose permissions were never fetched; §4 names that trap by name.
  *
- * `refetch` is threaded into the default's Retry. While the link is still down
- * TanStack re-pauses it, which is the honest outcome — the control re-arms
- * rather than claiming to have checked.
+ * `refetch` is threaded into the default's Retry. While the connection is
+ * still down TanStack re-pauses it or fails it again, and either way the gate
+ * lands back here, which is the honest outcome — the control re-arms rather
+ * than claiming to have checked.
  */
 export function Can({
   children,
@@ -117,6 +128,7 @@ export function Can({
   const { data, isPending, isError, fetchStatus, refetch } = useMyPermissions({
     enabled: Boolean(activeChapterId),
   });
+  const { isOffline } = useNetwork();
 
   if (!activeChapterId) {
     // No chapter picked yet — there is no permission context to evaluate
@@ -124,9 +136,7 @@ export function Can({
     return <>{deniedFallback}</>;
   }
 
-  if (isPending && fetchStatus === "paused") {
-    // Above the bare `isPending` below, which would otherwise swallow it: a
-    // paused query is pending too.
+  const unanswerable = () => {
     const retry = () => {
       void refetch();
     };
@@ -146,6 +156,12 @@ export function Can({
             : offlineFallback}
       </>
     );
+  };
+
+  if (isPending && fetchStatus === "paused") {
+    // Above the bare `isPending` below, which would otherwise swallow it: a
+    // paused query is pending too.
+    return unanswerable();
   }
 
   if (isPending) {
@@ -153,9 +169,15 @@ export function Can({
   }
 
   if (isError && !data) {
-    // A failed permissions fetch with nothing cached is fail-safe closed. The
-    // shell shows a global error banner in this case; individual gated
-    // controls just disappear until the fetch recovers.
+    // Offline, this is the paused branch's state reached the other way: the
+    // fetch never paused because TanStack never saw an `offline` event, so it
+    // ran and failed (#2267). It is just as unanswerable, and hiding the
+    // control would tell the member they lack a permission nobody checked.
+    if (isOffline) return unanswerable();
+
+    // Online, a failed permissions fetch with nothing cached is fail-safe
+    // closed. The shell shows a global error banner in this case; individual
+    // gated controls just disappear until the fetch recovers.
     //
     // `&& !data` because v5 keeps `data` through a *background* refetch
     // failure and only resets `status` to `pending` when there is none
