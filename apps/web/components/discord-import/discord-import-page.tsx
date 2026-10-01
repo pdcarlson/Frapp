@@ -102,7 +102,8 @@ export function DiscordImportPage() {
   // Both of these are read ONCE into state, not on every render. The effect
   // below strips the params, and Next patches `replaceState` so
   // `useSearchParams()` re-renders without them — while the wizard is still
-  // behind the imports query's loading state and has not mounted. Read live,
+  // behind `<Can>`'s permission read and has not mounted (the browser is back
+  // from Discord on a full page load, so that read starts uncached). Read live,
   // it would mount a moment later with both already gone: the admin who just
   // authorized would land on "Choose how", and the one-time token that
   // activates their server would be lost.
@@ -259,9 +260,9 @@ function DiscordImportList({
   // Above every state branch, and so above anything the list's own read can
   // do. The wizard reads nothing from the list, but it holds every choice the
   // admin has made (source, consent, mappings, cutoff) in its own state, so a
-  // branch that unmounts it loses them: a list read that failed, or went
-  // offline, while another import's deletion was being polled used to send
-  // the admin back to the first step with nothing kept. On the page surface,
+  // branch that unmounts it loses them: a list read that failed while another
+  // import's deletion was being polled used to send the admin back to the
+  // first step with nothing kept. On the page surface,
   // not in a card: it already holds itself to a centred 672px column with its
   // own step heading and footer rule.
   if (wizardOpen) {
@@ -284,8 +285,8 @@ function DiscordImportList({
   // which on this flush route redraws the card the route deleted, and each of
   // these is the page's only async state. The error used to take
   // `ErrorState`'s defaults, "Unable to load data" and "Please retry in a
-  // moment.": no reason and no next step, the vague shape `writing.md` §1
-  // bans and §3's three-part pattern rules out.
+  // moment.": a failure that names nothing ("data") and gives no reason, the
+  // context-free shape `writing.md` §1 bans and §3's pattern rules out.
   if (isOffline && anyReadUncached(imports)) {
     return (
       <NestedOffline

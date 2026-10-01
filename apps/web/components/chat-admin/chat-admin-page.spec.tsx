@@ -132,15 +132,39 @@ describe("ChatAdminPage — on the page surface (#2500)", () => {
     expect(screen.queryByText(/Create, edit, and delete channels/)).toBeNull();
   });
 
-  it("shows the channel's type beside the edit heading", () => {
-    render(<ChatAdminPage />);
+  it("shows the channel's type beside the edit heading, on the page surface", () => {
+    const { container } = render(<ChatAdminPage />);
     selectExec();
+    expect(cardFilledContainers(container)).toEqual([]);
 
     const pane = screen.getByRole("region", { name: "Edit #exec" });
     expect(
       within(pane).getByRole("heading", { level: 3, name: "Edit #exec" }),
     ).toBeInTheDocument();
     expect(within(pane).getByText("Private")).toBeInTheDocument();
+  });
+});
+
+describe("ChatAdminPage — row heights", () => {
+  // The Directory's row-as-control recipe for a channel (the button sets the
+  // height: 36, 44 on touch) and the 44px floor for a category. Padding on
+  // either row puts 8px on top of that.
+  it("lets the controls set the row height, with no padding around them", () => {
+    render(<ChatAdminPage />);
+
+    const channelButton = screen.getByRole("button", { name: /^#exec/ });
+    expect(channelButton.className).toContain("min-h-9");
+    expect(channelButton.className).toContain("pointer-coarse:min-h-11");
+    const channelRow = channelButton.closest("li") as HTMLElement;
+    expect(channelRow.className).not.toMatch(/\bpy-/);
+
+    const categoryRow = within(
+      screen.getByRole("region", { name: "Categories" }),
+    )
+      .getByText("Chapter")
+      .closest("li") as HTMLElement;
+    expect(categoryRow.className).toContain("min-h-11");
+    expect(categoryRow.className).not.toMatch(/\bpy-/);
   });
 });
 
@@ -163,6 +187,14 @@ describe("ChatAdminPage — the create dialog", () => {
 describe("ChatAdminPage — the channel structure's states", () => {
   it("keeps the loaded channels through a failed background read", () => {
     reads.channels = { ...settled(CHANNELS), isError: true };
+    render(<ChatAdminPage />);
+
+    expect(screen.getByText("#general")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+
+  it("keeps the loaded categories through a failed background read", () => {
+    reads.categories = { ...settled(CATEGORIES), isError: true };
     render(<ChatAdminPage />);
 
     expect(screen.getByText("#general")).toBeInTheDocument();
@@ -199,7 +231,7 @@ describe("ChatAdminPage — a channel's pins", () => {
     render(<ChatAdminPage />);
     selectExec();
 
-    expect(screen.getByText(/Couldn't load the pins/)).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load pins")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(screen.queryByText("Nothing pinned")).toBeNull();
     // No count when there is no list to count.
@@ -213,8 +245,29 @@ describe("ChatAdminPage — a channel's pins", () => {
     render(<ChatAdminPage />);
     selectExec();
 
-    expect(screen.getByText(/Pins unavailable offline/)).toBeInTheDocument();
+    expect(screen.getByText("Pins unavailable offline")).toBeInTheDocument();
     expect(screen.queryByText("Nothing pinned")).toBeNull();
+  });
+
+  it("keeps the loaded pins through a failed background read", () => {
+    reads.pins = {
+      ...settled([
+        {
+          id: "m-1",
+          content: "Dues are due Friday",
+          sender_id: null,
+          author_name: "Treasurer",
+          created_at: "2026-09-30T12:00:00Z",
+          pinned_at: "2026-09-30T12:00:00Z",
+        },
+      ]),
+      isError: true,
+    };
+    render(<ChatAdminPage />);
+    selectExec();
+
+    expect(screen.getByText("Dues are due Friday")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load pins")).toBeNull();
   });
 
   it("says nothing is pinned when the read succeeded empty", () => {

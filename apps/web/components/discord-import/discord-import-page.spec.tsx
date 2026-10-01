@@ -167,9 +167,11 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
   // The wizard holds every choice in its own state, so a branch that unmounts
   // it sends the admin back to the first step with nothing kept.
   it("keeps an open wizard through a list read that fails with nothing cached", () => {
-    const { rerender } = render(<DiscordImportPage />);
+    const { container, rerender } = render(<DiscordImportPage />);
     fireEvent.click(screen.getByRole("button", { name: "New import" }));
     expect(screen.getByTestId("wizard")).toBeInTheDocument();
+    // On the page surface, not in the card it used to sit in.
+    expect(cardFilledContainers(container)).toEqual([]);
 
     hooks.listError = true;
     hooks.listCached = false;
@@ -273,6 +275,29 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
     rerender(<DiscordImportPage />);
     expect(screen.getByText("Tau Nu Discord")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load imports")).toBeNull();
+
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));
+    await waitFor(() =>
+      expect(hooks.remove).toHaveBeenCalledWith({ id: "big" }),
+    );
+  });
+
+  // #2944's own guard: the confirmation lives above the list's state branches,
+  // so even a read that leaves the list nothing to show, and swaps it for the
+  // error state, cannot unmount the open dialog and settle it as a cancel.
+  it("keeps an open confirmation when the list is swapped for its error state", async () => {
+    const { rerender } = render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
+    );
+    await screen.findByRole("dialog");
+
+    hooks.listError = true;
+    hooks.listCached = false;
+    rerender(<DiscordImportPage />);
+    expect(screen.queryByText("Tau Nu Discord")).toBeNull();
+    expect(screen.getByText("Couldn't load imports")).toBeInTheDocument();
 
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));

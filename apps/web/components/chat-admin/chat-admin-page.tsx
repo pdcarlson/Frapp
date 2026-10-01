@@ -944,6 +944,8 @@ function ChatAdminBody() {
                       to fall through to "Nothing pinned", because `pins` is
                       `[]` whenever there is no data, so an officer offline or
                       behind a failed read was told the channel had no pins.
+                      The nested family, so the three states in this slot
+                      read as one, and Retry is the family's 44px control.
                     */}
                     {pinsQuery.isLoading ? (
                       <p className="text-xs text-muted-foreground">
@@ -951,20 +953,17 @@ function ChatAdminBody() {
                       </p>
                     ) : pinsQuery.data === undefined &&
                       pinsQuery.fetchStatus === "paused" ? (
-                      <p className="text-xs text-muted-foreground">
-                        Pins unavailable offline. Reconnect to load them.
-                      </p>
+                      <NestedOffline
+                        title="Pins unavailable offline"
+                        description="Reconnect to load this channel's pins."
+                        onRetry={() => void pinsQuery.refetch()}
+                      />
                     ) : pinsQuery.isError && pinsQuery.data === undefined ? (
-                      <p className="text-xs text-muted-foreground">
-                        Couldn&apos;t load the pins.{" "}
-                        <button
-                          type="button"
-                          className={`underline ${FOCUS_RING_OFFSET}`}
-                          onClick={() => void pinsQuery.refetch()}
-                        >
-                          Retry
-                        </button>
-                      </p>
+                      <NestedError
+                        title="Couldn't load pins"
+                        description="Confirm your chapter access and retry."
+                        onRetry={() => void pinsQuery.refetch()}
+                      />
                     ) : pins.length === 0 ? (
                       <NestedEmpty
                         title="Nothing pinned"
@@ -1073,7 +1072,7 @@ function ChatAdminBody() {
               .map((category) => (
                 <li
                   key={category.id}
-                  className="flex min-h-11 items-center justify-between gap-2 py-1"
+                  className="flex min-h-11 items-center justify-between gap-2"
                 >
                   {editingCategoryId === category.id ? (
                     <>
