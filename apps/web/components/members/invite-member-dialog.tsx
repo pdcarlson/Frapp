@@ -182,6 +182,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   // #422: the chapter's configured default invite role, resolved id → name
   // against the live catalog. `undefined` while the config query is in flight
   // or when no default is set.
+  //
+  // Read from the officer-only config, deliberately: this dialog is an
+  // inviter's tool (`members:invite`, which among seeded roles only President
+  // holds, with `chapter-config:view`), and the member view doesn't carry
+  // `default_invite_role_id` (#2957). A custom role granted `members:invite`
+  // without `chapter-config:view` is refused the read and starts on Member.
   const defaultRoleName = useMemo(() => {
     const configuredId = orgConfigQuery.data?.default_invite_role_id;
     if (!configuredId) return undefined;

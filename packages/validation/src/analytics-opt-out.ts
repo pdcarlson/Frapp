@@ -10,10 +10,13 @@
  *
  * Two properties this file deliberately keeps:
  *
- * - **Fail-open.** Only an explicit `true` suppresses events.
+ * - **Fail-open on the flag.** Only an explicit `true` suppresses events.
  *   Missing / `undefined` / `false` means analytics is on (the product
- *   default; onboarding discloses this). Same reading as
- *   `useOrgConfig().data?.analytics_opt_out === true` on web.
+ *   default; onboarding discloses this). This reads a *loaded* chapter's
+ *   flag. A read that hasn't answered is not "missing": web counts that
+ *   chapter as opted out without asking this predicate (#2957); mobile
+ *   doesn't yet (#3101). See `spec/behavior/data-retention.md`
+ *   #analytics-events-pseudonymous.
  * - **Never a security boundary.** The API repeats the check before any
  *   server-originated event is sent (`spec/behavior/data-retention.md`
  *   #analytics-events-pseudonymous). This exists so an opted-out chapter

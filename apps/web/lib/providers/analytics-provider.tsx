@@ -1,7 +1,11 @@
 "use client";
 
 import React, { createContext, useCallback, useEffect, useMemo } from "react";
-import { useFrappClient, useActiveChapterId, useOrgConfig } from "@repo/hooks";
+import {
+  useFrappClient,
+  useActiveChapterId,
+  useCurrentChapter,
+} from "@repo/hooks";
 import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
 import {
   applyAnalyticsOptOut,
@@ -20,9 +24,20 @@ import {
  *
  * Client-side opt-out is the fourth shared gate (`isAnalyticsOptedOut` in
  * `@repo/validation`), next to `can`, `isModuleEnabled`, and
- * `subscriptionWriteState`. Web reads the flag from `useOrgConfig()`
- * (`GET /v1/chapters/{id}/config`); mobile reads the same scalar from
- * `useCurrentChapter()`.
+ * `subscriptionWriteState`. Web and mobile both read the flag from
+ * `useCurrentChapter()` (`GET /v1/chapters/current`), the member view, which
+ * every member can read. Web used to read it from `useOrgConfig()`, which needs
+ * `chapter-config:view`: no seeded role below President holds it, so for them
+ * the read always failed and the SDK was opted in (#2957).
+ *
+ * **Opted out until the member view answers.** While the chapter read is
+ * pending, after it fails with nothing cached, or with no active chapter, the
+ * provider treats the chapter as opted out: the SDK stays opted out and
+ * `track` posts nothing. Opting in is the step that needs proof, because
+ * nothing on the server stands behind what the PostHog SDK sends directly
+ * (`spec/behavior/data-retention.md` #analytics-events-pseudonymous). Once a
+ * payload has loaded, the shared predicate decides: only an explicit `true`
+ * opts out.
  *
  * `track` posts named product events to the API only. PostHog JS does **not**
  * capture those names — the API adapter already forwards them, and a second
@@ -45,10 +60,13 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const chapterId = useActiveChapterId();
   // First gate, enforced at the SDK boundary via the shared predicate: when
   // the active chapter has opted out, emit zero events for its members. The
-  // API repeats this check as defense-in-depth (data-retention.md
-  // #analytics-events-pseudonymous), so the ~5min config staleTime window
-  // before this client refetches is acceptable.
-  const optedOut = isAnalyticsOptedOut(useOrgConfig().data?.analytics_opt_out);
+  // API repeats this check for `track` as defense-in-depth (data-retention.md
+  // #analytics-events-pseudonymous). An officer's own Privacy-tab write
+  // re-reads this payload when it settles (`usePatchOrgConfig`); another
+  // member picks it up on the next refetch.
+  const chapter = useCurrentChapter().data;
+  const optedOut =
+    chapter === undefined || isAnalyticsOptedOut(chapter.analytics_opt_out);
 
   useEffect(() => {
     applyAnalyticsOptOut(optedOut);

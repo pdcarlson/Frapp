@@ -113,6 +113,34 @@ describe("identity, groups, logout, opt-out", () => {
     );
   });
 
+  // Both SDKs clear stored consent on `reset()` and fall back to capturing.
+  // The identity provider resets while the identity read loads, which is right
+  // after the analytics provider has applied a chapter opt-out (#2957).
+  it("keeps an opt-out across the reset a missing identity triggers", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyAnalyticsOptOut(true);
+    memory.calls.length = 0;
+
+    applyAnalyticsIdentity(null);
+    expect(memory.calls).toEqual([{ type: "reset" }, { type: "optOut" }]);
+
+    memory.calls.length = 0;
+    resetPostHog();
+    expect(memory.calls).toEqual([{ type: "reset" }, { type: "optOut" }]);
+  });
+
+  it("does not opt out after a reset when the chapter has not opted out", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyAnalyticsOptOut(false);
+    memory.calls.length = 0;
+
+    applyAnalyticsIdentity(null);
+    resetPostHog();
+    expect(memory.calls).toEqual([{ type: "reset" }, { type: "reset" }]);
+  });
+
   it("sets Sentry user from the same validated hex", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);

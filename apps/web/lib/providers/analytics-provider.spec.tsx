@@ -2,20 +2,23 @@ import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockPost, mockUseOrgConfig, applyAnalyticsOptOut } = vi.hoisted(
+const { mockPost, mockUseCurrentChapter, applyAnalyticsOptOut } = vi.hoisted(
   () => ({
     mockPost: vi.fn(),
-    mockUseOrgConfig: vi.fn(),
+    mockUseCurrentChapter: vi.fn(),
     applyAnalyticsOptOut: vi.fn(),
   }),
 );
 
-// The provider only needs a POST-capable client and an active chapter id.
-// Opt-out state is read from the merged chapter config.
+// The provider only needs a POST-capable client, an active chapter id, and
+// the member view (`GET /v1/chapters/current`). The config read is what every
+// role below President sees: refused (#2957). The provider must not depend on
+// it, so it reports the refusal here rather than being left out of the mock.
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ POST: mockPost }),
   useActiveChapterId: () => "chap-1",
-  useOrgConfig: () => mockUseOrgConfig(),
+  useCurrentChapter: () => mockUseCurrentChapter(),
+  useOrgConfig: () => ({ data: undefined, isError: true }),
 }));
 
 vi.mock("@repo/observability/identified-posthog", async (importOriginal) => {
@@ -42,25 +45,33 @@ function Emitter() {
   );
 }
 
-function renderWithOptOut(optOut: boolean | undefined) {
-  mockUseOrgConfig.mockReturnValue({ data: { analytics_opt_out: optOut } });
-  render(
+function tree() {
+  return (
     <AnalyticsProvider>
       <Emitter />
-    </AnalyticsProvider>,
+    </AnalyticsProvider>
   );
+}
+
+function renderWithOptOut(optOut: boolean | undefined) {
+  mockUseCurrentChapter.mockReturnValue({
+    data: { id: "chap-1", analytics_opt_out: optOut },
+    isError: false,
+  });
+  return render(tree());
 }
 
 describe("AnalyticsProvider client-side opt-out", () => {
   beforeEach(() => {
     mockPost.mockReset();
     mockPost.mockResolvedValue({ data: {}, error: undefined });
-    mockUseOrgConfig.mockReset();
+    mockUseCurrentChapter.mockReset();
     applyAnalyticsOptOut.mockReset();
   });
 
   it("posts the event when the chapter has not opted out", () => {
     renderWithOptOut(false);
+    expect(applyAnalyticsOptOut).toHaveBeenLastCalledWith(false);
     fireEvent.click(screen.getByText("emit"));
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(mockPost).toHaveBeenCalledWith(
@@ -74,14 +85,46 @@ describe("AnalyticsProvider client-side opt-out", () => {
     );
   });
 
-  it("emits zero events when the chapter has opted out", () => {
+  // The #2957 case: a member below President, whose config read is refused,
+  // in a chapter that turned analytics off. Read from the member view, the
+  // flag reaches the SDK.
+  it("opts a member out when their chapter has opted out", () => {
     renderWithOptOut(true);
     fireEvent.click(screen.getByText("emit"));
     expect(mockPost).not.toHaveBeenCalled();
     expect(applyAnalyticsOptOut).toHaveBeenCalledWith(true);
+    expect(applyAnalyticsOptOut).not.toHaveBeenCalledWith(false);
   });
 
-  it("fails open when the flag is missing from chapter config", () => {
+  it("stays opted out while the chapter read is pending, then opts in", () => {
+    mockUseCurrentChapter.mockReturnValue({ data: undefined, isError: false });
+    const view = render(tree());
+    expect(applyAnalyticsOptOut).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByText("emit"));
+    expect(mockPost).not.toHaveBeenCalled();
+
+    mockUseCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", analytics_opt_out: false },
+      isError: false,
+    });
+    view.rerender(tree());
+    expect(applyAnalyticsOptOut).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getByText("emit"));
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays opted out when the chapter read fails with nothing cached", () => {
+    mockUseCurrentChapter.mockReturnValue({ data: undefined, isError: true });
+    render(tree());
+    fireEvent.click(screen.getByText("emit"));
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(applyAnalyticsOptOut).toHaveBeenCalledWith(true);
+    expect(applyAnalyticsOptOut).not.toHaveBeenCalledWith(false);
+  });
+
+  // Once a payload has loaded, the shared predicate decides: only an explicit
+  // `true` opts out (`isAnalyticsOptedOut`).
+  it("opts in when a loaded payload has no flag", () => {
     renderWithOptOut(undefined);
     fireEvent.click(screen.getByText("emit"));
     expect(mockPost).toHaveBeenCalledTimes(1);
