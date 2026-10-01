@@ -5,8 +5,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The global ✦ Ask entry (s04, s06).
  *
- * `spec/ui/mobile/navigation.md:60` — "Ask is a global entry, not a tab, and it
- * MUST NOT become a fifth tab." It rides `ScreenShell`'s `headerAction` slot,
+ * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar: "Ask is
+ * a global entry, not a tab — it MUST NOT become a fifth tab." It rides `ScreenShell`'s `headerAction` slot,
  * which S2 added ahead of the hotspot freeze for exactly this control, so
  * rendering it needs no change to any frozen file.
  *
