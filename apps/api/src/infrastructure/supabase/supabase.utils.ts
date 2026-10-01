@@ -65,9 +65,10 @@ const MAX_PAGED_ROWS = 1_000_000;
  * see.
  *
  * Errors are **thrown**, never swallowed, so partial reads cannot be mistaken
- * for complete ones. A caller that wants a different policy expresses it at its
- * own call site (`scheduled-jobs.repository.ts` catches and returns `[]`;
- * `report.service.ts` translates the error inside its own `page` callback).
+ * for complete ones. A failed page throws a `SupabaseQueryError`. A caller that
+ * wants a different policy expresses it at its own call site
+ * (`scheduled-jobs.repository.ts` catches and returns `[]`;
+ * `chat-notification-preference.repository.ts` degrades one chunk).
  *
  * @param limit Optional ceiling on rows read. Callers that need to distinguish
  * "complete" from "stopped early" pass `limit + 1` and compare the row count
@@ -84,9 +85,9 @@ export async function fetchAllPages<T>(
     // Terminating only on an empty page means a backend that ignored the
     // window would hand back a full page forever, so the loop is bounded too —
     // the same guard, for the same reason, as `listEntries` in
-    // `infrastructure/storage/supabase-storage.service.ts`. Three of the four
-    // callers pass no `limit`, and two of them run inside a cron; failing
-    // loudly at an absurd row count beats hanging a tick.
+    // `infrastructure/storage/supabase-storage.service.ts`. Most callers pass
+    // no `limit`, and the scheduled sweeps among them run inside a cron;
+    // failing loudly at an absurd row count beats hanging a tick.
     if (rows.length > MAX_PAGED_ROWS) {
       throw new Error(
         `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,

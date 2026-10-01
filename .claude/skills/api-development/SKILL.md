@@ -64,8 +64,10 @@ Use the `task` feature as the reference, since it follows every convention below
   object at runtime, whatever supabase-js's type says, so thrown bare it has no stack and logs as
   `[object Object]`. Read `error.code` (or `message`, as `parseArchiveQuotaError` does) before
   wrapping when the method branches on it; the wrapper keeps `code` and `hint` and drops `details`.
-  `supabase-query-error-throws.spec.ts` fails on a raw throw. Storage-js and auth-js errors are real
-  `Error`s already and are thrown as they are. Return `data ?? []` for lists.
+  `supabase-query-error-throws.spec.ts` fails on the usual raw-throw shapes; it is a syntax scan,
+  and its docblock lists the ones it can't see (a helper that throws an `error` passed into it is
+  one), so don't write those. Storage-js and auth-js errors are real `Error`s already and are thrown
+  as they are. Return `data ?? []` for lists.
 - Write methods take `TablesInsert<'table'>` / `TablesUpdate<'table'>` and pass them to
   `.insert()` / `.update()` with no cast and no `@ts-expect-error`. `as never`, `as any`,
   `as unknown as …` and the expanded `Database['public']['Tables'][…]['Insert']` all erase the

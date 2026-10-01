@@ -168,8 +168,10 @@ describe('AllExceptionsFilter → Sentry, for a rethrown 5xx (#2131)', () => {
     const failed = {
       code: 'PGRST205',
       message: "Could not find the table 'public.chapters' in the schema cache",
-      details:
-        'Key (email)=(alice@example.com) is not present in table "users".',
+      // A name, not an email: the scrubber's free-text sweep redacts emails
+      // on its own, so only a value it leaves alone proves the wrapper
+      // dropped `details`.
+      details: 'Key (display_name)=(Alice Smith) already exists.',
       hint: null,
     };
     const chain: Record<string, unknown> = {
@@ -207,7 +209,7 @@ describe('AllExceptionsFilter → Sentry, for a rethrown 5xx (#2131)', () => {
       '{{ default }}',
       'SupabaseQueryError:PGRST205',
     ]);
-    expect(JSON.stringify(sent[0])).not.toContain('alice@example.com');
+    expect(JSON.stringify(sent[0])).not.toContain('Alice Smith');
   });
 
   it('leaves an ordinary 500 on default grouping', async () => {

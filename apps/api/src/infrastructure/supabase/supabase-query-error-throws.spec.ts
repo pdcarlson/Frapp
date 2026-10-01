@@ -16,24 +16,29 @@ import {
  * catches this: `@typescript-eslint/only-throw-error` reads the declared
  * `PostgrestError` and passes it. Thrown bare, it renders `[object Object]`,
  * defeats every `instanceof Error` branch, and reaches Sentry with a stack
- * rooted in `toReportableError` instead of the query. 281 sites threw it that
- * way before this ledger existed.
+ * rooted in `toReportableError` instead of the query. This detector, run
+ * over `main` at 77fa9bf, found 309 sites throwing it that way before the
+ * ledger existed.
  *
- * What is judged, anywhere under `apps/api/src`:
+ * What is judged, anywhere under `apps/api/src` outside spec files:
  *
  *  - `throw x`, where the nearest binding of `x` in scope destructures a
- *    result's `error` property: `const { data, error } = await …` or
- *    `const { error: pageError } = …`.
+ *    result's `error` property: `const { data, error } = await …`,
+ *    `const { error: pageError } = …`, or a callback's own parameter,
+ *    `.then(({ error }) => …)`.
  *  - `throw r.error`, for a result held whole.
  *
- * Both are exempt when the result came from `.storage` or `.auth`: storage-js
- * and auth-js construct `StorageError` and `AuthError`, which are real
- * `Error` subclasses already.
+ * Both are exempt when the result came from `.storage` or `.auth` (for a
+ * callback parameter, the call the callback is passed to): storage-js and
+ * auth-js construct `StorageError` and `AuthError`, which are real `Error`
+ * subclasses already.
  *
  * Not judged, and stated so nobody reads more into a green run: an `error`
  * passed into a helper and thrown there (`report.service.ts` and
  * `search.service.ts` once each had a local `throwIfError`), destructuring by
- * assignment (`({ error } = …)`), and `const error = result.error`.
+ * assignment (`({ error } = …)`), `const error = result.error`, and a query
+ * error that is never thrown at all: a site that drops `error` and reads the
+ * missing row as an answer is invisible here.
  */
 interface RawThrow {
   line: number;
@@ -100,42 +105,64 @@ function declarationListsOf(scope: ts.Node): ts.VariableDeclarationList[] {
 }
 
 /**
- * The nearest declaration of `name` visible from `from`, walking out through
- * blocks and closures. A catch clause or parameter that shadows it ends the
- * search with no declaration: that binding is not a query result.
+ * How a name was bound, as far as this ledger cares: whether it took a
+ * result's `error` property, and the code the result came from.
  */
-function nearestDeclaration(
-  name: string,
-  from: ts.Node,
-): ts.VariableDeclaration | undefined {
+interface Binding {
+  errorProperty: boolean;
+  source: string;
+}
+
+/** For a callback's parameter, the call the callback is handed to. */
+function callbackSource(fn: FunctionLike): string {
+  return fn.parent && ts.isCallExpression(fn.parent)
+    ? fn.parent.expression.getText()
+    : '';
+}
+
+/**
+ * The nearest binding of `name` visible from `from`, walking out through
+ * blocks and closures. A catch clause binds a caught value, never a query
+ * result; a parameter is one only when it destructures `error`.
+ */
+function nearestBinding(name: string, from: ts.Node): Binding | undefined {
   for (let scope = from.parent; scope; scope = scope.parent) {
     if (
       ts.isCatchClause(scope) &&
       scope.variableDeclaration &&
       bindsName(scope.variableDeclaration.name, name)
     ) {
-      return undefined;
+      return { errorProperty: false, source: '' };
     }
-    if (
-      isFunctionLike(scope) &&
-      scope.parameters.some((parameter) => bindsName(parameter.name, name))
-    ) {
-      return undefined;
+    if (isFunctionLike(scope)) {
+      const parameter = scope.parameters.find((candidate) =>
+        bindsName(candidate.name, name),
+      );
+      if (parameter) {
+        return {
+          errorProperty: bindsErrorProperty(parameter.name, name),
+          source: callbackSource(scope),
+        };
+      }
     }
     for (const list of declarationListsOf(scope)) {
       const declaration = list.declarations.find((candidate) =>
         bindsName(candidate.name, name),
       );
-      if (declaration) return declaration;
+      if (declaration) {
+        return {
+          errorProperty: bindsErrorProperty(declaration.name, name),
+          source: declaration.initializer?.getText() ?? '',
+        };
+      }
     }
   }
   return undefined;
 }
 
 /** storage-js and auth-js throw real `Error` subclasses of their own. */
-function fromStorageOrAuth(declaration: ts.VariableDeclaration): boolean {
-  const initializer = declaration.initializer?.getText() ?? '';
-  return /\.(storage|auth)\b/.test(initializer);
+function fromStorageOrAuth(binding: Binding): boolean {
+  return /\.(storage|auth)\b/.test(binding.source);
 }
 
 /** Every `throw` that hands on a query's raw `error`. */
@@ -153,12 +180,8 @@ function rawQueryErrorThrows(source: ts.SourceFile): RawThrow[] {
     if (ts.isThrowStatement(node) && node.expression) {
       const thrown = node.expression;
       if (ts.isIdentifier(thrown)) {
-        const declaration = nearestDeclaration(thrown.text, node);
-        if (
-          declaration &&
-          bindsErrorProperty(declaration.name, thrown.text) &&
-          !fromStorageOrAuth(declaration)
-        ) {
+        const binding = nearestBinding(thrown.text, node);
+        if (binding?.errorProperty && !fromStorageOrAuth(binding)) {
           record(node);
         }
       } else if (
@@ -166,7 +189,7 @@ function rawQueryErrorThrows(source: ts.SourceFile): RawThrow[] {
         thrown.name.text === 'error'
       ) {
         const holder = ts.isIdentifier(thrown.expression)
-          ? nearestDeclaration(thrown.expression.text, node)
+          ? nearestBinding(thrown.expression.text, node)
           : undefined;
         if (!holder || !fromStorageOrAuth(holder)) record(node);
       }
@@ -244,6 +267,27 @@ describe('a failed Supabase query is thrown as a SupabaseQueryError (#1264)', ()
           }
         `),
       ).toEqual([{ line: 4, thrown: 'result.error' }]);
+    });
+
+    it("flags an error destructured in a callback's own parameters", () => {
+      expect(
+        judged(`
+          async function a() {
+            await supabase.from('t').update(x).eq('id', id).then(({ error }) => {
+              if (error) throw error;
+            });
+            results.forEach(({ error: rowError }) => {
+              if (rowError) throw rowError;
+            });
+            await this.supabase.storage.from('b').remove([p]).then(({ error }) => {
+              if (error) throw error;
+            });
+          }
+        `),
+      ).toEqual([
+        { line: 4, thrown: 'error' },
+        { line: 7, thrown: 'rowError' },
+      ]);
     });
 
     it('sees the binding from inside a closure', () => {
