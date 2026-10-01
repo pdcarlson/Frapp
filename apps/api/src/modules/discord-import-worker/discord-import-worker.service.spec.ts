@@ -1176,9 +1176,10 @@ describe('DiscordImportWorkerService — importing', () => {
   });
 
   it('records a repository\'s error text, not "[object Object]"', async () => {
-    // A repository throws PostgREST's plain object, not an Error. Staging's
-    // first real bot import failed with its cause reduced to "[object Object]"
-    // on the page and in the log (#2825).
+    // A throwable that is not an Error, as every repository threw before
+    // #1264. Staging's first real bot import failed with its cause reduced to
+    // "[object Object]" on the page and in the log (#2825), and the worker
+    // still normalizes whatever reaches it.
     const storage = makeStorage(part000());
     storage.downloadFile.mockImplementation().mockRejectedValue({
       code: 'PGRST000',
@@ -1492,7 +1493,7 @@ describe('DiscordImportWorkerService — purging', () => {
     const storage = makeStorage(null);
     storage.listFiles.mockImplementation(async () => ['m/one.png']);
     const reportRepo = {
-      // A PostgREST error, which the repositories throw as a plain object.
+      // A failed query. Any rejection must stop the purge, whatever its shape.
       findHeldObjects: jest.fn(() =>
         Promise.reject({ code: 'XX000', message: 'boom' }),
       ),

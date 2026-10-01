@@ -11,6 +11,7 @@ import {
   type SubscriptionWebhookPatch,
 } from '#domain/repositories/chapter.repository.interface';
 import { Chapter } from '#domain/entities/chapter.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseChapterRepository implements IChapterRepository {
@@ -25,7 +26,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -35,7 +36,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .from('chapters')
       .select('*')
       .in('id', ids);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -45,7 +46,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .select('*')
       .eq('subscription_id', subscriptionId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -57,7 +58,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .select('*')
       .eq('stripe_customer_id', customerId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -87,7 +88,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
         : query.eq('subscription_id', expectedSubscriptionId);
 
     const { data, error } = await query.select('*');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return Array.isArray(data) && data.length > 0 ? data[0] : null;
   }
 
@@ -104,7 +105,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
         p_patch: patch,
       },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     if (rows.length === 0) return null;
     const row = rows[0];
@@ -125,7 +126,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .insert(chapterData)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -139,7 +140,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 }

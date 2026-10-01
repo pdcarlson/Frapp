@@ -149,9 +149,13 @@ describe('SupabaseDiscordAuthorLinkRepository — errors', () => {
       message: 'permission denied for function link_discord_author',
     };
     const { repo } = build({ link_discord_author: { error: denied } });
-    await expect(repo.link(CHAPTER_A, MEMBER, DISCORD_A, null)).rejects.toBe(
-      denied,
-    );
+    await expect(
+      repo.link(CHAPTER_A, MEMBER, DISCORD_A, null),
+    ).rejects.toMatchObject({
+      name: 'SupabaseQueryError',
+      code: '42501',
+      message: '42501: permission denied for function link_discord_author',
+    });
   });
 
   it('treats an empty function result as a failure, not a link', async () => {

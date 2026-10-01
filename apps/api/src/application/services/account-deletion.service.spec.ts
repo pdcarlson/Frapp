@@ -13,6 +13,7 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { AUTH_ADMIN_PROVIDER } from '#domain/adapters/auth-admin.interface';
 import type { IAuthAdminProvider } from '#domain/adapters/auth-admin.interface';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 const liveUser = {
   id: 'user-1',
@@ -418,21 +419,25 @@ describe('AccountDeletionService', () => {
 
   it('aborts with 502 before any mutation when membership enumeration fails', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
-    // What a Supabase repository actually throws: a plain PostgREST body.
-    mockMemberRepo.findByUser.mockRejectedValue({
+    // What a Supabase repository actually throws: a `SupabaseQueryError`
+    // (#1264), which never carries the record's `details`.
+    const failure = new SupabaseQueryError({
       code: 'PGRST301',
       message: 'db blip',
       details: 'Key (user_id)=(user-1)',
     });
+    mockMemberRepo.findByUser.mockRejectedValue(failure);
 
     const thrown = await service
       .deleteAccount('user-1')
       .catch((error: unknown) => error);
 
     expect(thrown).toBeInstanceOf(BadGatewayException);
-    // Normalized before it becomes the cause, so `details` never reaches Sentry.
+    // The query's own error is the cause, stack and all, so Sentry's linked
+    // exception points at the repository; `details` was never on it.
+    expect((thrown as Error).cause).toBe(failure);
     expect((thrown as Error).cause).toMatchObject({
-      name: 'NonErrorThrowable',
+      name: 'SupabaseQueryError',
       message: 'PGRST301: db blip',
     });
     expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
