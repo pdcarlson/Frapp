@@ -1429,7 +1429,10 @@ function SettingsToolsOnly({ tools }: { tools: readonly SettingsTool[] }) {
             <Link
               href={tool.href}
               className={cn(
-                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent",
+                // A row in a card list hovers like a table row
+                // (`ui/table.tsx`): the accent tint, which moves hue where
+                // `bg-accent`, the elevated step, moved 1.105:1.
+                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent-subtle",
                 FOCUS_RING,
               )}
             >

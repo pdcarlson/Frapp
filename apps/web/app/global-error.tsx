@@ -96,18 +96,18 @@ export default function GlobalError({
               reported. Reloading usually clears it.
             </p>
             {/*
-              Byte-identical to `Button variant="secondary" size="sm"`'s recipe
-              rather than a better one-off: `hover:bg-accent` is weak on a card
-              (`--accent` aliases `--popover`, 1.085:1) but that is the
-              primitive's defect on every surface, filed separately, and a
-              last-resort screen quietly disagreeing with the button everywhere
-              else is the drift the cutover rule forbids. §10 also bars the
-              chapter accent from an error surface, which rules out the tint.
+              `Button variant="secondary" size="sm"`'s recipe, copied class for
+              class because this boundary replaces the root layout and may not
+              import the component tree. A last-resort screen disagreeing with
+              the button everywhere else is the drift the cutover rule forbids,
+              so `components/shared/elevation-call-sites.spec.ts` fails when the
+              two diverge. The hover is the neutral `--card-hover`, never the
+              accent tint: §10 bars the chapter accent from an error surface.
             */}
             <button
               type="button"
               onClick={() => reset()}
-              className="mt-1 inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25"
+              className="mt-1 inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25"
             >
               Reload the dashboard
             </button>

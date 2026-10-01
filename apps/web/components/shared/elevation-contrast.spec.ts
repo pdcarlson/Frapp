@@ -3,13 +3,18 @@ import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
+  accentFour,
+  accentRolesFor,
+  CARD_HOVER,
   HAIRLINE_ALPHA,
   ratio,
+  SEEDS,
   SEMANTIC,
   SURFACE,
   signetDarkTokens,
   statusTint,
   INDISTINGUISHABLE,
+  TEXT,
 } from "@/tests/signet-contrast";
 
 /**
@@ -29,6 +34,10 @@ import {
  * It lives in `shared/` for `table-contrast.spec.ts`'s reason: four families
  * composited the same ladder mistake here, and the families whose #920 slice
  * has not landed will inherit it.
+ *
+ * These are the values. They cannot see who reaches for a token, and would
+ * stay green through a revert of every call site they were written for, so
+ * the call-site half is `elevation-call-sites.spec.ts` beside this file.
  */
 
 /** `signet.css` is the token source; these read it rather than restating it. */
@@ -122,5 +131,109 @@ describe("the amber notices were a light-mode island", () => {
         `--warning on its own tint over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
+  });
+});
+
+/** The ladder steps a control can sit on, by the names `signet.css` gives them. */
+const STEPS = [
+  ["--background", SURFACE.background],
+  ["--surface-1", SURFACE.surface1],
+  ["--card", SURFACE.card],
+  ["--popover", SURFACE.popover],
+] as const;
+
+describe("a card-filled control hovers above the ladder (#1220)", () => {
+  /*
+   * The Secondary button's hover was the elevated step, `hover:bg-accent`. On a
+   * card that moved it 1.105:1; inside a dialog, which IS `--popover`, it
+   * painted the button in the dialog's own colour (the alias test at the top).
+   * There is no step above `--popover` to borrow, so `--card-hover` is one: the
+   * elevated step lifted toward white, which is distinct from every step by
+   * being above all of them.
+   */
+  it("is --popover lifted 6% toward white, so a ladder change cannot leave it behind", () => {
+    // An opaque literal (no `color-mix` floor), held to its derivation here
+    // rather than trusted to be re-derived by whoever next moves the ladder.
+    expect(CARD_HOVER.toUpperCase()).toBe(
+      applyAlpha("#ffffff", 0.06, SURFACE.popover).toUpperCase(),
+    );
+  });
+
+  it.each(STEPS)("reads as a state on %s", (_name, step) => {
+    // The rest fill is `--card` on every one of these, so the `--card` row is
+    // also the rest-to-hover delta wherever the button sits.
+    expect(ratio(CARD_HOVER, step)).toBeGreaterThan(INDISTINGUISHABLE);
+  });
+
+  it("keeps the label over the text gate", () => {
+    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it("does not need a chapter: a white alpha would have, and failed on --background", () => {
+    // The recipe weighed first: `rgba(255,255,255,.06)` tracks its container
+    // the way a hairline does, which is the problem. Over `--background` it
+    // composites to about the button's own card rest fill, so hovering a page
+    // level Secondary button changed nothing.
+    const alphaOverBackground = applyAlpha("#ffffff", 0.06, SURFACE.background);
+    expect(ratio(alphaOverBackground, SURFACE.card)).toBeLessThan(1.05);
+  });
+});
+
+/** #1208's floor: no row hover in the shell sits under this against its container. */
+const ROW_HOVER_FLOOR = 1.03;
+
+describe("the notification drawer's rows hover off the sheet (#1208)", () => {
+  // The drawer is a `SheetContent`, so every row's container is `--popover`.
+
+  it("lifts a read row, which is card filled, off the sheet and off its rest fill", () => {
+    expect(ratio(CARD_HOVER, SURFACE.popover)).toBeGreaterThan(
+      INDISTINGUISHABLE,
+    );
+    expect(ratio(CARD_HOVER, SURFACE.card)).toBeGreaterThan(INDISTINGUISHABLE);
+  });
+
+  it("would have left a read row on the sheet's own luminance with §2's tint", () => {
+    // §2's accent tint is the remedy for a row that is transparent over a menu,
+    // and it separates by hue alone. On this card-filled row it lands within
+    // 1.03:1 of the sheet for several seeds (`#1F4E79` measured 1.000:1), which
+    // is why the read row takes the neutral lift instead.
+    const worst = Math.min(
+      ...SEEDS.map((seed) =>
+        ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.popover),
+      ),
+    );
+    expect(worst).toBeLessThan(ROW_HOVER_FLOOR);
+  });
+
+  it("lifts an unread row, which is tinted, to accent-4 for every seed", () => {
+    // §3's Tinted hover: one step up the accent scale, off the sheet and a real
+    // step above the row's accent-3 rest fill (`table-contrast.spec.ts` pins
+    // the same lift for a selected row).
+    for (const seed of SEEDS) {
+      const roles = accentRolesFor(seed);
+      const four = accentFour(roles);
+      expect(
+        ratio(four, SURFACE.popover),
+        `${seed} accent-4 on --popover`,
+      ).toBeGreaterThanOrEqual(ROW_HOVER_FLOOR);
+      expect(
+        ratio(four, roles["--accent-subtle"]!),
+        `${seed} accent-4 over accent-3`,
+      ).toBeGreaterThan(1.1);
+    }
+  });
+});
+
+describe("an overlay's close control is text-toned (#1208)", () => {
+  // `ui/dialog.tsx` and `ui/sheet.tsx` draw the same accessibly named "Close"
+  // glyph on `--popover`. components.md §1: `--muted` is not a text token.
+  it("would have caught --muted on the overlay's own fill", () => {
+    expect(ratio(TEXT.muted, SURFACE.popover)).toBeLessThan(AA_TEXT);
+  });
+
+  it("clears the text gate in --muted-foreground", () => {
+    expect(ratio(TEXT.mutedForeground, SURFACE.popover)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 });

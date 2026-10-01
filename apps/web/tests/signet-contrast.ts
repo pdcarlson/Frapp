@@ -124,6 +124,9 @@ function cssToken(name: string): string {
 
 export const DESTRUCTIVE_TEXT = cssToken("--destructive-text");
 
+/** A card-filled control's hover (components.md §3), an opaque literal. */
+export const CARD_HOVER = cssToken("--card-hover");
+
 /**
  * The in-body mention chip (§11) — an opaque fill and the text that sits on it.
  * Opaque is the load-bearing property, not a styling preference; see the guards
