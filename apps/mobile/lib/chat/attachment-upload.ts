@@ -39,9 +39,10 @@ import {
  * return value is a *claim* and not a file. Dropping the chip before sending
  * drops the claim, not the object, and an abandoned composer leaves the object
  * unreferenced. Nothing sweeps those out of the `chat` bucket yet (#2197), so
- * each one stays as an orphan. Web took this trade deliberately (`composer.tsx`, "Files uploaded and waiting to be claimed by
- * the next send") because the alternative it replaced was worse: the only
- * record of the file was a string the sender could edit out of the body.
+ * each one stays as an orphan. Web took this trade deliberately
+ * (`composer.tsx`, "Files uploaded and waiting to be claimed by the next
+ * send") because the alternative it replaced was worse: the only record of the
+ * file was a string the sender could edit out of the body.
  *
  * ## Transcoding is conditional, and that is the point
  *
