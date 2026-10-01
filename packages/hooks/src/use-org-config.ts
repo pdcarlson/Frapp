@@ -214,32 +214,60 @@ export function usePatchOrgConfig() {
     // endpoint (#1982), and that query is cached for five minutes. Without this
     // write, switching a module off would leave its nav row up until the cache
     // went stale.
+    //
+    // So is the analytics opt-out. Web's `AnalyticsProvider` reads it from
+    // there too (#2957), and an officer who turns analytics off must stop
+    // their own SDK at once, not after the round trip and a re-read that may
+    // fail and leave the cached `false` in place.
     onMutate: async (diff: PatchChapterConfig) => {
       await qc.cancelQueries({ queryKey });
       const previous = qc.getQueryData<OrgConfig>(queryKey);
       qc.setQueryData<OrgConfig>(queryKey, (old) => applyOptimistic(old, diff));
 
       const modules = diff.enabled_modules;
-      if (!modules) return { previous };
+      const optOut = diff.analytics_opt_out;
+      if (!modules && optOut === undefined) return { previous };
       await qc.cancelQueries({ queryKey: chapterKey });
       // Only the keys this write touches, with the value each had. `scope`
       // serialises the PATCHes but not `onMutate`, so a second toggle's
       // optimistic write lands while this one is in flight; restoring a
       // whole-object snapshot on error would silently undo it too.
       const touchedModules: Record<string, boolean | undefined> = {};
+      const replaced: { optOut?: { value: unknown } } = {};
       qc.setQueryData(chapterKey, (old: unknown) => {
         if (!old || typeof old !== "object") return old;
-        const current =
-          (old as { enabled_modules?: Record<string, boolean> | null })
-            .enabled_modules ?? {};
-        for (const key of Object.keys(modules)) touchedModules[key] = current[key];
-        return { ...old, enabled_modules: { ...current, ...modules } };
+        let next = old as Record<string, unknown>;
+        if (modules) {
+          const current =
+            (next.enabled_modules as Record<string, boolean> | null | undefined) ??
+            {};
+          for (const key of Object.keys(modules)) touchedModules[key] = current[key];
+          next = { ...next, enabled_modules: { ...current, ...modules } };
+        }
+        if (optOut !== undefined) {
+          replaced.optOut = { value: next.analytics_opt_out };
+          next = { ...next, analytics_opt_out: optOut };
+        }
+        return next;
       });
-      return { previous, touchedModules };
+      return {
+        previous,
+        touchedModules: modules ? touchedModules : undefined,
+        touchedOptOut: replaced.optOut,
+      };
     },
     onError: (_error, _diff, context) => {
       if (context && "previous" in context) {
         qc.setQueryData(queryKey, context.previous);
+      }
+      const optOutBefore =
+        context && "touchedOptOut" in context ? context.touchedOptOut : undefined;
+      if (optOutBefore) {
+        qc.setQueryData(chapterKey, (old: unknown) =>
+          old && typeof old === "object"
+            ? { ...old, analytics_opt_out: optOutBefore.value }
+            : old,
+        );
       }
       const touched = context && "touchedModules" in context ? context.touchedModules : null;
       if (touched) {

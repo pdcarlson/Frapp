@@ -2,20 +2,25 @@ import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockPost, mockUseCurrentChapter, applyAnalyticsOptOut } = vi.hoisted(
-  () => ({
-    mockPost: vi.fn(),
-    mockUseCurrentChapter: vi.fn(),
-    applyAnalyticsOptOut: vi.fn(),
-  }),
-);
+const { mockPost, mockClient, mockUseCurrentChapter, applyAnalyticsOptOut } =
+  vi.hoisted(() => {
+    const post = vi.fn();
+    return {
+      mockPost: post,
+      // One client object, as `FrappProvider` gives, so `track`'s identity
+      // depends only on what the provider does.
+      mockClient: { POST: post },
+      mockUseCurrentChapter: vi.fn(),
+      applyAnalyticsOptOut: vi.fn(),
+    };
+  });
 
 // The provider only needs a POST-capable client, an active chapter id, and
 // the member view (`GET /v1/chapters/current`). The config read is what every
 // role below President sees: refused (#2957). The provider must not depend on
 // it, so it reports the refusal here rather than being left out of the mock.
 vi.mock("@repo/hooks", () => ({
-  useFrappClient: () => ({ POST: mockPost }),
+  useFrappClient: () => mockClient,
   useActiveChapterId: () => "chap-1",
   useCurrentChapter: () => mockUseCurrentChapter(),
   useOrgConfig: () => ({ data: undefined, isError: true }),
@@ -120,6 +125,30 @@ describe("AnalyticsProvider client-side opt-out", () => {
     expect(mockPost).not.toHaveBeenCalled();
     expect(applyAnalyticsOptOut).toHaveBeenCalledWith(true);
     expect(applyAnalyticsOptOut).not.toHaveBeenCalledWith(false);
+  });
+
+  // Consumers key effects on `track` (`ChatProvider`'s boot outbox flush). A
+  // new identity when the read settles re-ran them on every load.
+  it("keeps one track identity while the chapter read settles", () => {
+    const seen = new Set<unknown>();
+    function Capture() {
+      seen.add(useContext(AnalyticsContext));
+      return null;
+    }
+    const capture = () => (
+      <AnalyticsProvider>
+        <Capture />
+      </AnalyticsProvider>
+    );
+    mockUseCurrentChapter.mockReturnValue({ data: undefined, isError: false });
+    const view = render(capture());
+    mockUseCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", analytics_opt_out: false },
+      isError: false,
+    });
+    view.rerender(capture());
+    expect(applyAnalyticsOptOut).toHaveBeenLastCalledWith(false);
+    expect(seen.size).toBe(1);
   });
 
   // Once a payload has loaded, the shared predicate decides: only an explicit

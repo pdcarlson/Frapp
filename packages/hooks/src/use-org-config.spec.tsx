@@ -235,6 +235,62 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
     expect(qc.getQueryState(QUERY_KEY)?.isInvalidated).toBe(true);
   });
 
+  // Web's AnalyticsProvider reads the opt-out off the current chapter (#2957).
+  // An officer turning analytics off must stop their own SDK before the round
+  // trip, not after a re-read that may fail.
+  it("writes an analytics opt-out into the current chapter at once", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { analytics_opt_out: false });
+    qc.setQueryData(CHAPTER_KEY, {
+      name: "Alpha",
+      enabled_modules: { reports: true },
+      analytics_opt_out: false,
+    });
+    let seenDuringFlight: unknown;
+    mockPatch.mockImplementationOnce(async () => {
+      seenDuringFlight = qc.getQueryData(CHAPTER_KEY);
+      return { data: {}, error: undefined };
+    });
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ analytics_opt_out: true });
+    });
+
+    expect(seenDuringFlight).toEqual({
+      name: "Alpha",
+      enabled_modules: { reports: true },
+      analytics_opt_out: true,
+    });
+    expect(qc.getQueryState(CHAPTER_KEY)?.isInvalidated).toBe(true);
+  });
+
+  it("puts the opt-out back when the PATCH fails", async () => {
+    const qc = makeClient();
+    qc.setQueryData(QUERY_KEY, { analytics_opt_out: false });
+    qc.setQueryData(CHAPTER_KEY, {
+      enabled_modules: { reports: true },
+      analytics_opt_out: false,
+    });
+    mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
+
+    const { result } = renderHook(() => usePatchOrgConfig(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ analytics_opt_out: true })
+        .catch(() => undefined);
+    });
+
+    expect(qc.getQueryData(CHAPTER_KEY)).toEqual({
+      enabled_modules: { reports: true },
+      analytics_opt_out: false,
+    });
+  });
+
   it("leaves the current chapter's data alone for a write with no module toggle", async () => {
     const qc = makeClient();
     qc.setQueryData(QUERY_KEY, { vocabulary: { recruitment: "Rush" } });

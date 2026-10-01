@@ -993,7 +993,10 @@ export {
 } from "./subscription";
 // Client-side analytics opt-out. Fourth shared client gate alongside `can`,
 // `isModuleEnabled`, and `subscriptionWriteState`.
-export { isAnalyticsOptedOut } from "./analytics-opt-out";
+export {
+  isAnalyticsOptedOut,
+  isChapterAnalyticsOptedOut,
+} from "./analytics-opt-out";
 
 // Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns

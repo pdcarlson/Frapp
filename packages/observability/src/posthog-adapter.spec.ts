@@ -141,6 +141,46 @@ describe("identity, groups, logout, opt-out", () => {
     expect(memory.calls).toEqual([{ type: "reset" }, { type: "reset" }]);
   });
 
+  // Web is opted out until its chapter read answers (#2957), so identity often
+  // lands first, and the SDK drops the `$groupidentify` it sends then.
+  it("re-sends the chapter group once an opt-out lifts", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyAnalyticsOptOut(true);
+    applyAnalyticsIdentity({
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: OTHER,
+    });
+    memory.calls.length = 0;
+
+    applyAnalyticsOptOut(false);
+    expect(memory.calls).toEqual([
+      { type: "optIn" },
+      { type: "resetGroups" },
+      { type: "group", groupType: "chapter", groupKey: OTHER },
+    ]);
+  });
+
+  it("re-sends no group on an opt-in that lifts nothing, or after a reset", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyAnalyticsIdentity({
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: OTHER,
+    });
+    memory.calls.length = 0;
+    applyAnalyticsOptOut(false);
+    expect(memory.calls).toEqual([{ type: "optIn" }]);
+
+    applyAnalyticsOptOut(true);
+    applyAnalyticsIdentity(null);
+    memory.calls.length = 0;
+    applyAnalyticsOptOut(false);
+    expect(memory.calls).toEqual([{ type: "optIn" }]);
+  });
+
   it("sets Sentry user from the same validated hex", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);

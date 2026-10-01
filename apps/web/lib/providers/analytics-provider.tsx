@@ -1,12 +1,22 @@
 "use client";
 
-import React, { createContext, useCallback, useEffect, useMemo } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   useFrappClient,
   useActiveChapterId,
   useCurrentChapter,
 } from "@repo/hooks";
-import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
+import {
+  isChapterAnalyticsOptedOut,
+  type AnalyticsProperties,
+} from "@repo/validation";
 import {
   applyAnalyticsOptOut,
   namedAnalyticsEventBody,
@@ -30,14 +40,13 @@ import {
  * `chapter-config:view`: no seeded role below President holds it, so for them
  * the read always failed and the SDK was opted in (#2957).
  *
- * **Opted out until the member view answers.** While the chapter read is
- * pending, after it fails with nothing cached, or with no active chapter, the
- * provider treats the chapter as opted out: the SDK stays opted out and
- * `track` posts nothing. Opting in is the step that needs proof, because
- * nothing on the server stands behind what the PostHog SDK sends directly
+ * **Opted out until the member view answers** (`isChapterAnalyticsOptedOut`).
+ * While the chapter read is pending, after it fails with nothing cached, or
+ * with no active chapter, the SDK stays opted out and `track` posts nothing.
+ * Opting in is the step that needs proof, because nothing on the server stands
+ * behind what the PostHog SDK sends directly
  * (`spec/behavior/data-retention.md` #analytics-events-pseudonymous). Once a
- * payload has loaded, the shared predicate decides: only an explicit `true`
- * opts out.
+ * payload has loaded, only an explicit `true` opts out.
  *
  * `track` posts named product events to the API only. PostHog JS does **not**
  * capture those names — the API adapter already forwards them, and a second
@@ -61,12 +70,21 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   // First gate, enforced at the SDK boundary via the shared predicate: when
   // the active chapter has opted out, emit zero events for its members. The
   // API repeats this check for `track` as defense-in-depth (data-retention.md
-  // #analytics-events-pseudonymous). An officer's own Privacy-tab write
-  // re-reads this payload when it settles (`usePatchOrgConfig`); another
-  // member picks it up on the next refetch.
-  const chapter = useCurrentChapter().data;
-  const optedOut =
-    chapter === undefined || isAnalyticsOptedOut(chapter.analytics_opt_out);
+  // #analytics-events-pseudonymous). An officer's own Privacy-tab write lands
+  // in this payload optimistically (`usePatchOrgConfig`); another member picks
+  // it up on the next refetch.
+  const optedOut = isChapterAnalyticsOptedOut(useCurrentChapter().data);
+
+  // `track` reads the gate through a ref so it keeps one identity while the
+  // chapter read settles. Its consumers key effects on it (`ChatProvider`'s
+  // boot outbox flush), and a flip on every load re-ran them, sending a
+  // second, overlapping flush. Written in `useLayoutEffect`, not during render
+  // (`react-hooks/refs`), so the passive effects of the same commit read the
+  // new value.
+  const optedOutRef = useRef(optedOut);
+  useLayoutEffect(() => {
+    optedOutRef.current = optedOut;
+  }, [optedOut]);
 
   useEffect(() => {
     applyAnalyticsOptOut(optedOut);
@@ -74,7 +92,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
 
   const track = useCallback<TrackFn>(
     (name, properties) => {
-      if (optedOut) return;
+      if (optedOutRef.current) return;
       const body = namedAnalyticsEventBody({ name, chapterId, properties });
       if (!body) return;
       void client
@@ -83,7 +101,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
           // Best-effort: analytics must never surface an error to the user.
         });
     },
-    [client, chapterId, optedOut],
+    [client, chapterId],
   );
 
   const value = useMemo(() => track, [track]);
