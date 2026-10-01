@@ -245,6 +245,29 @@ describe("ChatAdminPage — the channel structure's states", () => {
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 
+  it.each([
+    [
+      "has failed with nothing loaded",
+      { isError: true },
+      /Couldn.t load the permission catalog/,
+    ],
+    [
+      "is loading",
+      { isPending: true, isLoading: true, fetchStatus: "fetching" },
+      "Loading permissions…",
+    ],
+  ])(
+    "says so when a role-gated channel's catalog %s, on the page surface",
+    (_, read, text) => {
+      reads.catalog = empty(read);
+      const { container } = render(<ChatAdminPage />);
+      fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
+
+      expect(screen.getByText(text)).toBeInTheDocument();
+      expect(cardFilledContainers(container)).toEqual([]);
+    },
+  );
+
   it("keeps the loaded categories through a failed background read", () => {
     reads.categories = { ...settled(CATEGORIES), isError: true };
     render(<ChatAdminPage />);
