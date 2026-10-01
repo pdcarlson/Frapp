@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
 import type { SemesterArchive } from '#domain/entities/semester-archive.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseSemesterArchiveRepository implements ISemesterArchiveRepository {
@@ -17,7 +18,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .select('*')
       .eq('chapter_id', chapterId)
       .order('end_date', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -31,7 +32,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -45,7 +46,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -57,7 +58,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -81,7 +82,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       p_new_member_role_id: params.newMemberRoleId,
       p_member_role_id: params.memberRoleId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 }

@@ -21,6 +21,7 @@ import {
   ChapterAuditLogService,
   type AuditDiff,
 } from './chapter-audit-log.service';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * What `create` and `update` accept.
@@ -85,7 +86,7 @@ export class CustomRoleService {
       .select('*')
       .eq('chapter_id', chapterId)
       .order('rank', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -104,7 +105,7 @@ export class CustomRoleService {
       .select('*')
       .in('id', ids)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -137,7 +138,7 @@ export class CustomRoleService {
           'A custom role with this key already exists in this chapter',
         );
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     const role = data as ChapterCustomRole;
@@ -206,7 +207,7 @@ export class CustomRoleService {
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
 
     await this.auditLog.record({
       chapterId,

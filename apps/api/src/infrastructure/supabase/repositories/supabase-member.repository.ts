@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { ChapterMemberIdentity, Member } from '#domain/entities/member.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * The wire shape of the `users!inner(id, display_name)` embed, written out
@@ -35,7 +36,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -49,7 +50,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -58,7 +59,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .from('members')
       .select('*')
       .eq('user_id', userId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -67,7 +68,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .from('members')
       .select('*')
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -83,7 +84,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .from('members')
       .select('user_id, users!inner(id, display_name)')
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
 
     // Narrowed, never cast. `database.types.ts` is a hand-rolled shim whose
     // `Relationships` are declared structurally rather than as literals, so
@@ -112,7 +113,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .insert(memberData)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -126,13 +127,13 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
   async delete(id: string): Promise<void> {
     const { error } = await this.supabase.from('members').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async transferPresidencyAtomic(
@@ -147,7 +148,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       p_target_member_id: targetMemberId,
       p_president_role_id: presidentRoleId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // The RPC returns both updated member rows on success, or zero rows when the
     // current member no longer holds the President role in the chapter (race lost
     // / not eligible). The target-missing case raises in SQL and surfaces via
@@ -167,7 +168,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
       p_eligible_role_id: eligibleRoleId,
       p_president_role_id: presidentRoleId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // `false` => the chapter's needs_president flag was already clear (race
     // lost to another claimant, or the chapter no longer needs one). The
     // claiming-member-vanished case raises in SQL and surfaces via `error`.

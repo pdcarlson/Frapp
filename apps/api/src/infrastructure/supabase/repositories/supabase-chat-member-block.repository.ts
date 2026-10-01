@@ -4,6 +4,7 @@ import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IChatMemberBlockRepository } from '#domain/repositories/chat-moderation.repository.interface';
 import type { ChatMemberBlockRef } from '#domain/entities/chat-moderation.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * Per-chapter member block list (#2257).
@@ -47,7 +48,7 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
       .select('blocked_user_id')
       .eq('chapter_id', chapterId)
       .eq('blocker_user_id', blockerUserId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map((row) => row.blocked_user_id);
   }
 
@@ -91,7 +92,7 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
           .eq('chapter_id', chapterId)
           .eq('blocked_user_id', blockedUserId)
           .in('blocker_user_id', chunk);
-        if (error) throw error;
+        if (error) throw new SupabaseQueryError(error);
         return data ?? [];
       }),
     );
@@ -125,7 +126,7 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return stripBlockRow(data);
   }
 
@@ -144,7 +145,7 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
       .eq('chapter_id', chapterId)
       .eq('blocker_user_id', blockerUserId)
       .eq('blocked_user_id', blockedUserId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }
 
