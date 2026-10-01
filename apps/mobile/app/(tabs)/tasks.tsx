@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -134,13 +134,23 @@ export default function TasksScreen() {
   const [refusal, setRefusal] = useState<string | null>(null);
   // Cleared when the member comes back, because a tab is never unmounted: an
   // officer may have sorted the gate out since, and returning is a deliberate
-  // second look rather than a retry in place.
+  // second look rather than a retry in place. Back to the screen is a
+  // navigation focus; back to the app on this same tab is an AppState change,
+  // which `useFocusEffect` never sees. Without the second, a member who
+  // reopens the app after the officer's fix finds the board still refused,
+  // and nothing on it says to leave the tab and return.
   useFocusEffect(
     useCallback(() => {
       setRefusal(null);
       return undefined;
     }, []),
   );
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") setRefusal(null);
+    });
+    return () => subscription.remove();
+  }, []);
   /**
    * Ids with a sequence in flight.
    *

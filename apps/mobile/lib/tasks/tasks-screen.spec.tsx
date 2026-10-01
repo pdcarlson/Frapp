@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
+import { AppState } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -77,6 +78,17 @@ const TASKS = [
     point_reward: 5,
     points_awarded: false,
   },
+  // A second row, so a latch scoped to the refused row alone would show.
+  {
+    id: "task-2",
+    title: "Collect ride-share forms",
+    stored_status: "TODO",
+    status: "TODO",
+    due_date: "2026-10-04",
+    assignee_id: "user-1",
+    point_reward: 3,
+    points_awarded: false,
+  },
 ];
 
 let failure: unknown = REFUSED;
@@ -129,7 +141,15 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-const row = (tree: ReactTestRenderer) => tree.root.findByType(TaskRow);
+const rows = (tree: ReactTestRenderer) => tree.root.findAllByType(TaskRow);
+/** The row the specs tap: the first on the board. */
+const row = (tree: ReactTestRenderer) => rows(tree)[0]!;
+
+/** The listener the screen registered last with the mocked `AppState`. */
+function appStateListener(): (state: string) => void {
+  const calls = vi.mocked(AppState.addEventListener).mock.calls;
+  return calls[calls.length - 1]![1] as (state: string) => void;
+}
 
 async function tapRow(tree: ReactTestRenderer) {
   const onToggle = row(tree).props.onToggle as (() => void) | undefined;
@@ -157,7 +177,26 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     // The guard's own words: a checkout instruction the store declaration
     // forbids in the app, or a Settings → Modules instruction for an officer.
     expect(screenText(tree)).not.toContain((error as { message: string }).message);
+    // Every row, not just the one tapped: each would refuse the same way.
+    expect(rows(tree)).toHaveLength(2);
+    for (const each of rows(tree)) expect(each.props.onToggle).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers the toggles again when the member comes back to the app on this tab", async () => {
+    // No navigation focus fires for a return from the background, and the
+    // officer may have sorted the gate out meanwhile.
+    failure = REFUSED;
+    const tree = render();
+    await tapRow(tree);
     expect(row(tree).props.onToggle).toBeUndefined();
+
+    act(() => appStateListener()("background"));
+    expect(row(tree).props.onToggle).toBeUndefined();
+    act(() => appStateListener()("active"));
+
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    for (const each of rows(tree)) expect(each.props.onToggle).toBeDefined();
     act(() => tree.unmount());
   });
 

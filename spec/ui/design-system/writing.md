@@ -367,7 +367,7 @@ every one of them, and both are the point rather than style:
 | Surface | Description |
 |---|---|
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
-| Task status toggle (s08) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board; the toggles stay withdrawn until the member comes back to the screen ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
+| Task status toggle (s08) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board; the toggles stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
 | Log service hours (s20) | `Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.` |
 | Study | See the two rows in *Study session (mobile, s10)* below — start and in-session differ, and the difference is load-bearing. |
