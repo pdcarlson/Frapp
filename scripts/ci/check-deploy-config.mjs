@@ -19,8 +19,8 @@
 // after the served-commit check (`smoke-deployed-api.mjs`, #3113) read the same
 // URL, which they need in its `/health` form, and `SUPABASE_URL` and
 // `SUPABASE_SERVICE_ROLE_KEY`, on every run that verifies the API; on a run
-// that doesn't deploy the API, nothing else checks those two before the apply. Before the v0.7.0
-// ship the first two were checked by hand (#2558).
+// that doesn't deploy the API, nothing else checks those two before the
+// apply. Before the v0.7.0 ship the first two were checked by hand (#2558).
 //
 // ── What it runs ────────────────────────────────────────────────────────────
 // The rules are the DEPLOYED commit's, on purpose: its `validateEnv` is what
