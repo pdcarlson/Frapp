@@ -208,7 +208,8 @@
      *
      * Set from the framework board, which draws the sweep as
      * `linear-gradient(90deg,#2A2621 25%,#332E26 50%,#2A2621 75%)` (option
-     * `3a`). Committed HTML outranks written docs while #2140 is open, so the
+     * `3a`). Committed HTML outranks written docs
+     * (`spec/ui/web-dashboard/README.md` § Sources and precedence), so the
      * board's pair is what ships.
      *
      * KNOWN COST, recorded rather than silently accepted. The value that stood

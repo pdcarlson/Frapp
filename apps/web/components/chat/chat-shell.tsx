@@ -444,7 +444,8 @@ export function ChatShell({
    * Which of the two columns is on screen below `lg`.
    *
    * The shell's responsive contract is two states switching once at `lg`
-   * (`deletion-checklist.md` §5), and chat has to hold it: below `lg` the app
+   * (`spec/ui/web-dashboard/README.md` § Responsive contract), and chat has to
+   * hold it: below `lg` the app
    * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
    * column beside the thread leaves the thread about 135px wide at the
    * documented 375px floor. That is not a narrow layout, it is an unusable one,

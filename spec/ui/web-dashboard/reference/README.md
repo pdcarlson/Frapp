@@ -11,12 +11,8 @@ below records that it no longer ships. *Moved here from `spec/ui/web-greenfield/
 
 **One artifact landed, 2026-09-11:** [`web-framework.dc.html`](web-framework.dc.html), the framework
 board. It is the rank-1 source for anything it covers, and it closes L-01 in
-[`../tokens.md`](../tokens.md) — see § What this board settles below. *(Corrected 2026-09-30: its
-chat thread's bubbles, including the pending self bubble, the skeleton's "r18 bubbles" and the token
-sheet's "Bubbles r18 · tail 6", are superseded by the compact chat layout, an owner decision of
-2026-09-29 ([#2873](https://github.com/pdcarlson/Frapp/issues/2873),
-[`components.md`](../../design-system/components.md) §11). The board stays truth for the rest of
-chat.)*
+[`../tokens.md`](../tokens.md). Two things it draws no longer ship, its chat bubbles and its focus
+border; § What this board settles below is where both are recorded.
 
 The numbered Design to Code packs, the backlog and the originating brief are still **not here**. A
 change that needs one of those should ask for the artifact rather than invent one.
@@ -108,7 +104,7 @@ Two things the board does **not** settle, recorded so a later change does not ov
 
 Two things the board draws that deliberately no longer ship:
 
-- **The chat bubbles** (added 2026-10-01; the decision is 2026-09-29's). The `#general` thread, the
+- **The chat bubbles** (recorded 2026-09-30; the owner's decision is 2026-09-29's). The `#general` thread, the
   pending self bubble, the skeleton's "r18 bubbles" and the token sheet's "Bubbles r18 · tail 6" are
   superseded by the compact, bubble-free chat layout, an owner decision
   ([#2873](https://github.com/pdcarlson/Frapp/issues/2873)) that

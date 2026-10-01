@@ -23,7 +23,10 @@
  * (`AGENTS.md` § Lint, test, build, type-check). Nothing in CI runs it. Wiring a
  * budget into a required check is a decision about which routes get frozen at
  * what number, and this greenfield is mid-rebuild; freezing it now would pin
- * numbers that five open lanes are still moving.
+ * numbers that five open lanes are still moving. (Corrected 2026-10-01: #2140
+ * has since closed with every lane landed, so that reason has lapsed; the
+ * decision about which routes to pin, at what, still stands in its way.
+ * `spec/ui/resilience/performance-budgets.md` § Bundle size owns this.)
  *
  * ## Where the numbers come from
  *

@@ -347,7 +347,7 @@ If lane 3 or 7 removed the Ask pill, three tokens would have gone with it — `-
 pre-emptively removed.
 
 **Neither lane removed it.** Lane 2 rebuilt the pill to the board's 34px/r10 top-bar geometry and
-kept it on `--gold-ask-*` (§4), and lane 7 had no reason to revisit that. The lock closes in the
+kept it on `--gold-ask-*` ([`README.md` § Top bar](README.md#top-bar) records the pill as it ships), and lane 7 had no reason to revisit that. The lock closes in the
 direction that leaves the family standing.
 
 Lane 7 did change the family's *status*, though, and in the opposite direction from deletion: L-01's
