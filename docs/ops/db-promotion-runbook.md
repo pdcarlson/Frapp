@@ -215,7 +215,7 @@ refuses rather than reordering:
 
 That is #1373: `20260829000000_rollover_promote_new_members` merged after
 `20260829002000` was already applied to staging, and staging's migration deploy
-halted. Measured against CLI 2.77.0, and again against 2.110.0 when the pin moved
+halted. Measured against CLI 2.77.0, and again against 2.117.0 when the pin moved
 there (#723): exit 1, nothing applied, ledger untouched. The CLI stops; it does not
 reorder.
 

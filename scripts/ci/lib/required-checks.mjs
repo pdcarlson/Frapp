@@ -333,7 +333,7 @@ export const DRIFT_CHECKS = [
 
   // Does a migration this change INTRODUCES sort before a version the target
   // database has already applied? If it does, the Supabase CLI refuses rather
-  // than reordering — measured against 2.77.0 and again against 2.110.0
+  // than reordering — measured against 2.77.0 and again against 2.117.0
   // (#723): exit 1, nothing applied, "Found local migration files to be
   // inserted before the last migration on remote database". That is #1373,
   // which halted staging's migration deploy and, through `migration-drift`,

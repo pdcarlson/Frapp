@@ -93,7 +93,7 @@ managed() { psql "$DB_URL" -tAc "$MANAGED_SQL" 2>/dev/null | sed '/^$/d'; }
 # Resolve the Supabase CLI the same way db-backup.sh does: a `supabase` already
 # on PATH, else the pinned version through npx (never bare `latest`). The pin is
 # held equal to .github/actions/supabase-cli's by infisical-secrets-action.test.mjs.
-SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.110.0}"
+SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.117.0}"
 if command -v supabase >/dev/null 2>&1; then SUPABASE="supabase"; else SUPABASE="npx --yes supabase@${SUPABASE_CLI_VERSION}"; fi
 
 destroy() {

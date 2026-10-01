@@ -233,7 +233,7 @@ test("decideOutcome codes are the ones the production rehearsal parses", () => {
 // The gate computed `backDated`, logged it, and passed — its stated reason
 // being that the CLI "applies such a migration at the END regardless of where
 // its version sorts", which is not what the CLI does. Measured on 2026-08-29
-// against 2.77.0, and again on 2026-10-01 against 2.110.0 (#723): it exits 1,
+// against 2.77.0, and again on 2026-10-01 against 2.117.0 (#723): it exits 1,
 // applies nothing, and prints "Found local migration files to be inserted
 // before the last migration on remote database."
 

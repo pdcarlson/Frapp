@@ -22,12 +22,14 @@
 # Until #723 the three disagreed: CI ran 2.77.0, the sandbox 2.110.0, and the laptop bootstrap
 # bare `npx supabase`, i.e. whatever "latest" was that day. The sandbox could not move back to
 # 2.77.0 (its realtime container aborts with `:listen_error, :eafnosupport` binding IPv6, which
-# the cloud sandbox does not support), so CI moved forward to the version the sandbox had been
-# running since #640.
+# the cloud sandbox does not support), so everything moved forward. Not to 2.110.0: it reports a
+# failed migration without Postgres's error (no "relation … does not exist", no SQLSTATE; fixed
+# in 2.111.0), which is the one message a failed production apply has to show. 2.117.0 was the
+# newest release with three weeks in the wild when the pin moved (2026-10-01).
 #
 # Override with FRAPP_SUPABASE_CLI_VERSION to try another version locally. Any spec npm accepts
 # works (a version, a range, `latest`); the cache below keys on it.
-FRAPP_SUPABASE_CLI_PIN="2.110.0"
+FRAPP_SUPABASE_CLI_PIN="2.117.0"
 
 # Log prefix, looked up at CALL time (not at source time), so callers may set it before or
 # after sourcing: cloud-sandbox-common.sh sets `[cloud-sandbox]`, local-dev-setup.sh its own.

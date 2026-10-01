@@ -120,12 +120,13 @@ const PARKED_DIR = join(process.cwd(), "supabase", ".migrations-replay-parked");
  *
  * `db push` and `migration up` are not merely similar here. On 2.77.0
  * `internal/db/push` called `up.GetPendingMigrations`, the same entry point, and
- * both bound `--include-all` to the same flag. 2.110.0, the pin since #723,
- * reimplemented both outside that Go code, so the claim was re-measured rather
+ * both bound `--include-all` to the same flag. 2.117.0, the pin since #723,
+ * implements both outside that Go code, so the claim was re-measured rather
  * than carried over (2026-10-01, a back-dated file against the full local
- * ledger): `migration up --local` and `db push --local` each exit 1, apply
- * nothing, and print the same message, now inside a JSON error envelope
- * (`LegacyMigrationMissingRemoteError` / `LegacyDbPushMissingRemoteError`). So
+ * ledger, on 2.110.0 and 2.117.0): `migration up --local` and `db push --local`
+ * each exit 1, apply nothing, and print the same message, now inside a JSON
+ * error envelope (`LegacyMigrationMissingRemoteError` /
+ * `LegacyDbPushMissingRemoteError`). So
  * the replay's phase 2 DOES reproduce the refusal — this gate is not covering a
  * hole in the rehearsal.
  *
@@ -220,7 +221,7 @@ export function decideOutcome({ partition, replay }) {
 
   // Decided BEFORE the replay, on purpose. The replay would fail too — phase 2
   // runs `migration up`, and `db push` refuses identically (measured on 2.77.0
-  // and again on 2.110.0; see `partitionMigrations` above). Deciding here
+  // and again on 2.117.0; see `partitionMigrations` above). Deciding here
   // spends no Docker and no database rebuild to reach a verdict already known,
   // and reports an ordering fault as one — with the rename remedy attached —
   // rather than as a failure "applying" a file.
