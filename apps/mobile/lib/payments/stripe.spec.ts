@@ -114,6 +114,95 @@ describe("stripeUnavailableReason", () => {
     expect(stripeUnavailableReason()).toContain("aren't switched on");
   });
 
+  it("does not tell an installed build whose module threw to install the build", () => {
+    // Outside Expo Go and web the loader runs, and a throw is cached as the
+    // same `null` Go gets (#2618).
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    setStripeLoaderForTests(() => {
+      throw new Error("native module missing");
+    });
+
+    const reason = stripeUnavailableReason();
+
+    expect(reason).toBeTruthy();
+    expect(reason).not.toMatch(/Expo Go/);
+    expect(reason).not.toMatch(/installed/);
+    // It names a next step and still routes the member to paying another
+    // way, as every other sentence here does.
+    expect(reason).toMatch(/Updating the app/);
+    expect(reason).toMatch(/treasurer/);
+    warn.mockRestore();
+  });
+
+  it("names the missing key, not a fix an update can't bring, when the module also threw", () => {
+    // Production ships no Stripe key, so an update that repaired the module
+    // would still leave Pay disabled. Promising otherwise would be false.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    setStripeLoaderForTests(() => {
+      throw new Error("native module missing");
+    });
+    delete process.env[KEY];
+
+    const reason = stripeUnavailableReason();
+
+    expect(reason).toContain("aren't switched on");
+    expect(reason).not.toMatch(/Expo Go|Updating the app/);
+    warn.mockRestore();
+  });
+
+  it("does not blame Expo Go on the web target", async () => {
+    const { Platform } = await import("react-native");
+    const os = Platform.OS;
+    Platform.OS = "web";
+    try {
+      setStripeLoaderForTests(() => fakeStripe());
+      const reason = stripeUnavailableReason();
+
+      expect(isStripeAvailable()).toBe(false);
+      // The web sentence itself, not merely "not Expo Go": the load-failure
+      // sentence would pass that too, and tells a web visitor to update an
+      // app that can never take a payment there.
+      expect(reason).toContain("Frapp mobile app");
+      expect(reason).not.toMatch(/Expo Go|Updating the app/);
+    } finally {
+      Platform.OS = os;
+    }
+  });
+
+  it("gives every cause its own sentence", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reasons: (string | null)[] = [];
+
+    constantsState.executionEnvironment = "storeClient";
+    setStripeLoaderForTests(() => fakeStripe());
+    reasons.push(stripeUnavailableReason());
+
+    constantsState.executionEnvironment = "bare";
+    setStripeLoaderForTests(() => {
+      throw new Error("native module missing");
+    });
+    reasons.push(stripeUnavailableReason());
+
+    setStripeLoaderForTests(() => fakeStripe());
+    delete process.env[KEY];
+    reasons.push(stripeUnavailableReason());
+    process.env[KEY] = "pk_test_123";
+
+    const { Platform } = await import("react-native");
+    const os = Platform.OS;
+    Platform.OS = "web";
+    try {
+      setStripeLoaderForTests(() => fakeStripe());
+      reasons.push(stripeUnavailableReason());
+    } finally {
+      Platform.OS = os;
+    }
+
+    expect(reasons.every((reason) => typeof reason === "string")).toBe(true);
+    expect(new Set(reasons).size).toBe(4);
+    warn.mockRestore();
+  });
+
   it("is null when payment is available, so the control has no excuse to show", () => {
     setStripeLoaderForTests(() => fakeStripe());
     expect(stripeUnavailableReason()).toBeNull();
