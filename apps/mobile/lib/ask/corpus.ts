@@ -11,7 +11,7 @@
  * ## Reconciling two rules that look like they contradict
  *
  * Epic #937 says of this cluster: "Ask AI — no `ai` module in the API, by
- * design. Use `__mock` behind the flag." `spec/ui/mobile/screens.md:76` says
+ * design. Use `__mock` behind the flag." `spec/ui/mobile/screens.md` § Notes says
  * the opposite-sounding thing about every other unbacked element in the app:
  * "Elements drawn in Canvas that have no backing data are **omitted, not
  * faked**."

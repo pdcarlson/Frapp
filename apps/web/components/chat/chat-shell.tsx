@@ -202,8 +202,8 @@ function ChannelHeaderMark({
  * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
  * deleted. Where threads went: the quote above a reply, which was the panel's
  * only remaining entry point, now scrolls this timeline to the message it
- * quotes (`MessageItem`'s `onJumpToParent`). The reasoning is recorded in
- * `spec/ui/web-greenfield/deletion-checklist.md` §2.
+ * quotes (`MessageItem`'s `onJumpToParent`). The decision is recorded in
+ * `spec/ui/web-dashboard/README.md` § Chat.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
@@ -444,7 +444,8 @@ export function ChatShell({
    * Which of the two columns is on screen below `lg`.
    *
    * The shell's responsive contract is two states switching once at `lg`
-   * (`deletion-checklist.md` §5), and chat has to hold it: below `lg` the app
+   * (`spec/ui/web-dashboard/README.md` § Responsive contract), and chat has to
+   * hold it: below `lg` the app
    * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
    * column beside the thread leaves the thread about 135px wide at the
    * documented 375px floor. That is not a narrow layout, it is an unusable one,

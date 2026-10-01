@@ -32,3 +32,17 @@ export const drawnText = (node: ReactTestInstance): string =>
   node.children
     .map((child) => (typeof child === "string" ? child : drawnText(child)))
     .join("");
+
+/**
+ * The `Text`s a rendered screen marks as headings, which is where a screen
+ * reader's headings rotor lands for its title. Only `Text`: a heading that is
+ * also a control (Chat home's foldable section headers are `Pressable`s,
+ * #2877) is not a title. Shared by the title specs (#2485) so that filter
+ * can't drift between them.
+ */
+export const textHeadings = (tree: ReactTestRenderer): ReactTestInstance[] =>
+  tree.root.findAll(
+    (node) =>
+      node.props.accessibilityRole === "header" &&
+      (node.type as unknown) === "Text",
+  );

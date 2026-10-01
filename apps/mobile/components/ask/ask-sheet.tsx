@@ -28,8 +28,8 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * A sheet rather than a route: `spec/ui/mobile/patterns.md` § Bottom sheets
  * lists "the s17 Ask presentation" among the flows that are sheets hosted by
- * their parent screen, and `navigation.md:60` makes Ask a global entry that
- * "MUST NOT become a fifth tab". Chat home (s04) and Events (s06) both host it.
+ * their parent screen, and `navigation.md` § Global entries outside the tab
+ * bar makes Ask a global entry that "MUST NOT become a fifth tab". Chat home (s04) and Events (s06) both host it.
  *
  * **Signet gold, never the chapter accent.** Nothing in this file or in
  * `answer-card.tsx` reaches `useChapterBranding()` — `components.md:232` scopes

@@ -280,7 +280,9 @@ export default function CheckInScreen() {
         >
           <Text style={styles.closeText}>✕</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Check in</Text>
+        <Text accessibilityRole="header" style={styles.headerTitle}>
+          Check in
+        </Text>
         <View style={styles.close} />
       </View>
 
