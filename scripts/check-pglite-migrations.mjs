@@ -15,9 +15,10 @@
 //     carry client-read policies that must stay scoped to `auth.uid()` — "no
 //     policies" stopped being the invariant for `chat_messages` when
 //     20260816140000 gave it one) and an exact policy inventory.
-//   - ENFORCEMENT, black-box — a non-owner `rls_probe` role with `auth.uid()`
-//     and `auth.role()` stubbed to a signed-in client reads the tables for
-//     real. Positive sets for `chat_messages` / `chat_message_actions`, which
+//   - ENFORCEMENT, black-box — non-owner probe roles with `auth.uid()` and
+//     `auth.role()` stubbed per scenario read the tables for real, as a
+//     signed-in client and as the anon key. Positive sets for
+//     `chat_messages` / `chat_message_actions`, which
 //     carry client-reachable policies; zero-row denial for `members` and
 //     `financial_invoices`, which carry none (#423). Posture alone cannot see
 //     a policy whose predicate is wrong but whose shape is fine.
@@ -83,7 +84,7 @@ await db.waitReady;
 // Stub the three functions so policy DDL parses. These are the DEFAULTS: the
 // black-box tiers further down replace `auth.uid()` and `auth.role()` per
 // scenario to impersonate a signed-in or anonymous client, and read the tables
-// through a non-owner role that is granted `authenticated`. So this file does
+// through non-owner probe roles granted `authenticated` or `anon`. So this file does
 // verify enforcement, not only presence — what stays with the NestJS Jest tier
 // is a real GoTrue-minted JWT (claims beyond `sub`/`role`), per ADR-11/ADR-12.
 await db.exec(`
@@ -93,20 +94,39 @@ await db.exec(`
   create or replace function auth.jwt()  returns jsonb language sql as $$ select '{}'::jsonb $$;
 `);
 
-// Stand up the `authenticated` role BEFORE applying migrations. ~18 migrations
-// wrap policy and grant statements in `if exists (select 1 from pg_roles where
-// rolname = 'authenticated')` — the repo's dominant idiom for anything that
-// targets a client role, because the role exists on hosted Supabase but not in
-// a bare Postgres. Without the role here, every one of those blocks is skipped
+// Stand up Supabase's four roles BEFORE applying migrations. Migrations wrap
+// policy, grant and revoke statements in `if exists (select 1 from pg_roles
+// where rolname = '<role>')` — the repo's dominant idiom for anything that
+// targets a Supabase role, because the roles exist on hosted Supabase but not
+// in a bare Postgres. Without a role here, every block guarded on it is skipped
 // silently, so the harness validates a schema the hosted project does not run.
 //
-// That was a live false-PASS, not a theoretical one: a permissive
+// That was a live false-PASS, not a theoretical one (#423): a permissive
 // `create policy ... to authenticated using (true)` written in that idiom left
 // this entire script green while handing every signed-in client every row of
-// the table. Creating the role is what makes the black-box tiers below see the
-// policies they exist to check, and it exercises the `to authenticated` clause
-// itself (`v_role_clause`), which previously was never applied here.
-await db.exec("create role authenticated nologin;");
+// the table. Creating `authenticated` is what makes the black-box tiers below
+// see the policies they exist to check, and it exercises the `to
+// authenticated` clause itself (`v_role_clause`).
+//
+// The other three close the same class for their own guards (#1557): about 35
+// blocks guard on `anon` and 34 on `service_role`. A `revoke ... from anon`
+// naming the wrong function signature is the case that matters: with the role
+// absent the statement never ran, this job stayed green, and `supabase db
+// push` aborted on the hosted project, where the role exists.
+// `supabase_auth_admin` guards the custom-access-token hook's grants and its
+// two `auth_admin_can_read_*` policies, which now exist here too.
+//
+// Attributes follow the local Supabase image's `pg_roles`, except LOGIN, which
+// nothing here uses: `service_role` alone bypasses RLS, `supabase_auth_admin`
+// is NOINHERIT and CREATEROLE, and neither client role is a member of the
+// other. The last is the one that matters, because a policy binds every
+// member of the roles it names.
+await db.exec(`
+  create role authenticated nologin;
+  create role anon nologin;
+  create role service_role nologin bypassrls;
+  create role supabase_auth_admin nologin noinherit createrole;
+`);
 
 const migrationResults = [];
 const tApplyStart = performance.now();
@@ -764,12 +784,13 @@ const RLS_SMOKE = [
     // exposing it as an RPC hands out a membership oracle. A later `drop function;
     // create function` silently restores the default PUBLIC grant, so pin it.
     //
-    // LIMITATION: this checks the PUBLIC bit only, because PGlite has no `anon`
-    // role to check. Hosted Supabase grants `anon` EXECUTE *directly* via ALTER
-    // DEFAULT PRIVILEGES, not through PUBLIC — so a drop/recreate there could
-    // restore anon's grant while this assertion stays green. The
-    // `has_function_privilege('anon', ...)` check in DB_PROMOTION_RUNBOOK.md is
-    // what covers that; it is a promotion-time check, not a CI one.
+    // LIMITATION: this checks the PUBLIC bit only. The `anon` role exists here
+    // (#1557), but hosted Supabase grants it EXECUTE *directly* via ALTER
+    // DEFAULT PRIVILEGES, not through PUBLIC, and this harness does not replay
+    // those defaults. So `anon` never holds a grant here for a drop/recreate to
+    // restore, and asserting `has_function_privilege('anon', ...)` would pass
+    // vacuously. The same check in DB_PROMOTION_RUNBOOK.md is what covers it;
+    // it is a promotion-time check, not a CI one.
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'can_read_chat_message'`,
@@ -946,56 +967,83 @@ for (const lm of RLS_SMOKE) await runOne(lm);
 // **N counts individual policy statements — rows in `pg_policies` — not rows in
 // the doc's table**, several of which name two policies each.
 //
-// PGlite legitimately sees fewer than a hosted project, and every one of the
-// three absences is role- or schema-gated rather than a defect:
-//   - `users.auth_admin_can_read_users` and `members.auth_admin_can_read_members`
-//     are created inside `if exists (select 1 from pg_roles where rolname =
-//     'supabase_auth_admin')` (20260802120000_active_chapter_jwt_claim.sql:137),
-//     and that role does not exist here.
-//   - `realtime.messages.realtime_messages_scoped_select` and
-//     `realtime.messages.realtime_messages_scoped_insert` (#1552 phase 1) live
-//     in the `realtime` schema, which PGlite does not have at all.
-// So: 8 in `public` here; 12 hosted (10 in `public` + 2 in `realtime`). The
-// printed hosted figure is derived from this list + those 4, so it cannot
-// silently contradict itself the way a second hardcoded literal would.
+// PGlite legitimately sees fewer than a hosted project, and both absences are
+// schema-gated rather than a defect: `realtime.messages.realtime_messages_
+// scoped_select` and `realtime.messages.realtime_messages_scoped_insert` (#1552
+// phase 1) live in the `realtime` schema, which PGlite does not have at all.
+// (`users.auth_admin_can_read_users` and `members.auth_admin_can_read_members`
+// were a third and fourth absence until #1557 created `supabase_auth_admin`,
+// whose `if exists` guard in 20260802120000_active_chapter_jwt_claim.sql:137
+// they sit behind.) So: 10 in `public` here; 12 hosted (10 in `public` + 2 in
+// `realtime`). The printed hosted figure is derived from this list + those 2,
+// so it cannot silently contradict itself the way a second hardcoded literal
+// would.
 //
 // Asserted as an exact SET rather than a count: a bare count lets a dropped
 // policy be masked by an added one, which is the failure mode that matters — a
 // silently removed policy widens access without changing the total.
+// A policy whose `roles` is exactly this binds no client: `supabase_auth_admin`
+// is the role Supabase Auth runs the custom-access-token hook as. Every other
+// role list counts as client-reachable, `{public}` above all. Shared by the
+// tautology tripwire below and the default-deny tier's catalog check.
+const AUTH_ADMIN_ONLY = "{supabase_auth_admin}";
+
 {
+  const HOSTED_ONLY_POLICIES = 2;
   const EXPECTED_PUBLIC_POLICIES = [
-    "chapter_audit_log.audit_log_no_delete [DELETE]",
-    "chapter_audit_log.audit_log_no_update [UPDATE]",
-    "chat_message_actions.chat_message_actions_delete [DELETE]",
-    "chat_message_actions.chat_message_actions_insert [INSERT]",
-    "chat_message_actions.chat_message_actions_select [SELECT]",
-    "chat_messages.chat_messages_select [SELECT]",
-    "chat_notification_preferences.chat_notification_preferences_select_own [SELECT]",
+    "chapter_audit_log.audit_log_no_delete [DELETE] to {public}",
+    "chapter_audit_log.audit_log_no_update [UPDATE] to {public}",
+    "chat_message_actions.chat_message_actions_delete [DELETE] to {public}",
+    "chat_message_actions.chat_message_actions_insert [INSERT] to {public}",
+    "chat_message_actions.chat_message_actions_select [SELECT] to {authenticated}",
+    "chat_messages.chat_messages_select [SELECT] to {authenticated}",
+    "chat_notification_preferences.chat_notification_preferences_select_own [SELECT] to {public}",
     // FOR ALL, so an in-place rewrite here would widen writes as well as reads —
     // which is why the unconditional check below matters most for this one.
-    "member_custom_field_values.member_custom_field_values_service_role [ALL]",
+    "member_custom_field_values.member_custom_field_values_service_role [ALL] to {public}",
+    "members.auth_admin_can_read_members [SELECT] to {supabase_auth_admin}",
+    "users.auth_admin_can_read_users [SELECT] to {supabase_auth_admin}",
   ];
   // `cmd` is part of the identity, not decoration: flipping a policy from SELECT
   // to ALL widens it to writes while the name set is unchanged.
+  //
+  // So are the roles (#1557). `chat_messages_select` is written through a
+  // `v_role_clause` DO block, and a plain `create policy` now works here, so
+  // tidying that block into one would be the natural edit — and dropping its
+  // `to authenticated` on the way changes neither name nor cmd. The policy
+  // then binds `anon` on hosted, where `can_read_chat_message` is not
+  // executable by anon: a read returns zero rows or raises 42501 depending on
+  // plan shape (security-fixes.md § the chat_message_actions tiers), and
+  // `use-chat-channel.ts` discards the error. Naming the roles makes that edit
+  // a REMOVED-and-ADDED pair instead of a silent pass.
   const res = await db.query(
     `select tablename, policyname, cmd, permissive,
+            roles::text as roles,
             coalesce(qual, '') as qual,
             coalesce(with_check, '') as with_check
        from pg_policies
       where schemaname = 'public'
       order by tablename, policyname`,
   );
-  const got = res.rows.map((r) => `${r.tablename}.${r.policyname} [${r.cmd}]`);
+  const got = res.rows.map(
+    (r) => `${r.tablename}.${r.policyname} [${r.cmd}] to ${r.roles}`,
+  );
   const added = got.filter((p) => !EXPECTED_PUBLIC_POLICIES.includes(p));
   const removed = EXPECTED_PUBLIC_POLICIES.filter((p) => !got.includes(p));
 
-  // A name-and-cmd set still cannot see a policy REWRITTEN in place, and two of
-  // these eight have no other coverage anywhere in the repo
+  // A name, cmd and roles set still cannot see a policy REWRITTEN in place, and
+  // two of these ten have no other coverage anywhere in the repo
   // (`chat_notification_preferences_select_own`,
   // `member_custom_field_values_service_role`). Dropping and recreating one with
   // `using (true)` under the same name would keep the set identical and hand
-  // every row to any authenticated PostgREST client. None of the eight is
-  // unconditional today, so assert that directly.
+  // every row to any authenticated PostgREST client. None of the eight a client
+  // role can reach is unconditional today, so assert that directly.
+  //
+  // Only a policy a client can reach counts, which is every policy except one
+  // bound to `supabase_auth_admin` alone (AUTH_ADMIN_ONLY). The two
+  // `auth_admin_can_read_*` policies are `using (true)` by design: that is the
+  // role the custom-access-token hook runs as, and no PostgREST request can
+  // assume it.
   // BOTH halves, deliberately. `qual` governs reads (and the row a write may
   // target); `with_check` governs what a write may create. A FOR INSERT policy
   // like `chat_message_actions_insert` has a NULL `qual` and carries its entire
@@ -1005,7 +1053,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
   //
   // This is a tripwire for the obvious rewrite, not a proof: it catches the
   // literal tautologies, and an adversarial `using (id = id)` would still pass.
-  // It exists because two of these eight have no other coverage anywhere in the
+  // It exists because two of these ten have no other coverage anywhere in the
   // repo (`chat_notification_preferences_select_own`,
   // `member_custom_field_values_service_role`).
   const TAUTOLOGY = /^\s*\(*\s*(true|1\s*=\s*1)\s*\)*\s*$/i;
@@ -1013,6 +1061,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
     .filter(
       (r) =>
         r.permissive === "PERMISSIVE" &&
+        r.roles !== AUTH_ADMIN_ONLY &&
         (TAUTOLOGY.test(r.qual) || TAUTOLOGY.test(r.with_check)),
     )
     .map(
@@ -1048,7 +1097,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
   }
   if (!drifted) {
     console.log(
-      `OK    public policy inventory matches authorization-model.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 4} hosted)`,
+      `OK    public policy inventory matches authorization-model.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + HOSTED_ONLY_POLICIES} hosted)`,
     );
   }
 }
@@ -1490,12 +1539,130 @@ try {
   );
 }
 
+// ─── Who a tier reads as (#1556) ────────────────────────────────────────────
+//
+// A reader is three things, and a scenario that sets only one of them is a
+// different reader from the one its name claims:
+//   - `uid`: what `auth.uid()` returns, the JWT's `sub`; null with no JWT.
+//   - `jwtRole`: what `auth.role()` returns, the JWT's `role` claim.
+//   - `dbRole`: the Postgres role the read runs as, which is what a policy's
+//     `TO` clause binds. RLS skips superusers and table owners, so a
+//     black-box read needs a non-owner probe role at all.
+//
+// The tiers used to stub `auth.uid()` per scenario and leave `auth.role()` at
+// a tier-wide 'authenticated', which made every "no JWT" scenario a signed-in
+// reader who happened to have no uid. A policy spelled `using (auth.role() =
+// 'anon')` then reads as default-deny here and hands the table to every
+// unauthenticated client on hosted (#423 found it in the deny tier). Building
+// every reader from these three is what keeps the parts consistent.
+const signedIn = (uid) => ({ uid, jwtRole: "authenticated", dbRole: "rls_probe" });
+
+// The claims of a request with no JWT, read through the `authenticated` grant.
+// Hosted never receives this exact request (PostgREST runs a keyless request
+// as `anon`, below). It is kept because it is the stricter reader for
+// predicates: it binds every `to authenticated` policy, so a predicate that
+// admits a missing uid or the anon claim fails here even where the `TO`
+// clause would stop it on hosted.
+const NO_JWT = { uid: null, jwtRole: "anon", dbRole: "rls_probe" };
+
+// The anon key as hosted runs it: no uid, the anon claim, and the read made as
+// a member of `anon` and not of `authenticated` (#1557 created the role). This
+// is the reader a `to anon` or `to public` policy binds. NO_JWT cannot see such
+// a policy when it is spelled `to anon`.
+const ANON_KEY = { uid: null, jwtRole: "anon", dbRole: "rls_probe_anon" };
+
+const firstLine = (e) => String(e?.message ?? e).split("\n")[0];
+
+// Point `auth.uid()` and `auth.role()` at a reader. Both, always: this is the
+// one place either stub is rewritten per scenario.
+async function setAuth({ uid, jwtRole }) {
+  // A mistyped `F.` key yields undefined, which would interpolate
+  // 'undefined'::uuid and read as a denial: a scenario that silently tests
+  // nothing. Fail loudly instead.
+  if (uid !== null && typeof uid !== "string") {
+    throw new Error(`a reader has a non-fixture uid (${String(uid)})`);
+  }
+  const sub = uid === null ? "null" : `'${uid}'`;
+  await db.exec(`
+    create or replace function auth.uid()  returns uuid language sql as $$ select ${sub}::uuid $$;
+    create or replace function auth.role() returns text language sql as $$ select '${jwtRole}'::text $$;
+  `);
+}
+
+// One black-box read as `who`, in its own savepoint. Returns `{ rows, failure }`
+// and never throws for the read itself.
+//
+// The savepoint is the point (#1556). A policy that references a table the
+// probe cannot read raises `permission denied` instead of returning rows, and
+// an error inside the open transaction poisons it (25P02) for everything after.
+// Before this helper, one such policy in the first tier unwound to the
+// tier-wide catch, and every later tier never ran: the log showed one chat
+// error and no deny header at all. Rolling back to the savepoint keeps the
+// transaction usable, so each scenario reports its own verdict and the tiers
+// after it still run.
+async function probeAs(who, sql) {
+  await setAuth(who);
+  await db.exec("savepoint probe;");
+  let rows = null;
+  let failure = null;
+  try {
+    await db.exec(`set role ${who.dbRole};`);
+    rows = (await db.query(sql)).rows;
+  } catch (e) {
+    failure = firstLine(e);
+  } finally {
+    try {
+      await db.exec("reset role;");
+    } catch {
+      /* the savepoint rollback below is what actually recovers */
+    }
+    // Guarded like the `reset role` above, and for the same reason: a throw
+    // raised in `finally` REPLACES the verdict the try/catch just computed.
+    //
+    // `rollback to savepoint` does NOT destroy the savepoint (verified while
+    // building the #423 deny tier: rolling back to the same name three times
+    // succeeds), so the error branch releases it explicitly. Otherwise every
+    // failing read leaves another live subtransaction open.
+    try {
+      await db.exec(
+        failure === null
+          ? "release savepoint probe;"
+          : "rollback to savepoint probe; release savepoint probe;",
+      );
+    } catch (e) {
+      failure ??= `savepoint cleanup failed: ${firstLine(e)}`;
+    }
+  }
+  return { rows, failure };
+}
+
+// The exact-set verdict the visibility tiers print. A count is satisfied by the
+// right NUMBER of wrong rows, so each reader's set is compared both ways. Reads
+// select their row id as `id`.
+function expectSet(name, probe, visible, labelOf) {
+  if (probe.failure !== null) {
+    missing += 1;
+    console.log(`MISS  ${name}\n        ↳ the read raised instead: ${probe.failure}`);
+    return;
+  }
+  const got = probe.rows.map((r) => r.id).sort();
+  const want = [...visible].sort();
+  const leaked = got.filter((g) => !want.includes(g));
+  const absent = want.filter((w) => !got.includes(w));
+  if (leaked.length === 0 && absent.length === 0) {
+    console.log(`OK    ${name}`);
+  } else {
+    missing += 1;
+    console.log(
+      `MISS  ${name}` +
+        (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(labelOf).join(", ")}` : "") +
+        (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(labelOf).join(", ")}` : ""),
+    );
+  }
+}
+
 async function canReadAs(authUid, messageId) {
-  await db.exec(
-    authUid === null
-      ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
-      : `create or replace function auth.uid() returns uuid language sql as $$ select '${authUid}'::uuid $$;`,
-  );
+  await setAuth(authUid === null ? NO_JWT : signedIn(authUid));
   const res = await db.query(
     `select public.can_read_chat_message('${messageId}'::uuid) as ok`,
   );
@@ -1594,16 +1761,28 @@ if (readSeeded) {
       grant select on public.members to rls_probe;
       grant select on public.financial_invoices to rls_probe;
       grant execute on function public.can_read_chat_message(uuid) to rls_probe;
-      -- Mirrors the request context of a signed-in Supabase client. The
-      -- authenticated role is created before the migrations apply, so the TO
-      -- clause is real here and rls_probe inherits it via the grant above;
-      -- the qual is then what decides visibility.
-      create or replace function auth.role() returns text language sql as $$ select 'authenticated'::text $$;
+
+      -- The anon key's reader (ANON_KEY). A member of anon and NOT of
+      -- authenticated, as on hosted, so a policy bound to anon or public
+      -- applies to it and one bound to authenticated does not. It gets the same
+      -- table grants: hosted's default grant all on tables to anon is never
+      -- revoked at table level, so RLS is what stands between the anon key and
+      -- these rows there too. It gets no EXECUTE on can_read_chat_message,
+      -- which is revoked from anon on hosted.
+      drop role if exists rls_probe_anon;
+      create role rls_probe_anon nologin;
+      grant anon to rls_probe_anon;
+      grant usage on schema public to rls_probe_anon;
+      grant select on public.chat_message_actions to rls_probe_anon;
+      grant select on public.chat_messages to rls_probe_anon;
+      grant select on public.members to rls_probe_anon;
+      grant select on public.financial_invoices to rls_probe_anon;
     `);
 
     // userA: chapter A, in member_ids of PRIVATE/DM/GROUP_DM, holds chat:secret.
     // userC: chapter A, no privileges, in no member list -> PUBLIC only.
-    // userB: chapter B -> nothing. null uid: no JWT -> nothing.
+    // userB: chapter B -> its own chapter's row only. No JWT, read either way
+    // (NO_JWT, ANON_KEY) -> nothing.
     //
     // FRA-321 moved both non-zero counts down by one, and the row that left each
     // is the same one: the ROLE_GATED channel with an empty requirement list.
@@ -1627,51 +1806,22 @@ if (readSeeded) {
     // would still total 5 here and stay green, which is the whole failure this
     // tier exists to catch.
     const BLACKBOX = [
-      { name: "member sees every action row in channels they can read (all but the empty-gated one)", uid: F.userAAuth,
+      { name: "member sees every action row in channels they can read (all but the empty-gated one)", as: signedIn(F.userAAuth),
         visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM] },
-      { name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)", uid: F.userBAuth,
+      { name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)", as: signedIn(F.userBAuth),
         visible: [F.msgPublicB] },
-      { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", uid: F.userCAuth,
+      { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", as: signedIn(F.userCAuth),
         visible: [F.msgPublic] },
-      { name: "no JWT (null auth.uid()) sees nothing", uid: null, visible: [] },
+      { name: "no JWT (null auth.uid()) sees nothing", as: NO_JWT, visible: [] },
+      { name: "the anon key (role anon, no JWT) sees nothing", as: ANON_KEY, visible: [] },
     ];
 
     for (const s of BLACKBOX) {
-      await db.exec(
-        s.uid === null
-          ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
-          : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+      const probe = await probeAs(
+        s.as,
+        `select message_id::text as id from public.chat_message_actions`,
       );
-      await db.exec("set role rls_probe;");
-      let seen;
-      try {
-        const res = await db.query(
-          `select message_id::text as id from public.chat_message_actions`,
-        );
-        seen = res.rows.map((r) => r.id);
-      } finally {
-        // Never let this replace a pending exception by raising 25P02 on an
-        // aborted transaction.
-        try {
-          await db.exec("reset role;");
-        } catch {
-          /* keep the original error */
-        }
-      }
-      const want = [...s.visible].sort();
-      const got = [...seen].sort();
-      const leaked = got.filter((g) => !want.includes(g));
-      const absent = want.filter((w) => !got.includes(w));
-      if (leaked.length === 0 && absent.length === 0) {
-        console.log(`OK    ${s.name}`);
-      } else {
-        missing += 1;
-        console.log(
-          `MISS  ${s.name}` +
-            (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(label).join(", ")}` : "") +
-            (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(label).join(", ")}` : ""),
-        );
-      }
+      expectSet(s.name, probe, s.visible, label);
     }
 
 
@@ -1738,42 +1888,12 @@ if (readSeeded) {
           ('${K.blockerReaction}',   '${F.msgPublic}',  '${F.userCId}', 'reaction:🎉');
       `);
 
-      const setUid = (uid) =>
-        db.exec(
-          `create or replace function auth.uid() returns uuid language sql as $$ select '${uid}'::uuid $$;`,
+      const readRowsAs = (uid) =>
+        probeAs(
+          signedIn(uid),
+          `select id::text as id from public.chat_message_actions
+            where id in (${ROW_IDS.map((id) => `'${id}'`).join(", ")})`,
         );
-      async function readRowsAs(uid) {
-        await setUid(uid);
-        await db.exec("set role rls_probe;");
-        try {
-          const res = await db.query(
-            `select id::text as id from public.chat_message_actions
-              where id in (${ROW_IDS.map((id) => `'${id}'`).join(", ")})`,
-          );
-          return res.rows.map((r) => r.id).sort();
-        } finally {
-          try {
-            await db.exec("reset role;");
-          } catch {
-            /* keep the original error */
-          }
-        }
-      }
-      function expectRows(name, got, visible) {
-        const want = [...visible].sort();
-        const leaked = got.filter((g) => !want.includes(g));
-        const absent = want.filter((w) => !got.includes(w));
-        if (leaked.length === 0 && absent.length === 0) {
-          console.log(`OK    ${name}`);
-        } else {
-          missing += 1;
-          console.log(
-            `MISS  ${name}` +
-              (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(rowLabel).join(", ")}` : "") +
-              (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(rowLabel).join(", ")}` : ""),
-          );
-        }
-      }
 
       // Read before the block, so "unchanged" has something to compare with.
       const blockedBefore = await readRowsAs(F.userAAuth);
@@ -1793,26 +1913,26 @@ if (readSeeded) {
       const BLOCK_SCENARIOS = [
         {
           name: "before any block, the blocker-to-be reads every reaction and vote in both chapters",
-          got: blockerBefore,
+          probe: blockerBefore,
           visible: ROW_IDS,
         },
         {
           name: "before any block, the member about to be blocked reads every reaction and vote in both chapters",
-          got: blockedBefore,
+          probe: blockedBefore,
           visible: ROW_IDS,
         },
         {
           name: "a blocker reads none of a blocked member's reaction rows in that chapter, and keeps everything else",
-          got: blockerAfter,
+          probe: blockerAfter,
           visible: [K.blockedVote, K.blockedInChapB, K.otherReaction, K.blockerReaction],
         },
         {
           name: "the blocked member still reads every row after being blocked (no oracle)",
-          got: blockedAfter,
+          probe: blockedAfter,
           visible: ROW_IDS,
         },
       ];
-      for (const s of BLOCK_SCENARIOS) expectRows(s.name, s.got, s.visible);
+      for (const s of BLOCK_SCENARIOS) expectSet(s.name, s.probe, s.visible, rowLabel);
 
       // The helper takes no blocker parameter. Called over RPC it must answer
       // only about the caller's own list: userA learns nothing about userC's
@@ -1838,7 +1958,7 @@ if (readSeeded) {
         },
       ];
       for (const s of HELPER_SCENARIOS) {
-        await setUid(s.uid);
+        await setAuth(signedIn(s.uid));
         const res = await db.query(
           `select public.chat_viewer_has_blocked('${s.actor}'::uuid, '${s.msg}'::uuid) as ok`,
         );
@@ -1887,7 +2007,7 @@ if (readSeeded) {
     const MSG_BLACKBOX = [
       {
         who: "chapter member in member_ids holding chat:secret",
-        uid: F.userAAuth,
+        as: signedIn(F.userAAuth),
         visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM],
       },
       {
@@ -1897,12 +2017,12 @@ if (readSeeded) {
         // "sees zero of chapter A" is equally satisfied by a uuid belonging to
         // nobody, and the tenant boundary is never actually exercised.
         who: "cross-chapter member (sees only their own chapter)",
-        uid: F.userBAuth,
+        as: signedIn(F.userBAuth),
         visible: [F.msgPublicB],
       },
       {
         who: "chapter member with no privileges, in no member list",
-        uid: F.userCAuth,
+        as: signedIn(F.userCAuth),
         visible: [F.msgPublic],
       },
       {
@@ -1911,10 +2031,11 @@ if (readSeeded) {
         // ROLE_GATED channels (including the empty-requirement one) and still
         // must not grant PRIVATE / DM / GROUP_DM, which gate on member_ids.
         who: "chapter member holding the '*' wildcard, in no member list",
-        uid: F.userDAuth,
+        as: signedIn(F.userDAuth),
         visible: [F.msgPublic, F.msgRoleGated, F.msgRoleGatedOpen],
       },
-      { who: "no JWT (null auth.uid())", uid: null, visible: [] },
+      { who: "no JWT (null auth.uid())", as: NO_JWT, visible: [] },
+      { who: "the anon key (role anon, no JWT)", as: ANON_KEY, visible: [] },
     ];
 
     // Every expectation below is stated as a set over ALL_MSG_IDS. That is only
@@ -1938,54 +2059,18 @@ if (readSeeded) {
     }
 
     for (const s of MSG_BLACKBOX) {
-      // A mistyped `F.` key yields undefined, which would interpolate the string
-      // 'undefined'::uuid and read as a denial — a scenario that silently tests
-      // nothing. Fail loudly instead.
-      if (s.uid !== null && typeof s.uid !== "string") {
-        throw new Error(`MSG_BLACKBOX scenario "${s.who}" has a non-fixture uid`);
-      }
-      await db.exec(
-        s.uid === null
-          ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
-          : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
-      );
-      await db.exec("set role rls_probe;");
-      let seen;
-      try {
-        const res = await db.query(
-          `select id::text as id from public.chat_messages
-            where id in (${ALL_MSG_IDS.map((m) => `'${m}'`).join(", ")})`,
-        );
-        seen = res.rows.map((r) => r.id);
-      } finally {
-        // Never let this replace a pending exception. These run inside the open
-        // transaction, so a failed query aborts it and `RESET ROLE` then raises
-        // 25P02 — which would surface instead of the real cause and collapse the
-        // whole tier into one uninformative ERR.
-        try {
-          await db.exec("reset role;");
-        } catch {
-          /* keep the original error */
-        }
-      }
-
       const want = [...s.visible].sort();
-      const got = [...seen].sort();
-      const leaked = got.filter((g) => !want.includes(g));
-      const absent = want.filter((w) => !got.includes(w));
-
-      if (leaked.length === 0 && absent.length === 0) {
-        console.log(
-          `OK    ${s.who} reads exactly ${want.length}/${ALL_MSG_IDS.length} (${want.map(label).join(", ") || "nothing"})`,
-        );
-      } else {
-        missing += 1;
-        console.log(
-          `MISS  ${s.who} reads the wrong set of chat_messages` +
-            (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(label).join(", ")}` : "") +
-            (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(label).join(", ")}` : ""),
-        );
-      }
+      const probe = await probeAs(
+        s.as,
+        `select id::text as id from public.chat_messages
+          where id in (${ALL_MSG_IDS.map((m) => `'${m}'`).join(", ")})`,
+      );
+      expectSet(
+        `${s.who} reads exactly ${want.length}/${ALL_MSG_IDS.length} (${want.map(label).join(", ") || "nothing"})`,
+        probe,
+        s.visible,
+        label,
+      );
     }
 
 
@@ -2016,41 +2101,31 @@ if (readSeeded) {
     const ARCHIVE = [
       {
         name: "an imported archive row is invisible to a member who CAN read the channel",
-        uid: F.userAAuth,
+        as: signedIn(F.userAAuth),
         sql: `select count(*)::int as n from public.chat_messages where id = '${IMPORTED_MSG}'`,
         expect: 0,
       },
       {
         name: "a live row in the same channel is still visible (the rule is `kind`, not a blanket deny)",
-        uid: F.userAAuth,
+        as: signedIn(F.userAAuth),
         sql: `select count(*)::int as n from public.chat_messages where id = '${F.msgPublic}'`,
         expect: 1,
       },
     ];
 
     for (const s of ARCHIVE) {
-      await db.exec(
-        `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
-      );
-      await db.exec("set role rls_probe;");
-      let got;
-      try {
-        const res = await db.query(s.sql);
-        got = res.rows[0].n;
-      } finally {
-        // See the note on the chat_messages tier: never let this replace a
-        // pending exception by raising 25P02 on an aborted transaction.
-        try {
-          await db.exec("reset role;");
-        } catch {
-          /* keep the original error */
-        }
-      }
-      if (got === s.expect) {
+      const probe = await probeAs(s.as, s.sql);
+      const got = probe.rows?.[0]?.n;
+      if (probe.failure === null && got === s.expect) {
         console.log(`OK    ${s.name}`);
       } else {
         missing += 1;
-        console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
+        console.log(
+          `MISS  ${s.name}\n        ↳ ` +
+            (probe.failure === null
+              ? `expected ${s.expect} visible row(s), got ${got}`
+              : `the read raised instead: ${probe.failure}`),
+        );
       }
     }
 
@@ -2067,55 +2142,29 @@ if (readSeeded) {
     // hands every archived message in every chapter to an unauthenticated
     // PostgREST client. It satisfies all three shape regexes, keeps one
     // permissive policy, and passes every membership expectation — because the
-    // row it leaks does not exist yet when those run. So re-check the two
-    // readers that must see nothing of another tenant, now that it does.
+    // row it leaks does not exist yet when those run. So re-check the readers
+    // that must see nothing of another tenant, now that it does.
     // Exact sets over the WHOLE table, matching the membership tier — a count
     // can be right for the wrong reason (a policy hiding chapterB/PUBLIC from
     // userB while exposing one imported row keeps the total at 1).
     const POST_ARCHIVE = [
-      { who: "no JWT (null auth.uid())", uid: null, visible: [] },
+      { who: "no JWT (null auth.uid())", as: NO_JWT, visible: [] },
+      { who: "the anon key (role anon, no JWT)", as: ANON_KEY, visible: [] },
       {
         who: "cross-chapter member",
-        uid: F.userBAuth,
+        as: signedIn(F.userBAuth),
         visible: [F.msgPublicB], // their own chapter's PUBLIC message, nothing else
       },
     ];
     const postLabel = (id) => (id === IMPORTED_MSG ? "IMPORTED" : label(id));
     for (const s of POST_ARCHIVE) {
-      await db.exec(
-        s.uid === null
-          ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
-          : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+      const probe = await probeAs(s.as, `select id::text as id from public.chat_messages`);
+      expectSet(
+        `${s.who} still reads exactly ${s.visible.length} row(s) once an imported archive row exists`,
+        probe,
+        s.visible,
+        postLabel,
       );
-      await db.exec("set role rls_probe;");
-      let seen;
-      try {
-        const res = await db.query(
-          `select id::text as id from public.chat_messages`,
-        );
-        seen = res.rows.map((r) => r.id);
-      } finally {
-        try {
-          await db.exec("reset role;");
-        } catch {
-          /* keep the original error */
-        }
-      }
-      const want = [...s.visible].sort();
-      const got = [...seen].sort();
-      const leaked = got.filter((g) => !want.includes(g));
-      const absent = want.filter((w) => !got.includes(w));
-      const name = `${s.who} still reads exactly ${want.length} row(s) once an imported archive row exists`;
-      if (leaked.length === 0 && absent.length === 0) {
-        console.log(`OK    ${name}`);
-      } else {
-        missing += 1;
-        console.log(
-          `MISS  ${name}` +
-            (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(postLabel).join(", ")}` : "") +
-            (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(postLabel).join(", ")}` : ""),
-        );
-      }
     }
 
     // ─── Unread counts: the "47,000 unread" case, end to end ────────────────
@@ -2158,9 +2207,7 @@ if (readSeeded) {
     // chat_message_actions policy, so narrowing it would silently kill reactions
     // and poll votes on every imported message.
     {
-      await db.exec(
-        `create or replace function auth.uid() returns uuid language sql as $$ select '${F.userAAuth}'::uuid $$;`,
-      );
+      await setAuth(signedIn(F.userAAuth));
       const res = await db.query(
         `select public.can_read_chat_message('${IMPORTED_MSG}'::uuid) as ok`,
       );
@@ -2181,10 +2228,10 @@ if (readSeeded) {
     //
     //   - `financial_invoices` has no policy anywhere in the tree.
     //   - `members`' only policy, `auth_admin_can_read_members`, is
-    //     `to supabase_auth_admin` and is not even created here — it sits
-    //     inside an `if exists (... rolname = 'supabase_auth_admin')` guard and
-    //     that role does not exist under PGlite. See the policy-inventory note
-    //     earlier in this file, which already records the same three absences.
+    //     `to supabase_auth_admin`, the role Supabase Auth runs the
+    //     custom-access-token hook as. It exists here since #1557 created that
+    //     role, so the catalog check below excludes it by its roles, not by
+    //     its absence.
     //
     // Under RLS, no reachable policy means default-deny, and per ADR-11 the API
     // reads both tables exclusively through the service-role client, which
@@ -2249,27 +2296,38 @@ if (readSeeded) {
     const DENY_TABLES = ["members", "financial_invoices"];
 
     const DENY_READERS = [
-      { who: "a chapter-A member reading their own chapter", uid: F.userAAuth },
-      { who: "a chapter-B member (cross-tenant)", uid: F.userBAuth },
-      { who: "a chapter-A member holding the '*' wildcard", uid: F.userDAuth },
-      // A real anon reader: null uid AND auth.role() = 'anon'. Stubbing only
-      // the uid would leave this indistinguishable from a signed-in reader,
-      // which is how an `auth.role() = 'anon'` policy stays invisible.
-      { who: "an anonymous reader (no JWT, auth.role() = 'anon')", uid: null },
+      { who: "a chapter-A member reading their own chapter", as: signedIn(F.userAAuth) },
+      { who: "a chapter-B member (cross-tenant)", as: signedIn(F.userBAuth) },
+      { who: "a chapter-A member holding the '*' wildcard", as: signedIn(F.userDAuth) },
+      // Null uid AND auth.role() = 'anon'. Stubbing only the uid would leave
+      // this indistinguishable from a signed-in reader, which is how an
+      // `auth.role() = 'anon'` policy stays invisible.
+      { who: "an anonymous reader (no JWT, auth.role() = 'anon')", as: NO_JWT },
+      { who: "the anon key (role anon, no JWT)", as: ANON_KEY },
     ];
 
     // Asserted once, before any table: every `reads 0 rows` line below is only
-    // meaningful because `rls_probe` is a MEMBER of `authenticated`. Without
-    // that membership a `to authenticated` policy simply does not bind the
-    // probe, so the read is answered by default-deny and the assertion passes
-    // while testing nothing. Today that membership is also load-bearing for the
-    // chat visibility sets, which would fail loudly — but this tier must not
-    // borrow its validity from another tier's failure.
-    {
-      const name = "rls_probe is a member of authenticated (so `to authenticated` policies bind it)";
-      const res = await db.query(
+    // meaningful because each probe role is a MEMBER of the client role it
+    // stands in for. Without that membership a `to authenticated` (or `to
+    // anon`) policy simply does not bind the probe, so the read is answered by
+    // default-deny and the assertion passes while testing nothing. The anon
+    // probe must also NOT be a member of `authenticated`, or it is a second
+    // signed-in reader under another name. Today the `authenticated`
+    // membership is also load-bearing for the chat visibility sets, which
+    // would fail loudly, but this tier must not borrow its validity from
+    // another tier's failure.
+    for (const [name, sql] of [
+      [
+        "rls_probe is a member of authenticated (so `to authenticated` policies bind it)",
         `select pg_has_role('rls_probe', 'authenticated', 'member') as ok`,
-      );
+      ],
+      [
+        "rls_probe_anon is a member of anon and not of authenticated (so it binds exactly what the anon key binds)",
+        `select pg_has_role('rls_probe_anon', 'anon', 'member')
+                and not pg_has_role('rls_probe_anon', 'authenticated', 'member') as ok`,
+      ],
+    ]) {
+      const res = await db.query(sql);
       if (res.rows[0].ok === true) {
         console.log(`OK    ${name}`);
       } else {
@@ -2285,9 +2343,10 @@ if (readSeeded) {
       // `missing` goes up either way, but anyone reading the log — or grepping
       // it for the deny assertions — sees green on a property never tested.
       const privileged = await db.query(
-        `select has_table_privilege('rls_probe', 'public.${table}', 'select') as ok`,
+        `select has_table_privilege('rls_probe', 'public.${table}', 'select')
+                and has_table_privilege('rls_probe_anon', 'public.${table}', 'select') as ok`,
       );
-      const privName = `rls_probe holds SELECT on ${table} (so a zero-row read means RLS, not a missing grant)`;
+      const privName = `both probe roles hold SELECT on ${table} (so a zero-row read means RLS, not a missing grant)`;
       if (privileged.rows[0].ok !== true) {
         missing += 1;
         console.log(`MISS  ${privName}\n        ↳ skipping ${table}: its deny assertions would pass vacuously`);
@@ -2318,9 +2377,9 @@ if (readSeeded) {
       // Both tables are supposed to carry NO policy a client role can reach,
       // in any command shape, so assert exactly that from the catalog — it
       // covers INSERT/UPDATE/DELETE/ALL without needing a write probe per
-      // command. `supabase_auth_admin` is excluded: it is a Supabase-internal
-      // role, not a client, and `members` legitimately carries one such policy
-      // on hosted projects.
+      // command. A policy bound to `supabase_auth_admin` alone is excluded
+      // (AUTH_ADMIN_ONLY): that is a Supabase-internal role, not a client, and
+      // `members` legitimately carries one such policy.
       // `permissive = 'PERMISSIVE'` is not optional, and every sibling policy
       // check in this file filters it for the same reason: a RESTRICTIVE policy
       // can only ever NARROW access, so flagging one would fail CI on a
@@ -2332,7 +2391,7 @@ if (readSeeded) {
            from pg_policies
           where schemaname = 'public' and tablename = '${table}'
             and permissive = 'PERMISSIVE'
-            and roles <> '{supabase_auth_admin}'`,
+            and roles::text <> '${AUTH_ADMIN_ONLY}'`,
       );
       const anyCmdName = `${table} carries no client-reachable policy of ANY command (covers the write path)`;
       if (clientPolicies.rows.length === 0) {
@@ -2348,68 +2407,9 @@ if (readSeeded) {
       }
 
       for (const s of DENY_READERS) {
-        // A mistyped `F.` key yields undefined, which would interpolate
-        // 'undefined'::uuid and read as a denial — a scenario that silently
-        // tests nothing. Same guard the message tier carries.
-        if (s.uid !== null && typeof s.uid !== "string") {
-          throw new Error(`DENY_READERS scenario "${s.who}" has a non-fixture uid`);
-        }
-        // `auth.role()` is varied with the identity, not left at the tier-wide
-        // 'authenticated'. Without this the "no JWT" scenario is not an
-        // unauthenticated reader at all — it is a signed-in reader who happens
-        // to have a null uid, so a policy spelled `using (auth.role() =
-        // 'anon')` reads as default-deny here and hands the table to every
-        // unauthenticated PostgREST client in production.
-        await db.exec(
-          s.uid === null
-            ? `create or replace function auth.uid()  returns uuid language sql as $$ select null::uuid $$;
-               create or replace function auth.role() returns text language sql as $$ select 'anon'::text $$;`
-            : `create or replace function auth.uid()  returns uuid language sql as $$ select '${s.uid}'::uuid $$;
-               create or replace function auth.role() returns text language sql as $$ select 'authenticated'::text $$;`,
-        );
-        // Each read gets its own savepoint. A policy that references a table
-        // the probe cannot read raises `permission denied` rather than
-        // returning rows, and an error inside the open transaction poisons it
-        // (25P02) for everything after — which would collapse this whole tier
-        // into one uninformative ERR and skip every later scenario. This is not
-        // hypothetical: a tenant-scoped policy spelled
-        // `chapter_id in (select id from public.chapters)` does exactly that.
-        // Rolling back to the savepoint keeps the transaction usable, so each
-        // scenario reports its own verdict.
-        await db.exec("savepoint deny_probe;");
-        await db.exec("set role rls_probe;");
-        let seen;
-        let failure = null;
-        try {
-          const res = await db.query(`select count(*)::int as n from public.${table}`);
-          seen = res.rows[0].n;
-        } catch (e) {
-          failure = String(e?.message ?? e).split("\n")[0];
-        } finally {
-          try {
-            await db.exec("reset role;");
-          } catch {
-            /* the savepoint rollback below is what actually recovers */
-          }
-          // Guarded like the `reset role` above, and for the same reason: a
-          // throw raised in `finally` REPLACES the verdict the try/catch just
-          // computed, collapsing this scenario and every one after it into the
-          // single opaque outer ERR that the savepoints exist to prevent.
-          //
-          // `rollback to savepoint` does NOT destroy the savepoint (verified —
-          // rolling back to the same name three times succeeds), so the error
-          // branch must release it explicitly or every failing scenario leaves
-          // another live subtransaction open inside the outer transaction.
-          try {
-            if (failure === null) {
-              await db.exec("release savepoint deny_probe;");
-            } else {
-              await db.exec("rollback to savepoint deny_probe; release savepoint deny_probe;");
-            }
-          } catch (e) {
-            failure ??= `savepoint cleanup failed: ${String(e?.message ?? e).split("\n")[0]}`;
-          }
-        }
+        const probe = await probeAs(s.as, `select count(*)::int as n from public.${table}`);
+        const failure = probe.failure;
+        const seen = probe.rows?.[0]?.n;
 
         const name = `${table}: ${s.who} reads 0 rows`;
         if (failure !== null) {
