@@ -16,8 +16,8 @@ import { useOpenImageViewer, viewerImages } from "./image-viewer";
  * so a message with no attachments never issues one.
  *
  * This replaces the "N attachments · open on web" placeholder #1228 shipped as a
- * stopgap. That line was honest but it was a dead end — a member on mobile could
- * not reach the file at all, which is what `components.md` §5 bans.
+ * stopgap. That line was honest but it was a dead end: a member on mobile could
+ * not reach the file at all.
  *
  * **Callers must not mount this for a message with no attachments.** The query
  * hook reaches for `FrappClientProvider` the moment this renders, so mounting it

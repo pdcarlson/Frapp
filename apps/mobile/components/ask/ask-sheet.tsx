@@ -142,7 +142,8 @@ export const AskSheet = forwardRef<BottomSheetModal>(
      * are built as controls. What they cannot do yet is navigate: the corpus is
      * mocked and its sources carry a label, not a document id, so there is
      * nothing to resolve. Saying so is the honest middle — the alternative is a
-     * chip that swallows the tap, which is the §5 dead end again.
+     * chip that swallows the tap, which is the dead end
+     * `spec/ui/design-system/README.md` §5 rule 2 bans.
      *
      * TODO-DESIGN: wire each chip to its source (Documents for a `document`,
      * the thread for a `channel`) once citations arrive with real ids.
