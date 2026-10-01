@@ -1190,6 +1190,269 @@ describe("reduceTouchBreadcrumb (#2982)", () => {
   });
 });
 
+/**
+ * Breadcrumbs as `@sentry/browser` 10.75's breadcrumbs integration records
+ * them in React Native (#3104): `_getFetchBreadcrumbHandler` (the app's
+ * `fetch` is `expo/fetch`), `_getXhrBreadcrumbHandler` and
+ * `_getConsoleBreadcrumbHandler`, after `@sentry/core`'s `addBreadcrumb` has
+ * stamped the timestamp. `apps/mobile/lib/sentry/recorded-breadcrumbs.spec.ts`
+ * drives the real handlers into these shapes.
+ */
+const SEARCH_URL = "https://api.frapp.live/v1/members/search?q=Jo%20Smith&limit=20";
+const SEARCH_ORIGIN_AND_PATH = "https://api.frapp.live/v1/members/search";
+
+function sdkRequestCrumb(
+  category: "fetch" | "xhr",
+  data: Record<string, unknown>,
+) {
+  return { timestamp: 1_700_000_000, category, type: "http", level: "info", data };
+}
+
+function sdkConsoleCrumb(args: unknown[], message: string) {
+  return {
+    timestamp: 1_700_000_000,
+    category: "console",
+    level: "warning",
+    message,
+    data: { arguments: args, logger: "console" },
+  };
+}
+
+describe("scrubRecordedBreadcrumb (#3104)", () => {
+  const record = browser.scrubRecordedBreadcrumb;
+
+  it("keeps a request crumb's origin and path, and drops its query string", () => {
+    const recorded = record(
+      sdkRequestCrumb("fetch", {
+        method: "GET",
+        url: SEARCH_URL,
+        status_code: 200,
+      }),
+    );
+
+    expect(JSON.stringify(recorded)).not.toContain("Jo");
+    expect(recorded).toEqual({
+      timestamp: 1_700_000_000,
+      type: "http",
+      category: "fetch",
+      level: "info",
+      data: { method: "GET", url: SEARCH_ORIGIN_AND_PATH, status_code: 200 },
+    });
+  });
+
+  it("drops the fragment and userinfo of an xhr crumb's URL, and sweeps its path", () => {
+    const recorded = record(
+      sdkRequestCrumb("xhr", {
+        method: "GET",
+        url: `https://admin:hunter2!@api.frapp.live/v1/members/${USER_UUID}/${MEMBER_EMAIL}?q=Sigma#top`,
+        status_code: 404,
+      }),
+    );
+    const serialized = JSON.stringify(recorded);
+
+    expect(serialized).not.toContain("hunter2");
+    expect(serialized).not.toContain(USER_UUID);
+    expect(serialized).not.toContain(MEMBER_EMAIL);
+    expect(serialized).not.toContain("Sigma");
+    expect(recorded?.data).toEqual({
+      method: "GET",
+      url: "https://api.frapp.live/v1/members/[redacted:id]/[redacted:email]",
+      status_code: 404,
+    });
+  });
+
+  it("keeps the origin the SDK's own filters match on", () => {
+    // `sdk.js`'s `defaultBeforeBreadcrumb`, and the native SDKs'
+    // `beforeBreadcrumb`, drop an `http` crumb whose URL starts with the DSN's
+    // origin or the dev server's URL. A path-only URL would match neither.
+    const envelope = record(
+      sdkRequestCrumb("fetch", {
+        method: "POST",
+        url: "https://o0.ingest.sentry.io/api/0/envelope/?sentry_key=examplepublickey&sentry_version=7",
+        status_code: 200,
+      }),
+    );
+    const metro = record(
+      sdkRequestCrumb("xhr", {
+        method: "POST",
+        url: "http://192.168.1.20:8081/symbolicate",
+        status_code: 200,
+      }),
+    );
+    const bareOrigin = record(
+      sdkRequestCrumb("fetch", { method: "GET", url: "https://api.frapp.live?q=Jo" }),
+    );
+
+    expect((envelope?.data as { url: string }).url).toBe(
+      "https://o0.ingest.sentry.io/api/0/envelope/",
+    );
+    expect((metro?.data as { url: string }).url).toBe(
+      "http://192.168.1.20:8081/symbolicate",
+    );
+    expect((bareOrigin?.data as { url: string }).url).toBe("https://api.frapp.live/");
+  });
+
+  it("reduces a relative URL to its path", () => {
+    const recorded = record(
+      sdkRequestCrumb("xhr", { method: "GET", url: "/v1/chapter-directory/search?q=Sigma" }),
+    );
+
+    expect(recorded?.data).toEqual({ method: "GET", url: "/v1/chapter-directory/search" });
+  });
+
+  it("keeps only method, URL and status on a request crumb", () => {
+    const recorded = record({
+      ...sdkRequestCrumb("fetch", {
+        method: "POST",
+        url: SEARCH_URL,
+        status_code: 500,
+        request: { body: CHAT_BODY },
+        response: { headers: { "x-member": MEMBER_NAME } },
+        "http.query": "q=Jo%20Smith",
+      }),
+      level: "error",
+    });
+    const unknownMethod = record(
+      sdkRequestCrumb("xhr", { method: MEMBER_NAME, url: SEARCH_URL, status_code: "200" }),
+    );
+
+    expect(JSON.stringify(recorded)).not.toContain(MEMBER_EMAIL);
+    expect(recorded?.data).toEqual({
+      method: "POST",
+      url: SEARCH_ORIGIN_AND_PATH,
+      status_code: 500,
+    });
+    expect(unknownMethod?.data).toEqual({ url: SEARCH_ORIGIN_AND_PATH });
+  });
+
+  it("drops a console crumb's raw arguments and sweeps its message", () => {
+    const args = [
+      "search failed for",
+      MEMBER_EMAIL,
+      "at /v1/members/search?q=Jo%20Smith",
+      { member: { name: MEMBER_NAME } },
+    ];
+    const recorded = record(
+      sdkConsoleCrumb(
+        args,
+        `search failed for ${MEMBER_EMAIL} at /v1/members/search?q=Jo%20Smith [object Object]`,
+      ),
+    );
+
+    expect(JSON.stringify(recorded)).not.toContain("Jo");
+    expect(JSON.stringify(recorded)).not.toContain(MEMBER_EMAIL);
+    expect(recorded).toEqual({
+      timestamp: 1_700_000_000,
+      category: "console",
+      level: "warning",
+      message: "search failed for [redacted:email] at /v1/members/search [object Object]",
+    });
+  });
+
+  it("keeps a touch crumb's code-only path, as #2982 left it", () => {
+    const recorded = record(
+      sdkRageTapCrumb([{ name: "Text", label: MEMBER_NAME }], MEMBER_NAME),
+    );
+
+    expect(JSON.stringify(recorded)).not.toContain(MEMBER_NAME);
+    expect(recorded).toEqual({
+      timestamp: 1_700_000_000,
+      category: "ui.multiClick",
+      type: "default",
+      message: "Text",
+      data: { path: [{ name: "Text" }], clickCount: 3 },
+    });
+  });
+
+  it("keeps a navigation crumb's from and to, which native reads for the current screen", () => {
+    // `reactnavigation.js`, registered by the SDK's Expo Router integration,
+    // with the templated path Expo Router hands it as the route name.
+    const routed = record({
+      timestamp: 1_700_000_000,
+      category: "navigation",
+      type: "navigation",
+      message: "Navigation to /members/[id]",
+      data: { from: "/(tabs)/chat", to: "/members/[id]" },
+    });
+    // The browser SDK's history crumb, the one shape that carries a concrete
+    // path, query string included.
+    const concrete = record({
+      timestamp: 1_700_000_000,
+      category: "navigation",
+      data: {
+        from: "/directory",
+        to: `/members/${USER_UUID}?q=Jo%20Smith#notes`,
+      },
+    });
+
+    expect(routed?.data).toEqual({ from: "/(tabs)/chat", to: "/members/[id]" });
+    expect(JSON.stringify(concrete)).not.toContain("Jo");
+    expect(concrete?.data).toEqual({
+      from: "/directory",
+      to: "/members/[redacted:id]",
+    });
+  });
+
+  it("drops any other navigation data and unknown fields", () => {
+    // `expoRouter.js`'s own crumb: `pathname` and `params` are not what
+    // native reads, and `params` holds route values.
+    const recorded = record({
+      timestamp: 1_700_000_000,
+      category: "navigation",
+      type: "navigation",
+      message: `Expo Router push to /members/${USER_UUID}`,
+      origin: "auto.navigation.expo_router",
+      data: { method: "push", pathname: `/members/${USER_UUID}`, params: { q: "Jo" } },
+      payload: MEMBER_NAME,
+    });
+
+    expect(recorded).toEqual({
+      timestamp: 1_700_000_000,
+      type: "navigation",
+      category: "navigation",
+      message: "Expo Router push to /members/[redacted:id]",
+    });
+  });
+
+  it("is idempotent, and the send-time pass over a recorded crumb only drops data", () => {
+    const crumbs = [
+      sdkRequestCrumb("fetch", { method: "GET", url: SEARCH_URL, status_code: 200 }),
+      sdkConsoleCrumb([MEMBER_EMAIL], `ping ${MEMBER_EMAIL}`),
+      sdkTouchCrumb([{ label: RELOAD_LABEL }, { name: "Pressable" }], RELOAD_LABEL),
+    ];
+
+    for (const crumb of crumbs) {
+      const once = record(crumb);
+      expect(record(once)).toEqual(once);
+
+      const sent = browser.scrubSentryEvent({ breadcrumbs: [once] });
+      const withoutData = Object.fromEntries(
+        Object.entries(once ?? {}).filter(([key]) => key !== "data"),
+      );
+      expect(sent?.breadcrumbs).toEqual([withoutData]);
+    }
+  });
+
+  it("drops a crumb it cannot read rather than letting it through", () => {
+    const hostile = {
+      timestamp: 1_700_000_000,
+      category: "fetch",
+      type: "http",
+      get data(): never {
+        throw new Error(SEARCH_URL);
+      },
+    };
+
+    expect(record(hostile)).toBeNull();
+  });
+
+  it("returns null for a crumb with nothing to keep", () => {
+    expect(record(null)).toBeNull();
+    expect(record("console")).toBeNull();
+    expect(record({ data: { arguments: [MEMBER_NAME] } })).toBeNull();
+  });
+});
+
 describe("DOM selectors in breadcrumbs and names (#2736)", () => {
   it("reduces a ui.click breadcrumb's selector", () => {
     const scrubbed = browser.scrubSentryEvent({
