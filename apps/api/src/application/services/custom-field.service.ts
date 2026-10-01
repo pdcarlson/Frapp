@@ -23,6 +23,7 @@ import {
   ChapterAuditLogService,
   type AuditDiff,
 } from './chapter-audit-log.service';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * What `create` and `update` accept.
@@ -88,7 +89,7 @@ export class CustomFieldService {
       .eq('chapter_id', chapterId)
       .order('sort', { ascending: true })
       .order('created_at', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -115,7 +116,7 @@ export class CustomFieldService {
       .in('visibility', Array.from(allowed))
       .order('sort', { ascending: true })
       .order('created_at', { ascending: true });
-    if (defsError) throw defsError;
+    if (defsError) throw new SupabaseQueryError(defsError);
     if (!defs || defs.length === 0) return [];
 
     // Restrict the value lookup to the already visibility-filtered field IDs so
@@ -129,7 +130,7 @@ export class CustomFieldService {
         .select('field_id, value')
         .eq('member_id', memberId)
         .in('field_id', visibleFieldIds);
-    if (valuesError) throw valuesError;
+    if (valuesError) throw new SupabaseQueryError(valuesError);
 
     const valueByFieldId = new Map(
       (values ?? []).map((row) => [row.field_id, row.value]),
@@ -166,7 +167,7 @@ export class CustomFieldService {
       data: { id: string; visibility: CustomFieldVisibility }[] | null;
       error: PostgrestError | null;
     };
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -190,7 +191,7 @@ export class CustomFieldService {
         { member_id: string; field_id: string; value: string | null }[] | null;
       error: PostgrestError | null;
     };
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -237,7 +238,7 @@ export class CustomFieldService {
           'A custom field with this key already exists in this chapter',
         );
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     const field = data as ChapterCustomField;
@@ -328,7 +329,7 @@ export class CustomFieldService {
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
 
     await this.auditLog.record({
       chapterId,
@@ -358,7 +359,7 @@ export class CustomFieldService {
       data: { sort: number } | null;
       error: PostgrestError | null;
     };
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ? data.sort + 1 : 0;
   }
 

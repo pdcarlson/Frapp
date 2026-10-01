@@ -247,8 +247,10 @@ export class DiscordImportWorkerService {
         }
         return await this.runImportSlice(job, lockToken, now);
       } catch (error) {
-        // A repository throws PostgREST's plain `{ code, message }` object, which
-        // `String()` turned into "[object Object]" in the log and on the page.
+        // Read through `toReportableError`, not `String()`: before #1264 a
+        // repository threw PostgREST's plain `{ code, message }` object, which
+        // `String()` turned into "[object Object]" in the log and on the page,
+        // and anything else that is not an `Error` still would.
         const message = toReportableError(error).message;
         logThrowable(
           this.logger,

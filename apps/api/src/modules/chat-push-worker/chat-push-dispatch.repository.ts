@@ -9,6 +9,7 @@ import {
   PG_UNIQUE_VIOLATION,
 } from '#domain/constants/postgres-error-codes';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * How one claim attempt ended.
@@ -73,7 +74,7 @@ export class ChatPushDispatchRepository {
       .from('chat_push_dispatches')
       .delete({ count: 'exact' })
       .lt('dispatched_at', cutoff.toISOString());
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return count ?? 0;
   }
 }

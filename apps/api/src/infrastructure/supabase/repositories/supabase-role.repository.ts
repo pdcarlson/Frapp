@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Role } from '#domain/entities/role.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseRoleRepository implements IRoleRepository {
@@ -21,7 +22,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .select('*')
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -31,7 +32,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .order('display_order', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -46,7 +47,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -60,7 +61,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .eq('chapter_id', chapterId)
       .eq('name', name)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -74,7 +75,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .eq('chapter_id', chapterId)
       .eq('system_key', systemKey)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -84,7 +85,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .insert(roleData)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -93,7 +94,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .from('roles')
       .insert(rolesData)
       .select();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -104,12 +105,12 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
   async delete(id: string): Promise<void> {
     const { error } = await this.supabase.from('roles').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }
