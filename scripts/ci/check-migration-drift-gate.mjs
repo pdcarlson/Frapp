@@ -131,7 +131,7 @@ import { requireEnv, SECRETS_RUNBOOK } from "./lib/env.mjs";
 import { DEFAULT_ATTEMPTS, DEFAULT_BACKOFF_MS } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { PROMOTION_RUNBOOK, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING, PROMOTION_RUNBOOK } from "./lib/ops-docs.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
@@ -400,7 +400,7 @@ export function buildGateSummary({
       "This blocks `supabase db push` outright — no further migration can be",
       "applied to staging until it is reconciled. Do NOT run",
       "`migration repair` without first reading what the row did; see",
-      `\`${ROLLBACK_PLAYBOOK}\`.`,
+      `\`${DRIFT_AND_ORDERING}\` § Reconciling a foreign migration row.`,
       "",
     );
   }

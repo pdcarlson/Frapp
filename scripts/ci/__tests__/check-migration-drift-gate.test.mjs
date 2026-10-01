@@ -452,6 +452,7 @@ test("the summary explains a foreign migration blocks db push", () => {
 
   assert.match(summary, /blocks `supabase db push`/);
   assert.match(summary, /20260228000000/);
+  assert.match(summary, /drift-and-ordering\.md` § Reconciling a foreign migration row/);
 });
 
 test("against a snapshot, grace runs from now, and a deploy since the capture makes a late migration unverifiable", () => {

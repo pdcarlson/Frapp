@@ -38,8 +38,8 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   syncs are inventoried in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (in
   the shared `_deploy.yml` job that `deploy-staging.yml` calls; automatic since #1265). Production migrations run inside `deploy-production.yml`,
-  after a replay against production's live applied state —
-  [`db-promotion-runbook.md`](../db-promotion-runbook.md) has the current production state.
+  after a replay against production's live applied state; the procedure is
+  [`database/promotion.md`](../database/promotion.md).
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.

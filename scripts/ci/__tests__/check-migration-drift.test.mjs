@@ -523,6 +523,7 @@ test("drift creates the alert issue when none exists, and exits 1", async () => 
   assert.match(created.body, /Foreign \(1\)/);
   assert.match(created.body, /Pending \(37\)/);
   assert.match(created.body, /do not run it blind/i);
+  assert.match(created.body, /drift-and-ordering\.md` § Reconciling a foreign migration row/);
 });
 
 test("drift comments on an already-open alert rather than filing a second one", async () => {

@@ -1,7 +1,8 @@
 # Promotion log
 
 Every migration below records what it does, how it was promoted, and anything a
-promoter must do by hand.
+promoter must do by hand. How a migration gets promoted is
+[`promotion.md`](promotion.md).
 
 `check:migration-safety` asserts **per-migration** coverage here _and_ in
 [`db-rollback-playbook.md`](../db-rollback-playbook.md) — both, not either. It
@@ -492,6 +493,80 @@ the code — the column is simply unread until the API that writes it ships.
   should return 1 row.
 
 **Rollback**: See `db-rollback-playbook.md` § Rollback the points ledger origin channel.
+
+## 2026-09-07: Production's applied migrations, read by hand
+
+Dated reads of `frapp-prod`'s migration ledger, taken by hand while production
+trailed `main`. Each records what was true on its date, not current state.
+
+**✅ Production is reconciled and current (verified 2026-08-29).** The
+Management API reports **54** applied migrations on both `frapp-staging` and
+`frapp-prod`, newest `20260829002000`, exactly matching
+`supabase/migrations/` on `main`: nothing pending, and no foreign version.
+(This read **52** when checked on 2026-08-28; two migrations have landed since.)
+The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
+block `supabase db push` outright is gone from the history (#832).
+
+**⚠️ Correction 2026-09-06 — the "nothing pending" half is superseded.** The
+**54** above is a real Management API read and is left as recorded, but `main`
+has carried migrations past that read's `20260829002000` high-water mark ever
+since. So the applied set no longer matches that historical snapshot; current
+pending status for either project is unverified.
+
+Deliberately no tree-side count here: this note has quoted one three times and
+it went stale within a day each time, because every merge moves it. Re-derive
+with `ls supabase/migrations/*.sql | wc -l` — the durable fact is that the tree
+is past `20260829002000`, not any particular total. This correction was derived from the
+repository alone; the block below is the read that followed. Re-read
+before any promotion, and do not skip the dry run on the strength of the ✅
+above.
+
+**Re-read 2026-09-06 (Management API, `select count(*), max(version) from
+supabase_migrations.schema_migrations`):** `frapp-prod` **54**, newest
+`20260829002000` — unchanged since the 2026-08-29 promotion; `frapp-staging`
+**74**, newest `20260906120001`, equal to the tree that day. The tree holds
+**twenty files newer than production's high-water mark**, so those twenty are
+certainly unapplied there; that the older 54 are the _same_ 54 rests on the
+2026-08-29 exact-match read, not on the count. The next `Deploy production`
+dispatch will therefore _attempt_ those twenty after the rehearsal replays them
+against production's applied history — which is exactly what that step exists
+to prove out first, and why `scope: migrations-only` should go before a `full`
+release. Like every number in this block, this one is a dated read, not a live
+fact; the API of record is the Management API, not this page. (#1620.)
+
+**Re-read 2026-09-07 (production Postgres via the session pooler).** Ledger:
+`select version from supabase_migrations.schema_migrations` → **54** rows,
+newest `20260829002000`. Compared with `supabase/migrations/*.sql` on
+`origin/main` `a9fe5ff2`: no applied version lacks a file (foreign none);
+**22** files have a version newer than that high-water mark (the 09-06 twenty
+plus `20260906203000_realtime_presence_private.sql` and
+`20260907011500_chapter_directory_seed_rows.sql`). `select count(*) from
+public.users` → 1; `select count(*) from public.chapters` → 0. Management API
+from this environment still 403; this is a SQL read, not that endpoint.
+
+The one pending file that `DROP FUNCTION`s is
+`20260902010001_get_points_report_until.sql` (3-arg → 4-arg, `p_until` defaults
+null). Live API is Render `frapp-api-prod` deploy `971d7d5a` (Render API
+2026-09-07; `/health` uptime still that 2026-08-29 ship). That revision's
+`ReportService.getPointsReport` sends three named args. On a local database
+that already had those 22 applied, PostgREST
+`POST /rest/v1/rpc/get_points_report` with `{p_chapter_id, p_user_id, p_since}`
+returned 200; Postgres accepts the 3-arg call via the default. That is the
+live argument list against the new signature, not a run of the `971d7d5a`
+binary. `20260906203000` adds RLS arms for _private_ presence topics; the
+migration states public rooms stay a separate room, and `971d7d5a`'s
+`packages/chat-core` has no `private: true`, so a `migrations-only` apply
+does not by itself put live clients on the private path. Still run `full`
+promptly — the window is apply-then-code, not a place to linger. This does
+not replace the workflow's `check-migration-replay` against hosted
+production.
+
+This block previously warned that production was ~49 migrations behind and
+that both production paths of the time would fail on the dry run. That was true on 2026-08-24
+and is not true now — left here as a correction rather than deleted, because
+a stale blocker is the kind of warning that sends the next reader to a runbook
+for a problem somebody already fixed.
+
 
 ## 2026-09-07: Chapter directory reference rows reach every environment (#840)
 
@@ -1188,26 +1263,8 @@ Fixing the invalid Infisical credential (#696) was necessary but **not sufficien
 - **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), pin tracked in #835). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Verified on both as of 2026-08-29: `frapp-prod` is `ACTIVE_HEALTHY`, not paused, and run [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied production migrations successfully — so the production value is exercised, not merely provisioned. (This line previously said the opposite, from a period when `frapp-prod` was paused and no production deploy had run.)
 - **Migration-history reconciliation.** `db push` refused with `Remote migration versions not found in local migrations directory`. Staging's `schema_migrations` carried `20260228000000_enable_rls_on_remaining_tables`, a version that has never existed in this repository on any branch. Its recorded `statements` column showed four `alter table … enable row level security` calls (`users`, `chapters`, `push_tokens`, `user_settings`) — a hand-applied February hotfix. The current `00000000000000_initial_schema.sql` already enables RLS on all four, so the row was redundant and was deleted.
 
-**On-call note — reconciling a foreign migration row.** When `db push` reports a remote version missing locally, the CLI suggests `supabase migration repair --status reverted <version>`. **Do not run it blind.** First read what the row actually did:
-
-```sql
-select version, name, array_to_string(statements, E'\n;;\n') as sql_text
-from supabase_migrations.schema_migrations where version = '<version>';
-```
-
-Postgres stores the executed SQL, so a migration absent from git is still fully recoverable from the database. Only once you have confirmed its effects are either redundant with the repo or intentionally superseded should you remove the row (`delete from supabase_migrations.schema_migrations where version = '<version>';` — equivalent in effect to `repair --status reverted`, and what was used here). Record the `version` and `name` first — re-inserting them is the rollback. If the row's SQL is **not** represented in `supabase/migrations/`, stop: the correct fix is a new migration capturing it, not deleting the evidence.
-
-**This class of drift now has a detector.** `.github/workflows/check-migration-drift.yml` runs
-daily (07:00 UTC) and compares `supabase_migrations.schema_migrations` on each deployed database
-against what it should hold. What each is judged against, what it classifies and when it
-tolerates a pending row: [`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs). A failure upserts one `incident` tracking issue and closes it once every
-environment is back in sync, so "alert issue open" means "a deployed database is drifting right
-now". Semantics in `scripts/ci/check-migration-drift.mjs`; run it by hand from the Actions tab
-(`workflow_dispatch`, with an adjustable grace window) or via `npm run check:migration-drift`.
-
-The check **reports and never repairs** — it sends no SQL. Reconciling a foreign row is the manual
-procedure above, and applying a backlog of pending migrations is a deliberate promotion, not
-something a watchdog should do on its own.
+The procedure this used:
+[`drift-and-ordering.md` § Reconciling a foreign migration row](drift-and-ordering.md#reconciling-a-foreign-migration-row).
 
 ## 2026-08-09: Activation funnel — `chapter_activation_milestones` (#267)
 

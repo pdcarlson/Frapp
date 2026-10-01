@@ -61,10 +61,11 @@ the ones a later reader would otherwise re-litigate.
   mark that read recorded. Whether either project is behind *today* is **unverified** — the applied
   counts have not been re-read, and a promotion may have happened since. No tree-side count is
   quoted here on purpose: every merge moves it, so re-derive with
-  `ls supabase/migrations/*.sql | wc -l`. The dated Management-API reads of what each project
-  actually holds live in `db-promotion-runbook.md` (latest 2026-09-06), not here — one home, so a
-  promotion updates one place. #1620 tracks refreshing this and the matching block in
-  `docs/ops/db-promotion-runbook.md`.
+  `ls supabase/migrations/*.sql | wc -l`. The dated reads of what each project actually holds live
+  in the promotion log, `docs/ops/database/promotion-log.md` (latest 2026-09-07), not here — one
+  home, so a promotion updates one place. (Corrected 2026-10-01: this said the latest read was
+  2026-09-06 and that #1620 tracked refreshing this paragraph and that block. The block also
+  carries a 2026-09-07 read, and #1620 closed on 2026-09-23 with neither refreshed.)
 - **Staging and production build differently on purpose.** Staging is verified through preview
   deployments; production is built through the API with `target: production`. `web-production-build`
   closes the type-check half of that gap in CI, not the deployment half.

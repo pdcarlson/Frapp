@@ -672,9 +672,7 @@ real:
   has never existed in this repository (hand-applied in February). `supabase db push` refuses to
   run at all in that state, and the error's suggested fix (`migration repair --status reverted`) is
   destructive if applied without first reading what the row did — see
-  [`../ops/db-promotion-runbook.md`](../ops/db-promotion-runbook.md), the **On-call note —
-  reconciling a foreign migration row** paragraph — bold prose inside the `## 2026-08-10: Staging
-  migration backlog cleared` entry, not a heading, so search the phrase rather than the headings.
+  [`drift-and-ordering.md` § Reconciling a foreign migration row](../ops/database/drift-and-ordering.md#reconciling-a-foreign-migration-row).
 
 **Why scheduled and not post-deploy.** `Deploy API` failed 44 of 44 executing runs for 71 days
 (#763). A check that only ran after a successful deploy would have been silent for exactly the

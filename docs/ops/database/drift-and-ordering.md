@@ -1,5 +1,10 @@
 # Migration drift and ordering
 
+What the migration checks judge, what a red one means, and the two hand
+recoveries: `--include-all`, and reconciling a foreign migration row. Promoting
+a migration is [`promotion.md`](promotion.md); the dated record of each
+promotion is [`promotion-log.md`](promotion-log.md).
+
 ## What catches drift, and what catches bad ordering
 
 Three checks, deliberately different shapes:
@@ -168,3 +173,49 @@ Two other refusals, both deliberate:
 - **Wrong directory.** `supabase/migrations/` is resolved from the working
   directory, so running from anywhere else is an error rather than a cheerful
   "no migrations to apply" and exit 0.
+
+## Reconciling a foreign migration row
+
+A foreign row is a version in a hosted database's `schema_migrations` that no
+file in `supabase/migrations/` explains. `supabase db push` refuses to run
+against that database at all while one is there.
+
+**What finds one.** The daily `check-migration-drift.yml` watchdog (the table
+above) reports one on either project. On a PR, `migration-replay` fails outright
+when production holds one, and the `migration-drift` summary lists any on
+staging. None of them repairs anything: they send no SQL. Reconciling a foreign
+row is the manual procedure below, and applying a backlog of pending migrations
+is a deliberate promotion, not something a watchdog should do on its own.
+
+**The CLI's suggested fix is destructive.** When `db push` reports a remote
+version missing locally, the CLI suggests
+`supabase migration repair --status reverted <version>`. **Do not run it
+blind.**
+
+1. **Check whether the version ever existed in git:**
+   `git log --all --oneline -- 'supabase/migrations/<version>_*'`. If it shipped
+   and `main` has renamed it since, the SQL already ran: mark the old version
+   reverted and the new one applied, and delete nothing.
+2. **Otherwise, read what the row actually did.** Postgres stores the executed
+   SQL, so a migration absent from git is still fully recoverable from the
+   database:
+
+   ```sql
+   select version, name, array_to_string(statements, E'\n;;\n') as sql_text
+   from supabase_migrations.schema_migrations where version = '<version>';
+   ```
+
+3. **Remove the row only once its effects are redundant with the repo or
+   intentionally superseded:**
+   `delete from supabase_migrations.schema_migrations where version = '<version>';`.
+   That is equivalent in effect to `repair --status reverted`, and it is what the
+   [2026-08-10 staging cleanup](promotion-log.md#2026-08-10-staging-migration-backlog-cleared--two-blockers-behind-the-696-credential)
+   used. Record the `version` and `name` first: re-inserting them is the rollback.
+4. **If the row's SQL is not represented in `supabase/migrations/`, stop.** The
+   correct fix is a new migration capturing it, not deleting the evidence.
+
+A hand change to a ledger triggers no snapshot publish, so re-publish before
+re-running a PR's checks ([above](#what-catches-drift-and-what-catches-bad-ordering)).
+To confirm the database is clean again, run `check-migration-drift.yml` from the
+Actions tab (`workflow_dispatch`, with an adjustable `grace_hours`) or
+`npm run check:migration-drift`.

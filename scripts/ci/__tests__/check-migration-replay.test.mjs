@@ -88,6 +88,8 @@ test("a foreign migration fails the gate before any replay is attempted", () => 
   const outcome = decideOutcome({ partition, replay: null });
   assert.equal(outcome.ok, false);
   assert.equal(outcome.code, "foreign-migrations");
+  // The reconciliation procedure lives there; the rollback playbook has none.
+  assert.match(outcome.message, /drift-and-ordering\.md § Reconciling a foreign migration row/);
 });
 
 test("nothing pending passes without a replay", () => {

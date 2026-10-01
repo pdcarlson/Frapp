@@ -17,7 +17,7 @@ them against the section whose wording matches.
 
 ## Where things go
 
-Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, `spec/architecture/adr/`, `spec/ui/resilience/`, and `docs/ops/deployment/` are the ones that crossed that line.
+Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, `spec/architecture/adr/`, `spec/ui/resilience/`, `docs/ops/deployment/`, and `docs/ops/database/` are the ones that crossed that line.
 
 | Kind of change | Canonical home |
 | -------------- | -------------- |
@@ -39,7 +39,8 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | How to run locally / test / contribute, including the UI accessibility protocol | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](../ci-cd/pr-babysitting.md); Dependabot facts: [`dependency-updates.md`](../ci-cd/dependency-updates.md) |
-| Ops runbooks (DB, incidents, branch protection) | `docs/ops/` |
+| Ops runbooks (DB rollback and backups, incidents, branch protection) | `docs/ops/` |
+| Database runbooks (migration promotion, drift and ordering checks, the promotion log) | `docs/ops/database/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Deploy runbook (providers, CI/CD gate, launch) | `docs/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/security/` |

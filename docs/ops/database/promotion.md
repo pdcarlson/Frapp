@@ -95,80 +95,12 @@ dispatches queue instead of interleaving two `db push` runs against one database
 > `docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap
 > secrets — read that rather than trusting a restatement here.
 
-> **✅ Production is reconciled and current (verified 2026-08-29).** The
-> Management API reports **54** applied migrations on both `frapp-staging` and
-> `frapp-prod`, newest `20260829002000`, exactly matching
-> `supabase/migrations/` on `main`: nothing pending, and no foreign version.
-> (This read **52** when checked on 2026-08-28; two migrations have landed since.)
-> The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
-> block `supabase db push` outright is gone from the history (#832).
->
-> **⚠️ Correction 2026-09-06 — the "nothing pending" half is superseded.** The
-> **54** above is a real Management API read and is left as recorded, but `main`
-> has carried migrations past that read's `20260829002000` high-water mark ever
-> since. So the applied set no longer matches that historical snapshot; current
-> pending status for either project is unverified.
->
-> Deliberately no tree-side count here: this note has quoted one three times and
-> it went stale within a day each time, because every merge moves it. Re-derive
-> with `ls supabase/migrations/*.sql | wc -l` — the durable fact is that the tree
-> is past `20260829002000`, not any particular total. This correction was derived from the
-> repository alone; the block below is the read that followed. Re-read
-> before any promotion, and do not skip the dry run on the strength of the ✅
-> above.
->
-> **Re-read 2026-09-06 (Management API, `select count(*), max(version) from
-supabase_migrations.schema_migrations`):** `frapp-prod` **54**, newest
-> `20260829002000` — unchanged since the 2026-08-29 promotion; `frapp-staging`
-> **74**, newest `20260906120001`, equal to the tree that day. The tree holds
-> **twenty files newer than production's high-water mark**, so those twenty are
-> certainly unapplied there; that the older 54 are the _same_ 54 rests on the
-> 2026-08-29 exact-match read, not on the count. The next `Deploy production`
-> dispatch will therefore _attempt_ those twenty after the rehearsal replays them
-> against production's applied history — which is exactly what that step exists
-> to prove out first, and why `scope: migrations-only` should go before a `full`
-> release. Like every number in this block, this one is a dated read, not a live
-> fact; the API of record is the Management API, not this page. (#1620.)
->
-> **Re-read 2026-09-07 (production Postgres via the session pooler).** Ledger:
-> `select version from supabase_migrations.schema_migrations` → **54** rows,
-> newest `20260829002000`. Compared with `supabase/migrations/*.sql` on
-> `origin/main` `a9fe5ff2`: no applied version lacks a file (foreign none);
-> **22** files have a version newer than that high-water mark (the 09-06 twenty
-> plus `20260906203000_realtime_presence_private.sql` and
-> `20260907011500_chapter_directory_seed_rows.sql`). `select count(*) from
-public.users` → 1; `select count(*) from public.chapters` → 0. Management API
-> from this environment still 403; this is a SQL read, not that endpoint.
->
-> The one pending file that `DROP FUNCTION`s is
-> `20260902010001_get_points_report_until.sql` (3-arg → 4-arg, `p_until` defaults
-> null). Live API is Render `frapp-api-prod` deploy `971d7d5a` (Render API
-> 2026-09-07; `/health` uptime still that 2026-08-29 ship). That revision's
-> `ReportService.getPointsReport` sends three named args. On a local database
-> that already had those 22 applied, PostgREST
-> `POST /rest/v1/rpc/get_points_report` with `{p_chapter_id, p_user_id, p_since}`
-> returned 200; Postgres accepts the 3-arg call via the default. That is the
-> live argument list against the new signature, not a run of the `971d7d5a`
-> binary. `20260906203000` adds RLS arms for _private_ presence topics; the
-> migration states public rooms stay a separate room, and `971d7d5a`'s
-> `packages/chat-core` has no `private: true`, so a `migrations-only` apply
-> does not by itself put live clients on the private path. Still run `full`
-> promptly — the window is apply-then-code, not a place to linger. This does
-> not replace the workflow's `check-migration-replay` against hosted
-> production.
->
-> This block previously warned that production was ~49 migrations behind and
-> that both paths above would fail on the dry run. That was true on 2026-08-24
-> and is not true now — left here as a correction rather than deleted, because
-> a stale blocker is the kind of warning that sends the next reader to a runbook
-> for a problem somebody already fixed.
->
-> If a foreign version ever reappears, the `migration-replay` check
-> ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml))
-> now fails the PR that would walk into it, instead of the failure surfacing
-> mid-deploy. Do not run `migration repair` to make such an error go away
-> without first reading what the row did — see
-> [`db-rollback-playbook.md`](../db-rollback-playbook.md).
+**Production's applied migrations are a provider read, not a fact this page
+keeps.** The dry run below lists what is pending before anything applies, and
+the daily `check-migration-drift.yml` compares production with the latest
+release tag ([`drift-and-ordering.md`](drift-and-ordering.md)). The hand reads
+taken from 2026-08-29 to 2026-09-07 are a dated entry in the
+[promotion log](promotion-log.md#2026-09-07-productions-applied-migrations-read-by-hand).
 
 ## Preflight checklist
 
@@ -178,9 +110,9 @@ public.users` → 1; `select count(*) from public.chapters` → 0. Management AP
       blocking** — see [`.squawk.toml`](../../../.squawk.toml) for the rules this
       repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`db-rollback-playbook.md`)
-- [ ] PR appends an entry to the promotion log at the bottom of this file
-      (`check:migration-safety` now requires a per-migration entry in **both**
-      this doc and the rollback playbook — see the entry shapes below)
+- [ ] PR appends an entry to the [promotion log](promotion-log.md)
+      (`check:migration-safety` requires a per-migration entry in **both** the
+      log and the rollback playbook — the log's header gives the entry shapes)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
 - [ ] For a **production** promotion, a backup **taken by you**, with the dump path
       or object key recorded on the PR — or an explicit, written acceptance that
@@ -273,7 +205,7 @@ variable the Vercel Production scope did not hold — 34894763676 on
 two runs died at different _stages_, and the stage is what names the variable —
 34894763676 at config load in `next.config.js`, 34896647837 thirty seconds later
 at prerender, i.e. _after_ the guard had passed and so with both URLs present.
-See `deployment/ci-cd.md`). The third,
+See `docs/ops/deployment/ci-cd.md`). The third,
 34892839657, died earlier and for a different reason: `requireEnv("DEPLOY_SHA")`
 threw inside `deploy-vercel.mjs` _before_ it invoked the CLI at all, which was a
 workflow wiring bug rather than an environment one, and #2265 fixed it.
