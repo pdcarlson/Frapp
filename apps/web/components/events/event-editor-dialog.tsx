@@ -514,7 +514,7 @@ export function EventEditorDialog({
         </DialogHeader>
 
         {usingPreviewData ? (
-          <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
+          <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               Preview mode is active. Sign in to create and edit live events.
@@ -626,18 +626,18 @@ export function EventEditorDialog({
               <RolesGlyph className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">Required roles</span>
             </div>
-            <p className="text-[12.5px] text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Leave all unchecked to require every member. Select roles to limit
               attendance and auto-absent to members holding any selected role.
             </p>
             {rolesQuery.isError ? (
-              <div className="rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
+              <div className="rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
                 Couldn&apos;t load chapter roles, so the list below may be
                 incomplete.
               </div>
             ) : null}
             {displayedRoles.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
                 {rolesQuery.isLoading
                   ? "Loading roles…"
                   : rolesQuery.isError
@@ -675,7 +675,7 @@ export function EventEditorDialog({
               <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">Check-in zone</span>
             </div>
-            <p className="text-[12.5px] text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Optional. When set, members must be inside this area to check in.
               Enter at least 3 corner points; the shape closes itself, so
               don&apos;t repeat the first point. Remove every point to clear the
@@ -697,7 +697,7 @@ export function EventEditorDialog({
             </div>
 
             {checkInZone.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-[12.5px] text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
                 No check-in zone. Members can check in from anywhere.
               </div>
             ) : (

@@ -191,7 +191,7 @@ export function AlumniDirectory() {
             Alumni
           </h2>
           {query.isSuccess ? (
-            <p className="shrink-0 text-[12.5px] text-muted">
+            <p className="shrink-0 text-caption text-muted">
               {alumni.length} alum{alumni.length === 1 ? "" : "ni"}
             </p>
           ) : null}
@@ -362,12 +362,12 @@ export function AlumniDirectory() {
                       <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
                         {name}
                       </span>
-                      <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
+                      <span className="min-w-0 truncate text-caption text-muted sm:flex-1">
                         {meta}
                       </span>
                     </span>
                     {alum.bio ? (
-                      <span className="line-clamp-1 text-[12.5px] text-muted">
+                      <span className="line-clamp-1 text-caption text-muted">
                         {alum.bio}
                       </span>
                     ) : null}

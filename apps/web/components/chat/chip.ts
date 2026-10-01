@@ -23,7 +23,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 export const CHIP = {
   base: [
     "inline-flex h-[26px] shrink-0 items-center rounded-[9px] border px-2.5",
-    "text-[12.5px] font-semibold transition-colors",
+    "text-caption font-semibold transition-colors",
     FOCUS_RING,
   ].join(" "),
 

@@ -355,7 +355,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             on the 24px *page title* one line up (`:244`, the word
             "Subscription"), and its 22px plan name has no `letter-spacing` at
             all. The title that tracking belongs to is not rendered on this
-            route anyway; `PageHeader` supplies the heading at 15/700.
+            route anyway; `PageHeader` supplies the heading, at `label`/700.
 
             An `<h2>`, not the route's `<h1>`: `PageHeader` owns that, and one
             typographic anchor per screen is its whole contract.
@@ -394,7 +394,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             focusable and the sentence is its accessible context, which is the
             §10 control-slot shape.
           */
-          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
             Couldn&apos;t load this chapter&apos;s Stripe details.
             <Button
               variant="link"
@@ -408,7 +408,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
         ) : null}
 
         {outcome === "cancelled" && !usesPortal ? (
-          <p className="mt-2 text-[12.5px] text-muted-foreground">
+          <p className="mt-2 text-caption text-muted-foreground">
             Your last checkout was cancelled. No charge was made.
           </p>
         ) : null}
@@ -441,7 +441,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
           <>
             {outcome === "success" ||
             (outcome === "returned" && sawActivation) ? (
-              <p className="flex items-center gap-2 text-[12.5px] font-semibold text-success">
+              <p className="flex items-center gap-2 text-caption font-semibold text-success">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 Payment cleared
               </p>
@@ -577,7 +577,7 @@ function PlanMeta({
   if (items.length === 0) return null;
 
   return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
+    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
       {items.map((item, index) => (
         <span key={item.key} className="flex items-center gap-2">
           {index > 0 ? <span aria-hidden="true">·</span> : null}
@@ -632,7 +632,7 @@ function StripeAction({
   askAnOfficer: string | null;
 }) {
   const denied = askAnOfficer ? (
-    <p className="max-w-[15rem] text-[12.5px] text-muted-foreground">
+    <p className="max-w-[15rem] text-caption text-muted-foreground">
       {askAnOfficer}
     </p>
   ) : null;
@@ -680,7 +680,7 @@ function ActivationWait({
     return (
       <p
         role="status"
-        className="flex max-w-[15rem] items-center gap-2 text-[12.5px] text-muted-foreground"
+        className="flex max-w-[15rem] items-center gap-2 text-caption text-muted-foreground"
       >
         <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
         {outcome === "returned"
@@ -694,7 +694,7 @@ function ActivationWait({
     <>
       <p
         role="status"
-        className="max-w-[15rem] text-[12.5px] text-muted-foreground"
+        className="max-w-[15rem] text-caption text-muted-foreground"
       >
         Stripe hasn&apos;t confirmed yet. If it persists, contact support with
         your Stripe receipt rather than paying a second time.

@@ -1,5 +1,7 @@
+import sharedConfig from "@repo/theme/tailwind";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
+  cn,
   downloadBlob,
   downloadCsv,
   getErrorMessage,
@@ -175,5 +177,39 @@ describe("guardDecimalDraft", () => {
     expect(guardDecimalDraft("1.5")).toBe("1.5");
     expect(guardDecimalDraft("")).toBe("");
     expect(guardDecimalDraft("-1")).toBeUndefined();
+  });
+});
+
+/**
+ * #2842: tailwind-merge filed every Signet type key under text colour, so a
+ * key and a colour in one `cn()` call dropped whichever came first.
+ */
+describe("cn with the Signet type scale", () => {
+  const presetKeys = Object.keys(sharedConfig.theme?.extend?.fontSize ?? {});
+
+  it("registers every type key the shared preset binds", () => {
+    // `cn` reads its list from the §7 roles in `signet.ts`; the preset is
+    // what actually emits the utilities. A key added to one and not the
+    // other is a utility `cn` would silently mis-merge.
+    expect(presetKeys.length).toBeGreaterThan(0);
+    for (const key of presetKeys) {
+      expect(cn("text-muted-foreground", `text-${key}`)).toBe(
+        `text-muted-foreground text-${key}`,
+      );
+      expect(cn(`text-${key}`, "text-primary")).toBe(`text-${key} text-primary`);
+    }
+  });
+
+  it("lets a later size replace an earlier one, as with any size", () => {
+    expect(cn("text-sm text-muted-foreground", "text-caption")).toBe(
+      "text-muted-foreground text-caption",
+    );
+    expect(cn("text-caption", "text-[11px]")).toBe("text-[11px]");
+  });
+
+  it("keeps the crest's code label at caption size beside its tone", () => {
+    expect(
+      cn("font-mono text-caption font-semibold tracking-[0.1em]", "text-primary"),
+    ).toContain("text-caption");
   });
 });

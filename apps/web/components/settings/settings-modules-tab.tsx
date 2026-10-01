@@ -310,7 +310,7 @@ function ModuleRow({
                 className="flex items-center justify-between text-sm"
               >
                 <span className="text-muted-foreground">{sub.label}</span>
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="text-caption uppercase tracking-wide text-muted-foreground">
                   {sub.defaultOn ? "On by default" : "Off by default"}
                 </span>
               </li>

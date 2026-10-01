@@ -269,7 +269,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         <Badge variant={STATUS_BADGE[status]}>{STATUS_LABELS[status]}</Badge>
       </div>
       <p className="mt-2 text-base font-bold">{payload.title}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span>
           {payload.assigner_name} → {payload.assignee_name}
         </span>

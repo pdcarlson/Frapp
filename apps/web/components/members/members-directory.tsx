@@ -614,7 +614,7 @@ export function MembersDirectory() {
             before the answer is back.
           */}
           {activeQuery.isLoading ? null : (
-            <p className="shrink-0 text-[12.5px] text-muted">
+            <p className="shrink-0 text-caption text-muted">
               {sortedMembers.length} member
               {sortedMembers.length === 1 ? "" : "s"}
               {usingSearch ? ` matching “${deferredQuery}”` : ""}
@@ -744,7 +744,7 @@ export function MembersDirectory() {
       */}
       {selectedCount > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
-          <p className="text-[12.5px] font-semibold text-accent-text">
+          <p className="text-caption font-semibold text-accent-text">
             {selectedCount} selected
           </p>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -841,7 +841,7 @@ export function MembersDirectory() {
             emptied the selection, which unmounted the bar around the checkbox
             that had focus. Here it behaves exactly as the `<th>` checkbox did.
           */}
-          <label className="flex w-fit min-h-9 cursor-pointer items-center gap-2 text-[12.5px] text-muted pointer-coarse:min-h-11">
+          <label className="flex w-fit min-h-9 cursor-pointer items-center gap-2 text-caption text-muted pointer-coarse:min-h-11">
             <span className={dashboardCheckboxHitAreaClassName}>
               <input
                 type="checkbox"
@@ -982,13 +982,13 @@ export function MembersDirectory() {
                         is what survives a narrow row, and an email is the field
                         that can run long.
                       */}
-                      <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
+                      <span className="min-w-0 truncate text-caption text-muted sm:flex-1">
                         {[roleName, joined, member.email]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[12.5px] tabular-nums text-muted">
+                    <span className="shrink-0 text-caption tabular-nums text-muted">
                       {points} pts
                     </span>
                   </button>
@@ -998,7 +998,7 @@ export function MembersDirectory() {
           </ul>
 
           {pageCount > 1 ? (
-            <div className="flex items-center justify-between gap-2 text-[12.5px]">
+            <div className="flex items-center justify-between gap-2 text-caption">
               <p className="text-muted">
                 Page {currentPage} of {pageCount}
               </p>

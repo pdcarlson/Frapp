@@ -117,12 +117,12 @@ export function SlashPalette({
                     value={`${command.name} ${command.description}`}
                     onSelect={() => onSelect(command)}
                   >
-                    <span className="font-mono text-[12.5px] text-muted-foreground">
+                    <span className="font-mono text-caption text-muted-foreground">
                       /{command.displayName ?? command.name}
                     </span>
                     <span className="ml-2 text-base">{command.description}</span>
                     {command.usage ? (
-                      <span className="ml-auto text-[12.5px] text-muted-foreground">
+                      <span className="ml-auto text-caption text-muted-foreground">
                         {command.usage}
                       </span>
                     ) : null}

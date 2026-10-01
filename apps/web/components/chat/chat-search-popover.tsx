@@ -210,7 +210,7 @@ function ScopeTab({
       disabled={disabled}
       onClick={onSelect}
       className={cn(
-        "rounded-md px-2 py-1 text-[12.5px] font-semibold transition-colors",
+        "rounded-md px-2 py-1 text-caption font-semibold transition-colors",
         selected
           ? "bg-accent-subtle text-accent-text"
           : "text-muted-foreground hover:bg-accent-subtle hover:text-accent-text",
@@ -257,7 +257,7 @@ function ChatSearchResults({
 }) {
   if (!hasMinQuery) {
     return (
-      <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+      <p className="px-3 py-4 text-caption text-muted-foreground">
         Type at least {SEARCH_MIN_QUERY_LENGTH} characters to search
         {scope === "channel" && activeChannelId
           ? " this channel."
@@ -267,7 +267,7 @@ function ChatSearchResults({
   }
   if (isPending) {
     return (
-      <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+      <p className="px-3 py-4 text-caption text-muted-foreground">
         Searching…
       </p>
     );
@@ -278,7 +278,7 @@ function ChatSearchResults({
   if (isError) {
     return (
       <div className="px-3 py-4">
-        <p role="alert" className="text-[12.5px] text-destructive-text">
+        <p role="alert" className="text-caption text-destructive-text">
           Search failed.
         </p>
         <Button
@@ -294,7 +294,7 @@ function ChatSearchResults({
   }
   if (hits.length === 0) {
     return (
-      <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+      <p className="px-3 py-4 text-caption text-muted-foreground">
         {timedOut
           ? // "We stopped looking here" is not "we found nothing", and
             // spec/behavior/search.md requires the client to tell them apart.
@@ -307,7 +307,7 @@ function ChatSearchResults({
   return (
     <>
       {timedOut ? (
-        <p className="border-b border-border px-3 py-2 text-[12.5px] text-muted-foreground">
+        <p className="border-b border-border px-3 py-2 text-caption text-muted-foreground">
           Search timed out. Some matches may be missing.
         </p>
       ) : null}
@@ -328,7 +328,7 @@ function ChatSearchResults({
                 type="button"
                 onClick={() => onPick(hit)}
                 className={cn(
-                  "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
+                  "block w-full px-3 py-3 text-left text-caption transition-colors",
                   "hover:bg-accent-subtle hover:text-accent-text",
                   FOCUS_RING,
                 )}

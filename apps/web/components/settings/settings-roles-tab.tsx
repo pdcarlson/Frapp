@@ -255,7 +255,7 @@ function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
         memberCounts={memberCounts}
         canManage={canManage}
       />
-      <p className="text-[12.5px] text-muted-foreground">
+      <p className="text-caption text-muted-foreground">
         {canManage
           ? "A role holding every permission cannot be edited here; the presidency moves through Transfer presidency below."
           : "You can see who holds what. Changing it needs the roles:manage permission."}
@@ -360,13 +360,13 @@ function DefaultInviteRoleCard({
           ))}
         </select>
         {isDangling ? (
-          <p className="text-[12.5px] text-warning">
+          <p className="text-caption text-warning">
             The configured default role no longer exists. Pick another, or
             leave it. New invites fall back to the Member role.
           </p>
         ) : null}
         {rolesQuery.isError ? (
-          <p className="text-[12.5px] text-destructive">
+          <p className="text-caption text-destructive">
             Roles could not load, so the default cannot be changed right now.
           </p>
         ) : null}
