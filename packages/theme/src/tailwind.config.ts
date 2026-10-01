@@ -111,6 +111,8 @@ const config: Partial<Config> = {
         card: {
           DEFAULT: colorVar("--card"),
           foreground: colorVar("--card-foreground"),
+          // A card-filled control's hover (components.md §3); `signet.css`.
+          hover: colorVar("--card-hover"),
         },
         popover: {
           DEFAULT: colorVar("--popover"),
@@ -139,9 +141,12 @@ const config: Partial<Config> = {
           foreground: colorVar("--muted-foreground"),
         },
         /*
-         * Present because the ShadCN scaffold's `secondary` variants use it and
-         * ~20 call sites use those variants. Without this key the classes
-         * compiled to nothing (#1145).
+         * The ShadCN aliases: `--secondary` is `--card` and `--accent` is
+         * `--popover` (`signet.css`). Nothing paints them any more, and
+         * `apps/web/components/shared/elevation-call-sites.spec.ts` bans them
+         * in both Next surfaces, because the names hid that `hover:bg-accent`
+         * was the elevated step itself. Deleting these keys and the variables
+         * behind them is #3036.
          */
         secondary: {
           DEFAULT: colorVar("--secondary"),
@@ -274,7 +279,7 @@ const config: Partial<Config> = {
        * `caption` carry literals here that the type scale does not define.
        * Those five values were chosen when these utilities landed, not derived
        * from the spec, and `signet.css` is therefore *not* the one place they
-       * are written. Tracked as L-09 in `spec/ui/web-greenfield/tokens.md`;
+       * are written. Tracked as L-09 in `spec/ui/web-dashboard/tokens.md`;
        * settle them there (or in §7) rather than editing one literal in place.
        *
        * `apps/landing` adds three MARKETING roles on top of these six, in its

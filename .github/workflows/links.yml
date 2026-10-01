@@ -38,8 +38,9 @@ jobs:
       # That exclusion was described here as belt-and-braces, on the grounds
       # that lychee's walk does not extract `<script src>` and only reaches
       # these files when the directory is passed explicitly. **Half of that is
-      # wrong, and it was measured when web-greenfield/reference/web-framework.dc.html
-      # landed.** `spec` IS passed explicitly, lychee walks into it, and it
+      # wrong, and it was measured when web-framework.dc.html landed (at
+      # web-greenfield/reference/, moved to web-dashboard/reference/ by #2743).**
+      # `spec` IS passed explicitly, lychee walks into it, and it
       # extracts `<img src>` even though it does skip `<script src>`: that one
       # board produced 10 errors from its image references and none from its
       # `./support.js`. So the exclusion is load-bearing for any export carrying
@@ -85,5 +86,5 @@ jobs:
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-greenfield/reference/web-framework.dc.html --exclude-path spec/ui/landing/reference/canvas docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md apps/landing/AGENTS.md .github/pull_request_template.md"
+          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-dashboard/reference/web-framework.dc.html --exclude-path spec/ui/landing/reference/canvas docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md apps/landing/AGENTS.md .github/pull_request_template.md"
           fail: true

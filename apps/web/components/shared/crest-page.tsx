@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * The full-page terminal state — board `1k`, and **the only place crest art is
  * allowed.**
  *
- * `spec/ui/web-greenfield/reference/web-framework.dc.html` `1k` draws the 404 as
+ * `spec/ui/web-dashboard/reference/web-framework.dc.html` `1k` draws the 404 as
  * a 720×450 field at `#1A1A1A` holding a 260px crest beside a 300px column, and
  * its note extends the same layout to the error page with the code swapped. The
  * note also fixes the constraint this component exists to hold: *"Crest is the

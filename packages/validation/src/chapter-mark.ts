@@ -1,8 +1,8 @@
 /**
  * The chapter mark: what stands for a chapter wherever the product shows its
- * identity in a small space (#2876). The web nav's chapter tile, the mobile
- * chat header, and the welcome message onboarding posts all read it from here,
- * so the precedence can't drift between them.
+ * identity in a small space (#2876). The web nav's chapter tile, Chat home's
+ * title row on mobile, and the welcome message onboarding posts all read it
+ * from here, so the precedence can't drift between them.
  *
  * Precedence, owned by `spec/behavior/branding.md` § Chapter mark:
  *

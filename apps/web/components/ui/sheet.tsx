@@ -76,9 +76,10 @@ const SheetContent = React.forwardRef<
       className={cn(sheetVariants({ side }), className)}
       {...props}
     >
+      {/* `--muted-foreground`, for the reason `ui/dialog.tsx`'s close gives. */}
       <SheetPrimitive.Close
         className={cn(
-          "absolute right-4 top-4 rounded-xs border border-transparent p-1 text-muted transition-colors hover:text-foreground disabled:pointer-events-none",
+          "absolute right-4 top-4 rounded-xs border border-transparent p-1 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none",
           FOCUS_RING
         )}
       >
