@@ -10,10 +10,11 @@ export interface PointTransaction {
   description: string;
   metadata: Record<string, unknown>;
   /**
-   * Client-minted idempotency key (UUIDv4) for chat-originated adjustments.
-   * A replay carrying the same `(chapter_id, client_message_id)` returns the
-   * original transaction rather than writing a second ledger row. `null` for
-   * dashboard adjustments, which send no key and are not deduplicated.
+   * Client-minted idempotency key (UUIDv4), sent by the `/points` command and
+   * the dashboard. A replay carrying the same `(chapter_id, client_message_id)`
+   * returns the original transaction rather than writing a second ledger row.
+   * `null` for a dashboard adjustment made before the dashboard sent a key
+   * (#1906); those rows are not deduplicated.
    */
   client_message_id?: string | null;
   /**

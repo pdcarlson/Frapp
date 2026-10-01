@@ -74,3 +74,59 @@ export function codeOf(error: unknown): string | null {
     ? candidate.code
     : null;
 }
+
+/**
+ * Throws unless the response was a 2xx, with the status on what it throws.
+ *
+ * openapi-fetch 0.17 reports a non-2xx whose body is empty as `error:
+ * undefined` (a `Content-Length: 0` failure) or `error: ""` (an empty text
+ * body), both falsy, so `if (error) throw error` reads that failure as a
+ * success. The status is the truth. What is thrown always carries it where
+ * {@link statusOf} reads it: a body that names none gets `statusCode` from the
+ * response, which also covers an edge's JSON or HTML refusal that isn't Nest's
+ * shape. A plain-text body is kept as `message`; markup is not, because a
+ * gateway's HTML error page would otherwise render as a toast's description.
+ */
+export function throwUnlessOk(result: {
+  error?: unknown;
+  response: { ok: boolean; status: number };
+}): void {
+  if (result.response.ok) return;
+  const { error } = result;
+  const statusCode = result.response.status;
+  if (error !== null && typeof error === "object") {
+    throw statusOf(error) === undefined ? { ...error, statusCode } : error;
+  }
+  const text = typeof error === "string" ? error.trim() : "";
+  throw {
+    statusCode,
+    message: text.length > 0 && !text.startsWith("<") ? text : undefined,
+  };
+}
+
+/**
+ * Statuses in the 4xx band that an INTERMEDIARY emits after the origin may
+ * already have processed the request. They look like refusals and are not: a
+ * proxy request timeout is the same "response lost after a possible write" event
+ * as a 502, merely numbered in the client-error band. `408` is the standard
+ * one; `499` (nginx) and `460` (AWS ALB) are the client-disconnect equivalents.
+ */
+const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
+
+/**
+ * Whether a status is a **definitive** client refusal — the origin validated
+ * the request and rejected it, so nothing was written and repeating it
+ * unchanged is pointless.
+ *
+ * One definition, deliberately shared by chat-core's `classify` (the
+ * outbox/send path) and `dispatch.ts` (heavy commands) and by `@repo/hooks`'
+ * `useAdjustPoints`, because "4xx means do not retry" is one policy and copies
+ * of it drift. The carve-out above is why that matters: a proxy 408 treated as
+ * definitive tells a caller their write failed when it may have landed, and
+ * the retry that follows is a fresh attempt rather than a replay.
+ */
+export function isDefinitiveClientError(status: number): boolean {
+  return (
+    status >= 400 && status < 500 && !INCONCLUSIVE_CLIENT_ERRORS.has(status)
+  );
+}

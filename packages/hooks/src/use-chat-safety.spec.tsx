@@ -443,9 +443,10 @@ describe("useBlockMember / useUnblockMember", () => {
     const { result } = renderListAndActions({ GET, POST });
     await waitFor(() => expect(result.current.list.status).toBe("ready"));
 
+    // The response status rides on a body that names none (`throwUnlessOk`).
     await expect(
       act(() => result.current.block.mutateAsync(ALICE)),
-    ).rejects.toEqual({ message: "nope" });
+    ).rejects.toEqual({ message: "nope", statusCode: 403 });
 
     expect([...result.current.list.ids]).toEqual([BOB]);
     expect(queryClient.getQueryData(confirmedBlockChangesKey(CHAPTER))).toEqual(
@@ -563,7 +564,7 @@ describe("useReportMessage", () => {
       act(() =>
         result.current.mutateAsync({ messageId: "m1", reason: "other" }),
       ),
-    ).rejects.toEqual({ message: "forbidden" });
+    ).rejects.toEqual({ message: "forbidden", statusCode: 403 });
   });
 
   it("treats a non-2xx with an empty body as a failure (finding 5c)", async () => {
