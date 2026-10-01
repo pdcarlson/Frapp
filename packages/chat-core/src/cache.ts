@@ -585,10 +585,38 @@ export function reconcileNewestPage(
  * when the member next scrolls to them.
  */
 export function trimOlderThan(cache: ChannelCache, time: number): ChannelCache {
+  return dropConfirmed(cache, (message) => timeOf(message) < time);
+}
+
+/**
+ * Drops the confirmed rows a newest-page read proves gone (#2807): those at or
+ * before `through` (epoch ms) that `rows` doesn't carry. For a read the server
+ * answered as the channel's newest page, which holds every row it has up to
+ * its newest one, or up to `through` when the caller knows a later instant it
+ * has none before (a purged cursor's). Rows in the page keep their reactions,
+ * and optimistic rows stay.
+ */
+export function dropUnreadThrough(
+  cache: ChannelCache,
+  rows: readonly RawChatMessage[],
+  through: number,
+): ChannelCache {
+  const read = new Set(rows.map((row) => row.id));
+  return dropConfirmed(
+    cache,
+    (message) => !read.has(message.id) && timeOf(message) <= through,
+  );
+}
+
+/** Drops the confirmed rows `matches` picks, with their reactions. */
+function dropConfirmed(
+  cache: ChannelCache,
+  matches: (message: ChatMessage) => boolean,
+): ChannelCache {
   const drop = new Set(
     cache.order.filter((key) => {
       const message = cache.byId[key];
-      return message?._status === "confirmed" && timeOf(message) < time;
+      return message?._status === "confirmed" && matches(message);
     }),
   );
   if (drop.size === 0) return cache;

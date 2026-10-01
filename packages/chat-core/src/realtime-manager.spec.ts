@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createFrappClient } from "@repo/api-sdk";
 import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
@@ -1459,6 +1460,37 @@ describe("ChatRealtimeManager — a backfill that missed more than a page (#2807
     expect(cachedIds()).toContain("m6");
   });
 
+  test("a purged cursor takes the purged rows the thread held with it", async () => {
+    // m8–m10 were purged and their Realtime deletes missed. The newest page
+    // is m1–m7, which holds every row the server has up to m7.
+    queryClient.setQueryData(
+      chatMessagesKey("c1"),
+      mergeServerRows(emptyCache(), newestFirst(1, 10)),
+    );
+    window.localStorage.setItem("chat:lastSeen:c1", "m10");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m10"))
+      .mockResolvedValueOnce(newestFirst(1, 7));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m7"),
+    );
+    expect(cachedIds()).toEqual(["m1", "m2", "m3", "m4", "m5", "m6", "m7"]);
+  });
+
+  test("when every message was purged, the thread holds none of them", async () => {
+    heldThrough("m3");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m3"))
+      .mockResolvedValueOnce([]);
+
+    reconnect();
+
+    await vi.waitFor(() => expect(cachedIds()).toEqual([]));
+  });
+
   test("a cursor whose newest page comes back empty is still dropped", async () => {
     // Every message after it was purged too. The fallback writes no cursor of
     // its own, so only the drop keeps the next attempt off the 404.
@@ -1603,6 +1635,45 @@ describe("createBackfillFetcher (#2807)", () => {
     await expect(
       createBackfillFetcher(client)("c1", { since: "m3", limit: 100 }),
     ).rejects.toBe(error);
+  });
+
+  test("recognises the cursor's 404 through the real API client both apps build", async () => {
+    // Web and mobile both call `createFrappClient` (@repo/api-sdk). This runs
+    // the read through it and openapi-fetch's own error parsing, so a client
+    // change that moved `code` off the top level of the error would fail here.
+    const body = (status: number, json: unknown) =>
+      new Response(JSON.stringify(json), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    const fetchStub = vi
+      .fn()
+      .mockResolvedValueOnce(
+        body(404, {
+          statusCode: 404,
+          code: CHAT_SINCE_NOT_FOUND_CODE,
+          message: "The since message is not in this channel",
+        }),
+      )
+      .mockResolvedValueOnce(
+        body(404, { statusCode: 404, message: "Channel not found" }),
+      );
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      const read = createBackfillFetcher(
+        createFrappClient({ baseUrl: "http://api.test" }),
+      );
+
+      await expect(
+        read("c1", { since: "m3", limit: BACKFILL_PAGE_LIMIT }),
+      ).rejects.toBeInstanceOf(SinceCursorNotFoundError);
+      await expect(
+        read("c1", { since: "m3", limit: BACKFILL_PAGE_LIMIT }),
+      ).rejects.not.toBeInstanceOf(SinceCursorNotFoundError);
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("a body that isn't a list reads as no rows", async () => {

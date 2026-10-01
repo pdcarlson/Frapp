@@ -55,6 +55,7 @@ import type {
 import {
   applyReactionDelete,
   applyReactionInsert,
+  dropUnreadThrough,
   emptyCache,
   holdsServerRow,
   mergeServerRow,
@@ -468,7 +469,8 @@ class ChatRealtimeManager {
       if (!messageId) this.kvStore().remove(LAST_SEEN_PREFIX + channelId);
       else this.kvStore().set(LAST_SEEN_PREFIX + channelId, messageId);
     } catch {
-      // Storage unavailable — the next backfill just reads a wider window.
+      // Storage unavailable. This session's copy (`lastSeen`) still holds the
+      // cursor; after a restart the next backfill reads the newest page.
     }
   }
 
@@ -917,10 +919,11 @@ class ChatRealtimeManager {
   private async runBackfill(channelId: string): Promise<void> {
     if (!this.ctx) return;
     try {
-      const { rows, limit } = await this.readBackfill(
+      const { rows, limit, gone } = await this.readBackfill(
         this.ctx.backfill,
         channelId,
       );
+      if (gone) this.dropPurged(channelId, gone, rows);
       if (rows.length === 0) return;
       // The page is the newest rows after the cursor, so a full one may not
       // reach back to it. Merged as is, the rows in between would draw as
@@ -945,15 +948,46 @@ class ChatRealtimeManager {
   }
 
   /**
+   * The cursor's row is gone from the server (purged, its Realtime delete
+   * missed), and a purge deletes in slices whose other deletes were missed the
+   * same way. The newest page read in its place holds every row the server
+   * has up to its own newest, so a confirmed row the thread holds up to that,
+   * or up to the gone row's instant when the thread holds it, and the page
+   * doesn't carry is gone too. Web's `loadNewer` drops them on the same
+   * answer; without this, mobile, which has no `loadNewer`, would show them
+   * until the thread was read again from scratch.
+   *
+   * Never creates a cache for a channel whose first read hasn't landed.
+   */
+  private dropPurged(
+    channelId: string,
+    gone: string,
+    rows: readonly RawChatMessage[],
+  ): void {
+    this.ctx?.queryClient.setQueryData<ChannelCache>(
+      chatMessagesKey(channelId),
+      (cache) => {
+        if (!cache) return cache;
+        const goneRow = cache.byId[gone];
+        const instants = [goneRow, ...rows]
+          .map((row) => (row ? Date.parse(row.created_at) : Number.NaN))
+          .filter((time) => !Number.isNaN(time));
+        if (instants.length === 0) return cache;
+        return dropUnreadThrough(cache, rows, Math.max(...instants));
+      },
+    );
+  }
+
+  /**
    * The rows after the channel's cursor, or its newest page when it has none,
    * with the page size they were read at. A cursor the server no longer knows
-   * is dropped, unless a live row has replaced it meanwhile, and the read is
-   * made again as the newest page.
+   * is dropped, unless a live row has replaced it meanwhile, the read is made
+   * again as the newest page, and the dropped cursor comes back as `gone`.
    */
   private async readBackfill(
     backfill: BackfillFetcher,
     channelId: string,
-  ): Promise<{ rows: RawChatMessage[]; limit: number }> {
+  ): Promise<{ rows: RawChatMessage[]; limit: number; gone?: string }> {
     const newestPage = async () => ({
       rows: await backfill(channelId, { limit: FIRST_PAGE_LIMIT }),
       limit: FIRST_PAGE_LIMIT,
@@ -968,7 +1002,7 @@ class ChatRealtimeManager {
       if (this.readLastSeen(channelId) === since) {
         this.writeLastSeen(channelId, null);
       }
-      return newestPage();
+      return { ...(await newestPage()), gone: since };
     }
   }
 

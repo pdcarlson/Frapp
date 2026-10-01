@@ -1,5 +1,7 @@
 import { ChatMessageCursorNotFoundError } from '#domain/repositories/chat.repository.interface';
 import { SupabaseChatMessageRepository } from './supabase-chat-message.repository';
+import type { FrappSupabaseClient } from '../database.types';
+import { SupabaseQueryError } from '../supabase-query-error';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -315,5 +317,33 @@ describe('SupabaseChatMessageRepository — findByChannel since (#2807)', () => 
         limit: 50,
       }),
     ).rejects.toBeInstanceOf(ChatMessageCursorNotFoundError);
+  });
+});
+
+/**
+ * A pivot read that fails is a failure, not an unknown cursor (#2807). Read as
+ * "no such message", it would answer `chat.since_not_found`, and the client
+ * would drop a cursor that is still good and trim the thread behind it.
+ */
+describe('SupabaseChatMessageRepository — findByChannel since, a failed pivot read (#2807)', () => {
+  it('throws the query error rather than refusing the cursor as unknown', async () => {
+    const pivotError = { message: 'connection reset', code: '08006' };
+    const chain: Record<string, jest.Mock> = {};
+    for (const method of ['select', 'eq', 'order', 'limit', 'gt', 'lt']) {
+      chain[method] = jest.fn(() => chain);
+    }
+    chain.maybeSingle = jest.fn(() =>
+      Promise.resolve({ data: null, error: pivotError }),
+    );
+    const client = {
+      from: jest.fn(() => chain),
+    } as unknown as FrappSupabaseClient;
+
+    const failure: unknown = await new SupabaseChatMessageRepository(client)
+      .findByChannel('channel-1', { since: 'message-1', limit: 50 })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(SupabaseQueryError);
+    expect(failure).not.toBeInstanceOf(ChatMessageCursorNotFoundError);
   });
 });
