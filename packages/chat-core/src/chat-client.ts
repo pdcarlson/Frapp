@@ -18,7 +18,11 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { createFrappClient } from "@repo/api-sdk";
+import {
+  serverMessageOf,
+  statusOf,
+  type createFrappClient,
+} from "@repo/api-sdk";
 import {
   CHAT_MESSAGE_KINDS,
   chatMessagesKey,
@@ -187,9 +191,9 @@ const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
  * the request and rejected it, so nothing was written and repeating it
  * unchanged is pointless.
  *
- * One definition, deliberately shared by `classify` (the outbox/send path) and
- * `dispatch.ts` (heavy commands), because "4xx means do not retry" is one policy
- * and two copies of it drift. The carve-out above is why that matters: a proxy
+ * One definition, deliberately shared by `classifyChatError` (the outbox/send
+ * path) and `dispatch.ts` (heavy commands), because "4xx means do not retry" is
+ * one policy and two copies of it drift. The carve-out above is why that matters: a proxy
  * 408 treated as definitive tells a caller their write failed when it may have
  * landed, and the retry that follows is a fresh attempt rather than a replay.
  */
@@ -212,19 +216,25 @@ function extractMessage(value: unknown): string | null {
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
  *
- * Handles two error shapes:
+ * Handles three error shapes:
  *   - openapi-fetch `{ error, response }` rejected envelope (NestJS API)
  *   - generic `Error` with `status` / `context.response.status`
+ *   - the parsed error body itself, which a `@repo/hooks` mutation rethrows
+ *     (`if (error) throw error`) with the status on `statusCode` and a
+ *     `message` that a validation failure sends as an array
+ *
+ * Exported so a chat surface outside the outbox reads an API failure the way
+ * the send path does, instead of with a second copy of this split. The web
+ * composer's attachment upload is one (#2199).
  */
-function classify(error: unknown): {
+export function classifyChatError(error: unknown): {
   terminal: boolean;
   status?: number;
   message: string;
 } {
   if (!error) return { terminal: false, message: "Unknown error" };
   const e = error as FunctionsErrorWithStatus;
-  let status: number | undefined =
-    typeof e.status === "number" ? e.status : undefined;
+  let status: number | undefined = statusOf(error);
   if (
     status === undefined &&
     e.response &&
@@ -242,8 +252,8 @@ function classify(error: unknown): {
     }
   }
   const message = memberFacingRefusal(
-    extractMessage(error) ??
-      extractMessage((error as { error?: unknown }).error) ??
+    serverMessageOf(error) ??
+      serverMessageOf((error as { error?: unknown }).error) ??
       "Couldn't reach chat server",
   );
   const terminal =
@@ -253,7 +263,7 @@ function classify(error: unknown): {
 
 /**
  * Normalize an openapi-fetch `{ data, error }` response into the same
- * thrown-Error shape `classify` understands. NestJS error bodies look
+ * thrown-Error shape `classifyChatError` understands. NestJS error bodies look
  * like `{ statusCode, message, error }`; openapi-fetch exposes the raw
  * `Response` so we hang the status off the thrown error.
  */
@@ -449,7 +459,7 @@ export async function sendMessage(
       mergeServerRow(cache, message),
     );
   } catch (err) {
-    const { terminal, status, message } = classify(err);
+    const { terminal, status, message } = classifyChatError(err);
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),
@@ -892,7 +902,7 @@ export async function react(
         false,
       ),
     );
-    const { message } = classify(err);
+    const { message } = classifyChatError(err);
     ctx.toast?.({
       title: "Couldn't react",
       description: message,
@@ -932,7 +942,7 @@ export async function unreact(
     patchCache(ctx.queryClient, args.channelId, (cache) =>
       toggleReactionLocal(cache, args.messageId, actionType, ctx.userId!, true),
     );
-    const { message } = classify(err);
+    const { message } = classifyChatError(err);
     ctx.toast?.({
       title: "Couldn't remove reaction",
       description: message,
@@ -980,7 +990,7 @@ export async function editMessage(
       mergeHeldServerRow(cache, data as unknown as RawChatMessage),
     );
   } catch (err) {
-    const { message } = classify(err);
+    const { message } = classifyChatError(err);
     ctx.toast?.({
       title: "Couldn't edit message",
       description: message,
@@ -1023,7 +1033,7 @@ export async function deleteMessage(
       mergeHeldServerRow(cache, data as unknown as RawChatMessage),
     );
   } catch (err) {
-    const { message } = classify(err);
+    const { message } = classifyChatError(err);
     ctx.toast?.({
       title: "Couldn't delete message",
       description: message,
@@ -1083,7 +1093,7 @@ export async function actOnCard(
       );
     }
   } catch (err) {
-    const { message } = classify(err);
+    const { message } = classifyChatError(err);
     ctx.toast?.({
       title: "Couldn't record action",
       description: message,

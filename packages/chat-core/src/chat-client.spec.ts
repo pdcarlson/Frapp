@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  classifyChatError,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -1700,5 +1701,68 @@ describe("memberFacingRefusal", () => {
     expect(memberFacingRefusal(moduleDisabledMessage("events"))).toBe(
       moduleDisabledMessage("events"),
     );
+  });
+});
+
+describe("classifyChatError", () => {
+  // A `@repo/hooks` mutation rethrows openapi-fetch's parsed body unchanged, so
+  // the status arrives on `statusCode` and nowhere else (#2199). Reading only
+  // `status` made every such refusal look transient.
+  it("reads the status off a rethrown error body", () => {
+    expect(
+      classifyChatError({
+        statusCode: 403,
+        error: "Forbidden",
+        message: "You do not have access to this channel",
+      }),
+    ).toEqual({
+      terminal: true,
+      status: 403,
+      message: "You do not have access to this channel",
+    });
+  });
+
+  it("joins a validation body's message array instead of dropping it", () => {
+    expect(
+      classifyChatError({
+        statusCode: 400,
+        error: "Bad Request",
+        message: ["filename must be a string", "content_type is not allowed"],
+      }),
+    ).toEqual({
+      terminal: true,
+      status: 400,
+      message: "filename must be a string, content_type is not allowed",
+    });
+  });
+
+  it("keeps a 5xx body transient", () => {
+    expect(
+      classifyChatError({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "Service Unavailable",
+      }),
+    ).toMatchObject({ terminal: false, status: 503 });
+  });
+
+  it("keeps reading the send path's wrapped Error by its response status", () => {
+    const wrapped = Object.assign(new Error("Channel not found"), {
+      response: { status: 404 },
+      context: { status: 404 },
+    });
+    expect(classifyChatError(wrapped)).toEqual({
+      terminal: true,
+      status: 404,
+      message: "Channel not found",
+    });
+  });
+
+  it("treats an Error with no status as transient", () => {
+    expect(classifyChatError(new TypeError("Failed to fetch"))).toEqual({
+      terminal: false,
+      status: undefined,
+      message: "Failed to fetch",
+    });
   });
 });

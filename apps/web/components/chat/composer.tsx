@@ -38,6 +38,7 @@ import {
 } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { classifyChatError } from "@repo/chat-core/chat-client";
 // Imported, never restated. A structural copy of this shape is assignable even
 // when it is missing a field, so a hand-written `{ ok, error? }` silently erases
 // any outcome added later — which is exactly what happened at the
@@ -721,10 +722,27 @@ export function notifyDispatchOutcome(
 }
 
 /**
- * Composer: Tiptap WYSIWYG editor + slash palette + emoji insert + pre-signed
- * file upload. Drafts persist as serialized text (Tiptap → plain text) so the
- * Dexie schema stays stable across editor upgrades.
+ * The description on the "Couldn't upload file" toast (#2199).
+ *
+ * The mint (`useRequestChatUploadUrl`) rethrows the API's parsed error body, a
+ * plain object, so the send path's classifier reads it. A definitive 4xx is the
+ * server telling the member why, and retrying can't change it. That covers a
+ * member who lost posting rights inside the channel list's staleTime (the mint
+ * authorizes as a post) and a file the API refuses. A 429 is the exception: its
+ * body is the throttler's framework text ("ThrottlerException: Too Many
+ * Requests"), and waiting is the remedy. A 5xx, a proxy 408 or no status at all
+ * is transient.
+ *
+ * A thrown `Error` is not an API body (`readSignedUpload`'s contract error, the
+ * storage PUT's `SignedUploadError`, a network failure) and keeps the message
+ * it has always shown.
  */
+export function uploadFailureDescription(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  const { terminal, status, message } = classifyChatError(err);
+  return terminal && status !== 429 ? message : "Retry in a moment.";
+}
+
 /**
  * Composing help, behind a `?` and nowhere else.
  *
@@ -770,6 +788,11 @@ function ComposerHelp() {
   );
 }
 
+/**
+ * Composer: Tiptap WYSIWYG editor + slash palette + emoji insert + pre-signed
+ * file upload. Drafts persist as serialized text (Tiptap → plain text) so the
+ * Dexie schema stays stable across editor upgrades.
+ */
 export function Composer({
   channelId,
   channelName,
@@ -814,10 +837,11 @@ export function Composer({
    *
    * Held here rather than in the editor document because an attachment is not
    * text. The bytes are already in the bucket by the time a chip appears — the
-   * upload happens on pick — so removing a chip drops the claim, not the object;
-   * an unclaimed object is swept by the storage retention pass, and that is a
-   * far better failure than the old one, where the only record of the file was a
-   * string the sender could edit away.
+   * upload happens on pick — so removing a chip drops the claim, not the object.
+   * Nothing sweeps an unclaimed object out of the `chat` bucket yet (#2197), so
+   * it stays behind as an orphan. That is still a far better failure than the
+   * old one, where the only record of the file was a string the sender could
+   * edit away.
    */
   const [pending, setPending] = useState<OutboxAttachment[]>([]);
 
@@ -1262,8 +1286,7 @@ export function Composer({
       } catch (err) {
         toast({
           title: "Couldn't upload file",
-          description:
-            err instanceof Error ? err.message : "Retry in a moment.",
+          description: uploadFailureDescription(err),
           variant: "destructive",
         });
       }
@@ -1373,12 +1396,15 @@ export function Composer({
   // channel). `isReadOnly` on its own used to gate the whole composer
   // unconditionally, which meant nobody — not even the President — could
   // ever get a live composer in `#announcements`, regardless of permission.
-  // `isReadOnly` is read here only to pick which explanation applies: the
-  // read-only case (no `announcements:post`) and the alumni lifecycle
-  // restriction (`spec/behavior/alumni.md`) are the only two ways `can_post`
-  // comes back false — read access to reach this channel at all is a
-  // precondition of it appearing in the caller's channel list, so there is
-  // no third case to distinguish.
+  // `isReadOnly` is read here only to pick which explanation applies.
+  // Read access is already proven by the channel being in the caller's list,
+  // and past that `canAccessChannel` refuses a post for three reasons: an
+  // archived channel (#348), the alumni lifecycle restriction
+  // (`spec/behavior/alumni.md`), and the read-only case (no
+  // `announcements:post`). The first never reaches this composer: the list
+  // leaves archived channels out (`filterAccessibleChannels`), and this
+  // renders only for a channel in it. So two explanations cover every case
+  // here, and a list that starts carrying archived channels needs a third.
   //
   // `canPost` defaults to `!isReadOnly`, not to `true` unconditionally: a
   // caller that only passes `isReadOnly` (predating this prop, or a channel

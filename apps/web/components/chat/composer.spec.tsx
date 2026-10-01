@@ -78,6 +78,7 @@ import {
   composerPlaceholder,
   notifyDispatchOutcome,
   runDispatch,
+  uploadFailureDescription,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import type { SlashCommand } from "@repo/chat-integrations";
@@ -1228,6 +1229,85 @@ describe("Composer attachment ticket contract", () => {
       ),
     );
     expect(mockUploadSignedUrl).not.toHaveBeenCalled();
+  });
+
+  // #2199: the mint rethrows the API's parsed body, a plain object. Read as
+  // "not an Error", every refusal used to say "Retry in a moment.", including
+  // a member who had lost posting rights and could never succeed.
+  it("shows a mint refusal's own reason, not retry advice", async () => {
+    mockRequestUploadUrl.mockRejectedValueOnce({
+      statusCode: 403,
+      error: "Forbidden",
+      message: "You do not have access to this channel",
+    });
+
+    const { container } = render(<Composer {...baseProps()} />);
+    await attach(container);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't upload file",
+          description: "You do not have access to this channel",
+        }),
+      ),
+    );
+    expect(mockUploadSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("keeps retry advice for a mint failure that a retry can fix", async () => {
+    mockRequestUploadUrl.mockRejectedValueOnce({
+      statusCode: 500,
+      error: "Internal Server Error",
+      message: "Internal server error",
+    });
+
+    const { container } = render(<Composer {...baseProps()} />);
+    await attach(container);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: "Retry in a moment." }),
+      ),
+    );
+  });
+});
+
+describe("uploadFailureDescription (#2199)", () => {
+  it("gives a definitive 4xx body's message", () => {
+    expect(
+      uploadFailureDescription({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "File exceeds the 25 MB upload limit",
+      }),
+    ).toBe("File exceeds the 25 MB upload limit");
+  });
+
+  it("never shows the throttler's framework text for a 429", () => {
+    expect(
+      uploadFailureDescription({
+        statusCode: 429,
+        error: "Too Many Requests",
+        message: "ThrottlerException: Too Many Requests",
+      }),
+    ).toBe("Retry in a moment.");
+  });
+
+  it("treats a proxy 408 and a body with no status as transient", () => {
+    expect(
+      uploadFailureDescription({ statusCode: 408, message: "Request Timeout" }),
+    ).toBe("Retry in a moment.");
+    expect(uploadFailureDescription({ message: "Something" })).toBe(
+      "Retry in a moment.",
+    );
+    expect(uploadFailureDescription(undefined)).toBe("Retry in a moment.");
+  });
+
+  it("keeps a thrown Error's message, as before", () => {
+    expect(uploadFailureDescription(new Error("Upload failed (413)"))).toBe(
+      "Upload failed (413)",
+    );
   });
 });
 
