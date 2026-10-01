@@ -15,21 +15,21 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { createFrappClient } from "@repo/api-sdk";
+import { codeOf } from "@repo/api-sdk";
+import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   cacheFromPage,
   mergeUnheldRows,
   oldestConfirmed,
   reconcileNewestPage,
 } from "./cache";
+import type { FrappApiClient } from "./chat-client";
 import {
   chatMessagesKey,
   type ChannelCache,
   type RawChatMessage,
   type RawChatMessageAction,
 } from "./types";
-
-type FrappClient = ReturnType<typeof createFrappClient>;
 
 /** The newest page a channel opens on. */
 export const FIRST_PAGE_LIMIT = 50;
@@ -53,7 +53,10 @@ export interface HistoryPageQuery {
   limit: number;
   /** ISO timestamp; the API returns rows strictly before it. */
   before?: string;
-  /** Message id; the API returns rows created after it. */
+  /**
+   * Message id; the API returns the newest `limit` rows created after it, so
+   * a full page may not reach back to it (#2807).
+   */
   since?: string;
 }
 
@@ -90,7 +93,47 @@ export type FetchHistoryPage = (
 ) => Promise<HistoryPage>;
 
 /**
- * The one way a client reads a page: `GET /v1/channels/{id}/messages`, then a
+ * What a read throws when the server holds no message by its `since` id in
+ * that channel (#2807): one hard-deleted since the client stored it (the
+ * Discord import purge), or another channel's message. Told apart from the
+ * route's other 404, a channel the viewer can't read, by its code, so a
+ * caller can drop the id and read the newest page instead.
+ */
+export class SinceCursorNotFoundError extends Error {
+  constructor(
+    readonly channelId: string,
+    readonly since: string,
+  ) {
+    super("The since cursor names no message in this channel");
+    this.name = "SinceCursorNotFoundError";
+  }
+}
+
+/**
+ * The message rows of one page: `GET /v1/channels/{id}/messages`. Every page
+ * read goes through here, the history pages below and the reconnect backfill
+ * (`createBackfillFetcher`) alike, so the response handling and the
+ * `SinceCursorNotFoundError` mapping live in one place.
+ */
+export async function readMessageRows(
+  apiClient: FrappApiClient,
+  channelId: string,
+  query: HistoryPageQuery,
+): Promise<RawChatMessage[]> {
+  const { data, error } = await apiClient.GET("/v1/channels/{id}/messages", {
+    params: { path: { id: channelId }, query },
+  });
+  if (error) {
+    if (query.since && codeOf(error) === CHAT_SINCE_NOT_FOUND_CODE) {
+      throw new SinceCursorNotFoundError(channelId, query.since);
+    }
+    throw error;
+  }
+  return Array.isArray(data) ? (data as RawChatMessage[]) : [];
+}
+
+/**
+ * The one way a client reads a page with its actions: `readMessageRows`, then a
  * single batched select on `chat_message_actions`, so reactions and poll
  * tallies are on the first paint rather than appearing only after a live
  * echo. Rejects when the message read fails.
@@ -109,15 +152,11 @@ export type FetchHistoryPage = (
  * `getSupabaseClient`); the page then carries no actions.
  */
 export function createHistoryPageFetcher(
-  apiClient: FrappClient,
+  apiClient: FrappApiClient,
   supabase: SupabaseClient | null,
 ): FetchHistoryPage {
   return async (channelId, query) => {
-    const { data, error } = await apiClient.GET("/v1/channels/{id}/messages", {
-      params: { path: { id: channelId }, query },
-    });
-    if (error) throw error;
-    const rows = Array.isArray(data) ? (data as RawChatMessage[]) : [];
+    const rows = await readMessageRows(apiClient, channelId, query);
     const messageIds = rows.map((row) => row.id).filter(Boolean);
     if (!supabase || messageIds.length === 0) return { rows, actions: [] };
     const actions: RawChatMessageAction[] = [];

@@ -50,6 +50,7 @@ vi.mock("@/lib/realtime/supabase-realtime", () => ({
 }));
 vi.mock("@repo/chat-core/realtime-manager", () => ({
   chatRealtime: { configure: vi.fn(), destroy: vi.fn() },
+  createBackfillFetcher: vi.fn((client: unknown) => ({ readsWith: client })),
 }));
 vi.mock("@repo/chat-core/chat-client", () => ({
   flushOutbox: vi.fn(async () => undefined),
@@ -60,7 +61,8 @@ vi.mock("@repo/chat-core/adapters", () => ({
 }));
 
 const { ChatProvider } = await import("./chat-provider");
-const { chatRealtime } = await import("@repo/chat-core/realtime-manager");
+const { chatRealtime, createBackfillFetcher } =
+  await import("@repo/chat-core/realtime-manager");
 const { useChatViewerId } = await import("./viewer-id");
 const { CachedBlockFloorContext } = await import("./use-thread-block-list");
 
@@ -184,6 +186,19 @@ describe("ChatProvider rebinds the realtime manager without tearing it down (#30
       expect.objectContaining({ viewerId: "user-b" }),
     );
     expect(chatRealtime.destroy).not.toHaveBeenCalled();
+  });
+
+  it("hands the manager chat-core's one backfill read, on its own API client (#2807)", () => {
+    // The full-page and unknown-cursor rules live in that read and the
+    // manager; an inline fetcher here would skip the second.
+    liveViewerId.current = "user-live";
+    renderProvider();
+
+    const fetcher = vi.mocked(createBackfillFetcher);
+    expect(fetcher.mock.lastCall?.[0]).toHaveProperty("GET");
+    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ backfill: fetcher.mock.results.at(-1)?.value }),
+    );
   });
 
   it("destroys the manager when the chat surface unmounts", () => {
