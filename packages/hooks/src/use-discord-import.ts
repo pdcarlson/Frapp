@@ -91,10 +91,7 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
     },
     enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 30_000,
-    refetchInterval: (query) =>
-      discordImportListPollMs(
-        query.state.data as ReadonlyArray<{ status?: string }> | undefined,
-      ),
+    refetchInterval: (query) => discordImportListPollMs(query.state.data),
   });
 }
 
@@ -120,9 +117,7 @@ export function useDiscordImport(
     // asking again on a timer.
     retry: false,
     refetchInterval: (query) => {
-      const status = (
-        query.state.data as { status?: DiscordImportStatus } | undefined
-      )?.status;
+      const status = query.state.data?.status;
       return status && DISCORD_IMPORT_ACTIVE_STATUSES.includes(status)
         ? DISCORD_IMPORT_POLL_MS
         : false;

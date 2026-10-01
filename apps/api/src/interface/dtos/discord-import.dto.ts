@@ -16,7 +16,11 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
-import { DISCORD_IMPORT_PROGRESS_LIMITS } from '#domain/entities/discord-import.entity';
+import {
+  DISCORD_IMPORT_PROGRESS_LIMITS,
+  type DiscordImportSource,
+  type DiscordImportStatus,
+} from '#domain/entities/discord-import.entity';
 
 export class CreateDiscordImportDto {
   @ApiProperty({
@@ -374,4 +378,111 @@ export class DiscordImportProgressDto {
     description: `Failed rows with the reason, in import order, at most ${DISCORD_IMPORT_PROGRESS_LIMITS.failed}. A restart resumes them.`,
   })
   failed: DiscordImportChannelProgressRowDto[];
+}
+
+const DISCORD_IMPORT_STATUS_VALUES = [
+  'draft',
+  'ready',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'purging',
+  'purged',
+] as const satisfies readonly DiscordImportStatus[];
+
+/**
+ * An import as every route that returns one returns it (#2860): the columns
+ * in `DISCORD_IMPORT_VIEW_FIELDS`, and nothing of the worker's lease, resume
+ * cursor or storage layout. Keep the two lists in step.
+ */
+export class DiscordImportResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({
+    enum: DISCORD_IMPORT_STATUS_VALUES,
+    description:
+      '`running` and `purging` are the two states the background worker advances; every other change is an admin action.',
+  })
+  status: DiscordImportStatus;
+
+  @ApiProperty({
+    enum: ['upload', 'bot'],
+    description:
+      '`upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server.',
+  })
+  source: DiscordImportSource;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Discord server name, for display only.',
+  })
+  guild_name: string | null;
+
+  @ApiProperty({
+    description:
+      "Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads.",
+  })
+  total_messages: number;
+
+  @ApiProperty()
+  imported_messages: number;
+
+  @ApiProperty()
+  messages_skipped: number;
+
+  @ApiProperty()
+  attachments_imported: number;
+
+  @ApiProperty({
+    type: [String],
+    description: 'The most recent warnings for the admin, at most 50.',
+  })
+  warnings: string[];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Why a failed import stopped.',
+  })
+  error: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.",
+  })
+  messages_after: string | null;
+
+  @ApiProperty({
+    description:
+      'Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished.',
+  })
+  purged_messages: number;
+}
+
+/** List and detail: the import, plus a bot import's progress in channel rows. */
+export class DiscordImportWithProgressResponseDto extends DiscordImportResponseDto {
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled.',
+  })
+  channels_total: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Of those, how many are finished (imported, or skipped because Discord no longer showed them to the bot). Null when `channels_total` is.',
+  })
+  channels_done: number | null;
 }

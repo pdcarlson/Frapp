@@ -317,10 +317,10 @@ export function ImportWizard({
       const createdId =
         importId ??
         (
-          (await createImport.mutateAsync({
+          await createImport.mutateAsync({
             consent_acknowledged: true,
             source,
-          })) as { id?: string } | undefined
+          })
         )?.id;
       if (!createdId) throw new Error("The API did not return an import id.");
       setImportId(createdId);
