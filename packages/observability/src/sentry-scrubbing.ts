@@ -904,7 +904,19 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     crumb: unknown,
   ): Record<string, unknown> | undefined {
     if (!crumb || typeof crumb !== 'object') return undefined;
-    const source = reduceTouchBreadcrumb(crumb) as Record<string, unknown>;
+    return allowlistBreadcrumb(
+      reduceTouchBreadcrumb(crumb) as Record<string, unknown>,
+    );
+  }
+
+  /**
+   * {@link scrubBreadcrumb}'s allowlist, over a crumb the touch rule has
+   * already rebuilt. Shared with {@link scrubRecordedBreadcrumb}, which needs
+   * the rebuilt crumb's `data` as well.
+   */
+  function allowlistBreadcrumb(
+    source: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
     const out: Record<string, unknown> = {};
     if (typeof source.timestamp === 'number') out.timestamp = source.timestamp;
     if (typeof source.type === 'string') out.type = redactFreeText(source.type);
@@ -1009,8 +1021,12 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    * built from that copy without passing `beforeSend`. So the send-time rule
    * in {@link scrubBreadcrumb} is applied here too: the same top-level
    * allowlist, the swept `message`, the rebuilt touch crumb. The one
-   * difference is `data`. At send time it is always dropped. Here it is kept
-   * only where the SDK reads it back after the hook:
+   * difference is `data`. At send time it is always dropped. Here a few
+   * fields survive, each one code or request metadata rather than anything a
+   * member typed. Some the SDK reads back after the hook: a request's origin,
+   * which its own filters match, and a screen change's `to`, which sets the
+   * native current screen. The rest place the crumb in a crash report: a
+   * request's method and status, the route left, the touched component.
    *
    *  - **an `http` crumb** (`xhr`, or `fetch` under `expo/fetch`) keeps
    *    {@link recordedHttpData}. Its URL is a search's query otherwise.
@@ -1020,29 +1036,39 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    *  - **everything else**, a `console` crumb's raw `arguments` among them,
    *    keeps none.
    *
-   * Returns `null`, which drops the crumb, when nothing survives. It is
-   * idempotent, so the send-time pass over a recorded crumb changes nothing
-   * but `data`.
+   * Returns `null`, which drops the crumb, when nothing survives or anything
+   * throws: fail closed, like the event hooks, rather than rely on the SDK
+   * dropping a crumb whose hook threw. It is idempotent, so the send-time
+   * pass over a recorded crumb changes nothing but `data`.
    */
   function scrubRecordedBreadcrumb(
     crumb: unknown,
   ): Record<string, unknown> | null {
-    const out = scrubBreadcrumb(crumb);
-    if (!out) return null;
-    const source = crumb as Record<string, unknown>;
-    const data =
-      source.data && typeof source.data === 'object'
-        ? (source.data as Record<string, unknown>)
-        : {};
-    const kept = isTouchBoundaryCrumb(source, data)
-      ? (reduceTouchBreadcrumb(source) as Record<string, unknown>).data
-      : source.type === 'http'
-        ? recordedHttpData(data)
-        : source.category === 'navigation'
-          ? recordedNavigationData(data)
-          : undefined;
-    if (kept !== undefined) out.data = kept;
-    return out;
+    try {
+      if (!crumb || typeof crumb !== 'object') return null;
+      const raw = crumb as Record<string, unknown>;
+      // `reduceTouchBreadcrumb` hands any other crumb back as it came, so a
+      // new object means the touch rule rebuilt it, `data` included.
+      const source = reduceTouchBreadcrumb(raw) as Record<string, unknown>;
+      const out = allowlistBreadcrumb(source);
+      if (!out) return null;
+      const data =
+        raw.data && typeof raw.data === 'object'
+          ? (raw.data as Record<string, unknown>)
+          : {};
+      const kept =
+        source !== raw
+          ? source.data
+          : raw.type === 'http'
+            ? recordedHttpData(data)
+            : raw.category === 'navigation'
+              ? recordedNavigationData(data)
+              : undefined;
+      if (kept !== undefined) out.data = kept;
+      return out;
+    } catch {
+      return null;
+    }
   }
 
   function scrubTags(

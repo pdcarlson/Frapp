@@ -8,8 +8,8 @@ import {
  * Client bindings pass {@link NO_PSEUDONYMS}: they hold no salt, so the
  * free-text sweep redacts identifiers rather than hashing them.
  *
- * `scrubRecordedBreadcrumb` is mobile's `beforeBreadcrumb` (#3104). It keeps
- * the little `data` the SDK reads back after that hook, so it is not the
+ * `scrubRecordedBreadcrumb` is mobile's `beforeBreadcrumb` (#3104). It keeps a
+ * few `data` fields that are code or request metadata, so it is not the
  * send-time breadcrumb rule, which drops all of it. The browser bindings have
  * no native scope to protect and leave it unwired.
  */

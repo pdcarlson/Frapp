@@ -1433,6 +1433,19 @@ describe("scrubRecordedBreadcrumb (#3104)", () => {
     }
   });
 
+  it("drops a crumb it cannot read rather than letting it through", () => {
+    const hostile = {
+      timestamp: 1_700_000_000,
+      category: "fetch",
+      type: "http",
+      get data(): never {
+        throw new Error(SEARCH_URL);
+      },
+    };
+
+    expect(record(hostile)).toBeNull();
+  });
+
   it("returns null for a crumb with nothing to keep", () => {
     expect(record(null)).toBeNull();
     expect(record("console")).toBeNull();
