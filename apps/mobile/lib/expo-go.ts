@@ -31,10 +31,11 @@ export function isExpoGo(): boolean {
  * export. It makes the intent legible at the one place a reader looks, and it
  * is simply true — neither remote push nor Stripe's native sheet has a web
  * target. It is **not** redundant for the reason sentence, though:
- * `pushUnavailableReason()` reads this guard to tell "no native target" apart
- * from a native module that threw in an installed build, which caches the
- * same `null`, so dropping the web clause would tell a web visitor to update
- * the app. `push.spec.ts` pins the web sentence.
+ * `pushUnavailableReason()` and `stripeUnavailableReason()` read this guard to
+ * tell "no native target" apart from a native module that threw in an
+ * installed build, which caches the same `null`, so dropping the web clause
+ * would tell a web visitor to update the app. `push.spec.ts` and
+ * `stripe.spec.ts` pin the web sentence.
  *
  * One predicate rather than two, because this one is genuinely shared: if what
  * counts as "no native target" ever changes, it must change for both, and a
