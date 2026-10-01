@@ -2535,3 +2535,18 @@ alter table public.chat_message_reports
   drop column if exists evidence_released_at,
   drop column if exists reported_attachments;
 ```
+
+## Rollback one DM per pair (20260930231000)
+
+* **Migration**: `20260930231000_chat_dm_one_channel_per_pair.sql`
+
+A CHECK on `chat_channels`, `chat_channels_dm_two_members`, and a partial unique index, `chat_channels_dm_pair_key` (#2788). No data is rewritten.
+
+**Revert the API code forward, and keep the migration file.** Revert the #2788 code on `main` and ship that, but keep `supabase/migrations/20260930231000_chat_dm_one_channel_per_pair.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API runs safely against the index. It looks the pair up, then inserts, so the losing call of a race gets the raw `23505` as a 500, and opening the DM again returns the one that won.
+
+**Keep the index unless it is itself the problem.** Dropping it lets two racing opens make two DMs for one pair again, and the members can end up in different threads. To remove both anyway, do it in a later forward migration, not by hand:
+
+```sql
+drop index if exists public.chat_channels_dm_pair_key;
+alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
+```

@@ -51,6 +51,7 @@ Chat is not a module — it is the spine of the app, and every other capability 
 ## Direct Messages
 
 - **1-on-1:** Initiated by selecting a member. Creates (or reuses) a DM-type channel between exactly two users. Chapter-scoped.
+  - **One per pair.** A chapter holds at most one DM for a pair of members, whichever of them opens it. The database enforces it (`chat_channels_dm_pair_key`, keyed on the two member ids rather than the channel's name, #2788). Two overlapping opens, such as a double tap or both members opening at once, return the same channel.
 - **Group DM:** User selects multiple members (up to 10). Creates a GROUP_DM-type channel. Chapter-scoped.
 - DMs appear in their own section of the channel list ("Direct messages" on web, `DIRECT` on mobile), not mixed with chapter channels, except that a DM the member pins moves up into Pinned beside pinned channels (§ Sidebar arrangement).
 - DMs are not role-gated; they are scoped by an explicit member list stored on the channel.
