@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
   MAX_UPLOAD_LABEL,
   inspectUploadFile,
@@ -226,31 +227,16 @@ export const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.
  * The sentence to show for a failed request.
  *
  * `@repo/hooks` mutations throw the API's error body, a plain object carrying
- * the `statusCode` and a `message`. A 4xx refusal's message is the API's reason
- * for a member to read. A 429's and a 5xx's are framework text
- * ("ThrottlerException: Too Many Requests", "Internal server error"), and a
- * thrown `Error` is a native networking failure or a parse error in platform
- * jargon, so each of those reads as the generic sentence.
+ * the `statusCode` and a `message`. A definitive refusal's message is the API's
+ * reason for a member to read, read by the same `definitiveRefusalMessage` the
+ * web composer uses, so one response reads the same on both (#2199). A 429's
+ * and a 5xx's are framework text ("ThrottlerException: Too Many Requests",
+ * "Internal server error"), and a thrown `Error` is a native networking failure
+ * or a parse error in platform jargon, so each of those reads as the generic
+ * sentence.
  */
 export function uploadFailureReason(err: unknown): string {
-  if (!err || typeof err !== "object" || err instanceof Error) {
-    return UPLOAD_FAILED;
-  }
-  const { statusCode, message } = err as {
-    statusCode?: unknown;
-    message?: unknown;
-  };
-  const refusal =
-    typeof statusCode === "number" &&
-    statusCode >= 400 &&
-    statusCode < 500 &&
-    statusCode !== 429;
-  if (!refusal) return UPLOAD_FAILED;
-  if (typeof message === "string" && message.length > 0) return message;
-  if (Array.isArray(message) && typeof message[0] === "string") {
-    return message[0];
-  }
-  return UPLOAD_FAILED;
+  return definitiveRefusalMessage(err) ?? UPLOAD_FAILED;
 }
 
 async function pickAndUploadImageUnguarded(

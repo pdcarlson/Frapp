@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  classifyChatError,
+  definitiveRefusalMessage,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -401,6 +403,42 @@ describe("editMessage", () => {
       title: "Couldn't edit message",
       description: "You can only edit your own messages",
     });
+  });
+
+  // A ValidationPipe 400 carries `message` as an array. `throwApiError` used to
+  // read strings only, so the member saw the fallback instead of the reason.
+  it("shows a validation refusal's reasons, not the fallback", async () => {
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: null,
+        error: {
+          statusCode: 400,
+          error: "Bad Request",
+          message: ["content must be shorter than or equal to 4000 characters"],
+        },
+        response: { status: 400 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      editMessage(ctx, {
+        channelId: "chan-1",
+        messageId: "msg-1",
+        content: "edited body",
+      }),
+    ).rejects.toThrow();
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't edit message",
+        description: "content must be shorter than or equal to 4000 characters",
+      }),
+    );
   });
 
   it("is a no-op with no userId, and never calls onError", async () => {
@@ -1700,5 +1738,118 @@ describe("memberFacingRefusal", () => {
     expect(memberFacingRefusal(moduleDisabledMessage("events"))).toBe(
       moduleDisabledMessage("events"),
     );
+  });
+});
+
+describe("classifyChatError", () => {
+  // A `@repo/hooks` mutation rethrows openapi-fetch's parsed body unchanged, so
+  // the status arrives on `statusCode` and nowhere else (#2199). Reading only
+  // `status` made every such refusal look transient.
+  it("reads the status off a rethrown error body", () => {
+    expect(
+      classifyChatError({
+        statusCode: 403,
+        error: "Forbidden",
+        message: "You do not have access to this channel",
+      }),
+    ).toEqual({
+      terminal: true,
+      status: 403,
+      message: "You do not have access to this channel",
+    });
+  });
+
+  it("joins a validation body's message array instead of dropping it", () => {
+    expect(
+      classifyChatError({
+        statusCode: 400,
+        error: "Bad Request",
+        message: ["filename must be a string", "content_type is not allowed"],
+      }),
+    ).toEqual({
+      terminal: true,
+      status: 400,
+      message: "filename must be a string, content_type is not allowed",
+    });
+  });
+
+  it("keeps a 5xx body transient", () => {
+    expect(
+      classifyChatError({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "Service Unavailable",
+      }),
+    ).toMatchObject({ terminal: false, status: 503 });
+  });
+
+  it("keeps reading the send path's wrapped Error by its response status", () => {
+    const wrapped = Object.assign(new Error("Channel not found"), {
+      response: { status: 404 },
+      context: { status: 404 },
+    });
+    expect(classifyChatError(wrapped)).toEqual({
+      terminal: true,
+      status: 404,
+      message: "Channel not found",
+    });
+  });
+
+  it("treats an Error with no status as transient", () => {
+    expect(classifyChatError(new TypeError("Failed to fetch"))).toEqual({
+      terminal: false,
+      status: undefined,
+      message: "Failed to fetch",
+    });
+  });
+});
+
+describe("definitiveRefusalMessage", () => {
+  it("gives a definitive refusal's own reason", () => {
+    expect(
+      definitiveRefusalMessage({
+        statusCode: 403,
+        message: "You do not have access to this channel",
+      }),
+    ).toBe("You do not have access to this channel");
+  });
+
+  it("is null for a 429, whose body is the throttler's framework text", () => {
+    expect(
+      definitiveRefusalMessage({
+        statusCode: 429,
+        message: "ThrottlerException: Too Many Requests",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["a 5xx", { statusCode: 500, message: "Internal server error" }],
+    ["a proxy 408", { statusCode: 408, message: "Request Timeout" }],
+    ["a body with no status", { message: "something" }],
+    ["a refusal with no message", { statusCode: 400, message: "" }],
+    ["a thrown Error, even with a status", Object.assign(new Error("Upload failed (413)"), { status: 413 })],
+    ["a text body openapi-fetch couldn't parse", "<html>Bad Gateway</html>"],
+    ["nothing", undefined],
+  ])("is null for %s", (_label, err) => {
+    expect(definitiveRefusalMessage(err)).toBeNull();
+  });
+
+  it("reads the reason off the openapi-fetch envelope too, as classifyChatError does", () => {
+    expect(
+      definitiveRefusalMessage({
+        error: { statusCode: 400, message: "File type not allowed" },
+        response: { status: 400 },
+      }),
+    ).toBe("File type not allowed");
+  });
+
+  it("gives the member the Polls-off sentence, as the send path does", () => {
+    expect(
+      definitiveRefusalMessage({
+        statusCode: 403,
+        message: moduleDisabledMessage("polls"),
+      }),
+    ).toBe(POLLS_OFF_COPY);
   });
 });
