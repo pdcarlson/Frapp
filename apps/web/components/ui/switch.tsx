@@ -41,7 +41,7 @@ const Switch = React.forwardRef<
     className={cn(
       "group peer inline-flex h-[30px] w-[50px] shrink-0 cursor-pointer items-center rounded-full border transition-colors",
       "enabled:data-[state=checked]:border-transparent enabled:data-[state=checked]:bg-primary",
-      "enabled:data-[state=unchecked]:border-input enabled:data-[state=unchecked]:bg-accent",
+      "enabled:data-[state=unchecked]:border-input enabled:data-[state=unchecked]:bg-popover",
       FOCUS_RING_OFFSET,
       "disabled:cursor-not-allowed disabled:border-border disabled:bg-card",
       /*
@@ -66,9 +66,9 @@ const Switch = React.forwardRef<
        *     casualty: a composited one is no longer `--background` at all, so
        *     the measurement stops being the one `focus.ts` reasons about.
        *   - It flattens the very cue this variant exists to protect: checked
-       *     `--primary` against the unchecked `bg-accent` track clears 3:1 on
+       *     `--primary` against the unchecked `bg-popover` track clears 3:1 on
        *     all 19 seeds undimmed (the §8 fill floor holds it against
-       *     `--popover`, the same `#2A2621`, in palettes written since;
+       *     `--popover`, in palettes written since;
        *     `accent-engine.md` §4 covers stored ones), and a 50%
        *     dim composited over `--background` drops 16 of them under it
        *     (`#8B0000` 3.83 → 1.86, `#CC0000` 3.82 → 1.81; measured

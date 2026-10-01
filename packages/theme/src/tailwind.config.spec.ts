@@ -552,10 +552,11 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     // caught a single mis-typed value. These are the semantic families the
     // shared preset is responsible for on both surfaces.
     const css = await compile(
-      "bg-card text-foreground border-border bg-secondary text-muted-foreground bg-destructive bg-success bg-accent bg-popover ring-ring",
+      "bg-card bg-card-hover text-foreground border-border bg-secondary text-muted-foreground bg-destructive bg-success bg-accent bg-popover ring-ring",
     );
     for (const [cls, token] of [
       ["bg-card", "--card"],
+      ["bg-card-hover", "--card-hover"],
       ["text-foreground", "--foreground"],
       ["border-border", "--border"],
       ["bg-secondary", "--secondary"],

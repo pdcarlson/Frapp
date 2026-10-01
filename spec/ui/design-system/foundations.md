@@ -28,7 +28,7 @@ Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor
 
 **The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
 
-- `--surface-1` is now `#1A1A1A`, stated at the time as the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B would sit flush on the raised surface instead of on a warmer neighbour. **That rationale did not survive measurement at the time:** the committed mark's field measured `#151515` and its gold `#DDA220`, so `#1A1A1A` was close to but not the mark's field, and the emblem did not sit flush. [#2153](https://github.com/pdcarlson/Frapp/issues/2153) closed the gap by re-exporting the mark at the spec'd pair rather than by moving this rung, so the rationale now holds and the value never changed — see [`../web-greenfield/tokens.md`](../web-greenfield/tokens.md) L-08 for the measurements and the history.
+- `--surface-1` is now `#1A1A1A`, stated at the time as the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B would sit flush on the raised surface instead of on a warmer neighbour. **That rationale did not survive measurement at the time:** the committed mark's field measured `#151515` and its gold `#DDA220`, so `#1A1A1A` was close to but not the mark's field, and the emblem did not sit flush. [#2153](https://github.com/pdcarlson/Frapp/issues/2153) closed the gap by re-exporting the mark at the spec'd pair rather than by moving this rung, so the rationale now holds and the value never changed — see [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-08 for the measurements and the history.
 - Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
 - **Three more pairs are sub-AA but were already sub-AA before this ladder**, and are not this change's doing: `--info` on `--popover` (4.220 → 4.010), `--mention` on `--card` (4.383 → 4.238) and `--mention` on `--popover` (4.040 → 3.839). They are named here so the next ladder change is not reasoned from an inflated cost, and so nobody tries to "restore" contrast by darkening the ladder to fix failures that predate it.
 
@@ -167,7 +167,7 @@ The six roles above are the **product** scale and bind every product surface. A 
 
 **The one place a role crosses over.** On phone a pricing figure takes `--text-hero` (40 / 44) rather than `--text-display-lg` (32 / 37) — capped at the H1's size, so a price never outweighs it, but not shrunk to the section-heading step either. That is the System sheet's rule ([`../landing/reference/canvas/System.dc.html`](../landing/reference/canvas/System.dc.html)) and it is the only sanctioned use of `--text-hero` outside the hero H1. Desktop is unaffected: there the figures are `--text-display-lg` and the H1 is already the larger role.
 
-Type inside the landing's product frames is transcribed from the design-system and web-greenfield boards and is deliberately **not** on either scale. Do not "correct" it.
+Type inside the landing's product frames is transcribed from the design-system and web framework boards and is deliberately **not** on either scale. Do not "correct" it.
 
 ### Type tokens
 
@@ -196,7 +196,7 @@ properties above) with a **literal** ratio — `1.15`, `1.2`, `1.3`, `1.3`, `1.3
 utilities landed rather than derived from anything here. So a screen written against this section and
 a screen written against `text-title` can disagree, with nothing to arbitrate. Either promote the
 five into this table as real tokens, or record here that the non-body roles take a ratio owned at the
-utility layer. Tracked as L-09 in [`../web-greenfield/tokens.md`](../web-greenfield/tokens.md).
+utility layer. Tracked as L-09 in [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md).
 
 ---
 
@@ -319,6 +319,6 @@ what it would have to be legible against.
 
 **The framework board takes no position on this.** Option `3a`'s token sheet does not mention
 selection, so this is an extension beyond what the board draws rather than a transcription of it;
-[`../web-greenfield/tokens.md`](../web-greenfield/tokens.md) records that as the lane note.
+[`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) records that as the lane note.
 `::-moz-selection` is deliberately not duplicated: Firefox has supported unprefixed `::selection`
 since 62, and an invalid prefixed selector in the same rule list would drop the rule in every engine.

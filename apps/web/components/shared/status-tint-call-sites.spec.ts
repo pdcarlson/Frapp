@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { productSourceFiles, REPO, withoutComments } from "@/tests/source-scan";
 
 /**
  * #2376: no Next surface draws a semantic status fill as an alpha utility, and
@@ -22,56 +23,13 @@ import { describe, expect, it } from "vitest";
  * a bolder border with nothing drawn in its colour on top of it.
  */
 
-const REPO = join(__dirname, "..", "..", "..", "..");
-/** Where product code lives in each Next app; `tests/` is harness code. */
-const ROOTS = [
-  "apps/web/app",
-  "apps/web/components",
-  "apps/web/hooks",
-  "apps/web/lib",
-  "apps/landing/app",
-  "apps/landing/components",
-  "apps/landing/lib",
-];
-const SOURCE = /\.tsx?$/;
-const SPEC = /\.(spec|test)\.tsx?$/;
+/** Roots, walker and comment stripping: `tests/source-scan.ts`, shared with
+ * `elevation-call-sites.spec.ts` so the two bans cannot scan different trees. */
+const sourceFiles = () => productSourceFiles();
 
 /** A semantic status family's background, followed by an opacity modifier. */
 export const ALPHA_STATUS_FILL =
   /(?<![\w-])bg-(success|warning|destructive|info)\/[\w.[\]%]+/g;
-
-/**
- * `withFileTypes`, as in `lib/date-call-sites.spec.ts`, so a dangling symlink
- * is skipped rather than crashing the suite. A root that stops existing throws
- * instead of being skipped, because a scan of nothing passes forever.
- */
-function walk(dir: string): string[] {
-  const found: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name === ".next") continue;
-      found.push(...walk(path));
-    } else if (entry.isFile() && SOURCE.test(entry.name)) {
-      if (!SPEC.test(entry.name)) found.push(path);
-    }
-  }
-  return found;
-}
-
-function sourceFiles(): string[] {
-  return ROOTS.flatMap((root) => walk(join(REPO, root))).sort();
-}
-
-/**
- * Comments are dropped before matching: prose may name the banned shape to
- * explain why a line does not use it (the landing's danger chip does).
- */
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
-}
 
 /** Every string literal in a source, each a candidate class list. */
 const STRING_LITERAL = /"([^"\\\n]*)"|'([^'\\\n]*)'|`([^`\\]*)`/g;

@@ -113,7 +113,7 @@ describe("the Accent tab says what the accent actually does", () => {
   });
 
   it("carries no em dash, because it is greenfield product copy", () => {
-    // `spec/ui/web-greenfield/README.md` §2.
+    // `spec/ui/web-dashboard/README.md` § No em dashes in product copy.
     expect(description).not.toContain("\u2014");
   });
 });
