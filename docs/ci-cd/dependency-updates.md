@@ -151,14 +151,13 @@ ranges stay updatable even when they look RN-adjacent — `@react-navigation/nat
 
 That `check-types` safety net is the reason JS-only libraries stay updatable, and it **does not
 cover a package that ships native code**: `@sentry/react-native` and `@stripe/stripe-react-native`
-both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and neither is
-on the ignore list as a family — so a bad bump on either fails as a native compile with no CI
-signal, not as a type error. Both are also deliberately held *ahead* of the versions the SDK
-specifies. The one exception so far is Stripe's 0.78 line, which broke the iOS build one step
-earlier, at `pod install`, and is ignored from `0.78.0` up
-([held on Stripe's Swift Package path](#stripestripe-react-native-078-is-held-on-stripes-swift-package-path)). Whether
-that exemption is right, and on what grounds, is #2336; it is an open question, not a decision this
-rule has made.
+both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and Dependabot
+updates both — so a bad bump on either fails as a native compile with no CI signal, not as a type
+error. They are also deliberately held *ahead* of the versions the SDK specifies. Whether that
+exemption from the ignore list is right, and on what grounds, is #2336; it is an open question, not
+a decision this rule has made. The one entry either has is a narrow hold on Stripe's 0.78 line,
+which broke the iOS build one step earlier, at `pod install`
+([held on Stripe's Swift Package path](#stripestripe-react-native-078-is-held-on-stripes-swift-package-path)).
 
 **For the `expo-*` client packages, apply (b) mechanically, not as a judgement:** *every* `expo-*`
 entry in `apps/mobile/package.json` belongs in the list, whatever the package looks like from the
@@ -407,7 +406,7 @@ majors-only hold would not have stopped it. Like every ignore entry, it also sup
 security PRs for 0.78 and later. `check:npm-audit` fails CI on a high or critical advisory there,
 and below that nothing surfaces it.
 
-The ignore stops Dependabot, not a person, so the required `mobile-validate` job now checks the
+The ignore stops Dependabot, not a person, so the required `mobile-validate` job also checks the
 same thing: `npm run check:mobile-native-declarations` fails when any linked iOS pod declares a
 Swift package (`spm_dependency`, which 0.78's `stripe_spm.rb` calls) while the introspected Podfile
 properties don't set `ios.useFrameworks` to `dynamic`. That catches a hand bump, a removed ignore

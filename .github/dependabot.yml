@@ -430,9 +430,9 @@ updates:
       # for 0.78 and later; `check:npm-audit` catches a high or critical
       # advisory there, and below that nothing does.
       #
-      # This entry stops Dependabot, not a person: `check:mobile-native-
-      # declarations` (mobile-validate) fails any linked pod that declares a
-      # Swift package while pods link statically.
+      # This entry stops Dependabot, not a person. For the rest,
+      # `check:mobile-native-declarations` (mobile-validate) fails any linked
+      # pod that declares a Swift package while pods link statically.
       #
       # Write-up: docs/ci-cd/dependency-updates.md
       # § `@stripe/stripe-react-native` 0.78 is held on Stripe's Swift

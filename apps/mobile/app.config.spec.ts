@@ -1111,8 +1111,9 @@ describe("assertProductionAskDisabled", () => {
  * use needs, and it can't read native code fetched from elsewhere: podspec
  * dependencies (sentry-cocoa, SDWebImage, ReachabilitySwift, the Stripe iOS
  * SDK's pods, which stripe-react-native 0.77 takes from CocoaPods,
- * react-native's third-party pods, hermes-engine). The audit recorded in the array test below covers
- * sentry-cocoa and SDWebImage; the rest are unaudited (#3030).
+ * react-native's third-party pods, hermes-engine). The audit recorded in the
+ * array test below covers sentry-cocoa and SDWebImage; the rest are unaudited
+ * (#3030).
  */
 describe("iOS privacy manifest (#2294)", () => {
   function resolved() {
