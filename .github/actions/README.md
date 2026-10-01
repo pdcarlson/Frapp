@@ -40,8 +40,9 @@ action file is not on disk yet when the runner resolves it.
   lifecycle scripts beside a credential).
   `_deploy.yml` and `_mobile-build.yml` are outside that rule: each hand-written `npm ci`
   runs in a job that holds its environment's secrets, before any step that uses them
-  (`_deploy.yml`'s Infisical injection, `_mobile-build.yml`'s `EXPO_TOKEN` steps), and #2824
-  tracks isolating `_deploy.yml`'s.
+  (`_deploy.yml`'s Infisical injection, `_mobile-build.yml`'s `EXPO_TOKEN` steps). #2824
+  tracks isolating `_deploy.yml`'s, and #3125 `_mobile-build.yml`'s. Only the job that
+  checks out another commit is exempt; any other job in either file follows the rule.
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`

@@ -62,11 +62,14 @@ name: Mobile build
 # tree), and the steps that judge the result are inline shell. `npm ci` and the
 # eas-cli install run before any step that names `EXPO_TOKEN`, and only the
 # steps that call `eas` name it, so no install script runs with it in its
-# environment. Honest limits: an install script can still leave something a
-# later step runs (the one `_deploy.yml` states), and eas-cli's own
-# dependencies are resolved at install time, not from a lockfile (see the
-# install step). The deployed commit is an ancestor of `main` with green CI,
-# so it is already-reviewed code.
+# environment; the eas-cli install runs no install scripts at all. Honest
+# limits: an install script from `npm ci` can still leave something a later
+# step runs (the one `_deploy.yml` states), and, on a hosted runner with
+# sudo, read a secret the job references from the runner's memory; a later
+# `eas` step runs eas-cli's dependencies with the token, and those are
+# resolved at install time, not from a lockfile (#3118). Isolating the
+# install from the token is #3125. The deployed commit is an ancestor
+# of `main` with green CI, so its own tree is already-reviewed code.
 #
 # ── Failure ─────────────────────────────────────────────────────────────────
 # Production is live and tagged before this starts, so nothing here rolls
@@ -96,9 +99,9 @@ permissions:
 jobs:
   # Beside `build`, not before it: a publish takes under a minute, and a
   # failed one shouldn't hold up the store build. It reds its own row.
-  # `GITHUB_TOKEN` may start a `workflow_dispatch` run (the one event it can),
-  # and the download action trusts a dispatched publish whose commit is on
-  # `main`.
+  # A `workflow_dispatch` is one of the few events a `GITHUB_TOKEN` may start
+  # a run with, and the download action trusts a dispatched publish whose
+  # commit is on `main`.
   snapshot:
     name: Publish the migration snapshot now (this run stays open for the store build)
     runs-on: ubuntu-latest
@@ -202,13 +205,18 @@ jobs:
       # It is not a lockfile: npm can still pick a different pre-cutoff
       # version when one is deprecated or unpublished later, or when the
       # runner's Node or npm changes, and nothing checks integrity (#3118).
+      # `--ignore-scripts`: those dependencies' install scripts would run
+      # unreviewed, and none is needed (on 24.8.0's tree, checked 2026-10-01,
+      # only dtrace-provider's, a no-op on Linux that bunyan loads optionally,
+      # and protobufjs's, which only prints). eas-cli has none of its own, and
+      # npm still links the `eas` bin.
       # 24.8.0 was published 2026-09-24; it is the version `mobile.md` § 6.6's
       # non-interactive table and this file's flags (`--no-wait`, `--json`,
       # `build:view`, `--id`, `--no-auto-testflight-setup`) were read from.
       # Move the two together, deliberately, re-reading `eas build --help`
       # and `eas submit --help` (the store build's suite pins the pair).
       - name: Install EAS CLI
-        run: npm install --global --before=2026-10-01 eas-cli@24.8.0
+        run: npm install --global --ignore-scripts --before=2026-10-01 eas-cli@24.8.0
 
       # eas-cli uploads the working tree, uncommitted changes included, unless
       # `requireCommit` is set (it isn't). So the tree must be exactly the SHA:
@@ -244,18 +252,49 @@ jobs:
           DEPLOY_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
-          # A failed read fails the step (set -e); only the filter may find nothing.
-          TAGS="$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
-          LATEST="$(printf '%s\n' "$TAGS" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+          # `scripts/ci/lib/release-tag.mjs`'s rule, the one `release.yml` bumps
+          # from: the top `v*` tag by version, which must be a plain `vX.Y.Z`.
+          # Written again here because this job runs the deployed tree, not
+          # the lib's; `deploy-production-mobile.test.mjs` runs both on the
+          # same tags.
+          #
+          # Each read: three attempts, 1s then 5s apart, and no retry of a 4xx
+          # other than 429 (`download-migration-snapshot`'s `gh_api`, whose
+          # header says why). A read that still fails fails the step, which
+          # the record job keeps apart from a moved tag.
+          GH_ERR="$RUNNER_TEMP/tag-check-gh-stderr.txt"
+          gh_api() {
+            local attempt out
+            for attempt in 1 2 3; do
+              if out="$(gh api "$@" 2>"$GH_ERR")"; then
+                printf '%s\n' "$out"
+                return 0
+              fi
+              cat "$GH_ERR" >&2
+              if grep -Eq '\(HTTP 4[0-9][0-9]\)' "$GH_ERR" && ! grep -q '(HTTP 429)' "$GH_ERR"; then
+                return 1
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                sleep $(( attempt == 1 ? 1 : 5 ))
+              fi
+            done
+            return 1
+          }
+          TAGS="$(gh_api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
+          LATEST="$(printf '%s\n' "$TAGS" | sed '/^$/d' | sort -V | tail -n1)"
           if [ -z "$LATEST" ]; then
-            echo "::error::No vX.Y.Z tag exists, so nothing says what production serves. Refusing to go on."
+            echo "::error::No v* tag exists, so nothing says what production serves. Refusing to go on."
             exit 1
           fi
-          REF="$(gh api "repos/$REPO/git/ref/tags/$LATEST" --jq '.object.type + " " + .object.sha')"
+          if ! [[ "$LATEST" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The latest v* tag, $LATEST, is not a vX.Y.Z release, so nothing says what production serves (release-tag.mjs refuses it too). Refusing to go on."
+            exit 1
+          fi
+          REF="$(gh_api "repos/$REPO/git/ref/tags/$LATEST" --jq '.object.type + " " + .object.sha')"
           TYPE="${REF%% *}"
           OBJECT="${REF#* }"
           if [ "$TYPE" = "tag" ]; then
-            OBJECT="$(gh api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
+            OBJECT="$(gh_api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
           fi
           if [ "$OBJECT" != "$DEPLOY_SHA" ]; then
             # Said apart from a failed read, which also fails this step: the
@@ -328,8 +367,9 @@ jobs:
       # Poll every started build until each one ends or the deadline passes.
       # `eas build:view --json` is one read, held to READ_TIMEOUT_SECONDS
       # because eas-cli's client sets no request timeout of its own; a read
-      # that fails or stalls is retried on the next round, and a build still
-      # unread at the deadline is reported by id. The deadline is this
+      # that fails or stalls is logged with its cause and retried on the next
+      # round, and a build still unread at the deadline is reported by id,
+      # with what its last read said. The deadline is this
       # script's, under the step's timeout with room for a last stalled read,
       # so the list always goes out. A build is handed to its upload only when
       # EAS reports it FINISHED from the shipped commit.
@@ -353,12 +393,32 @@ jobs:
           fi
           DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
           TERMINAL='(.status == "FINISHED" or .status == "ERRORED" or .status == "CANCELED")'
+          READ_ERR="$RUNNER_TEMP/eas-build-view-stderr.txt"
+          # Why each build's latest read failed. Logged, never put in an
+          # output: a job output carrying a masked value is dropped.
+          declare -A WHY=()
           while :; do
             BUILDS='[]'
             for ID in $IDS; do
-              ONE="$(timeout "$READ_TIMEOUT_SECONDS" eas build:view "$ID" --json 2>/dev/null \
-                | jq -c '{id, platform, status, appVersion, appBuildVersion, gitCommitHash}' 2>/dev/null || true)"
-              [ -n "$ONE" ] || ONE="$(jq -cn --arg id "$ID" '{id: $id, status: "UNREAD"}')"
+              ONE=""
+              STATUS=0
+              VIEW="$(timeout "$READ_TIMEOUT_SECONDS" eas build:view "$ID" --json 2>"$READ_ERR")" || STATUS=$?
+              if [ "$STATUS" -eq 0 ]; then
+                ONE="$(jq -c '{id, platform, status, appVersion, appBuildVersion, gitCommitHash}' <<< "$VIEW" 2>/dev/null || true)"
+              fi
+              if [ -n "$ONE" ]; then
+                unset "WHY[$ID]"
+              else
+                if [ "$STATUS" -eq 124 ]; then
+                  WHY[$ID]="no answer within ${READ_TIMEOUT_SECONDS}s"
+                elif [ "$STATUS" -eq 0 ]; then
+                  WHY[$ID]="its output was not a build's JSON"
+                else
+                  WHY[$ID]="exit $STATUS: $(tail -n 3 "$READ_ERR" | tr '\n' ' ')"
+                fi
+                echo "Couldn't read $ID this round (${WHY[$ID]}); trying again next round."
+                ONE="$(jq -cn --arg id "$ID" '{id: $id, status: "UNREAD"}')"
+              fi
               BUILDS="$(jq -c --argjson one "$ONE" '. + [$one]' <<< "$BUILDS")"
             done
             if [ "$(jq "map(select($TERMINAL | not)) | length" <<< "$BUILDS")" -eq 0 ]; then break; fi
@@ -377,6 +437,11 @@ jobs:
           PENDING="$(jq -r "map(select($TERMINAL | not) | \"\(.id) \(.status)\") | join(\", \")" <<< "$BUILDS")"
           if [ -n "$PENDING" ]; then
             echo "::error::Still not finished after $DEADLINE_MINUTES minutes: $PENDING. They may finish on EAS later; the record job's summary says how to upload one by hand."
+            # An UNREAD build may be one EAS can't be asked about at all (a
+            # revoked EXPO_TOKEN, say), not a slow one: say what the read said.
+            for ID in "${!WHY[@]}"; do
+              echo "::error::The last read of $ID failed: ${WHY[$ID]}"
+            done
             FAILED=1
           fi
           ENDED="$(jq -r 'map(select(.status == "ERRORED" or .status == "CANCELED") | "\(.platform) \(.id) \(.status)") | join(", ")' <<< "$BUILDS")"
@@ -403,18 +468,49 @@ jobs:
           DEPLOY_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
-          # A failed read fails the step (set -e); only the filter may find nothing.
-          TAGS="$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
-          LATEST="$(printf '%s\n' "$TAGS" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+          # `scripts/ci/lib/release-tag.mjs`'s rule, the one `release.yml` bumps
+          # from: the top `v*` tag by version, which must be a plain `vX.Y.Z`.
+          # Written again here because this job runs the deployed tree, not
+          # the lib's; `deploy-production-mobile.test.mjs` runs both on the
+          # same tags.
+          #
+          # Each read: three attempts, 1s then 5s apart, and no retry of a 4xx
+          # other than 429 (`download-migration-snapshot`'s `gh_api`, whose
+          # header says why). A read that still fails fails the step, which
+          # the record job keeps apart from a moved tag.
+          GH_ERR="$RUNNER_TEMP/tag-check-gh-stderr.txt"
+          gh_api() {
+            local attempt out
+            for attempt in 1 2 3; do
+              if out="$(gh api "$@" 2>"$GH_ERR")"; then
+                printf '%s\n' "$out"
+                return 0
+              fi
+              cat "$GH_ERR" >&2
+              if grep -Eq '\(HTTP 4[0-9][0-9]\)' "$GH_ERR" && ! grep -q '(HTTP 429)' "$GH_ERR"; then
+                return 1
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                sleep $(( attempt == 1 ? 1 : 5 ))
+              fi
+            done
+            return 1
+          }
+          TAGS="$(gh_api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
+          LATEST="$(printf '%s\n' "$TAGS" | sed '/^$/d' | sort -V | tail -n1)"
           if [ -z "$LATEST" ]; then
-            echo "::error::No vX.Y.Z tag exists, so nothing says what production serves. Refusing to go on."
+            echo "::error::No v* tag exists, so nothing says what production serves. Refusing to go on."
             exit 1
           fi
-          REF="$(gh api "repos/$REPO/git/ref/tags/$LATEST" --jq '.object.type + " " + .object.sha')"
+          if ! [[ "$LATEST" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The latest v* tag, $LATEST, is not a vX.Y.Z release, so nothing says what production serves (release-tag.mjs refuses it too). Refusing to go on."
+            exit 1
+          fi
+          REF="$(gh_api "repos/$REPO/git/ref/tags/$LATEST" --jq '.object.type + " " + .object.sha')"
           TYPE="${REF%% *}"
           OBJECT="${REF#* }"
           if [ "$TYPE" = "tag" ]; then
-            OBJECT="$(gh api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
+            OBJECT="$(gh_api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
           fi
           if [ "$OBJECT" != "$DEPLOY_SHA" ]; then
             # Said apart from a failed read, which also fails this step: the

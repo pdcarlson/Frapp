@@ -301,6 +301,23 @@ describe("node-setup call sites", () => {
     assert.deepEqual(offenders, [], "install through ./.github/actions/node-setup's `install:` input");
   });
 
+  // An exception covers the job that moved the tree, not the whole file: a job
+  // beside it on the trusted ref (`_mobile-build.yml`'s `record` and
+  // `snapshot`, which go on to hold the base-sync App token and `actions:
+  // write`) installs through node-setup like any other.
+  it("in an exception file, only a job on another commit hand-writes the install or setup-node", () => {
+    const offenders = EXCEPTIONS.flatMap((file) => {
+      const text = readFileSync(join(WORKFLOW_DIR, file), "utf8");
+      // As in the exception test above: a path-limited overlay leaves
+      // `.github/actions` where it was, so it doesn't make a job an exception.
+      const withoutOverlays = text.replace(/^.*\bgit\b.*\bcheckout\b.*\s--(?:\s.*)?$/gm, "");
+      return workspaceTrust(withoutOverlays, (line) => runsInstall(line) || SETUP_NODE_RE.test(line))
+        .filter((call) => call.state !== "untrusted")
+        .map((call) => `${file}:${call.line}`);
+    });
+    assert.deepEqual(offenders, [], "set up Node and install through ./.github/actions/node-setup in a trusted-ref job");
+  });
+
   /** `{ where, install, holdsSecrets }` for every node-setup call. */
   function calls() {
     const secretCallers = [];
@@ -374,7 +391,8 @@ describe("node-setup call sites", () => {
   // and quota checks) run dependency-free scripts on purpose, so none of them
   // may switch to an installing mode. `_deploy.yml` and `_mobile-build.yml`
   // install before any step uses their secrets (the Infisical injection, the
-  // EXPO_TOKEN steps), and are hand-written, outside this rule.
+  // EXPO_TOKEN steps), and are hand-written, outside this rule; #2824 and
+  // #3125 track isolating them.
   it("no job holding a secret installs through it", () => {
     const offenders = calls()
       .filter((c) => c.holdsSecrets && c.install !== "none")

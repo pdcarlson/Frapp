@@ -15,7 +15,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ import {
   workflowJobs,
   workflowSteps,
 } from "./helpers/workflow-yaml.mjs";
+import { latestReleaseTag } from "../lib/release-tag.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const CALLER = join(REPO_ROOT, ".github", "workflows", "deploy-production.yml");
@@ -221,14 +222,61 @@ describe("unticked, a run is what it was", () => {
       .split("\n")
       .filter((l) => !/^\s*#/.test(l));
     const reads = text.filter((l) => /inputs\.mobile_build|needs\.mobile\b/.test(l)).map((l) => l.trim());
+    // The third read is the summary's, for one message on a failed tag, run below.
     assert.deepEqual(reads, [
       `if: ${jobOf(CALLER, "mobile").if}`,
       "platform: ${{ inputs.mobile_build }}",
+      "MOBILE_BUILD: ${{ inputs.mobile_build }}",
     ]);
   });
 
   it("the summary job's inputs are unchanged, so its report and alert are too", () => {
     assert.equal(jobOf(CALLER, "deploy-outcome").keys.get("needs"), "[validate, deploy, release]");
+  });
+
+  // A failed tag skips the store build (`mobile` needs `release`), and the
+  // Release workflow, the retry the summary names, never builds. So a run
+  // that asked for one says so, and names the retry that keeps it.
+  describe("the summary, when the tag failed", () => {
+    const step = () => stepNamed(CALLER, "deploy-outcome", "Summarise what actually happened");
+    function run(mobileBuild, releaseResult = "failure") {
+      const dir = mkdtempSync(join(tmpdir(), "mobile-summary-"));
+      const summaryFile = join(dir, "summary.md");
+      writeFileSync(summaryFile, "");
+      const result = runStep(step(), {
+        cwd: dir,
+        env: {
+          GITHUB_STEP_SUMMARY: summaryFile,
+          SHA,
+          SCOPE: "full",
+          DRY_RUN: "false",
+          DEPLOY_RESULT: "success",
+          RELEASE_RESULT: releaseResult,
+          RESOLVED: "false",
+          ALERT_OUTCOME: "",
+          MOBILE_BUILD: mobileBuild,
+        },
+      });
+      rmSync(dir, { recursive: true, force: true });
+      return result;
+    }
+
+    it("reads the input only through its env", () => {
+      assert.equal(step().env.get("MOBILE_BUILD"), "${{ inputs.mobile_build }}");
+    });
+
+    it("names the skipped store build, and the retry that keeps it, only when one was asked for", () => {
+      const none = run("none");
+      assert.equal(none.status, 1);
+      assert.match(none.stdout, /Re-run the 'Release' workflow manually with sha=/);
+      assert.doesNotMatch(none.stdout, /store build/, "unticked, the message is what it was");
+      for (const platform of ["ios", "android", "all"]) {
+        const asked = run(platform);
+        assert.equal(asked.status, 1, platform);
+        assert.match(asked.stdout, new RegExp(`asked for a store build \\(${platform}\\).*Re-run failed jobs on this run`), platform);
+      }
+      assert.equal(run("ios", "success").status, 0, "a tagged ship says nothing about the store build here");
+    });
   });
 
   // The approval count. Every job that names `production` costs an Approve
@@ -453,14 +501,19 @@ describe("the latest-tag check, before the builds and again before the uploads",
   /**
    * Runs the check against a stand-in `gh`: `tags` maps each tag to the
    * commit it names; an annotated tag is served as a tag object, the way
-   * release.yml mints them.
+   * release.yml mints them. `fail` makes the first `times` calls fail with
+   * HTTP `status`, as gh reports it on stderr. `sleep` is a stand-in that
+   * records each back-off, so a retry costs the suite nothing.
    */
-  function run({ tags, sha = SHA, failApi = false }) {
+  function run({ tags, sha = SHA, fail = null }) {
     const objects = Object.entries(tags).map(([name, commit]) => `${name} ${commit}`).join("\n");
     const { dir, path } = withStub(
       "gh",
       [
-        failApi ? "echo 'HTTP 502' >&2; exit 1" : "",
+        'state="$(dirname "$0")/.."',
+        'n="$(cat "$state/calls" 2>/dev/null || echo 0)"',
+        'echo "$((n + 1))" > "$state/calls"',
+        fail ? `if [ "$n" -lt ${fail.times} ]; then echo 'gh: Failed (HTTP ${fail.status})' >&2; exit 1; fi` : "",
         'path="$2"',
         'case "$path" in',
         // In ref order, as the API returns them: lexical, so v0.10.0 comes
@@ -472,13 +525,18 @@ describe("the latest-tag check, before the builds and again before the uploads",
         "esac",
       ].join("\n"),
     );
+    writeFileSync(join(dir, "bin", "sleep"), '#!/usr/bin/env bash\necho "$1" >> "$(dirname "$0")/../sleeps"\n');
+    chmodSync(join(dir, "bin", "sleep"), 0o755);
     const output = join(dir, "output");
     writeFileSync(output, "");
     const result = runStep(stepNamed(CALLED, "build", TAG_STEPS.build), {
       cwd: dir,
-      env: { PATH: path, GH_TOKEN: "t", REPO: "o/r", DEPLOY_SHA: sha, GITHUB_OUTPUT: output },
+      env: { PATH: path, GH_TOKEN: "t", REPO: "o/r", DEPLOY_SHA: sha, GITHUB_OUTPUT: output, RUNNER_TEMP: dir },
     });
     result.outputs = readOutputs(output);
+    const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean) : []);
+    result.calls = Number(read("calls")[0] ?? 0);
+    result.sleeps = read("sleeps");
     rmSync(dir, { recursive: true, force: true });
     return result;
   }
@@ -501,15 +559,76 @@ describe("the latest-tag check, before the builds and again before the uploads",
     assert.equal(run({ tags: { "v0.9.0": SHA } }).outputs.moved, undefined);
   });
 
-  it("refuses with no version tag, ignores other v-tags, and fails on an API error rather than calling it untagged", () => {
+  it("refuses with no v* tag, or a top one that isn't a release, and neither is a moved production", () => {
     const none = run({ tags: {} });
     assert.equal(none.status, 1);
-    assert.match(none.stdout, /No vX\.Y\.Z tag exists/);
-    assert.equal(run({ tags: { "v0.9.0": SHA, "v2-rc": OLD } }).status, 0);
-    const down = run({ tags: { "v0.9.0": SHA }, failApi: true });
+    assert.match(none.stdout, /No v\* tag exists/);
+    // A hand-pushed tag above the release: release.yml would bump from it,
+    // so stepping past it would disagree with the next release.
+    const rc = run({ tags: { "v0.9.0": SHA, "v0.10.0-rc1": OLD } });
+    assert.equal(rc.status, 1);
+    assert.match(rc.stdout, /The latest v\* tag, v0\.10\.0-rc1, is not a vX\.Y\.Z release/);
+    for (const result of [none, rc]) assert.equal(result.outputs.moved, undefined);
+  });
+
+  it("names the same tag as release-tag.mjs, and refuses where it does", () => {
+    const cases = [
+      [],
+      ["v0.9.0"],
+      ["v0.9.0", "v0.10.0"],
+      ["v1.0.0", "v0.10.0", "v0.9.0"],
+      ["v1.0.9", "v1.0.10"],
+      ["v1.9.0", "v1.10.0-rc1"],
+      ["v1.10.0", "v1.10.0-rc1"],
+      ["v0.9.0", "v2-rc"],
+      ["v1.2.3", "v1.2.3.4"],
+      ["v0.9.0", "very-old"],
+    ];
+    const dir = mkdtempSync(join(tmpdir(), "mobile-tags-"));
+    const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+    try {
+      git(["init", "-q"]);
+      git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "seed"]);
+      for (const tags of cases) {
+        for (const t of git(["tag", "--list"]).split("\n").filter(Boolean)) git(["tag", "-d", t]);
+        for (const t of tags) git(["tag", t]);
+        const lib = latestReleaseTag({ git });
+        const shell = run({ tags: Object.fromEntries(tags.map((t) => [t, SHA])) });
+        const label = `[${tags.join(", ")}]: ${shell.stdout}${shell.stderr}`;
+        if (lib.ok) {
+          assert.equal(shell.status, 0, label);
+          assert.ok(shell.stdout.includes(`is the latest tag (${lib.tag})`), label);
+        } else if (lib.tag === null) {
+          assert.equal(shell.status, 1, label);
+          assert.match(shell.stdout, /No v\* tag exists/, label);
+        } else {
+          assert.equal(shell.status, 1, label);
+          assert.ok(shell.stdout.includes(`The latest v* tag, ${lib.tag}, is not a vX.Y.Z release`), label);
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("retries a failed read, 1s then 5s apart, and passes once one answers", () => {
+    const result = run({ tags: { "v0.9.0": SHA }, fail: { status: 502, times: 2 } });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(result.sleeps, ["1", "5"]);
+  });
+
+  it("fails on an API error rather than calling it untagged or moved, and doesn't retry a 4xx", () => {
+    const down = run({ tags: { "v0.9.0": SHA }, fail: { status: 502, times: 3 } });
     assert.notEqual(down.status, 0);
-    assert.doesNotMatch(down.stdout, /No vX\.Y\.Z tag exists/);
+    assert.equal(down.calls, 3);
+    assert.doesNotMatch(down.stdout, /No v\* tag exists|is not a vX\.Y\.Z release/);
     assert.equal(down.outputs.moved, undefined, "a failed read is not a moved production");
+    const refused = run({ tags: { "v0.9.0": SHA }, fail: { status: 404, times: 1 } });
+    assert.notEqual(refused.status, 0);
+    assert.equal(refused.calls, 1);
+    assert.deepEqual(refused.sleeps, []);
+    const limited = run({ tags: { "v0.9.0": SHA }, fail: { status: 429, times: 1 } });
+    assert.equal(limited.status, 0, limited.stdout + limited.stderr);
   });
 });
 
@@ -558,9 +677,10 @@ describe("the eas commands", () => {
   // future (or it freezes nothing). Moving the pin means adding its date here.
   const PUBLISHED = { "24.8.0": "2026-09-24" };
 
-  it("installs an exact eas-cli, with its dependencies held to a past date", () => {
+  it("installs an exact eas-cli, running no install script, with its dependencies held to a past date", () => {
     const install = scriptOf(stepNamed(CALLED, "build", "Install EAS CLI"));
-    const m = install.match(/^npm install --global --before=(\d{4}-\d{2}-\d{2}) eas-cli@(\d+\.\d+\.\d+)$/);
+    // `--ignore-scripts`: the step's comment lists the install scripts in the tree.
+    const m = install.match(/^npm install --global --ignore-scripts --before=(\d{4}-\d{2}-\d{2}) eas-cli@(\d+\.\d+\.\d+)$/);
     assert.ok(m, install);
     const [, before, version] = m;
     assert.ok(PUBLISHED[version], `add eas-cli ${version}'s publish date to PUBLISHED`);
@@ -686,16 +806,17 @@ describe("the eas commands", () => {
     /**
      * `views` maps a build id to what `eas build:view <id> --json` prints, or
      * to a list of what it prints on each read in turn (the last repeats); a
-     * missing id fails, and `sleep` makes every read stall that many seconds.
+     * missing id fails, printing `error` on stderr, and `sleep` makes every
+     * read stall that many seconds.
      */
-    function run({ views, ids = "i1 a1", deadline = "0", sleep = 0, readTimeout = "120" }) {
+    function run({ views, ids = "i1 a1", deadline = "0", sleep = 0, readTimeout = "120", error = "" }) {
       const { dir, output, path } = withStub(
         "eas",
         [
           sleep ? `sleep ${sleep}` : "",
           'n="$RUNNER_TEMP/reads-$2"; c=$(( $(cat "$n" 2>/dev/null || echo 0) + 1 )); echo "$c" > "$n"',
           'f="$RUNNER_TEMP/view-$2-$c.json"; [ -f "$f" ] || f="$(ls "$RUNNER_TEMP"/view-"$2"-*.json 2>/dev/null | sort -V | tail -n1)"',
-          '[ -n "$f" ] && [ -f "$f" ] && cat "$f" || exit 1',
+          '[ -n "$f" ] && [ -f "$f" ] && cat "$f" || { [ -n "$EAS_ERROR" ] && echo "$EAS_ERROR" >&2; exit 1; }',
         ].join("\n"),
       );
       for (const [id, view] of Object.entries(views)) {
@@ -712,6 +833,7 @@ describe("the eas commands", () => {
           DEADLINE_MINUTES: deadline,
           POLL_SECONDS: "0",
           READ_TIMEOUT_SECONDS: readTimeout,
+          EAS_ERROR: error,
         },
       });
       const outputs = readOutputs(output);
@@ -763,6 +885,20 @@ describe("the eas commands", () => {
       assert.ok(Date.now() - started < 4000, "the read was not cut off");
       assert.equal(status, 1);
       assert.match(stdout, /i1 UNREAD/);
+      assert.match(stdout, /The last read of i1 failed: no answer within 1s/);
+    });
+
+    it("logs why a read failed, every round and again at the deadline", () => {
+      const { status, stdout, outputs } = run({
+        views: { i1: ios({ status: "IN_QUEUE" }) },
+        error: "GraphQL request failed: Unauthorized",
+      });
+      assert.equal(status, 1);
+      assert.match(stdout, /Couldn't read a1 this round \(exit 1: GraphQL request failed: Unauthorized/);
+      assert.match(stdout, /::error::The last read of a1 failed: exit 1: GraphQL request failed: Unauthorized/);
+      assert.doesNotMatch(stdout, /The last read of i1/, "i1 was read; only the unread build is explained");
+      // The cause stays in the log: an output carrying a masked value is dropped.
+      assert.doesNotMatch(outputs.builds, /Unauthorized/);
     });
 
     it("refuses to wait for nothing", () => {

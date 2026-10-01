@@ -75,7 +75,7 @@ describe("planRecord", () => {
       { platform: "android", version: "0.9.0", build: "7", sha: SHA, recorded: DAY },
     ]);
     assert.deepEqual(
-      rows.map((r) => [r.store, r.recorded]),
+      rows.map((r) => [r.store, r.planned]),
       [
         ["ios", true],
         ["android", true],
@@ -117,6 +117,19 @@ describe("planRecord", () => {
     assert.match(problems[0], new RegExp(`from ${OTHER}, not the validated ${SHA}`));
     const missing = plan({ builds: [iosBuild({ gitCommitHash: undefined })] , platform: "ios" });
     assert.match(missing.problems[0], /an unreported commit/);
+    // Unfinished, but already naming another commit: refused now, so the
+    // summary never offers it a hand upload for when it finishes.
+    for (const status of ["NEW", "IN_QUEUE", "IN_PROGRESS"]) {
+      const unfinished = plan({ platform: "ios", builds: [iosBuild({ status, gitCommitHash: OTHER })], uploads: { ios: "skipped" } });
+      assert.equal(unfinished.rows[0].refused, true, status);
+      assert.match(unfinished.problems[0], new RegExp(`from ${OTHER}, not the validated ${SHA}`), status);
+      const text = summary({ sha: SHA, rows: unfinished.rows, entries: unfinished.entries, pr: null, problems: unfinished.problems });
+      assert.doesNotMatch(text, /eas submit/, status);
+    }
+    // Unfinished and not yet naming a commit: still running, not refused.
+    const early = plan({ platform: "ios", builds: [iosBuild({ status: "IN_QUEUE", gitCommitHash: undefined })], uploads: { ios: "skipped" } });
+    assert.equal(early.rows[0].refused, false);
+    assert.deepEqual(early.problems, []);
   });
 
   it("refuses a version or build number shipped-builds.json can't hold", () => {
@@ -254,6 +267,7 @@ describe("recordShippedBuilds", () => {
     assert.doesNotMatch(pr.body, /nothing else needs review/);
     assert.doesNotMatch(pr.body, /\b(fixes|closes|resolves)\s+#/i);
     assert.match(text, /Recorded in https:\/\/github\.com\/pdcarlson\/Frapp\/pull\/9000/);
+    assert.match(text, /\| iOS \| `ios-build-1` \| `FINISHED` \| 0\.9\.0 \(12\) \| `success` \| in the PR \|/);
   });
 
   it("opens no PR when every build is already listed", async () => {
@@ -266,7 +280,8 @@ describe("recordShippedBuilds", () => {
     const { code, calls, text } = await run({}, routes(listed));
     assert.equal(code, 0);
     assert.equal(calls.length, 2);
-    assert.match(text, /already listed/);
+    assert.match(text, /already listed in/);
+    assert.match(text, /\| `success` \| already listed \|/);
   });
 
   it("calls no API and passes when nothing was uploaded", async () => {
@@ -291,6 +306,9 @@ describe("recordShippedBuilds", () => {
     assert.match(text, /Not recorded/);
     assert.match(text, /"platform":"ios","version":"0.9.0","build":"12"/);
     assert.ok(logs.some((l) => l.startsWith("::error::No base-sync App token")));
+    // The table says so too: it is the first thing an operator reads.
+    assert.match(text, /\| iOS \| `ios-build-1` \| `FINISHED` \| 0\.9\.0 \(12\) \| `success` \| \*\*no\*\*, see below \|/);
+    assert.doesNotMatch(text, /\| (yes|in the PR|already listed) \|/);
   });
 
   it("fails, and lists the entries, when GitHub refuses a write", async () => {
@@ -299,6 +317,7 @@ describe("recordShippedBuilds", () => {
     assert.equal(code, 1);
     assert.match(text, /POST \/repos\/pdcarlson\/Frapp\/pulls failed \(HTTP 403: Resource not accessible by integration\)/);
     assert.match(text, /Not recorded/);
+    assert.match(text, /\| Android \| `android-build-1` \| `FINISHED` \| 0\.9\.0 \(7\) \| `success` \| \*\*no\*\*, see below \|/);
   });
 
   it("records the upload that landed and says how to finish the one that didn't", async () => {
@@ -384,7 +403,7 @@ describe("recordShippedBuilds", () => {
       ANDROID_UPLOAD: "skipped",
       TAG_BEFORE_UPLOAD: "failure",
     });
-    assert.match(upload.text, /iOS built, and was not uploaded because the latest-tag check before uploading couldn't read the tags/);
+    assert.match(upload.text, /iOS built, and was not uploaded because the latest-tag check before uploading failed without finding production moved/);
     assert.match(upload.text, /eas submit --platform android --profile production --id android-build-1 --non-interactive`/);
     assert.doesNotMatch(upload.text, /production has shipped another commit/);
     const build = await run({
@@ -397,7 +416,8 @@ describe("recordShippedBuilds", () => {
       TAG_BEFORE_BUILD: "failure",
       TAG_BEFORE_UPLOAD: "",
     });
-    assert.match(build.text, /iOS didn't start: the latest-tag check before building couldn't read the tags/);
+    assert.match(build.text, /iOS didn't start: the latest-tag check before building failed without finding production moved/);
+    assert.match(build.text, /use \*\*Re-run failed jobs\*\* on this run/);
   });
 
   it("never sends one platform to a re-run while the other is still building or waits for its upload", async () => {

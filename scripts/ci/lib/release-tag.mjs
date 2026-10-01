@@ -5,7 +5,10 @@
  * asks here, and they can't disagree.
  *
  * Readers: `check-migration-drift.mjs`'s release baseline, and
- * `resolve-deploy-sha.mjs`'s floor (#3114).
+ * `resolve-deploy-sha.mjs`'s floor (#3114). `_mobile-build.yml`'s two
+ * latest-tag checks apply the same rule in shell, because that job runs the
+ * deployed tree rather than this file (#3111);
+ * `deploy-production-mobile.test.mjs` runs them against this on the same tags.
  *
  * The tag must be a plain `vX.Y.Z`, which is all `release.yml` mints. Anything
  * else on top (a hand-pushed `v1.9.0-rc1`, say) is an error rather than a quiet

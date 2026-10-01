@@ -254,7 +254,10 @@ without releasing**. iOS lands on TestFlight and Android on the Play `internal` 
 promoting a Play track stay a human's clicks in the consoles.
 
 **Which commit.** Build a store binary from the commit production serves, which is the latest `v*`
-tag (`git tag --list 'v*' --sort=-version:refname | head -n1`), and never from `main`'s tip. A
+tag (`git tag --list 'v*' --sort=-version:refname | head -n1`), and never from `main`'s tip. That
+tag must be a plain `vX.Y.Z`; if anything else is on top (a hand-pushed `v1.10.0-rc1`, say), stop:
+nothing says what production serves until it's resolved. The rule is `release.yml`'s, and
+[`scripts/ci/lib/release-tag.mjs`](../../../scripts/ci/lib/release-tag.mjs) is its one home. A
 binary newer than production calls routes production doesn't serve yet (#2526); that is why the
 `v0.7.0` ship had to come before the 0.9.0 binary. The CI path checks that its commit is still the
 latest `v*` tag before it builds and again before it uploads, and stops otherwise, a re-run
@@ -337,13 +340,19 @@ nothing is still building.
   other by hand from the latest `v*` tag (below), and record it.
 - **Production shipped another commit before or while EAS was building:** nothing from this run
   may upload. The next store build comes with the next ship.
-- **A tag check couldn't read the tags** (a GitHub API error, which the summary keeps apart from a
-  moved production): before the builds, nothing started, so re-run once GitHub answers; before
-  the uploads, the builds are done, so confirm the commit is still the latest `v*` tag and upload
-  them by hand with the summary's `eas submit … --id`.
+- **A tag check failed without finding production moved** (a GitHub API error that outlasted its
+  retries, or a top `v*` tag that isn't `vX.Y.Z`; the summary keeps both apart from a moved
+  production): resolve that first. Before the builds, nothing started, so then re-run; before the
+  uploads, the builds are done, so confirm the commit is the latest `v*` tag and upload them by
+  hand with the summary's `eas submit … --id`.
 - **Nothing built:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded and
   don't run again, and the builds get fresh build numbers. The re-run stops if a later ship has
   tagged another commit; dispatch Deploy production for that one instead.
+- **The tag failed, so the store build never started:** `mobile` shows skipped, and the deploy
+  summary says the run asked for one. Fix the tag's cause, then use **Re-run failed jobs** on this
+  run rather than the Release workflow: it retries the tag without redeploying, then runs the
+  store build. The Release workflow on its own tags and builds nothing; if that is how the tag
+  landed, build by hand from it (below).
 
 **Before the first run.** These exist outside the repo, and a non-interactive run stops without
 each one:
@@ -398,8 +407,9 @@ message shown:
 | iOS: a submissions App Store Connect API key already stored in EAS | "App Store Connect API Keys cannot be set up in --non-interactive mode." |
 | iOS, password route: an Apple ID | "Set appleId in the submit profile (eas.json)." |
 
-Plus `EXPO_TOKEN` for the Expo account. `ascAppId` is committed since #3111.
-`eas-production-profile.test.mjs` doesn't require it.
+Plus `EXPO_TOKEN` for the Expo account. `ascAppId` is committed since #3111, and
+`deploy-production-mobile.test.mjs` pins it to the Apple ID the store README records
+(`eas-production-profile.test.mjs` leaves it to that suite).
 
 **Source:** read from the eas-cli 24.8.0 source (`IosSubmitCommand`, `AscApiKeySource`,
 `SetUpAscApiKey`, `AppSpecificPasswordSource`, `submit/commons`) and `@expo/eas-json` 24.8.0

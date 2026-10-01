@@ -126,7 +126,9 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
   for (const store of requested) {
     const matches = (builds ?? []).filter((b) => b.platform === EAS_PLATFORM[store]);
     const upload = uploads[store] || "not run";
-    const row = { store, buildId: null, status: "not built", version: null, build: null, upload, recorded: false, refused: false };
+    // `planned`: an entry for this build is in `entries`. Whether it reached
+    // the registry is the PR's outcome, which only `summary` knows.
+    const row = { store, buildId: null, status: "not built", version: null, build: null, upload, planned: false, refused: false };
     rows.push(row);
 
     if (matches.length > 1) {
@@ -171,7 +173,7 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
       continue;
     }
     entries.push({ platform: store, version: row.version, build: row.build, sha, recorded });
-    row.recorded = true;
+    row.planned = true;
   }
   return { rows, entries, problems };
 }
@@ -282,7 +284,8 @@ const STILL_RUNNING = new Set(["NEW", "IN_QUEUE", "IN_PROGRESS", "PENDING_CANCEL
  */
 export function nextStep(row, { sha, tag = {}, blockRerun = false }) {
   const name = DISPLAY[row.store];
-  if (row.recorded || row.refused) return null;
+  // A planned row is the PR's, or the "Not recorded" block's when the PR failed.
+  if (row.planned || row.refused) return null;
   if (tag.moved) {
     return `${name} was not uploaded: production has shipped another commit since this run, so nothing built from \`${sha}\` may reach testers. The next store build comes from the next ship.`;
   }
@@ -292,7 +295,7 @@ export function nextStep(row, { sha, tag = {}, blockRerun = false }) {
     `\`eas submit --platform ${row.store} --profile production --id ${id} --non-interactive${row.store === "ios" ? " --no-auto-testflight-setup" : ""}\` from \`apps/mobile\``;
   if (row.status === "FINISHED" && row.upload !== "success" && row.buildId) {
     if (tag.beforeUpload === "failure") {
-      return `${name} built, and was not uploaded because the latest-tag check before uploading couldn't read the tags (its log says why). If \`${sha}\` is still the latest \`v*\` tag, upload it by hand with ${submit(row.buildId)} and record it. Don't re-run: that builds every platform again.`;
+      return `${name} built, and was not uploaded because the latest-tag check before uploading failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, and \`${sha}\` is the latest \`v*\` tag, upload it by hand with ${submit(row.buildId)} and record it. Don't re-run: that builds every platform again.`;
     }
     return `${name} built but did not upload (\`${row.upload}\`). After fixing the cause, upload it by hand with ${submit(row.buildId)}, then record it as \`apps/mobile/store/README.md\` § Shipped builds says. Don't re-run: that builds every platform again.`;
   }
@@ -300,7 +303,7 @@ export function nextStep(row, { sha, tag = {}, blockRerun = false }) {
     return `${name} (\`${row.buildId}\`) had not finished when the job stopped waiting, and may still finish on EAS. Don't start another build: when it finishes, and \`${sha}\` is still the latest \`v*\` tag, upload it with ${submit(row.buildId)} and record it by hand.`;
   }
   if (tag.beforeBuild === "failure") {
-    return `${name} didn't start: the latest-tag check before building couldn't read the tags (its log says why). Use **Re-run failed jobs** on this run once GitHub answers.`;
+    return `${name} didn't start: the latest-tag check before building failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, use **Re-run failed jobs** on this run.`;
   }
   if (blockRerun) {
     return `${name} didn't build (\`${row.status}\`), while another platform uploaded, is still building, or waits for its upload. Fix the cause, then build and upload ${name} by hand from the latest \`v*\` tag (\`docs/ops/deployment/mobile.md\` § 6.6, By hand) and record it. Don't re-run: that builds the other platform again.`;
@@ -313,10 +316,18 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
   const lines = [`### Store builds — \`${sha}\``, ""];
   lines.push("| Platform | EAS build | Status | Version (build) | Upload | Recorded |");
   lines.push("| --- | --- | --- | --- | --- | --- |");
+  // From the PR's outcome, not the plan: a planned entry whose PR never
+  // opened is not recorded, and the block below lists it.
+  const recordedAs = (r) => {
+    if (!r.planned) return "no";
+    if (pr?.outcome === "opened") return "in the PR";
+    if (pr?.outcome === "already-recorded") return "already listed";
+    return "**no**, see below";
+  };
   for (const r of rows) {
     const version = r.version || r.build ? `${r.version ?? "?"} (${r.build ?? "?"})` : "—";
     lines.push(
-      `| ${DISPLAY[r.store]} | ${r.buildId ? `\`${r.buildId}\`` : "—"} | \`${r.status}\` | ${version} | \`${r.upload}\` | ${r.recorded ? "yes" : "no"} |`,
+      `| ${DISPLAY[r.store]} | ${r.buildId ? `\`${r.buildId}\`` : "—"} | \`${r.status}\` | ${version} | \`${r.upload}\` | ${recordedAs(r)} |`,
     );
   }
   lines.push("");
@@ -334,7 +345,7 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
       (o) =>
         o !== r &&
         !o.refused &&
-        (o.upload === "success" || (o.status === "FINISHED" && !o.recorded) || STILL_RUNNING.has(o.status)),
+        (o.upload === "success" || (o.status === "FINISHED" && !o.planned) || STILL_RUNNING.has(o.status)),
     );
     const step = nextStep(r, { sha, tag, blockRerun });
     if (step) lines.push(`- ${step}`);
