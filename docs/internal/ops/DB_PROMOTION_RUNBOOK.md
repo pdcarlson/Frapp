@@ -1695,9 +1695,10 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   - Sanity: no member sees their own messages as unread — pick a chapter's most recent sender and
     confirm the channel they just posted in does not count that message.
 - **Rollback**: see **Rollback the chat unread/mention slice** in
-  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). Note it is a **coordinated** rollback — the
-  API must be redeployed to a pre-C1 revision _before_ the function is dropped, or
-  `GET /v1/channels/unread` 500s on every poll.
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). Note it is a **coordinated** rollback — a
+  forward revert of C1 must be live _before_ the function is dropped, or
+  `GET /v1/channels/unread` 500s on every poll. A pre-C1 commit can't be deployed instead
+  ([`DB_ROLLBACK_PLAYBOOK.md` § 3) Undo one migration](DB_ROLLBACK_PLAYBOOK.md#3-undo-one-migration)).
 
 ## 2026-08-14: Backfill `chapters.accent_color` from branding (#795)
 

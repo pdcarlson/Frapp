@@ -134,33 +134,61 @@ re-applied, it means what this section says.
 reverts the code using the change (the API, and web or mobile where they use it)
 and **keeps every migration file**, then ship that commit's own SHA with Deploy
 production (`scope: full`). A plain `git revert` of the PR that added the
-migration deletes the file, so restore it in the revert commit. Never deploy an
-older commit for this. Production has applied a migration that an older
-commit's tree lacks. The rehearsal (`scripts/ci/check-migration-replay.mjs`, run
-by `_deploy.yml` before anything is applied) puts that version in `foreign` and
-fails the run as `foreign-migrations` before Render is touched, and
-`supabase db push` refuses the same state. An older commit deploys only while production has applied no
+migration deletes the file and its entries here and in
+[`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md), so restore all three in
+the revert commit: `check:migration-safety` fails without the entries, and this
+file's entry holds the SQL for the second run. Never deploy an older commit for
+this. Production has applied a migration that an older commit's tree lacks. The
+rehearsal (`scripts/ci/check-migration-replay.mjs`, run by `_deploy.yml` before
+anything is applied) puts that version in `foreign` and fails the run as
+`foreign-migrations` before Render is touched, and `supabase db push` refuses
+the same state. An older commit deploys only while production has applied no
 migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
 
 **The schema comes off in a later run, as a new forward migration.** Write the
-recipe's SQL as a new migration (`npx supabase migration new rollback_<what>`).
-Make it idempotent where Postgres allows (`drop … if exists`), and give it its
-own entries here and in [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md)
-(`check:migration-safety` requires both). Merge it once staging serves the
-revert, and ship it with a second Deploy production run once the revert is live
-on production. One run can't do both. `_deploy.yml` applies migrations before it
-deploys to Render, so a combined run would drop the object while the API that
-uses it is still serving, the order most recipes warn breaks live writes. For
-the same reason, the first run ships the revert's SHA, not a later `main`
-commit that already carries the undo. Afterwards the ledger records both
-versions, the next rehearsal rebuilds production faithfully from the repo, and a
-fresh database (local, CI, a restore) replays the change and its undo in order.
+recipe's SQL as a new migration (`npx supabase migration new rollback_<what>`),
+and give it its own entries here and in
+[`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) (`check:migration-safety`
+requires both). Make every statement idempotent, so the migration also applies
+where someone already ran it by hand (below): `if exists` where Postgres has it,
+and a guarded `do` block where it doesn't. `alter publication … drop table` has
+no `if exists`, so check `pg_publication_tables` first, as the original
+migrations do. Merge it once staging serves the revert, and ship it with a
+second Deploy production run once the revert is live on production. One run
+can't do both. `_deploy.yml` applies migrations before it deploys to Render, so
+a combined run would drop the object while the API that uses it is still
+serving, the order most recipes warn breaks live writes. For the same reason,
+the first run ships the revert's SHA, not a later `main` commit that already
+carries the undo.
+
+Some recipes ship part of the undo in the revert's run, and where one does, its
+order wins over this paragraph. That happens when the reverted code and the
+current schema can't work together at all, as when the change replaced a
+function's signature or return shape (the subscription webhook's
+previous-status return, the `get_points_report` overloads). It also happens when
+the gap between two runs would open a hole the recipe names (Discord author
+links, chat report attachment evidence). In one run the migration applies
+first and the reverted API goes live right after, so the window is the
+minutes between the two, not a staging soak.
+
+Afterwards the ledger records both versions, the next rehearsal rebuilds
+production faithfully from the repo, and a fresh database (local, CI, a restore)
+replays the change and its undo in order.
 
 The rollback migration replays in CI like any other. Where
 `check:pglite-migrations` asserts what the original added (a landmark or a smoke
-tier), the rollback fails that job until the same PR relaxes the assertion. Where a
-recipe below names a gate like that, relaxing it is part of the rollback.
+tier), the rollback fails that job until the same PR relaxes the assertion, and
+relaxing it is part of the rollback. Recipes don't name every such assertion, so
+before opening the PR, search `scripts/check-pglite-migrations.mjs` for each
+object the rollback drops or changes.
+
+**Restore the current definition, not an older file's.** Where a recipe says to
+restore a function or policy from an earlier migration, first check whether a
+later migration redefined it (`grep -ln '<name>' supabase/migrations/`). Start
+from the newest definition and remove only this migration's change. An older
+file's body also undoes every change made after it, such as another feature's
+purge in `anonymize_user`.
 
 **Hand DDL is a bridge, not the rollback.** When the damage can't wait for a PR
 and CI, run the recipe's DDL by hand in the SQL editor, then still ship it as
@@ -174,10 +202,13 @@ ran. Until that migration ships, nothing records the change:
   repo's: `check-migration-drift.mjs` compares ledger versions only
   ([#3037](https://github.com/pdcarlson/Frapp/issues/3037) tracks adding one).
 
-One recipe never ships as a migration, because the gate it would fail guards a
-security invariant:
+Two recipes are exceptions.
 [§ Rollback the `security definer` search_path pin](#rollback-the-security-definer-search_path-pin)
-says what follows instead. Data-only SQL (an `update` or `delete` that changes
+never ships as a migration, because the gate it would fail guards a security
+invariant.
+[§ Rollback the ping-swallow warning](#rollback-the-ping-swallow-warning) allows a
+temporary rollback by hand that is undone by hand, and a migration only when the
+rollback is meant to be permanent. Each says what follows instead. Data-only SQL (an `update` or `delete` that changes
 no schema) touches nothing the rehearsal rebuilds, so it can run by hand; record
 it in the incident issue.
 
@@ -203,12 +234,23 @@ in order, once the forward revert is live:
 3. Actions → **Migration snapshot** → Run workflow on `main`, so the PR checks
    read the repaired ledgers
    ([`DB_PROMOTION_RUNBOOK.md` § What catches drift, and what catches bad ordering](DB_PROMOTION_RUNBOOK.md#what-catches-drift-and-what-catches-bad-ordering)).
-4. Merge a PR that deletes the migration file and its entries here and in
-   `DB_PROMOTION_RUNBOOK.md`. Until it merges, any merge to `main` re-applies the
-   version on staging or halts staging's deploy on it.
+4. Merge a PR that deletes the migration file, its entry in this playbook, and
+   its line in `UNLEDGERED` in `scripts/check-migration-safety.mjs` if it has one.
+   Keep its `DB_PROMOTION_RUNBOOK.md` entry: that file is a historical ledger
+   whose entries may outlive their files (`HISTORICAL_LEDGERS` in the same
+   script). Until the PR merges, any merge to `main` re-applies the version on
+   staging or halts staging's deploy on it.
+
+Expect the daily migration drift watchdog
+([`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml))
+to raise its P1 once the row is gone. It judges staging against `main` and
+production against the newest `v*` tag, so it reports the version as pending
+until step 4 merges for staging, and until the next Deploy production ships a tag
+without the file for production. Record the repair on the alert issue. Don't
+re-apply the migration to clear it.
 
 Prefer the forward migration. It edits neither project's ledger by hand, has no
-window, and leaves a history that records the undo. Take the repair only when
+window, raises no drift alert, and leaves a history that records the undo. Take the repair only when
 the migration must never run again on any database, a fresh one included.
 
 **Re-landing after a rollback is a new migration too.** `db push` never re-runs a
@@ -889,13 +931,20 @@ After any rollback event:
   Then re-run the `CREATE FUNCTION` from
   `20260909050000_apply_subscription_webhook_rpc.sql` (`returns setof chapters`).
   Args stay `(uuid, timestamptz, jsonb)`; only the return shape changes.
-* **Order**: **take the API off it first, then this migration**: a forward revert of
-  #1979's code, then the SQL above as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). A build from
-  after this migration unwraps `applied` / `previous_subscription_status` from
-  the RPC result, so it errors once the function is again `setof chapters`.
-  A build with #1979 reverted (post-#731, pre-#1979 code) reads the result as a
-  chapter row and is unaffected by restoring that shape. Reverting the function first breaks
-  every subscription webhook until the deploy catches up.
+* **Order**: **the forward revert of #1979's code and the SQL above, as a new
+  migration, in the same Deploy production run** ([§ 3) Undo one migration](#3-undo-one-migration)). Neither
+  order across two runs is safe, because each API is locked to its own return
+  shape. A build from after this migration unwraps `applied` /
+  `previous_subscription_status` from the RPC result, so it errors once the
+  function is again `setof chapters`. The migration's own header says the
+  pre-#1979 API reads the RPC as `setof chapters`. In one run the migration applies
+  first and the reverted API goes live right after, so subscription webhooks are
+  at risk only for those minutes, and Stripe retries a delivery that failed.
+  *Corrected 2026-10-01 (#2606): this used to say to roll the API back first and
+  the migration after.*
+* **CI**: the rollback migration fails `check:pglite-migrations` until the same PR
+  removes its #1979 assertions: the "returns previous_subscription_status" landmark
+  and the subscription-webhook CAS tier's `(applied).…` reads.
 * **Data caveat**: rolling back does not rewrite chapter rows. Notify again
   keys off the handler snapshot, which restores the duplicate-URGENT-alert
   exposure of #1979 for as long as it is off.
@@ -1253,7 +1302,7 @@ After any rollback event:
   materialises per row under ACCESS EXCLUSIVE. If the archive has already been
   imported, treat a re-apply as a scheduled maintenance window, not a hotfix.
 * **Lighter option**: if the problem is search *results* rather than the schema
-  (stemming surprises, an unexpected match), revert only the service change and
+  (stemming surprises, an unexpected match), forward-revert only the service change and
   leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
 
@@ -1364,10 +1413,10 @@ After any rollback event:
   writes for every chapter at once, not just the one that prompted the rollback.
 * **Lighter option**: if the problem is search *results* rather than the schema
   (stemming surprises — `Budget` matches `Budgetson` but `udgets` no longer
-  does), revert only the service change and leave the columns and indexes in
+  does), forward-revert only the service change and leave the columns and indexes in
   place. They cost writes on insert and nothing on read, and they will be needed
   again.
-* **If you roll back the service but keep the schema**, also revert
+* **If you forward-revert the service but keep the schema**, also revert
   `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` together with it: the
   `check-pglite-migrations.mjs` landmark asserts those lists match their table's
   columns minus the tsvector, so a half-revert fails that gate.
@@ -1375,10 +1424,16 @@ After any rollback event:
 ## Rollback the imported-kind semantics
 
 * **Migration**: `20260823123000_chat_imported_kind_semantics.sql`
-* **Action**: restore the previous function body and policy, both of which are
-  the versions in `20260816190000_chat_unread_and_mentions.sql` and
-  `20260816140000_realtime_carrier_repair.sql` respectively. Copy them from those
-  files rather than retyping — the grant block and the `search_path` pin matter.
+* **Action**: restore the previous policy and function body. The policy is the
+  version in `20260816140000_realtime_carrier_repair.sql`. The function,
+  `get_channel_unread_counts`, has been redefined since
+  (`20260927050000_chat_unread_counts_skip_blocked.sql` skips blocked senders), so
+  start from its newest body and take out only the `kind` clause
+  ([§ 3) Undo one migration](#3-undo-one-migration)).
+  `20260816190000_chat_unread_and_mentions.sql`'s body would undo that later
+  change as well. Copy rather than retype: the grant block and the `search_path`
+  pin matter. *Corrected 2026-10-01 (#2606): this used to name
+  `20260816190000`'s body.*
 * **Order**: no coordinated redeploy needed; nothing in the API reads either the
   function body or the policy text. Ship it as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
 * **⚠️ Do not roll this back while imported rows exist in a chapter people are
@@ -1414,13 +1469,17 @@ After any rollback event:
   tables is not allowed"; present on `frapp-staging` and the local stack,
   2026-10-01). *Corrected 2026-10-01 (#2606): this recipe used to give that
   `DELETE` as the action.*
-* **Order**: no coordinated redeploy required *if the bucket is unused*. Once an
+* **Order**: **take the API off it first.** The live API names the bucket
+  (`CHAT_ARCHIVE_BUCKET`): it registers every import file there, and its workers
+  and `ChatService` sign, list and delete objects in it. Delete the bucket only once
+  a forward revert that stops using it is live ([§ 3) Undo one migration](#3-undo-one-migration)); an
+  empty bucket is not an unused one while that API serves. Once an
   import has run, the objects in it are the only copy of the archive's media —
   `chat_message_attachments.external_url` is **always null** for imported rows (why: [`spec/architecture/README.md` § Communications](../../../spec/architecture/README.md#communications)) and the only recovery handle is `discord_import_files` plus the admin's original export — so
   treat deletion as destructive. Because the removal is a Storage API call, no
   migration records it: the ledger keeps `20260823124000`, and a fresh database
   still creates the bucket.
-* **Note**: additive bucket only. Nothing else references it, and the live `chat`
+* **Note**: additive bucket only. No table references it, and the live `chat`
   bucket is untouched. Re-applying the migration (a new migration repeating it,
   [§ 3](#3-undo-one-migration)) recreates it with the same id and constraints; the
   objects are not restored by that.
@@ -1429,8 +1488,8 @@ After any rollback event:
   to `104857600`. Leaving it raised is harmless — every member-upload bucket is
   still pinned to 25 MB by its own `allowed_mime_types`/`file_size_limit` columns
   and by `MAX_UPLOAD_BYTES` in `@repo/validation`.
-* **Lighter option**: to stop new writes without deleting anything, revert the API
-  and leave the bucket in place. An unused private bucket costs storage for what
+* **Lighter option**: to stop new writes without deleting anything, forward-revert
+  the API's use of it and leave the bucket in place. An unused private bucket costs storage for what
   is in it and nothing else.
 
 ## Rollback the Realtime carrier repair
@@ -1465,6 +1524,10 @@ After any rollback event:
   ALTER PUBLICATION supabase_realtime DROP TABLE public.chapter_audit_log;
   DROP POLICY IF EXISTS "chat_messages_select" ON public.chat_messages;
   ```
+  Step 3's `ALTER PUBLICATION … DROP TABLE` has no `IF EXISTS` and raises on a
+  table that isn't published. In the migration, guard each one on
+  `pg_publication_tables`, as the original does, so it applies cleanly where the
+  steps already ran by hand.
   Ship it as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)). **Order matters in one direction only, and it is the harmless one** — for this migration alone. The precondition above rolls back the private presence topics first, and that one has its own clients-first order: follow [its section](#rollback-the-private-presence-topics) before this note applies. Rolling this migration back without redeploying the web app does not error: the three dashboard subscriptions simply stop receiving pings (a private channel with no authorising policy is denied), and chat's `postgres_changes` handler goes quiet. That is *precisely* the pre-migration behavior — see the note below — so a DB-only rollback degrades to "realtime never worked", which is where `main` sat before this landed. There is no 500, no broken route, and no user-visible error; only staleness until a manual refresh.
 * **Note**: **rolling back does not re-open a vulnerability — it narrows access.** The only widening this migration performs is the `chat_messages_select` policy, which lets the browser read `chat_messages` scoped to channel membership (mirroring the precedent `chat_message_actions` already set). Dropping it returns the table to default-deny. The `realtime.messages` policy is likewise purely additive: that table had RLS on with *no* policy, denying every private channel, and this migration grants exactly three topic families (`20260906203000` later added two more, which its own rollback removes first). Nothing predating the migration can be lost — no column, constraint, or row is touched anywhere.
 * **Prefer a roll-forward fix anyway.** Reverting restores the #867 defect in full: every `postgres_changes` subscription in the product receives nothing, in every environment, and does so *silently* — the channel joins, reports `SUBSCRIBED`, and never fires, which is indistinguishable from an idle one. That silence is what hid the bug from the first deploy until 2026-08-16. If you roll this back, say so loudly somewhere a human reads, because nothing in the app will tell you.
@@ -1534,7 +1597,7 @@ After any rollback event:
   Ship the C1 revert first and both disappear with it; then the DB drop is unobserved. If you only remember one thing here: the "no client consumes it yet" note applies to the *endpoint*, never to the column.
 * **Note**: the `mentions` half degrades gracefully in *both* directions, which is worth knowing before you panic. The push worker reads `row.mentions ?? []`, so a missing column simply means no message is ever treated as a mention — the same behavior the product had before this migration, since the worker was previously casting over a column that never existed and always resolving to empty. Dropping the column cannot therefore break push; it only returns the `mentions` tier to never firing.
 * **Data caveat**: **dropping the column is not recoverable by re-applying.** `mentions` is resolved at send time against chapter membership as it stood at that moment, so re-adding the column gives every historical message an empty array. The raw `@`-text survives in `content`, so a backfill is *possible*, but it would resolve against today's membership — a member who has since left, been renamed, or whose display name now collides with another's would resolve differently or not at all. If you only need to stop a bad mention resolution rather than remove the feature, `UPDATE chat_messages SET mentions = '{}'` on the affected rows and leave the schema alone.
-* **Lighter option**: to stop the badges without touching the schema, revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost essentially nothing to leave in place. There is no index on `chat_messages` to pay for — see below.
+* **Lighter option**: to stop the badges without touching the schema, forward-revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost essentially nothing to leave in place. There is no index on `chat_messages` to pay for — see below.
 * **Do not "restore" an index on `chat_messages.mentions`.** An earlier draft of this migration created a GIN index there and it was removed deliberately, so its absence is not an oversight to correct during a rollback. The mention tally is computed inside an aggregate `filter (where ...)`, which is not a row-selection predicate, so the planner cannot consult an index for it at all — the plan is a seq scan with the index present and without it. Adding one back buys nothing and costs write amplification on the product's hottest insert path. If a future *row-predicate* query needs it (a "my mentions" inbox), it must be spelled `mentions @> array[$1]`, which GIN can serve; the equivalent-looking `$1 = any (mentions)` cannot and seq-scans regardless.
 
 ## Rollback the activation funnel table
@@ -1578,11 +1641,11 @@ After any rollback event:
 ## Rollback ROLE_GATED `required_permissions`
 
 * **Migration**: `20260807220000_role_gated_required_permissions.sql`
-* **Action**: there is no DDL to undo — the migration only populates an existing nullable column and replaces one function. To restore the previous read semantics, re-apply the **prior** definition of `public.can_read_chat_message` from `20260803150000_chat_message_actions_membership_rls.sql` verbatim (it is `create or replace`, so re-running that file's function block is the rollback). The backfilled `required_permissions` values can stay: under the old predicate an explicit `{members:view}` behaves the same as the empty list it replaced, since every seeded role holds `members:view`.
+* **Action**: there is no DDL to undo — the migration only populates an existing nullable column and replaces one function. To restore the previous read semantics, let an empty `required_permissions` admit any chapter member again in the ROLE_GATED branch of `public.can_read_chat_channel`. Since `20260906203000_realtime_presence_private.sql` that function holds the rule, and `can_read_chat_message` delegates to it. Start from its newest definition ([§ 3) Undo one migration](#3-undo-one-migration)). Don't re-run `20260803150000_chat_message_actions_membership_rls.sql`'s `can_read_chat_message`: that body predates the `pg_temp` pin (`20260827190000`) and the delegation, so it would undo both. *Corrected 2026-10-01 (#2606): this used to say to re-run that file's function block.* The backfilled `required_permissions` values can stay: under the old predicate an explicit `{members:view}` behaves the same as the empty list it replaced, since every seeded role holds `members:view`.
   **Take the API off it first with a forward revert of FRA-321**, then ship the function as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)); otherwise the app-layer predicate keeps denying empty-gated channels while the SQL one allows them — the same split this migration exists to prevent, just inverted.
   To revert only the seeded `#alumni` marker and re-open alumni posting to every ROLE_GATED channel, drop the marker and forward-revert the posting rule: `update chat_channels set required_permissions = array['members:view']::text[] where type = 'ROLE_GATED' and 'alumni:post' = any (required_permissions);`
 * **⚠️ Note**: Rolling back **re-opens the vulnerability** (FRA-321): a ROLE_GATED channel with no `required_permissions` becomes readable by every chapter member, and — because the pre-FRA-321 posting rule keys on channel *type* — writable by alumni, including a chapter's `#exec-board`. Prefer a roll-forward fix. Nothing predating the migration can be lost: no column, constraint, policy, or row is dropped.
-* **Data caveat**: the two `UPDATE`s only touch rows whose `required_permissions` is null or empty, so a chapter that had already configured a channel is never overwritten and re-applying (a new migration repeating it, [§ 3](#3-undo-one-migration)) is idempotent. What a drop/re-apply cycle cannot reconstruct is *which* channel was the alumni channel: step 1 matches on `name = 'alumni'`, so a chapter that renamed it gets `{members:view}` from step 2 and loses alumni posting there until an officer with `channels:manage` adds `alumni:post` back. Snapshot `select id, chapter_id, name, type, required_permissions from chat_channels where type = 'ROLE_GATED'` first if any chapter has renamed or hand-tuned a role-gated channel. The Alumni role grant (step 3) is guarded by an `any(permissions)` check and is likewise idempotent; to undo it, `update roles set permissions = array_remove(permissions, 'alumni:post') where system_key = 'ALUMNI';`
+* **Data caveat**: the two `UPDATE`s only touch rows whose `required_permissions` is null or empty, so a chapter that had already configured a channel is never overwritten and re-applying them (in a new migration, [§ 3](#3-undo-one-migration)) is idempotent. What a drop/re-apply cycle cannot reconstruct is *which* channel was the alumni channel: step 1 matches on `name = 'alumni'`, so a chapter that renamed it gets `{members:view}` from step 2 and loses alumni posting there until an officer with `channels:manage` adds `alumni:post` back. Snapshot `select id, chapter_id, name, type, required_permissions from chat_channels where type = 'ROLE_GATED'` first if any chapter has renamed or hand-tuned a role-gated channel. The Alumni role grant (step 3) is guarded by an `any(permissions)` check and is likewise idempotent; to undo it, `update roles set permissions = array_remove(permissions, 'alumni:post') where system_key = 'ALUMNI';`
 
 ## Rollback system-role `system_key`
 
@@ -1764,7 +1827,7 @@ After any rollback event:
 ## Rollback `get_points_report` RPC
 * **Migration**: `20260604140000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`
-* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: ship a forward revert to the prior all-time call, with a new migration that re-creates the original `(uuid, uuid, text)` body, before a later run drops the `timestamptz` overload ([§ 3) Undo one migration](#3-undo-one-migration)).
+* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: ship a forward revert to the prior all-time call in the same Deploy production run as one new migration that drops the `timestamptz` overload and re-creates the original `(uuid, uuid, text)` body ([§ 3) Undo one migration](#3-undo-one-migration)). Don't split them across runs: while both overloads exist, a call that names only arguments both accept matches two functions and PostgREST refuses it (`PGRST203`). In one run, points reports fail only between the migration and the reverted API going live.
 
 ## Rollback `chat_message_actions` membership-scoped read RLS
 * **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
@@ -1813,7 +1876,7 @@ After any rollback event:
 ## Rollback `get_points_report` RPC `p_until` bound
 * **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.
-* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a forward-fix is required: a forward revert to the prior 3-arg call, shipped with a new migration that recreates the 3-arg overload and its lock-down, before a later run drops the 4-arg overload ([§ 3) Undo one migration](#3-undo-one-migration)). Otherwise every points report request fails. The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
+* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a forward-fix is required: a forward revert to the prior 3-arg call, in the same Deploy production run as one new migration that runs the Action above (drop the 4-arg overload, recreate the 3-arg one and its lock-down) ([§ 3) Undo one migration](#3-undo-one-migration)). Otherwise every points report request fails. Don't split them across runs: while both overloads exist, the reverted call (`p_chapter_id`, `p_user_id`, `p_since`) matches both, because `p_until` has a default, and PostgREST refuses it (`PGRST203`). In one run, points reports fail only between the migration and the reverted API going live. The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
 
 ## Rollback Group DM leave + archive (20260901180000)
 * **Migration**: `20260901180000_chat_channels_archived_at.sql`
@@ -2119,8 +2182,8 @@ DROP TABLE IF EXISTS public.chat_message_bookmarks;
    `42P01` — and `DELETE /v1/users/me` stops working entirely. That is an
    outage of the account-deletion path, not a degraded panel.
 
-So the order is: **revert `anonymize_user` to its `20260803140000` definition**
-(see the entry below) and ship a forward revert of #462, which can share one
+So the order is: **take the bookmark delete out of `anonymize_user`** (see the
+entry below) and ship a forward revert of #462, which can share one
 Deploy production run, then drop the table as a new migration in a later run
 ([§ 3) Undo one migration](#3-undo-one-migration)). Dropping first takes account deletion down with it.
 
@@ -2156,15 +2219,14 @@ Function-only change (#462): `create or replace function anonymize_user(...)`
 adding one `delete from chat_message_bookmarks where user_id = p_user_id;`
 alongside the existing per-user purges.
 
-To roll back, re-apply the previous definition from
-`20260803140000_account_deletion_anonymize_user_rpc.sql` as a new migration
-([§ 3) Undo one migration](#3-undo-one-migration)); `db push` won't re-run that version itself. The whole function
-body is in that file, and `create or replace` makes replaying it idempotent:
-
-```sql
--- Re-run the CREATE OR REPLACE block from
--- supabase/migrations/20260803140000_account_deletion_anonymize_user_rpc.sql
-```
+To roll back, ship a new migration that `create or replace`s `anonymize_user`
+with its newest definition's body (find it as § 3 says) minus the `chat_message_bookmarks` delete
+([§ 3) Undo one migration](#3-undo-one-migration)). Don't replay
+`20260803140000_account_deletion_anonymize_user_rpc.sql`'s body: four later
+migrations redefined the function, and that body would also drop their purges
+(`chat_member_blocks`, `rush_candidate_votes`, `chat_sidebar_*`,
+`discord_author_links`). *Corrected 2026-10-01 (#2606): this used to say to
+re-run that file's block.*
 
 **Rolling this back is a data-retention regression, not a feature rollback.**
 Without the purge line, a deleted member's bookmark rows survive account
@@ -2174,8 +2236,9 @@ can see. The FK's `on delete cascade` does **not** cover it: `anonymize_user`
 tombstones the `users` row rather than deleting it, so nothing ever cascades.
 Only roll back alongside dropping `chat_message_bookmarks` itself.
 
-**Re-applying (a new migration repeating it, [§ 3](#3-undo-one-migration)) is safe** and idempotent; the extra delete is a no-op on a user
-with no bookmarks, and re-running the whole function on an already-tombstoned
+**Re-applying is safe** and idempotent: a new migration that adds the delete back
+to the newest body, not one that repeats this file ([§ 3](#3-undo-one-migration)).
+The extra delete is a no-op on a user with no bookmarks, and re-running the whole function on an already-tombstoned
 user is the documented retry path.
 
 ## Rollback rush candidates (20260910020000)
@@ -2234,16 +2297,11 @@ Both dumps are restricted. The report dump names reporters and carries the snaps
 
 Function-only change (#2257): `create or replace function anonymize_user(...)` adding `delete from chat_member_blocks where blocker_user_id = p_user_id;` and `delete from rush_candidate_votes where voter_id = p_user_id;` alongside the existing per-user purges.
 
-To roll back, re-apply the previous definition from `20260902160000_anonymize_user_purge_bookmarks.sql` as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)); `db push` won't re-run that version itself. The whole function body is in that file, and `create or replace` makes replaying it idempotent:
-
-```sql
--- Re-run the CREATE OR REPLACE block from
--- supabase/migrations/20260902160000_anonymize_user_purge_bookmarks.sql
-```
+To roll back, ship a new migration that `create or replace`s `anonymize_user` with its newest definition's body (find it as § 3 says) minus the two deletes above ([§ 3) Undo one migration](#3-undo-one-migration)). Don't replay `20260902160000_anonymize_user_purge_bookmarks.sql`'s body: later migrations redefined the function, and that body would also drop the `chat_sidebar_*` and `discord_author_links` purges. *Corrected 2026-10-01 (#2606): this used to say to re-run that file's block.*
 
 **Rolling this back is a data-retention regression, not a feature rollback.** Without these lines, a deleted member's own block list and their rush ballots both survive account deletion. The FKs' `on delete cascade` do **not** cover either: `anonymize_user` tombstones the `users` row rather than deleting it, so nothing ever cascades. What each table retains and why is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion. Only roll back alongside dropping `chat_member_blocks` itself — and in that order, per the note above.
 
-**Re-applying (a new migration repeating it, [§ 3](#3-undo-one-migration)) is safe** and idempotent; each delete is a no-op for a user with no such rows, and re-running the whole function on an already-tombstoned user is the documented retry path.
+**Re-applying is safe** and idempotent: a new migration that adds the deletes back to the newest body, not one that repeats this file ([§ 3](#3-undo-one-migration)). Each delete is a no-op for a user with no such rows, and re-running the whole function on an already-tombstoned user is the documented retry path.
 
 ## Rollback the theme palette engine stamp (20260923170000)
 
@@ -2294,7 +2352,7 @@ SELECT id, legal_accepted_at, legal_policy_version FROM users WHERE legal_accept
 
 A policy and a function (#2494). It re-creates `chat_message_actions_select` with one more conjunct and adds `chat_viewer_has_blocked`. No data changes, and no API or client code depends on it: clients read the table the same way under either policy and just receive fewer rows under this one.
 
-**Roll back with a new forward migration, not by hand.** It is the rule in [§ 3) Undo one migration](#3-undo-one-migration): hand DDL leaves production's ledger recording `20260924170000` as applied, so a later re-land would apply nothing. Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The policy goes back to exactly what `20260803150000` wrote. It is re-created before the function is dropped, because the current policy references the function.
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The policy goes back to exactly what `20260803150000` wrote. It is re-created before the function is dropped, because the current policy references the function.
 
 ```sql
 drop policy if exists "chat_message_actions_select" on public.chat_message_actions;
@@ -2332,7 +2390,7 @@ That migration re-creates a policy, so the same PR bumps the entry's `creates` c
 
 A column and two functions (#2303). The column is written only by a member hiding a DM, and dropping it loses exactly that: every hidden DM comes back into its member's list. No message, channel or other receipt field is touched.
 
-**Roll back with a new forward migration, not by hand.** Same rule as [§ 3) Undo one migration](#3-undo-one-migration): hand DDL leaves the ledger recording `20260925200000` as applied, so a later re-land would apply nothing. Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The API carrying #2303 keeps working against the rolled-back database: the channel list shows every DM, and opening a DM still works, because the service fails open on both reads. Only the hide itself answers 500 until that API is forward-reverted too.
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the following in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). The API carrying #2303 keeps working against the rolled-back database: the channel list shows every DM, and opening a DM still works, because the service fails open on both reads. Only the hide itself answers 500 until that API is forward-reverted too.
 
 ```sql
 drop function if exists public.get_hidden_channel_ids(uuid, uuid);
@@ -2347,7 +2405,7 @@ alter table public.channel_read_receipts drop column if exists hidden_at;
 
 A function body (#2521). It re-creates `get_channel_unread_counts` with one more join predicate, so a sender the caller has blocked in the chapter no longer counts toward their unread or mention badges. No data changes, the signature is unchanged, and no API or client code depends on the new behaviour: the API reads the counts the same way under either body.
 
-**Roll back with a new forward migration, not by hand.** Same rule as [§ 3) Undo one migration](#3-undo-one-migration): hand DDL leaves the ledger recording `20260927050000` as applied, so a later re-land would apply nothing. Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
 
 The same PR removes the `#2521` landmark and the "Unread and mention counts skip a blocked sender" tier from `scripts/check-pglite-migrations.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
 
@@ -2359,9 +2417,9 @@ The same PR removes the `#2521` landmark and the "Unread and mention counts skip
 
 Three new functions (#1302), `add_private_channel_member`, `remove_private_channel_member` and `remove_user_from_private_channels`, and nothing else: no table, column, policy or data changes. Their only callers are the API's `POST /v1/channels/{id}/members` and `DELETE /v1/channels/{id}/members/{userId}`, and `MemberService.remove`.
 
-**Roll back the API first, then the functions, and keep the migration file.** An API that calls the functions against a database without them answers 500 on the two routes and refuses every chapter member removal. So revert the #1302 code (the two routes, the `ChatService` methods and the `remove_user_from_private_channels` call in `MemberService.remove`), but **keep `supabase/migrations/20260928170000_chat_private_channel_members.sql`** in the tree. A plain `git revert` of the PR deletes that file, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations` on a version production has applied but the repo no longer holds. That blocks both the rollback and the drop below.
+**Roll back the API first, then the functions, and keep the migration file.** An API that calls the functions against a database without them answers 500 on the two routes and refuses every chapter member removal. So revert the #1302 code (the two routes, the `ChatService` methods and the `remove_user_from_private_channels` call in `MemberService.remove`), but **keep `supabase/migrations/20260928170000_chat_private_channel_members.sql`** in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-Then drop the functions in a new forward migration, not by hand. Same rule as [§ 3) Undo one migration](#3-undo-one-migration): hand DDL leaves the ledger recording `20260928170000` as applied, so a later re-land would apply nothing.
+Then drop the functions in a new forward migration, not by hand. See [§ 3) Undo one migration](#3-undo-one-migration).
 
 ```sql
 drop function if exists public.add_private_channel_member(uuid, uuid, uuid);
@@ -2400,9 +2458,9 @@ Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewr
 
    Cancel each one it lists: the chapter's admin presses Cancel on the Discord import page (`POST /v1/discord-imports/{id}/cancel`). Rows in `cancelled`, `completed` or `purged` imports are never picked up, so they do not count. A cancelled import cannot be changed or restarted, and a new import started after the rollback can only create channels readable by the whole chapter, so tell the chapter before cancelling.
 
-2. **Revert the web app and the API together, forward, and keep the migration file.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. The web client that ships with it sends `new_channel_visibility` on every new channel, and the previous API's validation pipe rejects unknown properties (`forbidNonWhitelisted`), so that client against a reverted API fails every mapping save with a 400. So revert the #2787 code in both on `main` and ship that, but **keep `supabase/migrations/20260928171600_discord_import_channel_visibility.sql`** in the tree. Do not deploy a commit from before #2787 instead, and do not `git revert` the whole PR: either leaves the repo without a version production has applied, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`, which blocks both the rollback and the drop below.
+2. **Revert the web app and the API together, forward, and keep the migration file.** The API that ships with this migration writes all four columns on every scan and mapping, so dropping them under it fails every Discord import write. The web client that ships with it sends `new_channel_visibility` on every new channel, and the previous API's validation pipe rejects unknown properties (`forbidNonWhitelisted`), so that client against a reverted API fails every mapping save with a 400. So revert the #2787 code in both on `main` and ship that, but **keep `supabase/migrations/20260928171600_discord_import_channel_visibility.sql`** in the tree. Do not deploy a commit from before #2787 instead, and do not `git revert` the whole PR without restoring the file ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-3. **Remove the columns with a new forward migration**, not by hand. Hand DDL leaves the ledger recording `20260928171600` as applied, so a later re-land would apply nothing ([§ 3) Undo one migration](#3-undo-one-migration)):
+3. **Remove the columns with a new forward migration**, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 
    ```sql
    alter table public.discord_import_channels
@@ -2420,9 +2478,9 @@ Four columns and one CHECK on `discord_import_channels` (#2787). No data is rewr
 
 One nullable column on `discord_imports` (#2817). No data is rewritten.
 
-**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration filters the import list on `cleared_at`, so dropping the column under it fails the list. Revert the #2817 code on `main` and ship that, but keep `supabase/migrations/20260928183000_discord_import_cleared_at.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration filters the import list on `cleared_at`, so dropping the column under it fails the list. Revert the #2817 code on `main` and ship that, but keep `supabase/migrations/20260928183000_discord_import_cleared_at.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-Then drop the column in a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260928183000` as applied, so a later re-land would apply nothing ([§ 3) Undo one migration](#3-undo-one-migration)):
+Then drop the column in a new forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 
 ```sql
 alter table public.discord_imports drop column if exists cleared_at;
@@ -2462,9 +2520,9 @@ Work in this order.
 
    Cancel each one it lists (Cancel on the chapter's Discord import page, `POST /v1/discord-imports/{id}/cancel`) and tell the chapter's admin to start a new import after the rollback, choosing who can read each private channel by hand. A `ready` or `running` import was started under this release, so its roles and grants already exist and it can finish.
 
-2. **Revert the web app and the API together, forward, and keep the migration file.** The API that ships with this migration writes both columns on every scan and mapping, so dropping them under it fails every Discord import write. The role route's body changed shape in both directions (`action` in, `signet_role_key` out), and each side's validation pipe rejects the other's (`forbidNonWhitelisted`), so a web and API from different sides of #2818 fail the role step with a 400. Revert the #2818 code in both on `main` and ship that, but **keep `supabase/migrations/20260928203000_discord_import_role_gates.sql`** in the tree. Do not deploy a commit from before #2818, and do not `git revert` the whole PR: either leaves the repo without a version production has applied, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+2. **Revert the web app and the API together, forward, and keep the migration file.** The API that ships with this migration writes both columns on every scan and mapping, so dropping them under it fails every Discord import write. The role route's body changed shape in both directions (`action` in, `signet_role_key` out), and each side's validation pipe rejects the other's (`forbidNonWhitelisted`), so a web and API from different sides of #2818 fail the role step with a 400. Revert the #2818 code in both on `main` and ship that, but **keep `supabase/migrations/20260928203000_discord_import_role_gates.sql`** in the tree. Do not deploy a commit from before #2818 instead, and do not `git revert` the whole PR without restoring the file ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-3. **Remove the columns with a new forward migration**, not by hand. Hand DDL leaves the ledger recording `20260928203000` as applied, so a later re-land would apply nothing ([§ 3) Undo one migration](#3-undo-one-migration)):
+3. **Remove the columns with a new forward migration**, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 
    ```sql
    alter table public.discord_import_channels
@@ -2482,9 +2540,9 @@ Work in this order.
 
 One nullable column on `discord_imports` (#2858). No data is rewritten.
 
-**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration writes `messages_after` when an import starts with a cutoff. Revert the #2858 code on `main` and ship that, but keep `supabase/migrations/20260929170000_discord_import_messages_after.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration writes `messages_after` when an import starts with a cutoff. Revert the #2858 code on `main` and ship that, but keep `supabase/migrations/20260929170000_discord_import_messages_after.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-Then drop the column in a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260929170000` as applied, so a later re-land would apply nothing ([§ 3) Undo one migration](#3-undo-one-migration)):
+Then drop the column in a new forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 
 ```sql
 alter table public.discord_imports drop column if exists messages_after;
@@ -2498,9 +2556,9 @@ An import that was running with a cutoff reads all history from where it stopped
 
 One nullable column and its CHECK on `chat_channels` (#2771). No data is rewritten.
 
-**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration selects `default_notification_level` in the push worker and writes it from `PATCH /v1/channels/{id}`. Revert the #2771 code on `main` and ship that, but keep `supabase/migrations/20260929190000_chat_channels_default_notification_level.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+**Revert the API and web code forward, and keep the migration file.** The API that ships with this migration selects `default_notification_level` in the push worker and writes it from `PATCH /v1/channels/{id}`. Revert the #2771 code on `main` and ship that, but keep `supabase/migrations/20260929190000_chat_channels_default_notification_level.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
-Then drop the column in a new forward migration, not by hand. Hand DDL leaves the ledger recording `20260929190000` as applied, so a later re-land would apply nothing ([§ 3) Undo one migration](#3-undo-one-migration)):
+Then drop the column in a new forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 
 ```sql
 alter table public.chat_channels
@@ -2516,11 +2574,11 @@ Channels an officer set lose that choice and fall back to the built-in default. 
 
 Two new per-member tables (#2877), `chat_sidebar_preferences` and `chat_sidebar_pins`, the function `set_chat_sidebar_section_collapsed`, and an `anonymize_user` that also purges both tables. No existing table or row changes.
 
-**Revert the API and client code forward, and keep the migration file.** Revert the #2877 code on `main` (the `/v1/chat-sidebar` controller, its service and repository, and the clients' sidebar controls), but keep `supabase/migrations/20260929213000_chat_sidebar_preferences.sql` in the tree. A plain `git revert` of the PR deletes that file, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+**Revert the API and client code forward, and keep the migration file.** Revert the #2877 code on `main` (the `/v1/chat-sidebar` controller, its service and repository, and the clients' sidebar controls), but keep `supabase/migrations/20260929213000_chat_sidebar_preferences.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
 **Once a store build that calls `/v1/chat-sidebar` is listed in `apps/mobile/store/shipped-builds.json`, keep the routes.** Removing a route a shipped binary calls fails the required `check:api-breaking:shipped` gate, and its waiver covers only routes no shipped binary calls. Revert the web rail and mobile s04 to the default arrangement instead, and leave the controller answering; an installed build then keeps working until it is retired.
 
-Leaving the tables in place after the code is reverted is safe: nothing reads them, and `anonymize_user` keeps purging them. To remove them, write a new forward migration, not hand DDL, which would leave the ledger recording `20260929213000` as applied ([§ 3) Undo one migration](#3-undo-one-migration)). That migration must first restore `anonymize_user` without the two sidebar deletes, because the current body deletes from both tables and would fail once they are gone. The body to restore is the current one minus those two lines: since `20260929230000_discord_author_links.sql` (#2878) redefines `anonymize_user` on top of this one, restoring the `20260915210100` body would also drop the #2878 Discord-link scrub, unless #2878 was rolled back first (added 2026-09-29):
+Leaving the tables in place after the code is reverted is safe: nothing reads them, and `anonymize_user` keeps purging them. To remove them, write a new forward migration, not hand DDL ([§ 3) Undo one migration](#3-undo-one-migration)). That migration must first restore `anonymize_user` without the two sidebar deletes, because the current body deletes from both tables and would fail once they are gone. The body to restore is the current one minus those two lines: since `20260929230000_discord_author_links.sql` (#2878) redefines `anonymize_user` on top of this one, restoring the `20260915210100` body would also drop the #2878 Discord-link scrub, unless #2878 was rolled back first (added 2026-09-29):
 
 ```sql
 -- 1. create or replace function anonymize_user(...) with the current body, minus the chat_sidebar_* deletes.
@@ -2538,7 +2596,7 @@ Dropping the tables loses every member's pins, folds and filters. Each member's 
 
 A new table, a column and CHECK on `discord_oauth_states`, three functions, an insert trigger on `chat_messages`, and a redefined `anonymize_user` (#2878). Linking has rewritten `chat_messages.sender_id` on the imported rows of every member who linked. That is the part a rollback has to undo deliberately. (It also pointed reports about those rows that named nobody at the member; those stay.)
 
-**Revert the API and web code forward, and keep the migration file.** Revert the #2878 code on `main` and ship that, but keep `supabase/migrations/20260929230000_discord_author_links.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+**Revert the API and web code forward, and keep the migration file.** Revert the #2878 code on `main` and ship that, but keep `supabase/migrations/20260929230000_discord_author_links.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
 Then undo it in two new forward migrations, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)). A deploy applies migrations before it ships the API, so the first migration, steps 1 to 3, ships with the code revert: the detach cannot wait for a later deploy (step 1). Until the reverted API is live, the #2878 author-link routes answer 500 because their table is gone; that is the feature being withdrawn. The bot connect flow keeps working, because `purpose` stays. The second migration, step 4, ships in a later deploy.
 
@@ -2585,11 +2643,11 @@ Then undo it in two new forward migrations, not by hand ([§ 3) Undo one migrati
 
 One new API-only table, `chat_push_dispatches`, and its `dispatched_at` index (#2846). No existing table or row changes. The audit bridge's half of #2846 needs no schema: it reuses `idx_chat_messages_dedupe` through `client_message_id`.
 
-**Revert the API forward first, and keep the migration file.** Revert the #2846 code on `main` and ship that, but keep `supabase/migrations/20260930020000_chat_push_dispatches.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API runs one instance's worth of pushes again, so hold every API service at one instance until it is re-landed.
+**Revert the API forward first, and keep the migration file.** Revert the #2846 code on `main` and ship that, but keep `supabase/migrations/20260930020000_chat_push_dispatches.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API runs one instance's worth of pushes again, so hold every API service at one instance until it is re-landed.
 
 **Never drop the table under the #2846 API.** The push worker claims every message before sending, and treats a failed claim as "not claimed", so with the table gone every chat push stops. It fails safe (no crash, no double-send) but quietly: the only signal is a `chat-push: dispatch claim failed` error line per message.
 
-Leaving the table after the revert is harmless: nothing writes it, and nothing purges it either, so it keeps the last day of claims. To remove it once the reverted API is live, use a new forward migration, not hand DDL, which would leave the ledger recording `20260930020000` as applied ([§ 3) Undo one migration](#3-undo-one-migration)):
+Leaving the table after the revert is harmless: nothing writes it, and nothing purges it either, so it keeps the last day of claims. To remove it once the reverted API is live, use a new forward migration, not hand DDL ([§ 3) Undo one migration](#3-undo-one-migration)):
 
 ```sql
 drop table if exists public.chat_push_dispatches;
@@ -2601,7 +2659,7 @@ drop table if exists public.chat_push_dispatches;
 
 A table, `discord_import_created_channels` (RLS on, no policies), two functions, `delete_empty_discord_import_channels` and its check `discord_import_channel_holds_anything`, and two partial indexes, on `point_transactions (channel_id)` and `discord_import_channels (target_channel_id)` (#2905). The migration itself rewrites no row. What changes data is the function, when a purge calls it: it deletes channels an import created that hold no message, attachment, points-ledger link or `use_existing` mapping. Each delete also cascades that channel's read receipts, sidebar pins and created-channel row. It sets `target_channel_id` to null on the mapping rows that named it, which removes the one record of which channel that `create_new` row made.
 
-**Revert the API code forward, and keep the migration file.** The worker that ships with this migration writes a row to the table for every channel it creates, and calls the function in every purge slice. Revert the #2905 code on `main` and ship that, but keep `supabase/migrations/20260930030000_discord_import_purge_channels.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker neither writes the table nor calls the function, so leaving both in place is safe.
+**Revert the API code forward, and keep the migration file.** The worker that ships with this migration writes a row to the table for every channel it creates, and calls the function in every purge slice. Revert the #2905 code on `main` and ship that, but keep `supabase/migrations/20260930030000_discord_import_purge_channels.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted worker neither writes the table nor calls the function, so leaving both in place is safe.
 
 To remove them, drop them in a new forward migration once the reverted API is live, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)). A newer worker still running fails its channel creation and every purge slice until the revert deploys.
 
@@ -2621,7 +2679,7 @@ A channel a purge already deleted can't be recovered by rollback. It held no mes
 
 It replaces the `discord_import_channels_target_present` CHECK with `discord_import_channels_new_name_present`, so a `use_existing` mapping row can lose its target when its channel is deleted. It also replaces two functions: `discord_import_channel_holds_anything` stops counting a merge by a `purging` or `purged` import, and `delete_empty_discord_import_channels` also reaps a channel a `purging` or `purged` import created that the purging import merged into (#2922). The migration itself rewrites no row. Data changes come later, from an officer deleting a merged-into channel (the mapping rows keep their record with `target_channel_id` null) and from purges.
 
-**Revert the API code forward, and keep the migration file.** Revert the #2922 code on `main` and ship that, but keep `supabase/migrations/20260930140000_discord_import_merge_target_deletable.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API runs safely on the new schema, but it doesn't name the deletion. `start` no longer refuses a merge whose channel was deleted, and the worker fails that import with an older message. A channel deleted between slices gives "Channel mapping for #… has no target.". One deleted while a slice writes into it gives a raw foreign-key error (`23503`) from the insert or the row's write-back, or "…points at a channel outside this chapter." at the next part or channel it resolves. Nothing is written into the missing channel either way.
+**Revert the API code forward, and keep the migration file.** Revert the #2922 code on `main` and ship that, but keep `supabase/migrations/20260930140000_discord_import_merge_target_deletable.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API runs safely on the new schema, but it doesn't name the deletion. `start` no longer refuses a merge whose channel was deleted, and the worker fails that import with an older message. A channel deleted between slices gives "Channel mapping for #… has no target.". One deleted while a slice writes into it gives a raw foreign-key error (`23503`) from the insert or the row's write-back, or "…points at a channel outside this chapter." at the next part or channel it resolves. Nothing is written into the missing channel either way.
 
 **Don't restore the old CHECK.** It is the bug: with it back, deleting any channel an import merged into answers 500 again. It also can't be added once an officer has deleted such a channel, because the rows that merged into it now have no target and fail validation. `not valid` would skip them and still bring the 500 back.
 
@@ -2635,7 +2693,7 @@ A channel a purge or an officer already deleted can't be recovered by rollback. 
 
 One column on `discord_imports`, `purged_messages integer not null default 0` (#2944). No data is rewritten, and the count it holds is progress only: nothing reads it to decide what to delete.
 
-**Revert the API and web code forward, and keep the migration file.** The worker that ships with this migration writes `purged_messages` with every lease renewal during a purge. Revert the #2944 code on `main` and ship that, but keep `supabase/migrations/20260930150000_discord_import_purged_messages.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted worker doesn't write the column and the reverted web doesn't read it, so leaving it in place is safe.
+**Revert the API and web code forward, and keep the migration file.** The worker that ships with this migration writes `purged_messages` with every lease renewal during a purge. Revert the #2944 code on `main` and ship that, but keep `supabase/migrations/20260930150000_discord_import_purged_messages.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted worker doesn't write the column and the reverted web doesn't read it, so leaving it in place is safe.
 
 To remove it, drop it in a new forward migration once the reverted API is live, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)). A newer worker still running fails every purge slice after its first round until the revert deploys, and the import is marked `failed`; deleting it again finishes it.
 
@@ -2649,7 +2707,7 @@ alter table public.discord_imports drop column if exists purged_messages;
 
 Two columns on `chat_message_reports`, `reported_attachments` and `evidence_released_at`, and two partial indexes, `idx_chat_message_reports_evidence_held` and `idx_chat_message_reports_evidence_unreleased` (#2481). No data is rewritten.
 
-**Revert the API and web code forward, and keep the migration file.** Revert the #2481 code on `main` and ship that, but keep `supabase/migrations/20260930191500_chat_report_attachment_evidence.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`.
+**Revert the API and web code forward, and keep the migration file.** Revert the #2481 code on `main` and ship that, but keep `supabase/migrations/20260930191500_chat_report_attachment_evidence.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)).
 
 **Scrub the snapshots in the same revert; don't just leave the columns.** The reverted report repository selects every column and strips only `reporter_user_id`, so a reverted API would hand each report's `reported_attachments` (bucket and storage path included) and `evidence_released_at` to the officer queue. So the revert PR carries a forward migration that empties them, which a deploy applies before the reverted API goes live:
 
@@ -2700,7 +2758,7 @@ alter table public.chat_message_reports
 
 A CHECK on `chat_channels`, `chat_channels_dm_two_members`, and a partial unique index, `chat_channels_dm_pair_key` (#2788). No data is rewritten.
 
-**Revert the API code forward, and keep the migration file.** Revert the #2788 code on `main` and ship that, but keep `supabase/migrations/20260930231000_chat_dm_one_channel_per_pair.sql` in the tree: a plain `git revert` of the PR deletes it, and Deploy production's replay rehearsal (`scripts/ci/check-migration-replay.mjs`) then fails with `foreign-migrations`. The reverted API runs safely against the index. It looks the pair up, then inserts, so the losing call of a race gets the raw `23505` as a 500, and opening the DM again returns the one that won.
+**Revert the API code forward, and keep the migration file.** Revert the #2788 code on `main` and ship that, but keep `supabase/migrations/20260930231000_chat_dm_one_channel_per_pair.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API runs safely against the index. It looks the pair up, then inserts, so the losing call of a race gets the raw `23505` as a 500, and opening the DM again returns the one that won.
 
 **Keep the index unless it is itself the problem.** Dropping it lets two racing opens make two DMs for one pair again, and the members can end up in different threads. To remove both anyway, do it in a later forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 

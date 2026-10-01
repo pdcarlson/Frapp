@@ -11,8 +11,8 @@ import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 // all of them. Two merges minutes apart then cancel the earlier commit's run,
 // its required checks conclude `cancelled`, nothing re-runs them, and
 // `validate-deploy-sha.mjs` refuses to deploy that commit forever after — which
-// lands on exactly the operation that needs it, since DB_ROLLBACK_PLAYBOOK
-// recovery is redeploying an older commit.
+// lands on exactly the operation that needs it, since a code-only rollback
+// redeploys an older commit.
 //
 // The reason this is a test and not just four edited files: nothing about a new
 // workflow with `cancel-in-progress: true` looks wrong. The cost only appears
