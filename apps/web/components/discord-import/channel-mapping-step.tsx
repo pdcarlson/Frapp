@@ -246,7 +246,10 @@ export function ChannelMappingStep({
     catalog,
     holders,
     catalogLoading: catalogQuery.isPending,
-    catalogUnavailable: catalogQuery.isError,
+    // With no data, as on Chat Admin: a catalog refetch that fails while the
+    // grid is open would otherwise swap a known set of permissions for an
+    // error, mid-mapping.
+    catalogUnavailable: catalogQuery.isError && catalogQuery.data === undefined,
   };
 
   return (

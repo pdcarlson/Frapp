@@ -21,16 +21,12 @@ import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { EYEBROW } from "@/components/ui/typography";
+import { denseListClassName } from "@/components/shared/table-controls";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  anyReadUncached,
+  readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import {
@@ -62,7 +58,7 @@ import type { ChatReportTab } from "./chat-report-copy";
  * The officer report queue (#2257) and its one destructive action (#2311).
  *
  * Contract: `spec/behavior/chat/README.md` § Report and block. Three rules from
- * it shape this card more than anything visual:
+ * it shape this queue more than anything visual:
  *
  * - **It shows the evidence, not the conversation.** Each row is the report's
  *   own snapshot (`reported_content`, `reported_sender_id` /
@@ -74,16 +70,16 @@ import type { ChatReportTab } from "./chat-report-copy";
  *   posts the report id alone, and the control only exists on an open report
  *   whose message is still there; a row whose message is gone offers Mark
  *   actioned instead. The server is idempotent on the message, so "already
- *   removed" is a success the card reports as such, never an error that blames
+ *   removed" is a success the queue reports as such, never an error that blames
  *   anyone for it. The confirmation says what the sender will see, and that in
  *   a DM they may deduce the reporter — the trade-off the owner accepted with
  *   this removal (`spec/behavior/chat/README.md` § Officer action).
  * - **A failure is described by what the server could have done.** Only a
  *   404 or 409 carries a refusal worth quoting — the API's own authored words,
  *   decided before anything changed. A 5xx or a transport failure is shown in
- *   this card's words, never as "Internal server error" or "Failed to fetch",
- *   and says the outcome is unknown, because it is: a removal or a resolution
- *   may have committed before its answer was lost
+ *   the queue's own words, never as "Internal server error" or "Failed to
+ *   fetch", and says the outcome is unknown, because it is: a removal or a
+ *   resolution may have committed before its answer was lost
  *   ({@link removalFailureMessage}, {@link resolutionFailureMessage}).
  *
  * The gate is `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) —
@@ -101,12 +97,21 @@ export function ChatReportsCard() {
     <Can
       allOf={CHAT_REPORT_QUEUE_PERMISSIONS}
       deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{copy.title}</CardTitle>
-            <CardDescription>{copy.deniedDescription}</CardDescription>
-          </CardHeader>
-        </Card>
+        // Labelled as the queue is when it renders. This sits beside the flush
+        // channel sections on the same page, so a card here would draw the
+        // same title in a second style for an officer who can manage channels
+        // but not review reports.
+        <section aria-labelledby="chat-reports-label" className="space-y-1">
+          <h2
+            id="chat-reports-label"
+            className={`${EYEBROW} text-muted-foreground`}
+          >
+            {copy.title}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {copy.deniedDescription}
+          </p>
+        </section>
       }
       offlineFallback={(retry) => (
         <PermissionsOfflineSurface
@@ -247,68 +252,95 @@ function ChatReportsQueue() {
   }
 
   return (
-    <Card>
+    // Flush, not carded: the route's other sections sit on the page surface,
+    // and this one is labelled the same way. The heading survives as the
+    // section label; the line under it is kept, because it is not the queue
+    // describing itself but the two facts a row cannot show — that its text is
+    // the snapshot taken at report time, and that the reporter is never named.
+    <section aria-labelledby="chat-reports-label" className="space-y-3">
       {confirmDialog}
-      <CardHeader>
-        <CardTitle className="text-lg">{copy.title}</CardTitle>
-        <CardDescription>{copy.description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Tabs
-          value={status}
-          onValueChange={(next) => setStatus(next as ChatReportStatus)}
+      <div className="space-y-1">
+        <h2
+          id="chat-reports-label"
+          className={`${EYEBROW} text-muted-foreground`}
         >
-          {/*
-            Four labels plus the primitive's 24px gaps run past a 375px card,
+          {copy.title}
+        </h2>
+        <p className="text-caption text-muted">{copy.description}</p>
+      </div>
+      <Tabs
+        value={status}
+        onValueChange={(next) => setStatus(next as ChatReportStatus)}
+      >
+        {/*
+            Four labels plus the primitive's 24px gaps run past a 375px page,
             so the rail scrolls in its own box rather than pushing the page
             (the `test:floor` rule). The wrapper scrolls, not the list: the
             active underline sits on the list's own hairline, and a scrolling
             list would clip it.
           */}
-          <div className="overflow-x-auto">
-            <TabsList className="min-w-max" aria-label="Report status">
-              {CHAT_REPORT_TABS.map((tab) => (
-                <TabsTrigger key={tab.status} value={tab.status}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          {CHAT_REPORT_TABS.map((tab) => (
-            <TabsContent key={tab.status} value={tab.status}>
-              {/* Radix unmounts inactive panels, so one slice is read at a time. */}
-              <ReportList
-                tab={tab}
-                busy={busy}
-                onResolve={(report, next) => void handleResolve(report, next)}
-                onRemove={(report, author) => void handleRemove(report, author)}
-              />
-            </TabsContent>
-          ))}
-        </Tabs>
-      </CardContent>
-    </Card>
+        <div className="overflow-x-auto">
+          <TabsList className="min-w-max" aria-label="Report status">
+            {CHAT_REPORT_TABS.map((tab) => (
+              <TabsTrigger key={tab.status} value={tab.status}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        {CHAT_REPORT_TABS.map((tab) => (
+          <TabsContent key={tab.status} value={tab.status}>
+            {/* Radix unmounts inactive panels, so one slice is read at a time. */}
+            <ReportList
+              tab={tab}
+              busy={busy}
+              onResolve={(report, next) => void handleResolve(report, next)}
+              onRemove={(report, author) => void handleRemove(report, author)}
+            />
+          </TabsContent>
+        ))}
+      </Tabs>
+    </section>
   );
 }
 
-function ReportList({
-  tab,
-  busy,
-  onResolve,
-  onRemove,
-}: {
+interface ReportListProps {
   tab: ChatReportTab;
   busy: Readonly<Record<string, RowAction>>;
   onResolve: (report: ChatReport, next: Resolution) => void;
   onRemove: (report: ChatReport, author: string) => void;
-}) {
-  const query = useChatReports(tab.status);
+}
+
+function ReportList(props: ReportListProps) {
+  const query = useChatReports(props.tab.status);
+  // Above every branch the read can switch between, so the notice's live
+  // region is already mounted when a refetch fails, and an empty tab says it
+  // is stale as plainly as a full one: "No open reports" from a failed read
+  // reads as a queue with nothing waiting.
+  return (
+    <div className="space-y-3">
+      <StaleReadNotice
+        stale={query.isError && query.data !== undefined}
+        message={copy.stale}
+        onRetry={() => void query.refetch()}
+      />
+      <ReportListBody {...props} query={query} />
+    </div>
+  );
+}
+
+function ReportListBody({
+  tab,
+  busy,
+  onResolve,
+  onRemove,
+  query,
+}: ReportListProps & { query: ReturnType<typeof useChatReports> }) {
   const { isOffline } = useNetwork();
   const { nameFor } = useMemberDisplayNames();
   const now = useNow();
 
-  const paused = query.isPending && query.fetchStatus === "paused";
-  if ((isOffline && anyReadUncached(query)) || paused) {
+  if (readIsOffline(isOffline, query)) {
     return (
       <NestedOffline
         title={copy.offlineTitle}
@@ -379,7 +411,12 @@ function ReportList({
       {tab.status === "open" ? (
         <p className="text-xs text-muted-foreground">{copy.openHint}</p>
       ) : null}
-      <ul className="space-y-3" aria-label={`${tab.label} reports`}>
+      {/*
+        A flush list, as on every other flushed route: the list's own dividers
+        rather than a bordered box per report, which was the same per-row card
+        /discord-import dropped in the same change (#2500).
+      */}
+      <ul className={denseListClassName} aria-label={`${tab.label} reports`}>
         {rows.map(({ report, author, subject }, index) => (
           <ReportRow
             key={report.id}
@@ -440,7 +477,7 @@ function ReportRow({
 
   return (
     <li
-      className="space-y-3 rounded-lg border border-border p-3"
+      className="min-h-11 space-y-3 py-3"
       aria-busy={busy !== null || undefined}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

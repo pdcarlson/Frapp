@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import { anyReadUncached } from "@/components/shared/async-states";
 /*
   The **nested** state family, not the whole-screen one, and on a page with no
@@ -600,27 +600,22 @@ export function MembersDirectory() {
       page surface. `1f` pin 2.
     */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h2
-            id="members-list-label"
-            className={`${EYEBROW} truncate text-muted-foreground`}
-          >
-            {/* A search spans both tabs (see `members` above), so say so. */}
-            {usingSearch ? "Actives and alumni" : "Actives"}
-          </h2>
-          {/*
-            Suppressed while a search is in flight rather than rendering
-            "0 members matching …", which is a claim about the roster made
-            before the answer is back.
-          */}
-          {activeQuery.isLoading ? null : (
-            <p className="shrink-0 text-caption text-muted">
-              {sortedMembers.length} member
-              {sortedMembers.length === 1 ? "" : "s"}
-              {usingSearch ? ` matching “${deferredQuery}”` : ""}
-            </p>
-          )}
-        </div>
+        {/*
+          The count is suppressed while a search is in flight rather than
+          rendering "0 members matching …", which is a claim about the roster
+          made before the answer is back.
+        */}
+        <SectionLabel
+          id="members-list-label"
+          count={
+            activeQuery.isLoading
+              ? null
+              : `${sortedMembers.length} member${sortedMembers.length === 1 ? "" : "s"}${usingSearch ? ` matching “${deferredQuery}”` : ""}`
+          }
+        >
+          {/* A search spans both tabs (see `members` above), so say so. */}
+          {usingSearch ? "Actives and alumni" : "Actives"}
+        </SectionLabel>
         <div className="flex flex-wrap items-center gap-2">
           {/*
           `type="search"`, not `type="text"`: it gets the browser's own clear

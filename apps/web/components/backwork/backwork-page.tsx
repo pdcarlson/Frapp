@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import {
   UPLOAD_FIELD_CLASS,
   UPLOAD_SHEET_BUTTON_CLASS,
@@ -933,14 +933,14 @@ export function BackworkPage() {
           The glyph stays — it is the route's own mark and the only thing on
           this row that is not a word.
         */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex items-center gap-2">
           <BackworkGlyph className="h-4 w-4 shrink-0 text-muted" />
-          <h2 id="bw-list-label" className={`${EYEBROW} text-muted-foreground`}>
+          <SectionLabel
+            id="bw-list-label"
+            count={`${resources.length} result${resources.length === 1 ? "" : "s"}`}
+          >
             Resources
-          </h2>
-          <p className="text-caption text-muted">
-            {resources.length} result{resources.length === 1 ? "" : "s"}
-          </p>
+          </SectionLabel>
         </div>
         <div className="pt-2">
           {/*

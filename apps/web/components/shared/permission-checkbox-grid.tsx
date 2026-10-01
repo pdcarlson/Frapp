@@ -52,8 +52,8 @@ export function PermissionCheckboxGrid({
   if (isOffline && (catalogUnavailable || catalogLoading)) {
     return (
       <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
-        Offline — can&apos;t load the permission list. Existing selections are
-        unaffected; reconnect to change them.
+        Can&apos;t load the permission list while offline. Existing selections
+        are unaffected; reconnect to change them.
       </p>
     );
   }

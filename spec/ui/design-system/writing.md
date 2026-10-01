@@ -487,6 +487,34 @@ will retry (`apps/web/components/chat/composer.tsx`, `submit`).
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
 
+### Chat Admin — channels and categories (dashboard)
+
+The channel structure below the report queue on `/chat-admin`. Its states stand where both of its sections would be, so they name channels, not the page: the report queue above them reads and fails on its own.
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading channels...` |
+| Empty (channels) | `No channels yet` | `Create the first channel to get chapter chat structured.` |
+| Empty (categories) | `No categories yet` | `Channels without a category show up as uncategorized.` |
+| Nothing selected (edit pane) | `No channel selected` | `Pick a channel to edit its details, notifications and pins.` |
+| Loading (pins) | — | `Loading pins...` |
+| Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
+| Stale (pins) | — | `Couldn't refresh the pins. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded pins stay) |
+| Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
+| Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
+| Loading (permission grid) | — | `Loading permissions…` |
+| Unavailable (permission grid) | — | `Couldn't load the permission catalog. You may be missing the members:view permission it requires. Existing selections are unaffected; ask your chapter president for access to change them.` (nothing loaded; a failed refresh keeps the loaded grid) |
+| Offline (permission grid) | — | `Can't load the permission list while offline. Existing selections are unaffected; reconnect to change them.` |
+| Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
+| Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
+| Permission denied | — | `Managing channels and categories needs the channels:manage permission. Ask your chapter president to grant access.` |
+
+The permission grid is the role-gated channel's, shared with the import wizard's channel step, which shows the same three lines.
+
+Implementation: inline in `apps/web/components/chat-admin/chat-admin-page.tsx`; the permission grid's in `apps/web/components/shared/permission-checkbox-grid.tsx`.
+
 ### Chat Admin — reported messages (dashboard)
 
 The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Report and block). One empty row per status tab, because each tab is a different claim about the chapter.
@@ -497,6 +525,8 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
 | Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
 | Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay, and so does an empty tab, which says it too) |
+| No chapter | `No chapter selected` | `Pick an active chapter to review its reports.` |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
 | Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
@@ -522,10 +552,28 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 
 ### Discord Import (dashboard)
 
-Deleting an import from `/discord-import` ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
+The import list on `/discord-import`, and deleting an import from it ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
 
 | State | Title | Description |
 |---|---|---|
+| Loading | — | `Loading imports...` |
+| Empty | `No imports yet` | `Bring your chapter's Discord history in as read-only archive messages.` |
+| Error | `Couldn't load imports` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the imports. This is the last update that loaded.` · `Try again` (a background refresh of the list failed, or of the polled import's own row while that row still shows its copy; the loaded rows and their meters stay) |
+| Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
+| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
+| Permission denied | — | `Importing a Discord archive needs channel management permission.` |
+| Loading (channel panel) | — | `Loading the import’s channels…` |
+| Error (channel panel) | `Couldn’t load the import’s channels` | `The import itself is unaffected and keeps running. Try again in a moment.` · `Retry` |
+| Offline (channel panel) | `Channels unavailable offline` | `Reconnect to see this import’s channels.` (whether the read paused or failed while offline) |
+| Stale (channel panel) | — | `Couldn’t refresh the channels. This is the last update that loaded.` · `Try again` (a poll of the panel failed; the channels it last showed stay) |
+| Empty (channel panel) | — | `Waiting for the first channel to start.` (still running) · `No channel was imported.` (finished) |
+| Channel panel groups | `Importing now` / `Stopped at` (running / stopped) · `Finished last` / `Finished` · `Failed` | A failed channel without a reason: `No reason was recorded.` Under the groups: `Imported messages don’t appear live in chat. Open a channel to see what has landed so far.` |
+| Loading (wizard, connect step) | — | `Checking whether Discord is connected…` · `Confirming your Discord server…` (the returned authorization is being confirmed) |
+| Error (wizard, connect step) | `Couldn't check the Discord connection` | `Retry to see whether your server is connected.` |
+| Offline (wizard, connect step) | `Can't check Discord offline` | `Reconnect to check whether your server is connected.` (whether the read paused or failed while offline) |
+| Stale (wizard, connect step) | — | `Couldn't recheck the Discord connection. This is the last answer that loaded.` · `Try again` (a recheck failed; the last answer, connected or not, stays) |
+| Refused (wizard, connect step) | `Could not confirm that server` | The API's own message, or `That Discord authorization could not be confirmed for this chapter.` (kept across Back and Continue, since a refused authorization is not sent again) |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
 | Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
 | Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
@@ -535,7 +583,9 @@ Deleting an import from `/discord-import` ([#2944](https://github.com/pdcarlson/
 
 The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
-Implementation: `apps/web/components/discord-import/delete-import-copy.ts`.
+The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's, and the connect step's loading lines keep the ellipsis; match them exactly when editing any of them.
+
+Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the channel panel's in `apps/web/components/discord-import/import-watch-panel.tsx`, the connect step's in `apps/web/components/discord-import/connect-step.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
 
 ### Billing (dashboard)
 
