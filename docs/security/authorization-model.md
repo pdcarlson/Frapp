@@ -534,7 +534,7 @@ it carries a client-reachable `SELECT` policy with no black-box coverage (tracke
 and the harness does not replay those defaults. So its `anon` EXECUTE assertions catch an explicit
 `grant … to anon`, but not a drop/recreate that forgets its `revoke … from anon`, which on hosted
 hands the grant back. Only the per-migration `has_function_privilege('anon', …)` checks in
-`db-promotion-runbook.md` cover that, at promotion time and only for the functions whose entries
+`docs/ops/database/promotion-log.md` cover that, at promotion time and only for the functions whose entries
 carry one. Replaying the defaults is #3052.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The

@@ -123,25 +123,7 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
 }));
 
 import { MembersDirectory } from "@/components/members/members-directory";
-
-/**
- * Elements painting `--card` that are not controls.
- *
- * `bg-card` is also the Secondary *button* recipe (`ui/button.tsx`), which is
- * legitimate and unrelated — a bare `.bg-card` query counts a Retry button as a
- * restored panel. What this lane deleted is the card as a **container**, so the
- * assertions below look only at what is not a control.
- */
-function cardFilledContainers(container: HTMLElement) {
-  return Array.from(container.querySelectorAll(".bg-card")).filter(
-    (el) =>
-      el.tagName !== "BUTTON" &&
-      // The idle presence dot is deliberately `bg-card` (`presence-status.ts`:
-      // a transparent interior lets an avatar photo show through and destroys
-      // the shape cue). It is a 10px disc, not a container.
-      !el.hasAttribute("data-presence"),
-  );
-}
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 beforeEach(() => {
   vi.clearAllMocks();

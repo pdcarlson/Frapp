@@ -9,6 +9,8 @@ import {
   runMigrationCli,
   validateInvocation,
 } from "../../run-migration.mjs";
+import { DRIFT_AND_ORDERING, ROLLBACK_PLAYBOOK } from "../lib/ops-docs.mjs";
+import { assertCitesSection } from "./helpers/doc-sections.mjs";
 
 // ── Doubles ─────────────────────────────────────────────────────────────────
 
@@ -229,6 +231,7 @@ test("--include-all is refused in CI unless deliberately allowed", () => {
   });
   assert.equal(refused.ok, false);
   assert.match(refused.message, /human recovery path/);
+  assertCitesSection(refused.message, DRIFT_AND_ORDERING, "--include-all");
 
   const allowed = validateInvocation({
     args: { env: "production", dryRun: false, includeAll: true },
@@ -244,16 +247,20 @@ test("--include-all is refused in CI unless deliberately allowed", () => {
 
 test("--include-all outside CI passes the flag through to db push", () => {
   const { supabase, calls } = makeSupabase();
+  const logged = [];
   const code = runMigrationCli({
     argv: ["--env", "production", "--include-all"],
     env: baseEnv({ SUPABASE_PROJECT_REF: ENVIRONMENTS.production.supabaseProjectRef }),
     supabase,
     readDir,
     lookupEnvironment,
-    ...quiet,
+    log: (line) => logged.push(line),
+    error: () => {},
   });
   assert.equal(code, EXIT_OK);
   assert.ok(calls.includes("db push --include-all"));
+  // The warning sends the operator to the recovery section before the push runs.
+  assertCitesSection(logged.join("\n"), DRIFT_AND_ORDERING, "--include-all");
 });
 
 test("without --include-all the flag is never passed", () => {
@@ -330,15 +337,23 @@ test("an UNREADABLE migrations directory is fatal, not 'nothing to apply'", () =
 
 test("a failing push exits 1 rather than throwing", () => {
   const { supabase } = makeSupabase({ throwOn: "db push" });
+  const errors = [];
   const code = runMigrationCli({
     argv: ["--env", "staging"],
     env: baseEnv(),
     supabase,
     readDir,
     lookupEnvironment,
-    ...quiet,
+    log: () => {},
+    error: (line) => errors.push(line),
   });
   assert.equal(code, EXIT_MIGRATION_FAILED);
+  // A refused push (foreign or back-dated version) and failed SQL need different
+  // docs: the rollback playbook has no ledger recovery.
+  const printed = errors.join("\n");
+  assertCitesSection(printed, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
+  assertCitesSection(printed, DRIFT_AND_ORDERING, "--include-all");
+  assert.ok(printed.includes(ROLLBACK_PLAYBOOK), "names the rollback playbook for failed SQL");
 });
 
 test("importing this module runs no migration", () => {

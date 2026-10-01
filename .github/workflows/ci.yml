@@ -1033,7 +1033,7 @@ jobs:
   # Out of reach: Realtime, Presence and GoTrue with real JWTs, which live in
   # the NestJS Jest tier (see ADR-11/ADR-12 + agent-infra.md), and the `anon`
   # EXECUTE grant hosted adds through default privileges, which only
-  # db-promotion-runbook.md's per-migration checks cover, where an entry has
+  # docs/ops/database/promotion-log.md's per-migration checks cover, where an entry has
   # one (#3052).
   pglite-migrations:
     needs: changes

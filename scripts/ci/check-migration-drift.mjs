@@ -96,7 +96,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { PROMOTION_LOG } from "./lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING } from "./lib/ops-docs.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -439,16 +439,14 @@ export function overallStatus(results) {
 
 // ── Reporting ───────────────────────────────────────────────────────────────
 
-// A foreign version has two causes with opposite fixes, so the guidance names
-// both. Deleting a renamed row makes the next `db push` re-run SQL the database
-// already ran.
+// A foreign version has two causes with opposite fixes: deleting a renamed row
+// makes the next `db push` re-run SQL the database already ran. The steps live in
+// the doc this names, once, so the alert says why to read them and links there.
 const FOREIGN_GUIDANCE =
-  "`supabase db push` refuses to run while one is present. First check whether the version ever " +
-  "existed in git (`git log --all --oneline -- 'supabase/migrations/<version>_*'`). If it shipped " +
-  "and `main` renamed it since, the SQL already ran: mark the old version reverted and the new one " +
-  "applied, and delete nothing. If git never held it, read the row's recorded `statements` before " +
-  `removing it — \`${PROMOTION_LOG}\` § reconciling a foreign migration row. ` +
-  "The CLI suggests `migration repair --status reverted`; **do not run it blind**.";
+  "`supabase db push` refuses to run while one is present. The CLI suggests " +
+  "`migration repair --status reverted`; **do not run it blind**: a version `main` renamed and one " +
+  "git never held need opposite fixes, and deleting the first makes the next `db push` re-run SQL " +
+  `the database already ran. Follow \`${DRIFT_AND_ORDERING}\` § Reconciling a foreign migration row.`;
 
 function migrationList(migrations, limit = 10) {
   const shown = migrations.slice(0, limit).map((m) => `\`${m.version}_${m.name}\``);

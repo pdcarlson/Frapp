@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import { invoiceStatusKind } from "@/components/billing/invoice-status";
 import {
   PayInvoiceDialog,
@@ -394,40 +394,42 @@ export function InvoiceList({ id }: { id?: string }) {
         statuses about nothing in particular.
       */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h2
-            id="invoice-list-heading"
-            className={`${EYEBROW} truncate text-muted-foreground`}
-          >
-            Invoices
-          </h2>
-          {/*
-            Only once the read has answered. `openCount` and `paidCount` come
-            from `invoices`, which is `[]` while `GET /v1/invoices` is in
-            flight — so rendering this unconditionally put "0 open · 0 paid"
-            above the spinner for the length of the round trip, which is the
-            confidently-wrong signal #707 exists to stop, on two more numbers.
-            The page this replaces could not reach that state because it gated
-            its whole body on a page-level `isLoading`; this list has no such
-            gate, so the guard moves here. Same shape the alumni list uses for
-            its own count.
-          */}
-          {invoicesQuery.isSuccess ? (
-          <p className="shrink-0 text-caption text-muted-foreground tabular-nums">
-            {openCount} open ·{" "}
-            <span
-              title={
-                overdueUnavailable
-                  ? "Overdue status is unavailable right now"
-                  : undefined
-              }
-            >
-              {overdueUnavailable ? "overdue unknown" : `${overdueCount} overdue`}
-            </span>{" "}
-            · {paidCount} paid
-          </p>
-          ) : null}
-        </div>
+        {/*
+          The count shows only once the read has answered. `openCount` and
+          `paidCount` come from `invoices`, which is `[]` while
+          `GET /v1/invoices` is in flight — so rendering this unconditionally
+          put "0 open · 0 paid" above the spinner for the length of the round
+          trip, which is the confidently-wrong signal #707 exists to stop, on
+          two more numbers.
+          The page this replaces could not reach that state because it gated
+          its whole body on a page-level `isLoading`; this list has no such
+          gate, so the guard moves here. Same shape the alumni list uses for
+          its own count.
+        */}
+        <SectionLabel
+          id="invoice-list-heading"
+          count={
+            invoicesQuery.isSuccess ? (
+              <>
+                {openCount} open ·{" "}
+                <span
+                  title={
+                    overdueUnavailable
+                      ? "Overdue status is unavailable right now"
+                      : undefined
+                  }
+                >
+                  {overdueUnavailable
+                    ? "overdue unknown"
+                    : `${overdueCount} overdue`}
+                </span>{" "}
+                · {paidCount} paid
+              </>
+            ) : null
+          }
+        >
+          Invoices
+        </SectionLabel>
         <div className="flex flex-wrap items-center gap-2">
           <Input
             aria-label="Search invoices or members"

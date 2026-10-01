@@ -143,8 +143,9 @@ export function NestedEmpty({
 /**
  * `title` and `description` are required rather than defaulted. The top-level
  * `ErrorState` defaults to "Unable to load data" / "Please retry in a moment.",
- * and the second is the shape `writing.md` §1 bans by name — vague copy that
- * states no failure, no reason and no next step. Every caller here supplies
+ * and the second is the shape `writing.md` §1 bans ("Please try again later"
+ * without context) — copy that names no specific failure and gives no reason,
+ * two of the three parts §3's pattern requires. Every caller here supplies
  * §7's own strings; requiring them means the next caller cannot ship the banned
  * copy by forgetting a prop.
  */

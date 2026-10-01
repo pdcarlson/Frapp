@@ -4,6 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { networkMock } from "@/tests/network";
+import { denseListClassName } from "@/components/shared/table-controls";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /*
  * The officer report queue. What is pinned here is the contract in
@@ -135,6 +137,9 @@ function settled(rows: ChatReport[]) {
   return { data: rows, isPending: false, isLoading: false, isError: false };
 }
 
+const STALE =
+  "Couldn't refresh the reports. These are the last ones that loaded.";
+
 /** The default report's filing time, as its accessible names read it. */
 const FILED = formatLocaleDateTime("2026-09-22T11:55:00Z");
 
@@ -151,6 +156,33 @@ beforeEach(() => {
   reportsByStatus.value = { open: settled([report()]) };
   mockResolve.mockResolvedValue({});
   mockRemove.mockResolvedValue({});
+});
+
+describe("ChatReportsCard — the section", () => {
+  it("is a labelled section on the page surface, with the two facts a row can't show", () => {
+    const { container } = render(<ChatReportsCard />);
+
+    // Flush on /chat-admin (#2500): no wrapper card, and the heading is the
+    // section's accessible name.
+    const region = screen.getByRole("region", { name: "Reported messages" });
+    expect(
+      within(region).getByText(
+        "Each report shows the message as it read when reported. Who reported it is never shown.",
+      ),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  // A flush list, not a bordered box per report (#2500).
+  it("draws each report as a flush row", () => {
+    render(<ChatReportsCard />);
+    const item = row(/nobody wants you here/);
+    expect(item.className).not.toMatch(/\b(rounded|border)/);
+    // The list's own dividers separate the rows instead.
+    expect((item.closest("ul") as HTMLElement).className).toContain(
+      denseListClassName,
+    );
+  });
 });
 
 describe("ChatReportsCard — what a row shows", () => {
@@ -394,9 +426,10 @@ describe("ChatReportsCard — status tabs", () => {
     async (label, status, title) => {
       const user = userEvent.setup();
       reportsByStatus.value = { [status]: settled([]), open: settled([]) };
-      render(<ChatReportsCard />);
+      const { container } = render(<ChatReportsCard />);
       await user.click(screen.getByRole("tab", { name: label }));
       expect(screen.getByText(title)).toBeInTheDocument();
+      expect(cardFilledContainers(container)).toEqual([]);
     },
   );
 });
@@ -406,9 +439,10 @@ describe("ChatReportsCard — async states", () => {
     reportsByStatus.value = {
       open: { isPending: true, isLoading: true, fetchStatus: "fetching" },
     };
-    render(<ChatReportsCard />);
+    const { container } = render(<ChatReportsCard />);
     expect(screen.getByText("Loading reports...")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /dismiss/i })).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("shows an error with a retry that refetches the slice", async () => {
@@ -421,9 +455,12 @@ describe("ChatReportsCard — async states", () => {
         error: { statusCode: 500 },
       },
     };
-    render(<ChatReportsCard />);
+    const { container } = render(<ChatReportsCard />);
 
     expect(screen.getByText("Couldn't load reports")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+    // Nothing loaded, so nothing is stale: the error says it all.
+    expect(screen.queryByText(STALE)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
@@ -439,6 +476,46 @@ describe("ChatReportsCard — async states", () => {
     render(<ChatReportsCard />);
     expect(screen.getByText(/nobody wants you here/)).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load reports")).not.toBeInTheDocument();
+    // And says they are the last that loaded, rather than presenting them as
+    // current.
+    expect(screen.getByText(STALE)).toBeInTheDocument();
+  });
+
+  it("says an empty tab is stale too, rather than a queue with nothing waiting", () => {
+    reportsByStatus.value = {
+      open: { ...settled([]), isError: true, error: { statusCode: 500 } },
+    };
+    render(<ChatReportsCard />);
+    expect(screen.getByText("No open reports")).toBeInTheDocument();
+    expect(screen.getByText(STALE)).toBeInTheDocument();
+  });
+
+  it("has the notice's live region mounted before the refresh fails, so its line is announced", () => {
+    reportsByStatus.value = { open: settled([report()]) };
+    const { container, rerender } = render(<ChatReportsCard />);
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    reportsByStatus.value = {
+      open: {
+        ...settled([report()]),
+        isError: true,
+        error: { statusCode: 500 },
+      },
+    };
+    rerender(<ChatReportsCard />);
+
+    expect(regions).toContain(
+      screen.getByText(STALE).closest('[role="status"]'),
+    );
+  });
+
+  it("says no chapter is selected rather than loading for ever", () => {
+    reportsByStatus.value = {
+      open: { data: undefined, isPending: true, fetchStatus: "idle" },
+    };
+    const { container } = render(<ChatReportsCard />);
+    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("shows an offline state rather than an empty queue when nothing is cached", () => {
@@ -446,9 +523,10 @@ describe("ChatReportsCard — async states", () => {
     reportsByStatus.value = {
       open: { data: undefined, isPending: true, fetchStatus: "paused" },
     };
-    render(<ChatReportsCard />);
+    const { container } = render(<ChatReportsCard />);
     expect(screen.getByText("Reports unavailable offline")).toBeInTheDocument();
     expect(screen.queryByText("No open reports")).not.toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 });
 
@@ -964,6 +1042,17 @@ describe("ChatReportsCard — the gate", () => {
     ).toBeInTheDocument();
     expect(requestedStatuses).toEqual([]);
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
+
+  it("labels the denied state the way the queue is labelled, on the page surface", () => {
+    permissions.value = ["channels:manage"];
+    const { container } = render(<ChatReportsCard />);
+
+    const region = screen.getByRole("region", { name: "Reported messages" });
+    expect(
+      within(region).getByText(/needs the members:view and channels:manage/),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("admits the wildcard", () => {

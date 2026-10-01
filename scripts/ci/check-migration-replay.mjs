@@ -81,7 +81,7 @@ import { resilientFetch } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
 import { resolveSupabaseCli } from "./lib/supabase-cli-pin.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING } from "./lib/ops-docs.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -215,7 +215,7 @@ export function decideOutcome({ partition, replay }) {
         `${foreign.length} migration(s) are applied on production but exist in no repo file. ` +
         `Production's state cannot be faithfully reconstructed, so this gate cannot certify ` +
         `anything — and \`supabase db push\` will refuse to run in this state anyway. ` +
-        `Reconcile first: ${ROLLBACK_PLAYBOOK}.`,
+        `Reconcile first: ${DRIFT_AND_ORDERING} § Reconciling a foreign migration row.`,
     };
   }
 
@@ -246,7 +246,7 @@ export function decideOutcome({ partition, replay }) {
         `both and can tell you.\n\n` +
         `If it is unapplied everywhere — the ordinary case for a migration still in review — ` +
         `rename it to a version after \`${newestApplied}\`, keeping its name. Otherwise read ` +
-        `${PROMOTION_LOG} § \`--include-all\` first.`,
+        `${DRIFT_AND_ORDERING} § \`--include-all\` first.`,
     };
   }
 

@@ -150,7 +150,7 @@ jobs:
     timeout-minutes: 75
     # One deploy per environment at a time, queued, never cancelled. The group
     # is the environment's migration lock (`db-migrate-staging`,
-    # `db-migrate-production`; `db-promotion-runbook.md` documents them), and
+    # `db-migrate-production`; `docs/ops/database/promotion.md` documents them), and
     # this job is the only thing that migrates either database. Two production
     # dispatches (a `full` release and a `migrations-only` retry, say) must not
     # interleave two `db push` runs, and a merge must not start a staging push
@@ -566,7 +566,7 @@ jobs:
 
       # Every run lists what WAS pending before the apply, so a failed apply's
       # log says what it was trying to do. On a production dry run this listing
-      # is the output db-promotion-runbook.md says to read before promoting.
+      # is the output docs/ops/database/promotion.md says to read before promoting.
       #
       # Ahead of the builds, not after them: a `next build` the OOM killer takes
       # would otherwise end a dry run before this ever ran, and the dry-run stop
@@ -589,7 +589,7 @@ jobs:
       # The dry run above has already run `supabase link`, the command that
       # rewrites config.toml in some CLI lines, so production's check after
       # the apply can be made here too, before anything is written. A CLI that
-      # rewrites it then fails the production dry run db-promotion-runbook.md
+      # rewrites it then fails the production dry run docs/ops/database/promotion.md
       # starts from, rather than failing after production is migrated and
       # before its API ships. Both environments, every run: staging deploys
       # every merge, so a CLI bump that does this fails the bump's own merge
