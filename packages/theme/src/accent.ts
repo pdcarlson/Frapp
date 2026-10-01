@@ -70,9 +70,9 @@ export type ResolveChapterAccentOptions = {
  * The rounding is deliberate and long-standing: it is what this resolver has
  * always compared against 4.5, and it is what `contrastOnBackground` reports.
  * Roughly 9,000 hex colors score in `[4.495, 4.5)` and pass only because of it,
- * so tightening to exact comparison would repaint live chapter accents. The
- * shared math in `@repo/color` is exact; the rounding lives here, with the
- * caller whose behavior depends on it.
+ * so tightening to exact comparison would flip the Settings preview's verdict
+ * on accents chapters already use. The shared math in `@repo/color` is exact;
+ * the rounding lives here, with the caller whose behavior depends on it.
  */
 function ratioOn(color: Rgb, background: Rgb): number {
   return roundRatio(contrastRatio(color, background));
@@ -103,9 +103,9 @@ export function resolveChapterAccentColor(
   // inputs it would replace. The requested fallback is tried first, so a caller
   // passing its own mode's token (all of them do today) is unaffected.
   // Resolved lazily, inside the closure: this runs on every render of the
-  // dashboard shell and the mobile chapter header, and walking the ladder is
-  // several contrast evaluations whose result is thrown away whenever the
-  // chapter's own accent passes — which is the normal case.
+  // web Settings accent preview, its one remaining caller, and walking the
+  // ladder is several contrast evaluations whose result is thrown away
+  // whenever the chapter's own accent passes — which is the normal case.
   const fallback = (
     reason: AccentValidationResult["reason"],
   ): AccentValidationResult => {

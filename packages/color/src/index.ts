@@ -80,10 +80,11 @@ export function relativeLuminance({ r, g, b }: Rgb): number {
  * the math, and the distinction is load-bearing. `resolveChapterAccentColor`
  * has always compared a 2dp-rounded ratio, which lets a value in `[4.495, 4.5)`
  * pass — 9,074 hex colors sit in that band against white, `#006FFB` among them.
- * Those accents render today on the web dashboard and in the mobile app, and
- * chapters choose arbitrary accents in Settings, so silently tightening the
- * comparison would repaint live chapters. Callers opt in via
- * {@link meetsContrast}'s `round` option; see {@link roundRatio}.
+ * Those accents pass the web Settings accent preview, the resolver's one
+ * remaining caller, and chapters choose arbitrary accents there, so silently
+ * tightening the comparison would flip that preview's verdict on accents
+ * chapters already use. Callers opt in via {@link meetsContrast}'s `round`
+ * option; see {@link roundRatio}.
  */
 export function contrastRatio(a: Rgb, b: Rgb): number {
   const luminanceA = relativeLuminance(a);
