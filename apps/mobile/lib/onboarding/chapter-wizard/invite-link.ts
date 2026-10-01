@@ -5,8 +5,9 @@ import { mintJoinUrl, PRODUCTION_APP_ORIGIN } from "@repo/validation";
  *
  * Web builds `${window.location.origin}/join?token=…` (`spec/product/onboarding.md`).
  * Mobile has no origin. Prefer `EXPO_PUBLIC_APP_URL` when a build inlines it
- * (Infisical reference `${APP_URL}`); otherwise the production dashboard origin
- * so a generated link still redeems. Do not invent a staging URL here.
+ * (set in EAS or `apps/mobile/.env.local`, never Infisical: ENV_REFERENCE.md
+ * § References); otherwise the production dashboard origin so a generated link
+ * still redeems. Do not invent a staging URL here.
  */
 
 export function webAppOrigin(

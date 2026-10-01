@@ -17,9 +17,10 @@ import { initWebPostHog } from "@/lib/posthog/client";
  * Only synchronous top-level code is guaranteed to finish before hydration, so
  * both SDKs are initialized directly rather than behind a dynamic import.
  *
- * **No DSN / no PostHog key means no initialization at all** — local dev,
- * tests, and CI report nowhere, matching the API's behavior and this app's own
- * analytics gating.
+ * **No DSN / no PostHog key means no initialization at all** — tests and CI
+ * report nowhere, matching the API's behavior and this app's own analytics
+ * gating. A local `npm run dev:web` gets Infisical `dev`'s DSN, so Sentry does
+ * report from it, tagged `development` (ENV_REFERENCE.md § apps/web).
  *
  * Landing is a different app (WS6) and stays out of this file.
  */
