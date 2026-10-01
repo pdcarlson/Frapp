@@ -4,7 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 /**
- * The page's own `canEditProfile` wiring (#2575).
+ * The page's own chapter-profile wiring: the `canEditProfile` gate (#2575),
+ * and what the profile and accent fields are seeded with (#2844).
  *
  * `settings-org-tab.spec.tsx` pins that the tab honours the prop it is given,
  * and `chapter.controller.spec.ts` pins the routes to
@@ -128,5 +129,49 @@ describe("the Settings page gates profile and accent saves on CHAPTER_PROFILE_PE
     render(<SettingsPage />);
     expect(screen.queryByRole("tab", { name: /^chapter$/i })).toBeNull();
     expect(screen.queryByRole("tab", { name: /accent/i })).toBeNull();
+  });
+});
+
+/*
+ * The page reads `GET /v1/chapters/current` through its contract type. It used
+ * to run the payload through a zod twin of that type first, and a stored
+ * `branding` value the twin refused (a pre-1776 founding year, a non-hex
+ * accent) failed the whole parse: the profile form came up empty and the
+ * accent draft never seeded, though `branding` feeds neither (#2844).
+ */
+describe("the Settings page seeds the chapter profile from the contract payload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    permissions.current = ["*"];
+  });
+
+  it("fills the profile and accent fields when the chapter's branding is malformed", async () => {
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        past_due_since: null,
+        name: "Tau Nu",
+        university: "RPI",
+        donation_url: "https://donate.example/tau-nu",
+        accent_color: "#8B0000",
+        branding: { founded_at: 1500, colors: { accent: "gold" } },
+      },
+      isPending: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
+    expect(screen.getByLabelText("Chapter name")).toHaveValue("Tau Nu");
+    expect(screen.getByLabelText("University")).toHaveValue("RPI");
+    expect(screen.getByLabelText("Donation link (optional)")).toHaveValue(
+      "https://donate.example/tau-nu",
+    );
+
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
+      "#8B0000",
+    );
   });
 });
