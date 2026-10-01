@@ -43,7 +43,7 @@ layers are that job's steps named `inputs.environment == 'production'`:
 
 1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked in an unscoped `validate` job before any secret is read and before GitHub asks anyone to Approve.
 2. **Commit validation** — trim, then the SHA must be an ancestor of `main` _and_ have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`). Still unscoped. A bad paste fails here with no reviewer request (run 34234768094 sat on Approve, then died at Validate).
-   With `sha` empty, `scripts/ci/resolve-deploy-sha.mjs` picks the commit first (#3114), then the pick takes the same validation as a paste and leaves `validate` through the same `sha` output, so `deploy`, `release` and `deploy-outcome` treat both alike. Which commit it picks, and the job summary that names it before the approval: [`promotion.md` § Production: one path, two scopes](../database/promotion.md#production-one-path-two-scopes).
+   With `sha` empty, `scripts/ci/resolve-deploy-sha.mjs` picks the commit first (#3114), then the pick takes the same validation as a paste and leaves `validate` through the same `sha` output, so `deploy`, `release`, the opt-in store build (`mobile`) and `deploy-outcome` treat both alike. Which commit it picks, and the job summary that names it before the approval: [`promotion.md` § Production: one path, two scopes](../database/promotion.md#production-one-path-two-scopes).
 3. **Environment approval** — the shipping job (`deploy`, `_deploy.yml`'s) pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires after `validate` succeeds, on a run that names the commit. Do not put `environment: production` on `validate`.
 4. **Installs, then the trusted window** — `npm ci`, the Vercel CLI install and the API build (for the config check) on the deployed commit before any secret is injected (#2801). Then the job moves to the trusted ref (the dispatched `main`) for the local actions, the provider ids (from `.github/environments.json`, so a rollback ships to the services today's config names), the preflight below and the Infisical `prod` injection, and checks the deployed commit back out.
 5. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the _absence_ of a Git link, so a **present** link is the violation.
@@ -59,6 +59,12 @@ layers are that job's steps named `inputs.environment == 'production'`:
    shipped with `vercel deploy --prebuilt --prod`) → **source-map check** ([§ Source maps](#source-maps);
    reports, never fails) → **tag**. A failure after the approval opens the
    P1 *Deploy production failed* alert issue ([`alert-routing.md`](../alert-routing.md#automated-github-issue-alerts)).
+8. **Store builds, only when asked** — with `mobile_build` set to `ios`, `android` or `all`, and
+   only after a `full` ship and its tag succeed, `_mobile-build.yml` builds the same commit on EAS,
+   uploads it without releasing it, and opens the `shipped-builds.json` PR
+   ([`mobile.md` § 6.6](mobile.md#66-store-submission)). A failure there leaves production and the
+   tag as they are and opens no alert issue: the *Deploy production failed* alert above covers the
+   ship, not the store build.
 
 > **Corrected 2026-09-28 (#2805):** until #2805 production had its own copy of these steps in
 > `deploy-production.yml`, with three differences that were accidents: `npm ci` and the Vercel CLI

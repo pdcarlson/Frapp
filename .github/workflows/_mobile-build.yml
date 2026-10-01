@@ -1,0 +1,628 @@
+name: Mobile build
+
+# Build the commit production serves for the stores, upload it without
+# releasing it, and record what was uploaded (#3111). A reusable workflow:
+# `on: workflow_call` only, and its one caller is `deploy-production.yml`'s
+# `mobile` job, which runs only when the operator chose a platform in the
+# `mobile_build` input, and only after a `full`, non-dry-run ship whose
+# deploy and tag both succeeded. Paul chose this opt-in shape on 2026-10-01
+# over building on every ship: most ships don't touch the app, every iOS
+# release is another App Review cycle, and EAS meters builds.
+#
+# ── What it enforces that a maintainer's laptop did by memory ──────────────
+#   1. A binary is never newer than production. It is built from `inputs.sha`,
+#      the SHA the caller's `validate` job checked and its `deploy` job just
+#      verified live, and from nothing else; and only while that SHA is still
+#      the latest `v*` tag, checked before the builds start and again before
+#      anything uploads. A ship made meanwhile (a rollback, say), or a re-run
+#      after one, stops the store build instead of uploading a commit
+#      production has moved off. EAS's own record of each build's commit is
+#      checked too: a build of anything else is never uploaded. A build from
+#      `main`'s tip could call routes production doesn't serve (#2526).
+#   2. Every uploaded build is listed in `apps/mobile/store/shipped-builds.json`,
+#      which arms the required `api-contract-check` gate. The `record` job
+#      opens that PR (`scripts/ci/record-shipped-builds.mjs`).
+#
+# ── Upload, never release ───────────────────────────────────────────────────
+# iOS goes to TestFlight and Android to the Play `internal` track
+# (`submit.production` in `apps/mobile/eas.json`). Submitting for App Review
+# and promoting a Play track stay a human's clicks. `--no-auto-testflight-setup`
+# keeps CI from creating a TestFlight group: who tests a build is a person's
+# call too.
+#
+# ── Start each platform, then wait for both ────────────────────────────────
+# `eas build --platform all` prepares and starts Android, then iOS, in one
+# process. When iOS then fails to prepare (no distribution certificate, say),
+# the command dies before printing anything, and the Android build it already
+# started runs on, metered and unreported. So each platform is started by its
+# own `eas build --no-wait`, which hands its build id on at once, and one step
+# then polls them (`eas build:view`) under its own deadline. Every build is
+# named in the run from the moment it exists, a build still queued when the
+# deadline passes is reported by id rather than lost with a killed step, and
+# the two build at once.
+#
+# ── Jobs, environments and approvals ────────────────────────────────────────
+# Every job names `automation`, which has no reviewers
+# (docs/ci-cd/agent-infra.md § GitHub environments and bootstrap secrets), so
+# none costs an Approve click. Never name `production` here. `snapshot` reads
+# no secret, but the caller's `secrets: inherit` reaches every job here, so it
+# names the main-only environment too (`workflow-secrets-scope.test.mjs` B).
+#   * `build` holds `EXPO_TOKEN` and runs the deployed tree.
+#   * `record` holds the base-sync App token and runs the trusted ref.
+#   * `snapshot` publishes the migration snapshot as the store build starts.
+#     This run stays in flight for as long as EAS takes, and
+#     `migration-snapshot.yml` otherwise publishes only when a Deploy
+#     production run completes; the required PR migration gates would judge
+#     production against the pre-ship snapshot all that time
+#     (`download-migration-snapshot`'s header).
+#
+# ── The trust split (`_deploy.yml`'s header, #2801, #2824) ─────────────────
+# `build` checks out the deployed commit and runs nothing local from it as a
+# check: no `./.github/actions/…` action (it would load from the deployed
+# tree), and the steps that judge the result are inline shell. `npm ci` and the
+# eas-cli install run before any step that names `EXPO_TOKEN`, and only the
+# steps that call `eas` name it, so no install script runs with it in its
+# environment; the eas-cli install runs no install scripts at all. Honest
+# limits: an install script from `npm ci` can still leave something a later
+# step runs (the one `_deploy.yml` states), and, on a hosted runner with
+# sudo, read a secret the job references from the runner's memory; a later
+# `eas` step runs eas-cli's dependencies with the token, and those are
+# resolved at install time, not from a lockfile (#3118). Isolating the
+# install from the token is #3125. The deployed commit is an ancestor
+# of `main` with green CI, so its own tree is already-reviewed code.
+#
+# ── Failure ─────────────────────────────────────────────────────────────────
+# Production is live and tagged before this starts, so nothing here rolls
+# anything back or turns the deploy's summary red. A failed build or upload
+# reds this workflow's own job, which reds the run with the caller's job name
+# saying the ship stands, and the `record` job's summary says what was built,
+# what was uploaded and how to finish each case by hand (ADR-24 I4: never a
+# silent skip). A re-run rebuilds every platform the run asked for, so re-run
+# only when nothing uploaded and nothing is still building
+# (`docs/ops/deployment/mobile.md` § 6.6).
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: "The validated commit Deploy production just shipped"
+        required: true
+        type: string
+      platform:
+        description: "ios, android or all"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # Beside `build`, not before it: a publish takes under a minute, and a
+  # failed one shouldn't hold up the store build. It reds its own row.
+  # A `workflow_dispatch` is one of the few events a `GITHUB_TOKEN` may start
+  # a run with, and the download action trusts a dispatched publish whose
+  # commit is on `main`.
+  snapshot:
+    name: Publish the migration snapshot now (this run stays open for the store build)
+    runs-on: ubuntu-latest
+    environment:
+      name: automation
+      deployment: false
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch Migration snapshot on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: gh workflow run migration-snapshot.yml --repo "$REPO" --ref main
+
+  build:
+    name: Build on EAS, then upload to TestFlight / Play internal
+    runs-on: ubuntu-latest
+    # Main only, no reviewers: no Approve click (see the header).
+    environment:
+      name: automation
+      deployment: false
+    # The ceilings below: two starts of 15, the wait of 240 (its own deadline
+    # ends the poll at 230, so the step reports before it can be killed), two
+    # uploads of 25, and the installs, under the 360 a hosted job allows.
+    timeout-minutes: 340
+    permissions:
+      contents: read
+    # Ids, statuses, versions and the commit EAS saw, nothing else: the record
+    # job needs no more, and a job output carrying a masked value is dropped.
+    outputs:
+      builds: ${{ steps.wait.outputs.builds }}
+      ios-started: ${{ steps.start-ios.outputs.id }}
+      android-started: ${{ steps.start-android.outputs.id }}
+      ios-upload: ${{ steps.upload-ios.outcome }}
+      android-upload: ${{ steps.upload-android.outcome }}
+      # `true` when either tag check found production on another commit;
+      # each check's outcome says whether it ran and passed.
+      tag-moved: ${{ steps.tag-before-build.outputs.moved || steps.tag-before-upload.outputs.moved }}
+      tag-before-build: ${{ steps.tag-before-build.outcome }}
+      tag-before-upload: ${{ steps.tag-before-upload.outcome }}
+    steps:
+      # Before any checkout: an input this job doesn't know, or a token that
+      # never arrived, costs nothing. Names only: the check is
+      # `secrets.EXPO_TOKEN != ''`, so no value enters this step.
+      - name: Check the inputs, and that EXPO_TOKEN reached this job
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          PLATFORM: ${{ inputs.platform }}
+          HAS_EXPO_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            ios|android|all) ;;
+            *)
+              echo "::error::platform must be ios, android or all; got '$PLATFORM'."
+              exit 1
+              ;;
+          esac
+          if ! [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character lowercase commit SHA; got '$DEPLOY_SHA'."
+            exit 1
+          fi
+          if [ "$HAS_EXPO_TOKEN" != "true" ]; then
+            echo "::error::EXPO_TOKEN did not reach this job. It is a secret of the automation environment, and a called job gets it only when its caller passes secrets: inherit. Production is live and tagged; nothing was built. The owner steps are in docs/ops/deployment/mobile.md § 6.6."
+            exit 1
+          fi
+
+      # The validated SHA and nothing else (rule 1 in the header). The caller
+      # passes `needs.validate.outputs.sha`; `deploy-production-mobile.test.mjs`
+      # pins both ends, and that no step here moves the tree.
+      - name: Check out the shipped commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          # Nothing here talks to the remote after checkout, and this job
+          # holds EXPO_TOKEN. The tag checks ask the API instead.
+          persist-credentials: false
+
+      # Hand-written, not ./.github/actions/node-setup: a local action loads
+      # from the tree on disk, which is the deployed commit here. The ref,
+      # version and `package-manager-cache: false` must match node-setup's
+      # step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # `eas build` evaluates `apps/mobile/app.config.js` through the
+      # project's own `expo` package, so the workspace's dependencies are
+      # needed, as on a laptop. Before EXPO_TOKEN is in any step's environment.
+      - name: Install dependencies
+        run: npm ci
+
+      # The version is exact, and `--before` keeps every dependency to a
+      # version published before that date: eas-cli ships no shrinkwrap, and
+      # several of its dependencies are caret ranges, so without it each run
+      # would take whatever was published since and run it beside EXPO_TOKEN.
+      # It is not a lockfile: npm can still pick a different pre-cutoff
+      # version when one is deprecated or unpublished later, or when the
+      # runner's Node or npm changes, and nothing checks integrity (#3118).
+      # `--ignore-scripts`: those dependencies' install scripts would run
+      # unreviewed, and none is needed (on 24.8.0's tree, checked 2026-10-01,
+      # only dtrace-provider's, a no-op on Linux that bunyan loads optionally,
+      # and protobufjs's, which only prints). eas-cli has none of its own, and
+      # npm still links the `eas` bin.
+      # 24.8.0 was published 2026-09-24; it is the version `mobile.md` § 6.6's
+      # non-interactive table and this file's flags (`--no-wait`, `--json`,
+      # `build:view`, `--id`, `--no-auto-testflight-setup`) were read from.
+      # Move the two together, deliberately, re-reading `eas build --help`
+      # and `eas submit --help` (the store build's suite pins the pair).
+      - name: Install EAS CLI
+        run: npm install --global --ignore-scripts --before=2026-10-01 eas-cli@24.8.0
+
+      # eas-cli uploads the working tree, uncommitted changes included, unless
+      # `requireCommit` is set (it isn't). So the tree must be exactly the SHA:
+      # HEAD on it, and nothing changed or added that git doesn't ignore.
+      - name: Confirm the tree is exactly the shipped commit
+        id: confirm
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
+            echo "::error::HEAD is $HEAD_SHA, not the shipped $DEPLOY_SHA. Refusing to build anything else."
+            exit 1
+          fi
+          DIRTY="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$DIRTY" ]; then
+            echo "::error::The install changed the tree, and eas-cli would upload the change with the build:"
+            printf '%s\n' "$DIRTY"
+            exit 1
+          fi
+
+      # The SHA must still be what production serves: the latest `v*` tag,
+      # which the `release` job mints on the live SHA. Asked of the API, not
+      # the checkout, because the second run of this script comes hours later,
+      # and a later ship (a rollback) may have tagged another commit since.
+      # The same script runs again before the uploads.
+      - name: Check the SHA is still the latest tag, before building
+        id: tag-before-build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          # `scripts/ci/lib/release-tag.mjs`'s rule, the one `release.yml` bumps
+          # from: the top `v*` tag by version, which must be a plain `vX.Y.Z`.
+          # Written again here because this job runs the deployed tree, not
+          # the lib's; `deploy-production-mobile.test.mjs` runs both on the
+          # same tags.
+          #
+          # Each read: three attempts, 1s then 5s apart, and no retry of a 4xx
+          # other than 429 (`download-migration-snapshot`'s `gh_api`, whose
+          # header says why). A read that still fails fails the step, which
+          # the record job keeps apart from a moved tag.
+          GH_ERR="$RUNNER_TEMP/tag-check-gh-stderr.txt"
+          gh_api() {
+            local attempt out
+            for attempt in 1 2 3; do
+              if out="$(gh api "$@" 2>"$GH_ERR")"; then
+                printf '%s\n' "$out"
+                return 0
+              fi
+              cat "$GH_ERR" >&2
+              if grep -Eq '\(HTTP 4[0-9][0-9]\)' "$GH_ERR" && ! grep -q '(HTTP 429)' "$GH_ERR"; then
+                return 1
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                sleep $(( attempt == 1 ? 1 : 5 ))
+              fi
+            done
+            return 1
+          }
+          TAGS="$(gh_api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
+          # Ordered by git itself, the order release.yml reads: GNU `sort -V`
+          # disagrees with it on tags like `v-next` and `v1.02.0`. A scratch
+          # repository holds each name as a ref on the empty tree, so nothing
+          # is fetched and the deployed checkout is untouched.
+          ORDER="$RUNNER_TEMP/tag-order"
+          rm -rf "$ORDER"
+          git -c init.defaultBranch=main init -q "$ORDER"
+          EMPTY_TREE="$(git -C "$ORDER" mktree < /dev/null)"
+          printf '%s\n' "$TAGS" | awk -v oid="$EMPTY_TREE" 'NF { print "create refs/tags/" $0 " " oid }' \
+            | git -C "$ORDER" update-ref --stdin
+          LATEST="$(git -C "$ORDER" tag --list 'v*' --sort=-version:refname | sed -n 1p)"
+          if [ -z "$LATEST" ]; then
+            echo "::error::No v* tag exists, so nothing says what production serves. Refusing to go on."
+            exit 1
+          fi
+          if ! [[ "$LATEST" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The latest v* tag, $LATEST, is not a vX.Y.Z release, so nothing says what production serves (release-tag.mjs refuses it too). Refusing to go on."
+            exit 1
+          fi
+          REF="$(gh_api "repos/$REPO/git/ref/tags/$LATEST" --jq '.object.type + " " + .object.sha')"
+          TYPE="${REF%% *}"
+          OBJECT="${REF#* }"
+          if [ "$TYPE" = "tag" ]; then
+            OBJECT="$(gh_api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
+          fi
+          if [ "$OBJECT" != "$DEPLOY_SHA" ]; then
+            # Said apart from a failed read, which also fails this step: the
+            # record job forbids a hand upload only for this.
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+            echo "::error::The latest tag, $LATEST, is on $OBJECT, not $DEPLOY_SHA: production has shipped another commit since this run. Store builds are made only from the latest v* tag; dispatch Deploy production for it instead."
+            exit 1
+          fi
+          echo "$DEPLOY_SHA is the latest tag ($LATEST)."
+
+      # Each platform starts on its own (see the header). `--no-wait --json`
+      # prints the started build on stdout and exits; its id goes out at once,
+      # so a build that exists is never lost to a later failure.
+      - name: Start the iOS build on EAS
+        id: start-ios
+        if: ${{ !cancelled() && steps.tag-before-build.outcome == 'success' && (inputs.platform == 'ios' || inputs.platform == 'all') }}
+        timeout-minutes: 15
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORM: ios
+          DEPLOY_SHA: ${{ inputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/eas-start-$PLATFORM.json"
+          STATUS=0
+          eas build --platform "$PLATFORM" --profile production --non-interactive --no-wait --json \
+            --message "Deploy production $DEPLOY_SHA $RUN_URL" > "$OUT" || STATUS=$?
+          ID="$(jq -r --arg p "${PLATFORM^^}" 'map(select(.platform == $p)) | if length == 1 then .[0].id else "" end' "$OUT" 2>/dev/null || true)"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::eas build --platform $PLATFORM exited $STATUS${ID:+ after starting $ID}. Production is live and tagged. The log above says why."
+            exit "$STATUS"
+          fi
+          if [ -z "$ID" ]; then
+            echo "::error::eas build --platform $PLATFORM exited 0 but reported no started $PLATFORM build."
+            exit 1
+          fi
+          echo "Started the $PLATFORM build $ID."
+
+      - name: Start the Android build on EAS
+        id: start-android
+        if: ${{ !cancelled() && steps.tag-before-build.outcome == 'success' && (inputs.platform == 'android' || inputs.platform == 'all') }}
+        timeout-minutes: 15
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORM: android
+          DEPLOY_SHA: ${{ inputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/eas-start-$PLATFORM.json"
+          STATUS=0
+          eas build --platform "$PLATFORM" --profile production --non-interactive --no-wait --json \
+            --message "Deploy production $DEPLOY_SHA $RUN_URL" > "$OUT" || STATUS=$?
+          ID="$(jq -r --arg p "${PLATFORM^^}" 'map(select(.platform == $p)) | if length == 1 then .[0].id else "" end' "$OUT" 2>/dev/null || true)"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::eas build --platform $PLATFORM exited $STATUS${ID:+ after starting $ID}. Production is live and tagged. The log above says why."
+            exit "$STATUS"
+          fi
+          if [ -z "$ID" ]; then
+            echo "::error::eas build --platform $PLATFORM exited 0 but reported no started $PLATFORM build."
+            exit 1
+          fi
+          echo "Started the $PLATFORM build $ID."
+
+      # Poll every started build until each one ends or the deadline passes.
+      # `eas build:view --json` is one read, held to READ_TIMEOUT_SECONDS
+      # because eas-cli's client sets no request timeout of its own; a read
+      # that fails or stalls is logged with its cause and retried on the next
+      # round, and a build still unread at the deadline is reported by id,
+      # with what its last read said. The deadline is this
+      # script's, under the step's timeout with room for a last stalled read,
+      # so the list always goes out. A build is handed to its upload only when
+      # EAS reports it FINISHED from the shipped commit.
+      - name: Wait for the EAS builds
+        id: wait
+        if: ${{ !cancelled() && (steps.start-ios.outputs.id != '' || steps.start-android.outputs.id != '') }}
+        timeout-minutes: 240
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          IDS: ${{ steps.start-ios.outputs.id }} ${{ steps.start-android.outputs.id }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          DEADLINE_MINUTES: "230"
+          POLL_SECONDS: "60"
+          READ_TIMEOUT_SECONDS: "120"
+        run: |
+          set -uo pipefail
+          if [ -z "${IDS// /}" ]; then
+            echo "::error::No build id reached the wait, so there is nothing to wait for."
+            exit 1
+          fi
+          DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
+          TERMINAL='(.status == "FINISHED" or .status == "ERRORED" or .status == "CANCELED")'
+          READ_ERR="$RUNNER_TEMP/eas-build-view-stderr.txt"
+          # Why each build's latest read failed. Logged, never put in an
+          # output: a job output carrying a masked value is dropped.
+          declare -A WHY=()
+          while :; do
+            BUILDS='[]'
+            for ID in $IDS; do
+              ONE=""
+              STATUS=0
+              VIEW="$(timeout "$READ_TIMEOUT_SECONDS" eas build:view "$ID" --json 2>"$READ_ERR")" || STATUS=$?
+              if [ "$STATUS" -eq 0 ]; then
+                ONE="$(jq -c '{id, platform, status, appVersion, appBuildVersion, gitCommitHash}' <<< "$VIEW" 2>/dev/null || true)"
+              fi
+              if [ -n "$ONE" ]; then
+                unset "WHY[$ID]"
+              else
+                if [ "$STATUS" -eq 124 ]; then
+                  WHY[$ID]="no answer within ${READ_TIMEOUT_SECONDS}s"
+                elif [ "$STATUS" -eq 0 ]; then
+                  WHY[$ID]="its output was not a build's JSON"
+                else
+                  WHY[$ID]="exit $STATUS: $(tail -n 3 "$READ_ERR" | tr '\n' ' ')"
+                fi
+                echo "Couldn't read $ID this round (${WHY[$ID]}); trying again next round."
+                ONE="$(jq -cn --arg id "$ID" '{id: $id, status: "UNREAD"}')"
+              fi
+              BUILDS="$(jq -c --argjson one "$ONE" '. + [$one]' <<< "$BUILDS")"
+            done
+            if [ "$(jq "map(select($TERMINAL | not)) | length" <<< "$BUILDS")" -eq 0 ]; then break; fi
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then break; fi
+            sleep "$POLL_SECONDS"
+          done
+
+          echo "builds=$BUILDS" >> "$GITHUB_OUTPUT"
+          for P in ios android; do
+            ID="$(jq -r --arg p "${P^^}" --arg sha "$DEPLOY_SHA" \
+              'map(select(.platform == $p and .status == "FINISHED" and .gitCommitHash == $sha)) | if length == 1 then .[0].id else "" end' <<< "$BUILDS")"
+            echo "${P}_id=$ID" >> "$GITHUB_OUTPUT"
+          done
+
+          FAILED=0
+          PENDING="$(jq -r "map(select($TERMINAL | not) | \"\(.id) \(.status)\") | join(\", \")" <<< "$BUILDS")"
+          if [ -n "$PENDING" ]; then
+            echo "::error::Still not finished after $DEADLINE_MINUTES minutes: $PENDING. They may finish on EAS later; the record job's summary says how to upload one by hand."
+            # An UNREAD build may be one EAS can't be asked about at all (a
+            # revoked EXPO_TOKEN, say), not a slow one: say what the read said.
+            for ID in "${!WHY[@]}"; do
+              echo "::error::The last read of $ID failed: ${WHY[$ID]}"
+            done
+            FAILED=1
+          fi
+          ENDED="$(jq -r 'map(select(.status == "ERRORED" or .status == "CANCELED") | "\(.platform) \(.id) \(.status)") | join(", ")' <<< "$BUILDS")"
+          if [ -n "$ENDED" ]; then
+            echo "::error::EAS builds that did not finish: $ENDED."
+            FAILED=1
+          fi
+          WRONG="$(jq -r --arg sha "$DEPLOY_SHA" 'map(select(.status == "FINISHED" and .gitCommitHash != $sha) | "\(.platform) \(.id) from \(.gitCommitHash)") | join(", ")' <<< "$BUILDS")"
+          if [ -n "$WRONG" ]; then
+            echo "::error::EAS built from another commit than $DEPLOY_SHA, so these will not be uploaded: $WRONG."
+            FAILED=1
+          fi
+          exit "$FAILED"
+
+      # The same check as before the builds, hours later: a ship made while
+      # EAS was building (a rollback, say) has moved production, and nothing
+      # built from this SHA may upload after that.
+      - name: Check the SHA is still the latest tag, before uploading
+        id: tag-before-upload
+        if: ${{ !cancelled() && (steps.wait.outputs.ios_id != '' || steps.wait.outputs.android_id != '') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          # `scripts/ci/lib/release-tag.mjs`'s rule, the one `release.yml` bumps
+          # from: the top `v*` tag by version, which must be a plain `vX.Y.Z`.
+          # Written again here because this job runs the deployed tree, not
+          # the lib's; `deploy-production-mobile.test.mjs` runs both on the
+          # same tags.
+          #
+          # Each read: three attempts, 1s then 5s apart, and no retry of a 4xx
+          # other than 429 (`download-migration-snapshot`'s `gh_api`, whose
+          # header says why). A read that still fails fails the step, which
+          # the record job keeps apart from a moved tag.
+          GH_ERR="$RUNNER_TEMP/tag-check-gh-stderr.txt"
+          gh_api() {
+            local attempt out
+            for attempt in 1 2 3; do
+              if out="$(gh api "$@" 2>"$GH_ERR")"; then
+                printf '%s\n' "$out"
+                return 0
+              fi
+              cat "$GH_ERR" >&2
+              if grep -Eq '\(HTTP 4[0-9][0-9]\)' "$GH_ERR" && ! grep -q '(HTTP 429)' "$GH_ERR"; then
+                return 1
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                sleep $(( attempt == 1 ? 1 : 5 ))
+              fi
+            done
+            return 1
+          }
+          TAGS="$(gh_api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
+          # Ordered by git itself, the order release.yml reads: GNU `sort -V`
+          # disagrees with it on tags like `v-next` and `v1.02.0`. A scratch
+          # repository holds each name as a ref on the empty tree, so nothing
+          # is fetched and the deployed checkout is untouched.
+          ORDER="$RUNNER_TEMP/tag-order"
+          rm -rf "$ORDER"
+          git -c init.defaultBranch=main init -q "$ORDER"
+          EMPTY_TREE="$(git -C "$ORDER" mktree < /dev/null)"
+          printf '%s\n' "$TAGS" | awk -v oid="$EMPTY_TREE" 'NF { print "create refs/tags/" $0 " " oid }' \
+            | git -C "$ORDER" update-ref --stdin
+          LATEST="$(git -C "$ORDER" tag --list 'v*' --sort=-version:refname | sed -n 1p)"
+          if [ -z "$LATEST" ]; then
+            echo "::error::No v* tag exists, so nothing says what production serves. Refusing to go on."
+            exit 1
+          fi
+          if ! [[ "$LATEST" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The latest v* tag, $LATEST, is not a vX.Y.Z release, so nothing says what production serves (release-tag.mjs refuses it too). Refusing to go on."
+            exit 1
+          fi
+          REF="$(gh_api "repos/$REPO/git/ref/tags/$LATEST" --jq '.object.type + " " + .object.sha')"
+          TYPE="${REF%% *}"
+          OBJECT="${REF#* }"
+          if [ "$TYPE" = "tag" ]; then
+            OBJECT="$(gh_api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
+          fi
+          if [ "$OBJECT" != "$DEPLOY_SHA" ]; then
+            # Said apart from a failed read, which also fails this step: the
+            # record job forbids a hand upload only for this.
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+            echo "::error::The latest tag, $LATEST, is on $OBJECT, not $DEPLOY_SHA: production has shipped another commit since this run. Store builds are made only from the latest v* tag; dispatch Deploy production for it instead."
+            exit 1
+          fi
+          echo "$DEPLOY_SHA is the latest tag ($LATEST)."
+
+      - name: Upload iOS to TestFlight (not submitted for review)
+        id: upload-ios
+        if: ${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.ios_id != '' }}
+        timeout-minutes: 25
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ steps.wait.outputs.ios_id }}
+        run: eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait --no-auto-testflight-setup
+
+      - name: Upload Android to the Play internal track (not promoted)
+        id: upload-android
+        if: ${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.android_id != '' }}
+        timeout-minutes: 25
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ steps.wait.outputs.android_id }}
+        run: eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
+
+  record:
+    name: Record the uploads in shipped-builds.json (opens a PR)
+    needs: build
+    # After a failed build too: one platform may have uploaded, and the
+    # summary is how the run says what happened.
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: automation
+      deployment: false
+    # The writes go through the App token, never this job's GITHUB_TOKEN.
+    permissions:
+      contents: read
+    steps:
+      # The dispatched `main` (`github.sha`), not the shipped commit: the
+      # script judges the build job's output, so it can't come from the tree
+      # that was built.
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The trusted ref, so the local action is the one `main` carries. Node
+      # only: the script imports Node built-ins and nothing installed.
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      # The PR base sync App (`pr-base-sync.yml`): a PR opened with
+      # GITHUB_TOKEN starts no workflow, so its required checks would never
+      # report. Only when something was uploaded, so a run that built nothing
+      # can't fail here for a reason unrelated to it.
+      - name: Mint the base-sync App token
+        id: app-token
+        if: ${{ needs.build.outputs.ios-upload == 'success' || needs.build.outputs.android-upload == 'success' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Runs on a failed mint too, so the summary lists the entries to add by
+      # hand.
+      - name: Record the uploaded builds and summarise the run
+        if: ${{ !cancelled() }}
+        env:
+          EAS_BUILDS: ${{ needs.build.outputs.builds }}
+          EAS_STARTED_IOS: ${{ needs.build.outputs.ios-started }}
+          EAS_STARTED_ANDROID: ${{ needs.build.outputs.android-started }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PLATFORM: ${{ inputs.platform }}
+          IOS_UPLOAD: ${{ needs.build.outputs.ios-upload }}
+          ANDROID_UPLOAD: ${{ needs.build.outputs.android-upload }}
+          TAG_MOVED: ${{ needs.build.outputs.tag-moved }}
+          TAG_BEFORE_BUILD: ${{ needs.build.outputs.tag-before-build }}
+          TAG_BEFORE_UPLOAD: ${{ needs.build.outputs.tag-before-upload }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: node scripts/ci/record-shipped-builds.mjs

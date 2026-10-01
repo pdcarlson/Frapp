@@ -298,6 +298,12 @@ and nothing tied to a personal account changes. The mint step carries `continue-
 purpose — with the secrets absent it fails, and a red workflow would be exactly the noise this sweep
 exists to remove; instead the token comes out empty and the alert issue explains why.
 
+The App has a second consumer: `_mobile-build.yml`'s `record` job mints a token from the same pair,
+with the same two permissions, to open the `shipped-builds.json` PR after a store build (#3111;
+[`mobile.md` § 6.6](../ops/deployment/mobile.md#66-store-submission)). Rotating the key changes
+nothing there. Narrowing the App's permissions, uninstalling it or replacing it breaks that job's
+mint too: its summary then lists the uploads to record by hand.
+
 **Confirmed end to end on 2026-08-21T17:28Z**, on the first behind PR the sweep ever encountered.
 This closes the one claim the design rested on and could not check from a session: that an App
 installation token's pushes **create workflow runs**, where `GITHUB_TOKEN`'s do not (GitHub's
