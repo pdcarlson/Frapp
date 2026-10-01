@@ -7,6 +7,7 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   POINT_TRANSACTION_REPOSITORY,
@@ -18,6 +19,8 @@ import type {
 } from '#domain/repositories/point-transaction.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type {
@@ -90,6 +93,8 @@ export class PointsService {
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepo: IUserRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
     private readonly chapterPointsConfig: ChapterPointsConfigService,
@@ -331,6 +336,27 @@ export class PointsService {
 
     if (input.adminUserId === input.targetUserId) {
       throw new ForbiddenException('Admins cannot adjust their own points');
+    }
+
+    // The target must be a member of THIS chapter (#3092). Every guard on the
+    // route checks the caller, and the ledger's foreign keys accept any user,
+    // so without this an officer could fine someone in another chapter and
+    // push them the reason. The 404 is the one a stranger, a departed member
+    // and a nonexistent id all get, so it reveals nothing about other chapters.
+    // An alumnus still holds a `members` row and stays adjustable: the alumni
+    // rule restricts what they earn themselves, and a wrong grant on someone
+    // who just graduated must stay correctable in an append-only ledger.
+    //
+    // Before the replay check, so a forged or reused key never reaches it on a
+    // non-member's behalf. The cost: a retry of a committed adjustment whose
+    // target has since left gets this 404 rather than the original row, which
+    // is still in the ledger.
+    const target = await this.memberRepo.findByUserAndChapter(
+      input.targetUserId,
+      input.chapterId,
+    );
+    if (!target) {
+      throw new NotFoundException('Member not found');
     }
 
     // Idempotency (#1719). A `/points` dispatch whose response was lost — a
