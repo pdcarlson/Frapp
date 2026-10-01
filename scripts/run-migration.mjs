@@ -109,7 +109,8 @@ export function validateInvocation({
   // Asserted here, not left to the CLI. Without it the pinned Supabase CLI
   // cannot initialise its `cli_login_postgres` role and dies with
   // `42501: permission denied to alter role` — which reads as a privilege
-  // problem on the production database and is a CLI bug (supabase/cli#5091).
+  // problem on the production database. It is an upstream bug the CLI only
+  // surfaces (supabase/cli#5091), so a CLI bump does not fix it (ENV_REFERENCE.md).
   // The production deploy's fence (`_deploy.yml`) already checks it for the workflow path;
   // the documented human recovery run had nothing checking it at all, so an
   // operator following the runbook mid-incident would have spent the incident
@@ -118,8 +119,9 @@ export function validateInvocation({
     return fail(
       "SUPABASE_DB_PASSWORD environment variable is required.\n" +
         "  The pinned Supabase CLI cannot initialise its `cli_login_postgres` role without it and\n" +
-        "  fails as `42501: permission denied to alter role` — a CLI bug (supabase/cli#5091), not a\n" +
-        "  privilege problem on the database. It is set in every Infisical environment; export it\n" +
+        "  fails as `42501: permission denied to alter role`: an upstream bug the CLI only surfaces\n" +
+        "  (supabase/cli#5091), not a privilege problem on the database, and a CLI bump does not fix\n" +
+        "  it. It is set in every Infisical environment; export it\n" +
         "  alongside SUPABASE_ACCESS_TOKEN when running by hand.\n" +
         "  See docs/internal/environment/ENV_REFERENCE.md.",
     );
@@ -356,7 +358,11 @@ export function runMigrationCli({
     error(`  Error: ${thrown.message}`);
     error("\n  The deploy pipeline will be halted.");
     error("  Check the migration output above for details.");
-    error(`  Refer to ${ROLLBACK_PLAYBOOK} for recovery steps.`);
+    error("  If db push refused a version the database holds and the repo does not:");
+    error(`    ${DRIFT_AND_ORDERING} § Reconciling a foreign migration row.`);
+    error("  If it refused a migration that sorts before the newest applied:");
+    error(`    ${DRIFT_AND_ORDERING} § --include-all.`);
+    error(`  If a migration's SQL failed: ${ROLLBACK_PLAYBOOK}.`);
     return EXIT_MIGRATION_FAILED;
   }
 

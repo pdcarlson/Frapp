@@ -162,8 +162,11 @@ All three variables are mandatory and the script refuses without them.
 `SUPABASE_DB_PASSWORD` is the one that surprises people: without it the pinned
 CLI cannot initialise its `cli_login_postgres` role and dies as
 `42501: permission denied to alter role`, which reads as a privilege problem on
-the production database and is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091)).
-The script now says so rather than letting you debug it mid-incident.
+the production database. It is an upstream bug the CLI only surfaces
+([supabase/cli#5091](https://github.com/supabase/cli/issues/5091)), and a CLI
+bump does not fix it
+([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) has why). The
+script says so rather than letting you debug it mid-incident.
 
 Two other refusals, both deliberate:
 
@@ -185,9 +188,11 @@ against that database at all while one is there.
 above) reports one on either project; what it judges each project against is
 [`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs).
 `migration-replay` fails outright when production holds one, but only on a run
-that replays: a PR or a push to `main` that changes a file under
-`supabase/migrations/`, or a manual dispatch. A PR that touches no migration
-skips the replay and stays green whatever production holds. The
+that replays. The `touched` step in
+[`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)
+decides that: a change under `supabase/migrations/` or to the Supabase CLI and
+replay paths it names, a diff it could not read, or a manual dispatch. Any other
+PR skips the replay and stays green whatever production holds. The
 `migration-drift` summary lists any on staging. None of them repairs anything:
 they send no SQL. Reconciling a foreign row is the manual procedure below, and
 applying a backlog of pending migrations is a deliberate promotion, not
@@ -201,7 +206,10 @@ blind.**
 1. **Check whether the version ever existed in git:**
    `git log --all --oneline -- 'supabase/migrations/<version>_*'`. If it shipped
    and `main` has renamed it since, the SQL already ran: mark the old version
-   reverted and the new one applied, and delete nothing.
+   reverted and the new one applied, and delete nothing. In a shallow clone
+   (every cloud session's), run `git fetch --unshallow` first: there, empty
+   output proves nothing, and a renamed migration's SQL would pass step 3's
+   test as "redundant with the repo".
 2. **Otherwise, read what the row actually did.** Postgres stores the executed
    SQL, so a migration absent from git is still fully recoverable from the
    database:

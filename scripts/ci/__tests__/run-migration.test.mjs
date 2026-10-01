@@ -9,7 +9,7 @@ import {
   runMigrationCli,
   validateInvocation,
 } from "../../run-migration.mjs";
-import { DRIFT_AND_ORDERING } from "../lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING, ROLLBACK_PLAYBOOK } from "../lib/ops-docs.mjs";
 import { assertCitesSection } from "./helpers/doc-sections.mjs";
 
 // ── Doubles ─────────────────────────────────────────────────────────────────
@@ -337,15 +337,23 @@ test("an UNREADABLE migrations directory is fatal, not 'nothing to apply'", () =
 
 test("a failing push exits 1 rather than throwing", () => {
   const { supabase } = makeSupabase({ throwOn: "db push" });
+  const errors = [];
   const code = runMigrationCli({
     argv: ["--env", "staging"],
     env: baseEnv(),
     supabase,
     readDir,
     lookupEnvironment,
-    ...quiet,
+    log: () => {},
+    error: (line) => errors.push(line),
   });
   assert.equal(code, EXIT_MIGRATION_FAILED);
+  // A refused push (foreign or back-dated version) and failed SQL need different
+  // docs: the rollback playbook has no ledger recovery.
+  const printed = errors.join("\n");
+  assertCitesSection(printed, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
+  assertCitesSection(printed, DRIFT_AND_ORDERING, "--include-all");
+  assert.ok(printed.includes(ROLLBACK_PLAYBOOK), "names the rollback playbook for failed SQL");
 });
 
 test("importing this module runs no migration", () => {

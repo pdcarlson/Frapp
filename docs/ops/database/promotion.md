@@ -33,7 +33,8 @@ as "no migrations changed" and the job skipped, green and silent.
 `db-migrate-staging` concurrency group (`db-migrate-${{ inputs.environment }}` there), and that lock cannot see a run on your machine — nothing in GitHub can. A hand-applied
 migration also becomes a _foreign_ migration the moment its file changes or is
 renamed before merge, and a foreign row makes `supabase db push` refuse to run
-**at all** until someone reconciles it by hand.
+**at all** until someone reconciles it by hand
+([`drift-and-ordering.md` § Reconciling a foreign migration row](drift-and-ordering.md#reconciling-a-foreign-migration-row)).
 
 If staging needs a migration applied out of band, re-run the **Deploy staging**
 run for the latest commit on `main`.

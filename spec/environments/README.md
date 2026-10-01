@@ -441,7 +441,7 @@ Creating and applying a migration locally: [`CONTRIBUTING.md` § Database Migrat
 
 ### Remote (Staging / Production)
 
-Remote projects are migrated by `scripts/run-migration.mjs --env <staging|production>`, which links the named project and runs `db push` on the pinned CLI. Every deploy runs it (below). Staging is never pushed by hand, and production goes through **Deploy production**; a by-hand run is a recovery path only ([`promotion.md`](../../docs/ops/database/promotion.md)).
+Remote projects are migrated by `scripts/run-migration.mjs --env <staging|production>`, which links the named project and runs `db push` on the pinned CLI. Every deploy runs it (below). Staging is never pushed by hand, and production goes through **Deploy production**; a by-hand run is a recovery path only ([`drift-and-ordering.md` § `--include-all`](../../docs/ops/database/drift-and-ordering.md#--include-all-recovery-only)).
 
 ### Automated Migrations (CI/CD)
 

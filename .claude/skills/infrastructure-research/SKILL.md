@@ -321,8 +321,10 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
   2. Compare against `supabase/migrations/` on `main`. There's no `production` branch: production
      deploys a named commit on `main` via `.github/workflows/deploy-production.yml`. Gates:
      [`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
-  3. Check promotion status in
-     [`promotion-log.md`](../../../docs/ops/database/promotion-log.md).
+  3. Steps 1-2 are the answer.
+     [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) is not a status record: a
+     migration's entry lands with its PR, before any promotion. Read it only for that migration's
+     promoter notes and post-apply checks.
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.
   2. Compare them against `ENV_REFERENCE.md`.
