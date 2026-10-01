@@ -1,32 +1,13 @@
-/** An import as the list shows it. */
-export type ImportRow = {
-  id: string;
-  status: string;
-  source?: string;
-  guild_name: string | null;
-  total_messages: number;
-  imported_messages: number;
-  /**
-   * A bot import's progress in channel and thread rows. Null for an upload, and
-   * for a bot import that is not queued, running or stopped part-way. Its
-   * message total grows with every page it reads, so messages cannot measure
-   * it.
-   */
-  channels_total?: number | null;
-  channels_done?: number | null;
-  messages_skipped: number;
-  attachments_imported: number;
-  warnings: string[];
-  error: string | null;
-  created_at: string;
-  /** A bot import's date cutoff (#2858): only messages since it. */
-  messages_after?: string | null;
-  /**
-   * Imported messages the deletion has removed so far (#2944), out of
-   * `imported_messages`. Kept by the purge worker, so reading it is free.
-   */
-  purged_messages?: number;
-};
+import type { components } from "@repo/api-sdk";
+
+/**
+ * An import as the list shows it: the contract's own type, so a field the API
+ * stops sending is a compile error here, not a silent `undefined` read as 0 or
+ * as "not a bot import" (#2860). The fields are documented on
+ * `DiscordImportWithProgressResponseDto`.
+ */
+export type ImportRow =
+  components["schemas"]["DiscordImportWithProgressResponseDto"];
 
 /** How far a deletion has got, in messages, for a row that is `purging`. */
 export type PurgeProgress = {
