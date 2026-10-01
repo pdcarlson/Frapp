@@ -56,7 +56,7 @@ Then hit:
 
 - `http://localhost:3001/health`
 
-> **Tip:** Use `host.docker.internal` so the API container can talk to Supabase running on your host machine (`npx supabase start`).
+> **Tip:** Use `host.docker.internal` so the API container can talk to Supabase running on your host machine (`npm run supabase -- start`).
 
 ## 4. docker-compose (optional convenience)
 

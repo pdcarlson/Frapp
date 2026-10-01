@@ -13,7 +13,7 @@ This guide walks you through setting up the Frapp monorepo and running the full 
 - **Node.js** at or above the root `package.json` `engines.node` (`nvm use` reads `.nvmrc`, which pins only the major, so check `node -v` against `engines.node`)
 - **npm** 10+
 - **Docker Desktop** (for Supabase)
-- **Supabase CLI**: `npm install -g supabase` or `npx supabase --version`
+- **Supabase CLI**: nothing to install. The repo pins the version CI deploys with, and `npm run supabase -- <args>` runs it (the bootstrap below uses the same one)
 - **Git**
 
 ## 1. Clone the repository
@@ -31,8 +31,11 @@ With **Docker running** (`docker info` succeeds — e.g. Docker Desktop with WSL
 bash scripts/local-dev-setup.sh
 ```
 
-This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, **repairs the
-local Postgres default ACLs**, then optional typecheck and migration-safety checks.
+This runs `npm install`, `supabase start` and `supabase db push --local`, **repairs the
+local Postgres default ACLs**, then optional typecheck and migration-safety checks. It runs the
+repo's pinned Supabase CLI, the version CI deploys with, installing it into the gitignored
+`.cache/supabase-cli/` on first use (~200 MB), so a global `supabase` install is not used.
+`npm run supabase -- <args>` runs that same CLI by hand.
 
 The ACL repair is not optional and will stop the bootstrap if it fails: the pinned
 `supabase/postgres` image ships schema `public` without DML grants for the API's roles, so
@@ -65,7 +68,7 @@ Frapp pins **Postgres 17** locally via `supabase/config.toml` (`[db] major_versi
   bash scripts/local-dev-setup.sh --reset-supabase-data
   ```
 
-  Equivalent manual steps: `npx supabase stop --no-backup`, then `npx supabase start`, then `npx supabase db push --local`. Local DB contents are recreated from migrations (anything only in local data is lost).
+  Equivalent manual steps: `npm run supabase -- stop --no-backup`, then `npm run supabase -- start`, then `npm run supabase -- db push --local`. Local DB contents are recreated from migrations (anything only in local data is lost).
 
 - **`--reset-supabase`** (without `--no-backup`) is for **stuck or exited containers**; it **does not** remove volumes and **will not** fix a Postgres major-version mismatch.
 
@@ -77,8 +80,8 @@ From the repo root, if you skipped the script:
 
 ```bash
 npm install
-npx supabase start
-npx supabase db push --local
+npm run supabase -- start
+npm run supabase -- db push --local
 ```
 
 This spins up the local Supabase stack (Postgres, Auth, Storage, Realtime, Studio) using Docker and applies our migrations from `supabase/migrations/`.
@@ -95,7 +98,7 @@ You can open Supabase Studio at:
 **Recommended:** use **Infisical** so you do not maintain `.env.local` copies for every app.
 
 1. From the repo root, authenticate once: `npx infisical login`.
-2. Ensure the Infisical **`dev`** environment (“Development” in the UI) is populated (Supabase values from `npx supabase status -o env`, plus keys per [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md)). See [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md) for project setup and syncs.
+2. Ensure the Infisical **`dev`** environment (“Development” in the UI) is populated (Supabase values from `npm run -s supabase -- status -o env`, plus keys per [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md)). See [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md) for project setup and syncs.
 
 When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `dev` or when building `.env.local` manually.
 
