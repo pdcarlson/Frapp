@@ -159,7 +159,9 @@ export default function ServiceHoursScreen() {
           // Ordinary failures keep the retry they have always had; a gate
           // refusal takes it away, because retrying cannot win. Both asked
           // before `submitFailed`, and never as a bare 403: this route also
-          // 403s for permission denials, which recover on their own.
+          // 403s for a permission denial, which an officer's role grant clears
+          // on the next try, and for the `chapter.context.*` family, which
+          // clears itself.
           if (subscriptionRefusalOf(error)) {
             setRefusal(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
             return;

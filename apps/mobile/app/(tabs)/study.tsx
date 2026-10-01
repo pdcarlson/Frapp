@@ -765,8 +765,13 @@ export default function StudyScreen() {
     // module stays off. The body names the session instead. Underneath, an
     // unpaused foregrounded session keeps heartbeating, and a paused one
     // retries its resume on the next return to the app; the first of those
-    // to get through refetches this payload (`applyResponse`), which brings
-    // the card back while the session can still be credited.
+    // to get through refetches this payload (`applyResponse`). Within
+    // `HEARTBEAT_STALE_MINUTES` (10) of an unpaused session's last banked
+    // heartbeat, or inside a paused one's grace window, that brings the card
+    // back. Past it, the write settles the session instead (EXPIRED with
+    // nothing credited, or PAUSED_EXPIRED with its pre-pause time, per
+    // `spec/behavior/study-sessions.md`), and the screen goes to Start with
+    // the ended notice.
     if (!hoursEnabled) {
       return (
         <EmptyState
