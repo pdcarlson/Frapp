@@ -396,13 +396,27 @@ export function EventEditorDialog({
     const zone = parsedZone.zone;
     const zoneName = checkInZoneName.trim();
 
+    // An empty field saves as 0 points, as it always has. Anything else that
+    // isn't a whole number of 0 or more is refused rather than zeroed: typing
+    // can't leave one, but a stored value seeded on edit could.
+    const pointValueNumber =
+      pointValue.trim() === "" ? 0 : parseGuardedInt(pointValue);
+    if (pointValueNumber === undefined) {
+      toast({
+        title: "Valid point value required",
+        description: "Use a whole number of 0 or more.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const payload = {
       name: name.trim(),
       description: description.trim() || undefined,
       location: location.trim() || undefined,
       start_time: startIso,
       end_time: endIso,
-      point_value: parseGuardedInt(pointValue) ?? 0,
+      point_value: pointValueNumber,
       is_mandatory: isMandatory,
       recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,

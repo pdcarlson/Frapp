@@ -531,6 +531,7 @@ describe("EventEditorDialog check-in zone", () => {
 
 describe("EventEditorDialog point value guard (#2206)", () => {
   beforeEach(() => {
+    mockToast.mockReset();
     createMutate.mockReset();
     createMutate.mockResolvedValue(undefined);
     chapter.active();
@@ -570,6 +571,34 @@ describe("EventEditorDialog point value guard (#2206)", () => {
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
     expect(createMutate.mock.calls[0]![0].point_value).toBe(0);
+  });
+
+  it("refuses a stored negative on edit rather than saving it as 0", async () => {
+    updateMutate.mockReset();
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e9",
+          name: "Exec Sync",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+          point_value: -5,
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Valid point value required" }),
+      ),
+    );
+    expect(updateMutate).not.toHaveBeenCalled();
   });
 
   it("sends the kept whole number, never Infinity", async () => {

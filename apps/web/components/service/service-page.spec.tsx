@@ -614,6 +614,10 @@ describe("ServiceHoursPage duration guard (#2206)", () => {
     expect(hours).toHaveValue(2);
     fireEvent.change(hours, { target: { value: "1.5" } });
     expect(hours).toHaveValue(1.5);
+    // The specs submit with fireEvent.submit, which skips the browser's
+    // constraint validation, so pin it directly: without step="any" the
+    // default step of 1 makes 1.5 a stepMismatch and a real submit is refused.
+    expect((hours as HTMLInputElement).validity.stepMismatch).toBe(false);
   });
 
   it("reads an emptied or unparseable field as blank", async () => {

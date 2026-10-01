@@ -721,12 +721,36 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
 
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Check the assignment number" }),
+        expect.objectContaining({
+          title: "Check the year and assignment number",
+        }),
       ),
     );
     // Refused before the file reaches storage, so nothing is left orphaned.
     expect(mockRequestUpload).not.toHaveBeenCalled();
     expect(mockConfirmUpload).not.toHaveBeenCalled();
+  });
+
+  it("refuses a year under the API's 1900 before the upload", async () => {
+    const { dialog, year } = await openUpload();
+    fireEvent.change(year, { target: { value: "2" } });
+    expect(year).toHaveValue(2);
+
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: {
+        files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.submit(document.getElementById("backwork-upload-form")!);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Check the year and assignment number",
+        }),
+      ),
+    );
+    expect(mockRequestUpload).not.toHaveBeenCalled();
   });
 
   it("confirms with the kept whole numbers, and omits a blank one", async () => {

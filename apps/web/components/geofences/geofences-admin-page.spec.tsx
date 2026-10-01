@@ -282,18 +282,38 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     }
   });
 
-  it("refuses a rate under the API's floor at save: 0 only for the minimum session", async () => {
-    await openCreate();
-    fireEvent.change(rate(/minutes per point/i), { target: { value: "0" } });
-    submitCreate();
+  it.each([/minutes per point/i, /points per interval/i, /pause grace/i])(
+    "refuses %s under its floor of 1 at save, on create",
+    async (label) => {
+      await openCreate();
+      fireEvent.change(rate(label), { target: { value: "0" } });
+      submitCreate();
 
-    await waitFor(() =>
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Check the zone's numbers" }),
-      ),
-    );
-    expect(mockCreateMutate).not.toHaveBeenCalled();
-  });
+      await waitFor(() =>
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Check the zone's numbers" }),
+        ),
+      );
+      expect(mockCreateMutate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([/minutes per point/i, /points per interval/i, /pause grace/i])(
+    "refuses %s under its floor of 1 at save, on edit",
+    async (label) => {
+      render(<GeofencesAdminPage />);
+      await userEvent.click(editButton());
+      fireEvent.change(rate(label), { target: { value: "0" } });
+      fireEvent.submit(document.getElementById("geofence-edit-form")!);
+
+      await waitFor(() =>
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Check the zone's numbers" }),
+        ),
+      );
+      expect(mockUpdateMutate).not.toHaveBeenCalled();
+    },
+  );
 
   it("creates with the kept whole numbers, never NaN or Infinity", async () => {
     await openCreate();
@@ -330,6 +350,9 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     expectRefusedEntriesKeep(rate(/points per interval/i), "1");
     expectRefusedEntriesKeep(rate(/min session/i), "15");
     expectRefusedEntriesKeep(rate(/pause grace/i), "5");
+    expectClearingEntriesEmpty(rate(/minutes per point/i), "30");
+    expectClearingEntriesEmpty(rate(/points per interval/i), "1");
+    expectClearingEntriesEmpty(rate(/min session/i), "15");
     expectClearingEntriesEmpty(rate(/pause grace/i), "5");
   });
 

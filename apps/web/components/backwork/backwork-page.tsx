@@ -107,6 +107,9 @@ function uploadRejectionDescription(reason: "type" | "size"): string {
 // "no filter" / "no selection" in local state before we hit the API.
 const ANY = "__any__";
 
+/** The API's `@Min` on a Backwork resource's `year` (`backwork.dto.ts`). */
+const BACKWORK_YEAR_MIN = 1900;
+
 /** SHA-256 hex digest for the browser — matches the server's file_hash format. */
 async function sha256Hex(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
@@ -300,16 +303,21 @@ export function BackworkPage() {
     }
     setUploadError(null);
     const contentType = inspected.contentType;
-    // The input's own min={1} stops a browser's submit first; this covers a
-    // programmatic one, and refuses before the file reaches storage.
+    // The floors the API checks on confirm, checked here before the file
+    // reaches storage, so a refusal can't leave an orphaned object. This is a
+    // toast, not the inline error the comment above prescribes, because a
+    // browser never gets here: the inputs' own min stops its submit first,
+    // and the metadata fields carry no error slot (`UploadField`). It covers
+    // a programmatic submit.
+    const year = parseGuardedInt(uploadDraft.year, BACKWORK_YEAR_MIN);
     const assignmentNumber = parseGuardedInt(uploadDraft.assignment_number, 1);
     if (
-      uploadDraft.assignment_number !== "" &&
-      assignmentNumber === undefined
+      (uploadDraft.year !== "" && year === undefined) ||
+      (uploadDraft.assignment_number !== "" && assignmentNumber === undefined)
     ) {
       toast({
-        title: "Check the assignment number",
-        description: "Assignment numbers start at 1.",
+        title: "Check the year and assignment number",
+        description: `The year starts at ${BACKWORK_YEAR_MIN}, and assignment numbers start at 1.`,
         variant: "destructive",
       });
       return;
@@ -339,7 +347,7 @@ export function BackworkPage() {
         department_code: uploadDraft.department_code.trim() || undefined,
         course_number: uploadDraft.course_number.trim() || undefined,
         professor_name: uploadDraft.professor_name.trim() || undefined,
-        year: parseGuardedInt(uploadDraft.year),
+        year,
         semester: uploadDraft.semester
           ? (uploadDraft.semester as (typeof SEMESTERS)[number])
           : undefined,
@@ -540,8 +548,8 @@ export function BackworkPage() {
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.year}
                           onChange={(event) => {
-                            // The year's floor is the API's to refuse: a
-                            // guard at 1900 would refuse the "2" of "2026".
+                            // Its floor waits for submit: a guard at 1900
+                            // would refuse the "2" of "2026".
                             const next = guardIntDraft(event.target.value);
                             if (next === undefined) return;
                             setUploadDraft((prev) => ({ ...prev, year: next }));
