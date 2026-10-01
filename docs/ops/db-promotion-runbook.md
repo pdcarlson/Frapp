@@ -578,6 +578,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-10-01: `discord_imports.role_mapping` gets a catalog comment that is true (#2887)
+
+### 20261001024000_discord_import_role_mapping_comment.sql
+
+- **Purpose**: One `comment on column public.discord_imports.role_mapping`. The column's `--` comment in `20260824120000_discord_import.sql` still calls the mapping informational, says nothing reads it, and shows a `signet_role` entry (the key the API actually wrote before #2818 was `signet_role_key`). Since #2818 it gates the channels imported "Same as Discord", and starting the import creates the mapped roles and grants their read permissions. That migration is promoted and isn't edited in place, so the true description goes into the catalog instead. Nothing else changes: no column, index, constraint, policy or row.
+- **Checks**: After `db push`, `select col_description('public.discord_imports'::regclass, (select attnum from pg_attribute where attrelid = 'public.discord_imports'::regclass and attname = 'role_mapping'));` returns the comment, which starts `Discord role -> Frapp role mapping (#2818).`
+- **Promoter notes**: Ship it in any order. No API or web code reads the comment. `COMMENT ON` takes a brief lock on `discord_imports`, a table of one row per import. Re-applying overwrites the comment with the same text. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-the-role_mapping-comment-20261001024000) § Rollback the role_mapping comment.
+
 ## 2026-09-30: One 1:1 DM per chapter and member pair (#2788)
 
 ### 20260930231000_chat_dm_one_channel_per_pair.sql
@@ -1386,6 +1396,13 @@ it depends on (`chat_messages.author_name`, `chat_message_attachments`, and the
 > tracked in #1409. Canonical statement:
 > `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist
 > actually enforces.
+
+> **Comment correction (2026-10-01, #2887).** The `role_mapping` column comment
+> here ("informational only … nothing reads it", with a `signet_role` entry) has
+> been false since #2818. The true description is the column's catalog comment,
+> written by `20261001024000_discord_import_role_mapping_comment.sql`; the
+> entry shape is `DiscordRoleMapping` in
+> `apps/api/src/domain/entities/discord-import.entity.ts`.
 
 - **Purpose**: give the importer its own identity column and the three tables an
   import needs while it runs. `chat_messages.external_message_id` holds the
