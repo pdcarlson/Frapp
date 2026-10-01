@@ -101,16 +101,16 @@ export default function GlobalError({
               component tree. A last-resort screen disagreeing with the button
               everywhere else is the drift the cutover rule forbids. So
               `components/shared/elevation-call-sites.spec.ts` holds this copy
-              to every class of that variant and size, and to no hover of its
-              own; `focus-contrast.spec.ts` holds its focus recipe. The base's
-              icon and disabled classes are left out, since this button has
-              neither. The hover is the neutral `--card-hover`, never the
-              accent tint: §10 bars the chapter accent from an error surface.
+              to exactly the classes that button renders, less its icon
+              (`[&_svg]:*`) and disabled (`disabled:*`) classes, since this one
+              has neither, plus `mt-1`, its placement here. The hover is the
+              neutral `--card-hover`, never the accent tint: §10 bars the
+              chapter accent from an error surface.
             */}
             <button
               type="button"
               onClick={() => reset()}
-              className="mt-1 inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25"
+              className="mt-1 inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25"
             >
               Reload the dashboard
             </button>

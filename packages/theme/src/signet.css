@@ -147,8 +147,10 @@
      * control in its container's own colour (#1208, #1220). Nothing in
      * either Next app paints them any more, and
      * `apps/web/components/shared/elevation-call-sites.spec.ts` keeps
-     * it that way; deleting them is #3036. Spell the surface you mean
-     * (`bg-card`, `bg-popover`).
+     * it that way; deleting them is #3036. A rest fill names its ladder
+     * step (`bg-card`, `bg-popover`). A hover takes a state above what
+     * it sits on (`--card-hover` below, or `--accent-subtle` for a row
+     * in a menu or table), never the surface it already sits on.
      * Chapter-accent tints are a different thing: `--accent-subtle`. */
     --secondary: #211E1A;
     --secondary-foreground: #EDEAE3;

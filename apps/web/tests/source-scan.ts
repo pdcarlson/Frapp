@@ -8,7 +8,9 @@ import { join } from "node:path";
  *
  * One copy, for the reason `signet-contrast.ts` keeps one seed corpus: two scans
  * that each owned a `ROOTS` list could drift, and a root added to one would
- * silently fall out of the other's ban.
+ * silently fall out of the other's ban. (`lib/date-call-sites.spec.ts` keeps
+ * its own walker: it scans `apps/web` alone, with a narrower comment stripper,
+ * so folding it in would change what that guard reads.)
  */
 
 /** The repo root, from `apps/web/tests/`. */
