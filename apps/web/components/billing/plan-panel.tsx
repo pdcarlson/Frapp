@@ -605,8 +605,8 @@ function PlanMeta({
  * facts:
  *
  * - `deniedFallback` — they do not hold it, or the check failed while the
- *   connection was fine (#3065). "Ask an officer" is right for the first,
- *   which is the only outcome any branch establishes.
+ *   dashboard was not OFFLINE (#3064, #3065). "Ask an officer" is right for
+ *   the first, which is the only outcome any branch establishes.
  * - `fallback` — idle, nothing cached. Nothing is established, so it stays
  *   `null` and the slot is briefly empty, as the card this replaces left it.
  *   The alternative told a treasurer holding `billing:manage` to ask an

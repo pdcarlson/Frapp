@@ -18,7 +18,8 @@ type BaseProps = {
    * than showing a placeholder that implies "loading" even to permitted users
    * whose fetch is still in flight.
    *
-   * It does **not** cover the paused case any more; see `offlineFallback`.
+   * It does **not** cover the paused case any more, nor a fetch in flight
+   * while OFFLINE; see `offlineFallback`.
    */
   fallback?: ReactNode;
   /**
