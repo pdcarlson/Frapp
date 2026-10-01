@@ -46,6 +46,6 @@ Production deployments are **built fresh from the named commit**, not promoted f
 `main` preview. `NEXT_PUBLIC_*` values are inlined at build time, so a preview build
 carries the staging API URL and staging Supabase keys; promoting one would put the
 production dashboard on staging infrastructure. See the header of
-[`scripts/ci/deploy-vercel.mjs`](../../../../scripts/ci/deploy-vercel.mjs).
+[`scripts/ci/deploy-vercel.mjs`](../../../scripts/ci/deploy-vercel.mjs).
 
 ---

@@ -66,6 +66,7 @@ import {
   redactSecrets,
 } from "./staging-conformance.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { ALERT_ROUTING } from "./lib/ops-docs.mjs";
 
 export const PRODUCTION_SITE_URL = "https://app.frapp.live";
 export const PRODUCTION_AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.frapp.live";
@@ -359,7 +360,7 @@ export async function runProductionAuthConformance({
   } else if (alert.action === "failed") {
     logger.log?.(
       "::error::Production Auth settings are conformant but the alert issue could not be closed. " +
-        "It is still open; if this persists, the owner closes it by hand (docs/internal/ops/ALERT_ROUTING.md § Escalation).",
+        `It is still open; if this persists, the owner closes it by hand (${ALERT_ROUTING} § Escalation).`,
     );
   }
   return { outcome, results, alert };

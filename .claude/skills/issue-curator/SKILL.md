@@ -135,7 +135,7 @@ and it exists for signal quality: `/next` ranks this backlog, and filler buries 
 - **Runtime signals** (best effort). Live evidence makes these the highest-signal issues.
   - Sentry MCP: new or growing error clusters, and regressions on recent releases. Read the
     organization slug, projects, and region from
-    [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md). A wrong slug returns 403,
+    [`alert-routing.md`](../../../docs/ops/alert-routing.md). A wrong slug returns 403,
     which looks like a revoked grant, so call `find_organizations` before recording Sentry as
     unreachable.
   - Supabase MCP: `get_advisors` security and performance findings from both hosted projects.

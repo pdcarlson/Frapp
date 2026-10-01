@@ -36,7 +36,7 @@ type UnverifiedKind = 'redirects_not_reported' | 'discord_unreachable';
 type MisconfiguredKind =
   'redirect_unregistered' | 'client_id_mismatch' | 'bot_token_rejected';
 
-const SETUP_DOC = 'docs/internal/ops/deployment/integrations.md §7A';
+const SETUP_DOC = 'docs/ops/deployment/integrations.md §7A';
 
 /**
  * Compare Discord's record of the application with this environment's config.

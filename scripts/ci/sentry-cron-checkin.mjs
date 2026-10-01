@@ -10,11 +10,11 @@
 // replace it. The monitor adds a same-morning signal in Sentry, which is
 // where ADR-24's pager (Discord, being built in #2505) will read from; until
 // then an issue reaches the owner only through Sentry's email rule, and
-// ALERT_ROUTING.md says what is proven of that. `error` lands the moment the job
+// alert-routing.md says what is proven of that. `error` lands the moment the job
 // ends, a run that never starts is reported missed once `checkin_margin`
 // passes, and a run whose closing check-in never arrives (a lost runner) is
 // reported timed out after `max_runtime`. One failed night therefore raises
-// both, and docs/internal/ops/ALERT_ROUTING.md says so.
+// both, and docs/ops/alert-routing.md says so.
 //
 // ── The protocol ────────────────────────────────────────────────────────────
 // Sentry's HTTP check-in endpoint, derived from the project's DSN
@@ -40,7 +40,7 @@
 // monitoring blip. What a lost check-in costs depends on whether the monitor
 // exists yet. Once one check-in has landed, a night whose check-ins never
 // arrive is reported missed. Before that, nothing in Sentry notices, and only
-// the freshness watch above covers the job; ALERT_ROUTING.md records how to
+// the freshness watch above covers the job; alert-routing.md records how to
 // confirm the monitor exists.
 //
 // Usage:
