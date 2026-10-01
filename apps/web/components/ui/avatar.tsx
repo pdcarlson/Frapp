@@ -7,10 +7,12 @@ import { cn } from "@/lib/utils"
 
 /*
  * `spec/ui/design-system/components.md` §7 and §11 draw the avatar the same way
- * everywhere it appears: a circle on the elevated `#26221C` step with the
+ * everywhere it appears: a circle on the elevated `--popover` step with the
  * initials in `--muted-foreground` at the caption size and 700. The scaffold
  * filled the fallback with `bg-secondary`, which under Signet is the card step
- * — one below elevated, so an avatar sitting on a card vanished into it.
+ * — one below elevated, so an avatar sitting on a card vanished into it. The
+ * fill is spelled `bg-popover`, not the `bg-accent` alias that holds the same
+ * value: `components/shared/elevation-call-sites.spec.ts` bans the alias.
  */
 
 const Avatar = React.forwardRef<
@@ -47,7 +49,7 @@ const AvatarFallback = React.forwardRef<
   <AvatarPrimitive.Fallback
     ref={ref}
     className={cn(
-      "flex h-full w-full items-center justify-center rounded-full bg-accent text-[12.5px] font-bold text-muted-foreground",
+      "flex h-full w-full items-center justify-center rounded-full bg-popover text-[12.5px] font-bold text-muted-foreground",
       className
     )}
     {...props}
