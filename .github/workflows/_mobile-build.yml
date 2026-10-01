@@ -1,0 +1,286 @@
+name: Mobile build
+
+# Build the commit production serves for the stores, upload it without
+# releasing it, and record what was uploaded (#3111). A reusable workflow:
+# `on: workflow_call` only, and its one caller is `deploy-production.yml`'s
+# `mobile` job, which runs only when the operator chose a platform in the
+# `mobile_build` input, and only after a `full`, non-dry-run ship whose
+# deploy and tag both succeeded. Paul chose this opt-in shape on 2026-10-01
+# over building on every ship: most ships don't touch the app, every iOS
+# release is another App Review cycle, and EAS meters builds.
+#
+# ── What it enforces that a maintainer's laptop did by memory ──────────────
+#   1. A binary is never newer than production: it is built from the SHA the
+#      caller's `validate` job checked and the `deploy` job just verified
+#      live, `inputs.sha`, and from nothing else. A build from `main`'s tip
+#      could call routes production doesn't serve yet (#2526).
+#   2. Every uploaded build is listed in `apps/mobile/store/shipped-builds.json`,
+#      which arms the required `api-contract-check` gate. The `record` job
+#      opens that PR (`scripts/ci/record-shipped-builds.mjs`).
+#
+# ── Upload, never release ───────────────────────────────────────────────────
+# iOS goes to TestFlight and Android to the Play `internal` track
+# (`submit.production` in `apps/mobile/eas.json`). Submitting for App Review
+# and promoting a Play track stay a human's clicks. `--no-auto-testflight-setup`
+# keeps CI from creating a TestFlight group: who tests a build is a person's
+# call too.
+#
+# ── Jobs, environments and approvals ────────────────────────────────────────
+# Both jobs name `automation` (main only, no required reviewers,
+# `deployment: false`; docs/ci-cd/agent-infra.md § GitHub environments and
+# bootstrap secrets). That costs no Approve click, so a Deploy production run
+# is still one approval with or without a mobile build. Never name
+# `production` here: every job that does is another click.
+#   * `build` holds `EXPO_TOKEN` and runs the deployed tree.
+#   * `record` holds the base-sync App token and runs the trusted ref.
+# Neither holds the other's credential.
+#
+# ── The trust split (`_deploy.yml`'s header, #2801, #2824) ─────────────────
+# `build` checks out the deployed commit and runs nothing local from it as a
+# check: no `./.github/actions/…` action (it would load from the deployed
+# tree), and the steps that judge the result are inline shell. `npm ci` and the
+# eas-cli install run before any step that names `EXPO_TOKEN`, and only the
+# steps that call `eas` name it, so no install script runs with it in its
+# environment. Honest limit, the one `_deploy.yml` states: an install script
+# can still leave something a later step runs. The deployed commit is an
+# ancestor of `main` with green CI, so it is already-reviewed code.
+#
+# ── Failure ─────────────────────────────────────────────────────────────────
+# Production is live and tagged before this starts, so nothing here rolls
+# anything back or turns the deploy's summary red. A failed build or upload
+# reds this workflow's own job, which reds the run with the caller's job name
+# saying the ship stands, and the `record` job's summary says what was built,
+# what was uploaded and how to finish by hand (ADR-24 I4: never a silent
+# skip). To retry, re-run the failed jobs of the Deploy production run: the
+# deploy and tag succeeded and don't run again.
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: "The validated commit Deploy production just shipped"
+        required: true
+        type: string
+      platform:
+        description: "ios, android or all"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on EAS, then upload to TestFlight / Play internal
+    runs-on: ubuntu-latest
+    # Main only, no reviewers: no Approve click (see the header).
+    environment:
+      name: automation
+      deployment: false
+    # The EAS build step's own ceiling is 180 minutes (a free-plan queue can
+    # be long) and each upload's 30, on top of the installs.
+    timeout-minutes: 260
+    permissions:
+      contents: read
+    # Ids, statuses, versions and the commit EAS saw, nothing else: the record
+    # job needs no more, and a job output carrying a masked value is dropped.
+    outputs:
+      builds: ${{ steps.build.outputs.builds }}
+      ios-upload: ${{ steps.upload-ios.outcome }}
+      android-upload: ${{ steps.upload-android.outcome }}
+    steps:
+      # Before any checkout: an input this job doesn't know, or a token that
+      # never arrived, costs nothing. Names only: the check is
+      # `secrets.EXPO_TOKEN != ''`, so no value enters this step.
+      - name: Check the inputs, and that EXPO_TOKEN reached this job
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          PLATFORM: ${{ inputs.platform }}
+          HAS_EXPO_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            ios|android|all) ;;
+            *)
+              echo "::error::platform must be ios, android or all; got '$PLATFORM'."
+              exit 1
+              ;;
+          esac
+          if ! [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character lowercase commit SHA; got '$DEPLOY_SHA'."
+            exit 1
+          fi
+          if [ "$HAS_EXPO_TOKEN" != "true" ]; then
+            echo "::error::EXPO_TOKEN did not reach this job. It is a secret of the automation environment, and a called job gets it only when its caller passes secrets: inherit. Production is live and tagged; nothing was built. The owner steps are in docs/ops/deployment/mobile.md § 6.6."
+            exit 1
+          fi
+
+      # The validated SHA and nothing else (rule 1 in the header). The caller
+      # passes `needs.validate.outputs.sha`; `deploy-production-mobile.test.mjs`
+      # pins both ends, and that no step here moves the tree.
+      - name: Check out the shipped commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          # Nothing here talks to the remote after checkout, and this job
+          # holds EXPO_TOKEN.
+          persist-credentials: false
+
+      # Hand-written, not ./.github/actions/node-setup: a local action loads
+      # from the tree on disk, which is the deployed commit here. The version
+      # must match node-setup's (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # `eas build` evaluates `apps/mobile/app.config.js` through the
+      # project's own `expo` package, so the workspace's dependencies are
+      # needed, as on a laptop. Before EXPO_TOKEN is in any step's environment.
+      - name: Install dependencies
+        run: npm ci
+
+      # Pinned, like every other CLI this repo installs in CI. 24.8.0 is the
+      # version `mobile.md` § 6.6's non-interactive table was read from, and
+      # the one whose flags this file uses (`--wait`, `--json`, `--id`,
+      # `--no-auto-testflight-setup`). Move it deliberately, re-reading
+      # `eas build --help` and `eas submit --help`.
+      - name: Install EAS CLI
+        run: npm install --global eas-cli@24.8.0
+
+      # eas-cli uploads the working tree, uncommitted changes included, unless
+      # `requireCommit` is set (it isn't). So the tree must be exactly the SHA:
+      # HEAD on it, and nothing changed or added that git doesn't ignore.
+      - name: Confirm the tree is exactly the shipped commit
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
+            echo "::error::HEAD is $HEAD_SHA, not the shipped $DEPLOY_SHA. Refusing to build anything else."
+            exit 1
+          fi
+          DIRTY="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$DIRTY" ]; then
+            echo "::error::The install changed the tree, and eas-cli would upload the change with the build:"
+            printf '%s\n' "$DIRTY"
+            exit 1
+          fi
+
+      # `--json` prints the finished builds on stdout (everything else goes to
+      # stderr, where the EAS build links show). `eas build` exits 1 only when
+      # a build ERRORED: a CANCELED one exits 0. So every build's status is
+      # checked here, after the ids are handed to the upload steps, which
+      # upload whichever platform did finish.
+      - name: Build on EAS
+        id: build
+        timeout-minutes: 180
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORM: ${{ inputs.platform }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/eas-builds.json"
+          STATUS=0
+          eas build --platform "$PLATFORM" --profile production --non-interactive --wait --json \
+            --message "Deploy production $DEPLOY_SHA $RUN_URL" > "$OUT" || STATUS=$?
+
+          BUILDS="$(jq -c 'map({id, platform, status, appVersion, appBuildVersion, gitCommitHash})' "$OUT" 2>/dev/null || true)"
+          echo "builds=$BUILDS" >> "$GITHUB_OUTPUT"
+          for P in ios android; do
+            ID="$(printf '%s' "${BUILDS:-[]}" | jq -r --arg p "${P^^}" \
+              'map(select(.platform == $p and .status == "FINISHED")) | if length == 1 then .[0].id else "" end')"
+            echo "${P}_id=$ID" >> "$GITHUB_OUTPUT"
+          done
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::eas build exited $STATUS. Production is live and tagged; a store build did not finish. The EAS build links are in the log above."
+            exit "$STATUS"
+          fi
+          if [ -z "$BUILDS" ]; then
+            echo "::error::eas build exited 0 but printed no build list. Read the EAS build links in the log above."
+            exit 1
+          fi
+          UNFINISHED="$(printf '%s' "$BUILDS" | jq -r 'map(select(.status != "FINISHED") | "\(.platform) \(.id) \(.status)") | join(", ")')"
+          if [ -n "$UNFINISHED" ]; then
+            echo "::error::Not every EAS build finished: $UNFINISHED."
+            exit 1
+          fi
+
+      - name: Upload iOS to TestFlight (not submitted for review)
+        id: upload-ios
+        if: ${{ !cancelled() && steps.build.outputs.ios_id != '' }}
+        timeout-minutes: 30
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ steps.build.outputs.ios_id }}
+        run: eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait --no-auto-testflight-setup
+
+      - name: Upload Android to the Play internal track (not promoted)
+        id: upload-android
+        if: ${{ !cancelled() && steps.build.outputs.android_id != '' }}
+        timeout-minutes: 30
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_ID: ${{ steps.build.outputs.android_id }}
+        run: eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
+
+  record:
+    name: Record the uploads in shipped-builds.json (opens a PR)
+    needs: build
+    # After a failed build too: one platform may have uploaded, and the
+    # summary is how the run says what happened.
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: automation
+      deployment: false
+    # The writes go through the App token, never this job's GITHUB_TOKEN.
+    permissions:
+      contents: read
+    steps:
+      # The dispatched `main` (`github.sha`), not the shipped commit: the
+      # script judges the build job's output, so it can't come from the tree
+      # that was built.
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # The PR base sync App (`pr-base-sync.yml`): a PR opened with
+      # GITHUB_TOKEN starts no workflow, so its required checks would never
+      # report. Only when something was uploaded, so a run that built nothing
+      # can't fail here for a reason unrelated to it.
+      - name: Mint the base-sync App token
+        id: app-token
+        if: ${{ needs.build.outputs.ios-upload == 'success' || needs.build.outputs.android-upload == 'success' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Runs on a failed mint too, so the summary lists the entries to add by
+      # hand. The runner's own Node: the script imports Node built-ins only.
+      - name: Record the uploaded builds and summarise the run
+        if: ${{ !cancelled() }}
+        env:
+          EAS_BUILDS: ${{ needs.build.outputs.builds }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PLATFORM: ${{ inputs.platform }}
+          IOS_UPLOAD: ${{ needs.build.outputs.ios-upload }}
+          ANDROID_UPLOAD: ${{ needs.build.outputs.android-upload }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: node scripts/ci/record-shipped-builds.mjs

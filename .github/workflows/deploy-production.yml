@@ -105,8 +105,9 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # one approval, not four. That job is `_deploy.yml`'s, the one staging runs
 # too (epic #2802, #2805): its header has the order and the trust split, and
 # production's layers are its steps named `inputs.environment ==
-# 'production'`. The `release` and `deploy-outcome` jobs are unscoped and add
-# no clicks.
+# 'production'`. The `release`, `mobile` and `deploy-outcome` jobs name no
+# environment and add no clicks; the jobs `release` and `mobile` call name
+# `automation`, which has no reviewers.
 #
 # SHA confirmation, trim, and `validate-deploy-sha.mjs` run in a *prior*
 # unscoped job. Run 34234768094 sat on the reviewer gate for 20 minutes, then
@@ -156,6 +157,15 @@ on:
         default: auto
         type: choice
         options: [auto, patch, minor, major]
+      mobile_build:
+        # A choice, not a box: Android can't upload until the Play account
+        # exists (#2556), and `--platform all` fails both platforms when either
+        # one's credentials do. `none` is the unticked box.
+        description: "After a live 'full' ship and its tag, build this SHA on EAS, upload it to TestFlight / Play internal (not released), and open the shipped-builds.json PR. 'none' builds nothing."
+        required: false
+        default: none
+        type: choice
+        options: [none, ios, android, all]
 
 permissions:
   contents: read
@@ -289,6 +299,37 @@ jobs:
     with:
       sha: ${{ needs.validate.outputs.sha }}
       bump: ${{ inputs.bump }}
+
+  # The store builds, opt-in through `mobile_build` (#3111): build the SHA that
+  # just went live on EAS, upload it to TestFlight and the Play internal track
+  # without releasing it, and open the `shipped-builds.json` PR.
+  # `_mobile-build.yml`'s header has the rules it enforces and how it fails.
+  #
+  # After `release`, so a binary is only ever built from a commit that is live
+  # AND tagged: the manual path's rule is "build from the latest `v*` tag".
+  # Like `release`, it names no environment itself; the called jobs name
+  # `automation`, which has no reviewers, so a ship is still one Approve
+  # click with or without it.
+  #
+  # The opposite polarity from the scope conditions above, on purpose. Those
+  # are written so an unexpected value still ships. This is an extra that
+  # costs EAS builds and reaches the stores, so only a platform named in full
+  # starts it, and anything else, `none` included, builds nothing. The dry-run
+  # and scope clauses repeat what `release`'s success already implies, so a
+  # change to `release`'s `if:` can't open a path to a build.
+  mobile:
+    name: Build the live SHA for the stores (does not roll back a live ship)
+    needs: [validate, deploy, release]
+    if: ${{ needs.deploy.result == 'success' && needs.release.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' && (inputs.mobile_build == 'ios' || inputs.mobile_build == 'android' || inputs.mobile_build == 'all') }}
+    uses: ./.github/workflows/_mobile-build.yml
+    permissions:
+      contents: read
+    # EXPO_TOKEN and the base-sync App's pair are `automation` secrets, which
+    # GitHub releases to a called job only with `inherit` (#2804).
+    secrets: inherit
+    with:
+      sha: ${{ needs.validate.outputs.sha }}
+      platform: ${{ inputs.mobile_build }}
 
   # Terminal reporting. A `workflow_dispatch` failure reds one row in the
   # Actions list and emails the actor, which is thin for the only path to
