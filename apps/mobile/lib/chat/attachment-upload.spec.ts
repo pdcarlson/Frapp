@@ -73,9 +73,14 @@ describe("safeBasename", () => {
     expect(safeBasename("Café #2.jpg", "photo.jpg")).toBe("Café #2.jpg");
   });
 
+  it("trims surrounding whitespace, including a no-break space", () => {
+    expect(safeBasename(" beach.jpg\u00a0", "photo.jpg")).toBe("beach.jpg");
+  });
+
   it("falls back when there is nothing usable left", () => {
     expect(safeBasename("///", "photo.jpg")).toBe("photo.jpg");
     expect(safeBasename("file:///tmp/.", "photo.jpg")).toBe("photo.jpg");
+    expect(safeBasename("file:///tmp/\u3000", "photo.jpg")).toBe("photo.jpg");
   });
 });
 
@@ -130,6 +135,24 @@ describe("resolveUploadable", () => {
     });
 
     expect(result.filename).toBe("Été à Paris.jpg");
+  });
+
+  it("drops whitespace after the extension, which the avatar key would keep", async () => {
+    // `normalizeExtension` trims, so `jpg` + U+00A0 passes the allowlist here and
+    // at the API. `UserService` then builds the avatar key from the untrimmed
+    // extension, `<uuid>.jpg` + U+00A0, and storage-api refuses it. The old
+    // squash hid this by turning the name into `beach.jpg_`.
+    const result = await resolveUploadable(
+      {
+        uri: "file:///var/tmp/ABC-123.jpg",
+        fileName: "beach.jpg\u00a0",
+        mimeType: "image/jpeg",
+      },
+      "image",
+    );
+
+    expect(result.filename).toBe("beach.jpg");
+    expect(manipulator.manipulate).not.toHaveBeenCalled();
   });
 
   it("falls back to the extension when the picker reports no usable type", async () => {

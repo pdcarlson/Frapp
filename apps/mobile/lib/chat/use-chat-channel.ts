@@ -438,8 +438,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     // Staged attachments are per-channel exactly as the draft is. Unlike the
     // draft they are NOT persisted and restored per channel: the bytes are in
     // the bucket but the claim is in memory, so switching away abandons it and
-    // leaves the object an orphan (nothing sweeps the `chat` bucket until
-    // #2197). Carrying it across the switch
+    // leaves the object an orphan (nothing collects an upload no message
+    // claimed until #2197). Carrying it across the switch
     // would be the worse failure — the photo would ride the next message in a
     // channel it was never meant for.
     if (attachments.length > 0) setAttachments([]);
