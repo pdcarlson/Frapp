@@ -248,7 +248,7 @@ jobs:
       # own copy of the validator proves nothing. The shipping job moves the
       # tree to the SHA after this job passes.
       - name: Checkout (trusted ref)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -404,7 +404,7 @@ jobs:
       # `production-release-pin.yml`'s P1 alert catches hosts left untagged.
       - name: Checkout
         if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
