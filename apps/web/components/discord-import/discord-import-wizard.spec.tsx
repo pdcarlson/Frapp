@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { cardFilledContainers } from "@/tests/card-surfaces";
+import { networkMock } from "@/tests/network";
 
 // `vi.hoisted` runs before the hoisted `vi.mock` factory, so the spies exist
 // when the factory wires them in.
@@ -21,6 +23,10 @@ const {
   myPermissions,
   rolesFail,
   permissionsFail,
+  catalogStale,
+  connectionRead,
+  confirmPending,
+  mockOffline,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -38,6 +44,13 @@ const {
   // "error": no permissions ever loaded; "stale": a refetch failed but the
   // last answer is kept, as TanStack Query v5 does.
   permissionsFail: { value: null as null | "error" | "stale" },
+  // A catalog refetch that failed with the last answer kept.
+  catalogStale: { value: false },
+  // The connection read's state, over a settled one, for its async states.
+  connectionRead: { value: {} as Record<string, unknown> },
+  // A confirm in flight.
+  confirmPending: { value: false },
+  mockOffline: { value: false },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general", type: "PUBLIC" }] as unknown,
@@ -84,7 +97,7 @@ vi.mock("@repo/hooks", () => ({
       { key: "MEMBERS_VIEW", permission: "members:view" },
     ],
     isPending: false,
-    isError: false,
+    isError: catalogStale.value,
   }),
   useRoles: () =>
     rolesFail.value
@@ -132,6 +145,8 @@ vi.mock("@repo/hooks", () => ({
   useDiscordConnection: () => ({
     data: connection.value,
     isPending: false,
+    refetch: () => Promise.resolve(),
+    ...connectionRead.value,
   }),
   useBeginDiscordConnect: () => ({
     mutateAsync: beginConnect,
@@ -139,7 +154,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useConfirmDiscordConnect: () => ({
     mutateAsync: confirmConnect,
-    isPending: false,
+    isPending: confirmPending.value,
   }),
   useDiscoverDiscordChannels: () => ({
     mutateAsync: discoverChannels,
@@ -153,6 +168,7 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { ImportWizard } from "./import-wizard";
 import { SourceStep } from "./source-step";
@@ -195,6 +211,13 @@ describe("ImportWizard — choosing a path", () => {
       (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  // The dashboard shell's <main> holds the page; a second would be a second
+  // main landmark in a screen reader's list (#2500).
+  it("draws no main landmark of its own", () => {
+    render(<ImportWizard onStarted={() => {}} onCancel={() => {}} />);
+    expect(screen.queryByRole("main")).toBeNull();
   });
 
   it("still offers the upload path when the bot is not configured", () => {
@@ -1484,6 +1507,28 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(screen.getByText("cabinet:read")).toBeInTheDocument();
   });
 
+  it("keeps the permission grid through a failed catalog refresh", () => {
+    catalogStale.value = true;
+    try {
+      const choices = {
+        ...defaultChoices(channels),
+        "3": {
+          action: "create_new" as const,
+          newName: "cabinet",
+          visibility: "restricted" as const,
+          requiredPermissions: [],
+        },
+      };
+      renderStep({ choices });
+      expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+      expect(
+        screen.queryByText(/Couldn.t load the permission catalog/),
+      ).toBeNull();
+    } finally {
+      catalogStale.value = false;
+    }
+  });
+
   it("warns on the upload path that an export does not say what was private", () => {
     renderStep({ knowsPrivacy: false, onRescan: undefined });
     expect(
@@ -1645,6 +1690,127 @@ describe("export preamble reader", () => {
   });
 });
 
+describe("ConnectStep — its async states, on the page surface (#2500)", () => {
+  beforeEach(() => {
+    availability.value = { available: true };
+    connection.value = { connected: false };
+  });
+  afterEach(() => {
+    connectionRead.value = {};
+    confirmPending.value = false;
+    mockOffline.value = false;
+  });
+
+  function renderConnect() {
+    return render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+      />,
+    );
+  }
+
+  it("says the connection could not be checked, naming it, with Retry", () => {
+    connectionRead.value = { data: undefined, isError: true };
+    const { container } = renderConnect();
+
+    expect(
+      screen.getByText("Couldn't check the Discord connection"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Unable to load data")).toBeNull();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says it can't check offline, rather than checking for ever", () => {
+    connectionRead.value = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "paused",
+    };
+    const { container } = renderConnect();
+
+    expect(screen.getByText("Can't check Discord offline")).toBeInTheDocument();
+    expect(screen.queryByText(/Checking whether Discord/)).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  // Offline, a read either pauses or (the API unreachable, a page restored
+  // offline) fails; both are offline, not a failure to check.
+  it("says it can't check offline when the read failed while offline", () => {
+    mockOffline.value = true;
+    connectionRead.value = { data: undefined, isError: true };
+    renderConnect();
+
+    expect(screen.getByText("Can't check Discord offline")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't check the Discord connection"),
+    ).toBeNull();
+  });
+
+  it("keeps the last answer through a refetch that fails", () => {
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    connectionRead.value = { isError: true };
+    renderConnect();
+
+    expect(screen.getByText(/Connected to Tau Nu/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't check the Discord connection"),
+    ).toBeNull();
+    // And says it is the last answer: the bot may have been removed since.
+    expect(
+      screen
+        .getByText(
+          "Couldn't recheck the Discord connection. This is the last answer that loaded.",
+        )
+        .closest('[role="status"]'),
+    ).not.toBeNull();
+  });
+
+  it("says a 'not connected' answer is the last that loaded, too", () => {
+    // The bot may have been added since; the pitch to add it is then stale.
+    connectionRead.value = { isError: true };
+    renderConnect();
+
+    expect(
+      screen.getByRole("button", { name: /Add to Server/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByText(
+          "Couldn't recheck the Discord connection. This is the last answer that loaded.",
+        )
+        .closest('[role="status"]'),
+    ).not.toBeNull();
+  });
+
+  it("announces the confirm while it runs", () => {
+    confirmPending.value = true;
+    const { container } = renderConnect();
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Confirming your Discord server…",
+    );
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("announces the check while it runs", () => {
+    connectionRead.value = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "fetching",
+    };
+    const { container } = renderConnect();
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Checking whether Discord is connected…",
+    );
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+});
+
 describe("ConnectStep — confirming what the callback parked", () => {
   beforeEach(() => {
     availability.value = { available: true };
@@ -1699,6 +1865,65 @@ describe("ConnectStep — confirming what the callback parked", () => {
 
     await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
   });
+
+  it("does not confirm again when Back and Continue bring the step back", async () => {
+    // The step unmounts on Back, and the one Continue mounts is fresh; the
+    // token was spent, so a second confirm could only be refused.
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+    await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByText(/Tau Nu/)).toBeInTheDocument());
+    expect(confirmConnect).toHaveBeenCalledTimes(1);
+  });
+
+  // The API answers a spent, expired or other chapter's token with one 400.
+  // Anything else (a 503 while Discord is withdrawn, a request that never
+  // arrived) returned before it touched the token, which can still connect.
+  it.each([
+    { refusal: "a 400, which spent it", error: { statusCode: 400 }, calls: 1 },
+    { refusal: "a 503, which did not", error: { statusCode: 503 }, calls: 2 },
+    {
+      refusal: "a request that never arrived",
+      error: new TypeError("Failed to fetch"),
+      calls: 2,
+    },
+  ])(
+    "after $refusal, Back and Continue leave $calls confirm(s) in all",
+    async ({ error, calls }) => {
+      confirmConnect.mockRejectedValueOnce(error);
+      render(
+        <ImportWizard
+          onStarted={() => {}}
+          onCancel={() => {}}
+          initialSource="bot"
+          initialStep="connect"
+          handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        />,
+      );
+      await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Back" })).toBeEnabled(),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(calls));
+      // Settled: no third attempt follows.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(confirmConnect).toHaveBeenCalledTimes(calls);
+    },
+  );
 
   it("withdraws Add to Server, with a reason, once the API has switched Connect off", async () => {
     // The API re-reads Discord before every connect, so it can withdraw the
@@ -1795,6 +2020,8 @@ describe("ConnectStep — confirming what the callback parked", () => {
           onConnected={onConnected}
           accessGiven={accessGiven}
           onAccessGivenChange={setAccessGiven}
+          confirmError={null}
+          onConfirmErrorChange={() => {}}
         />
       );
     }
@@ -1833,6 +2060,37 @@ describe("ConnectStep — confirming what the callback parked", () => {
       ).toBeInTheDocument(),
     );
     expect(confirmConnect).not.toHaveBeenCalled();
+  });
+
+  it("still shows why the confirmation was refused after Back and Continue", async () => {
+    // A refused token is not sent again, so the step that comes back has to
+    // be told the reason rather than learn it from a second refusal.
+    confirmConnect.mockRejectedValueOnce(
+      Object.assign(
+        new Error("That Discord confirmation does not belong to this chapter."),
+        { statusCode: 400 },
+      ),
+    );
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+    expect(
+      await screen.findByText(/does not belong to this chapter/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByText(/does not belong to this chapter/),
+    ).toBeInTheDocument();
+    expect(confirmConnect).toHaveBeenCalledTimes(1);
   });
 
   it("shows the reason in place when the confirmation is refused", async () => {

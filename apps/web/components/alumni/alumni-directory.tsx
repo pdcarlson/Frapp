@@ -10,6 +10,7 @@ import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import { EmptyState, anyReadUncached } from "@/components/shared/async-states";
 // The nested family for everything that replaces the *list*, on the reasoning
 // `members-directory.tsx` spells out: the whole-screen variants paint `--card`,
@@ -183,19 +184,16 @@ export function AlumniDirectory() {
         which is the job only they can do.
       */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h2
-            id="alumni-list-label"
-            className={`${EYEBROW} truncate text-muted-foreground`}
-          >
-            Alumni
-          </h2>
-          {query.isSuccess ? (
-            <p className="shrink-0 text-caption text-muted">
-              {alumni.length} alum{alumni.length === 1 ? "" : "ni"}
-            </p>
-          ) : null}
-        </div>
+        <SectionLabel
+          id="alumni-list-label"
+          count={
+            query.isSuccess
+              ? `${alumni.length} alum${alumni.length === 1 ? "" : "ni"}`
+              : null
+          }
+        >
+          Alumni
+        </SectionLabel>
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={applyFilters}

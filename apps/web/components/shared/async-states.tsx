@@ -54,7 +54,12 @@ export function Skeleton({ className }: { className?: string }) {
  * than randomise — a skeleton that reshuffles on every render flickers, and
  * under React Strict Mode it would differ between the two passes.
  */
-const SKELETON_LINE_WIDTHS = ["w-[70%]", "w-[55%]", "w-[62%]", "w-[45%]"] as const;
+const SKELETON_LINE_WIDTHS = [
+  "w-[70%]",
+  "w-[55%]",
+  "w-[62%]",
+  "w-[45%]",
+] as const;
 
 /**
  * A placeholder is never worth a crash or a runaway render, and `lines` is a
@@ -82,7 +87,7 @@ export function SkeletonText({
           key={index}
           className={cn(
             "h-[13px]",
-            SKELETON_LINE_WIDTHS[index % SKELETON_LINE_WIDTHS.length]
+            SKELETON_LINE_WIDTHS[index % SKELETON_LINE_WIDTHS.length],
           )}
         />
       ))}
@@ -144,7 +149,7 @@ export function StateTile({
         "flex h-11 w-11 items-center justify-center rounded-lg",
         tone === "accent"
           ? "bg-accent-subtle text-accent-text"
-          : "bg-destructive-tint text-destructive-text"
+          : "bg-destructive-tint text-destructive-text",
       )}
     >
       {children}
@@ -182,7 +187,9 @@ export function EmptyState({
         <FolderOpen className="h-6 w-6" />
       </StateTile>
       <h2 className="text-base font-bold">{title}</h2>
-      <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
+      <p className="max-w-[220px] text-sm text-muted-foreground">
+        {description}
+      </p>
       {actionLabel && onAction ? (
         // §10: the empty-state CTA is the Tinted button — accent-soft, inviting,
         // never alarming and never semantic.
@@ -239,7 +246,9 @@ export function ErrorState({
         <AlertTriangle className="h-6 w-6" />
       </StateTile>
       <Heading className="text-base font-bold">{title}</Heading>
-      <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
+      <p className="max-w-[220px] text-sm text-muted-foreground">
+        {description}
+      </p>
       {onRetry ? (
         // §10 names Secondary for retry, deliberately: an error surface must not
         // use the chapter accent, which rules out both Primary and Tinted.
@@ -346,6 +355,27 @@ export function anyReadUncached(
   );
 }
 
+/**
+ * Whether one read with nothing to show is offline, either way the note above
+ * describes: paused (`isPending && fetchStatus === "paused"`), or uncached
+ * while `useNetwork()` reports OFFLINE, where it fails instead.
+ *
+ * For a slot that owns a single read and draws its own offline state (a
+ * channel's pins, the import wizard's connect step, the import channel panel,
+ * the report queue's tab). Writing the two clauses out at each slot is how
+ * they drift: one copy had already moved to `data === undefined` where this
+ * note prescribes `isPending`, harmless for that read but no longer the rule.
+ */
+export function readIsOffline(
+  isOffline: boolean,
+  read: CachedRead & { isPending: boolean; fetchStatus: string },
+): boolean {
+  return (
+    (isOffline && anyReadUncached(read)) ||
+    (read.isPending && read.fetchStatus === "paused")
+  );
+}
+
 export function OfflineState({
   title = "You're offline",
   description = "Reconnect to sync chapter data and retry this workflow.",
@@ -371,7 +401,9 @@ export function OfflineState({
         <WifiOff className="h-6 w-6" />
       </StateTile>
       <h2 className="text-base font-bold">{title}</h2>
-      <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
+      <p className="max-w-[220px] text-sm text-muted-foreground">
+        {description}
+      </p>
       {handleRetry ? (
         <Button variant="secondary" size="sm" onClick={handleRetry}>
           {actionLabel}
@@ -470,10 +502,13 @@ export function PermissionsOffline({
     <div
       className={cn(
         "inline-flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground",
-        className
+        className,
       )}
     >
-      <WifiOff aria-hidden="true" className="h-4 w-4 shrink-0 text-destructive" />
+      <WifiOff
+        aria-hidden="true"
+        className="h-4 w-4 shrink-0 text-destructive"
+      />
       <span>Offline — can&apos;t check your access.</span>
       {onRetry ? (
         <Button variant="secondary" size="sm" onClick={onRetry}>
