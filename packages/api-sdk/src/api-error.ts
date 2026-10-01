@@ -84,7 +84,8 @@ export function codeOf(error: unknown): string | null {
  * success. The status is the truth. What is thrown always carries it where
  * {@link statusOf} reads it: a body that names none gets `statusCode` from the
  * response, which also covers an edge's JSON or HTML refusal that isn't Nest's
- * shape. A non-empty string body is kept as `message`.
+ * shape. A plain-text body is kept as `message`; markup is not, because a
+ * gateway's HTML error page would otherwise render as a toast's description.
  */
 export function throwUnlessOk(result: {
   error?: unknown;
@@ -96,9 +97,10 @@ export function throwUnlessOk(result: {
   if (error !== null && typeof error === "object") {
     throw statusOf(error) === undefined ? { ...error, statusCode } : error;
   }
+  const text = typeof error === "string" ? error.trim() : "";
   throw {
     statusCode,
-    message: typeof error === "string" && error.length > 0 ? error : undefined,
+    message: text.length > 0 && !text.startsWith("<") ? text : undefined,
   };
 }
 

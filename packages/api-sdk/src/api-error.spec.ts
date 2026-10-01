@@ -120,10 +120,19 @@ describe("throwUnlessOk", () => {
     expect(serverMessageOf(error)).toBe("Forbidden");
   });
 
-  it("keeps a string body as the message", () => {
-    const error = thrown({ error: "<html>403</html>", response: failed(403) });
+  it("keeps a plain-text body as the message", () => {
+    const error = thrown({ error: "Bad Gateway", response: failed(502) });
+    expect(statusOf(error)).toBe(502);
+    expect(serverMessageOf(error)).toBe("Bad Gateway");
+  });
+
+  it("drops an HTML error page, so a toast never renders markup", () => {
+    const error = thrown({
+      error: "\n<!DOCTYPE html><html>403</html>",
+      response: failed(403),
+    });
     expect(statusOf(error)).toBe(403);
-    expect(serverMessageOf(error)).toBe("<html>403</html>");
+    expect(serverMessageOf(error)).toBeNull();
   });
 });
 
