@@ -16,6 +16,11 @@ const row = (overrides: Partial<ImportRow>): ImportRow => ({
   warnings: [],
   error: null,
   created_at: "2026-09-28T18:06:33Z",
+  source: "upload",
+  messages_after: null,
+  purged_messages: 0,
+  channels_total: null,
+  channels_done: null,
   ...overrides,
 });
 
@@ -56,7 +61,7 @@ describe("importPercent", () => {
     // A bot import's message ratio reads full from the first page, and the
     // purge leaves the counters as they were: never a stand-in.
     const readFull = { total_messages: 5307, imported_messages: 5307 };
-    for (const status of ["purging", "purged"]) {
+    for (const status of ["purging", "purged"] as const) {
       expect(importPercent(row({ source: "bot", status, ...readFull }))).toBe(
         null,
       );
@@ -117,7 +122,7 @@ describe("purgeProgress (#2944)", () => {
   });
 
   it("is null for an import that is not deleting", () => {
-    for (const status of ["completed", "purged", "failed", "running"]) {
+    for (const status of ["completed", "purged", "failed", "running"] as const) {
       expect(purgeProgress(row({ status, purged_messages: 3 }))).toBeNull();
     }
   });

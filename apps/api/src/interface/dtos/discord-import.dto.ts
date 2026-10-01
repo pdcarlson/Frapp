@@ -18,6 +18,8 @@ import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
 import {
   DISCORD_IMPORT_PROGRESS_LIMITS,
+  DISCORD_IMPORT_SOURCES,
+  DISCORD_IMPORT_STATUSES,
   type DiscordImportSource,
   type DiscordImportStatus,
 } from '#domain/entities/discord-import.entity';
@@ -39,14 +41,14 @@ export class CreateDiscordImportDto {
   guild_name?: string;
 
   @ApiPropertyOptional({
-    enum: ['upload', 'bot'],
+    enum: DISCORD_IMPORT_SOURCES,
     default: 'upload',
     description:
       "`upload` (the default) imports a DiscordChatExporter export the admin uploads. `bot` reads the chapter's connected Discord server directly and requires a connection to exist first. Both run the same consent gate, the same channel mapping, and the same purge.",
   })
   @IsOptional()
-  @IsIn(['upload', 'bot'])
-  source?: 'upload' | 'bot';
+  @IsIn(DISCORD_IMPORT_SOURCES)
+  source?: DiscordImportSource;
 }
 
 export class StartDiscordImportDto {
@@ -380,17 +382,6 @@ export class DiscordImportProgressDto {
   failed: DiscordImportChannelProgressRowDto[];
 }
 
-const DISCORD_IMPORT_STATUS_VALUES = [
-  'draft',
-  'ready',
-  'running',
-  'completed',
-  'failed',
-  'cancelled',
-  'purging',
-  'purged',
-] as const satisfies readonly DiscordImportStatus[];
-
 /**
  * An import as every route that returns one returns it (#2860): the columns
  * in `DISCORD_IMPORT_VIEW_FIELDS`, and nothing of the worker's lease, resume
@@ -401,14 +392,14 @@ export class DiscordImportResponseDto {
   id: string;
 
   @ApiProperty({
-    enum: DISCORD_IMPORT_STATUS_VALUES,
+    enum: DISCORD_IMPORT_STATUSES,
     description:
       '`running` and `purging` are the two states the background worker advances; every other change is an admin action.',
   })
   status: DiscordImportStatus;
 
   @ApiProperty({
-    enum: ['upload', 'bot'],
+    enum: DISCORD_IMPORT_SOURCES,
     description:
       '`upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server.',
   })

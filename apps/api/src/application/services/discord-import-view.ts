@@ -1,4 +1,5 @@
 import { DiscordImport } from '#domain/entities/discord-import.entity';
+import type { DiscordImportWithProgress } from './discord-import.service';
 
 /**
  * The `discord_imports` columns the API returns (#2860).
@@ -54,13 +55,13 @@ export type DiscordImportViewField =
 export type DiscordImportView = Pick<DiscordImport, DiscordImportViewField>;
 
 /**
- * A bot import's progress in channel rows, which list and detail add (null
- * for an upload, and for a bot import with no progress to show).
+ * A bot import's progress in channel rows, which list and detail add. The
+ * service's type owns the shape.
  */
-export interface DiscordImportProgressCounts {
-  channels_total: number | null;
-  channels_done: number | null;
-}
+export type DiscordImportProgressCounts = Pick<
+  DiscordImportWithProgress,
+  'channels_total' | 'channels_done'
+>;
 
 /**
  * Project an import row onto what the API returns.
@@ -71,7 +72,7 @@ export interface DiscordImportProgressCounts {
  * resolves to the one without them.
  */
 export function toDiscordImportView(
-  row: DiscordImport & DiscordImportProgressCounts,
+  row: DiscordImportWithProgress,
 ): DiscordImportView & DiscordImportProgressCounts;
 export function toDiscordImportView(row: DiscordImport): DiscordImportView;
 export function toDiscordImportView(

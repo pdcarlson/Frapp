@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -13,15 +14,9 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * client retries and refires on focus.
  */
 
+/** The contract's status union, so a status the API adds reaches here (#2860). */
 export type DiscordImportStatus =
-  | "draft"
-  | "ready"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "purging"
-  | "purged";
+  components["schemas"]["DiscordImportResponseDto"]["status"];
 
 /** Statuses the worker is actively moving. Only these are worth polling. */
 export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
