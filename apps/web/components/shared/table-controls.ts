@@ -97,7 +97,8 @@ export const dashboardCheckboxHitAreaClassName = [
 /**
  * The icon button that sits at the trailing edge of a **dense list row** —
  * `/documents` and `/backwork` after the greenfield lane flattened their cards
- * away (`spec/ui/web-greenfield/`, [#2144](https://github.com/pdcarlson/Frapp/issues/2144)).
+ * away (`spec/ui/web-dashboard/README.md` § Page grammar,
+ * [#2144](https://github.com/pdcarlson/Frapp/issues/2144)).
  *
  * `Button`'s `size="icon"` is 44x44, which is right for a toolbar and wrong
  * inside a row the same lane pulled down to ~40px: the control would set the

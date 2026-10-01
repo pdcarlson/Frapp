@@ -274,7 +274,7 @@ const config: Partial<Config> = {
        * `caption` carry literals here that the type scale does not define.
        * Those five values were chosen when these utilities landed, not derived
        * from the spec, and `signet.css` is therefore *not* the one place they
-       * are written. Tracked as L-09 in `spec/ui/web-greenfield/tokens.md`;
+       * are written. Tracked as L-09 in `spec/ui/web-dashboard/tokens.md`;
        * settle them there (or in §7) rather than editing one literal in place.
        *
        * `apps/landing` adds three MARKETING roles on top of these six, in its
