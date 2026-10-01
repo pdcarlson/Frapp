@@ -44,10 +44,10 @@ Three things already pointed the same way:
 Title Case controls ship on the web dashboard today — `New Event`
 (`apps/web/components/events/events-page.tsx`) and `Open Documents`
 (`apps/web/components/layout/ask-pill.tsx`) — and
-[`../web-greenfield/reference/web-framework.dc.html`](../web-greenfield/reference/web-framework.dc.html),
-which outranks written docs on the web surface until the
-[#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back, draws Title Case on some of its
-controls. That is real drift against this rule rather than an exception to it, it is tracked as
+[`../web-dashboard/reference/web-framework.dc.html`](../web-dashboard/reference/web-framework.dc.html),
+which outranks written docs on the web surface
+([`../web-dashboard/README.md` § Sources and precedence](../web-dashboard/README.md#sources-and-precedence)),
+draws Title Case on some of its controls. That is real drift against this rule rather than an exception to it, it is tracked as
 [#2386](https://github.com/pdcarlson/Frapp/issues/2386), and that issue carries the question the
 drift actually turns on: whether a board outranks this document on a control's *words* as well as on
 its looks. Do not "fix" it by re-widening this rule.
@@ -465,6 +465,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
 | Offline (composer) | — | `You're offline — messages send when you reconnect.` |
+| Composer mounted before the channels resolve (#2176); visible after Enter, announced from the first render | — | `Still opening your channels. You can keep typing.` |
 | Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
 | Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |
 
@@ -904,7 +905,7 @@ Three things about these rows, none of them free choices:
   pre-auth routes and anything that outruns the inner boundary.
 
 Neither page uses an em dash, per
-[`../web-greenfield/README.md`](../web-greenfield/README.md) §2.
+[`../web-dashboard/README.md` § No em dashes in product copy](../web-dashboard/README.md#no-em-dashes-in-product-copy).
 
 ### Degraded segment (`(dashboard)/error.tsx`)
 
