@@ -7,11 +7,15 @@ import {
 /**
  * Client bindings pass {@link NO_PSEUDONYMS}: they hold no salt, so the
  * free-text sweep redacts identifiers rather than hashing them.
+ *
+ * `scrubBreadcrumb` is mobile's `beforeBreadcrumb` (#3104). The browser
+ * bindings have no native scope to protect and leave it unwired.
  */
 export function createNoPseudonymScrubHooks(): {
   scrubError: <T>(event: T) => T | null;
   scrubTransaction: <T>(event: T) => T | null;
   scrubEnvelope: (envelope: unknown) => void;
+  scrubBreadcrumb: <T>(breadcrumb: T) => T | null;
 } {
   const scrubber = createSentryScrubber(NO_PSEUDONYMS);
   return {
@@ -26,5 +30,8 @@ export function createNoPseudonymScrubHooks(): {
       ) as T | null;
     },
     scrubEnvelope: scrubber.scrubSentryEnvelope,
+    scrubBreadcrumb<T>(breadcrumb: T): T | null {
+      return scrubber.scrubRecordedBreadcrumb(breadcrumb) as T | null;
+    },
   };
 }

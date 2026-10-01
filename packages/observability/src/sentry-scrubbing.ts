@@ -1,6 +1,6 @@
 /**
  * PII scrubbing for everything leaving a Frapp process for Sentry (#481, #896,
- * #865, #2736, #2982).
+ * #865, #2736, #2982, #3104).
  *
  * `spec/behavior/observability.md` § Error Tracking splits identifiers into two
  * classes, and this module is the single enforcement point for both — across
@@ -10,10 +10,10 @@
  * `scrubSentryTransaction` for `beforeSendTransaction` (tracing events). A
  * third, `scrubSentryEnvelope`, runs in the browser's `beforeEnvelope` for what
  * the SDK sends without an event at all: a standalone span, which is how INP
- * leaves (#2736). A fourth, {@link reduceTouchBreadcrumb}, is mobile's
- * `beforeBreadcrumb`: it rewrites a touch breadcrumb before React Native copies
- * it to the native SDK, whose crash reports pass none of the other three
- * (#2982).
+ * leaves (#2736). A fourth, `scrubRecordedBreadcrumb`, is mobile's
+ * `beforeBreadcrumb`: it holds each breadcrumb to the breadcrumb allowlist
+ * before React Native copies it to the native SDK, whose crash reports pass
+ * none of the other three (#2982, #3104).
  *
  * ## DOM selectors (#2736)
  *
@@ -453,11 +453,11 @@ function isTouchBoundaryCrumb(
  * `TaskRow (task-row.tsx)`), or {@link REDACTED_LABEL} when none has. Its
  * `data` keeps only the path's code fields and a rage tap's `clickCount`.
  *
- * Mobile runs this as `beforeBreadcrumb`, which `@sentry/core` applies before
- * the crumb reaches a scope, so the native SDK's copy (which a native crash
- * report carries, past any JS hook) is already rebuilt. `scrubBreadcrumb`
- * applies it again when an event is sent. It is idempotent, so a crumb that
- * passes both comes out the same.
+ * Mobile runs this inside `beforeBreadcrumb` (`scrubRecordedBreadcrumb`),
+ * which `@sentry/core` applies before the crumb reaches a scope, so the native
+ * SDK's copy (which a native crash report carries, past any JS hook) is
+ * already rebuilt. `scrubBreadcrumb` applies it again when an event is sent.
+ * It is idempotent, so a crumb that passes both comes out the same.
  */
 export function reduceTouchBreadcrumb<T extends object>(breadcrumb: T): T {
   const source = breadcrumb as Record<string, unknown>;
@@ -490,6 +490,9 @@ export function reduceTouchBreadcrumb<T extends object>(breadcrumb: T): T {
   if (Object.keys(reducedData).length > 0) out.data = reducedData;
   return out as T;
 }
+
+/** An HTTP method an `http` breadcrumb's recorded copy may keep (#3104). */
+const HTTP_METHOD_RE = /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)$/i;
 
 /**
  * Origin-form path or an absolute-form URL. Used to decide whether a span
@@ -543,6 +546,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   scrubSentryEvent: (event: ScrubbableEvent) => ScrubbableEvent | null;
   scrubSentryTransaction: (event: ScrubbableEvent) => ScrubbableEvent | null;
   scrubSentryEnvelope: (envelope: unknown) => void;
+  scrubRecordedBreadcrumb: (crumb: unknown) => Record<string, unknown> | null;
 } {
   /**
    * Best-effort PII sweep over a free-text string (exception messages, culprits,
@@ -922,6 +926,95 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       .map(scrubBreadcrumb)
       .filter((entry): entry is Record<string, unknown> => entry !== undefined);
     return kept.length > 0 ? kept : undefined;
+  }
+
+  /**
+   * An HTTP breadcrumb's URL as its recorded copy keeps it (#3104): the scheme
+   * and host, then the path {@link pathOnly} gives. The query, the fragment
+   * and any `userinfo` are gone, and the path is swept.
+   *
+   * The origin stays because the SDK still reads it after the hook. React
+   * Native's `defaultBeforeBreadcrumb` (`sdk.js`) drops an `http` crumb whose
+   * `data.url` starts with the DSN's origin or the dev server's URL, and the
+   * native SDKs' own `beforeBreadcrumb` does the same. A path alone matches
+   * neither, so Sentry's own envelope requests would start appearing.
+   */
+  function recordedUrl(url: unknown): string | undefined {
+    const path = pathOnly(url);
+    if (typeof url !== 'string' || path === undefined) return path;
+    const origin = url.match(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/?#]*)/);
+    if (!origin) return path;
+    const authority = origin[2] ?? '';
+    const host = authority.slice(authority.lastIndexOf('@') + 1);
+    return `${origin[1] ?? ''}${host}${path}`;
+  }
+
+  /**
+   * The `data` an HTTP breadcrumb's recorded copy keeps: the method, the
+   * reduced URL and the status, which is what the browser SDK's `xhr` and
+   * `fetch` handlers record and what a crash report needs to place the
+   * request. Anything else is dropped by omission. (React Native's replay
+   * integration adds body sizes and timings to an `xhr` crumb after this hook
+   * has run; those are numbers.)
+   */
+  function recordedHttpData(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    const out: Record<string, unknown> = {};
+    if (typeof data.method === 'string' && HTTP_METHOD_RE.test(data.method)) {
+      out.method = data.method;
+    }
+    const url = recordedUrl(data.url);
+    if (url) out.url = url;
+    if (
+      typeof data.status_code === 'number' &&
+      Number.isFinite(data.status_code)
+    ) {
+      out.status_code = data.status_code;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
+  /**
+   * One breadcrumb as it is recorded, before React Native copies it into the
+   * native SDK's scope (#3104). Mobile's `beforeBreadcrumb`.
+   *
+   * `@sentry/react-native` forwards every breadcrumb to the native SDK as
+   * soon as this hook returns, `data` included, and a native crash report is
+   * built from that copy without passing `beforeSend`. So the send-time rule
+   * in {@link scrubBreadcrumb} is applied here too: the same top-level
+   * allowlist, the swept `message`, the rebuilt touch crumb. The one
+   * difference is `data`. At send time it is always dropped. Here it is kept
+   * only where the SDK reads it back after the hook:
+   *
+   *  - **an `http` crumb** (`xhr`, or `fetch` under `expo/fetch`) keeps
+   *    {@link recordedHttpData}. Its URL is a search's query otherwise.
+   *  - **a touch or rage-tap crumb** keeps the code-only path
+   *    {@link reduceTouchBreadcrumb} leaves (#2982).
+   *  - **everything else**, a `console` crumb's raw `arguments` among them,
+   *    keeps none.
+   *
+   * Returns `null`, which drops the crumb, when nothing survives. It is
+   * idempotent, so the send-time pass over a recorded crumb changes nothing
+   * but `data`.
+   */
+  function scrubRecordedBreadcrumb(
+    crumb: unknown,
+  ): Record<string, unknown> | null {
+    const out = scrubBreadcrumb(crumb);
+    if (!out) return null;
+    const source = crumb as Record<string, unknown>;
+    const data =
+      source.data && typeof source.data === 'object'
+        ? (source.data as Record<string, unknown>)
+        : {};
+    const kept = isTouchBoundaryCrumb(source, data)
+      ? (reduceTouchBreadcrumb(source) as Record<string, unknown>).data
+      : source.type === 'http'
+        ? recordedHttpData(data)
+        : undefined;
+    if (kept !== undefined) out.data = kept;
+    return out;
   }
 
   function scrubTags(
@@ -1445,6 +1538,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     scrubSentryEvent,
     scrubSentryTransaction,
     scrubSentryEnvelope,
+    scrubRecordedBreadcrumb,
   };
 }
 

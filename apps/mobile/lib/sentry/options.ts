@@ -1,7 +1,6 @@
 import {
   createNoPseudonymScrubHooks,
   DEFAULT_TRACES_SAMPLE_RATE,
-  reduceTouchBreadcrumb,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
 } from "@repo/observability";
@@ -49,7 +48,8 @@ import { mobileTracePropagationTargets } from "./trace-targets";
  * add `mobileReplayIntegration`.
  */
 
-const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
+const { scrubError, scrubTransaction, scrubBreadcrumb } =
+  createNoPseudonymScrubHooks();
 
 /**
  * Derived from the option type rather than imported by name, matching the web
@@ -144,14 +144,29 @@ export type MobileSentryReleaseExtras = {
  * Both hooks are wired. Setting only one leaves the other event class shipping
  * unscrubbed, which is the gap #896 closed on the API.
  *
- * `beforeBreadcrumb` rebuilds the touch and rage-tap breadcrumbs that
- * `Sentry.wrap`'s touch boundary records, which name the touched element by
- * its `accessibilityLabel` or visible text: a member's name, a task's title, a
- * message's body (#2982). It has to run here rather than only in `beforeSend`.
- * The SDK copies each breadcrumb into the native SDK's scope once this hook
- * has returned, and a native crash report carries that copy without passing
- * any JS hook. `lib/sentry/touch-breadcrumbs.spec.ts` drives the real SDK to
- * show the order.
+ * `beforeBreadcrumb` holds every breadcrumb to the scrubber's breadcrumb
+ * allowlist as it is recorded, not only in `beforeSend`. The SDK copies each
+ * breadcrumb into the native SDK's scope once this hook has returned, and a
+ * native crash report carries that copy without passing any JS hook. So the
+ * copy has to be clean already: a touch crumb names the element by code, not
+ * by a member's name or a message's body (#2982); a request crumb's URL has
+ * no query string, which is where a typed search goes; and a `console`
+ * crumb has no raw arguments (#3104). `lib/sentry/touch-breadcrumbs.spec.ts`
+ * and `lib/sentry/recorded-breadcrumbs.spec.ts` drive the real SDK to show
+ * the order.
+ *
+ * Two native options close what the native SDKs record on their own, which
+ * no JS hook ever sees. Both are iOS-only:
+ *
+ *  - `enableNetworkBreadcrumbs: false`: sentry-cocoa's own `http` crumb keeps
+ *    the query string as `http.query`. It duplicates the JS request crumb by
+ *    design, so nothing is lost.
+ *  - `reportAccessibilityIdentifier: false`: sentry-cocoa names a tapped
+ *    native control by its `accessibilityIdentifier`, which is React Native's
+ *    `testID`.
+ *
+ * What the native SDKs still record is in `spec/behavior/observability.md`
+ * § Error Tracking.
  *
  * `release` / `dist` are optional extras resolved at init from expo-application
  * so this module stays free of native imports. Git SHA is a tag, not the
@@ -179,7 +194,8 @@ export function buildMobileSentryOptions(
       : {}),
     beforeSend: (event: ErrorEvent) => scrubError(event),
     beforeSendTransaction: (event: TransactionEvent) => scrubTransaction(event),
-    beforeBreadcrumb: (breadcrumb: Breadcrumb) =>
-      reduceTouchBreadcrumb(breadcrumb),
+    beforeBreadcrumb: (breadcrumb: Breadcrumb) => scrubBreadcrumb(breadcrumb),
+    enableNetworkBreadcrumbs: false,
+    reportAccessibilityIdentifier: false,
   };
 }
