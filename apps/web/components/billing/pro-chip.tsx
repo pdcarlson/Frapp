@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
  * **The paints are `--accent-*`, and that is the decision most worth stating.**
  * The board writes the chip as `#6B5A24` border on `#DDB844` text, which under
  * the demo tenant is its `--accent-border` and its mark gold at once — the trap
- * [`tokens.md`](../../../../spec/ui/web-greenfield/tokens.md) §L-01 names, where
+ * [`tokens.md`](../../../../spec/ui/web-dashboard/tokens.md) §L-01 names, where
  * the house seed and the house gold coincide and make the fixed Ask family look
  * identical to the retinting accent family. Two readings follow from that, and
  * only one is allowed:
@@ -33,9 +33,9 @@ import { cn } from "@/lib/utils";
  *   chapter. That is the merge the ask lock forbids in the other direction, and
  *   it would spend Ask's tokens on something that is not Ask.
  * - `--accent-*` retints per chapter, which is what product UI is supposed to
- *   do — the same call lane 4 made for `/documents`' file-row icon tile, and
- *   recorded in [`deletion-checklist.md`](../../../../spec/ui/web-greenfield/deletion-checklist.md)
- *   §8.
+ *   do — the same call lane 4 made for `/documents`' file-row icon tile. The
+ *   chip's rule is recorded in
+ *   [`README.md`](../../../../spec/ui/web-dashboard/README.md) § Billing.
  *
  * So: accent, and `--gold-ask-*` is not imported here or anywhere in this lane.
  *

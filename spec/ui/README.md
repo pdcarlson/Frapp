@@ -20,7 +20,7 @@ Naming: the product is **Frapp**, and "Signet" is the design system's internal n
 1. **Visuals:** the reference HTML files win over any written doc in this tree. If a doc disagrees with the reference, the doc is wrong and MUST be fixed. **The product name is the exception.** The boards draw "Signet" as the product name, but a shipped string's name follows [`brand-identity.md` § 1](brand-identity.md#1-identity). Frapp copy that differs from a board is therefore not drift, and never grounds for reverting it to Signet (ADR-25).
 2. **Logic:** [`../behavior/`](../behavior/README.md) wins over anything in this tree. UI specs describe presentation; they never override behavior rules.
 3. Where the two reference files disagree with each other, `canvas-screens.dc.html` wins. Known stale spots in the references are flagged in the owning doc under `design-system/` or `mobile/`.
-4. **Until the [#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back,** [`web-greenfield/`](web-greenfield/README.md) outranks [`web-dashboard/`](web-dashboard/README.md) on anything visual or structural the two disagree about, and its own [`reference/`](web-greenfield/reference/README.md) ranks with the boards in rule 1. This is scoped to the web surface and to that fold-back: it changes nothing for `mobile/`, and rules 1 to 3 still bind everything else. `web-greenfield/README.md` §1 carries the full order and what the distrust does **not** license — `web-dashboard/`'s navigation map, gating semantics, routing rules and data contracts are still truth.
+4. **The web dashboard's framework board** in [`web-dashboard/reference/`](web-dashboard/reference/README.md) ranks with the boards in rule 1 for that surface. [`web-dashboard/README.md` § Sources and precedence](web-dashboard/README.md#sources-and-precedence) carries the surface's full order, including where the product departs from the board and why a recorded departure is not drift. It changes nothing for `mobile/`, and rules 1 to 3 still bind everything else.
 
 ## Per-surface rules
 
@@ -34,8 +34,7 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | ---- | ------- | ------ |
 | [`design-system/`](design-system/README.md) | Tokens and rules shared by every Signet surface: foundations (color, type, radius, spacing), components, iconography, writing, chapter accent engine | Active |
 | [`mobile/`](mobile/README.md) | Mobile app: screen inventory, navigation, interaction patterns | Active |
-| [`web-greenfield/`](web-greenfield/README.md) | The web UI rebuild (#2140): trust order, brand locks, foundation tokens, deletion acceptance | Active — **outranks `web-dashboard/` on visuals and structure until the #2140 fold-back** |
-| [`web-dashboard/`](web-dashboard/README.md) | Admin web app: shell, nav, screens, state | Active (Signet since the #920 shell slice), but see the note below |
+| [`web-dashboard/`](web-dashboard/README.md) | Admin web app: precedence and locks, shell, nav, page grammar, per-route decisions, data contracts, the token record and the framework board | Active (Signet since the #920 shell slice, rebuilt by [#2140](https://github.com/pdcarlson/Frapp/issues/2140)) |
 | [`landing/`](landing/README.md) | Marketing site | **Reskin built out** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted, the decisions are taken, and both cutover slices have merged; `apps/landing` is on Figtree, the Signet ladder and the boards' composition, and slice 3 ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)) closed out the polish; what remains of the epic is owner decisions rather than build work |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
 | [`assets.md`](assets.md) | Logos, icons, asset sync | Active |
@@ -49,10 +48,6 @@ not by the Governs column here. No CI check asserts this table is complete or it
 - **It still MUST NOT be extended with new visual design decisions of its own** — those belong in [`design-system/`](design-system/README.md). What `landing/` owns is this surface's application of them: its decisions, its three marketing type roles, and its copy rules.
 
 The web dashboard left the frozen list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
-
-### The web dashboard after #2140
-
-`web-dashboard/` is **not** frozen and **not** deleted, but it is not yet the first thing to read about how the web surface looks. [#2140](https://github.com/pdcarlson/Frapp/issues/2140) rebuilt that surface and has closed; until its surviving truth folds back into `web-dashboard/`, [`web-greenfield/`](web-greenfield/README.md) wins on visuals and structure. What that does and does not license, and the fold-back itself: [`web-greenfield/README.md` § Why `web-dashboard/` is distrusted](web-greenfield/README.md#why-web-dashboard-is-distrusted-and-what-that-does-not-mean).
 
 ## Related trees
 
