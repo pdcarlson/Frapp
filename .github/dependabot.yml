@@ -418,6 +418,23 @@ updates:
       - dependency-name: "@vitest/coverage-v8"
         update-types: ["version-update:semver-major"]
 
+      # ── The Stripe React Native 0.78 hold ────────────────────────────────
+      # 0.78.0 takes the Stripe iOS SDK from Swift Package Manager, which
+      # needs dynamic frameworks. The app links its pods statically, so
+      # `pod install` fails on EAS. Nothing in CI runs `pod install`, so the
+      # grouped bump (#2739) went green and broke the first CI store build.
+      #
+      # A version range, not `update-types`: 0.77 -> 0.78 is a minor under
+      # 0.x, so a majors-only hold would not have stopped it. 0.77.x patches
+      # still flow. Like every entry here, it also suppresses security PRs
+      # for 0.78 and later; `check:npm-audit` is the backstop.
+      #
+      # Write-up: docs/ci-cd/dependency-updates.md
+      # § `@stripe/stripe-react-native` 0.78 is held on Stripe's Swift
+      # Package path. Lift it with the linkage decision in #3130.
+      - dependency-name: "@stripe/stripe-react-native"
+        versions: [">=0.78.0"]
+
       # ── TypeScript 7 dual-install ────────────────────────────────────────
       # TypeScript 7 is native tsc with no JS compiler API. The `typescript`
       # package is aliased to `@typescript/typescript6@6.0.2` (Nest CLI,

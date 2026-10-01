@@ -153,7 +153,10 @@ That `check-types` safety net is the reason JS-only libraries stay updatable, an
 cover a package that ships native code**: `@sentry/react-native` and `@stripe/stripe-react-native`
 both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and both are
 outside the ignore list — so a bad bump on either fails as a native compile with no CI signal, not
-as a type error. They are also deliberately held *ahead* of the versions the SDK specifies. Whether
+as a type error. Stripe's 0.78.0 broke the iOS build with no CI signal, one step earlier, at
+`pod install`
+([held on Stripe's Swift Package path](#stripestripe-react-native-078-is-held-on-stripes-swift-package-path)).
+They are also deliberately held *ahead* of the versions the SDK specifies. Whether
 that exemption is right, and on what grounds, is #2336; it is an open question, not a decision this
 rule has made.
 
@@ -374,6 +377,37 @@ once jest-dom ships vitest 5 types **and** `apps/mobile/lib/theme.spec.tsx` no l
 import-time mock call. Dropping them on jest-dom alone lands a PR that is red on `mobile-validate` —
 the failure this section predicts. **Keep the group** either way. Tracking:
 [#2445](https://github.com/pdcarlson/Frapp/issues/2445).
+
+## `@stripe/stripe-react-native` 0.78 is held on Stripe's Swift Package path
+
+`@stripe/stripe-react-native` ignores versions `>= 0.78.0`; 0.77.x patches still flow. 0.78.0 is the
+first release that takes the Stripe iOS SDK from Swift Package Manager instead of CocoaPods on React
+Native 0.75 and later: its podspec calls the new `stripe_spm.rb`, where 0.76.0 and 0.77.0 ship no
+such file and declare `core.dependency 'Stripe'`. That mode requires the pod to build as a dynamic
+framework. The app links its pods statically (`apps/mobile/app.json` has no `expo-build-properties`
+and so no `useFrameworks`), so `pod install` stops with:
+
+> [!] [stripe-react-native] Resolving the Stripe iOS SDK through Swift Package Manager requires
+> dynamic frameworks, but stripe-react-native is building as a static library.
+
+Under 0.x semver, 0.77 → 0.78 is a minor, so it arrived inside the grouped weekly PR (#2739) and
+passed every required check, because nothing in CI runs `pod install` (see
+[The ignore list is a runtime constraint, not a preference](#the-ignore-list-is-a-runtime-constraint-not-a-preference)).
+It surfaced in the first CI store build: Deploy production run
+[36904487648](https://github.com/pdcarlson/Frapp/actions/runs/36904487648), EAS build
+`1301b69a-4d4f-44b1-aab5-e94df079c518`, failed in its `INSTALL_PODS` phase after `v0.8.0` was live.
+Production was unaffected, because a store build never rolls back a ship.
+
+The entry is a version range rather than `update-types`, because the break was a minor and a
+majors-only hold would not have stopped it. Like every ignore entry, it also suppresses Dependabot
+security PRs for 0.78 and later, and `check:npm-audit` is the backstop.
+
+Lifting it means choosing a linkage. `useFrameworks: "dynamic"` through `expo-build-properties` is
+the path Stripe supports, and it changes every pod's linkage. `$StripeDisableSPM = true` in the
+generated Podfile keeps static linkage, but Stripe marks it deprecated and says future releases drop
+it. Either needs an EAS iOS build that finishes before it merges. Tracking:
+[#3130](https://github.com/pdcarlson/Frapp/issues/3130). Whether the native mobile packages belong on
+the ignore list at all is still #2336: this entry holds one known-bad line, not that posture.
 
 ## A group regeneration can drop `jsdom`, and vitest resolves it from the root
 
