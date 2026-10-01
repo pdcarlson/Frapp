@@ -10,6 +10,20 @@ const posthogInit = vi.hoisted(() => vi.fn());
 const reloadFeatureFlags = vi.hoisted(() => vi.fn());
 const setConfig = vi.hoisted(() => vi.fn());
 const optInCapturing = vi.hoisted(() => vi.fn());
+// Replay is off in every environment today, so the real options can't tell a
+// restored setting from a latched one. Tests that need replay on set this.
+const replayOn = vi.hoisted(() => ({ value: false }));
+
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return {
+    ...actual,
+    buildWebPostHogInitOptions: () => ({
+      ...actual.buildWebPostHogInitOptions(),
+      ...(replayOn.value ? { disable_session_recording: false } : {}),
+    }),
+  };
+});
 
 vi.mock("posthog-js", () => ({
   default: {
@@ -38,6 +52,7 @@ afterEach(() => {
   reloadFeatureFlags.mockClear();
   setConfig.mockClear();
   optInCapturing.mockClear();
+  replayOn.value = false;
 });
 
 describe("initWebPostHog", () => {
@@ -76,15 +91,13 @@ describe("initWebPostHog", () => {
   // opt-out's `stopSessionRecording()` latches replay off, and a plain
   // `opt_in_capturing()` never undoes it.
   it("restores the configured replay setting on opt-in, and sends no $opt_in", () => {
+    replayOn.value = true;
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
     initWebPostHog();
-    const options = posthogInit.mock.calls[0]?.[1] as {
-      disable_session_recording?: boolean;
-    };
     applyAnalyticsOptOut(true);
     applyAnalyticsOptOut(false);
     expect(setConfig).toHaveBeenCalledWith({
-      disable_session_recording: options.disable_session_recording,
+      disable_session_recording: false,
     });
     expect(optInCapturing).toHaveBeenCalledWith({ captureEventName: false });
     expect(setConfig.mock.invocationCallOrder[0]).toBeLessThan(

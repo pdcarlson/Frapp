@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useEffect } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -149,6 +149,38 @@ describe("AnalyticsProvider client-side opt-out", () => {
     view.rerender(capture());
     expect(applyAnalyticsOptOut).toHaveBeenLastCalledWith(false);
     expect(seen.size).toBe(1);
+  });
+
+  // The ref is written in `useLayoutEffect`, so a child effect in the commit
+  // that flips the gate already reads the new value. Written in `useEffect`,
+  // the child's passive effect would run first and post for a chapter that
+  // has just opted out.
+  it("applies a flip to child effects in the same commit", () => {
+    function EffectEmitter({ tick }: { tick: number }) {
+      const track = useContext(AnalyticsContext);
+      useEffect(() => {
+        track?.("opened-channel");
+      }, [track, tick]);
+      return null;
+    }
+    const withTick = (tick: number) => (
+      <AnalyticsProvider>
+        <EffectEmitter tick={tick} />
+      </AnalyticsProvider>
+    );
+    mockUseCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", analytics_opt_out: false },
+      isError: false,
+    });
+    const view = render(withTick(0));
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    mockUseCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", analytics_opt_out: true },
+      isError: false,
+    });
+    view.rerender(withTick(1));
+    expect(mockPost).toHaveBeenCalledTimes(1);
   });
 
   // Once a payload has loaded, the shared predicate decides: only an explicit

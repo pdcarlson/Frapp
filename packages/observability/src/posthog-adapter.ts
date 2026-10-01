@@ -100,8 +100,6 @@ let testAdapter: PostHogAdapter | null = null;
 let liveAdapter: PostHogAdapter | null = null;
 let liveInitialized = false;
 let optedOut = false;
-/** The chapter group the last identity applied, for an opt-in to re-send. */
-let appliedChapterGroup: string | null = null;
 
 export function bindPostHogAdapterForTests(
   adapter: PostHogAdapter | null,
@@ -110,7 +108,6 @@ export function bindPostHogAdapterForTests(
   liveInitialized = false;
   liveAdapter = null;
   optedOut = false;
-  appliedChapterGroup = null;
 }
 
 /**
@@ -143,7 +140,6 @@ export function isAnalyticsCaptureOptedOut(): boolean {
  * runs so an opt-in does not need a second identity fetch.
  */
 export function applyAnalyticsOptOut(next: boolean): void {
-  const wasOptedOut = optedOut;
   optedOut = next;
   const adapter = currentAdapter();
   if (!adapter) return;
@@ -153,14 +149,6 @@ export function applyAnalyticsOptOut(next: boolean): void {
     return;
   }
   adapter.optInCapturing();
-  // A group applied while opted out had its `$groupidentify` dropped, and the
-  // SDK sends that only for a group it doesn't already hold. Web is opted out
-  // until its chapter read answers (#2957), so identity often lands first;
-  // without this the chapter's group record would never be created.
-  if (wasOptedOut && appliedChapterGroup) {
-    adapter.resetGroups();
-    adapter.group("chapter", appliedChapterGroup);
-  }
 }
 
 /**
@@ -172,7 +160,6 @@ export function applyAnalyticsOptOut(next: boolean): void {
  */
 function resetKeepingOptOut(adapter: PostHogAdapter): void {
   adapter.reset();
-  appliedChapterGroup = null;
   if (optedOut) adapter.optOutCapturing();
 }
 
@@ -190,7 +177,6 @@ export function applyAnalyticsIdentity(
   }
   adapter.identify(distinct);
   const groupId = validatedChapterGroupId(identity);
-  appliedChapterGroup = groupId;
   if (groupId) {
     adapter.group("chapter", groupId);
   } else {
