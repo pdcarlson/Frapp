@@ -10,6 +10,7 @@ import {
 } from '#domain/repositories/point-transaction.repository.interface';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { PointTransaction } from '#domain/entities/point-transaction.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabasePointTransactionRepository implements IPointTransactionRepository {
@@ -43,7 +44,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
           data.client_message_id,
         );
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     return created;
   }
@@ -58,7 +59,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .eq('chapter_id', chapterId)
       .eq('client_message_id', clientMessageId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -72,7 +73,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -85,7 +86,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       p_since: window.since ?? null,
       p_until: window.until ?? null,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -116,7 +117,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
     const { data, error } = await q
       .order('created_at', { ascending: false })
       .limit(options.limit);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -131,7 +132,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .eq('chapter_id', chapterId)
       .eq('metadata->>adjusted_by', adminUserId)
       .gte('created_at', since.toISOString());
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return count ?? 0;
   }
 }
