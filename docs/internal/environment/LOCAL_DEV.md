@@ -62,6 +62,12 @@ npm run dev:mobile
 
 Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
+Infisical `dev` holds no `EXPO_PUBLIC_*` name, by rule
+([`ENV_REFERENCE.md` § References](./ENV_REFERENCE.md#references--framework-specific-names)), so
+write the mobile values to `apps/mobile/.env.local` first:
+[`docs/mobile/testing.md` § Provide the environment](../../mobile/testing.md#1-provide-the-environment)
+lists them and says what a phone needs instead of `127.0.0.1`.
+
 ## Fallback without Infisical
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
