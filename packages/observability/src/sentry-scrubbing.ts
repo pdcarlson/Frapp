@@ -381,6 +381,103 @@ export function reduceSelector(selector: string): string | undefined {
 }
 
 /**
+ * The breadcrumbs React Native's touch boundary records (#2982): `touch` for
+ * every tap (`touchevents.js`) and `ui.multiClick` for a rage tap
+ * (`ragetap.js`).
+ */
+const TOUCH_BREADCRUMB_CATEGORIES = new Set(['touch', 'ui.multiClick']);
+/** The prefix `@sentry/react-native` gives a `touch` breadcrumb's message. */
+const TOUCH_MESSAGE_PREFIX = 'Touch event within element: ';
+/** What a touched element with no component name is called instead. */
+const REDACTED_LABEL = '[redacted:label]';
+/**
+ * The touch-path fields that are code rather than user data: the component's
+ * `displayName` (or the annotation plugin's `data-sentry-component`), its
+ * `data-sentry-element`, and its `data-sentry-source-file`. The entry's
+ * `label` is the one field that is not.
+ */
+const TOUCH_PATH_KEYS = ['name', 'element', 'file'] as const;
+/** The breadcrumb fields that survive alongside the rebuilt message and data. */
+const TOUCH_BREADCRUMB_KEYS = [
+  'timestamp',
+  'type',
+  'category',
+  'level',
+  'event_id',
+] as const;
+
+function reduceTouchPathEntry(
+  entry: unknown,
+): Record<string, string> | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const source = entry as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const key of TOUCH_PATH_KEYS) {
+    const value = source[key];
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * A React Native touch or rage-tap breadcrumb that names the touched element
+ * by code alone (#2982). Any other breadcrumb is returned as it came.
+ *
+ * The SDK names the element by the first label it finds walking up from the
+ * touch: a `sentry-label` prop, then `accessibilityLabel`, `aria-label` and
+ * `testID`, and failing those up to 64 characters of the element's visible
+ * text. In `apps/mobile` those hold a task's title, a member's name and a
+ * chat message's body, and the label is in three places: the `message`, every
+ * `data.path` entry's `label`, and a rage tap's `data.node`. So the crumb is
+ * rebuilt rather than filtered. Its message names the first path entry that
+ * has a component name, in the SDK's own no-label form (`Pressable` or
+ * `TaskRow (task-row.tsx)`), or {@link REDACTED_LABEL} when none has. Its
+ * `data` keeps only the path's code fields and a rage tap's `clickCount`.
+ *
+ * Mobile runs this as `beforeBreadcrumb`, which `@sentry/core` applies before
+ * the crumb reaches a scope, so the native SDK's copy (which a native crash
+ * report carries, past any JS hook) is already rebuilt. `scrubBreadcrumb`
+ * applies it again when an event is sent. It is idempotent, so a crumb that
+ * passes both comes out the same.
+ */
+export function reduceTouchBreadcrumb<T extends object>(breadcrumb: T): T {
+  const source = breadcrumb as Record<string, unknown>;
+  if (
+    typeof source.category !== 'string' ||
+    !TOUCH_BREADCRUMB_CATEGORIES.has(source.category)
+  ) {
+    return breadcrumb;
+  }
+  const data =
+    source.data && typeof source.data === 'object'
+      ? (source.data as Record<string, unknown>)
+      : {};
+  const path = Array.isArray(data.path)
+    ? data.path
+        .map(reduceTouchPathEntry)
+        .filter((entry): entry is Record<string, string> => entry !== undefined)
+    : [];
+  const named = path.find((entry) => entry.name);
+  const element = named
+    ? `${named.name}${named.file ? ` (${named.file})` : ''}`
+    : REDACTED_LABEL;
+
+  const out: Record<string, unknown> = {};
+  for (const key of TOUCH_BREADCRUMB_KEYS) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  out.message =
+    source.category === 'touch' ? `${TOUCH_MESSAGE_PREFIX}${element}` : element;
+  const reducedData: Record<string, unknown> = {};
+  if (path.length > 0) reducedData.path = path;
+  if (typeof data.clickCount === 'number') {
+    reducedData.clickCount = data.clickCount;
+  }
+  if (Object.keys(reducedData).length > 0) out.data = reducedData;
+  return out as T;
+}
+
+/**
  * Origin-form path or an absolute-form URL. Used to decide whether a span
  * description / transaction name is HTTP-shaped enough to run through
  * {@link stripAuthority} rather than the free-text sweep (#2080).
@@ -777,15 +874,15 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    * interaction, and its `message` is the target's selector, with the
    * element's `aria-label` and `title` in it. It is reduced as a selector
    * (#2736), whether or not it happens to carry an attribute. Only those two:
-   * React Native's `ui.multiClick` rage-tap crumb (and its `touch` crumb)
-   * carries a label or the touched text, not a selector, and needs its own
-   * rule (#2982).
+   * React Native's `touch` crumb and its `ui.multiClick` rage-tap crumb carry
+   * a label or the touched text, not a selector, and are rebuilt by
+   * {@link reduceTouchBreadcrumb} instead (#2982).
    */
   function scrubBreadcrumb(
     crumb: unknown,
   ): Record<string, unknown> | undefined {
     if (!crumb || typeof crumb !== 'object') return undefined;
-    const source = crumb as Record<string, unknown>;
+    const source = reduceTouchBreadcrumb(crumb) as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     if (typeof source.timestamp === 'number') out.timestamp = source.timestamp;
     if (typeof source.type === 'string') out.type = redactFreeText(source.type);

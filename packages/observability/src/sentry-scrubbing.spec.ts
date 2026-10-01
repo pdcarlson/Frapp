@@ -3,6 +3,7 @@ import {
   createSentryScrubber,
   NO_PSEUDONYMS,
   reduceSelector,
+  reduceTouchBreadcrumb,
   type ScrubbableEvent,
   type SentryPseudonymizer,
 } from "./sentry-scrubbing";
@@ -978,6 +979,191 @@ describe("reduceSelector (#2736)", () => {
   });
 });
 
+/**
+ * React Native touch breadcrumbs (#2982), in the shapes `@sentry/react-native`
+ * 8.28 builds: `touchevents.js` `_logTouchEvent` for `touch`, and
+ * `ragetap.js` `RageTapDetector.check` for `ui.multiClick`. Each touch-path
+ * entry is what `getTouchedComponentInfo` returns: a component `name` when the
+ * fiber has a `displayName`, and a `label` from `accessibilityLabel` /
+ * `testID` / the visible text. `apps/mobile/lib/sentry/touch-breadcrumbs.spec.ts`
+ * drives the real SDK code into these shapes.
+ */
+const RELOAD_LABEL = `Reload ${MEMBER_NAME}`;
+
+function sdkTouchCrumb(path: Record<string, string>[], label: string) {
+  return {
+    timestamp: 1_700_000_000,
+    category: "touch",
+    type: "user",
+    level: "info",
+    message: `Touch event within element: ${label}`,
+    data: { path },
+  };
+}
+
+function sdkRageTapCrumb(path: Record<string, string>[], label: string) {
+  return {
+    timestamp: 1_700_000_000,
+    category: "ui.multiClick",
+    type: "default",
+    message: label,
+    data: {
+      clickCount: 3,
+      metric: true,
+      route: "chat/[channelId]",
+      node: {
+        id: 0,
+        tagName: path[0]?.name ?? "unknown",
+        textContent: "",
+        attributes: { "sentry-label": label },
+      },
+      path,
+    },
+  };
+}
+
+describe("reduceTouchBreadcrumb (#2982)", () => {
+  it("names an accessibility-labelled control by its component, not its label", () => {
+    const crumb = sdkTouchCrumb(
+      [{ label: RELOAD_LABEL }, { name: "Pressable" }],
+      RELOAD_LABEL,
+    );
+
+    const reduced = reduceTouchBreadcrumb(crumb);
+
+    expect(JSON.stringify(reduced)).not.toContain(MEMBER_NAME);
+    expect(reduced).toEqual({
+      timestamp: 1_700_000_000,
+      category: "touch",
+      type: "user",
+      level: "info",
+      message: "Touch event within element: Pressable",
+      data: { path: [{ name: "Pressable" }] },
+    });
+  });
+
+  it("drops visible text the SDK extracted as the label", () => {
+    const crumb = sdkTouchCrumb([{ name: "Text", label: CHAT_BODY }], CHAT_BODY);
+
+    const reduced = reduceTouchBreadcrumb(crumb);
+
+    expect(JSON.stringify(reduced)).not.toContain("dues are late");
+    expect(reduced.message).toBe("Touch event within element: Text");
+  });
+
+  it("keeps an annotated component's element and source file", () => {
+    const crumb = sdkTouchCrumb(
+      [
+        {
+          name: "TaskRow",
+          element: "Pressable",
+          file: "task-row.tsx",
+          label: `Pay dues, ${MEMBER_NAME}`,
+        },
+      ],
+      `Pay dues, ${MEMBER_NAME}`,
+    );
+
+    const reduced = reduceTouchBreadcrumb(crumb);
+
+    expect(reduced.message).toBe(
+      "Touch event within element: TaskRow (task-row.tsx)",
+    );
+    expect(reduced.data).toEqual({
+      path: [{ name: "TaskRow", element: "Pressable", file: "task-row.tsx" }],
+    });
+  });
+
+  it("stands a placeholder in when no entry has a component name", () => {
+    const reduced = reduceTouchBreadcrumb(
+      sdkTouchCrumb([{ label: MEMBER_NAME }], MEMBER_NAME),
+    );
+
+    expect(reduced.message).toBe("Touch event within element: [redacted:label]");
+    expect(reduced).not.toHaveProperty("data");
+  });
+
+  it("does not trust a touch crumb that arrives without a path", () => {
+    // Nothing to rebuild from, so the message is not kept: it may be a label.
+    const reduced = reduceTouchBreadcrumb({
+      category: "touch",
+      message: `Touch event within element: ${MEMBER_NAME}`,
+    });
+
+    expect(reduced).toEqual({
+      category: "touch",
+      message: "Touch event within element: [redacted:label]",
+    });
+  });
+
+  it("rebuilds a rage tap without its label, node or route", () => {
+    const crumb = sdkRageTapCrumb(
+      [{ label: RELOAD_LABEL }, { name: "Pressable" }],
+      RELOAD_LABEL,
+    );
+
+    const reduced = reduceTouchBreadcrumb(crumb);
+
+    expect(JSON.stringify(reduced)).not.toContain(MEMBER_NAME);
+    expect(reduced).toEqual({
+      timestamp: 1_700_000_000,
+      category: "ui.multiClick",
+      type: "default",
+      message: "Pressable",
+      data: { path: [{ name: "Pressable" }], clickCount: 3 },
+    });
+  });
+
+  it("drops fields it does not know at the top level too", () => {
+    const reduced = reduceTouchBreadcrumb({
+      ...sdkTouchCrumb([{ name: "Pressable" }], MEMBER_NAME),
+      label: MEMBER_NAME,
+    });
+
+    expect(JSON.stringify(reduced)).not.toContain(MEMBER_NAME);
+  });
+
+  it("is idempotent, so the record-time and send-time passes agree", () => {
+    const once = reduceTouchBreadcrumb(
+      sdkRageTapCrumb([{ label: RELOAD_LABEL }, { name: "Pressable" }], RELOAD_LABEL),
+    );
+
+    expect(reduceTouchBreadcrumb(once)).toEqual(once);
+  });
+
+  it("returns any other breadcrumb as it came", () => {
+    const crumb = { category: "console", message: MEMBER_NAME, data: { x: 1 } };
+
+    expect(reduceTouchBreadcrumb(crumb)).toBe(crumb);
+  });
+
+  it("applies when an event is sent, for a crumb that skipped the record-time hook", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      breadcrumbs: [
+        sdkTouchCrumb([{ label: RELOAD_LABEL }, { name: "Pressable" }], RELOAD_LABEL),
+        sdkRageTapCrumb([{ name: "Text", label: MEMBER_NAME }], MEMBER_NAME),
+      ],
+    });
+
+    expect(serialize(scrubbed)).not.toContain(MEMBER_NAME);
+    expect(scrubbed?.breadcrumbs).toEqual([
+      {
+        timestamp: 1_700_000_000,
+        category: "touch",
+        type: "user",
+        level: "info",
+        message: "Touch event within element: Pressable",
+      },
+      {
+        timestamp: 1_700_000_000,
+        category: "ui.multiClick",
+        type: "default",
+        message: "Text",
+      },
+    ]);
+  });
+});
+
 describe("DOM selectors in breadcrumbs and names (#2736)", () => {
   it("reduces a ui.click breadcrumb's selector", () => {
     const scrubbed = browser.scrubSentryEvent({
@@ -1012,18 +1198,14 @@ describe("DOM selectors in breadcrumbs and names (#2736)", () => {
   });
 
   it("leaves other breadcrumb messages to the free-text sweep", () => {
-    // `ui.multiClick` is React Native's rage tap: a label, not a selector.
-    // How a label is scrubbed is #2982's to decide.
+    // React Native's `touch` and `ui.multiClick` crumbs carry a label, not a
+    // selector; their rule is `reduceTouchBreadcrumb` (#2982), below.
     const scrubbed = browser.scrubSentryEvent({
-      breadcrumbs: [
-        { category: "console", message: 'lookup [status="404"]' },
-        { category: "ui.multiClick", message: "Save changes" },
-      ],
+      breadcrumbs: [{ category: "console", message: 'lookup [status="404"]' }],
     });
 
     expect(scrubbed?.breadcrumbs).toEqual([
       { category: "console", message: 'lookup [status="404"]' },
-      { category: "ui.multiClick", message: "Save changes" },
     ]);
   });
 

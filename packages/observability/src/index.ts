@@ -24,6 +24,7 @@
 export {
   createSentryScrubber,
   NO_PSEUDONYMS,
+  reduceTouchBreadcrumb,
   stripAuthority,
 } from "./sentry-scrubbing";
 export { sentryDataCollection } from "./sentry-data-collection";
