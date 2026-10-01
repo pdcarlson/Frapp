@@ -21,19 +21,27 @@
 //    the deployed tree: a rollback is judged against today's dashboards, and a
 //    commit from before the constants existed can't fail on a missing file.
 //
-// 2. The minimum app version (#2526). `GET /v1/client-policy` with
-//    `X-Client-Version: <platform>/<expo.version>`, for iOS and Android, where
-//    `expo.version` comes from the deployed commit's `apps/mobile/app.json`.
-//    `update_required: true` means every install of that version would open on
-//    the blocking update screen. The header carries no build number on purpose.
-//    The API lets a client with no build through when the versions are equal
-//    (`isBelowMinimum`), so the probe trips only on a minimum whose VERSION is
-//    above `expo.version`. A probe with a build (`+1`) would also trip on
-//    `0.9.0+14`, the documented way to retire earlier builds of `0.9.0`
-//    (ENV_REFERENCE.md § API-Only Settings), and fail every deploy while one is
-//    set. Known limit: a minimum above every build that exists (`0.9.0+999`)
-//    passes. EAS keeps the build numbers (`appVersionSource: remote`), so
-//    nothing in the repo knows the latest one.
+// 2. The minimum app version (#2526). `GET /v1/client-policy` once per
+//    platform, as the newest build installs could be running.
+//    `update_required: true` means that build, and so every install, opens on
+//    the blocking update screen. The probe's `X-Client-Version` is:
+//    - the newest build recorded for the platform in
+//      `apps/mobile/store/shipped-builds.json`, as `<platform>/<version>+<build>`.
+//      Every build is recorded there when it is first uploaded to TestFlight or
+//      a Play track (apps/mobile/store/README.md), so it is the repo's list of
+//      what can be installed. A minimum above the newest one strands everyone,
+//      `0.9.0+999` included; one that retires earlier builds of a version
+//      (`0.9.0+14`, ENV_REFERENCE.md § API-Only Settings) passes.
+//    - while nothing is recorded for the platform (the registry is empty until
+//      the first upload), `<platform>/<expo.version>` from `apps/mobile/app.json`,
+//      with no build number. The API lets a client with no build through when
+//      the versions are equal (`isBelowMinimum`), so this trips on a minimum
+//      whose VERSION is above `expo.version` and lets `0.9.0+14` pass. Its
+//      known limit: a minimum above every build of the current version
+//      (`0.9.0+999`) passes, because no build number is known.
+//    Both files come from the TRUSTED ref, like the origins: installs don't roll
+//    back with the API, so a rollback or a migrations-only run on an older
+//    commit is judged against today's builds, not the version its tree names.
 //    On staging, `update_required: true` is a warning: a staging minimum above
 //    the current version is how the update gate is tested with a preview build
 //    (the same ENV_REFERENCE.md row). A non-answer fails in both.
@@ -55,7 +63,9 @@
 // passed. A missing input fails only the checks that need it.
 //
 // Every request is safe to repeat (the POST writes nothing), so each one gets
-// `fetchWithRetry`'s bounded retry on a 429, a 5xx or a dropped connection.
+// `fetchWithRetry`'s bounded retry on a 429, a 5xx or a dropped connection,
+// with its default 15 s timeout per attempt: at most about 51 s a request, so
+// the five requests finish in under 5 minutes.
 //
 // No secret is printed: the key goes on two headers and nowhere else.
 //
@@ -63,20 +73,18 @@
 //   TARGET_ENVIRONMENT        — required; staging or production
 //   API_HEALTHCHECK_URL       — required; the API's `/health` URL, injected
 //                               from Infisical. The checks call the same host.
-//   TRUSTED_SHA               — required; the trusted ref (`github.sha`) whose
-//                               source names the dashboard origins
+//   TRUSTED_SHA               — required; the trusted ref (`github.sha`), whose
+//                               source names the dashboard origins and whose
+//                               mobile files name the builds to probe
 //   SUPABASE_URL              — required; injected from Infisical
 //   SUPABASE_SERVICE_ROLE_KEY — required; injected; the key the API calls the
 //                               function with
-//   MOBILE_APP_JSON           — optional; defaults to `apps/mobile/app.json`
-//                               in the working tree, the deployed commit
 //   SERVICE_LABEL             — optional, for logs
 //
 // Exits 0 when nothing failed (warnings included), 1 otherwise.
 // Unit tests: `scripts/ci/__tests__/smoke-deployed-api.test.mjs`.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 
 import { fetchWithRetry } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -94,7 +102,11 @@ export const DASHBOARD_ORIGIN_SOURCES = {
   staging: { file: "apps/api/src/interface/http/cors.options.ts", constant: "STAGING_APP_ORIGIN" },
 };
 
-export const DEFAULT_APP_JSON = "apps/mobile/app.json";
+/** `expo.version`, the probe while nothing is recorded as shipped. */
+export const APP_JSON = "apps/mobile/app.json";
+
+/** Every build uploaded to TestFlight or a Play track (apps/mobile/store/README.md). */
+export const SHIPPED_BUILDS = "apps/mobile/store/shipped-builds.json";
 
 export const PLATFORMS = ["ios", "android"];
 
@@ -119,9 +131,6 @@ export const COPY_PROBE_ITEM = Object.freeze({
   contentType: null,
   declaredSize: null,
 });
-
-/** Long enough for a function cold start plus its 10 s Auth check. */
-export const SMOKE_TIMEOUT_MS = 30_000;
 
 /** Every request here writes nothing, the POST included, so all may be re-sent. */
 export const SMOKE_RETRY_METHODS = new Set(["GET", "OPTIONS", "POST"]);
@@ -191,18 +200,83 @@ export function gitFileReader(sha, { exec = execFileSync } = {}) {
   };
 }
 
+const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
 /** `expo.version` from app.json's text, as `x.y.z`. */
-export function appVersionFrom(text, file = DEFAULT_APP_JSON) {
+export function appVersionFrom(text, file = APP_JSON) {
   let version;
   try {
     version = JSON.parse(text)?.expo?.version;
   } catch (error) {
     throw new Error(`${file} is not valid JSON: ${error.message}`);
   }
-  if (typeof version !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+  if (typeof version !== "string" || !VERSION.test(version)) {
     throw new Error(`${file}'s expo.version is not a version like 0.9.0 (got ${excerpt(version ?? "nothing", 60)}).`);
   }
   return version;
+}
+
+/** `a` newer than `b`, both `{ version: "x.y.z", build: "n" }`. */
+function isNewerBuild(a, b) {
+  const av = a.version.split(".").map(Number);
+  const bv = b.version.split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) if (av[i] !== bv[i]) return av[i] > bv[i];
+  return Number(a.build) > Number(b.build);
+}
+
+/**
+ * The newest recorded build per platform in shipped-builds.json's text, or
+ * null for a platform with none. Its own CI check (`parseRegistry`,
+ * `scripts/check-api-breaking-changes.mjs`) validates every entry on `main`,
+ * so an entry this can't read is refused rather than skipped.
+ */
+export function newestShippedBuilds(text, file = SHIPPED_BUILDS) {
+  let builds;
+  try {
+    builds = JSON.parse(text)?.builds;
+  } catch (error) {
+    throw new Error(`${file} is not valid JSON: ${error.message}`);
+  }
+  if (!Array.isArray(builds)) throw new Error(`${file} has no \`builds\` array.`);
+  const newest = Object.fromEntries(PLATFORMS.map((platform) => [platform, null]));
+  builds.forEach((entry, i) => {
+    const ok =
+      PLATFORMS.includes(entry?.platform) &&
+      typeof entry.version === "string" &&
+      VERSION.test(entry.version) &&
+      typeof entry.build === "string" &&
+      /^[1-9]\d{0,8}$/.test(entry.build);
+    if (!ok) throw new Error(`${file} builds[${i}] needs a platform, a version like 0.9.0 and a build number.`);
+    const current = newest[entry.platform];
+    if (current === null || isNewerBuild(entry, current)) newest[entry.platform] = { version: entry.version, build: entry.build };
+  });
+  return newest;
+}
+
+/**
+ * What to send as each platform's `X-Client-Version`: the newest recorded
+ * build, or `expo.version` with no build while none is recorded. `source` says
+ * which, for the messages.
+ */
+export function clientProbes(readTrustedFile) {
+  const newest = newestShippedBuilds(readTrustedFile(SHIPPED_BUILDS));
+  let version = null;
+  return PLATFORMS.map((platform) => {
+    const build = newest[platform];
+    if (build) {
+      return {
+        platform,
+        header: `${platform}/${build.version}+${build.build}`,
+        source: `the newest ${platform} build recorded in ${SHIPPED_BUILDS}`,
+      };
+    }
+    version ??= appVersionFrom(readTrustedFile(APP_JSON));
+    return {
+      platform,
+      header: `${platform}/${version}`,
+      source: `expo.version in ${APP_JSON} (no ${platform} build is recorded in ${SHIPPED_BUILDS} yet)`,
+    };
+  });
 }
 
 /**
@@ -255,9 +329,9 @@ export async function checkCors({ apiBase, origin, admitted, fetchImpl }) {
   );
 }
 
-/** One platform's `GET /v1/client-policy` for the current app version. */
-export async function checkClientPolicy({ apiBase, environment, platform, version, fetchImpl }) {
-  const header = `${platform}/${version}`;
+/** One platform's `GET /v1/client-policy`, as the probe from `clientProbes`. */
+export async function checkClientPolicy({ apiBase, environment, probe, fetchImpl }) {
+  const { platform, header, source } = probe;
   const check = `client policy serves ${header}`;
   const url = `${apiBase}${CLIENT_POLICY_PATH}`;
   const asked = `GET ${url} with X-Client-Version ${header}`;
@@ -270,15 +344,16 @@ export async function checkClientPolicy({ apiBase, environment, platform, versio
   const body = await response.json().catch(() => null);
   if (!response.ok) return fail(check, `${asked} answered HTTP ${response.status}: ${excerpt(body)}.`);
   const required = body?.update_required;
-  if (required === false) return pass(check, `${header} is supported (update_required: false).`);
+  if (required === false) return pass(check, `${header}, ${source}, is supported (update_required: false).`);
   if (required !== true) {
     return fail(check, `${asked} answered HTTP ${response.status} without a boolean update_required: ${excerpt(body)}.`);
   }
   const variable = MINIMUM_VERSION_VARIABLES[platform];
   const message =
-    `${asked} answered update_required: true. ${version} is expo.version in ${DEFAULT_APP_JSON} at the deployed ` +
-    `commit, so every ${platform} install of it opens on the blocking "Update Frapp" screen. ${variable} on this API ` +
-    `is above ${version}. Lower it in Infisical, then redeploy: a running API keeps the value it booted with.`;
+    `${asked} answered update_required: true. ${header} is ${source}, so every ${platform} install opens on the ` +
+    `blocking "Update Frapp" screen: ${variable} on this API is above it. If a newer build has shipped, record it in ` +
+    `${SHIPPED_BUILDS} (apps/mobile/store/README.md). Otherwise lower the minimum in Infisical and redeploy: a ` +
+    `running API keeps the value it booted with.`;
   if (environment === "staging") {
     return warn(
       check,
@@ -337,7 +412,6 @@ export async function runSmokeChecks({
   env = process.env,
   fetchImpl = smokeFetch,
   readTrustedFile = gitFileReader(env.TRUSTED_SHA),
-  readWorkingFile = (path) => readFileSync(path, "utf8"),
 } = {}) {
   const environment = env.TARGET_ENVIRONMENT;
   if (environment !== "staging" && environment !== "production") {
@@ -368,17 +442,14 @@ export async function runSmokeChecks({
       results.push(await checkCors({ apiBase, origin: origins.other, admitted: false, fetchImpl }));
     }
 
-    const appJson = env.MOBILE_APP_JSON || DEFAULT_APP_JSON;
-    let version = null;
+    let probes = null;
     try {
-      version = appVersionFrom(readWorkingFile(appJson), appJson);
+      probes = clientProbes(readTrustedFile);
     } catch (error) {
-      results.push(fail("client policy", `Could not read the app version: ${error.message}`));
+      results.push(fail("client policy", `Could not read which builds to probe: ${error.message.trim()}`));
     }
-    if (version) {
-      for (const platform of PLATFORMS) {
-        results.push(await checkClientPolicy({ apiBase, environment, platform, version, fetchImpl }));
-      }
+    for (const probe of probes ?? []) {
+      results.push(await checkClientPolicy({ apiBase, environment, probe, fetchImpl }));
     }
   }
 
@@ -393,9 +464,9 @@ export async function runSmokeChecks({
   return results;
 }
 
-/** `fetchWithRetry` for these checks: every method retried, one longer ceiling. */
+/** `fetchWithRetry` for these checks: every method retried, its default timeout. */
 export function smokeFetch(url, init, { fetchImpl = fetch, sleep } = {}) {
-  return fetchWithRetry(url, init, { retryMethods: SMOKE_RETRY_METHODS, timeoutMs: SMOKE_TIMEOUT_MS, fetchImpl, sleep });
+  return fetchWithRetry(url, init, { retryMethods: SMOKE_RETRY_METHODS, fetchImpl, sleep });
 }
 
 /** One log line per result; `failed` is how many failed. */

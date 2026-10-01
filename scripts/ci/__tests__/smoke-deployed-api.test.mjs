@@ -8,26 +8,29 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   apiBaseFrom,
+  APP_JSON,
   appVersionFrom,
   checkAttachmentCopy,
+  clientProbes,
   COPY_FUNCTION,
   COPY_PROBE_ITEM,
   DASHBOARD_ORIGIN_SOURCES,
   dashboardOrigins,
-  DEFAULT_APP_JSON,
   functionAuthHeaders,
   gitFileReader,
   MINIMUM_VERSION_VARIABLES,
+  newestShippedBuilds,
   readOriginConstant,
   report,
   runSmokeChecks,
+  SHIPPED_BUILDS,
   smokeFetch,
 } from "../smoke-deployed-api.mjs";
 
@@ -46,18 +49,24 @@ const STAGING_ORIGIN = "https://app.staging.example.test";
 const KEY = "eyJhbGciOiJIUzI1NiJ9.service-role.signature";
 const TRUSTED_SHA = "0123456789abcdef0123456789abcdef01234567";
 
+const appJson = (version) => JSON.stringify({ expo: { name: "Frapp", version } });
+const registry = (...builds) =>
+  JSON.stringify({
+    builds: builds.map(([platform, version, build]) => ({ platform, version, build, sha: TRUSTED_SHA, recorded: "2026-10-01" })),
+  });
 const SOURCES = {
   [DASHBOARD_ORIGIN_SOURCES.production.file]: `export const PRODUCTION_APP_ORIGIN = "${PROD_ORIGIN}";\n`,
   [DASHBOARD_ORIGIN_SOURCES.staging.file]: `export const STAGING_APP_ORIGIN = '${STAGING_ORIGIN}';\n`,
+  [APP_JSON]: appJson("0.9.0"),
+  [SHIPPED_BUILDS]: registry(),
 };
-const readTrustedFile = (path) => {
-  if (!(path in SOURCES)) throw new Error(`no ${path} at the trusted ref`);
-  return SOURCES[path];
-};
-const appJson = (version) => JSON.stringify({ expo: { name: "Frapp", version } });
-const readWorkingFile = (path) => {
-  assert.equal(path, DEFAULT_APP_JSON);
-  return appJson("0.9.0");
+/** The trusted ref's files, with some replaced. */
+const trusted = (overrides = {}) => {
+  const files = { ...SOURCES, ...overrides };
+  return (path) => {
+    if (!(path in files)) throw new Error(`no ${path} at the trusted ref`);
+    return files[path];
+  };
 };
 
 const env = (overrides = {}) => ({
@@ -124,15 +133,9 @@ function makeFetch(table) {
   return { fetchImpl, calls };
 }
 
-async function run({ table = routes(), envOverrides = {}, readers = {} } = {}) {
+async function run({ table = routes(), envOverrides = {}, readTrustedFile = trusted() } = {}) {
   const { fetchImpl, calls } = makeFetch(table);
-  const results = await runSmokeChecks({
-    env: env(envOverrides),
-    fetchImpl,
-    readTrustedFile,
-    readWorkingFile,
-    ...readers,
-  });
+  const results = await runSmokeChecks({ env: env(envOverrides), fetchImpl, readTrustedFile });
   return { results, calls, byCheck: (pattern) => results.filter((r) => pattern.test(r.check)) };
 }
 
@@ -168,7 +171,7 @@ describe("runSmokeChecks: a healthy deploy", () => {
     }
   });
 
-  it("asks about the app.json version with no build number", async () => {
+  it("asks about the app.json version with no build number while no build is recorded", async () => {
     // A build (`+1`) would trip on `0.9.0+14`, the documented way to retire
     // earlier builds of one version, and fail every deploy while it is set.
     const { calls } = await run();
@@ -235,14 +238,15 @@ describe("runSmokeChecks: CORS", () => {
   });
 
   it("fails the CORS checks alone when the origins can't be read", async () => {
-    const { results } = await run({ readers: { readTrustedFile: () => "export const SOMETHING_ELSE = 1;" } });
+    const readTrustedFile = trusted({ [DASHBOARD_ORIGIN_SOURCES.staging.file]: "export const SOMETHING_ELSE = 1;" });
+    const { results } = await run({ readTrustedFile });
     assert.deepEqual(verdicts(results), [
       "fail CORS",
       "pass client policy serves ios/0.9.0",
       "pass client policy serves android/0.9.0",
       `pass ${COPY_FUNCTION} accepts the API's key`,
     ]);
-    assert.match(results[0].message, /no longer exports PRODUCTION_APP_ORIGIN/);
+    assert.match(results[0].message, /no longer exports STAGING_APP_ORIGIN/);
   });
 });
 
@@ -255,7 +259,8 @@ describe("runSmokeChecks: the minimum app version", () => {
     assert.equal(ios.verdict, "fail");
     assert.match(ios.message, /update_required: true/);
     assert.match(ios.message, /MOBILE_MIN_VERSION_IOS/);
-    assert.match(ios.message, /every ios install of it/);
+    assert.match(ios.message, /every ios install opens on/);
+    assert.match(ios.message, /expo\.version in apps\/mobile\/app\.json/);
     assert.equal(byCheck(/android/)[0].verdict, "pass");
     assert.equal(report(results).failed, 1);
   });
@@ -289,10 +294,53 @@ describe("runSmokeChecks: the minimum app version", () => {
   });
 
   it("fails the client-policy checks alone when app.json has no usable version", async () => {
-    const { results } = await run({ readers: { readWorkingFile: () => appJson("0.9.0-beta.1") } });
+    const { results } = await run({ readTrustedFile: trusted({ [APP_JSON]: appJson("0.9.0-beta.1") }) });
     assert.deepEqual(verdicts(results).filter((v) => v.startsWith("fail")), ["fail client policy"]);
     assert.match(results.find((r) => r.verdict === "fail").message, /not a version like 0\.9\.0/);
     assert.equal(results.length, 4);
+  });
+
+  it("probes the newest recorded build once one has shipped, build number included", async () => {
+    const readTrustedFile = trusted({
+      [SHIPPED_BUILDS]: registry(["ios", "0.9.0", "12"], ["ios", "0.9.0", "14"], ["ios", "0.8.9", "40"], ["android", "0.9.0", "7"]),
+    });
+    const { calls, results } = await run({ readTrustedFile });
+    const asked = calls.filter((c) => c.method === "GET").map((c) => c.headers.get("x-client-version"));
+    assert.deepEqual(asked, ["ios/0.9.0+14", "android/0.9.0+7"]);
+    assert.match(results.find((r) => /ios/.test(r.check)).message, /the newest ios build recorded in/);
+  });
+
+  it("falls back to app.json for a platform with nothing recorded", async () => {
+    const readTrustedFile = trusted({ [SHIPPED_BUILDS]: registry(["android", "0.9.0", "7"]) });
+    const asked = (await run({ readTrustedFile })).calls
+      .filter((c) => c.method === "GET")
+      .map((c) => c.headers.get("x-client-version"));
+    assert.deepEqual(asked, ["ios/0.9.0", "android/0.9.0+7"]);
+  });
+
+  it("fails when the newest recorded build is below the minimum, and passes a retirement of older ones", async () => {
+    // `0.9.0+20` strands the newest build (+14), so every install; `0.9.0+14`
+    // retires only +12, so it passes.
+    const readTrustedFile = trusted({ [SHIPPED_BUILDS]: registry(["ios", "0.9.0", "12"], ["ios", "0.9.0", "14"]) });
+    const below = (minimumBuild) => (header) => {
+      const build = Number(/\+(\d+)$/.exec(header)?.[1] ?? Infinity);
+      return header.startsWith("ios/0.9.0") && build < minimumBuild;
+    };
+    const policy = (blocked) => ({ headers }) =>
+      json(200, { update_required: blocked(headers.get("x-client-version")), update_url: null });
+    const at = async (minimumBuild) =>
+      (await run({ readTrustedFile, table: routes({ [`GET ${API}/v1/client-policy`]: policy(below(minimumBuild)) }) })).byCheck(/ios/)[0];
+    const stranded = await at(20);
+    assert.equal(stranded.verdict, "fail");
+    assert.match(stranded.message, /record it in apps\/mobile\/store\/shipped-builds\.json/);
+    assert.equal((await at(14)).verdict, "pass");
+  });
+
+  it("fails the client-policy checks alone on a registry it can't read", async () => {
+    const readTrustedFile = trusted({ [SHIPPED_BUILDS]: JSON.stringify({ builds: [{ platform: "ios", version: "0.9" }] }) });
+    const { results } = await run({ readTrustedFile });
+    assert.deepEqual(verdicts(results).filter((v) => v.startsWith("fail")), ["fail client policy"]);
+    assert.match(results.find((r) => r.verdict === "fail").message, /builds\[0\] needs a platform/);
   });
 });
 
@@ -325,6 +373,15 @@ describe("runSmokeChecks: the attachment-copy function", () => {
     const [copy] = (await run({ table })).byCheck(/accepts/);
     assert.equal(copy.verdict, "fail");
     assert.match(copy.message, /HTTP 404\. The function is not deployed/);
+  });
+
+  it("fails on a 200 that refuses some other item, not the probe", async () => {
+    const table = routes({
+      [`POST ${FUNCTION_URL}`]: () => json(200, { results: [{ path: "chapters/x/other", status: "rejected" }] }),
+    });
+    const [copy] = (await run({ table })).byCheck(/accepts/);
+    assert.equal(copy.verdict, "fail");
+    assert.match(copy.message, /without refusing the probe/);
   });
 
   it("fails on a 200 that doesn't refuse the probe", async () => {
@@ -394,6 +451,18 @@ describe("runSmokeChecks: inputs", () => {
     assert.throws(() => readOriginConstant(`export const PRODUCTION_APP_ORIGIN = ORIGIN;`, source), /no longer exports/);
   });
 
+  it("reads the newest build per platform from the registry", () => {
+    assert.deepEqual(newestShippedBuilds(registry()), { ios: null, android: null });
+    assert.deepEqual(
+      newestShippedBuilds(registry(["ios", "0.9.0", "9"], ["ios", "0.10.0", "1"], ["ios", "0.9.1", "30"], ["android", "1.0.0", "2"])),
+      { ios: { version: "0.10.0", build: "1" }, android: { version: "1.0.0", build: "2" } },
+    );
+    // Build numbers compare as numbers, not strings.
+    assert.deepEqual(newestShippedBuilds(registry(["ios", "0.9.0", "9"], ["ios", "0.9.0", "10"])).ios, { version: "0.9.0", build: "10" });
+    assert.throws(() => newestShippedBuilds("{"), /not valid JSON/);
+    assert.throws(() => newestShippedBuilds("{}"), /no `builds` array/);
+  });
+
   it("reads expo.version strictly", () => {
     assert.equal(appVersionFrom(appJson("1.12.3")), "1.12.3");
     assert.throws(() => appVersionFrom("{"), /not valid JSON/);
@@ -459,8 +528,8 @@ describe("the repo agrees with the probe", () => {
     assert.match(cors, /^\s*staging: \[STAGING_APP_ORIGIN, \.\.\.LOCAL_DEV_ORIGINS\],$/m);
   });
 
-  it("reads a version from the real app.json", () => {
-    assert.match(appVersionFrom(readRepoFile(DEFAULT_APP_JSON)), /^\d+\.\d+\.\d+$/);
+  it("reads the real app.json and shipped-builds registry", () => {
+    for (const probe of clientProbes(readRepoFile)) assert.match(probe.header, /^(ios|android)\/\d+\.\d+\.\d+(\+\d+)?$/);
   });
 
   it("names the function the API calls, and that directory deploys", () => {
@@ -474,6 +543,33 @@ describe("the repo agrees with the probe", () => {
     for (const [platform, variable] of Object.entries(MINIMUM_VERSION_VARIABLES)) {
       assert.match(service, new RegExp(`${platform}: '${variable}'`));
     }
+  });
+});
+
+// The origins and the probed builds come from the trusted ref, never the
+// deployed tree: a rollback to an older commit is judged against today's.
+describe("runSmokeChecks: reads the trusted ref by default", () => {
+  const head = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const readDefault = async (sha) => {
+    const { fetchImpl } = makeFetch({
+      [`OPTIONS ${API}/v1/client-policy`]: preflight([]),
+      [`GET ${API}/v1/client-policy`]: clientPolicy(),
+      [`POST ${FUNCTION_URL}`]: copyFunction(),
+    });
+    return runSmokeChecks({ env: env({ TRUSTED_SHA: sha }), fetchImpl });
+  };
+
+  it("reads the origins and the builds from TRUSTED_SHA's objects", async () => {
+    const results = await readDefault(head);
+    const { own, other } = dashboardOrigins("production", (path) => readFileSync(join(REPO_ROOT, path), "utf8"));
+    assert.deepEqual(results.filter((r) => /^CORS/.test(r.check)).map((r) => r.check), [`CORS admits ${own}`, `CORS refuses ${other}`]);
+    assert.equal(results.filter((r) => /^client policy serves/.test(r.check)).length, 2);
+  });
+
+  it("refuses to read anything without a full TRUSTED_SHA, rather than reading the working tree", async () => {
+    const results = await readDefault("main");
+    assert.deepEqual(verdicts(results).slice(0, 2), ["fail CORS", "fail client policy"]);
+    for (const failed of results.slice(0, 2)) assert.match(failed.message, /TRUSTED_SHA must be/);
   });
 });
 

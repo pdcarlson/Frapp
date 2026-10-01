@@ -144,12 +144,13 @@ jobs:
     # secrets, after its main-only rule, and its reviewers (see the header).
     environment: ${{ inputs.environment }}
     # The steps' own ceilings: the Render poll 20 minutes, the served-commit
-    # check 5, the client checks under 9 (five requests, each at most three
-    # 30-second attempts), the Vercel READY poll 30
+    # check 5, the client checks under 5 (five requests, each at most three
+    # 15-second attempts), the Vercel READY poll 30
     # (`VERCEL_OVERALL_TIMEOUT_MS`), the source-map check under 3 (a minute of
-    # re-asking, two intervals and one read), on top
-    # of installs, two builds, production's rehearsal stack and the
-    # migrations. 75 bounds the job past all of them.
+    # re-asking, two intervals and one read): 63 in all. On top of them come
+    # installs, two builds, production's rehearsal stack and the migrations,
+    # about 5 of the deploy job's 9 minutes on the 2026-10-01 production run
+    # (36873240684). 75 bounds the job past all of them.
     timeout-minutes: 75
     # One deploy per environment at a time, queued, never cancelled. The group
     # is the environment's migration lock (`db-migrate-staging`,
@@ -712,7 +713,8 @@ jobs:
               echo "no deployment was created and production still serves what it served before."
               echo ""
               echo "Still unrehearsed, and reachable only on a real run: the migration apply, the"
-              echo "Render deploy, the served-commit check, and the Vercel upload."
+              echo "Render deploy, the served-commit check, the client checks (CORS, the minimum"
+              echo "app version, the attachment-copy function), and the Vercel upload."
               echo ""
               echo "One difference inside the build itself: a real run compiles with"
               echo "\`SENTRY_AUTH_TOKEN\` when Infisical \`prod\` holds it, and then uploads source"
@@ -826,17 +828,20 @@ jobs:
       #   * a preflight from this environment's dashboard origin doesn't get it
       #     back in `Access-Control-Allow-Origin`, or one from the other
       #     environment's gets the header at all;
-      #   * `GET /v1/client-policy` answers `update_required: true` to the
-      #     `expo.version` in this commit's `apps/mobile/app.json` (staging only
-      #     warns: a minimum above it is how the update gate is tested there);
+      #   * `GET /v1/client-policy` answers `update_required: true` for the
+      #     newest build installs can be running: the newest one recorded in
+      #     `apps/mobile/store/shipped-builds.json`, or `expo.version` in
+      #     `apps/mobile/app.json` while none is (staging only warns: a minimum
+      #     above it is how the update gate is tested there);
       #   * the attachment-copy function refuses the API's own key, or answers
       #     its probe with anything but a refusal made before any fetch.
       # Every check runs and names what it saw; the script header has the
-      # reasoning. The origins are read from the trusted ref's source
-      # (`TRUSTED_SHA`), the app version from the deployed tree. The function
-      # call uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, which every
-      # step since the Infisical injection already holds: no new secret
-      # reaches this job.
+      # reasoning. The origins and the builds come from the trusted ref
+      # (`TRUSTED_SHA`), not the deployed tree, so an older commit is judged
+      # against today's dashboards and today's installs. The function call
+      # uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, which every step
+      # since the Infisical injection already holds: no new secret reaches
+      # this job.
       #
       # Same condition as the served-commit check: whenever anything ships.
       - name: Check the API answers its clients (staging)
