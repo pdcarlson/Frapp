@@ -2,6 +2,7 @@ import {
   DiscordApiError,
   type DiscordApplicationInfo,
 } from '#domain/adapters/discord.interface';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * What Discord's own record says about this environment's Discord setup.
@@ -112,7 +113,7 @@ export function classifyApplicationFetchFailure(
         `Every bot read fails until Infisical carries the current token and the API restarts (${SETUP_DOC}, step 2).`,
     };
   }
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = toReportableError(error).message;
   return {
     status: 'unverified',
     kind: 'discord_unreachable',

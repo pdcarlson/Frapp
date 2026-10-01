@@ -158,9 +158,11 @@ export class AccountDeletionService {
     try {
       await this.userRepo.anonymize(userId, true);
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Post-auth-deletion convergence scrub failed for user ${userId}; if a concurrent profile edit or card slipped in during deletion it may persist — re-run anonymize_user('${userId}', true) manually`,
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
     }
   }
@@ -203,9 +205,11 @@ export class AccountDeletionService {
     try {
       await this.reportRetention.purgeUserReports(chapterIds);
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Report purge failed for user ${user.id}; deletion is proceeding; the hourly retention sweep normally removes these exports within ~${REPORT_RETENTION_HOURS + 1}h, but it cannot age out an object whose stored-at timestamp is missing and it skips a prefix it cannot read — investigate the reports bucket if this repeats`,
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
     }
   }
@@ -291,9 +295,11 @@ export class AccountDeletionService {
           null,
         );
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `Failed to flag orphaned presidency for chapter ${membership.chapter_id} (deleted user ${userId}); that chapter may be missing its needs_president flag — investigate manually`,
-          error instanceof Error ? error.stack : String(error),
+          error,
         );
       }
     }

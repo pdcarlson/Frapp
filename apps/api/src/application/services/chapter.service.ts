@@ -49,6 +49,7 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * The core `chapters` columns `PATCH /v1/chapters/current` can write, and so
@@ -203,10 +204,11 @@ export class ChapterService {
         chapter.logo_path,
       );
     } catch (error) {
-      this.logger.warn(
-        `Could not sign logo for chapter ${chapter.id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not sign logo for chapter ${chapter.id}`,
+        error,
       );
       return null;
     }
@@ -677,10 +679,11 @@ export class ChapterService {
       current = (await this.chapterRepo.findById(chapterId))?.logo_path ?? null;
     } catch (error) {
       // Without knowing what is current, deleting anything could delete it.
-      this.logger.warn(
-        `Skipped the logo sweep for chapter ${chapterId}: could not re-read logo_path: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Skipped the logo sweep for chapter ${chapterId}: could not re-read logo_path`,
+        error,
       );
       return;
     }
@@ -698,10 +701,13 @@ export class ChapterService {
     try {
       await this.storageProvider.deleteFiles(BRANDING_BUCKET, paths);
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `Could not delete replaced logo objects for chapter ${chapterId} (${paths.join(
           ', ',
-        )}): ${error instanceof Error ? error.message : String(error)}`,
+        )})`,
+        error,
       );
     }
   }
