@@ -320,7 +320,7 @@ export function ComposerShell({
               !pressedEnter && "sr-only",
             )}
           >
-            Still opening your channels — you can keep typing.
+            Still opening your channels. You can keep typing.
           </p>
         </div>
       </div>

@@ -12,10 +12,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The UP NEXT strip at the top of Chat home (s04).
  *
- * `spec/ui/mobile/navigation.md:52` — "the next event and the nearest due task
- * as compact rows, each tapping through to its detail… It is a pulse affordance:
- * chat is home, so the one glanceable 'what's next' surface rides above the
- * channel list rather than living in a Home tab."
+ * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar — "the
+ * next event and the nearest due task as compact rows, each tapping through
+ * to its detail… It is a pulse affordance: chat is home, so the one glanceable
+ * 'what's next' surface rides above the channel list rather than living in a
+ * Home tab."
  *
  * Drawn at `canvas-screens.dc.html:117-131`: an `UP NEXT` eyebrow, then two
  * rows separated by a hairline, each a glyph + title + `· context` with a

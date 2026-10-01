@@ -8,10 +8,11 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
- * The mobile chat header draws the chapter mark (#2876). What it reads is
+ * Chat home's title row draws the chapter mark (#2876, #2485). What it reads is
  * `useChapterBranding`'s `logoUrl` and `textMark`, whose precedence
  * `lib/chapter-branding.spec.tsx` and `@repo/validation`'s
- * `chapter-mark.spec.ts` pin; this pins what the header does with them.
+ * `chapter-mark.spec.ts` pin; this pins what the mark does with them. The
+ * chapter name beside it is `ScreenShell`'s title, not this component's.
  */
 const branding = vi.hoisted(() => ({
   current: {
@@ -26,32 +27,27 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
 
-import { ChapterHeaderTitle } from "./chapter-header-title";
+import { ChapterMark } from "./chapter-mark";
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <ChapterHeaderTitle />
+        <ChapterMark />
       </FrappThemeProvider>,
     );
   });
   return tree;
 }
 
-/** Every text node, the `Animated.Text` label included. */
 function texts(tree: ReactTestRenderer): string[] {
   return tree.root
-    .findAll((node) => {
-      // The setup stubs both as host strings ("Text", "Animated.Text").
-      const type = String(node.type);
-      return type === String(Text) || type === "Animated.Text";
-    })
+    .findAll((node) => String(node.type) === String(Text))
     .map((node) => String(node.props.children));
 }
 
-describe("ChapterHeaderTitle", () => {
+describe("ChapterMark", () => {
   beforeEach(() => {
     branding.current = {
       accent: "#F4CB63",
@@ -67,7 +63,6 @@ describe("ChapterHeaderTitle", () => {
     const tree = render();
     expect(tree.root.findAllByType(Image)).toHaveLength(1);
     expect(texts(tree)).not.toContain("FIJI");
-    expect(texts(tree)).toContain("Tau Nu");
   });
 
   it("falls back to the text mark when the logo fails to load", () => {
@@ -96,12 +91,11 @@ describe("ChapterHeaderTitle", () => {
     );
   });
 
-  it("draws the name alone for a chapter with no mark, never initials", () => {
-    // The opted-out chapter with no short name: `textMark` is null.
+  it("draws nothing for a chapter with no mark, never initials", () => {
+    // The opted-out chapter with no short name: `textMark` is null. The name
+    // then stands alone as the title row's text.
     const tree = render();
-    expect(tree.root.findAllByProps({ testID: "chapter-mark-text" })).toHaveLength(
-      0,
-    );
-    expect(texts(tree)).toEqual(["Tau Nu"]);
+    expect(tree.toJSON()).toBeNull();
+    expect(texts(tree)).toEqual([]);
   });
 });
