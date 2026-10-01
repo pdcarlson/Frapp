@@ -1,4 +1,5 @@
 import createClient, { Middleware } from 'openapi-fetch';
+import { randomClientId } from './random-id';
 import type { paths } from './types';
 
 export interface FrappClientConfig {
@@ -20,20 +21,13 @@ export const REQUEST_ID_HEADER = "x-request-id";
 /** Matches the API's `CLIENT_VERSION_HEADER` (`#domain/constants/client-version`). */
 export const CLIENT_VERSION_HEADER = "x-client-version";
 
-type CryptoLike = {
-  randomUUID?: () => string;
-  getRandomValues?: <T extends ArrayBufferView>(array: T) => T;
-};
-
 /**
  * Opaque request-correlation id. Not a Sentry/OTEL trace id, not a credential.
  *
- * Do not call `crypto.randomUUID()` bare: React Native has no `crypto` global
- * (`packages/chat-core/src/random-id.ts`, #937). api-sdk cannot import that
- * helper — chat-core already depends on this package. Same three-tier order:
- * `randomUUID` → `getRandomValues` → `Math.random` last resort.
+ * Minted through {@link randomClientId}, never a bare `crypto.randomUUID()`:
+ * React Native has no `crypto` global (`./random-id.ts`, #937).
  */
-export const mintRequestId = (): string => `req_${newRequestUuid()}`;
+export const mintRequestId = (): string => `req_${randomClientId()}`;
 
 /**
  * Ensure `x-request-id` is present. Honours a caller-supplied value.
@@ -55,39 +49,6 @@ export const withRequestIdInit = (init: RequestInit = {}): RequestInit => {
   const headers = ensureRequestIdHeader(new Headers(init.headers));
   return { ...init, headers };
 };
-
-function getCrypto(): CryptoLike | undefined {
-  return (globalThis as { crypto?: CryptoLike }).crypto;
-}
-
-function formatUuidV4(bytes: Uint8Array): string {
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-  return [
-    hex.slice(0, 4).join(""),
-    hex.slice(4, 6).join(""),
-    hex.slice(6, 8).join(""),
-    hex.slice(8, 10).join(""),
-    hex.slice(10, 16).join(""),
-  ].join("-");
-}
-
-function newRequestUuid(): string {
-  const cryptoObj = getCrypto();
-  if (typeof cryptoObj?.randomUUID === "function") {
-    return cryptoObj.randomUUID();
-  }
-  const bytes = new Uint8Array(16);
-  if (typeof cryptoObj?.getRandomValues === "function") {
-    cryptoObj.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i += 1) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return formatUuidV4(bytes);
-}
 
 /**
  * Normalize an API base URL to the bare origin the generated client expects.

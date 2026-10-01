@@ -1,11 +1,20 @@
 /**
- * UUID v4 generation for the chat hot path, on every runtime chat-core ships to.
+ * UUID v4 generation on every runtime the SDK ships to: the browser and React
+ * Native.
  *
- * `client_message_id` is the server's idempotency key
- * (`SendMessageDto.client_message_id`, validated `@IsUUID()` and backed by the
+ * Its main job is `client_message_id`, the server's idempotency key. Chat sends
+ * it (`SendMessageDto.client_message_id`, validated `@IsUUID()` and backed by the
  * partial unique index on `(channel_id, sender_id, client_message_id)`), so
  * every send, slash-command dispatch, and outbox retry needs one before it can
- * talk to the API.
+ * talk to the API. A points adjustment carries one too (`AdjustPointsDto`), from
+ * the `/points` command and from the dashboard's `useAdjustPoints`. The SDK's
+ * own `x-request-id` (`mintRequestId`) is built on it as well.
+ *
+ * It lives in the SDK, not in `@repo/chat-core` where it started, because
+ * `@repo/hooks` needs it and must not depend on chat-core: that package is
+ * app-level, carrying the Dexie outbox and a Supabase client, while hooks is a
+ * leaf both apps consume. Both already depend on this package, and moving it
+ * here also retired the request id's own copy of these three tiers (#1906).
  *
  * This existed as a bare `crypto.randomUUID()` call, which is a browser-only
  * assumption. **React Native supplies no `crypto` global.** What was actually
@@ -40,9 +49,10 @@
  * 3. `Math.random()` — where neither global exists, which is React Native today.
  *
  * **Tier 3 is not cryptographically secure, and that is sound here** because a
- * `client_message_id` is not a secret or a capability. Nothing in this repo
- * derives auth, ordering, or addressing from it. A value from this module MUST
- * NOT be used for a token, nonce, or any other security-bearing identifier.
+ * `client_message_id` is not a secret or a capability, and neither is a request
+ * id, which only correlates logs. Nothing in this repo derives auth, ordering,
+ * or addressing from either. A value from this module MUST NOT be used for a
+ * token, nonce, or any other security-bearing identifier.
  *
  * What a collision costs depends on which index the id lands in, and the two
  * are scoped differently — so this is stated per consumer rather than once:
