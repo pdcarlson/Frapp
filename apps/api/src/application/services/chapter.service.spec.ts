@@ -497,6 +497,7 @@ describe('ChapterService', () => {
     const result = await service.create('user-1', {
       name: 'Alpha',
       university: 'State U',
+      config: {},
     });
 
     expect(mockChapterRepo.create).toHaveBeenCalledWith({
@@ -604,7 +605,11 @@ describe('ChapterService', () => {
     };
     mockMemberRepo.create.mockResolvedValue(member);
 
-    await service.create('user-1', { name: 'Alpha', university: 'State U' });
+    await service.create('user-1', {
+      name: 'Alpha',
+      university: 'State U',
+      config: {},
+    });
 
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-1',
@@ -659,7 +664,11 @@ describe('ChapterService', () => {
       updated_at: '2024-01-01',
     });
 
-    await service.create('user-1', { name: 'Alpha', university: 'State U' });
+    await service.create('user-1', {
+      name: 'Alpha',
+      university: 'State U',
+      config: {},
+    });
 
     expect(mockSupabase.from).toHaveBeenCalledWith('chat_channels');
     expect(mockSupabase.from().insert).toHaveBeenCalledTimes(1);
@@ -761,7 +770,11 @@ describe('ChapterService', () => {
       .mockImplementation(() => undefined);
 
     await expect(
-      service.create('user-1', { name: 'Alpha', university: 'State U' }),
+      service.create('user-1', {
+        name: 'Alpha',
+        university: 'State U',
+        config: {},
+      }),
     ).rejects.toThrow(InternalServerErrorException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
