@@ -14,6 +14,7 @@ import type {
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import type { FrappSupabaseClient } from '../supabase/database.types';
+import { toReportableError } from '../observability/reportable-error';
 
 /**
  * Reject object paths that can escape their bucket.
@@ -113,10 +114,7 @@ export class SupabaseStorageService implements IStorageProvider {
       );
 
     if (error) {
-      const detail =
-        typeof error === 'object' && error && 'message' in error
-          ? String((error as { message: unknown }).message)
-          : String(error);
+      const detail = toReportableError(error).message;
       throw new InternalServerErrorException(
         `Failed to mint a signed upload URL for bucket "${bucket}": ${detail}. Confirm the bucket exists and the service role can mint signed URLs.`,
       );

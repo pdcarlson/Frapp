@@ -10,7 +10,7 @@ EAS builds are a separate path with a separate owner. `apps/mobile/eas.json`
 defines `development` / `preview` / `production` profiles against a linked EAS
 project (`extra.eas.projectId` and `owner` are committed in
 `apps/mobile/app.json`); the `eas build` commands and that linkage live in
-[`docs/internal/ops/deployment/mobile.md`](../internal/ops/deployment/mobile.md#6-mobile-eas-setup).
+[`docs/ops/deployment/mobile.md`](../ops/deployment/mobile.md#6-mobile-eas-setup).
 
 ### 1. Provide the environment
 

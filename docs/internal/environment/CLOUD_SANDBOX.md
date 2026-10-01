@@ -593,7 +593,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   hostnames are allowlisted, not the unique `*.vercel.app` URL each deployment also gets.
   When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in
-  [`../ops/deployment/vercel.md`](../ops/deployment/vercel.md) — you can reach what the alias currently
+  [`../../ops/deployment/vercel.md`](../../ops/deployment/vercel.md) — you can reach what the alias currently
   points at, not the newer deployment behind it. Check the alias state via the Vercel MCP
   tools rather than assuming the hostname is current.
 - **Writes being safe.** Nothing about egress makes a `POST` reversible. The skill's

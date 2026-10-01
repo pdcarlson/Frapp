@@ -323,7 +323,7 @@ describe("validateDeploySha", () => {
 // production back to the commit it was already running had become impossible.
 // A code-only rollback, redeploying the commit production last ran, is exactly
 // this operation (a schema change is undone by forward revert instead:
-// `DB_ROLLBACK_PLAYBOOK.md` § 3) Undo one migration).
+// `db-rollback-playbook.md` § 3) Undo one migration).
 
 describe("classifyRequiredChecks — checks the commit could not have produced", () => {
   const runs = [{ name: "api-tests", status: "completed", conclusion: "success" }];

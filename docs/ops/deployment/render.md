@@ -10,7 +10,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | Setting             | Production                                | Staging               |
 | ------------------- | ----------------------------------------- | --------------------- |
 | **Name**            | `frapp-api-prod`                          | `frapp-api-staging`   |
-| **Service ID**      | `renderServiceId` of `production` in [`.github/environments.json`](../../../../.github/environments.json) ([why there](../../../../spec/environments/README.md#environment-identity)) | `renderServiceId` of `staging` there |
+| **Service ID**      | `renderServiceId` of `production` in [`.github/environments.json`](../../../.github/environments.json) ([why there](../../../spec/environments/README.md#environment-identity)) | `renderServiceId` of `staging` there |
 | **Branch**          | `main`                                    | `main`                |
 | **Auto-Deploy**     | **No** — deploys are API-driven by commit | **No** — same, from `deploy-staging.yml` (#2505, #2803) |
 | **Root Directory**  | (leave empty — Dockerfile uses repo root) | (same)                |
@@ -23,12 +23,12 @@ Create **two** Render Web Services: one for production, one for staging.
 As with Vercel ([environment variables](vercel.md#42-environment-variables-per-project)), these are **not entered by hand in the Render dashboard**. Infisical holds
 the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod`
 (`render-api-staging` and `render-api-production`); the dashboard is the destination. See
-[`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md) for the sync setup
-and [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) for the full variable list.
+[`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md) for the sync setup
+and [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) for the full variable list.
 The full per-environment grid — every variable the API reads, with its `dev` / `staging` / `prod` value — is
-[`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](../../environment/ENV_REFERENCE.md#canonical-variables--the-complete-grid),
+[`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](../../internal/environment/ENV_REFERENCE.md#canonical-variables--the-complete-grid),
 plus its § "API-Only Settings" and § "CD Secrets (Deploy Workflows Only)" subsections. Do not restate it here:
-each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) § 5), so any short list understates what the service holds.
+each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) § 5), so any short list understates what the service holds.
 
 ### 5.3 Custom Domains
 
@@ -38,15 +38,15 @@ each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_
 ### 5.4 Health Check
 
 The API exposes `GET /health`, which answers `200` whether or not its dependency probes pass
-([`health.controller.ts`](../../../../apps/api/src/interface/controllers/health.controller.ts)). It
+([`health.controller.ts`](../../../apps/api/src/interface/controllers/health.controller.ts)). It
 never throws, so a `200` proves the process booted and Nest is serving, not that the database is
 reachable. The JSON body is the liveness payload in
-[`spec/behavior/observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check).
+[`spec/behavior/observability.md` § Health Check](../../../spec/behavior/observability.md#health-check).
 
 > **This section previously claimed Render auto-detects the health check from the Dockerfile
 > `HEALTHCHECK` directive. That claim is unverified and the configuration contradicts it.** Render
 > exposes a per-service `healthCheckPath` setting, and on 2026-08-21 the live `frapp-api-staging`
-> service reported `healthCheckPath: ""` — empty — while [`render.yaml`](../../../../render.yaml)
+> service reported `healthCheckPath: ""` — empty — while [`render.yaml`](../../../render.yaml)
 > declares `healthCheckPath: /health` for both API services. So the blueprint is **not** applied to
 > that service, whatever Render does with the Dockerfile directive.
 >
@@ -113,7 +113,7 @@ The claim is at most once. It is never released, so if the winning replica is ki
 
 Still per replica: the push worker's burst bundler, which counts in-process, so a burst whose messages land on different replicas bundles less (extra pushes in a burst, never a duplicate of one message). Also its presence subscriptions: every replica joins a channel's presence on the first message it hears there, won or not, so any replica can read who is in the channel. Each replica keeps at most 80 open (`MAX_PRESENCE_CHANNELS`) and closes the one whose last message is oldest to open another, because every channel a process opens shares one Supabase client and Supabase refuses joins past 100 per client (#2507). A refused or timed-out join logs `chat-push: presence join <status> for <channel>` and reports `chat-push presence join failed` to Sentry, at most once per 10 minutes per replica. And the channel cache (below).
 
-This is the deliberate default for now per [**ADR-09**](../../../../spec/architecture/adr/adr-09.md) (Push worker host = in-process API). The workers should be split into a standalone Render service when **either** condition is sustained:
+This is the deliberate default for now per [**ADR-09**](../../../spec/architecture/adr/adr-09.md) (Push worker host = in-process API). The workers should be split into a standalone Render service when **either** condition is sustained:
 
 - `p99 fanout latency > 1s` (from the `chat_messages` INSERT to `notifyUser` returning), **or**
 - `worker-loop CPU > 40%` of the API instance over a 10-minute window.
@@ -124,7 +124,7 @@ When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModu
 
 ### 5.6 In-process scheduled jobs
 
-`ScheduledJobsModule` runs eight `@Cron` sweeps inside the API Render service: attendance auto-absent (hourly), poll-expiry announcement (every 5 minutes), pre-event reminders (every 5 minutes), invoice and task due/overdue reminders (daily at 09:00), generated-report retention (hourly), the stale-palette sweep (hourly), which recomputes each chapter's stored accent palette when the accent engine has changed since it was written ([`accent-engine.md` § 4](../../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence), #1165), and the chat report evidence sweep (hourly), which deletes the attachments a resolved chat report held when the release at resolve time did not finish ([`chat/README.md` § Report](../../../../spec/behavior/chat/README.md#report), #2481). They are registered against the `ScheduleModule.forRoot()` in `app.module.ts`.
+`ScheduledJobsModule` runs eight `@Cron` sweeps inside the API Render service: attendance auto-absent (hourly), poll-expiry announcement (every 5 minutes), pre-event reminders (every 5 minutes), invoice and task due/overdue reminders (daily at 09:00), generated-report retention (hourly), the stale-palette sweep (hourly), which recomputes each chapter's stored accent palette when the accent engine has changed since it was written ([`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence), #1165), and the chat report evidence sweep (hourly), which deletes the attachments a resolved chat report held when the release at resolve time did not finish ([`chat/README.md` § Report](../../../spec/behavior/chat/README.md#report), #2481). They are registered against the `ScheduleModule.forRoot()` in `app.module.ts`.
 
 **These reach multi-replica safety the same way as the [§5.5 chat workers](#55-in-process-chat-workers-chunk-05), from a different trigger.** The chat workers receive every Realtime event on every replica and claim each one before acting. A `@Cron` handler instead fires on **every replica, on every tick**. Multi-instance safety therefore comes from the database, not the topology: each unit of work claims a row in `scheduled_notification_dispatches`, unique on `(entity_type, entity_id, threshold, due_date)`, and only the replica that wins the insert acts. Reminders cannot be double-sent, and auto-absent runs once per event rather than once per replica per hour.
 
@@ -153,10 +153,10 @@ Splitting these into a standalone Render Background Worker is not currently warr
 
 No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)), both through the `_deploy.yml` job they call. A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
 
-The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
+The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../internal/environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 
-- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly, and staging's also requires the response's `commit` to be the deployed SHA; why the two differ is [`observability.md` § Health Check](../../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
+- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly, and staging's also requires the response's `commit` to be the deployed SHA; why the two differ is [`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
-**Don't create or store a deploy hook for either service**; [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) gives the reason. Earlier revisions of these docs told operators to store one. The production hook was stored and synced onward, and was regenerated and its copies removed on 2026-09-24 ([#2540](https://github.com/pdcarlson/Frapp/issues/2540)). The staging hook, stored in Infisical `staging` until #2505, gets the same treatment in [#2679](https://github.com/pdcarlson/Frapp/issues/2679). Staging's auto-deploy, the other half of that issue, read **off** on 2026-09-29 (Render API).
+**Don't create or store a deploy hook for either service**; [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) gives the reason. Earlier revisions of these docs told operators to store one. The production hook was stored and synced onward, and was regenerated and its copies removed on 2026-09-24 ([#2540](https://github.com/pdcarlson/Frapp/issues/2540)). The staging hook, stored in Infisical `staging` until #2505, gets the same treatment in [#2679](https://github.com/pdcarlson/Frapp/issues/2679). Staging's auto-deploy, the other half of that issue, read **off** on 2026-09-29 (Render API).
 
 ---

@@ -144,7 +144,6 @@ vi.mock("@repo/hooks", async () => {
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#F4CB63",
-    accentFallbackApplied: false,
     accentPrimary: "#EFB63B",
     accentOnPrimary: "#131211",
     logoUrl: null,

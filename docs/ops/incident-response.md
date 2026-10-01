@@ -1,18 +1,18 @@
 # Incident response
 
 Detection, triage and recovery for the three failure modes that have runbooks. Where an alert is
-routed, who it pages, and the thresholds that fire it are in [`ALERT_ROUTING.md`](ALERT_ROUTING.md) —
+routed, who it pages, and the thresholds that fire it are in [`alert-routing.md`](alert-routing.md) —
 this file starts once someone is already looking.
 
 Database rollback and restore are their own procedures:
-[`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). Deploy and promotion are in
-[the deployment runbook](deployment/) and [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md).
+[`db-rollback-playbook.md`](db-rollback-playbook.md). Deploy and promotion are in
+[the deployment runbook](deployment/) and [`db-promotion-runbook.md`](db-promotion-runbook.md).
 
 ## API down
 
 ### Detection signals
 
-- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency. `/health`'s body shows it too, but up to 60 s late, because it reuses one probe for that long. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../../../spec/architecture/adr/adr-24.md); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
+- Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency. `/health`'s body shows it too, but up to 60 s late, because it reuses one probe for that long. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../../spec/architecture/adr/adr-24.md); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
 - Render service marked unhealthy
 - Elevated 5xx alerts
 
@@ -33,15 +33,15 @@ Database rollback and restore are their own procedures:
 
 ### Recovery checklist
 
-- [ ] If the latest release caused the outage, roll the API back through **Deploy production**, never the Render dashboard: the previous release's SHA when no migration has shipped since, otherwise a forward revert ([`DB_ROLLBACK_PLAYBOOK.md` § 3) Undo one migration](DB_ROLLBACK_PLAYBOOK.md#3-undo-one-migration))
+- [ ] If the latest release caused the outage, roll the API back through **Deploy production**, never the Render dashboard: the previous release's SHA when no migration has shipped since, otherwise a forward revert ([`db-rollback-playbook.md` § 3) Undo one migration](db-rollback-playbook.md#3-undo-one-migration))
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
-- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` with curl rather than waiting on the next **Production uptime** run. Green on `/health` alone does not clear a degraded dependency. The in-repo monitor's next run can be hours away ([ADR-24](../../../spec/architecture/adr/adr-24.md) has the measured gaps)
+- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` with curl rather than waiting on the next **Production uptime** run. Green on `/health` alone does not clear a degraded dependency. The in-repo monitor's next run can be hours away ([ADR-24](../../spec/architecture/adr/adr-24.md) has the measured gaps)
 
 ### Communication
 
-- when to tell affected chapters, and how often to update them: [`ALERT_ROUTING.md` § Escalation](ALERT_ROUTING.md#escalation). Signet has no status page yet
+- when to tell affected chapters, and how often to update them: [`alert-routing.md` § Escalation](alert-routing.md#escalation). Signet has no status page yet
 - include mitigation ETA and current customer impact
 
 ## Database latency

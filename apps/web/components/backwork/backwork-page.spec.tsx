@@ -9,6 +9,10 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
 const {
   mockCurrentChapter,
@@ -655,5 +659,117 @@ describe("BackworkPage upload allowlist", () => {
     );
     expect(fetch).not.toHaveBeenCalled();
     expect(mockConfirmUpload).not.toHaveBeenCalled();
+  });
+});
+
+describe("BackworkPage year and assignment-number guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+    chapter.active();
+    mockRequestUpload.mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/chap-1/backwork/res-1/notes.pdf",
+    });
+    mockConfirmUpload.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockResolvedValue(
+      new Uint8Array(32).buffer,
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function openUpload() {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    return {
+      dialog,
+      year: within(dialog).getByLabelText(/^year$/i),
+      assignment: within(dialog).getByLabelText(/assignment number/i),
+    };
+  }
+
+  it("keeps the last whole number in both fields through a negative or a decimal", async () => {
+    const { year, assignment } = await openUpload();
+    expectRefusedEntriesKeep(year, "2026");
+    expectRefusedEntriesKeep(assignment, "2");
+  });
+
+  it("reads an emptied or unparseable field as left blank", async () => {
+    const { year, assignment } = await openUpload();
+    expectClearingEntriesEmpty(year, "2026");
+    expectClearingEntriesEmpty(assignment, "2");
+  });
+
+  it("keeps the 0 left by deleting a leading digit, then refuses it before the upload", async () => {
+    const { dialog, assignment } = await openUpload();
+    fireEvent.change(assignment, { target: { value: "10" } });
+    fireEvent.change(assignment, { target: { value: "0" } });
+    expect(assignment).toHaveValue(0);
+
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: {
+        files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.submit(document.getElementById("backwork-upload-form")!);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Check the year and assignment number",
+        }),
+      ),
+    );
+    // Refused before the file reaches storage, so nothing is left orphaned.
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(mockConfirmUpload).not.toHaveBeenCalled();
+  });
+
+  it("refuses a year under the API's 1900 before the upload", async () => {
+    const { dialog, year } = await openUpload();
+    fireEvent.change(year, { target: { value: "2" } });
+    expect(year).toHaveValue(2);
+
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: {
+        files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.submit(document.getElementById("backwork-upload-form")!);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Check the year and assignment number",
+        }),
+      ),
+    );
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+  });
+
+  it("confirms with the kept whole numbers, and omits a blank one", async () => {
+    const { dialog, year, assignment } = await openUpload();
+    fireEvent.change(year, { target: { value: "2026" } });
+    fireEvent.change(year, { target: { value: "1.5" } });
+    fireEvent.change(assignment, { target: { value: "" } });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: {
+        files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
+      },
+    });
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    const body = mockConfirmUpload.mock.calls[0]![0];
+    expect(body.year).toBe(2026);
+    expect(body.assignment_number).toBeUndefined();
   });
 });

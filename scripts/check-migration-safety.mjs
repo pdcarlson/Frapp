@@ -3,8 +3,9 @@
 import { execSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
 // Resolved from this file, never `process.cwd()`. Every path this gate reasons
 // about is repo-root-relative — `git diff --name-only` emits them that way, and
@@ -127,6 +128,11 @@ function validateMigrationFiles(migrationFiles) {
 }
 
 /**
+ * The two migration ledgers are `PROMOTION_LOG` and `ROLLBACK_PLAYBOOK`
+ * (`./ci/lib/ops-docs.mjs`, the one place their paths are written). Every list
+ * and map below reads them, so moving either doc is an edit there, not here.
+ */
+/**
  * The docs a migration change must update. Declared once, and checked for
  * staleness on every run before the gate judges any PR (see
  * `validateDocManifest`).
@@ -136,7 +142,7 @@ function validateMigrationFiles(migrationFiles) {
  * migration PR in the repository because the author updated the *renamed* file
  * and matched none of the literals, or it quietly stops requiring anything at
  * all. Checking the manifest first turns both into one loud failure that names
- * this constant, so the rename gets fixed instead of the blameless PR.
+ * the path constants, so the rename gets fixed instead of the blameless PR.
  *
  * `spec/environments/` used to be a third disjunct: touching ANY environments
  * doc satisfied the gate. Measured over the last 400 commits on `main` it was
@@ -157,10 +163,7 @@ function validateMigrationFiles(migrationFiles) {
  * proves the ledger complete. Do not restore an "either doc is enough" reading
  * from this comment alone.
  */
-export const MIGRATION_DOCS = [
-  "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
-  "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
-];
+export const MIGRATION_DOCS = [PROMOTION_LOG, ROLLBACK_PLAYBOOK];
 
 /** Does this change set update one of the docs a migration owes? */
 export function satisfiesPromotionDocs(changedFiles) {
@@ -194,14 +197,14 @@ export function satisfiesPromotionDocs(changedFiles) {
  */
 export const LEDGER_ENTRY_PATTERNS = new Map([
   [
-    "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
+    PROMOTION_LOG,
     [
       /^### (\d{14}_[a-z0-9_]+\.sql)[ \t]*$/gm,
       /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
     ],
   ],
   [
-    "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
+    ROLLBACK_PLAYBOOK,
     [
       /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
       // Recipe headings name their subject three ways: by filename, by bare
@@ -280,7 +283,7 @@ export const RATCHET_VERSION_CEILING = "20260905010000";
  */
 export const UNLEDGERED = new Map([
   [
-    "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
+    PROMOTION_LOG,
     [
       "00000000000000_initial_schema.sql",
       "20260531120000_member_custom_field_values.sql",
@@ -320,7 +323,7 @@ export const UNLEDGERED = new Map([
     ],
   ],
   [
-    "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
+    ROLLBACK_PLAYBOOK,
     [
       "00000000000000_initial_schema.sql",
       "20250226120000_add_get_points_report_rpc.sql",
@@ -359,7 +362,7 @@ export function ledgerEntries(doc, text) {
  * to protect. The rollback playbook is the opposite: a recipe for a migration
  * that no longer exists is dead weight, and worth reporting.
  */
-const HISTORICAL_LEDGERS = new Set(["docs/internal/ops/DB_PROMOTION_RUNBOOK.md"]);
+const HISTORICAL_LEDGERS = new Set([PROMOTION_LOG]);
 
 /**
  * The whole-tree ledger contract, as a pure function so the tests can drive it
@@ -464,9 +467,10 @@ function validateDocManifest() {
   }
   console.error(
     "A promotion/rollback doc was renamed, moved or deleted without updating " +
-      "MIGRATION_DOCS in scripts/check-migration-safety.mjs. Repoint the list " +
-      "in the same change set as the rename — until then this REQUIRED check " +
-      "blocks every migration PR in the repository.",
+      "PROMOTION_LOG / ROLLBACK_PLAYBOOK in scripts/ci/lib/ops-docs.mjs. " +
+      "Repoint that constant (every list and map here reads it) in the same " +
+      "change set as the rename — until then this REQUIRED check blocks every " +
+      "migration PR in the repository.",
   );
   process.exit(2);
 }
@@ -586,8 +590,9 @@ function validateLedgerCoverage(migrations) {
         console.error(`- ${doc}: ${error instanceof Error ? error.message : error}`);
         console.error(
           "The file is tracked but could not be read. Restore it (or repoint " +
-            "MIGRATION_DOCS if it moved) — this REQUIRED check cannot grade " +
-            "ledger coverage without it.",
+            "PROMOTION_LOG / ROLLBACK_PLAYBOOK in scripts/ci/lib/ops-docs.mjs if " +
+            "it moved) — this REQUIRED check cannot grade ledger coverage " +
+            "without it.",
         );
         process.exit(2);
       }
@@ -615,13 +620,16 @@ function validateLedgerCoverage(migrations) {
   for (const { kind, doc, migration } of problems) {
     console.error(`- ${migration} ${describe(kind, doc)}.`);
   }
+  // The template's ledger names come from the constants too, so a moved ledger
+  // cannot leave the hint naming a file the problem lines above no longer do.
+  const ledger = (doc) => `  ${basename(doc).padEnd(26)}`;
   console.error(
     "\nEvery migration owes BOTH a promotion-log entry and a rollback recipe.\n" +
       "Write one of these lines, exactly (the marker may be * or -):\n" +
-      "  DB_PROMOTION_RUNBOOK.md   ### <migration>.sql\n" +
+      `${ledger(PROMOTION_LOG)}### <migration>.sql\n` +
       "                            (or, under a `## <date>: <what>` heading)\n" +
       "                            * **Migration**: `<migration>.sql`\n" +
-      "  DB_ROLLBACK_PLAYBOOK.md   * **Migration**: `<migration>.sql`\n" +
+      `${ledger(ROLLBACK_PLAYBOOK)}* **Migration**: \`<migration>.sql\`\n` +
       "                            (under a `## Rollback <what>` heading)\n" +
       "A filename mentioned in prose does not count — the shape is what is read.",
   );

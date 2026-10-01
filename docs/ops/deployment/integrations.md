@@ -17,7 +17,7 @@
    ```
 
    This list is `HANDLED_WEBHOOK_EVENT_TYPES` in
-   [`apps/api/src/infrastructure/billing/stripe-webhook-events.ts`](../../../../apps/api/src/infrastructure/billing/stripe-webhook-events.ts),
+   [`apps/api/src/infrastructure/billing/stripe-webhook-events.ts`](../../../apps/api/src/infrastructure/billing/stripe-webhook-events.ts),
    which is the source of truth — re-read it rather than trusting this copy, and
    update this step if it ever changes. Anything not on the list is dropped by the
    allowlist before the database is touched, so enabling extras is noise rather than
@@ -31,7 +31,7 @@
 6. Save the customer portal settings (Settings → Billing → Customer portal), even
    if you keep Stripe's defaults. The API opens a portal session with no
    `configuration` (`createCustomerPortalSession` in
-   [`stripe.service.ts`](../../../../apps/api/src/infrastructure/billing/stripe.service.ts)),
+   [`stripe.service.ts`](../../../apps/api/src/infrastructure/billing/stripe.service.ts)),
    so Stripe uses the mode's saved default and refuses the session when there is
    none, and "Manage billing" 503s. Whether test mode has one saved has not been
    checked: [#2762](https://github.com/pdcarlson/Frapp/issues/2762).
@@ -74,8 +74,8 @@ was not matched to it; of these settings, staging depends only on the portal (§
 | Business details → Public details | Support phone and address | Set to the owner's own; not copied here |
 | Branding | Icon | `packages/brand-assets/assets/signet-emblem-B-1024.png` (the crest on its charcoal tile) |
 | Branding | Logo | **Empty; the owner's call** ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). It waited on a lockup that says Frapp. `packages/brand-assets/assets/frapp-lockup.svg` does since ADR-25 step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)), but it is drawn for the dark page header: the crest has no tile and the word is `currentColor`, so on Stripe's light header it would show a bare gold crest beside black text. The Logo needs a raster made for a light background, or the Icon alone, which carries the tile. |
-| Branding | Brand color / accent color | `#1A1A1A` (the mark field) / `#EFB63B` (house gold), per [`brand-identity.md` § 2](../../../../spec/ui/brand-identity.md#2-the-mark) |
-| Billing → Customer portal | Features | Stripe's defaults: update payment method, invoice history, update billing info, cancel. Updating the payment method is how a `past_due` chapter recovers ([`billing.md`](../../../../spec/behavior/billing.md)), and Billing promises invoices ([`surfaces.md`](../../../../spec/product/surfaces.md)). The portal header and redirect link are empty, because the API passes `return_url` on every session. |
+| Branding | Brand color / accent color | `#1A1A1A` (the mark field) / `#EFB63B` (house gold), per [`brand-identity.md` § 2](../../../spec/ui/brand-identity.md#2-the-mark) |
+| Billing → Customer portal | Features | Stripe's defaults: update payment method, invoice history, update billing info, cancel. Updating the payment method is how a `past_due` chapter recovers ([`billing.md`](../../../spec/behavior/billing.md)), and Billing promises invoices ([`surfaces.md`](../../../spec/product/surfaces.md)). The portal header and redirect link are empty, because the API passes `return_url` on every session. |
 | Business → Customer emails | Successful payments, refunds | On (were off) |
 | Billing → Subscriptions and emails | Trial-ends reminder (7 days), upcoming renewals, expiring cards, card payment failures, bank debit failures | All on (all were off). The trial reminder matters because every new chapter starts on a trial (`TRIAL_PERIOD_DAYS` in `stripe.service.ts`). |
 | Billing → Subscriptions and emails | Payment method updates | A link to a Stripe-hosted page (was "mix of both (Legacy)", with every custom link pointing at the `www.frapp.live` homepage) |
@@ -173,7 +173,7 @@ this page nor the setting.
    already in the portal is free; what is not free is leaving one unregistered.
 
    Which environment points at which application is in
-   [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings —
+   [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) § API-Only Settings —
    read it before adding a row, because a row added to the wrong application is
    both useless and, if that application serves production, an isolation leak.
 
@@ -236,7 +236,7 @@ overwrite beats them. A server that denies View Channels to `@everyone` and
 grants it through roles (the usual fraternity setup) therefore shows the bot
 almost nothing: on the first real import it could read 2 of 78 channels. The
 scan works this out from Discord's permission overwrites and lists what the bot
-cannot read ([`spec/behavior/chat/README.md`](../../../../spec/behavior/chat/README.md#imported-archive-messages)
+cannot read ([`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages)
 § Imported archive messages). A server admin fixes it in Discord, not here, in
 one of two ways:
 
@@ -268,7 +268,7 @@ reason as the bot path, so do not bind on its callback either.
 `GET /v1/discord/availability` (as an officer with `channels:manage`) must answer
 `{"available": true}`. If it answers `false`, either one of the three secrets or
 `API_URL` / `APP_URL` is unset in that environment (see
-[`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings), or
+[`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) § API-Only Settings), or
 Discord's record of the application shows the setup wrong, and the API's log
 names which (table below).
 
@@ -341,7 +341,7 @@ Message Content Intent off. Step 5 is checked by the import itself, within the
 caveat above; confirm it by eye in the portal until that caveat's first
 observation is recorded.
 
-**Where an import's attachment bytes go, and who bills them** ([ADR-26](../../../../spec/architecture/adr/adr-26.md), #2848).
+**Where an import's attachment bytes go, and who bills them** ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
 Render bills a service's outbound bytes to the public internet, which includes its own requests to
 Supabase. An import's media is the largest thing the importer moves, so which hop carries the bytes
 decides whose bill they land on:

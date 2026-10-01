@@ -79,9 +79,11 @@ Rules:
   (`--text-hero`, `--text-display-lg`, `--text-lead`) are declared in `apps/landing/app/globals.css`
   and bound in `apps/landing/tailwind.config.ts`. They sit above `foundations.md` §7's locked six
   and are landing-only by decision, so using one on a product surface is an off-scale defect.
-- `@repo/theme/accent` has exactly one mobile importer, `apps/mobile/lib/chapter-branding.ts`
-  (check with `grep -rn "@repo/theme/accent" apps/mobile`). Keeping it to one keeps the accent
-  engine's blast radius auditable, so a second importer is a change you have to argue for.
+- `@repo/theme/accent` (`resolveChapterAccentColor`) has no mobile importer: #2595 deleted
+  mobile's pre-Signet-map fallback, and `useChapterBranding` paints only the served palette's roles,
+  or house gold without them. Its one caller is the web Settings accent preview.
+  `grep -rn "@repo/theme/accent" apps/mobile` should print nothing, so a mobile importer is a
+  change you have to argue for, since it would bring the raw seed back as paint.
 - Tokens hold complete color values, and the preset reads them as a plain `var(--token)`. Never
   write `hsl(var(--token))`, because it emits `hsl(hsl(...))`, which the browser drops, and
   `tailwind.config.spec.ts` fails on it. In an arbitrary value, use the type hint

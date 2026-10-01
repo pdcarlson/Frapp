@@ -38,7 +38,7 @@
 // required-check list makes impossible, and it fails at the moment you can
 // least afford to debug a gate. (Once production has applied a migration that
 // commit lacks, the migration rehearsal refuses it anyway, and the rollback is
-// a forward revert: `DB_ROLLBACK_PLAYBOOK.md` § 3) Undo one migration. This
+// a forward revert: `db-rollback-playbook.md` § 3) Undo one migration. This
 // narrowing keeps the code-only rollback possible.)
 //
 // So the expected set is intersected with the jobs the deployed commit's own

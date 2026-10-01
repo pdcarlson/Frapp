@@ -19,7 +19,7 @@
  *
  * The incident that produced them (2026-09-14: five `full` attempts, the last
  * two dying at prerender ~30s after this guard passed) is written up once in
- * `docs/internal/ops/deployment/ci-cd.md`, not retold here.
+ * `docs/ops/deployment/ci-cd.md`, not retold here.
  *
  * Preview (`DEPLOY_TARGET: preview`) and local / CI `next build` leave
  * `VERCEL_ENV` unset and skip this. CI `web-production-build` deliberately
