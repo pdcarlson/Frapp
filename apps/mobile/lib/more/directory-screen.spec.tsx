@@ -211,3 +211,26 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     expect(listed(tree)).toEqual(["Charles Whitmore III", "Marcus Reid"]);
   });
 });
+
+describe("s13's frame (#2485)", () => {
+  it("takes the top safe-area inset itself, since no navigator header does", () => {
+    // s13 opts out of ScreenShell for its FlatList, so it can't inherit the
+    // shell's edges.
+    const tree = render();
+    const frame = tree.root.findByType(
+      "SafeAreaView" as unknown as React.ElementType,
+    );
+
+    expect(frame.props.edges).toContain("top");
+  });
+
+  it("marks its title as the screen's heading, which no header supplies now", () => {
+    const tree = render();
+    const title = inHeader(
+      tree,
+      (element) => element.props.accessibilityRole === "header",
+    );
+
+    expect(title.children).toBe("Directory");
+  });
+});
