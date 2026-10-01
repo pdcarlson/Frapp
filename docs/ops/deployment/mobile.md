@@ -356,24 +356,35 @@ nothing is still building.
   the tag and a later step failed, retry neither, because either would put a second tag on the
   commit (#3126). Build by hand from the tag that landed.
 
-**Before the first run.** These exist outside the repo, and a non-interactive run stops without
-each one:
+**What a run needs outside the repo.** A non-interactive run stops without each of these. The iOS
+set was put in place on 2026-10-01, so the status says what exists and what renewing it takes.
 
-- **`EXPO_TOKEN`**: an Expo access token (a robot user's, so it isn't tied to a person), as a
-  secret of the GitHub **`automation`** environment. Not Infisical, and never a repository secret
-  (#2518). Without it the `build` job's first step fails, before any checkout.
+- **`EXPO_TOKEN`**: an Expo access token, as a secret of the GitHub **`automation`** environment.
+  Not Infisical, and never a repository secret (#2518). Without it the `build` job's first step
+  fails, before any checkout. *Status:* the token of the robot user `github-deploy-production`
+  (role Developer) on the `pdcarlson` Expo account, so it isn't tied to a person. To rotate it,
+  create a new token for that robot (Expo → account → Access tokens), replace the secret, then
+  revoke the old token.
 - **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
   certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
-  One interactive `eas build --platform ios --profile production` creates it, and the first
-  binary built by hand does that.
-- **An App Store Connect API key stored in EAS for submissions** (`eas credentials --platform ios`
-  → App Store Connect API Key). The table below says why.
+  One interactive `eas build --platform ios --profile production` creates it. *Status:* the
+  distribution certificate and the App Store provisioning profile for `live.frapp.mobile`, made by
+  the first build by hand, both expire on 2027-09-17. Renew them before then with an interactive
+  build or `eas credentials --platform ios`, or the CI path stops at that step.
+- **An App Store Connect API key, assigned to the app for EAS Submit.** Stored on the account is
+  not enough: a non-interactive submit uses only the key assigned to `live.frapp.mobile` for
+  submissions (`eas credentials --platform ios` → App Store Connect: Manage your API Key → Use an
+  existing API Key for EAS Submit). The table below gives the error otherwise. *Status:* assigned
+  on 2026-10-01.
 - **Android:** the Play service-account key in EAS credentials (#2556, #938). Until it exists,
   choose `ios`: an Android build would finish and then fail its upload. The keystore is no
   obstacle: a non-interactive build generates one when none exists (`CreateKeystore`). A
   production Android build also needs the `GOOGLE_SERVICES_JSON` file variable
   (`apps/mobile/app.config.js` refuses to evaluate without it).
-- **An EAS plan whose build quota covers each ticked ship** (one build per platform).
+- **An EAS plan whose build quota covers each ticked ship** (one build per platform). *Status:*
+  the Free plan, with 15 iOS and 15 Android builds a month, on the low-priority queue. A build
+  still queued when the wait's deadline passes is reported by id, and the summary says how to
+  upload it by hand; if that keeps happening, a paid plan is the fix.
 
 #### By hand
 
