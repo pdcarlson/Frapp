@@ -79,6 +79,7 @@ import { join } from "node:path";
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
+import { resolveSupabaseCli } from "./lib/supabase-cli-pin.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
@@ -101,8 +102,8 @@ const PARKED_DIR = join(process.cwd(), "supabase", ".migrations-replay-parked");
  * `backDated` is FATAL, and used to be merely reported. The comment that
  * justified staying silent said "`supabase db push` applies such a migration at
  * the END regardless of where its version sorts". That is false, and it is the
- * reason #1373 shipped. Measured against the pinned CLI 2.77.0 on 2026-08-29,
- * applying `20260102000000` to a database already holding `20260103000000`:
+ * reason #1373 shipped. Measured against CLI 2.77.0 on 2026-08-29, applying
+ * `20260102000000` to a database already holding `20260103000000`:
  *
  *   $ supabase migration up --db-url ...
  *   Connecting to local database...
@@ -117,10 +118,17 @@ const PARKED_DIR = join(process.cwd(), "supabase", ".migrations-replay-parked");
  * `--include-all` flag with the same description, so it refuses identically.
  * The CLI does not reorder; it stops.
  *
- * `db push` and `migration up` are not merely similar here: `internal/db/push`
- * calls `up.GetPendingMigrations`, the same entry point, and both bind
- * `--include-all` to the same flag. So the replay's phase 2 DOES reproduce the
- * refusal — this gate is not covering a hole in the rehearsal.
+ * `db push` and `migration up` are not merely similar here. On 2.77.0
+ * `internal/db/push` called `up.GetPendingMigrations`, the same entry point, and
+ * both bound `--include-all` to the same flag. 2.117.0, the pin since #723,
+ * implements both outside that Go code, so the claim was re-measured rather
+ * than carried over (2026-10-01, a back-dated file against the full local
+ * ledger, on 2.110.0 and 2.117.0): `migration up --local` and `db push --local`
+ * each exit 1, apply nothing, and print the same message, now inside a JSON
+ * error envelope (`LegacyMigrationMissingRemoteError` /
+ * `LegacyDbPushMissingRemoteError`). So
+ * the replay's phase 2 DOES reproduce the refusal — this gate is not covering a
+ * hole in the rehearsal.
  *
  * It is decided here for three smaller reasons that still add up. The verdict
  * needs no Docker and no database rebuild. It carries the remedy, where the
@@ -212,12 +220,11 @@ export function decideOutcome({ partition, replay }) {
   }
 
   // Decided BEFORE the replay, on purpose. The replay would fail too — phase 2
-  // runs `migration up`, and `db push` calls that same `GetPendingMigrations`,
-  // so both refuse identically (CLI 2.77.0, pkg/migration/apply.go, whose own
-  // comment reads "Enforce migrations are applied in chronological order by
-  // default"). Deciding here spends no Docker and no database rebuild to reach
-  // a verdict already known, and reports an ordering fault as one — with the
-  // rename remedy attached — rather than as a failure "applying" a file.
+  // runs `migration up`, and `db push` refuses identically (measured on 2.77.0
+  // and again on 2.117.0; see `partitionMigrations` above). Deciding here
+  // spends no Docker and no database rebuild to reach a verdict already known,
+  // and reports an ordering fault as one — with the rename remedy attached —
+  // rather than as a failure "applying" a file.
   if (backDated.length > 0) {
     const files = backDated.map((m) => `  ~ ${m.file}`).join("\n");
     return {
@@ -345,14 +352,16 @@ function restoreParked() {
  */
 export function replayAgainstDisposable({
   pending,
-  // In CI the Supabase CLI is installed on PATH by `supabase/setup-cli`, which
-  // pins the version; `npx` is the local-developer fallback. Reading it from
-  // the environment keeps the pinned CI binary from being silently replaced by
-  // whatever `npx` decides to fetch.
-  supabaseBin = process.env.REPLAY_SUPABASE_CLI ? process.env.REPLAY_SUPABASE_CLI : "npx",
-  supabaseArgs = process.env.REPLAY_SUPABASE_CLI ? [] : ["--yes", "supabase"],
+  // In CI the Supabase CLI is installed on PATH by `.github/actions/supabase-cli`,
+  // and the workflow names it in REPLAY_SUPABASE_CLI, so the rehearsal runs the
+  // very binary the apply after it runs. Elsewhere `resolveSupabaseCli` picks the
+  // pin (#723); this used to fall back to bare `npx supabase`, i.e. `latest`,
+  // which rehearsed a CLI nothing deploys with.
+  supabase = process.env.REPLAY_SUPABASE_CLI
+    ? { command: process.env.REPLAY_SUPABASE_CLI, prefixArgs: [] }
+    : resolveSupabaseCli(),
 }) {
-  const cli = (args, opts) => run(supabaseBin, [...supabaseArgs, ...args], opts);
+  const cli = (args, opts) => run(supabase.command, [...supabase.prefixArgs, ...args], opts);
 
   let parked = [];
   try {
@@ -519,12 +528,39 @@ function getArg(name, argv = process.argv) {
  */
 function fetchFromFile(path) {
   const rows = JSON.parse(readFileSync(path, "utf8"));
-  const migrations = Array.isArray(rows) ? rows : rows.migrations;
+  return fetchFromRows(Array.isArray(rows) ? rows : rows.migrations);
+}
+
+function fetchFromRows(migrations) {
   return async () => ({
     ok: true,
     status: 200,
     text: async () => JSON.stringify({ migrations }),
   });
+}
+
+/**
+ * `--rehearse-newest <n>` treats every repo migration but the newest `n` as
+ * applied, so the newest `n` are pending: phase 1 rebuilds the rest with
+ * `db reset`, phase 2 applies the `n` with `migration up`.
+ *
+ * It exists for a change to the CLI itself (#723). Against production's real
+ * state a CLI bump usually finds nothing pending, so the gate would report
+ * `nothing-pending` having run neither phase on the new build: green, and
+ * proving nothing about the apply it is meant to rehearse. Replaying the
+ * repo's own newest migrations runs both phases on every such change, with no
+ * credentials and no snapshot.
+ */
+export function rehearseNewestSource(n, { migrationsDir = MIGRATIONS_DIR } = {}) {
+  const local = readLocalMigrations(migrationsDir);
+  if (!Number.isInteger(n) || n < 1 || n >= local.length) {
+    throw new Error(
+      `--rehearse-newest needs a whole number from 1 to ${local.length - 1} (one less than the ` +
+        `${local.length} migrations in the repo, so a baseline is left to rebuild); got ${n}.`,
+    );
+  }
+  const applied = local.slice(0, -n).map(({ version, name }) => ({ version, name }));
+  return { fetchImpl: fetchFromRows(applied), accessToken: "offline", projectRef: "offline" };
 }
 
 /**
@@ -574,9 +610,25 @@ export function replaySource({ appliedFrom, snapshotPath, env = process.env } = 
 export async function runCli({ argv = process.argv, env = process.env, runGate = runReplayGate } = {}) {
   const appliedFrom = getArg("--applied-from", argv);
   const snapshotPath = getArg("--snapshot", argv);
-  if (appliedFrom && snapshotPath) {
-    console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
+  const rehearseNewest = getArg("--rehearse-newest", argv);
+  if ([appliedFrom, snapshotPath, rehearseNewest].filter((v) => v !== undefined).length > 1) {
+    console.error(
+      "Error: --applied-from, --snapshot and --rehearse-newest are each a source for one answer; pass one.",
+    );
     return 2;
+  }
+  if (rehearseNewest !== undefined) {
+    let source;
+    try {
+      source = rehearseNewestSource(/^\d+$/.test(rehearseNewest) ? Number(rehearseNewest) : NaN);
+    } catch (thrown) {
+      console.error(`Error: ${thrown.message}`);
+      return 2;
+    }
+    return runGate({
+      ...source,
+      label: getArg("--label", argv) ?? `the repo minus its newest ${rehearseNewest} migration(s)`,
+    });
   }
   return runGate({
     ...replaySource({ appliedFrom, snapshotPath, env }),

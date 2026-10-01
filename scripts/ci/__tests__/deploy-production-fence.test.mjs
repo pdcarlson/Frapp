@@ -415,6 +415,7 @@ describe("production's steps run in the order that fails before it writes", () =
     STEP_NAME,
     "Stop the disposable Supabase stack",
     "Run migrations (dry-run)",
+    "Assert supabase config was not rewritten by link (before the apply)",
     "Build the Vercel production bundles (web + landing)",
     "Stop here (dry run only)",
     "Run migrations (apply)",
@@ -505,6 +506,15 @@ describe("the dry run rehearses the build and ships nothing", () => {
       assert.equal(step.if, "inputs.environment == 'production'", `"${name}"'s condition changed`);
     }
     assert.doesNotMatch(withoutComments(readFileSync(SHARED, "utf8")), /continue-on-error/);
+  });
+
+  // `link` already ran in the dry run, so a config.toml it rewrote must stop the run
+  // before the apply, on a dry run and a migrations-only run too, and on staging,
+  // whose every merge is the first run a CLI bump gets.
+  it("the pre-apply config.toml assert is gated on nothing", () => {
+    const step = byName().get("Assert supabase config was not rewritten by link (before the apply)");
+    assert.ok(step, "the pre-apply config.toml assert is missing");
+    assert.equal(step.if ?? null, null, "the pre-apply config.toml assert gained a condition");
   });
 
   it("the dry-run stop reads the dry_run input, and the caller wires it from dry_run_only", () => {
