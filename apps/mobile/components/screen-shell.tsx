@@ -6,6 +6,13 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
   title: string;
+  /**
+   * Drawn before the title on the title row. Chat home passes the chapter mark
+   * (`ChapterMark`), which is the one mobile surface of the chapter's logo
+   * (`spec/behavior/branding.md` § Chapter mark). It used to ride in the tab
+   * navigator's header, which no screen has since #2485.
+   */
+  titleMark?: ReactNode;
   subtitle: string;
   /**
    * Trailing control rendered on the title row, right-aligned and vertically
@@ -13,15 +20,25 @@ type ScreenShellProps = {
    *
    * Added in S2 because this file freezes afterwards (#937's hotspot protocol)
    * and three drawn screens need it: the ✦ Ask pill on s04 and s06, and the `+`
-   * on s08 (spec/ui/mobile/navigation.md:44). Optional, so every existing call
-   * site is unaffected.
+   * on s08, as the Canvas board draws them (the pill's rule is
+   * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar).
+   * Optional, so every existing call site is unaffected.
    */
   headerAction?: ReactNode;
   children: ReactNode;
 };
 
+/**
+ * The screen frame most tab screens share: its title row, subtitle and
+ * scrolling body. s05, s13, s18 and s22 draw their own. The title is the
+ * only heading the shell draws; a screen may add its own below it, as Chat
+ * home's section headers do. The tab layout draws
+ * no navigator header (#2485), so the shell also takes the top safe-area inset
+ * the header used to absorb.
+ */
 export function ScreenShell({
   title,
+  titleMark,
   subtitle,
   headerAction,
   children,
@@ -30,11 +47,17 @@ export function ScreenShell({
   const styles = createStyles(tokens);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={styles.title}>{title}</Text>
+            {titleMark}
+            <Text accessibilityRole="header" style={styles.title}>
+              {title}
+            </Text>
             {headerAction ? (
               <View style={styles.headerAction}>{headerAction}</View>
             ) : null}

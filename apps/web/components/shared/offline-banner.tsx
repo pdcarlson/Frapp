@@ -118,7 +118,7 @@ export function OfflineBanner() {
       <div
         id={OFFLINE_BANNER_ID}
         tabIndex={-1}
-        className={`max-w-full rounded-lg bg-background shadow-md animate-slide-down ${FOCUS_RING_ALWAYS}`}
+        className={`max-w-full rounded-lg bg-background animate-slide-down ${FOCUS_RING_ALWAYS}`}
         role="alert"
         aria-live="polite"
       >

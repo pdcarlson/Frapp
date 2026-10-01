@@ -8,7 +8,11 @@ import {
 } from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 import { chunkIds } from '#domain/utils/chunk-ids';
-import { fetchAllPages as fetchAllPagesShared } from '../../infrastructure/supabase/supabase.utils';
+import {
+  type PagedQueryResult,
+  fetchAllPages as fetchAllPagesShared,
+} from '../../infrastructure/supabase/supabase.utils';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 export interface AttendanceReportRow {
@@ -60,14 +64,7 @@ export interface ServiceReportInput {
   end_date?: string;
 }
 
-interface QueryError {
-  message: string;
-}
-
-interface QueryResult<T> {
-  data: T[] | null;
-  error: QueryError | null;
-}
+type QueryResult<T> = PagedQueryResult<T>;
 
 /**
  * Rows requested per round-trip.
@@ -225,12 +222,6 @@ interface PointsReportRpcRow {
   breakdown_by_category: Record<string, number>;
 }
 
-function throwIfError(error: QueryError | null): void {
-  if (error) {
-    throw new Error(error.message);
-  }
-}
-
 /**
  * Read a query's full result set, one `REPORT_PAGE_SIZE` page at a time, and
  * report honestly whether {@link REPORT_MAX_ROWS} stopped it early.
@@ -257,20 +248,15 @@ async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<QueryResult<T>>,
   { limit = REPORT_MAX_ROWS }: { limit?: number } = {},
 ): Promise<ReportResult<T>> {
-  // The empty-page termination and the advance-by-what-arrived rule both live
-  // in the shared helper now; see `supabase.utils.ts` for why each is
-  // load-bearing. What stays here is report-specific: the `limit + 1` read that
-  // makes `truncated` an observed fact, and the `QueryError -> Error`
-  // translation, which runs inside the callback so the helper only ever sees a
-  // clean result.
-  const rows = await fetchAllPagesShared<T>(
-    async (from, to) => {
-      const { data, error } = await page(from, to);
-      throwIfError(error);
-      return { data, error: null };
-    },
-    { pageSize: REPORT_PAGE_SIZE, limit: limit + 1 },
-  );
+  // The empty-page termination, the advance-by-what-arrived rule and the
+  // `SupabaseQueryError` a failed page throws all live in the shared helper;
+  // see `supabase.utils.ts` for why each is load-bearing. What stays here is
+  // report-specific: the `limit + 1` read that makes `truncated` an observed
+  // fact.
+  const rows = await fetchAllPagesShared<T>(page, {
+    pageSize: REPORT_PAGE_SIZE,
+    limit: limit + 1,
+  });
 
   const truncated = rows.length > limit;
   return {
@@ -522,7 +508,7 @@ export class ReportService {
     ]);
 
     for (const pageResult of userPages) {
-      throwIfError(pageResult.error);
+      if (pageResult.error) throw new SupabaseQueryError(pageResult.error);
     }
 
     const userMap = new Map(
@@ -651,7 +637,7 @@ export class ReportService {
 
     const userMap = new Map<string, string>();
     for (const pageResult of userPages) {
-      throwIfError(pageResult.error);
+      if (pageResult.error) throw new SupabaseQueryError(pageResult.error);
       for (const u of pageResult.data ?? []) {
         userMap.set(u.id, u.display_name);
       }

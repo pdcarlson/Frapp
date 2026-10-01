@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type { INotificationRepository } from '#domain/repositories/notification.repository.interface';
 import type { Notification } from '#domain/entities/notification.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 function toNotificationInsert(
   data: TablesInsert<'notifications'>,
@@ -34,7 +35,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -52,7 +53,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .insert(data.map(toNotificationInsert))
       .select();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created ?? [];
   }
 
@@ -77,7 +78,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -89,7 +90,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -110,7 +111,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 }

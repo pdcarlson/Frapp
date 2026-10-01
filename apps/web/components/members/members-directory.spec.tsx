@@ -9,9 +9,10 @@ import { networkMock } from "@/tests/network";
  * `members-directory.tsx` had **no** test file before this one, which is the
  * same gap lane 2 closed for the shell (`dashboard-shell.spec.tsx`) when it
  * rewrote it. The cases below are deliberately about the things
- * [`spec/ui/web-greenfield/deletion-checklist.md`](../../../../spec/ui/web-greenfield/deletion-checklist.md)
- * §9 claims — a card that is gone, a table that is gone, a row that is now the
- * control, and one empty state that became three — rather than about the
+ * [`spec/ui/web-dashboard/README.md`](../../../../spec/ui/web-dashboard/README.md)
+ * § Page grammar and § Directory claim — a card that is gone, a table that is
+ * gone, a row that is now the control, and one empty state that became three —
+ * rather than about the
  * layout in general. A suite that asserted the whole render would go red on
  * every future restyle without telling anyone which rule broke.
  */
