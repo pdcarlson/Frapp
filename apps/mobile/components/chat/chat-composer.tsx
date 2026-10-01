@@ -351,7 +351,7 @@ function createStyles(tokens: SignetTokens) {
     },
     // Deliberately NOT gold. Gold is the send affordance on this row, and two
     // gold controls either side of the input would give the screen two primary
-    // actions (`spec/ui/design-system/components.md` §5, one clear primary).
+    // actions.
     attach: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
