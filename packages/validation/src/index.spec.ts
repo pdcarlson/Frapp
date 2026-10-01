@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   canAccessChannel,
-  CurrentChapterPayloadSchema,
   CustomFieldOptionsSchema,
   EmailInviteSchema,
   moduleDisabledMessage,
@@ -65,16 +64,6 @@ describe("Zod 4 schema smoke", () => {
       EmailInviteSchema.safeParse({ role: "member", emails: ["not-an-email"] })
         .success,
     ).toBe(false);
-  });
-
-  it("keeps unknown keys on CurrentChapterPayloadSchema", () => {
-    const parsed = CurrentChapterPayloadSchema.parse({
-      name: "Alpha",
-      university: "State",
-      subscription_status: "active",
-      extra_from_api: true,
-    });
-    expect(parsed.extra_from_api).toBe(true);
   });
 
   it("rejects unknown keys on CustomFieldOptionsSchema", () => {

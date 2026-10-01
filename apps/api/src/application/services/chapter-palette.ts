@@ -16,11 +16,12 @@ export type ChapterBrandColors = { accent?: string };
  * PATCH, as the application layer reads it.
  *
  * Reused from `@repo/validation` rather than restated: `ChapterBrandingSchema`
- * is what web and mobile already parse `chapters.branding` with, so this binds
- * the two writers here to the same declaration the clients use. `NonNullable`
- * because that schema is `.optional()` at its use site and the optionality
- * belongs to the field, not the shape. `Chapter.branding` stays the untyped
- * `Record<string, unknown>` jsonb column it is persisted as.
+ * is the branding shape the web's config PATCH body (`PatchChapterConfig`)
+ * declares, so this binds the two writers here to the same declaration the
+ * client writes through. `NonNullable` because that schema is `.optional()` at
+ * its use site and the optionality belongs to the field, not the shape.
+ * `Chapter.branding` stays the untyped `Record<string, unknown>` jsonb column
+ * it is persisted as.
  *
  * The interface layer's `BrandingDto` remains the request-time class-validator
  * surface — the application layer may not import it (dependency-cruiser

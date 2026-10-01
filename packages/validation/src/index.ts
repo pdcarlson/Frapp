@@ -77,13 +77,6 @@ export const TERMS_PROMPT_COPY = {
   failed: "Couldn't save your agreement. Check your connection and try again.",
 } as const;
 
-const subscriptionStatusEnum = z.enum([
-  "incomplete",
-  "active",
-  "past_due",
-  "canceled",
-]);
-
 // ── Chapter branding schema (Chunk 02: chapters.branding jsonb) ──────────────
 
 export const ChapterBrandingSchema = z
@@ -93,13 +86,11 @@ export const ChapterBrandingSchema = z
     // An empty string is how Settings clears a short name, since the config
     // PATCH deep-merges and an omitted key keeps its stored value.
     //
-    // No `.max()` here, deliberately. This schema also parses the chapter the
-    // API serves (`CurrentChapterPayloadSchema`), where one failed field fails
-    // the whole parse and blanks the nav and Settings for every member. The
-    // cap (`CHAPTER_SHORT_NAME_MAX_LENGTH`) is enforced by the DTO, whose
-    // class-validator count differs from zod's: it drops variation selectors,
-    // so "❤️❤️❤️❤️" is 4 to the API and 8 to zod. A read must accept what the
-    // API accepted; the inputs' `maxLength` is the client-side cap.
+    // No `.max()` here, deliberately. The cap (`CHAPTER_SHORT_NAME_MAX_LENGTH`)
+    // is enforced by the DTO, whose class-validator count differs from zod's:
+    // it drops variation selectors, so "❤️❤️❤️❤️" is 4 to the API and 8 to zod.
+    // A zod cap would refuse names the API accepts; the inputs' `maxLength` is
+    // the client-side cap.
     short_name: z.string().optional(),
     show_greek_letters: z.boolean().optional(),
     designation: z.string().optional(),
@@ -110,7 +101,7 @@ export const ChapterBrandingSchema = z
         // One seed. The legacy second colour (`dark`) fed only the
         // `derivePalette` token map and went with it in the #920 slice-9
         // cutover; rows written before that keep an inert stored value, which
-        // this schema strips on read.
+        // nothing reads.
         accent: z
           .string()
           .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
@@ -119,26 +110,6 @@ export const ChapterBrandingSchema = z
       .optional(),
   })
   .optional();
-
-/**
- * Subset of the chapter payload consumed by dashboard UI (`GET /v1/chapters/current`).
- * Extra API fields are allowed via `.passthrough()` so this stays a projection, not a strict full-entity schema.
- * `branding` carries the chapter identity the nav's chapter tile renders
- * through `resolveChapterMark` (#2876).
- */
-export const CurrentChapterPayloadSchema = z
-  .object({
-    name: z.string(),
-    university: z.string(),
-    accent_color: z.string().nullable().optional(),
-    subscription_status: subscriptionStatusEnum,
-    branding: ChapterBrandingSchema,
-    // Same scalar the config PATCH writes. `GET /v1/chapters/current` serves it
-    // in the member view (`CurrentChapterResponseDto`), which is where mobile
-    // reads the opt-out.
-    analytics_opt_out: z.boolean().optional(),
-  })
-  .passthrough();
 
 export const EmailInviteSchema = z.object({
   role: z.string().min(1),
@@ -800,8 +771,6 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
 }
 
 // ── Type Exports ─────────────────────────────────────────────────────────────
-
-export type CurrentChapterPayload = z.infer<typeof CurrentChapterPayloadSchema>;
 
 export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
