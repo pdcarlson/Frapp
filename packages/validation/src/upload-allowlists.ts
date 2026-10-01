@@ -136,7 +136,7 @@ export const MAX_ARCHIVE_EXPORT_PART_BYTES = 8 * 1024 * 1024;
  * **This is not a capacity plan for the hosted project.** It is an abuse
  * ceiling. What the hosted projects can actually hold (the org's Pro storage
  * quota and each project's 100 MB per-object limit) is recorded in
- * `docs/internal/ops/deployment/supabase.md` § Plan and quotas. Lowering this to track a real
+ * `docs/ops/deployment/supabase.md` § Plan and quotas. Lowering this to track a real
  * capacity budget is a one-line edit here, exactly as it is for the two
  * ceilings above.
  */

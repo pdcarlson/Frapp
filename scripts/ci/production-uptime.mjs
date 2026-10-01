@@ -147,7 +147,7 @@ function buildAlertIssueBody({ result, url, runUrl }) {
     "",
     "Watch `/health/ready`, not `/health`. `/health` is Render's `healthCheckPath` and is specified to always 2xx while the process is up, so a 200 there does not clear a degraded dependency.",
     "",
-    "See `docs/internal/ops/incident-response.md` § API down.",
+    "See `docs/ops/incident-response.md` § API down.",
     "",
     result.bodyText ? `Body:\n\n\`\`\`\n${snippet(result.bodyText)}\n\`\`\`` : "",
     runUrl ? `Run: ${runUrl}` : "",

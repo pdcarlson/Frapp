@@ -3,31 +3,22 @@
 // WHY THIS EXISTS. ADR-25 names the product Frapp, and step 2 moved the
 // mobile binary to it: the app.json permission strings, the Expo Go
 // pay/push sentences, and the PaymentSheet merchant default. A leftover
-// sweep can put Signet back in the OS dialog, add a third *Permission
-// string on app.config.js the first lock would miss, or drop a prompt so
-// the hardcoded list still passes. This lock was signet-mobile-permissions
-// (#1952), which pinned the same sites on Signet until ADR-25 reversed the
-// name; "Signet" now names only the design system, never a string a member
-// reads.
+// sweep can put Signet back in the OS dialog, or add a *Permission string
+// on app.config.js the first lock would miss. This lock was
+// signet-mobile-permissions (#1952), which pinned the same sites on Signet
+// until ADR-25 reversed the name; "Signet" now names only the design
+// system, never a string a member reads.
 //
-// THE FLOOR WENT THREE -> TWO (#2296) -> THREE AGAIN (#2464). The third
-// prompt is expo-image-picker's photosPermission. #2296 removed it because
-// no source file imported the picker, so it shipped a purpose string for a
-// feature that did not exist, and its plugin entry also set
-// `cameraPermission: false`, which stripped android.permission.CAMERA from
-// the QR scanner. The floor dropped to two and this block said a picker
-// returns only with the slice that actually builds a picker surface, and
-// that the floor rises with it. #2464 is that slice: mobile chat photo
-// upload, importing the picker from lib/chat/attachment-upload.ts.
-//
-// So the raise is the documented path, not a sweep restoring a string to
-// satisfy a lock — which is still the thing to refuse. Both #2296 defects
-// stay fixed and are pinned elsewhere: the plugin entry sets NO
-// cameraPermission key (apps/mobile/app.config.spec.ts pins the resolved
-// Android permission set, CAMERA included), and app.config.spec.ts also
-// pins that a media-picker dependency exists only while a non-spec source
-// file imports it. Drop the picker surface and those fail first.
-// spec/ui/mobile/navigation.md § Hotspot freeze has the full account.
+// WHICH PROMPTS EXIST IS NOT THIS LOCK'S (#2343). It used to keep a prompt
+// floor, a must-keep key list and the exact sentences, while
+// apps/mobile/app.config.spec.ts kept its own option roster. The two
+// contradicted each other once (#2296 removed photosPermission and this
+// floor went red), and both read app.json, so neither saw a plugin default
+// the build ships for an omitted option. The roster now has one home,
+// scripts/check-mobile-native-declarations.mjs, which reads the Info.plist
+// and AndroidManifest the config plugins actually produce and pins each
+// purpose string exactly. This lock asserts only its own concern: whatever
+// prompt strings exist name Frapp, never Signet.
 //
 // SCOPE. String-valued *Permission prompts under apps/mobile, the
 // stripeUnavailableReason / pushUnavailableReason definitions, and the
@@ -57,17 +48,8 @@ const STRIPE = "apps/mobile/lib/payments/stripe.ts";
 const PUSH = "apps/mobile/lib/notifications/push.ts";
 const DUES = "apps/mobile/app/(tabs)/dues.tsx";
 
-/** Current string-valued OS permission prompts. A deleted prompt must fail. */
-const MIN_PERMISSION_STRINGS = 3;
-
 const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", "coverage"]);
 const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
-
-const PERMISSIONS = [
-  "Frapp uses the camera to scan the check-in code at chapter events.",
-  "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
-  "Frapp uses your photo library so you can set your profile photo and send photos in chapter chat.",
-];
 
 const EXPECTED_SITES = [APP_JSON, DUES, PUSH, STRIPE].sort();
 
@@ -138,33 +120,10 @@ function livePermissionFiles() {
   }));
 }
 
-export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
+// The prompt strings themselves, app.json's included, are the walk's
+// (walkedPermissionCopyProblems): one predicate, one place.
+export function mobilePermissionLockProblems({ stripe, push, dues }) {
   const problems = [];
-  const prompts = collectPermissionStrings(appJson);
-  if (prompts.length < MIN_PERMISSION_STRINGS) {
-    problems.push(
-      `must keep at least ${MIN_PERMISSION_STRINGS} string-valued *Permission prompts`,
-    );
-  }
-  for (const key of ["cameraPermission", "locationWhenInUsePermission"]) {
-    if (!prompts.some((prompt) => prompt.key === key)) {
-      problems.push(`must keep ${key}`);
-    }
-  }
-  for (const sentence of PERMISSIONS) {
-    if (!prompts.some((prompt) => prompt.value === sentence)) {
-      problems.push(`missing permission sentence: ${sentence}`);
-    }
-  }
-  for (const prompt of prompts) {
-    if (!/\bFrapp\b/.test(prompt.value)) {
-      problems.push(`${prompt.key} must name Frapp`);
-    }
-    if (/\bSignet\b/.test(prompt.value)) {
-      problems.push(`${prompt.key} must not name Signet`);
-    }
-  }
-
   if (!/export function stripeUnavailableReason/.test(stripe)) {
     problems.push("must keep stripeUnavailableReason");
   }
@@ -193,10 +152,6 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
 
 export function lockSelfProblems(source) {
   const problems = [];
-  const floor = source.match(/^const MIN_PERMISSION_STRINGS = (\d+);?$/m);
-  if (!floor || floor[1] !== "3") {
-    problems.push("MIN_PERMISSION_STRINGS must stay 3");
-  }
   const mobileRoot = source.match(
     /^const MOBILE_ROOT = join\(REPO_ROOT, "([^"]+)"\);?$/m,
   );
@@ -228,8 +183,7 @@ export function lockSelfProblems(source) {
 test("OS permission, Expo Go, and merchant copy say Frapp", () => {
   assert.deepEqual(
     mobilePermissionLockProblems({
-      appJson: readRepo(APP_JSON),
-      stripe: readRepo(STRIPE),
+        stripe: readRepo(STRIPE),
       push: readRepo(PUSH),
       dues: readRepo(DUES),
     }),
@@ -240,35 +194,25 @@ test("OS permission, Expo Go, and merchant copy say Frapp", () => {
 });
 
 test("putting Signet in a camera permission string fails", () => {
-  const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON).replace(
-      "Frapp uses the camera",
-      "Signet uses the camera",
-    ),
-    stripe: readRepo(STRIPE),
-    push: readRepo(PUSH),
-    dues: readRepo(DUES),
-  });
+  const problems = walkedPermissionCopyProblems([
+    {
+      rel: APP_JSON,
+      source: readRepo(APP_JSON).replace("Frapp uses the camera", "Signet uses the camera"),
+    },
+  ]);
   assert.ok(
     problems.some((problem) => problem.includes("cameraPermission")),
     problems.join("; "),
   );
 });
 
-test("dropping cameraPermission fails", () => {
-  const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON).replace(
-      '"cameraPermission": "Frapp uses the camera to scan the check-in code at chapter events."',
-      '"cameraPermission": false',
-    ),
-    stripe: readRepo(STRIPE),
-    push: readRepo(PUSH),
-    dues: readRepo(DUES),
-  });
-  assert.ok(
-    problems.some((problem) => problem.includes("must keep cameraPermission")),
-    problems.join("; "),
-  );
+test("each half of the naming rule fails on its own", () => {
+  // Swapping Frapp for Signet trips both halves at once, so pin each alone.
+  const rel = "apps/mobile/app.config.js";
+  for (const value of ["Frapp (formerly Signet) uses the camera.", "Allow the app to use the camera."]) {
+    const source = `module.exports = { cameraPermission: "${value}" };\n`;
+    assert.deepEqual(walkedPermissionCopyProblems([{ rel, source }]), [`${rel}:cameraPermission`], value);
+  }
 });
 
 test("a third JS-style *Permission site fails the walk", () => {
@@ -282,15 +226,15 @@ test("a third JS-style *Permission site fails the walk", () => {
 });
 
 test("turning a disabled microphonePermission into a Signet prompt fails", () => {
-  const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON).replace(
-      '"microphonePermission": false',
-      '"microphonePermission": "Signet uses the microphone."',
-    ),
-    stripe: readRepo(STRIPE),
-    push: readRepo(PUSH),
-    dues: readRepo(DUES),
-  });
+  const problems = walkedPermissionCopyProblems([
+    {
+      rel: APP_JSON,
+      source: readRepo(APP_JSON).replace(
+        '"microphonePermission": false',
+        '"microphonePermission": "Signet uses the microphone."',
+      ),
+    },
+  ]);
   assert.ok(
     problems.some((problem) => problem.includes("microphonePermission")),
     problems.join("; "),
@@ -299,7 +243,6 @@ test("turning a disabled microphonePermission into a Signet prompt fails", () =>
 
 test("putting Signet back in stripeUnavailableReason fails", () => {
   const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE).replaceAll("Frapp", "Signet"),
     push: readRepo(PUSH),
     dues: readRepo(DUES),
@@ -312,7 +255,6 @@ test("putting Signet back in stripeUnavailableReason fails", () => {
 
 test("dropping stripeUnavailableReason fails", () => {
   const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE).replaceAll(
       "stripeUnavailableReason",
       "payUnavailableReason",
@@ -328,7 +270,6 @@ test("dropping stripeUnavailableReason fails", () => {
 
 test("pinning the merchant default to Signet fails", () => {
   const problems = mobilePermissionLockProblems({
-    appJson: readRepo(APP_JSON),
     stripe: readRepo(STRIPE),
     push: readRepo(PUSH),
     dues: readRepo(DUES).replace(
@@ -342,7 +283,7 @@ test("pinning the merchant default to Signet fails", () => {
   );
 });
 
-test("walker stays on apps/mobile and keeps the prompt floor", () => {
+test("walker stays on apps/mobile", () => {
   assert.deepEqual(lockSelfProblems(readFileSync(LOCK, "utf8")), []);
 });
 
@@ -368,19 +309,6 @@ test("dropping the unquoted JS collector fails", () => {
   );
   assert.ok(
     problems.some((problem) => problem.includes("unquoted JS")),
-    problems.join("; "),
-  );
-});
-
-test("dropping MIN_PERMISSION_STRINGS below 3 fails", () => {
-  const problems = lockSelfProblems(
-    readFileSync(LOCK, "utf8").replace(
-      "const MIN_PERMISSION_STRINGS = 3",
-      "const MIN_PERMISSION_STRINGS = 2",
-    ),
-  );
-  assert.ok(
-    problems.some((problem) => problem.includes("MIN_PERMISSION_STRINGS")),
     problems.join("; "),
   );
 });

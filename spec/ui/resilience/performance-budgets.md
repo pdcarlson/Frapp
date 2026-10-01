@@ -16,7 +16,7 @@ rather than aspirational, and says how to re-measure it.
 ## First paint
 
 The chat first-paint contract is owned by the framework board, section `1s`
-([`spec/ui/web-greenfield/reference/`](../web-greenfield/reference/README.md)), which is rank 1 in
+([`spec/ui/web-dashboard/reference/`](../web-dashboard/reference/README.md)), which is rank 1 in
 the trust order and beats this file where the two meet. Restated here only so this page is not
 silently a second opinion:
 
@@ -41,7 +41,9 @@ Measured, not budgeted. `node scripts/measure-web-route-bundles.mjs` reads the e
 own cost from the shell floor every dashboard route pays. It is a **measurement, not a gate** — the
 posture `npm run test:cov` has — and nothing in CI runs it. Freezing a number in a required check
 is a decision about which routes get pinned at what, and this greenfield is mid-rebuild with several
-lanes still moving the answer.
+lanes still moving the answer. *Corrected 2026-10-01:* [#2140](https://github.com/pdcarlson/Frapp/issues/2140)
+has since closed with every lane landed, so that second reason has lapsed. The first stands: nothing
+in CI runs the script, and gating on it still means deciding which routes to pin at what.
 
 As of the first-chunk read cache (2026-09-14), measured on one tree with and without the change so
 the two columns are comparable:

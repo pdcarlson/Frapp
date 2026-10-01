@@ -9,7 +9,7 @@
 // ref would have applied to the wrong database under the right label.
 //
 // So the ref belongs somewhere the repo can assert against. A project ref is
-// not a secret — it is already published in DB_ROLLBACK_PLAYBOOK.md,
+// not a secret — it is already published in db-rollback-playbook.md,
 // CLOUD_SANDBOX.md and the live-verification skill, and on its own it grants
 // nothing without `SUPABASE_ACCESS_TOKEN`. Naming it here costs no secrecy and
 // buys the fence in `run-migration.mjs`.

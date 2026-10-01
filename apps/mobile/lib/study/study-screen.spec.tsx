@@ -62,7 +62,12 @@ const MIRROR_RETRY_MS = 15_000;
 /** `HEARTBEAT_INTERVAL_MS` in the screen. */
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
-const CHAPTER = { enabled_modules: { hours: true } };
+const HOURS_ON = { enabled_modules: { hours: true } };
+const HOURS_OFF = { enabled_modules: { hours: false } };
+/** The chapter payload `useCurrentChapter` answers with. */
+let chapter: unknown = HOURS_ON;
+/** The chapter query's `refetch`: a spec sets `chapter` from it to play the server's answer. */
+const refetchChapter = vi.fn();
 const ZONES = [{ id: "zone-1", name: "Library", is_active: true }];
 const NO_SESSIONS: unknown[] = [];
 const LIVE_SESSION = [
@@ -87,7 +92,7 @@ let sessions: unknown[] = NO_SESSIONS;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useCurrentChapter: () => ({ data: CHAPTER }),
+  useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   useGeofences: () => ({
     data: ZONES,
     isPending: false,
@@ -172,7 +177,33 @@ function appStateListener(): (state: string) => void {
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   sessions = NO_SESSIONS;
+  chapter = HOURS_ON;
+  refetchChapter.mockReset().mockResolvedValue(undefined);
 });
+
+/** Re-render, as the query does when a refetch lands. */
+function rerender(tree: ReactTestRenderer) {
+  act(() =>
+    tree.update(
+      <FrappThemeProvider>
+        <StudyScreen />
+      </FrappThemeProvider>,
+    ),
+  );
+}
+
+const endButton = (tree: ReactTestRenderer) =>
+  tree.root.findAll(
+    (node) =>
+      node.props.accessibilityLabel === "End session" &&
+      node.type === ("Pressable" as never),
+  );
+
+/** How many times `text` appears on screen. */
+const occurrences = (tree: ReactTestRenderer, text: string) =>
+  screenText(tree).split(text).length - 1;
+
+const MODULE_OFF_TITLE = "Study hours are turned off";
 
 describe("Study Start on a subscription refusal (#2297)", () => {
   it("explains the refusal and withdraws Start", async () => {
@@ -280,6 +311,17 @@ describe("Study on a module-off refusal (#2393)", () => {
     act(() => tree.unmount());
   });
 
+  it("refetches the cached payload when Start is refused for hours being off", async () => {
+    // The refusal is the server saying hours is off; a payload that says on
+    // is stale, and refetching it is what hands the screen to module-off.
+    api.start.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await tapStart(tree);
+
+    expect(refetchChapter).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
   describe("with a session running", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -358,6 +400,276 @@ describe("Study on a module-off refusal (#2393)", () => {
       // under nothing but the "already closed" notice.
       expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
       expect(startButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    });
+  });
+});
+
+describe("Study when hours is switched off under a cached payload that says on (#2718)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+    sessions = LIVE_SESSION;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refetches the payload on a module-off refusal, so the module-off screen replaces the card", async () => {
+    api.heartbeat.mockRejectedValue(MODULE_OFF);
+    refetchChapter.mockImplementation(async () => {
+      chapter = HOURS_OFF;
+    });
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+    expect(refetchChapter).toHaveBeenCalledTimes(1);
+    rerender(tree);
+
+    expect(endButton(tree)).toHaveLength(0);
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
+    expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+    act(() => tree.unmount());
+  });
+
+  it("refetches nothing when there is no payload to correct", async () => {
+    // No `active_chapter_id` claim: the query is disabled, `hoursEnabled`
+    // failed open, and a manual refetch would send the read the hook withholds.
+    chapter = undefined;
+    api.heartbeat.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+    expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("refetches nothing when a write succeeds under a payload that already says on", async () => {
+    // A heartbeat every 5 minutes per live session would otherwise refetch
+    // the chapter each time, past the hook's 5-minute staleTime.
+    api.heartbeat.mockResolvedValue(LIVE_SESSION[0]);
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+
+    expect(api.heartbeat).toHaveBeenCalled();
+    expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("follows hours off and back on again within one mount", async () => {
+    // Mounted on, refused, refetched to off; then an officer turns hours back
+    // on and the next beat gets through. That beat must see the payload's
+    // current verdict, not the one the screen mounted with.
+    api.heartbeat
+      .mockRejectedValueOnce(MODULE_OFF)
+      .mockResolvedValue(LIVE_SESSION[0]);
+    refetchChapter
+      .mockImplementationOnce(async () => {
+        chapter = HOURS_OFF;
+      })
+      .mockImplementation(async () => {
+        chapter = HOURS_ON;
+      });
+    const tree = render();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+    rerender(tree);
+    expect(endButton(tree)).toHaveLength(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+    });
+    expect(refetchChapter).toHaveBeenCalledTimes(2);
+    rerender(tree);
+
+    expect(endButton(tree)).toHaveLength(1);
+    expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+    act(() => tree.unmount());
+  });
+
+  it("refetches nothing on a failure that isn't the module gate", async () => {
+    api.heartbeat.mockRejectedValue(REFUSED);
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.studySession);
+    expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+describe("Study with hours switched off (#2718)", () => {
+  it("shows the module-off empty state when no session is running", () => {
+    chapter = HOURS_OFF;
+    const tree = render();
+
+    expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+    expect(occurrences(tree, MODULE_OFF_COPY.start)).toBe(1);
+    act(() => tree.unmount());
+  });
+
+  it("does not repeat a refused Start's copy above the empty state it matches", async () => {
+    // Start refused while the cached payload still said `hours` was on; the
+    // payload then catches up. The failure line and the empty state's body are
+    // the same sentence.
+    api.start.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await tapStart(tree);
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.start);
+
+    chapter = HOURS_OFF;
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <StudyScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+
+    expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+    expect(occurrences(tree, MODULE_OFF_COPY.start)).toBe(1);
+    act(() => tree.unmount());
+  });
+
+  describe("with a session running", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      sessions = LIVE_SESSION;
+      chapter = HOURS_OFF;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("replaces the session's card with the module-off screen, which names the session", () => {
+      // Every write on the card is refused while hours is off, and nothing
+      // expires a stale session meanwhile, so the card would be a clamped
+      // timer beside an End that can't work.
+      const tree = render();
+
+      expect(endButton(tree)).toHaveLength(0);
+      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.start);
+      act(() => tree.unmount());
+    });
+
+    it("keeps probing, but doesn't stack a refused heartbeat's line above the screen", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+      expect(occurrences(tree, MODULE_OFF_COPY.runningSession)).toBe(1);
+      act(() => tree.unmount());
+    });
+
+    it("brings the card back, with the refused write's line, once the payload says hours is on", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      chapter = HOURS_ON;
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <StudyScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+
+      // The last beat really was refused, so the line is true again once the
+      // card it describes is back.
+      expect(endButton(tree)).toHaveLength(1);
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+
+    it("hides a subscription refusal's line too, rather than stack it above the screen", async () => {
+      // The guard checks the subscription before the module, so a chapter
+      // with both problems answers every write with the subscription refusal.
+      api.heartbeat.mockRejectedValue(REFUSED);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(screenText(tree)).not.toContain(
+        SUBSCRIPTION_REFUSAL_COPY.studySession,
+      );
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
+      act(() => tree.unmount());
+    });
+
+    it("refetches the payload when a heartbeat gets through under the screen, which brings the card back", async () => {
+      // An officer turned hours back on, but this payload is cached for five
+      // minutes and the tab is never unmounted.
+      api.heartbeat.mockResolvedValue(LIVE_SESSION[0]);
+      refetchChapter.mockImplementation(async () => {
+        chapter = HOURS_ON;
+      });
+      const tree = render();
+      expect(endButton(tree)).toHaveLength(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      expect(refetchChapter).toHaveBeenCalledTimes(1);
+      rerender(tree);
+
+      expect(endButton(tree)).toHaveLength(1);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+
+    it("doesn't refetch on a refusal the payload already agrees with", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(refetchChapter).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    });
+
+    it("says the plain module-off line once the server says the session is gone", async () => {
+      api.heartbeat
+        .mockRejectedValueOnce(MODULE_OFF)
+        .mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      sessions = NO_SESSIONS;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS);
+      });
+
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.start);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.runningSession);
       act(() => tree.unmount());
     });
   });

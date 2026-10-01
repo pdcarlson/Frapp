@@ -321,7 +321,7 @@ describe("validateDeploySha", () => {
 // running when this was written — `.github/workflows/` defines 50 job ids and
 // `web-production-build` is not among them. #1374 added that check, so rolling
 // production back to the commit it was already running had become impossible.
-// The recovery `DB_ROLLBACK_PLAYBOOK.md` prescribes is "redeploy the API at the
+// The recovery `db-rollback-playbook.md` prescribes is "redeploy the API at the
 // pre-<X> revision", which is exactly this operation.
 
 describe("classifyRequiredChecks — checks the commit could not have produced", () => {

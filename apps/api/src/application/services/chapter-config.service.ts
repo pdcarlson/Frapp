@@ -810,9 +810,11 @@ export class ChapterConfigService {
     try {
       return await this.getConfig(chapterId);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state: ${detail}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state`,
+        err,
       );
       return this.configAfterCommittedPatch(existing, {
         update,

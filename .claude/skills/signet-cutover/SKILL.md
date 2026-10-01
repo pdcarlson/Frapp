@@ -17,7 +17,7 @@ Canonical docs (link to them; don't restate their values):
 
 | Topic | Canonical |
 | --- | --- |
-| Web rebuild (#2140): trust order, brand locks, tokens, deletions | [`spec/ui/web-greenfield/`](../../../spec/ui/web-greenfield/README.md) |
+| Web surface: trust order, brand locks, page grammar, per-route decisions, tokens | [`spec/ui/web-dashboard/`](../../../spec/ui/web-dashboard/README.md) |
 | Brand (name, mark, typeface, lane) | [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md) |
 | Token values | [`spec/ui/design-system/foundations.md`](../../../spec/ui/design-system/foundations.md) |
 | Process rules + visual bans | [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md) |
@@ -34,12 +34,13 @@ Canonical docs (link to them; don't restate their values):
    [`canvas-screens.dc.html`](../../../spec/ui/design-system/reference/canvas-screens.dc.html) wins
    over [`signet-design-system.dc.html`](../../../spec/ui/design-system/reference/signet-design-system.dc.html)
    (for example, 4 tabs, not the system board's stale 5-tab bar).
-3. On the web surface, until the [#2140](https://github.com/pdcarlson/Frapp/issues/2140) fold-back into `web-dashboard/`,
-   [`spec/ui/web-greenfield/`](../../../spec/ui/web-greenfield/README.md) and anything committed
-   under its [`reference/`](../../../spec/ui/web-greenfield/reference/README.md) outrank
-   [`web-dashboard/`](../../../spec/ui/web-dashboard/README.md) on visuals and structure. Distrust
-   only `web-dashboard/`'s chrome: its nav map, gating, routing and data contracts are still truth,
-   and its visual prose is not grounds for a drift issue until then. Mobile is unaffected.
+3. On the web surface, the framework board under
+   [`spec/ui/web-dashboard/reference/`](../../../spec/ui/web-dashboard/reference/README.md) is
+   rank-1 visual truth, and
+   [`web-dashboard/README.md` § Sources and precedence](../../../spec/ui/web-dashboard/README.md#sources-and-precedence)
+   carries the full order and the places the board no longer ships. The
+   [#2140](https://github.com/pdcarlson/Frapp/issues/2140) rebuild's rules are folded into that
+   directory, so drift against it is filable like anywhere else. Mobile is unaffected.
 4. The behavior spec wins over UI specs for what the product does. UI specs never override
    [`spec/behavior/`](../../../spec/behavior/README.md).
 5. For the landing, the boards under
@@ -106,7 +107,7 @@ window.
 
 ## Before you ship a visual change
 
-1. Read the matching spec: brand-identity and foundations, plus the surface README (web-greenfield
+1. Read the matching spec: brand-identity and foundations, plus the surface README (web-dashboard
    for web; the landing README for the landing).
 2. When the reference board and the current code disagree, follow the board, not a screenshot of the
    code.

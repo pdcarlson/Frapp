@@ -34,6 +34,7 @@ import {
   type PointsWindow,
 } from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 // Re-exported so existing importers (points.controller, etc.) keep their path;
 // the canonical definition now lives in domain/utils/points-window.
@@ -572,12 +573,12 @@ export class PointsService {
       await this.postPointsCard(input, txn, PointsService.isFine(input));
       return true;
     } catch (error) {
-      this.logger.warn('Failed to post points card to chat', {
-        transactionId: txn.id,
-        channelId: input.channelId,
-        chapterId: input.chapterId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to post points card to chat (transaction ${txn.id}, channel ${input.channelId}, chapter ${input.chapterId})`,
+        error,
+      );
       return false;
     }
   }

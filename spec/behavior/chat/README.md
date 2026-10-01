@@ -596,7 +596,7 @@ channel that reports a different one fails the import rather than being skipped.
   Discord can't answer that, a count of blank messages is the only guard: it
   stops an archive that comes back blank at scale, not a small one, and its error
   says how many messages it had already written. What each check covers is in
-  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md) § 7A.
+  [`integrations.md`](../../../docs/ops/deployment/integrations.md) § 7A.
 - **The whole path disappears when unconfigured.** With no Discord application
   set up for the environment, `GET /v1/discord/availability` answers
   `available: false` and the wizard offers only the upload flow.
@@ -612,7 +612,7 @@ channel that reports a different one fails the import rather than being skipped.
   fixed, with no redeploy, with one exception: a refused bot token needs the new
   token and a restart of the API, because the token is only read at start and a
   refused one is not retried. What each check covers is in
-  [`integrations.md`](../../../docs/internal/ops/deployment/integrations.md)
+  [`integrations.md`](../../../docs/ops/deployment/integrations.md)
   § 7A.
 - **The callback always answers with a redirect, never an error page.** Discord
   returns the admin to `/v1/discord/connect/callback` as a top-level browser
@@ -745,7 +745,7 @@ channel that reports a different one fails the import rather than being skipped.
   role on the channel (a category allow reaches only channels still synced to
   it), which keeps the install read-only, or by giving it a role that can see
   the channel, which is quicker but lends the shared bot token whatever else
-  that role can do, so the role comes off once the import is done ([`integrations.md` § 7A](../../../docs/internal/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
+  that role can do, so the role comes off once the import is done ([`integrations.md` § 7A](../../../docs/ops/deployment/integrations.md#7a-discord-application-setup-the-archive-importers-bot-path)). Nothing is probed that is already known unreadable, because
   every refused request spends a rate-limit budget one bot token shares across
   every chapter. When access cannot be worked out (the bot's roles could not be
   read), each channel is probed once and a refusal is reported the same way.

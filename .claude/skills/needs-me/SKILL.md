@@ -36,7 +36,7 @@ except open `[human]` items, which count at any age.
 
 | Source | How | What you're looking for |
 |---|---|---|
-| Open incidents | `list_issues labels:["incident"] state:OPEN`, at any age | Every one. A watchdog filed it because something is broken right now, and it's assigned to him ([`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md#automated-github-issue-alerts)) |
+| Open incidents | `list_issues labels:["incident"] state:OPEN`, at any age | Every one. A watchdog filed it because something is broken right now, and it's assigned to him ([`alert-routing.md`](../../../docs/ops/alert-routing.md#automated-github-issue-alerts)) |
 | Human Action List | `search_issues query:"PR Follow-ups — Human Action List in:title"` | Its "Needs you" section, an index rebuilt weekly and possibly stale |
 | Session blockers | `search_issues query:"fp=human in:body state:open"` | `[human] …` issues filed per [`file-follow-up`](../file-follow-up/SKILL.md#proven-human-only-blockers) |
 | PR follow-ups | `search_issues query:"fp=pr-followup in:body state:open"` | The `[human]` ones; agent-doable ones belong to `/next` |
@@ -86,7 +86,7 @@ An `incident` is the exception to that close and to steps 2 and 5 below: triage 
 its thread, put the fix to him or mention it as new work ([Guardrails](#guardrails)), and leave the close to its
 watchdog, which closes it once its own checks pass. The one exception is an alert its watchdog
 can't close, which he closes by hand
-([`ALERT_ROUTING.md` § Escalation](../../../docs/internal/ops/ALERT_ROUTING.md#escalation) says
+([`alert-routing.md` § Escalation](../../../docs/ops/alert-routing.md#escalation) says
 which alerts those are).
 
 1. **Ground the steps in reality, not the issue.** Its "How to do it" was written at filing time and

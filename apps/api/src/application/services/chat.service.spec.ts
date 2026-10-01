@@ -2009,9 +2009,10 @@ describe('ChatService', () => {
       );
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
+      // One string (#2460): the context rides in the message, and the cause
+      // follows it, so a non-Error throwable cannot reach ConsoleLogger.
       expect(warnSpy).toHaveBeenCalledWith(
-        'Could not sign a batch of chat attachments; omitting them',
-        expect.objectContaining({ error: 'bucket unreachable' }),
+        'Could not sign a batch of chat attachments {"messageId":"msg-1","channelId":"ch-chan-1","bucket":"chat"}; omitting them: bucket unreachable',
       );
       warnSpy.mockRestore();
     });

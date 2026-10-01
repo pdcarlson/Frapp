@@ -248,8 +248,11 @@ export class FinancialInvoiceService {
           invoice.stripe_payment_intent_id,
         );
       } catch (error) {
-        this.logger.warn(
-          `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while moving invoice ${id} to ${newStatus}: ${error instanceof Error ? error.message : error} — the intent may still be confirmable; verify in Stripe`,
+        logThrowable(
+          this.logger,
+          'warn',
+          `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while moving invoice ${id} to ${newStatus} (the intent may still be confirmable; verify in Stripe)`,
+          error,
         );
       }
     }
