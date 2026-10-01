@@ -768,7 +768,7 @@ const RLS_SMOKE = [
     // role to check. Hosted Supabase grants `anon` EXECUTE *directly* via ALTER
     // DEFAULT PRIVILEGES, not through PUBLIC — so a drop/recreate there could
     // restore anon's grant while this assertion stays green. The
-    // `has_function_privilege('anon', ...)` check in DB_PROMOTION_RUNBOOK.md is
+    // `has_function_privilege('anon', ...)` check in db-promotion-runbook.md is
     // what covers that; it is a promotion-time check, not a CI one.
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace

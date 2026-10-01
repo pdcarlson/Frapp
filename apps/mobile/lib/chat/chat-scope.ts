@@ -31,7 +31,7 @@
  * thirty lines establishing that the absence of that claim is a normal,
  * supported state rather than a fault: the hook issues no claim for a
  * multi-chapter member with no selection, `ChapterGuard` auto-resolves a sole
- * membership server-side from the header instead, and `DB_ROLLBACK_PLAYBOOK.md`
+ * membership server-side from the header instead, and `db-rollback-playbook.md`
  * disables the hook as the first auth-incident mitigation — which returns
  * *every* token to claim-absence. `auth-session.tsx` is equally explicit that a
  * null `chapterId` means "not resolved yet" and "no chapter" indistinguishably.

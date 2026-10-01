@@ -28,6 +28,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -621,6 +622,21 @@ describe("installs run before any secret, and the trust split holds", () => {
     }
   });
 
+  // The rehearsal's stack starts after the detach, and a rollback can deploy a
+  // commit from before supabase-start-disposable.sh existed (#2609). Run from
+  // the deployed tree, the script would set a floor on rollbacks.
+  it("starts the rehearsal stack from the trusted copy, never the deployed tree", () => {
+    const copy = sharedSteps()[at("Keep a trusted copy of the served-commit check")];
+    const start = sharedSteps()[at("Start disposable Supabase stack")];
+    // The stack starts on every production run, migrations-only included, so
+    // a copy that skipped any run would leave it a missing file.
+    assert.equal(copy.if ?? null, null, "the trusted copy became conditional");
+    assert.equal(start.env.get("TRUSTED_CI"), copy.env.get("TRUSTED_CI"), "the stack start reads another copy");
+    assert.match(start.body, /run: bash "\$TRUSTED_CI\/supabase-start-disposable\.sh"/);
+    assert.doesNotMatch(start.body, /scripts\/ci\/supabase-start-disposable/, "the stack start runs the deployed tree's copy");
+    assert.ok(at("Start disposable Supabase stack") > at("Check out the commit being deployed"));
+  });
+
   // What made the #2801 fix possible to test at all: the verifier's copy needs
   // no install, so it must stay free of npm imports.
   it("the trusted copy needs no install: the verifier imports Node built-ins and ./lib only", () => {
@@ -957,8 +973,8 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.deepEqual(config.deployJobs, ["deploy"]);
     assert.equal(callerJob("deploy").keys.get("uses"), "./.github/workflows/_deploy.yml");
     assert.ok(config.alert.labels.includes("P1"));
-    const routing = readFileSync(join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md"), "utf8");
-    assert.ok(routing.includes(`*${config.alert.title}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
+    const routing = readFileSync(join(REPO_ROOT, ALERT_ROUTING), "utf8");
+    assert.ok(routing.includes(`*${config.alert.title}*`), "alert-routing.md's roster must list the alert by its title");
   });
 
   // A deploy job that never ran a step fails or cancels like one that broke.
@@ -988,7 +1004,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
       });
       return { code: result.status, out: result.stdout };
     };
-    const ROLLBACK = /DB_ROLLBACK_PLAYBOOK/;
+    const ROLLBACK = /db-rollback-playbook/;
     try {
       const notStarted = run({ ALERT_OUTCOME: "not-started" });
       assert.equal(notStarted.code, 1);

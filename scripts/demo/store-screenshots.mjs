@@ -4,7 +4,7 @@
  * launches a browser the moment it is imported, so that
  * `scripts/ci/__tests__/store-screenshots.test.mjs` can hold the presets to
  * each store's rules. Procedure and provenance:
- * `docs/internal/ops/deployment/mobile.md` § 6.4 (App Store) and § 6.5
+ * `docs/ops/deployment/mobile.md` § 6.4 (App Store) and § 6.5
  * (Google Play).
  */
 import { pngHeader } from "../lib/brand-pixels.mjs";

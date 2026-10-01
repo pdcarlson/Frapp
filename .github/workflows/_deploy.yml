@@ -46,7 +46,7 @@ name: Deploy
 #   * `uses: ./…` resolves from the workspace when the step runs, so a local
 #     action after the detach would load from the deployed commit. Rolling
 #     back to a commit older than the action dies with "Can't find
-#     'action.yml'" (DB_ROLLBACK_PLAYBOOK.md § Deploying an OLDER commit), and
+#     'action.yml'" (db-rollback-playbook.md § Deploying an OLDER commit), and
 #     a newer commit's `supabase-cli` pin would silently differ from the one
 #     the rehearsal used.
 #   * The provider preflight and the served-commit check are verdicts on the
@@ -150,7 +150,7 @@ jobs:
     timeout-minutes: 75
     # One deploy per environment at a time, queued, never cancelled. The group
     # is the environment's migration lock (`db-migrate-staging`,
-    # `db-migrate-production`; `DB_PROMOTION_RUNBOOK.md` documents them), and
+    # `db-migrate-production`; `db-promotion-runbook.md` documents them), and
     # this job is the only thing that migrates either database. Two production
     # dispatches (a `full` release and a `migrations-only` retry, say) must not
     # interleave two `db push` runs, and a merge must not start a staging push
@@ -374,8 +374,11 @@ jobs:
       # script existed (#2505) could ship its API and then fail here. The script
       # and its `lib/` imports are Node built-ins only, so the copy needs no
       # install. The source-map check at the end of the job (#2489) runs from
-      # this copy for the same reasons; the step keeps its name, which the
-      # deploy tests pin.
+      # this copy for the same reasons, and so does production's rehearsal
+      # stack start (`supabase-start-disposable.sh`, bash, #2609), which runs on
+      # every production run, migrations-only included. So the copy takes all
+      # of `scripts/ci` and has no condition. The step keeps its name, which
+      # the deploy tests pin.
       - name: Keep a trusted copy of the served-commit check
         env:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
@@ -452,12 +455,17 @@ jobs:
         run: node scripts/ci/plan-staging-deploy.mjs
 
       # ── Production: rehearse the migration before touching the database ──
-      # Only what the migrations need a real server for. The exclusion list is
-      # copied verbatim from migration-drift-gate.yml: a different list is a
-      # different rehearsal.
+      # The same stack migration-drift-gate.yml's `migration-replay` starts,
+      # through the same script: a different exclusion list is a different
+      # rehearsal. It retries when ghcr.io rate-limits an image pull (#2609),
+      # which would otherwise fail a production deploy before it began. Run
+      # from the trusted copy, like the served-commit check, so a rollback to a
+      # commit from before the script existed still starts the stack.
       - name: Start disposable Supabase stack
         if: inputs.environment == 'production'
-        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit
+        env:
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: bash "$TRUSTED_CI/supabase-start-disposable.sh"
 
       # The #1332 gate, run here against LIVE production state rather than at PR
       # time: rebuild production's applied set on the disposable stack, then
@@ -553,7 +561,7 @@ jobs:
 
       # Every run lists what WAS pending before the apply, so a failed apply's
       # log says what it was trying to do. On a production dry run this listing
-      # is the output DB_PROMOTION_RUNBOOK.md says to read before promoting.
+      # is the output db-promotion-runbook.md says to read before promoting.
       #
       # Ahead of the builds, not after them: a `next build` the OOM killer takes
       # would otherwise end a dry run before this ever ran, and the dry-run stop

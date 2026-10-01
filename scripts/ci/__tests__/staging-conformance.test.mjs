@@ -2189,7 +2189,7 @@ test("conformanceExitCode: only drift or an alert left unknown or open reds the 
   assert.equal(conformanceExitCode({ outcome: "healthy", alert: { action: "none" } }), 0);
   assert.equal(conformanceExitCode({ outcome: "healthy", alert: { action: "failed" } }), 1);
   assert.equal(conformanceExitCode({ outcome: "healthy", alert: { action: "unread" } }), 1);
-  // Left open on purpose: see docs/internal/ops/ALERT_ROUTING.md.
+  // Left open on purpose: see docs/ops/alert-routing.md.
   assert.equal(conformanceExitCode({ outcome: "unproven-recovery", alert: { action: "none" } }), 0);
   assert.equal(conformanceExitCode({ outcome: "inconclusive", alert: { action: "none" } }), 0);
 });

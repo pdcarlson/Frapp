@@ -13,7 +13,7 @@ name: Check migration drift
 #
 # Read-only: the script calls the Supabase Management API's migration-history
 # endpoint and sends no SQL. It reports drift and never repairs it — reconciling
-# a hosted database is a human action (see DB_PROMOTION_RUNBOOK.md).
+# a hosted database is a human action (see db-promotion-runbook.md).
 #
 # Staging is judged against `main`. Production is judged against the latest
 # `v*` tag, because it only moves when a ship is dispatched: a migration merged
