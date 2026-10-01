@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { networkMock } from "@/tests/network";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -442,7 +442,7 @@ describe("display order guard (#2206)", () => {
 
   it("reads an emptied or unparseable field as no order", async () => {
     const { input } = await selectRole();
-    expectClearingEntriesShow(input, "4", null);
+    expectClearingEntriesEmpty(input, "4");
   });
 
   it("saves the kept whole number, never NaN or Infinity", async () => {

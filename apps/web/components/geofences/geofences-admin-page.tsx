@@ -91,9 +91,10 @@ const STUDY_RULE_MIN: Record<StudyRuleKey, number> = {
 };
 
 /**
- * A zone's four rates read from their text drafts, or `null` when one is
- * empty. The drafts are guarded on every keystroke (`guardIntDraft`), so a
- * non-empty one is already an integer at or above its floor.
+ * A zone's four rates read from their text drafts, or `null` when one is empty
+ * or under its floor. The drafts are guarded on every keystroke
+ * (`guardIntDraft`), so a non-empty one is already a nonnegative integer; the
+ * floors are checked here rather than mid-edit.
  */
 function parseStudyRules(
   draft: Record<StudyRuleKey, string>,
@@ -243,25 +244,26 @@ export function GeofencesAdminPage() {
     editDialog.setOpen(true);
   }
 
-  // A rate draft only ever holds "" or an integer at or above its floor:
-  // anything else typed keeps the previous value.
+  // A rate draft only ever holds "" or a nonnegative integer: anything else
+  // typed keeps the previous value. The floors wait for submit, so the "0"
+  // left by deleting the 3 of "30" isn't refused mid-edit.
   function setCreateRule(key: StudyRuleKey, raw: string) {
-    const next = guardIntDraft(raw, STUDY_RULE_MIN[key]);
+    const next = guardIntDraft(raw);
     if (next === undefined) return;
     setCreateDraft((prev) => ({ ...prev, [key]: next }));
   }
 
   function setEditRule(key: StudyRuleKey, raw: string) {
-    const next = guardIntDraft(raw, STUDY_RULE_MIN[key]);
+    const next = guardIntDraft(raw);
     if (next === undefined) return;
     setEditDraft((prev) => ({ ...prev, [key]: next }));
   }
 
-  function toastMissingRules() {
+  function toastInvalidRules() {
     toast({
-      title: "Fill in every study rule",
+      title: "Check the zone's numbers",
       description:
-        "Minutes per point, points per interval, min session and pause grace each need a whole number.",
+        "Minutes per point, points per interval and pause grace each need a whole number of 1 or more. Min session can be 0.",
       variant: "destructive",
     });
   }
@@ -279,7 +281,7 @@ export function GeofencesAdminPage() {
     }
     const rules = parseStudyRules(createDraft);
     if (!rules) {
-      toastMissingRules();
+      toastInvalidRules();
       return;
     }
     try {
@@ -328,7 +330,7 @@ export function GeofencesAdminPage() {
     }
     const rules = parseStudyRules(editDraft);
     if (!rules) {
-      toastMissingRules();
+      toastInvalidRules();
       return;
     }
     try {

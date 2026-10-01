@@ -61,7 +61,9 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import {
   asArray,
   getErrorMessage,
+  guardDecimalDraft,
   guardIntDraft,
+  parseGuardedDecimal,
   parseGuardedInt,
 } from "@/lib/utils";
 import {
@@ -202,11 +204,13 @@ export function ServiceHoursPage() {
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
-    // Both drafts are "" or a nonnegative integer (guarded on every
+    // Both drafts are "" or a nonnegative number (guarded on every
     // keystroke), so an empty or invalid duration sums to 0 and is refused
-    // below rather than reaching the API as NaN.
+    // below rather than reaching the API as NaN. Hours take a decimal, as on
+    // mobile (`1.5` is 90 minutes), and round to the whole minute the API
+    // stores.
     const totalMinutes =
-      (parseGuardedInt(draft.hours) ?? 0) * 60 +
+      Math.round((parseGuardedDecimal(draft.hours) ?? 0) * 60) +
       (parseGuardedInt(draft.minutes) ?? 0);
     if (totalMinutes === 0) {
       toast({
@@ -499,9 +503,10 @@ export function ServiceHoursPage() {
                         id="service-hours"
                         type="number"
                         min={0}
+                        step="any"
                         value={draft.hours}
                         onChange={(event) => {
-                          const next = guardIntDraft(event.target.value);
+                          const next = guardDecimalDraft(event.target.value);
                           if (next === undefined) return;
                           setDraft((prev) => ({ ...prev, hours: next }));
                         }}

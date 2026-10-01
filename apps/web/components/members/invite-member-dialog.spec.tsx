@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -13,9 +13,11 @@ const {
   mockRoles,
   mockToast,
   mockBatchCreate,
+  mockCreateInvite,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockBatchCreate: vi.fn(),
+  mockCreateInvite: vi.fn(),
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
   mockToast: vi.fn(),
@@ -33,7 +35,10 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => mockRoles(),
   useOrgConfig: () => mockOrgConfig(),
   useInvites: () => ({ data: [INVITE], isError: false }),
-  useCreateInvite: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateInvite: () => ({
+    mutateAsync: mockCreateInvite,
+    isPending: false,
+  }),
   useBatchCreateInvites: () => ({
     mutateAsync: mockBatchCreate,
     isPending: false,
@@ -373,6 +378,7 @@ describe("InviteMemberDialog invite count guard (#2206)", () => {
     primeHooks();
     chapter.active();
     mockBatchCreate.mockResolvedValue([]);
+    mockCreateInvite.mockResolvedValue([]);
   });
 
   const countInput = () => screen.getByLabelText(/invite count/i);
@@ -382,19 +388,32 @@ describe("InviteMemberDialog invite count guard (#2206)", () => {
     expectRefusedEntriesKeep(countInput(), "5");
   });
 
-  it("reads an emptied or unparseable count as one invite, as before", async () => {
+  it("keeps an emptied count empty, so the next digit isn't appended to a 1", async () => {
     await openDialog();
-    expectClearingEntriesShow(countInput(), "5", 1);
+    expectClearingEntriesEmpty(countInput(), "5");
+    // Before #2206 an emptied field snapped to 1, so typing 3 produced 13.
+    fireEvent.change(countInput(), { target: { value: "3" } });
+    expect(countInput()).toHaveValue(3);
   });
 
-  it("refuses 0 and caps a large count at the batch limit of 50", async () => {
+  it("shows a count over the batch limit as the limit of 50", async () => {
     await openDialog();
-    fireEvent.change(countInput(), { target: { value: "5" } });
-    fireEvent.change(countInput(), { target: { value: "0" } });
-    expect(countInput()).toHaveValue(5);
     fireEvent.change(countInput(), { target: { value: "120" } });
     expect(countInput()).toHaveValue(50);
   });
+
+  it.each(["", "0"])(
+    "generates one invite for a count of %j, as it always has",
+    async (count) => {
+      await openDialog();
+      fireEvent.change(countInput(), { target: { value: "5" } });
+      fireEvent.change(countInput(), { target: { value: count } });
+      await userEvent.click(generate());
+
+      await waitFor(() => expect(mockCreateInvite).toHaveBeenCalledTimes(1));
+      expect(mockBatchCreate).not.toHaveBeenCalled();
+    },
+  );
 
   it("asks for the kept whole count, never a fraction of an invite", async () => {
     await openDialog();

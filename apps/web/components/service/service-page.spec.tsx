@@ -4,7 +4,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { MAX_UPLOAD_LABEL } from "@repo/validation";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -602,28 +602,43 @@ describe("ServiceHoursPage duration guard (#2206)", () => {
   const submitLog = () =>
     fireEvent.submit(document.getElementById("service-log-form")!);
 
-  it("keeps the last whole number through a negative or a decimal", async () => {
-    const { hours, minutes } = await openLog();
-    expectRefusedEntriesKeep(hours, "2");
+  it("keeps the last whole number of minutes through a negative or a decimal", async () => {
+    const { minutes } = await openLog();
     expectRefusedEntriesKeep(minutes, "30");
+  });
+
+  it("keeps the last hours through a negative, but takes a decimal, as mobile does", async () => {
+    const { hours } = await openLog();
+    fireEvent.change(hours, { target: { value: "2" } });
+    fireEvent.change(hours, { target: { value: "-3" } });
+    expect(hours).toHaveValue(2);
+    fireEvent.change(hours, { target: { value: "1.5" } });
+    expect(hours).toHaveValue(1.5);
   });
 
   it("reads an emptied or unparseable field as blank", async () => {
     const { hours, minutes } = await openLog();
-    expectClearingEntriesShow(hours, "2", null);
-    expectClearingEntriesShow(minutes, "30", null);
+    expectClearingEntriesEmpty(hours, "2");
+    expectClearingEntriesEmpty(minutes, "30");
   });
 
-  it("submits the kept whole numbers as minutes, never NaN", async () => {
-    const { hours, minutes } = await openLog();
-    fireEvent.change(hours, { target: { value: "2" } });
-    fireEvent.change(hours, { target: { value: "1.5" } });
-    fireEvent.change(minutes, { target: { value: "" } });
-    submitLog();
+  it.each([
+    ["1.5", "", 90],
+    ["2", "15", 135],
+    // 1.33 hours is 79.8 minutes; the API stores whole minutes.
+    ["1.33", "", 80],
+  ])(
+    "submits %j hours and %j minutes as %i minutes, never NaN",
+    async (h, m, expected) => {
+      const { hours, minutes } = await openLog();
+      fireEvent.change(hours, { target: { value: h } });
+      fireEvent.change(minutes, { target: { value: m } });
+      submitLog();
 
-    await waitFor(() => expect(mockCreateEntry).toHaveBeenCalledTimes(1));
-    expect(mockCreateEntry.mock.calls[0]![0].duration_minutes).toBe(120);
-  });
+      await waitFor(() => expect(mockCreateEntry).toHaveBeenCalledTimes(1));
+      expect(mockCreateEntry.mock.calls[0]![0].duration_minutes).toBe(expected);
+    },
+  );
 
   // Before #2206 an unparseable field summed to NaN, and `NaN === 0` is false,
   // so this refusal let a NaN duration through to the API.

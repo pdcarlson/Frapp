@@ -29,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
-import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
+import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -96,13 +96,29 @@ type InviteMemberDialogProps = {
   trigger: React.ReactNode;
 };
 
+/** The most invites one Generate creates (`POST /invites/batch`). */
+const MAX_INVITE_BATCH = 50;
+
+/**
+ * How many invites Generate creates for the count field's text: an empty field
+ * or a 0 means one, as it always has, and the batch caps at
+ * {@link MAX_INVITE_BATCH}.
+ */
+function invitesToGenerate(draft: string): number {
+  return Math.min(MAX_INVITE_BATCH, Math.max(1, parseGuardedInt(draft) ?? 1));
+}
+
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
   const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
   const [hasPickedRole, setHasPickedRole] = useState(false);
-  const [inviteCount, setInviteCount] = useState(1);
+  // Held as text so a cleared field stays cleared while the admin types. A
+  // number here made React write the cleared meaning, 1, back into the field,
+  // so the next digit typed after clearing turned 3 into 13.
+  const [inviteCountDraft, setInviteCountDraft] = useState("1");
+  const inviteCount = invitesToGenerate(inviteCountDraft);
   const [generatedInvites, setGeneratedInvites] = useState<InviteRow[]>([]);
   const rolesQuery = useRoles();
   const orgConfigQuery = useOrgConfig();
@@ -246,12 +262,15 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   }
 
   function handleInviteCountChange(event: React.ChangeEvent<HTMLInputElement>) {
-    // A cleared field means one invite, as before. Anything that isn't a
-    // positive integer keeps the previous count, and the batch caps at 50.
-    const raw = event.target.value;
-    const parsed = raw.trim() === "" ? 1 : parseGuardedInt(raw, 1);
-    if (parsed === undefined) return;
-    setInviteCount(Math.min(50, parsed));
+    // A negative or a decimal keeps the previous count. A count over the batch
+    // limit shows as the limit, so the field says what Generate will do.
+    const next = guardIntDraft(event.target.value);
+    if (next === undefined) return;
+    setInviteCountDraft(
+      next !== "" && Number(next) > MAX_INVITE_BATCH
+        ? String(MAX_INVITE_BATCH)
+        : next,
+    );
   }
 
   async function handleGenerateInvites() {
@@ -409,8 +428,8 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             <Input
               type="number"
               min={1}
-              max={50}
-              value={inviteCount}
+              max={MAX_INVITE_BATCH}
+              value={inviteCountDraft}
               onChange={handleInviteCountChange}
             />
           </label>

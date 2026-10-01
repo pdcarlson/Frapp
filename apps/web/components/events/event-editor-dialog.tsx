@@ -42,7 +42,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { normalizeRoleOptions } from "@/lib/roles";
-import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
+import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
 
 type EventRecord = Record<string, unknown>;
@@ -210,7 +210,9 @@ export function EventEditorDialog({
   const [location, setLocation] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
-  const [pointValue, setPointValue] = useState(10);
+  // Held as text so a cleared field stays cleared while the officer types,
+  // rather than React writing 0 back into it. An empty field still saves as 0.
+  const [pointValue, setPointValue] = useState("10");
   const [isMandatory, setIsMandatory] = useState(true);
   const [recurrenceRule, setRecurrenceRule] = useState("NONE");
   const [notes, setNotes] = useState("");
@@ -255,7 +257,7 @@ export function EventEditorDialog({
       setStartAt(isoToLocalInput(event.start_time));
       setEndAt(isoToLocalInput(event.end_time));
       setPointValue(
-        typeof event.point_value === "number" ? event.point_value : 10,
+        String(typeof event.point_value === "number" ? event.point_value : 10),
       );
       setIsMandatory(
         typeof event.is_mandatory === "boolean" ? event.is_mandatory : true,
@@ -288,7 +290,7 @@ export function EventEditorDialog({
     setLocation("");
     setStartAt(initialStartAt ?? "");
     setEndAt(initialEndAt ?? "");
-    setPointValue(10);
+    setPointValue("10");
     setIsMandatory(true);
     setRecurrenceRule("NONE");
     setNotes("");
@@ -308,13 +310,9 @@ export function EventEditorDialog({
   const handlePointValueChange = (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    // A cleared field means 0 points, as before. Anything that isn't a
-    // nonnegative integer (a negative, a decimal, `1e999`'s Infinity) keeps the
-    // previous value.
-    const raw = event.target.value;
-    const parsed = raw.trim() === "" ? 0 : parseGuardedInt(raw);
-    if (parsed === undefined) return;
-    setPointValue(parsed);
+    // A negative or a decimal keeps the previous value.
+    const next = guardIntDraft(event.target.value);
+    if (next !== undefined) setPointValue(next);
   };
 
   function handleRequiredRoleChange(roleId: string, isChecked: boolean) {
@@ -404,7 +402,7 @@ export function EventEditorDialog({
       location: location.trim() || undefined,
       start_time: startIso,
       end_time: endIso,
-      point_value: pointValue,
+      point_value: parseGuardedInt(pointValue) ?? 0,
       is_mandatory: isMandatory,
       recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,

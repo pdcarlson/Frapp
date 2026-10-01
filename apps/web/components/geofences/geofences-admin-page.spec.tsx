@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -262,22 +262,37 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
 
   it("reads an emptied or unparseable rate as blank", async () => {
     await openCreate();
-    expectClearingEntriesShow(rate(/minutes per point/i), "30", null);
-    expectClearingEntriesShow(rate(/pause grace/i), "5", null);
+    expectClearingEntriesEmpty(rate(/minutes per point/i), "30");
+    expectClearingEntriesEmpty(rate(/points per interval/i), "2");
+    expectClearingEntriesEmpty(rate(/min session/i), "15");
+    expectClearingEntriesEmpty(rate(/pause grace/i), "5");
   });
 
-  it("holds each rate to the API's floor: 0 only for the minimum session", async () => {
+  it("keeps the 0 left by deleting a leading digit, so the edit isn't refused mid-way", async () => {
     await openCreate();
     for (const label of [
       /minutes per point/i,
       /points per interval/i,
+      /min session/i,
       /pause grace/i,
     ]) {
+      fireEvent.change(rate(label), { target: { value: "30" } });
       fireEvent.change(rate(label), { target: { value: "0" } });
-      expect(rate(label)).not.toHaveValue(0);
+      expect(rate(label)).toHaveValue(0);
     }
-    fireEvent.change(rate(/min session/i), { target: { value: "0" } });
-    expect(rate(/min session/i)).toHaveValue(0);
+  });
+
+  it("refuses a rate under the API's floor at save: 0 only for the minimum session", async () => {
+    await openCreate();
+    fireEvent.change(rate(/minutes per point/i), { target: { value: "0" } });
+    submitCreate();
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Check the zone's numbers" }),
+      ),
+    );
+    expect(mockCreateMutate).not.toHaveBeenCalled();
   });
 
   it("creates with the kept whole numbers, never NaN or Infinity", async () => {
@@ -302,10 +317,20 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
 
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Fill in every study rule" }),
+        expect.objectContaining({ title: "Check the zone's numbers" }),
       ),
     );
     expect(mockCreateMutate).not.toHaveBeenCalled();
+  });
+
+  it("guards the edit dialog's four rates the same way", async () => {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(editButton());
+    expectRefusedEntriesKeep(rate(/minutes per point/i), "30");
+    expectRefusedEntriesKeep(rate(/points per interval/i), "1");
+    expectRefusedEntriesKeep(rate(/min session/i), "15");
+    expectRefusedEntriesKeep(rate(/pause grace/i), "5");
+    expectClearingEntriesEmpty(rate(/pause grace/i), "5");
   });
 
   it("saves a 0-minute minimum session as 0, not rewritten to 1", async () => {

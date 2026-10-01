@@ -3,7 +3,9 @@ import {
   downloadBlob,
   downloadCsv,
   getErrorMessage,
+  guardDecimalDraft,
   guardIntDraft,
+  parseGuardedDecimal,
   parseGuardedInt,
 } from "./utils";
 
@@ -102,7 +104,7 @@ describe("downloadCsv", () => {
 });
 
 /**
- * The guard every `apps/web` numeric input goes through (#2206). A
+ * The guards `apps/web`'s numeric inputs go through (#2206). A
  * `type="number"` input reports text it can't parse as `""`, but these take
  * the raw text anyway, so a field that isn't `type="number"` is covered too.
  */
@@ -115,6 +117,8 @@ describe("parseGuardedInt", () => {
     ["1.5", undefined],
     ["1e999", undefined],
     ["NaN", undefined],
+    // Past 2^53 an integer can't be held exactly: this one reads as ...992.
+    ["9007199254740993", undefined],
     ["0", 0],
     [" 42 ", 42],
   ])("reads %j as %j", (raw, expected) => {
@@ -124,6 +128,21 @@ describe("parseGuardedInt", () => {
   it("refuses an integer under the floor it is given", () => {
     expect(parseGuardedInt("0", 1)).toBeUndefined();
     expect(parseGuardedInt("1", 1)).toBe(1);
+  });
+});
+
+describe("parseGuardedDecimal", () => {
+  it.each([
+    ["", undefined],
+    ["abc", undefined],
+    ["-0.5", undefined],
+    ["1e999", undefined],
+    ["1e300", undefined],
+    ["1.5", 1.5],
+    [".5", 0.5],
+    ["2", 2],
+  ])("reads %j as %j", (raw, expected) => {
+    expect(parseGuardedDecimal(raw)).toBe(expected);
   });
 });
 
@@ -144,8 +163,17 @@ describe("guardIntDraft", () => {
     expect(guardIntDraft(" 12 ")).toBe("12");
   });
 
-  it("applies the floor it is given", () => {
-    expect(guardIntDraft("0", 1)).toBeUndefined();
-    expect(guardIntDraft("3", 1)).toBe("3");
+  // Deleting the 3 of "30" leaves "0" on the way to "45": a field's own floor
+  // is checked at submit, not mid-edit.
+  it("keeps a transient 0", () => {
+    expect(guardIntDraft("0")).toBe("0");
+  });
+});
+
+describe("guardDecimalDraft", () => {
+  it("keeps a decimal and a cleared field, and refuses a negative", () => {
+    expect(guardDecimalDraft("1.5")).toBe("1.5");
+    expect(guardDecimalDraft("")).toBe("");
+    expect(guardDecimalDraft("-1")).toBeUndefined();
   });
 });

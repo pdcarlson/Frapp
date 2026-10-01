@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -702,15 +702,31 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
 
   it("reads an emptied or unparseable field as left blank", async () => {
     const { year, assignment } = await openUpload();
-    expectClearingEntriesShow(year, "2026", null);
-    expectClearingEntriesShow(assignment, "2", null);
+    expectClearingEntriesEmpty(year, "2026");
+    expectClearingEntriesEmpty(assignment, "2");
   });
 
-  it("refuses assignment number 0, which the API's floor of 1 would reject", async () => {
-    const { assignment } = await openUpload();
-    fireEvent.change(assignment, { target: { value: "2" } });
+  it("keeps the 0 left by deleting a leading digit, then refuses it before the upload", async () => {
+    const { dialog, assignment } = await openUpload();
+    fireEvent.change(assignment, { target: { value: "10" } });
     fireEvent.change(assignment, { target: { value: "0" } });
-    expect(assignment).toHaveValue(2);
+    expect(assignment).toHaveValue(0);
+
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: {
+        files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.submit(document.getElementById("backwork-upload-form")!);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Check the assignment number" }),
+      ),
+    );
+    // Refused before the file reaches storage, so nothing is left orphaned.
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(mockConfirmUpload).not.toHaveBeenCalled();
   });
 
   it("confirms with the kept whole numbers, and omits a blank one", async () => {

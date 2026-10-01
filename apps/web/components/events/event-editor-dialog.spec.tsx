@@ -44,7 +44,7 @@ vi.mock("@/hooks/use-toast", () => ({
 import { EventEditorDialog } from "./event-editor-dialog";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -554,8 +554,22 @@ describe("EventEditorDialog point value guard (#2206)", () => {
     expectRefusedEntriesKeep(renderCreate(), "15");
   });
 
-  it("reads an emptied or unparseable field as 0 points, as a cleared field always has", () => {
-    expectClearingEntriesShow(renderCreate(), "15", 0);
+  it("keeps an emptied or unparseable field empty while the officer types", () => {
+    const input = renderCreate();
+    expectClearingEntriesEmpty(input, "15");
+    // Before #2206 an emptied field snapped to 0, so the next digit read "05".
+    fireEvent.change(input, { target: { value: "5" } });
+    expect(input).toHaveValue(5);
+  });
+
+  it("saves an emptied field as 0 points, as it always has", async () => {
+    const input = renderCreate();
+    fillRequiredFields();
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].point_value).toBe(0);
   });
 
   it("sends the kept whole number, never Infinity", async () => {

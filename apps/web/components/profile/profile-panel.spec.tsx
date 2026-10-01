@@ -136,7 +136,7 @@ vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 import { NOTIFICATION_CATEGORIES } from "@repo/validation";
 import { networkMock } from "@/tests/network";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 import { ProfilePanel } from "./profile-panel";
@@ -1098,7 +1098,7 @@ describe("ProfilePanel — graduation year guard (#2206)", () => {
 
   it("reads an emptied or unparseable year as no year", () => {
     render(<ProfilePanel />);
-    expectClearingEntriesShow(yearInput(), "2027", null);
+    expectClearingEntriesEmpty(yearInput(), "2027");
   });
 
   it("saves the kept whole year, never NaN or Infinity", async () => {

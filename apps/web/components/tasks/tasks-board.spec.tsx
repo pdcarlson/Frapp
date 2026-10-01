@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
-  expectClearingEntriesShow,
+  expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
@@ -446,7 +446,7 @@ describe("TasksBoard point reward guard (#2206)", () => {
 
   it("reads an emptied or unparseable field as no reward", async () => {
     const input = await openCreate();
-    expectClearingEntriesShow(input, "7", null);
+    expectClearingEntriesEmpty(input, "7");
   });
 
   it("sends the kept whole number, never NaN or Infinity", async () => {

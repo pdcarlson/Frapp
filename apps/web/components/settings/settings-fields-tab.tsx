@@ -354,10 +354,11 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
   }
 
   function setMaxLength(raw: string) {
-    // Guard-parse: only commit a positive integer (matches Workflows/Dues).
+    // Guard-parse: only commit a nonnegative integer (matches Workflows/Dues).
     // maxLength is stored as text (bound directly to the input), so it can be
-    // cleared.
-    const next = guardIntDraft(raw, 1);
+    // cleared. Its floor of 1 is checked at submit, so the "0" left by
+    // deleting the 1 of "100" isn't refused mid-edit.
+    const next = guardIntDraft(raw);
     if (next === undefined) return;
     setDraft((prev) => ({ ...prev, maxLength: next }));
   }
@@ -377,6 +378,14 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
     const options: { choices?: string[]; max_length?: number } = {};
     if (isSelect) options.choices = draft.choices;
     const maxLength = isText ? parseGuardedInt(draft.maxLength, 1) : undefined;
+    if (isText && draft.maxLength !== "" && maxLength === undefined) {
+      toast({
+        title: "Max length starts at 1",
+        description: "Enter 1 or more, or clear it for no limit.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (maxLength !== undefined) options.max_length = maxLength;
 
     try {

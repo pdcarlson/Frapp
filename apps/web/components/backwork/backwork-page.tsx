@@ -300,6 +300,20 @@ export function BackworkPage() {
     }
     setUploadError(null);
     const contentType = inspected.contentType;
+    // The input's own min={1} stops a browser's submit first; this covers a
+    // programmatic one, and refuses before the file reaches storage.
+    const assignmentNumber = parseGuardedInt(uploadDraft.assignment_number, 1);
+    if (
+      uploadDraft.assignment_number !== "" &&
+      assignmentNumber === undefined
+    ) {
+      toast({
+        title: "Check the assignment number",
+        description: "Assignment numbers start at 1.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setUploading(true);
     try {
@@ -332,7 +346,7 @@ export function BackworkPage() {
         assignment_type: uploadDraft.assignment_type
           ? (uploadDraft.assignment_type as (typeof ASSIGNMENT_TYPES)[number])
           : undefined,
-        assignment_number: parseGuardedInt(uploadDraft.assignment_number, 1),
+        assignment_number: assignmentNumber,
         document_variant: uploadDraft.document_variant
           ? (uploadDraft.document_variant as (typeof DOCUMENT_VARIANTS)[number])
           : undefined,
@@ -604,7 +618,9 @@ export function BackworkPage() {
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.assignment_number}
                           onChange={(event) => {
-                            const next = guardIntDraft(event.target.value, 1);
+                            // Its floor of 1 waits for submit, so deleting
+                            // the 1 of "10" isn't refused mid-edit.
+                            const next = guardIntDraft(event.target.value);
                             if (next === undefined) return;
                             setUploadDraft((prev) => ({
                               ...prev,
