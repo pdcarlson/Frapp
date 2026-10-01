@@ -352,7 +352,9 @@ nothing is still building.
   summary says the run asked for one. Fix the tag's cause, then use **Re-run failed jobs** on this
   run rather than the Release workflow: it retries the tag without redeploying, then runs the
   store build. The Release workflow on its own tags and builds nothing; if that is how the tag
-  landed, build by hand from it (below).
+  landed, build by hand from it (below). One exception: if the release job's log says it created
+  the tag and a later step failed, retry neither, because either would put a second tag on the
+  commit (#3126). Build by hand from the tag that landed.
 
 **Before the first run.** These exist outside the repo, and a non-interactive run stops without
 each one:

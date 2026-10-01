@@ -16,7 +16,10 @@ name: Release
 #
 # `workflow_dispatch` is kept as the manual retry path, for the one case
 # deploy-production.yml calls out explicitly: production updated, tagging
-# failed. Re-run this with the same SHA.
+# failed. Re-run this with the same SHA. When that Deploy production run asked
+# for a store build (`mobile_build`), Re-run failed jobs on it instead: it
+# retries this job without redeploying, then starts the build (#3111). Either
+# retry mints a second tag if this job failed after its tag landed (#3126).
 #
 # ── Traps this file used to walk into ───────────────────────────────────────
 #   1. The old job carried
@@ -245,9 +248,9 @@ jobs:
               echo "$REF_OUT"
               echo "::error::Failed to create refs/tags/${TAG} pointing at ${TAG_OBJ} on ${SHA}."
               if printf '%s' "$REF_OUT" | grep -q 'Resource not accessible by integration'; then
-                echo "::error::The GitHub App cannot create that tag ref when ${SHA}'s workflow tree differs from default-branch HEAD (run 34254679932). Set RELEASE_GITHUB_TOKEN, a secret of the automation environment (never a repository secret, #2518), to a user PAT with the Contents and Workflows permissions (read and write) and re-run the Release workflow, not Deploy production. Or mint the ref and the GitHub Release from a laptop against this TAG_OBJ. Do not widen the Actions App to cover workflow files."
+                echo "::error::The GitHub App cannot create that tag ref when ${SHA}'s workflow tree differs from default-branch HEAD (run 34254679932). Set RELEASE_GITHUB_TOKEN, a secret of the automation environment (never a repository secret, #2518), to a user PAT with the Contents and Workflows permissions (read and write) and re-run the Release workflow, never a new Deploy production dispatch (when this run came from Deploy production and asked for a store build, use Re-run failed jobs on that run instead: it retries this and then builds). Or mint the ref and the GitHub Release from a laptop against this TAG_OBJ. Do not widen the Actions App to cover workflow files."
               elif printf '%s' "$REF_OUT" | grep -q 'Resource not accessible by personal access token'; then
-                echo "::error::RELEASE_GITHUB_TOKEN made the tag object but was refused the ref: ${SHA}'s workflow tree differs from default-branch HEAD, which needs the token's Workflows permission (read and write) as well as Contents (run 36506993182). Add Workflows to the token and re-run the Release workflow, not Deploy production. Production is not affected."
+                echo "::error::RELEASE_GITHUB_TOKEN made the tag object but was refused the ref: ${SHA}'s workflow tree differs from default-branch HEAD, which needs the token's Workflows permission (read and write) as well as Contents (run 36506993182). Add Workflows to the token and re-run the Release workflow, never a new Deploy production dispatch (when this run came from Deploy production and asked for a store build, use Re-run failed jobs on that run instead: it retries this and then builds). Production is not affected."
               fi
               exit 1
             fi

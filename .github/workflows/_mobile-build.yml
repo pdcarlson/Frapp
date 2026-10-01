@@ -281,7 +281,17 @@ jobs:
             return 1
           }
           TAGS="$(gh_api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
-          LATEST="$(printf '%s\n' "$TAGS" | sed '/^$/d' | sort -V | tail -n1)"
+          # Ordered by git itself, the order release.yml reads: GNU `sort -V`
+          # disagrees with it on tags like `v-next` and `v1.02.0`. A scratch
+          # repository holds each name as a ref on the empty tree, so nothing
+          # is fetched and the deployed checkout is untouched.
+          ORDER="$RUNNER_TEMP/tag-order"
+          rm -rf "$ORDER"
+          git -c init.defaultBranch=main init -q "$ORDER"
+          EMPTY_TREE="$(git -C "$ORDER" mktree < /dev/null)"
+          printf '%s\n' "$TAGS" | awk -v oid="$EMPTY_TREE" 'NF { print "create refs/tags/" $0 " " oid }' \
+            | git -C "$ORDER" update-ref --stdin
+          LATEST="$(git -C "$ORDER" tag --list 'v*' --sort=-version:refname | sed -n 1p)"
           if [ -z "$LATEST" ]; then
             echo "::error::No v* tag exists, so nothing says what production serves. Refusing to go on."
             exit 1
@@ -497,7 +507,17 @@ jobs:
             return 1
           }
           TAGS="$(gh_api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')"
-          LATEST="$(printf '%s\n' "$TAGS" | sed '/^$/d' | sort -V | tail -n1)"
+          # Ordered by git itself, the order release.yml reads: GNU `sort -V`
+          # disagrees with it on tags like `v-next` and `v1.02.0`. A scratch
+          # repository holds each name as a ref on the empty tree, so nothing
+          # is fetched and the deployed checkout is untouched.
+          ORDER="$RUNNER_TEMP/tag-order"
+          rm -rf "$ORDER"
+          git -c init.defaultBranch=main init -q "$ORDER"
+          EMPTY_TREE="$(git -C "$ORDER" mktree < /dev/null)"
+          printf '%s\n' "$TAGS" | awk -v oid="$EMPTY_TREE" 'NF { print "create refs/tags/" $0 " " oid }' \
+            | git -C "$ORDER" update-ref --stdin
+          LATEST="$(git -C "$ORDER" tag --list 'v*' --sort=-version:refname | sed -n 1p)"
           if [ -z "$LATEST" ]; then
             echo "::error::No v* tag exists, so nothing says what production serves. Refusing to go on."
             exit 1

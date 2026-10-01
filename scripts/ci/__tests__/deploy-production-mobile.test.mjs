@@ -583,6 +583,14 @@ describe("the latest-tag check, before the builds and again before the uploads",
       ["v0.9.0", "v2-rc"],
       ["v1.2.3", "v1.2.3.4"],
       ["v0.9.0", "very-old"],
+      // Where GNU `sort -V` and git's version sort disagree: a shell sort
+      // would take the hand-pushed tag, or the zero-padded one.
+      ["v1.2.3", "v-next"],
+      ["v0.10.0", "v.1"],
+      ["v0.10.0", "v-backup"],
+      ["v1.2.3", "v-1.2.4"],
+      ["v1.1.0", "v1.02.0"],
+      ["v1.0.0", "v1.00.0"],
     ];
     const dir = mkdtempSync(join(tmpdir(), "mobile-tags-"));
     const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
@@ -593,7 +601,9 @@ describe("the latest-tag check, before the builds and again before the uploads",
         for (const t of git(["tag", "--list"]).split("\n").filter(Boolean)) git(["tag", "-d", t]);
         for (const t of tags) git(["tag", t]);
         const lib = latestReleaseTag({ git });
-        const shell = run({ tags: Object.fromEntries(tags.map((t) => [t, SHA])) });
+        // Only the lib's tag names the SHA, so a check that picked any other
+        // tag reads production as moved and fails.
+        const shell = run({ tags: Object.fromEntries(tags.map((t) => [t, t === lib.tag ? SHA : OLD])) });
         const label = `[${tags.join(", ")}]: ${shell.stdout}${shell.stderr}`;
         if (lib.ok) {
           assert.equal(shell.status, 0, label);
