@@ -476,6 +476,10 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(byLabel(tree, "Cancel").props.accessibilityRole).toBe("button");
   });
 
+  // What a back press does, and when focus is sent, are `lib/overlay.spec.tsx`'s
+  // to pin. These pin that the menu hands the hooks the right node and the
+  // right open state.
+
   it("closes on Android's back button instead of popping the screen, and lets go once closed", () => {
     const tree = openMenu();
     const addListener = vi.mocked(BackHandler.addEventListener);
@@ -488,12 +492,10 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
       remove: ReturnType<typeof vi.fn>;
     };
 
-    let handled: boolean | null | undefined;
     act(() => {
-      handled = (handler as () => boolean)();
+      (handler as () => boolean)();
     });
 
-    expect(handled).toBe(true);
     expect(menu(tree)).toHaveLength(0);
     expect(subscription.remove).toHaveBeenCalled();
   });
@@ -522,47 +524,38 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(byLabel(tree, TRIGGER).props.onLayout).toBe(onTriggerLayout);
   });
 
-  it("moves a screen reader's focus onto the menu title, once it is mounted", () => {
+  it("moves a screen reader's focus onto the menu title each time it opens", () => {
+    // The menu stays mounted while closed, as the thread draws it, so this is
+    // what proves it hands the hook its open state: a send at mount alone
+    // would find no title, and no open would send one.
     vi.useFakeTimers();
     try {
-      openMenu();
-      // Not from the opening commit's effect: on Android that runs before the
-      // title's view exists, and the event would be dropped.
-      expect(AccessibilityInfo.sendAccessibilityEvent).not.toHaveBeenCalled();
+      const tree = renderControl({ level: "mentions" });
+      act(() => {
+        vi.runAllTimers();
+      });
+      const focus = vi.mocked(AccessibilityInfo.sendAccessibilityEvent);
+      expect(focus).not.toHaveBeenCalled();
 
+      press(byLabel(tree, TRIGGER));
       act(() => {
         vi.runAllTimers();
       });
 
-      expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
-      const [target, eventType] = vi.mocked(
-        AccessibilityInfo.sendAccessibilityEvent,
-      ).mock.calls[0] as unknown as [
+      expect(focus).toHaveBeenCalledTimes(1);
+      const [target, eventType] = focus.mock.calls[0] as unknown as [
         { element: { props: { children?: unknown } } },
         string,
       ];
       expect(eventType).toBe("focus");
       expect(target.element.props.children).toBe("Notify me about");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
 
-  it("drops the pending focus when the menu closes first", () => {
-    vi.useFakeTimers();
-    try {
-      // Close and reopen before the first timer fires: an uncleared timer
-      // would find the reopened title mounted and focus it a second time.
-      const tree = openMenu();
       press(byLabel(tree, "Cancel"));
       press(byLabel(tree, TRIGGER));
-      expect(menu(tree)).toHaveLength(1);
-
       act(() => {
         vi.runAllTimers();
       });
-
-      expect(AccessibilityInfo.sendAccessibilityEvent).toHaveBeenCalledTimes(1);
+      expect(focus).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
