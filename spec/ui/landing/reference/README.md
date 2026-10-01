@@ -6,7 +6,7 @@
 > are the rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md)
 > § Precedence, rule 1). Drift between them and
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is a filable bug now rather
-> than an expected gap, with five standing exceptions, none of them drift:
+> than an expected gap, with six standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);
 > - the signature moment, which is **cut** from the shipped page until brand sign-off clears
@@ -20,6 +20,12 @@
 >   tile from page headers on 2026-09-28 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)),
 >   so the shipped lockup draws the crest straight on the page background
 >   ([`assets.md` § 3](../../assets.md#3-canonical-package)). The footer keeps its tile.
+> - the chat bubbles. `HeroB`, `Main`, `Phone` and `Motion` draw the chat frame's thread as
+>   bubbles at radius 18, a gold self bubble among them, and `Spec` and `System` describe them.
+>   The owner replaced chat's bubbles with a compact layout on web and mobile on 2026-09-29
+>   ([`components.md` § Chat messages](../../design-system/components.md#chat-messages-compact-layout),
+>   #2873), so the shipped frame draws that layout instead; why is in
+>   [`../README.md`](../README.md) (#2893).
 
 ## What this is
 
@@ -64,6 +70,9 @@ Three things to know before reading values off them:
   [`web-framework.dc.html`](../../web-dashboard/reference/web-framework.dc.html), re-pitched onto the
   current ladder in [`../../design-system/foundations.md`](../../design-system/foundations.md) §2.
   Landing chrome is on the scale and the grid; frame internals are not, on purpose.
+  The chat thread's rows are the exception: they follow
+  [`components.md` § Chat messages](../../design-system/components.md#chat-messages-compact-layout),
+  not these boards' bubbles (the sixth standing exception above).
 - `Spec.dc.html`'s "No em dashes" note extends "the web-greenfield product-copy lock". That
   directory was folded into `spec/ui/web-dashboard/` and deleted
   ([#2743](https://github.com/pdcarlson/Frapp/issues/2743), 2026-10-01). The board keeps the text it
