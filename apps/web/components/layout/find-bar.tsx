@@ -22,6 +22,7 @@ import { chatDeepLink } from "@/lib/chat/chat-links";
 import { asArray, cn } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
+import { EYEBROW } from "@/components/ui/typography";
 
 /**
  * The top bar's wide find field — what replaced the ⌘K command palette.
@@ -36,7 +37,7 @@ import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
  * virtualized, the browser's own in-page find searches only what happens to be
  * mounted. Escape closes and returns the page. The keyboard hint in the field
  * says `⌘F`, so the binding is advertised where it is used rather than being
- * folklore — `components.md` §5 bans a hint for a binding that is not wired,
+ * folklore — `components.md` §7 bans a hint for a binding that is not wired,
  * and this one is.
  *
  * **Ranking is Channels, then Members, then Messages** (`1d` pins 2-4), with
@@ -415,7 +416,7 @@ export function FindBar({ className }: { className?: string }) {
         <kbd
           aria-hidden="true"
           className={cn(
-            "shrink-0 font-mono text-[11px] text-muted",
+            "shrink-0 font-mono text-caption text-muted",
             open
               ? ""
               : "rounded-xs border border-border px-1.5 py-px",
@@ -457,7 +458,7 @@ export function FindBar({ className }: { className?: string }) {
             branch is what makes a partial result look complete.
           */}
           {partialTimeout ? (
-            <p className="px-2.5 pb-1 pt-2 text-[11px] text-muted-foreground">
+            <p className="px-2.5 pb-1 pt-2 text-caption text-muted-foreground">
               {timedOutSources.length > 0
                 ? `Stopped looking in ${timedOutSources.join(", ")}. Results may be incomplete.`
                 : "Some sources timed out. Results may be incomplete."}
@@ -482,7 +483,7 @@ export function FindBar({ className }: { className?: string }) {
                 {isNewGroup ? (
                   <p
                     aria-hidden="true"
-                    className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted"
+                    className={cn("px-2.5 pb-1 pt-2 text-muted", EYEBROW)}
                   >
                     {result.group}
                   </p>
@@ -507,7 +508,7 @@ export function FindBar({ className }: { className?: string }) {
                 >
                   <span className="min-w-0 flex-1 truncate">{result.label}</span>
                   {result.hint ? (
-                    <span className="shrink-0 truncate text-[11px] text-muted-foreground">
+                    <span className="shrink-0 truncate text-caption text-muted-foreground">
                       {result.hint}
                     </span>
                   ) : null}

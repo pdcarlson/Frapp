@@ -313,7 +313,7 @@ export function ComposerShell({
           <p
             id={hintId}
             className={cn(
-              "truncate text-[12.5px] text-muted-foreground",
+              "truncate text-caption text-muted-foreground",
               // Present from the first render either way, so `aria-describedby`
               // always resolves and a screen reader hears why the composer
               // cannot send before trying it.
@@ -776,7 +776,7 @@ function ComposerHelp() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64">
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-caption text-muted-foreground">
           Shift+Enter for a new line.
           <br />/ for commands. @ to mention.
         </p>
@@ -1414,7 +1414,7 @@ export function Composer({
   // above, which needs it too.)
   if (!resolvedCanPost) {
     return (
-      <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">
+      <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
         {isReadOnly ? (
           <>
             This channel is read-only. Posting requires the{" "}
@@ -1455,7 +1455,7 @@ export function Composer({
         */}
         {replyTo ? (
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="shrink-0 text-[12.5px] text-muted-foreground">
+            <span className="shrink-0 text-caption text-muted-foreground">
               Replying to
             </span>
             <QuotedMessage
@@ -1496,7 +1496,7 @@ export function Composer({
                  * `layout/chapter-nav-header.tsx`. This was `bg-surface-2`,
                  * which no config or stylesheet has ever defined (#1423).
                  */
-                className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-popover py-1 pl-2 pr-1 text-[12.5px]"
+                className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-popover py-1 pl-2 pr-1 text-caption"
               >
                 <AttachGlyph className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">{attachment.filename}</span>
@@ -1614,7 +1614,7 @@ export function Composer({
         the queued surface to carry.
       */}
       {isOffline ? (
-        <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        <p className="mt-2 flex items-center gap-1.5 text-caption text-muted-foreground">
           <OfflineGlyph className="h-4 w-4 shrink-0" />
           You&rsquo;re offline — messages send when you reconnect.
         </p>

@@ -281,7 +281,7 @@ export function ChannelMenu({
                   <Glyph className="h-5 w-5 shrink-0 text-muted-foreground" />
                   {label}
                   {count ? (
-                    <span className="ml-auto text-[12.5px] font-normal text-muted-foreground">
+                    <span className="ml-auto text-caption font-normal text-muted-foreground">
                       {count}
                     </span>
                   ) : null}
@@ -373,7 +373,7 @@ export function ChannelMenu({
                 <p className="text-sm font-semibold text-foreground">
                   {hideConversationConfirmTitle(hideConversation.name)}
                 </p>
-                <p className="text-[12.5px] text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {HIDE_CONVERSATION_CONFIRM_BODY}
                 </p>
                 <div className="flex justify-end">

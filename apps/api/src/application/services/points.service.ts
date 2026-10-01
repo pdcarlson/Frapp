@@ -72,8 +72,9 @@ interface AdjustPointsInput {
   /**
    * Client-minted idempotency key (UUIDv4). It is the dedupe key for **both**
    * the ledger row and the chat card: a replay carrying the same key returns
-   * the original transaction rather than granting again (#1719). Absent for
-   * dashboard adjustments, which are not deduplicated.
+   * the original transaction rather than granting again (#1719). The
+   * dashboard sends one without a `channelId` (#1906); a request without one
+   * is not deduplicated.
    */
   clientMessageId?: string;
 }
@@ -399,8 +400,9 @@ export class PointsService {
         client_message_id: input.clientMessageId ?? null,
         // Origin channel rides with the key so a later replay can heal a
         // lost card without trusting the request's `channelId` (#1734).
-        // Dashboard adjustments (no key) write NULL; a key without a
-        // channel is the pre-column shape and stays legal.
+        // A request with no key writes NULL. A key without a channel is how
+        // the dashboard adjusts (#1906), and the pre-column shape of a chat
+        // adjustment; both stay legal and simply post no card.
         channel_id: input.clientMessageId ? (input.channelId ?? null) : null,
       });
     } catch (error) {

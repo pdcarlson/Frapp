@@ -90,6 +90,17 @@ export function PointsAdjustmentDialog({
   }, [open, memberOptions]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Opening starts a new adjustment, so it drops the idempotency key the hook
+  // held for the last one (#1906). Resubmitting from a still-open dialog after
+  // a failure reuses that key and replays; reopening and re-entering the same
+  // grant is a new one, as re-typing `/points` is. Its own effect, keyed on
+  // `open` alone: a members refetch while the dialog is open must not drop a
+  // key a retry still needs.
+  const { reset: resetAdjustment } = adjustPointsMutation;
+  useEffect(() => {
+    if (open) resetAdjustment();
+  }, [open, resetAdjustment]);
+
   const submitLabel = adjustPointsMutation.isPending
     ? "Submitting..."
     : "Submit adjustment";

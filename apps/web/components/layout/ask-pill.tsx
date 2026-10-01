@@ -24,8 +24,8 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
  * that placement on web so later work has somewhere to plug an answer engine
  * into. No retrieval, no corpus, no model call happens here.
  *
- * **It opens a dialog rather than doing nothing.** `spec/ui/design-system/components.md`
- * §5 bans a control that silently no-ops, and the design system's writing rules
+ * **It opens a dialog rather than doing nothing.** `spec/ui/design-system/README.md`
+ * §5 rule 2 bans a control that silently no-ops, and the design system's writing rules
  * require a disabled affordance to name its blocker *and* the next action — so
  * the dialog says Ask cannot answer yet and points at the two surfaces that
  * can. It promises no date, because nothing here knows one.
@@ -70,7 +70,7 @@ export function AskPill({ className }: { className?: string }) {
         title="Ask"
         onClick={() => setOpen(true)}
         className={cn(
-          "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-[13.5px] font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
+          "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-label font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
           FOCUS_RING_SHELL,
           className,
         )}

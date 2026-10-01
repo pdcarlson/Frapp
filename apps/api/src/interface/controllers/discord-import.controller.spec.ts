@@ -109,3 +109,108 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
     },
   );
 });
+
+/**
+ * Every route that returns an import returns the view, never the row (#2860).
+ * The service hands back the whole `discord_imports` row, worker lease and
+ * all; a handler that returned it as is would put `lock_token` back in the
+ * browser, and the contract would still say it doesn't.
+ */
+describe('DiscordImportController — no route returns the worker lease (#2860)', () => {
+  let controller: DiscordImportController;
+
+  const leakyRow = {
+    id: IMPORT_ID,
+    status: 'running',
+    source: 'bot',
+    guild_name: 'Alpha Beta Discord',
+    lock_token: 'LOCK_TOKEN_SECRET',
+    locked_by: 'REPLICA_ID_SECRET',
+    lease_expires_at: '2026-10-01T03:00:00.000Z',
+    attempt_count: 2,
+    cursor_part_index: 1,
+    storage_prefix: 'chapters/STORAGE_PREFIX_SECRET',
+    guild_id: 'GUILD_SNOWFLAKE_SECRET',
+  };
+  const withProgress = { ...leakyRow, channels_total: 3, channels_done: 1 };
+
+  beforeEach(async () => {
+    const module: TestingModule = await createUnguardedTestingModule({
+      controllers: [DiscordImportController],
+      providers: [
+        {
+          provide: DiscordImportService,
+          useValue: {
+            create: jest.fn(async () => leakyRow),
+            list: jest.fn(async () => [withProgress]),
+            get: jest.fn(async () => withProgress),
+            setRoleMapping: jest.fn(async () => leakyRow),
+            start: jest.fn(async () => leakyRow),
+            cancel: jest.fn(async () => leakyRow),
+            clear: jest.fn(async () => leakyRow),
+            requestPurge: jest.fn(async () => leakyRow),
+          },
+        },
+        {
+          provide: RbacService,
+          useValue: { memberHasAnyPermission: jest.fn(async () => true) },
+        },
+      ],
+    }).compile();
+    controller = module.get(DiscordImportController);
+  });
+
+  const routes: [string, () => Promise<unknown>][] = [
+    [
+      'POST /',
+      () =>
+        controller.create(
+          CHAPTER,
+          { id: USER },
+          { consent_acknowledged: true, source: 'bot' },
+        ),
+    ],
+    ['GET /', () => controller.list(CHAPTER)],
+    ['GET /:id', () => controller.get(IMPORT_ID, CHAPTER)],
+    [
+      'PUT /:id/roles',
+      () => controller.setRoleMapping(IMPORT_ID, CHAPTER, USER, { roles: [] }),
+    ],
+    ['POST /:id/start', () => controller.start(IMPORT_ID, {}, CHAPTER, USER)],
+    ['POST /:id/cancel', () => controller.cancel(IMPORT_ID, CHAPTER)],
+    ['POST /:id/clear', () => controller.clear(IMPORT_ID, CHAPTER)],
+    ['DELETE /:id', () => controller.purge(IMPORT_ID, CHAPTER)],
+  ];
+
+  it.each(routes)(
+    '%s returns none of the worker internals',
+    async (_route, call) => {
+      const serialized = JSON.stringify(await call());
+
+      for (const secret of [
+        'lock_token',
+        'LOCK_TOKEN_SECRET',
+        'REPLICA_ID_SECRET',
+        'lease_expires_at',
+        'attempt_count',
+        'cursor_part_index',
+        'STORAGE_PREFIX_SECRET',
+        'GUILD_SNOWFLAKE_SECRET',
+      ]) {
+        expect(serialized).not.toContain(secret);
+      }
+      // Still the import: the projection drops internals, not the payload.
+      expect(serialized).toContain(IMPORT_ID);
+    },
+  );
+
+  it('keeps the progress counts on list and detail', async () => {
+    await expect(controller.get(IMPORT_ID, CHAPTER)).resolves.toMatchObject({
+      channels_total: 3,
+      channels_done: 1,
+    });
+    await expect(controller.list(CHAPTER)).resolves.toEqual([
+      expect.objectContaining({ channels_total: 3, channels_done: 1 }),
+    ]);
+  });
+});

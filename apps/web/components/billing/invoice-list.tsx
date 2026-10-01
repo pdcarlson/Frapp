@@ -190,8 +190,10 @@ export function InvoiceList({ id }: { id?: string }) {
    * "nothing is overdue" instead, which is the confidently-wrong signal #707
    * exists to fix, for most of the userbase. `isError` alone was never enough:
    * on every first paint the count asserted zero for the duration of the
-   * request, and offline the read is *paused* rather than failed, so it is
-   * `isPending` and never `isError`. `anyReadUncached` covers both.
+   * request, and offline the read may be *paused* rather than failed — then
+   * it is `isPending` and never `isError`. (Offline it can also fail outright,
+   * depending on how the dashboard got offline; `anyReadUncached` says when.)
+   * `isError || anyReadUncached` covers every case.
    */
   const overdueUnavailable =
     overdueQuery.isError || anyReadUncached(overdueQuery);
@@ -411,7 +413,7 @@ export function InvoiceList({ id }: { id?: string }) {
             its own count.
           */}
           {invoicesQuery.isSuccess ? (
-          <p className="shrink-0 text-[12.5px] text-muted-foreground tabular-nums">
+          <p className="shrink-0 text-caption text-muted-foreground tabular-nums">
             {openCount} open ·{" "}
             <span
               title={
@@ -710,7 +712,7 @@ export function InvoiceList({ id }: { id?: string }) {
             the text, which is `/members`' shape — putting the 24/44 box on the
             label itself would clip the words out of the clickable region.
           */}
-          <label className="flex w-fit cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-caption text-muted-foreground">
             <span className={dashboardCheckboxHitAreaClassName}>
               {/*
                 No `aria-label`. The wrapping `<label>` already names this from
@@ -792,7 +794,7 @@ export function InvoiceList({ id }: { id?: string }) {
                       inline; the description joins the member and the due date
                       here for the same reason.
                     */}
-                    <p className="truncate text-[12.5px] text-muted-foreground">
+                    <p className="truncate text-caption text-muted-foreground">
                       {[
                         memberName,
                         `Due ${formatBareDate(invoice.due_date)}`,
@@ -908,7 +910,7 @@ function OverdueSummary({
     are the ones worth keeping.
   */
   return (
-    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive-tint px-3 py-2 text-[12.5px] text-destructive-text">
+    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive-tint px-3 py-2 text-caption text-destructive-text">
       <AlertCircle className="h-4 w-4 shrink-0" />
       {failed
         ? "Couldn't load the overdue list. Overdue badges and the Overdue filter are unavailable until it recovers."

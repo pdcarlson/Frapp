@@ -41,7 +41,7 @@ export function SystemAuditCard({ message }: SystemAuditCardProps) {
   const payload = readPayload(message);
   if (!payload || !payload.action) {
     return (
-      <div className="mt-1 rounded-lg border border-border bg-card p-4 font-mono text-[12.5px] text-muted-foreground">
+      <div className="mt-1 rounded-lg border border-border bg-card p-4 font-mono text-caption text-muted-foreground">
         {message.content || "audit event"}
       </div>
     );
@@ -51,7 +51,7 @@ export function SystemAuditCard({ message }: SystemAuditCardProps) {
       <div className={cn(EYEBROW, "flex items-center gap-1.5 text-muted-foreground")}>
         <AuditGlyph className="h-4 w-4" /> Audit
       </div>
-      <div className="mt-2 font-mono text-[12.5px] text-foreground">
+      <div className="mt-2 font-mono text-caption text-foreground">
         <span className="font-semibold">{payload.action}</span>
         {payload.actor_user_id ? (
           <span className="ml-2 text-muted-foreground">
@@ -59,7 +59,7 @@ export function SystemAuditCard({ message }: SystemAuditCardProps) {
           </span>
         ) : null}
       </div>
-      <div className="mt-2 font-mono text-[12.5px] text-muted-foreground">
+      <div className="mt-2 font-mono text-caption text-muted-foreground">
         Changed: {summarizeDiff(payload.diff)}
       </div>
     </Card>

@@ -4,7 +4,7 @@
 #
 # Flags:
 #   --quick                  Skip check-types and check:migration-safety
-#   --reset-supabase         Run `npx supabase stop` before start (fixes stuck/exited Frapp Supabase containers)
+#   --reset-supabase         Run `supabase stop` before start (fixes stuck/exited Frapp Supabase containers)
 #   --reset-supabase-data    Same as stop with --no-backup (WIPES local DB volumes). Requires confirmation
 #                            (TTY: y/N prompt) or FRAPP_CONFIRM_SUPABASE_DATA_WIPE=1 in non-interactive shells.
 #
@@ -14,13 +14,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Shared with scripts/cloud-sandbox-up.sh: the Postgres default-ACL repair and the
-# supabase_db_* container resolution. Deliberately NOT scripts/lib/cloud-sandbox-common.sh,
-# which pins a Supabase CLI version and exports telemetry vars at source time — this script
-# uses `npx supabase` on purpose. The lib reads the prefix at call time, so the order relative
-# to the source below does not matter.
+# Shared with scripts/cloud-sandbox-up.sh: the pinned Supabase CLI (frapp_supabase, the same
+# version CI installs, #723), the Postgres default-ACL repair and the supabase_db_* container
+# resolution. Deliberately NOT scripts/lib/cloud-sandbox-common.sh, which exports telemetry vars
+# and normalizes the sandbox's retry knobs at source time. The libs read their prefixes at call
+# time, so the order relative to the sources below does not matter.
+FRAPP_SUPABASE_CLI_LOG_PREFIX='[local-dev-setup]'
 FRAPP_ACL_LOG_PREFIX='[local-dev-setup]'
 FRAPP_SEED_LOG_PREFIX='[local-dev-setup]'
+# shellcheck source=scripts/lib/supabase-cli.sh
+. "$ROOT/scripts/lib/supabase-cli.sh"
 # shellcheck source=scripts/lib/local-postgres-acl.sh
 . "$ROOT/scripts/lib/local-postgres-acl.sh"
 # Must come AFTER local-postgres-acl.sh — it calls frapp_run_local_sql from that lib.
@@ -93,10 +96,10 @@ supabase_stop_for_reset() {
       exit 1
     fi
     log "Stopping Supabase and removing data volumes (--no-backup)..."
-    npx supabase stop --no-backup || true
+    frapp_supabase stop --no-backup || true
   else
     log "Stopping Supabase stack for this project (volumes preserved)..."
-    npx supabase stop || true
+    frapp_supabase stop || true
   fi
 }
 
@@ -127,15 +130,24 @@ print_supabase_start_failure_hints() {
   log_err "Common causes:"
   log_err "  - Stuck or exited containers: bash scripts/local-dev-setup.sh --reset-supabase (keeps volumes)"
   log_err "  - Local data from an older Postgres major than supabase/config.toml: bash scripts/local-dev-setup.sh --reset-supabase-data"
-  log_err "    (same idea as: npx supabase stop --no-backup; see https://supabase.com/docs/reference/cli/supabase-stop )"
+  log_err "    (same idea as: supabase stop --no-backup; see https://supabase.com/docs/reference/cli/supabase-stop )"
 }
 
 run_supabase_start_with_optional_retry() {
-  if npx supabase start; then
+  local rc=0
+  frapp_supabase start || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then
     return 0
   fi
+  # 127 is frapp_supabase's own "the pinned CLI could not be installed or run", already
+  # explained above it. None of the container remedies below apply to it.
+  if [[ "${rc}" -eq 127 ]]; then
+    log_err "The pinned Supabase CLI could not be installed or run — see .cache/supabase-cli/install.log."
+    log_err "Delete .cache/supabase-cli/ to force a clean reinstall."
+    return 1
+  fi
 
-  log_err "npx supabase start failed."
+  log_err "supabase start failed."
   maybe_hint_postgres_volume_mismatch || true
   print_supabase_start_failure_hints
   echo "" >&2
@@ -143,11 +155,10 @@ run_supabase_start_with_optional_retry() {
     read -r -p "[local-dev-setup] Stop stack and retry start? (keeps volumes: fixes stuck/exited containers, NOT Postgres major-version mismatch) [y/N] " reply
     echo ""
     if [[ "${reply}" == "y" || "${reply}" == "Y" ]]; then
-      npx supabase stop || true
-      npx supabase start
+      frapp_supabase stop || true
+      frapp_supabase start
     else
-      log_err "Run manually: npx supabase stop && npx supabase start"
-      log_err "Or: bash scripts/local-dev-setup.sh --reset-supabase"
+      log_err "Stuck containers: bash scripts/local-dev-setup.sh --reset-supabase"
       log_err "If logs show incompatible Postgres data: bash scripts/local-dev-setup.sh --reset-supabase-data"
       return 1
     fi
@@ -189,7 +200,7 @@ if ! run_supabase_start_with_optional_retry; then
 fi
 
 echo "Applying local migrations..."
-npx supabase db push --local
+frapp_supabase db push --local
 
 # Immediately AFTER `db push`, because the repair fixes the tables those migrations just
 # created. The pinned supabase/postgres image ships schema `public` without DML grants for
@@ -205,7 +216,7 @@ if [[ -n "${FRAPP_SKIP_ACL_REPAIR:-}" ]]; then
   log_err "NOTE: without it the API's first query may fail with 42501 permission denied."
 else
   log "Repairing local Postgres default ACLs..."
-  if ! frapp_repair_local_acls "$ROOT" npx supabase; then
+  if ! frapp_repair_local_acls "$ROOT" frapp_supabase; then
     # Two different causes reach here and the remedies differ, so do not collapse them into
     # "the repair failed": the common one on a multi-project machine is that this project's
     # container could not be identified at all, which the lib has already listed above.
@@ -228,7 +239,7 @@ fi
 # make every table unreadable. The WARNING is loud because #840 is precisely the story
 # of this table being empty in every environment without anyone noticing.
 log "Loading the chapter directory seed..."
-if ! frapp_load_chapter_directory "$ROOT" npx supabase; then
+if ! frapp_load_chapter_directory "$ROOT" frapp_supabase; then
   log_err "WARN: chapter directory seed did not load; onboarding autofill will match nothing."
   log_err "      The stack is otherwise fine. Re-run: node scripts/load-chapter-directory.mjs"
   log_err "      Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"

@@ -21,4 +21,4 @@
  * tone their surface calls for, which is `--muted-foreground` in every current
  * consumer.
  */
-export const EYEBROW = "text-[12.5px] font-semibold uppercase tracking-[0.12em]";
+export const EYEBROW = "text-caption font-semibold uppercase tracking-[0.12em]";

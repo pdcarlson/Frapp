@@ -969,8 +969,8 @@ export function ChatShell({
   // window, so for any target older than the backfill it did nothing at all,
   // said nothing, and left nothing pending to retry. Search exists to reach old
   // messages, so that was the common case, not the edge — an inert row of
-  // exactly the kind `components.md` §5 bans. One path for every case means the
-  // unreachable-target handling below covers them all.
+  // exactly the kind `spec/ui/design-system/README.md` §5 rule 2 bans. One path
+  // for every case means the unreachable-target handling below covers them all.
   const jumpToChannelMessage = useCallback(
     (channelId: string, messageId: string) => {
       if (channelId !== activeChannelId) {
@@ -1635,7 +1635,7 @@ export function ChatShell({
               its content. With `shrink-0` a long channel name simply overflows
               and paints under the `⋯` trigger beside it.
             */}
-            <h1 className="flex min-w-0 items-center gap-2 text-[15px] font-bold text-foreground">
+            <h1 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
               {activeChannel ? (
                 <>
                   <ChannelHeaderMark
@@ -1672,7 +1672,7 @@ export function ChatShell({
               )}
             </h1>
             {activeChannel?.description ? (
-              <p className="truncate text-[12.5px] text-muted-foreground">
+              <p className="truncate text-caption text-muted-foreground">
                 {activeChannel.description}
               </p>
             ) : null}
@@ -1750,7 +1750,7 @@ export function ChatShell({
             // would assert a failure on channels nobody touched.
             <p
               role="alert"
-              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+              className="border-b border-border px-4 py-1.5 text-caption text-destructive"
             >
               Notification level not saved
             </p>
@@ -1758,7 +1758,7 @@ export function ChatShell({
           {bookmarkWriteFailed ? (
             <p
               role="alert"
-              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+              className="border-b border-border px-4 py-1.5 text-caption text-destructive"
             >
               {/* Covers both directions: the same alert fires for a failed
                   save and a failed removal, and "not saved" would be wrong
@@ -1771,7 +1771,7 @@ export function ChatShell({
               // Dismissible because it reports a past action, not a standing
               // condition of the channel.
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
-                <p className="text-[12.5px] text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {pendingTargetHeld
                     ? "That message is waiting on your block list. It opens once the list loads."
                     : showUnreachableNotice && unreachableTarget
@@ -2049,7 +2049,7 @@ export function ChatShell({
           strip would push the composer down by a line on every channel.
         */}
         {typingUsers.length > 0 ? (
-          <p className="shrink-0 px-4 pb-1 text-[12.5px] text-muted-foreground">
+          <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
             {typingUsers.length === 1
               ? "Someone is typing…"
               : `${typingUsers.length} people are typing…`}

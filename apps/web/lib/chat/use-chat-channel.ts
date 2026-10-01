@@ -43,12 +43,15 @@ import {
   newestConfirmed,
   reconcileNewestPage,
   selectMessages,
+  trimOlderThan,
 } from "@repo/chat-core/cache";
 import {
   createHistoryPageFetcher,
   createHistoryPager,
   OLDER_PAGE_LIMIT,
   olderHistoryView,
+  SinceCursorNotFoundError,
+  type HistoryPage,
   type LoadOlderResult,
 } from "@repo/chat-core/history";
 import {
@@ -312,14 +315,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     What arrived after the newest loaded row (#1571 review), for a jump whose
     target may be newer than the cache rather than older.
 
-    The API's `since` read returns the newest `limit` rows after the pivot,
-    not the ones right after it (#2807), so a full page may sit on the far
-    side of a hole. Merged, it would draw the hole as silence and put a target
-    inside it out of reach of paging back. A full page is therefore folded in
-    the way the channel query folds its newest page: it becomes the thread's
-    newest page, and the older rows it is not contiguous with go
+    The API's `since` read is the newest `limit` rows after the pivot, not the
+    ones right after it (#2807), so a full page may sit on the far side of a
+    hole. Merged, it would draw the hole as silence and put a target inside it
+    out of reach of paging back. A full page is therefore folded in the way
+    the channel query folds its newest page: it becomes the thread's newest
+    page, and the older rows it is not contiguous with go
     (`reconcileNewestPage`), so paging back runs contiguously through the
-    hole. No second request: the rows in hand already are that page.
+    hole. No second request: the rows in hand already are that page. The
+    reconnect backfill follows the same rule (`mergeSincePage`); this read
+    rebuilds from the page instead because it carries the page's reactions.
 
     Heavy-command cards it delivers settle their persisted notices, as every
     other path that delivers a server card does (`mergePersistedNotices`), or
@@ -331,10 +336,27 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     const newest = newestConfirmed(queryClient.getQueryData<ChannelCache>(key));
     if (!newest) return 0;
     try {
-      const { rows, actions, actionsIncomplete } = await fetchPage(channelId, {
-        limit: OLDER_PAGE_LIMIT,
-        since: newest.id,
-      });
+      // The server no longer holds the newest row this thread does (purged,
+      // and its Realtime delete missed), so nothing reads as after it. Nor can
+      // the thread vouch for any confirmed row up to its instant: a purge
+      // deletes in slices, and its other deletes were missed the same way.
+      // Those rows go, and the newest page is read instead, bringing back
+      // with their reactions whichever of them still exist. Dropping only
+      // the one row would key the next forward read on the next purged row,
+      // failing again one row per jump.
+      let goneAt: number | null = null;
+      let page: HistoryPage;
+      try {
+        page = await fetchPage(channelId, {
+          limit: OLDER_PAGE_LIMIT,
+          since: newest.id,
+        });
+      } catch (error) {
+        if (!(error instanceof SinceCursorNotFoundError)) throw error;
+        goneAt = Date.parse(newest.created_at);
+        page = await fetchPage(channelId, { limit: OLDER_PAGE_LIMIT });
+      }
+      const { rows, actions, actionsIncomplete } = page;
       // Merged once, like an older page, so partial tallies would stay: a
       // failed read instead, which the jump reports.
       if (actionsIncomplete) return null;
@@ -342,15 +364,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       let added = 0;
       queryClient.setQueryData<ChannelCache>(key, (current) => {
         if (!current) return current;
-        let next: ChannelCache;
-        if (full) {
-          next = reconcileNewestPage(current, cacheFromPage(rows, actions));
-          added = rows.filter((row) => !current.byId[row.id]).length;
-        } else {
-          const merged = mergeUnheldRows(current, rows, actions);
-          next = merged.cache;
-          added = merged.added;
-        }
+        const held =
+          goneAt === null ? current : trimOlderThan(current, goneAt + 1);
+        // New to the thread, not to `held`: rows the trim took and the page
+        // brought back were on screen all along.
+        added = rows.filter((row) => !current.byId[row.id]).length;
+        const next = full
+          ? reconcileNewestPage(held, cacheFromPage(rows, actions))
+          : mergeUnheldRows(held, rows, actions).cache;
         return mergePersistedNotices(next, {
           channelId,
           viewerId: viewerRef.current,

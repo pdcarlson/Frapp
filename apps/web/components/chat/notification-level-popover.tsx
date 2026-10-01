@@ -89,13 +89,14 @@ export function NotificationLevelPanel({
 }) {
   const unknown = level === null;
   // No channel to act on, or no level read yet: there is nothing to change, and
-  // components.md §5 bans a control that silently no-ops.
+  // `spec/ui/design-system/README.md` §5 rule 2 bans a control that silently
+  // no-ops.
   const locked = disabled || unknown;
 
   return (
     <>
       <div className="border-b border-border px-3 py-3">
-        <p className="text-[12.5px] text-foreground">
+        <p className="text-caption text-foreground">
           {unknown
             ? "Notification level unavailable"
             : `Notifications: ${CURRENT_LABEL[level]}`}
@@ -134,12 +135,12 @@ export function NotificationLevelPanel({
                     : "text-foreground hover:bg-card",
                 )}
               >
-                <span className="text-[14.5px] font-semibold">
+                <span className="text-label font-semibold">
                   {option.label}
                 </span>
                 <span
                   className={cn(
-                    "text-[12.5px]",
+                    "text-caption",
                     selected ? "text-accent-text" : "text-muted-foreground",
                   )}
                 >

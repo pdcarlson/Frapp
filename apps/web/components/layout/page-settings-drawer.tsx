@@ -73,7 +73,7 @@ export function PageSettingsDrawer({
         className="flex w-full flex-col gap-0 p-0 sm:w-[400px] sm:max-w-[400px]"
       >
         <SheetHeader className="h-12 flex-none space-y-0 border-b border-border px-4">
-          <SheetTitle className="flex h-12 items-center text-[15px] font-bold">
+          <SheetTitle className="flex h-12 items-center text-label font-bold">
             {title}
           </SheetTitle>
         </SheetHeader>
@@ -85,7 +85,7 @@ export function PageSettingsDrawer({
             furniture — without it the drawer reads as a form the member forgot
             to submit.
           */}
-          <p className="mt-auto pt-2 text-[12.5px] text-muted-foreground">
+          <p className="mt-auto pt-2 text-caption text-muted-foreground">
             Saved as you change. Members see the effect immediately.
           </p>
         </div>
@@ -123,7 +123,7 @@ export function PageSettingsSection({
       </h3>
       <div className="flex flex-col gap-1.5">{children}</div>
       {footer ? (
-        <p className="mt-1.5 text-[12.5px] text-muted-foreground">{footer}</p>
+        <p className="mt-1.5 text-caption text-muted-foreground">{footer}</p>
       ) : null}
     </section>
   );

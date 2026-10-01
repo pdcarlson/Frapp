@@ -13,7 +13,8 @@ const isCi = Boolean(process.env.CI);
  * photographs nothing. It reads geometry off the rendered page and compares it
  * to the numbers the reskin boards commit to: the 1440x900 fold on
  * `spec/ui/landing/reference/canvas/HeroB.dc.html` and the 390 phone board D6
- * pins (`Phone.dc.html`), at 390x844.
+ * pins (`Phone.dc.html`), at 390x844. One check also sweeps the chat frames
+ * from 320 to 1440 wide (#2893); `tests/visual/fold.spec.ts` lists them all.
  *
  * `testDir` selection is by DIRECTORY, not by tag, for the reason
  * `apps/web/playwright.config.ts` gives: a new spec dropped in here joins the

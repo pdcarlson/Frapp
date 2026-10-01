@@ -1,8 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useMyPermissions } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { can, canAll, canAny } from "@repo/validation";
 import { PermissionsOffline } from "@/components/shared/async-states";
 
@@ -17,12 +18,16 @@ type BaseProps = {
    * than showing a placeholder that implies "loading" even to permitted users
    * whose fetch is still in flight.
    *
-   * It does **not** cover the paused case any more; see `offlineFallback`.
+   * It does **not** cover the paused case any more, nor a fetch in flight
+   * while OFFLINE; see `offlineFallback`.
    */
   fallback?: ReactNode;
   /**
-   * Rendered when the permission query is **paused with nothing cached** —
-   * offline, first visit this session, no answer to be stale about.
+   * Rendered when the permission check **could not run for want of a
+   * connection, with nothing cached** — first visit this session, no answer to
+   * be stale about: a paused query, or, while `useNetwork()` reports OFFLINE,
+   * one that is retrying or has failed (`anyReadUncached` in
+   * `async-states.tsx` says why offline is two states, not one).
    *
    * Unlike the other two, this defaults to something rather than to `null`.
    * The default is the control-slot member of the §10 offline family, which is
@@ -95,14 +100,26 @@ type CanProps = BaseProps &
  *   the Resources & Reporting slice found on two data queries.
  * - **Paused, nothing cached** → `offlineFallback`. Never `null`: an
  *   unanswerable check is a recoverable state, and §5 rule 4 reserves hiding
- *   for "permissions the user will never hold".
+ *   for "permissions the user will never hold". **Retrying or failed while
+ *   OFFLINE, nothing cached** is the same state reached the other way, and
+ *   takes the same branch (#2267): offline, a query only pauses if TanStack
+ *   saw the `offline` event (see `anyReadUncached`). Two gaps remain. A
+ *   failure while the connection is fine is still a denial, below (#3065),
+ *   and so is one in the DEGRADED window before `useNetwork()` reaches
+ *   OFFLINE (#3064).
  * - **Idle, nothing cached** → `fallback`, and the gate still **fails closed**.
  *   Swapping `isPending` for `isLoading` here would render gated content to a
  *   viewer whose permissions were never fetched; §4 names that trap by name.
  *
- * `refetch` is threaded into the default's Retry. While the link is still down
- * TanStack re-pauses it, which is the honest outcome — the control re-arms
- * rather than claiming to have checked.
+ * `refetch` is threaded into the default's Retry. While the connection is
+ * still down TanStack re-pauses it, or retries it and fails it again, and the
+ * gate holds this state throughout, which is the honest outcome — the control
+ * re-arms rather than claiming to have checked.
+ *
+ * A paused check resumes by itself on reconnect. A failed one does not:
+ * TanStack's `onlineManager` never went offline, so it has no reconnect to
+ * refetch on. The gate refetches it when `useNetwork()` leaves OFFLINE, or
+ * the outage would end on the denial this branch exists to avoid.
  */
 export function Can({
   children,
@@ -117,6 +134,17 @@ export function Can({
   const { data, isPending, isError, fetchStatus, refetch } = useMyPermissions({
     enabled: Boolean(activeChapterId),
   });
+  const { isOffline } = useNetwork();
+
+  const wasOffline = useRef(isOffline);
+  useEffect(() => {
+    const recovered = wasOffline.current && !isOffline;
+    wasOffline.current = isOffline;
+    // `cancelRefetch: false`: every gate on the page runs this effect for the
+    // same query, and the default would have each call abort the last one's
+    // request.
+    if (recovered && isError && !data) void refetch({ cancelRefetch: false });
+  }, [isOffline, isError, data, refetch]);
 
   if (!activeChapterId) {
     // No chapter picked yet — there is no permission context to evaluate
@@ -124,9 +152,7 @@ export function Can({
     return <>{deniedFallback}</>;
   }
 
-  if (isPending && fetchStatus === "paused") {
-    // Above the bare `isPending` below, which would otherwise swallow it: a
-    // paused query is pending too.
+  const unanswerable = () => {
     const retry = () => {
       void refetch();
     };
@@ -146,6 +172,22 @@ export function Can({
             : offlineFallback}
       </>
     );
+  };
+
+  if (isPending && fetchStatus === "paused") {
+    // Above the bare `isPending` below, which would otherwise swallow it: a
+    // paused query is pending too.
+    return unanswerable();
+  }
+
+  if (isOffline && !data && (isError || fetchStatus === "fetching")) {
+    // Offline, the fetch may never pause: TanStack only pauses when it saw an
+    // `offline` event, so a document that mounted offline, or an unreachable
+    // API, runs it, retries and fails it instead (#2267). Retrying or failed,
+    // it is the paused branch's state, and hiding the control would tell the
+    // member they lack a permission nobody checked. `fetching` keeps the chip,
+    // and focus on its Retry, through the backoff a Retry starts.
+    return unanswerable();
   }
 
   if (isPending) {
@@ -153,9 +195,9 @@ export function Can({
   }
 
   if (isError && !data) {
-    // A failed permissions fetch with nothing cached is fail-safe closed. The
-    // shell shows a global error banner in this case; individual gated
-    // controls just disappear until the fetch recovers.
+    // A failed permissions fetch with nothing cached, while the connection is
+    // not OFFLINE, is fail-safe closed: gated controls just disappear until
+    // the fetch recovers. Nothing else on the page says why (#3065).
     //
     // `&& !data` because v5 keeps `data` through a *background* refetch
     // failure and only resets `status` to `pending` when there is none

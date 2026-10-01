@@ -19,6 +19,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  isDefinitiveClientError,
+  randomClientId,
   serverMessageOf,
   statusOf,
   type createFrappClient,
@@ -66,7 +68,6 @@ import {
   readNotices,
   type HeavyCommandNotice,
 } from "./heavy-command-notices";
-import { randomClientId } from "./random-id";
 import { memberFacingRefusal } from "./polls";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import type { AnalyticsProperties } from "@repo/validation";
@@ -175,32 +176,6 @@ interface FunctionsErrorWithStatus extends Error {
   status?: number;
   /** openapi-fetch error envelope; `response.status` carries the HTTP code. */
   response?: { status?: number };
-}
-
-/**
- * Statuses in the 4xx band that an INTERMEDIARY emits after the origin may
- * already have processed the request. They look like refusals and are not: a
- * proxy request timeout is the same "response lost after a possible write" event
- * as a 502, merely numbered in the client-error band. `408` is the standard
- * one; `499` (nginx) and `460` (AWS ALB) are the client-disconnect equivalents.
- */
-const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
-
-/**
- * Whether a status is a **definitive** client refusal — the origin validated
- * the request and rejected it, so nothing was written and repeating it
- * unchanged is pointless.
- *
- * One definition, deliberately shared by `classifyChatError` (the outbox/send
- * path) and `dispatch.ts` (heavy commands), because "4xx means do not retry" is
- * one policy and two copies of it drift. The carve-out above is why that matters: a proxy
- * 408 treated as definitive tells a caller their write failed when it may have
- * landed, and the retry that follows is a fresh attempt rather than a replay.
- */
-export function isDefinitiveClientError(status: number): boolean {
-  return (
-    status >= 400 && status < 500 && !INCONCLUSIVE_CLIENT_ERRORS.has(status)
-  );
 }
 
 /**

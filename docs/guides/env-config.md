@@ -35,15 +35,15 @@ npx infisical run --env=dev -- npm run start:dev -w apps/api
 npx infisical run --env=dev -- npm run dev -w apps/web
 ```
 
-For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`dev`** environment using values from `npx supabase status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
+For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`dev`** environment using values from `npm run -s supabase -- status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
 ### Fallback: Supabase CLI + `.env.local`
 
 If Infisical is unavailable, generate local env files from Supabase and merge in app vars from `ENV_REFERENCE.md`:
 
 ```bash
-npx supabase start
-npx supabase status -o env
+npm run supabase -- start
+npm run -s supabase -- status -o env
 ```
 
 Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` — placeholders are fine unless you are testing billing). Treat `.env.local` as a **fallback**; prefer Infisical when possible.

@@ -15,8 +15,8 @@ import { replyPreviewText } from "./reply-quote";
  *
  * **`onJump` is wired now.** It was optional and the shell never passed it, so
  * every row here was a `<button>` that did nothing — a control that silently
- * does nothing is the dead end components.md §5 bans, and repainting it would
- * only have made a prettier one. `MessageTimeline` exposes the scroll through
+ * does nothing is the dead end `spec/ui/design-system/README.md` §5 rule 2
+ * bans, and repainting it would only have made a prettier one. `MessageTimeline` exposes the scroll through
  * its ref; a pin older than the loaded window still cannot be reached, and the
  * timeline no-ops rather than pretending.
  */
@@ -78,7 +78,7 @@ export function PinsPanel({
   return (
     <>
       {pins.length === 0 && hidden.blocked === 0 && hidden.held === 0 ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Nothing pinned yet. Channel managers can pin key messages.
         </p>
       ) : pins.length === 0 ? null : (
@@ -96,7 +96,7 @@ export function PinsPanel({
                   onJump?.(message.id);
                 }}
                 className={cn(
-                  "block w-full px-3 py-3 text-left text-[12.5px] transition-colors",
+                  "block w-full px-3 py-3 text-left text-caption transition-colors",
                   "hover:bg-accent-subtle hover:text-accent-text",
                   FOCUS_RING,
                 )}
@@ -127,7 +127,7 @@ export function PinsPanel({
         hidden[reason] > 0 ? (
           <p
             key={reason}
-            className="px-3 py-3 text-[12.5px] italic text-muted-foreground"
+            className="px-3 py-3 text-caption italic text-muted-foreground"
           >
             {hiddenPinsText(hidden[reason], reason)}
           </p>
