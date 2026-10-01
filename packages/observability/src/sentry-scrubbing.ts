@@ -419,10 +419,10 @@ function reduceTouchPathEntry(
 /**
  * Whether a breadcrumb is one React Native's touch boundary recorded (#2982):
  * `touch` for every tap (`touchevents.js`), `ui.multiClick` for a rage tap
- * (`ragetap.js`). A rage tap always is. A `touch` crumb is when it carries the boundary's `data.path` or message
- * prefix. The iOS SDK records UIControl actions (a `Switch`'s `onChange:`) as
- * `touch` crumbs too, named by the action's selector, which is code; those
- * stay with the free-text sweep.
+ * (`ragetap.js`). A rage tap always is. A `touch` crumb is when it carries
+ * the boundary's `data.path` or message prefix. The iOS SDK records UIControl
+ * actions (a `Switch`'s `onChange:`) as `touch` crumbs too, named by the
+ * action's selector, which is code; those stay with the free-text sweep.
  */
 function isTouchBoundaryCrumb(
   source: Record<string, unknown>,
