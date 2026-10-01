@@ -39,7 +39,7 @@ xhr.upload.onprogress = (e) => {
 
 | Failure Point | Recovery |
 |---------------|----------|
-| Signed URL request fails | Retry 2x. On persistent failure: "Upload failed. Please try again." |
+| Signed URL request fails | A definitive refusal (a 4xx other than 408 or 429: no posting rights, a file the API rejects) is not retried and shows the server's reason, because client errors are never retried ([API retry](api-retry.md#retry-configuration)) and a retry can't change the answer (#2199). Any other failure: retry 2x. On persistent failure: "Upload failed. Please try again." |
 | Upload to Storage fails (network) | Show "Upload interrupted. [Retry]". Do NOT re-request signed URL (reuse). |
 | Upload to Storage fails (timeout) | Show "Upload timed out. Check your connection and try again." |
 | Confirm metadata fails | File is in storage but not tracked. Retry confirm 3x. On persistent failure: "File uploaded but not saved. [Retry]" |

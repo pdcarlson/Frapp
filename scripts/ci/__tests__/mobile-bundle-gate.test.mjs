@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { installsDependencies, USES_NODE_SETUP, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 import { CI_CHECKS } from "../lib/required-checks.mjs";
 
 // Pins the mobile Metro bundle step in `mobile-validate` (#2388).
@@ -37,8 +37,8 @@ const EXPORT_RE = /\bexpo\s+export\b/;
 // (`npm run build -w packages/validation`, a downloaded artifact, ...).
 const ALLOWED_BEFORE = [
   /^\s*-?\s*uses:\s*["']?actions\/checkout@/m,
-  /^\s*-?\s*uses:\s*["']?actions\/setup-node@/m,
-  /^\s*-?\s*run:\s*npm\s+ci\s*$/m,
+  // Node and `npm ci` (#1541): installs, builds nothing.
+  new RegExp(USES_NODE_SETUP.source, "m"),
   // Reads package.json, package-lock.json and dependabot.yml; builds nothing.
   /^\s*-?\s*run:\s*npm\s+run\s+check:expo-sdk-line\s*$/m,
 ];
@@ -86,12 +86,12 @@ describe(`${JOB}: the mobile bundle step (#2388)`, () => {
     for (const step of steps.slice(0, exportIndexes[0])) {
       assert.ok(
         ALLOWED_BEFORE.some((re) => re.test(withoutName(step))),
-        `"${step.name}" runs before \`expo export\`; only checkout, setup-node, \`npm ci\` and the read-only SDK-line check may, ` +
+        `"${step.name}" runs before \`expo export\`; only checkout, node-setup and the read-only SDK-line check may, ` +
           "because the EAS worker never builds the shared packages",
       );
     }
     assert.ok(
-      steps.slice(0, exportIndexes[0]).some((step) => /^\s*-?\s*run:\s*npm\s+ci\s*$/m.test(step.body)),
+      steps.slice(0, exportIndexes[0]).some(installsDependencies),
       "`expo export` must run after `npm ci`",
     );
   });

@@ -78,9 +78,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # Only SUPABASE_ACCESS_TOKEN is read from each; project refs come from
       # .github/environments.json.

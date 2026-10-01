@@ -1,6 +1,7 @@
 import {
   createNoPseudonymScrubHooks,
   DEFAULT_TRACES_SAMPLE_RATE,
+  reduceTouchBreadcrumb,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
 } from "@repo/observability";
@@ -60,6 +61,9 @@ const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
 type ErrorEvent = Parameters<NonNullable<ReactNativeOptions["beforeSend"]>>[0];
 type TransactionEvent = Parameters<
   NonNullable<ReactNativeOptions["beforeSendTransaction"]>
+>[0];
+type Breadcrumb = Parameters<
+  NonNullable<ReactNativeOptions["beforeBreadcrumb"]>
 >[0];
 
 /**
@@ -140,6 +144,15 @@ export type MobileSentryReleaseExtras = {
  * Both hooks are wired. Setting only one leaves the other event class shipping
  * unscrubbed, which is the gap #896 closed on the API.
  *
+ * `beforeBreadcrumb` rebuilds the touch and rage-tap breadcrumbs that
+ * `Sentry.wrap`'s touch boundary records, which name the touched element by
+ * its `accessibilityLabel` or visible text: a member's name, a task's title, a
+ * message's body (#2982). It has to run here rather than only in `beforeSend`.
+ * The SDK copies each breadcrumb into the native SDK's scope once this hook
+ * has returned, and a native crash report carries that copy without passing
+ * any JS hook. `lib/sentry/touch-breadcrumbs.spec.ts` drives the real SDK to
+ * show the order.
+ *
  * `release` / `dist` are optional extras resolved at init from expo-application
  * so this module stays free of native imports. Git SHA is a tag, not the
  * release name.
@@ -166,5 +179,7 @@ export function buildMobileSentryOptions(
       : {}),
     beforeSend: (event: ErrorEvent) => scrubError(event),
     beforeSendTransaction: (event: TransactionEvent) => scrubTransaction(event),
+    beforeBreadcrumb: (breadcrumb: Breadcrumb) =>
+      reduceTouchBreadcrumb(breadcrumb),
   };
 }

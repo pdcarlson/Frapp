@@ -68,9 +68,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # continue-on-error is load-bearing, not laziness. A revoked or rotated
       # machine identity — the #696/#763 incident this family exists to catch —
