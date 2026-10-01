@@ -104,7 +104,7 @@ describe("FindBar", () => {
   });
 
   it("advertises the binding it actually wires", () => {
-    // components.md §5 bans a keybinding hint that is not wired. The palette
+    // components.md §7 bans a keybinding hint that is not wired. The palette
     // this replaced advertised ⌘K; this field must advertise ⌘F.
     render(<FindBar />);
     expect(screen.getByText("⌘F")).toBeInTheDocument();
