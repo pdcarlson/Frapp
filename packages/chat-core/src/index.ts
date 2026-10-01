@@ -1,7 +1,6 @@
 export * from "./adapters";
 export * from "./topic-registry";
 export * from "./types";
-export * from "./random-id";
 export * from "./cache";
 export * from "./history";
 export * from "./chat-client";

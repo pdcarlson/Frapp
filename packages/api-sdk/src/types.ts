@@ -4219,7 +4219,7 @@ export interface components {
             reason: string;
             /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
             channel_id?: string;
-            /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
+            /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; the dashboard sends it without one. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
             client_message_id?: string;
         };
         AdjustPointsResponseDto: {
@@ -4241,7 +4241,7 @@ export interface components {
             created_at: string;
             /**
              * Format: uuid
-             * @description The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.
+             * @description The idempotency key this row was written under, echoed back. `null` for a dashboard adjustment made before the dashboard sent a key; those rows are not deduplicated.
              */
             client_message_id?: string | null;
             /**
@@ -4733,6 +4733,78 @@ export interface components {
              * @enum {string}
              */
             source: "upload" | "bot";
+        };
+        DiscordImportResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `running` and `purging` are the two states the background worker advances; every other change is an admin action.
+             * @enum {string}
+             */
+            status: "draft" | "ready" | "running" | "completed" | "failed" | "cancelled" | "purging" | "purged";
+            /**
+             * @description `upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server.
+             * @enum {string}
+             */
+            source: "upload" | "bot";
+            /** @description Discord server name, for display only. */
+            guild_name: string | null;
+            /** @description Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads. */
+            total_messages: number;
+            imported_messages: number;
+            messages_skipped: number;
+            attachments_imported: number;
+            /** @description The most recent warnings for the admin, at most 50. */
+            warnings: string[];
+            /** @description Why a failed import stopped. */
+            error: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.
+             */
+            messages_after: string | null;
+            /** @description Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished. */
+            purged_messages: number;
+        };
+        DiscordImportWithProgressResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `running` and `purging` are the two states the background worker advances; every other change is an admin action.
+             * @enum {string}
+             */
+            status: "draft" | "ready" | "running" | "completed" | "failed" | "cancelled" | "purging" | "purged";
+            /**
+             * @description `upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server.
+             * @enum {string}
+             */
+            source: "upload" | "bot";
+            /** @description Discord server name, for display only. */
+            guild_name: string | null;
+            /** @description Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads. */
+            total_messages: number;
+            imported_messages: number;
+            messages_skipped: number;
+            attachments_imported: number;
+            /** @description The most recent warnings for the admin, at most 50. */
+            warnings: string[];
+            /** @description Why a failed import stopped. */
+            error: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.
+             */
+            messages_after: string | null;
+            /** @description Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished. */
+            purged_messages: number;
+            /** @description Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled. */
+            channels_total: number | null;
+            /** @description Of those, how many are finished (imported, or skipped because Discord no longer showed them to the bot). Null when `channels_total` is. */
+            channels_done: number | null;
         };
         DiscordImportProgressCountsDto: {
             pending: number;
@@ -7420,7 +7492,7 @@ export interface operations {
                 limit?: number;
                 /** @description Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
                 before?: string;
-                /** @description Message UUID — returns messages created after this message (reconnect replay) */
+                /** @description Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id. */
                 since?: string;
             };
             header?: never;
@@ -11252,7 +11324,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportWithProgressResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -11282,7 +11356,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11310,7 +11386,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportWithProgressResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11338,7 +11416,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11554,7 +11634,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11648,7 +11730,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11676,7 +11760,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11704,7 +11790,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscordImportResponseDto"];
+                };
             };
             /** @description Error */
             default: {

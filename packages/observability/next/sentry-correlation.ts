@@ -1,10 +1,5 @@
-import {
-  REQUEST_ID_HEADER,
-  headerValue,
-  httpStatusClass,
-  pickSentryErrorCorrelatedProperties,
-} from "../src/index";
-import { statusFrom, traceIdFrom } from "../src/sentry-event";
+import { pickSentryErrorCorrelatedProperties } from "../src/index";
+import { afterScrubber, sentryMarkerFrom } from "../src/sentry-event";
 
 /**
  * Anonymous PostHog ↔ Sentry correlation: session/replay tags and the
@@ -61,15 +56,7 @@ export function attachAnonymousPostHogCorrelation<TEvent extends object>(
 
   try {
     source.captureSentryErrorCorrelated(
-      pickSentryErrorCorrelatedProperties({
-        sentry_event_id: view.event_id,
-        trace_id: traceIdFrom(view),
-        request_id: headerValue(view.request?.headers, REQUEST_ID_HEADER),
-        route:
-          typeof view.transaction === "string" ? view.transaction : undefined,
-        status_class: extras?.statusClass ?? httpStatusClass(statusFrom(view)),
-        release: typeof view.release === "string" ? view.release : undefined,
-      }),
+      pickSentryErrorCorrelatedProperties(sentryMarkerFrom(view, extras)),
     );
   } catch {
     // Never fail the Sentry send because the marker could not be queued.
@@ -83,25 +70,13 @@ export type AnonymousBeforeSend<TEvent, THint = unknown> = (
   hint: THint,
 ) => TEvent | null | PromiseLike<TEvent | null> | undefined;
 
-/**
- * Run the scrubber first, then the anonymous attach. `contexts.response` is
- * dropped by the scrubber allowlist, so status class is read before scrubbing.
- */
+/** Run the scrubber first, then the anonymous attach. */
 export function withAnonymousPostHogSentryCorrelation<
   TEvent extends object,
   THint = unknown,
 >(
   beforeSend: AnonymousBeforeSend<TEvent, THint> | undefined,
-  attach: (
-    event: TEvent,
-    extras?: { statusClass?: string },
-  ) => TEvent,
+  attach: (event: TEvent, extras?: { statusClass?: string }) => TEvent,
 ): (event: TEvent, hint: THint) => Promise<TEvent | null> {
-  return (event: TEvent, hint: THint) => {
-    const statusClass = httpStatusClass(statusFrom(asAnonymousEvent(event)));
-    const next = beforeSend ? beforeSend(event, hint) : event;
-    return Promise.resolve(next).then((resolved) =>
-      resolved ? attach(resolved, { statusClass }) : null,
-    );
-  };
+  return afterScrubber(beforeSend, attach);
 }

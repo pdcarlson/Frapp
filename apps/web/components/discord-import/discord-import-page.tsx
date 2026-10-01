@@ -248,8 +248,8 @@ function DiscordImportList({
     return <ErrorState onRetry={() => void imports.refetch()} />;
   }
 
-  const rows = (imports.data ?? []) as unknown as ImportRow[];
-  const activeRow = (active.data ?? null) as ImportRow | null;
+  const rows: ImportRow[] = imports.data ?? [];
+  const activeRow: ImportRow | null = active.data ?? null;
 
   async function cancel(id: string) {
     try {

@@ -9,10 +9,10 @@
 #
 # This lib deliberately does NOT source scripts/lib/cloud-sandbox-common.sh and has no
 # `cs_*` dependencies. That lib is not side-effect-free at source time (it exports the
-# telemetry vars, pins CS_SUPABASE_CLI_VERSION, and normalizes the retry knobs), so
-# sourcing it from the laptop path would silently pull the sandbox's pinned-CLI machinery
-# into a script that intentionally uses `npx supabase`. Whether those two converge is an
-# open decision tracked separately, not something this repair should settle by accident.
+# telemetry vars and normalizes the retry knobs), so sourcing it from the laptop path would
+# pull sandbox-only behaviour into the laptop bootstrap. The one thing both bootstraps do
+# share, the pinned Supabase CLI, lives in scripts/lib/supabase-cli.sh, which each sources
+# itself; this lib takes the CLI command from its caller instead (see frapp_run_local_sql).
 #
 # Portability: no bash arrays and no `"${arr[@]}"` expansion anywhere below. Expanding an
 # empty array under `set -u` is an unbound-variable error before bash 4.4, and that error is
@@ -258,7 +258,7 @@ frapp_resolve_supabase_db_container() {
 # directory load"). It only ever appears in log lines, so that one dispatch can serve
 # several callers without any of them inheriting another's wording.
 #
-# The CLI command (`cs_supabase`, or `npx supabase`) is passed as trailing words rather than
+# The CLI command (`cs_supabase`, or `frapp_supabase`) is passed as trailing words rather than
 # a resolved URL so the `status -o env` round-trip stays lazy — a host without psql never pays
 # for a call it would discard — while the parse itself lives here once instead of being copied
 # into both bootstrap scripts. Omit it to go straight to the container path.

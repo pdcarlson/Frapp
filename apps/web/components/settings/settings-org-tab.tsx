@@ -411,7 +411,7 @@ export function SettingsOrgTab({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Organization archetype
-            <span className="rounded-xs border border-border px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="rounded-xs border border-border px-1.5 py-0.5 text-caption font-medium uppercase tracking-wide text-muted-foreground">
               {current.short}
             </span>
           </CardTitle>
@@ -463,7 +463,7 @@ export function SettingsOrgTab({
                       // at 11. It also inherits from the button above, so this
                       // states the weight and lets the colour come from one
                       // place.
-                      <span className="text-[11px] font-medium">Current</span>
+                      <span className="text-caption font-medium">Current</span>
                     ) : null}
                   </span>
                   <span className="text-sm font-medium">{option.label}</span>

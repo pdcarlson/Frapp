@@ -41,6 +41,23 @@ export class ChatMessageDuplicateError extends Error {
 }
 
 /**
+ * Thrown by `IChatMessageRepository.findByChannel` when its `since` cursor
+ * names no message in that channel: one hard-deleted since (the Discord
+ * import purge), or another channel's message (#2807). Answering with the
+ * channel's newest page instead read as "everything after your cursor" and
+ * was merged as if it were.
+ */
+export class ChatMessageCursorNotFoundError extends Error {
+  constructor(
+    public readonly channel_id: string,
+    public readonly since: string,
+  ) {
+    super('The since cursor names no message in this channel');
+    this.name = 'ChatMessageCursorNotFoundError';
+  }
+}
+
+/**
  * Thrown by `IChatMessageActionRepository.create` when the unique dedupe
  * index `idx_chat_message_actions_dedupe` rejects the insert. Callers
  * decide whether to UPSERT (vote-change) or surface the existing row
@@ -139,6 +156,14 @@ export interface IChatCategoryRepository {
 
 export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
+  /**
+   * Newest first, at most `limit` rows. `before` keeps rows created strictly
+   * before an instant. `since` keeps rows created after that message, and the
+   * page is still the **newest** `limit` of them, not the ones right after it:
+   * a full page may not reach back to the cursor (#2807). Throws
+   * `ChatMessageCursorNotFoundError` when `since` names no message in this
+   * channel.
+   */
   findByChannel(
     channelId: string,
     options?: { limit?: number; before?: string; since?: string },

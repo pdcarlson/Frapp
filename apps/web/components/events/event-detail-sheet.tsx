@@ -231,7 +231,7 @@ export function EventDetailSheet({
         </SheetHeader>
 
         {usingPreviewData ? (
-          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
+          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               Showing preview event details. Sign in to edit and delete live
@@ -288,7 +288,7 @@ export function EventDetailSheet({
 
         <div className="mt-5 grid gap-3">
           <div className="rounded-lg border border-border p-3">
-            <p className="mb-2 text-[12.5px] text-muted-foreground">
+            <p className="mb-2 text-caption text-muted-foreground">
               Attendance policy
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -298,7 +298,7 @@ export function EventDetailSheet({
               <Badge variant="outline">{recurrenceRule}</Badge>
             </div>
             <div className="mt-3">
-              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+              <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
                 <RolesGlyph className="h-3.5 w-3.5" />
                 Required roles
               </p>
@@ -315,7 +315,7 @@ export function EventDetailSheet({
               )}
             </div>
             <div className="mt-3">
-              <p className="mb-1 flex items-center gap-1 text-[12.5px] text-muted-foreground">
+              <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
                 <StudyZonesGlyph className="h-3.5 w-3.5" />
                 Check-in zone
               </p>
@@ -330,7 +330,7 @@ export function EventDetailSheet({
                   </span>
                 </div>
               ) : checkInZoneIsMalformed ? (
-                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-[12.5px] text-warning">
+                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
                     This event&apos;s zone is incomplete, so every check-in is
@@ -346,7 +346,7 @@ export function EventDetailSheet({
           </div>
 
           <div className="rounded-lg border border-border p-3">
-            <p className="mb-2 text-[12.5px] text-muted-foreground">Schedule</p>
+            <p className="mb-2 text-caption text-muted-foreground">Schedule</p>
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
                 <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
@@ -376,7 +376,7 @@ export function EventDetailSheet({
 
           {description ? (
             <div className="rounded-lg border border-border p-3">
-              <p className="mb-1 text-[12.5px] text-muted-foreground">
+              <p className="mb-1 text-caption text-muted-foreground">
                 Description
               </p>
               {/* Same fix as the minutes block below: the source is a
@@ -390,7 +390,7 @@ export function EventDetailSheet({
 
           {notes ? (
             <div className="rounded-lg border border-border p-3">
-              <p className="mb-1 text-[12.5px] text-muted-foreground">
+              <p className="mb-1 text-caption text-muted-foreground">
                 Meeting minutes
               </p>
               {/* Same plain-text convention as chat's TextRenderer (#369 owns

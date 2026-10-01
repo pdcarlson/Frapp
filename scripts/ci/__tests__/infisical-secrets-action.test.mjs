@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
+import { readSupabaseCliPin } from "../lib/supabase-cli-pin.mjs";
 import {
   actionFiles,
   JOB_KEY_RE,
@@ -445,6 +446,8 @@ describe("supabase-cli composite action", () => {
     const pins = codeLines(supabaseAction).filter((l) => /^\s+version:/.test(l));
     assert.equal(pins.length, 1, "the action must declare exactly one version");
     assert.match(pins[0], /version:\s*\d+\.\d+\.\d+\s*$/, "the pin must be exact");
+    // The reader run-migration.mjs and check-migration-replay.mjs fall back on.
+    assert.equal(readSupabaseCliPin(), pinnedVersion);
   });
 
   it("takes no inputs, so the pin cannot be overridden per call site", () => {
@@ -499,38 +502,57 @@ describe("supabase-cli composite action", () => {
     assert.equal(total, 3);
   });
 
-  it("agrees with db-backup.sh's fallback pin", () => {
-    // scripts/db-backup.sh keeps its own `npx supabase@<version>` fallback for
-    // local runs where nothing is on PATH. That is a legitimate second copy --
-    // teaching the backup script to parse YAML would add a failure mode to the
-    // one script that produces this project's only restorable backup -- but an
-    // UNCHECKED second copy is how the two silently diverge.
-    //
-    // The drift that matters is #1421's restore rehearsal: it is run by hand,
-    // usually with no CLI on PATH, so it would exercise the stale fallback
-    // against dumps CI produced with the bumped pin -- validating a code path
-    // the backup never used. Asserting equality here means a bump has to move
-    // both, and the failure names the file to change.
-    const script = readFileSync(join(REPO, "scripts", "db-backup.sh"), "utf8");
-    const fallback = script.match(/SUPABASE_CLI_VERSION="\$\{SUPABASE_CLI_VERSION:-([^}]+)\}"/)?.[1];
-    assert.ok(fallback, "scripts/db-backup.sh no longer declares a fallback CLI version");
-    assert.equal(
-      fallback,
-      pinnedVersion,
-      "scripts/db-backup.sh's fallback Supabase CLI version has drifted from the pin in " +
-        ".github/actions/supabase-cli/action.yml — bump both together",
-    );
-    // …and the command must actually USE that variable. Checking the
-    // declaration alone let the two diverge with the assertion satisfied:
-    // hardcoding `supabase@2.70.0` on the invocation line leaves the declared
-    // fallback equal to the pin and completely ignored.
-    assert.match(
-      script,
-      /SUPABASE="npx --yes supabase@\$\{SUPABASE_CLI_VERSION\}"/,
-      "db-backup.sh must invoke the CLI through $SUPABASE_CLI_VERSION, not a literal — " +
-        "otherwise the checked declaration is dead and the real version is unpinned",
-    );
-  });
+  // The shell scripts that run the CLI outside CI keep their own copy of the version. Each is a
+  // legitimate second copy, and the reasons differ:
+  //
+  //   scripts/db-backup.sh          teaching the backup script to parse YAML would add a failure
+  //                                 mode to the one script that produces this project's only
+  //                                 offsite backup;
+  //   scripts/lib/supabase-cli.sh   the resolver the sandbox and laptop bootstraps and
+  //                                 db-restore-rehearsal.sh share, where an empty parse would
+  //                                 install `latest` silently (#723).
+  //
+  // But an UNCHECKED second copy is how they silently diverge, and the divergence that matters
+  // is real: #1421's restore rehearsal is run by hand, usually with no CLI on PATH, so a stale
+  // fallback would exercise a code path the backup never used, and a stale bootstrap pin is the
+  // three-way skew #723 closed. Asserting equality here means a bump has to move every copy,
+  // and the failure names the file to change.
+  //
+  // Each copy is also checked for USE, not just declaration. Checking the declaration alone let
+  // the two diverge with the assertion satisfied: hardcoding `supabase@2.70.0` on the invocation
+  // line leaves the declared fallback equal to the pin and completely ignored.
+  for (const { file, declared, used } of [
+    {
+      file: "scripts/db-backup.sh",
+      declared: /SUPABASE_CLI_VERSION="\$\{SUPABASE_CLI_VERSION:-([^}]+)\}"/,
+      used: /SUPABASE="npx --yes supabase@\$\{SUPABASE_CLI_VERSION\}"/,
+    },
+    {
+      file: "scripts/lib/supabase-cli.sh",
+      declared: /^FRAPP_SUPABASE_CLI_PIN="([^"]+)"$/m,
+      // The spec the pin feeds AND the install it feeds: either alone would pass with the
+      // other pointing at `latest`.
+      used: /spec="\$\{FRAPP_SUPABASE_CLI_VERSION:-\$FRAPP_SUPABASE_CLI_PIN\}"[\s\S]*npm install --prefix "\$cache" "supabase@\$\{spec\}"/,
+    },
+  ]) {
+    it(`agrees with ${file}'s copy of the pin`, () => {
+      const script = readFileSync(join(REPO, file), "utf8");
+      const copy = script.match(declared)?.[1];
+      assert.ok(copy, `${file} no longer declares a Supabase CLI version`);
+      assert.equal(
+        copy,
+        pinnedVersion,
+        `${file}'s Supabase CLI version has drifted from the pin in ` +
+          ".github/actions/supabase-cli/action.yml — bump both together",
+      );
+      assert.match(
+        script,
+        used,
+        `${file} must invoke the CLI through its declared version, not a literal — ` +
+          "otherwise the checked declaration is dead and the real version is unpinned",
+      );
+    });
+  }
 });
 
 describe("local actions resolve at every call site", () => {

@@ -177,7 +177,7 @@ export function ProtectedNavItem({
       <item.icon className={iconClassName} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
       {!collapsed && item.statusLabel ? (
-        <span className="ml-auto rounded-xs border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+        <span className="ml-auto rounded-xs border border-border px-2 py-0.5 text-caption uppercase tracking-wide text-muted">
           {item.statusLabel}
         </span>
       ) : null}

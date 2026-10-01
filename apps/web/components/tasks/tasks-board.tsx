@@ -610,11 +610,11 @@ export function TasksBoard() {
                         >
                           <p className="text-sm font-semibold">{task.title}</p>
                           {task.description ? (
-                            <p className="mt-1 text-[12.5px] text-muted-foreground line-clamp-2">
+                            <p className="mt-1 text-caption text-muted-foreground line-clamp-2">
                               {task.description}
                             </p>
                           ) : null}
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
                             <span>Due {formatDate(task.due_date)}</span>
                             <span aria-hidden="true">·</span>
                             <span>{assigneeName}</span>
@@ -719,7 +719,7 @@ export function TasksBoard() {
                   )}
                 </CardContent>
                 {column.status === "COMPLETED" ? (
-                  <CardFooter className="text-[12.5px] text-muted-foreground">
+                  <CardFooter className="text-caption text-muted-foreground">
                     Confirming a task awards its point reward (when set) to the
                     assignee. You cannot confirm a task assigned to you. Another
                     admin has to.

@@ -1,12 +1,11 @@
-import { isPseudonymHex, REQUEST_ID_HEADER } from "./correlation";
+import { isPseudonymHex } from "./correlation";
 import {
   captureSentryErrorCorrelated,
   getPostHogDistinctId,
   getPostHogReplayId,
   getPostHogSessionId,
 } from "./posthog-adapter";
-import { statusFrom, traceIdFrom } from "./sentry-event";
-import { headerValue, httpStatusClass } from "./sentry-http";
+import { afterScrubber, sentryMarkerFrom } from "./sentry-event";
 
 /**
  * The fields web and mobile Sentry events share for PostHog correlation.
@@ -49,17 +48,8 @@ export function attachPostHogCorrelation<T extends CorrelatableSentryEvent>(
   if (replayId) tags.posthog_replay_id = replayId;
   event.tags = tags;
 
-  const requestId = headerValue(event.request?.headers, REQUEST_ID_HEADER);
-  const traceId = traceIdFrom(event);
   try {
-    captureSentryErrorCorrelated({
-      sentry_event_id: event.event_id,
-      trace_id: traceId,
-      request_id: requestId,
-      route: typeof event.transaction === "string" ? event.transaction : undefined,
-      status_class: extras?.statusClass ?? httpStatusClass(statusFrom(event)),
-      release: typeof event.release === "string" ? event.release : undefined,
-    });
+    captureSentryErrorCorrelated(sentryMarkerFrom(event, extras));
   } catch {
     // Never fail the Sentry send because the marker could not be queued.
   }
@@ -75,13 +65,5 @@ export function withPostHogSentryCorrelation<
     | ((event: E, hint: H) => E | null | PromiseLike<E | null> | undefined)
     | undefined,
 ): (event: E, hint: H) => Promise<E | null> {
-  return (event: E, hint: H) => {
-    // `contexts.response` is dropped by the scrubber allowlist. Read the
-    // status class first so the timeline marker can still carry it.
-    const statusClass = httpStatusClass(statusFrom(event));
-    const next = beforeSend ? beforeSend(event, hint) : event;
-    return Promise.resolve(next).then((resolved) =>
-      resolved ? attachPostHogCorrelation(resolved, { statusClass }) : null,
-    );
-  };
+  return afterScrubber(beforeSend, attachPostHogCorrelation);
 }

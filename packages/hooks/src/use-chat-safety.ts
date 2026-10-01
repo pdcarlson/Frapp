@@ -7,7 +7,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import type { components } from "@repo/api-sdk";
+import { throwUnlessOk, type components } from "@repo/api-sdk";
 import type { BlockListStatus } from "@repo/validation";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import {
@@ -70,25 +70,6 @@ const _allReportReasonsListed: Record<
 > = {};
 void _allReportReasonsListed;
 
-/**
- * Throws unless the response was a 2xx.
- *
- * openapi-fetch 0.17 reports a non-2xx whose body is empty as `error:
- * undefined` (a 204-shaped or `Content-Length: 0` failure) or `error: ""` (an
- * empty text body), both falsy — so `if (error) throw error` reads a failed
- * block or report as a success and the UI would say it worked. The status is
- * the truth. What is thrown carries the status wherever the SDK put it, so
- * `statusOf` from `@repo/api-sdk` reads it back.
- */
-function throwUnlessOk(result: { error?: unknown; response: Response }): void {
-  if (result.response.ok) return;
-  const { error } = result;
-  if (error !== null && typeof error === "object") throw error;
-  throw {
-    statusCode: result.response.status,
-    message: typeof error === "string" && error.length > 0 ? error : undefined,
-  };
-}
 
 export interface BlockedUserIds {
   /**

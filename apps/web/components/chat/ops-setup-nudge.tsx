@@ -197,7 +197,7 @@ export function OpsSetupNudgeCard({
         >
           {module.headline}
         </p>
-        <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+        <p className="mt-0.5 text-caption text-muted-foreground">
           {module.description}
         </p>
       </div>

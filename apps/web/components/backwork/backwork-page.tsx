@@ -156,7 +156,7 @@ function InlineDownloadCell({ id }: { id: string }) {
       variant="ghost"
       onClick={handle}
       disabled={isFetching}
-      className="h-8 gap-1.5 px-2 text-[13px] font-semibold pointer-coarse:h-11"
+      className="h-8 gap-1.5 px-2 text-caption font-semibold pointer-coarse:h-11"
     >
       {isFetching ? (
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -671,7 +671,7 @@ export function BackworkPage() {
                       description, where Radix had wired it to the dialog for
                       free.
                     */}
-                    <p id="bw-taxonomy-note" className="text-[12.5px] text-muted">
+                    <p id="bw-taxonomy-note" className="text-caption text-muted">
                       A department code or professor the chapter has not used
                       before is created for this chapter on upload.
                     </p>
@@ -938,7 +938,7 @@ export function BackworkPage() {
           <h2 id="bw-list-label" className={`${EYEBROW} text-muted-foreground`}>
             Resources
           </h2>
-          <p className="text-[12.5px] text-muted">
+          <p className="text-caption text-muted">
             {resources.length} result{resources.length === 1 ? "" : "s"}
           </p>
         </div>
@@ -1025,7 +1025,7 @@ export function BackworkPage() {
                         {row.title ??
                           `${row.assignment_type ?? "Resource"} · ${row.course_number ?? ""}`}
                       </p>
-                      <p className="truncate text-[12.5px] text-muted">
+                      <p className="truncate text-caption text-muted">
                         {[
                           department?.code,
                           row.course_number,

@@ -1,4 +1,7 @@
+import { ChatMessageCursorNotFoundError } from '#domain/repositories/chat.repository.interface';
 import { SupabaseChatMessageRepository } from './supabase-chat-message.repository';
+import type { FrappSupabaseClient } from '../database.types';
+import { SupabaseQueryError } from '../supabase-query-error';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -235,5 +238,112 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     ]);
 
     expect(paths).toEqual([SHARED_AVATAR_B]);
+  });
+});
+
+/**
+ * The `since` read the chat backfill replays from (#2807). Its page is the
+ * newest `limit` rows after the cursor, not the ones right after it, and a
+ * cursor that finds nothing is refused: answered with the channel's newest
+ * page instead, a client merged it as everything after its cursor.
+ */
+describe('SupabaseChatMessageRepository — findByChannel since (#2807)', () => {
+  const SINCE_A = '0a000000-0000-4000-8000-000000000180';
+  const SINCE_B = '0b000000-0000-4000-8000-000000000180';
+  const inChannel = (channelId: string, prefix: '0a' | '0b', n: number) => ({
+    id: `${prefix}000000-0000-4000-8000-00000000018${n}`,
+    channel_id: channelId,
+    sender_id: USER_SHARED,
+    content: `message ${n}`,
+    type: 'TEXT',
+    is_deleted: false,
+    created_at: `2026-01-01T00:00:0${n}.000Z`,
+  });
+  const a = (n: number) => inChannel(SINCE_A, '0a', n).id;
+
+  let repo: SupabaseChatMessageRepository;
+
+  beforeEach(() => {
+    const harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA({ id: SINCE_A, name: 'general', type: 'PUBLIC' }),
+          inB({ id: SINCE_B, name: 'general', type: 'PUBLIC' }),
+        ],
+        chat_messages: [1, 2, 3, 4].flatMap((n) => [
+          inChannel(SINCE_A, '0a', n),
+          inChannel(SINCE_B, '0b', n),
+        ]),
+      },
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+    });
+    repo = new SupabaseChatMessageRepository(harness.client);
+  });
+
+  it('returns the newest rows after the cursor, newest first, not the ones right after it', async () => {
+    const messages = await repo.findByChannel(SINCE_A, {
+      since: a(1),
+      limit: 2,
+    });
+
+    expect(messages.map((m) => m.id)).toEqual([a(4), a(3)]);
+  });
+
+  it('returns everything after the cursor when it fits the page', async () => {
+    const messages = await repo.findByChannel(SINCE_A, {
+      since: a(2),
+      limit: 50,
+    });
+
+    expect(messages.map((m) => m.id)).toEqual([a(4), a(3)]);
+  });
+
+  it("refuses a cursor from another channel rather than answering with this channel's newest page", async () => {
+    await expect(
+      repo.findByChannel(SINCE_A, {
+        since: inChannel(SINCE_B, '0b', 1).id,
+        limit: 50,
+      }),
+    ).rejects.toBeInstanceOf(ChatMessageCursorNotFoundError);
+  });
+
+  it('refuses a cursor that names no message, such as one purged since', async () => {
+    await expect(
+      repo.findByChannel(SINCE_A, {
+        since: '0a000000-0000-4000-8000-0000000001ff',
+        limit: 50,
+      }),
+    ).rejects.toBeInstanceOf(ChatMessageCursorNotFoundError);
+  });
+});
+
+/**
+ * A pivot read that fails is a failure, not an unknown cursor (#2807). Read as
+ * "no such message", it would answer `chat.since_not_found`, and the client
+ * would drop a cursor that is still good and trim the thread behind it.
+ */
+describe('SupabaseChatMessageRepository — findByChannel since, a failed pivot read (#2807)', () => {
+  it('throws the query error rather than refusing the cursor as unknown', async () => {
+    const pivotError = { message: 'connection reset', code: '08006' };
+    const chain: Record<string, jest.Mock> = {};
+    for (const method of ['select', 'eq', 'order', 'limit', 'gt', 'lt']) {
+      chain[method] = jest.fn(() => chain);
+    }
+    chain.maybeSingle = jest.fn(() =>
+      Promise.resolve({ data: null, error: pivotError }),
+    );
+    const client = {
+      from: jest.fn(() => chain),
+    } as unknown as FrappSupabaseClient;
+
+    const failure: unknown = await new SupabaseChatMessageRepository(client)
+      .findByChannel('channel-1', { since: 'message-1', limit: 50 })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(SupabaseQueryError);
+    expect(failure).not.toBeInstanceOf(ChatMessageCursorNotFoundError);
   });
 });

@@ -73,15 +73,11 @@ Realtime peak connections have no API, so only the Usage page shows them.
 
 ### Apply Migrations
 
-```bash
-# Link to staging project
-npx supabase link --project-ref <STAGING_PROJECT_REF>
-npx supabase db push
-
-# Link to production project
-npx supabase link --project-ref <PRODUCTION_PROJECT_REF>
-npx supabase db push
-```
+Deploys apply them: every merge migrates staging, and **Deploy production** migrates production,
+both through `scripts/run-migration.mjs` on the repo's pinned CLI. Staging is never pushed by hand.
+A by-hand production run is a recovery path, `node scripts/run-migration.mjs --env production`,
+which links the project and runs `db push` on that same pinned CLI rather than whatever
+`npx supabase` resolves that day.
 
 Follow the internal promotion and rollback runbooks when promoting schema changes:
 

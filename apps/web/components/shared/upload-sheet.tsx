@@ -60,13 +60,13 @@ import { cn } from "@/lib/utils";
 export const UPLOAD_FIELD_CLASS = "h-11";
 
 /**
- * The sheet's own buttons, at the board's 44px / r12 / 15px.
- *
- * Not `size="sm"`: that is 44px too, but it also drops the label to `text-sm`,
- * and the board draws the footer at 15px. Spelling the height here rather than
- * adding a `size` variant keeps the change inside this lane.
+ * The sheet's own buttons: the board's 44px / r12 footer, its 15px label
+ * rounded onto the `label` role (14), as `components.md` rounds a drawn size
+ * (#2842). That leaves it one step from `size="sm"` (44px, `px-3.5`,
+ * `text-sm`): the board pads the footer 16px, and `text-label` is the role
+ * where `text-sm` is Tailwind's own 14px.
  */
-export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-[15px]";
+export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-label";
 
 /**
  * The sheet container.
@@ -368,7 +368,7 @@ export function UploadFileField({
               <p className="truncate text-sm font-semibold text-foreground">
                 {file.name}
               </p>
-              <p className="text-[12.5px] text-muted">
+              <p className="text-caption text-muted">
                 {formatBytes(file.size)}
                 {extension ? ` · ${extension}` : ""}
               </p>
@@ -388,7 +388,7 @@ export function UploadFileField({
             */}
             <p
               id={fieldHintId(id)}
-              className="min-w-0 flex-1 text-[12.5px] text-muted"
+              className="min-w-0 flex-1 text-caption text-muted"
             >
               {hint}
             </p>
@@ -404,7 +404,7 @@ export function UploadFileField({
         <p
           id={fieldErrorId(id)}
           role="alert"
-          className="text-[12.5px] text-destructive-text"
+          className="text-caption text-destructive-text"
         >
           {error}
         </p>

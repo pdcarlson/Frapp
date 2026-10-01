@@ -70,7 +70,7 @@ export function AskPill({ className }: { className?: string }) {
         title="Ask"
         onClick={() => setOpen(true)}
         className={cn(
-          "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-[13.5px] font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
+          "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-label font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
           FOCUS_RING_SHELL,
           className,
         )}

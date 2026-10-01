@@ -214,7 +214,7 @@
   }
 
   /* Thread rows rise a shorter distance at a wider step than section cards:
-   * four bubbles arriving 60ms apart at 8px reads as a list re-flowing, not as
+   * four messages arriving 60ms apart at 8px reads as a list re-flowing, not as
    * a conversation. Nothing inside THIS frame changes state — no count ticks,
    * no typing dots, no reaction pops — which is the Motion sheet's §2b and is
    * still exactly true. Slice 3 added the check-in ring below, and that is in

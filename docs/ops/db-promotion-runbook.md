@@ -12,7 +12,7 @@ looking for the command to push migrations to staging, there isn't one any more
 
 | Environment    | How migrations get applied                                                                                                                                                                                                                                       | Who triggers it                           |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| **Local**      | `npx supabase db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
+| **Local**      | `npm run supabase -- db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
 | **Staging**    | **Automatic.** The migration steps of the shared `deploy` job ([`_deploy.yml`](../../.github/workflows/_deploy.yml), which [`deploy-staging.yml`](../../.github/workflows/deploy-staging.yml) calls) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
 | **Production** | **Manual.** The [`Deploy production`](../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations _without_ shipping code, for recovery and backlogs | A human, deliberately                     |
 
@@ -215,8 +215,9 @@ refuses rather than reordering:
 
 That is #1373: `20260829000000_rollover_promote_new_members` merged after
 `20260829002000` was already applied to staging, and staging's migration deploy
-halted. Measured against the pinned CLI 2.77.0 — exit 1, nothing applied, ledger
-untouched. The CLI stops; it does not reorder.
+halted. Measured against CLI 2.77.0, and again against 2.117.0 when the pin moved
+there (#723): exit 1, nothing applied, ledger untouched. The CLI stops; it does not
+reorder.
 
 The remedy the check prints is the right one in the ordinary case: **rename the
 file to a version after the newest applied one**, keeping its name. That is safe
@@ -376,8 +377,8 @@ Two other refusals, both deliberate:
 ## Local validation
 
 ```bash
-npx supabase start
-npx supabase db push --local
+npm run supabase -- start
+npm run supabase -- db push --local
 ```
 
 Then run:
@@ -855,7 +856,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Purpose**: Adds `public.chat_viewer_has_blocked(p_actor uuid, p_message_id uuid)`: `security definer`, `stable`, `search_path = public, pg_temp`, no blocker parameter, and false for any message the caller can't read. It re-creates `chat_message_actions_select` with a third conjunct, `not (starts_with(action_type, 'reaction:') and chat_viewer_has_blocked(user_id, message_id))`. After it, a member who blocked someone in a chapter no longer receives that member's reaction rows there, over PostgREST or the Realtime echo. Votes and the blocked member's own reads are unchanged. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#what-a-block-does-and-does-not-hide) § What a block does and does not hide.
 - **Checks**: After `db push`,
   `select polroles::regrole[], pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname = 'chat_message_actions' and p.polpermissive and p.polcmd in ('r','*');` returns **exactly one** row: `{authenticated}`, with an expression containing both `can_read_chat_message(message_id)` and `chat_viewer_has_blocked(user_id, message_id)`. The FRA-38 check further down still holds as written.
-  `select has_function_privilege('anon', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | true`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+  `select has_function_privilege('anon', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | true`. Hosted Supabase grants `anon` EXECUTE through default privileges, which the PGlite gate doesn't replay: it catches an explicit `grant … to anon` but not a forgotten revoke, so this is the check that covers that.
   `select prosecdef, proconfig from pg_proc where proname = 'chat_viewer_has_blocked';` returns `true | {"search_path=public, pg_temp"}`.
 - **Promoter notes**: Nothing needs to ship with it, and either order with any API or web deploy is safe, because no code calls the helper and clients read the table the same way under both policies. The web dashboard stops showing a blocked member's reaction chips to the blocker on its next reaction read. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
@@ -1753,7 +1754,7 @@ On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully ag
 
 Fixing the invalid Infisical credential (#696) was necessary but **not sufficient**. Two further blockers only became visible once injection worked, and both will recur on the first **production** migration:
 
-- **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), pin tracked in #835). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Verified on both as of 2026-08-29: `frapp-prod` is `ACTIVE_HEALTHY`, not paused, and run [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied production migrations successfully — so the production value is exercised, not merely provisioned. (This line previously said the opposite, from a period when `frapp-prod` was paused and no production deploy had run.)
+- **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is an upstream bug in the Management API endpoint the CLI calls ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091)), which a CLI bump alone does not fix ([`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) has why). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Verified on both as of 2026-08-29: `frapp-prod` is `ACTIVE_HEALTHY`, not paused, and run [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied production migrations successfully — so the production value is exercised, not merely provisioned. (This line previously said the opposite, from a period when `frapp-prod` was paused and no production deploy had run.)
 - **Migration-history reconciliation.** `db push` refused with `Remote migration versions not found in local migrations directory`. Staging's `schema_migrations` carried `20260228000000_enable_rls_on_remaining_tables`, a version that has never existed in this repository on any branch. Its recorded `statements` column showed four `alter table … enable row level security` calls (`users`, `chapters`, `push_tokens`, `user_settings`) — a hand-applied February hotfix. The current `00000000000000_initial_schema.sql` already enables RLS on all four, so the row was redundant and was deleted.
 
 **On-call note — reconciling a foreign migration row.** When `db push` reports a remote version missing locally, the CLI suggests `supabase migration repair --status reverted <version>`. **Do not run it blind.** First read what the row actually did:
