@@ -2,7 +2,7 @@
 
 The four gates added in Wave 0 Phase 1, the Vercel-parity build gate added with #1371, plus the coverage tooling they sit alongside. Branch
 protection and the docs/spec gate are documented separately, in
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) and
+[`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md) and
 [`docs-ci.md`](docs-ci.md).
 
 ## The gates, and why each has the posture it does

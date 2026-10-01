@@ -1597,7 +1597,7 @@ test("an escalated run says 'did not run' on EVERY surface, not just the summary
   }
 
   // The diagnosis has to reach the durable artifact, not only the run page:
-  // the issue outlives log retention and is what ALERT_ROUTING.md links to.
+  // the issue outlives log retention and is what alert-routing.md links to.
   assert.match(issueBody, /the two have drifted apart/);
 });
 

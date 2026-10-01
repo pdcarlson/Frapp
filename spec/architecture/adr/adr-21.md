@@ -163,7 +163,7 @@ ADR called *designed, not built* is built. All four *Consequences* bullets are n
   migration or API it called. One workflow, `deploy-staging.yml`, replaced both: its one job builds
   web and landing before the migration and uploads them only once the API serves the commit. The
   order is in
-  [`ci-cd.md` § How Deployments Are Gated](../../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).)*
+  [`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).)*
 - **`gitSource` is gone.** `scripts/ci/deploy-vercel-production.mjs` was **replaced** by
   `scripts/ci/deploy-vercel.mjs`, parameterised by target rather than production-only: after this ADR
   both channels are CI's job, and carrying the difference in one argument keeps them from drifting
@@ -200,7 +200,7 @@ production traffic. The three build steps are gated on `inputs.scope != 'migrati
 `f2938a01`) applied, shipped Render, and uploaded both Vercel production bundles with
 `--prebuilt --prod`. The tag job failed afterward (`GET /pulls/1340`); that does not un-exercise
 the upload path. Canonical timestamps and the Actions-list trap:
-[`docs/internal/ops/deployment/ci-cd.md`](../../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
+[`docs/ops/deployment/ci-cd.md`](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
 
 **Correction 2026-09-09:** #1376 closed as `not_planned` on 2026-09-02 (premise moot while
 unlinked; reopen if Git is re-linked). The original *What it retires* paragraph that says it is

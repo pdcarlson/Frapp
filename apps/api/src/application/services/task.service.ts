@@ -17,6 +17,7 @@ import { TaskStatus } from '#domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
@@ -189,12 +190,12 @@ export class TaskService {
       await this.postTaskCard(input, task);
       return true;
     } catch (error) {
-      this.logger.warn('Failed to post task card to chat', {
-        taskId: task.id,
-        channelId: input.channel_id,
-        chapterId: input.chapter_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to post task card to chat (task ${task.id}, channel ${input.channel_id}, chapter ${input.chapter_id})`,
+        error,
+      );
       return false;
     }
   }
@@ -324,9 +325,11 @@ export class TaskService {
         chapterId,
       );
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `findByUserAndChapter failed while checking task ${task.id} creator membership`,
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
       return;
     }
@@ -472,9 +475,11 @@ export class TaskService {
     try {
       await this.notificationService.notifyUser(assigneeId, chapterId, payload);
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
     }
   }

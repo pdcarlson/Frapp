@@ -88,7 +88,7 @@ describe("useChatScope", () => {
     // The regression guard. Mobile's chapter comes from the access token's
     // `active_chapter_id` claim, and `auth-gate.ts` establishes that its
     // absence is normal: no claim is issued for a multi-chapter member with no
-    // selection, and `DB_ROLLBACK_PLAYBOOK.md` disables the hook as the first
+    // selection, and `db-rollback-playbook.md` disables the hook as the first
     // auth-incident mitigation, returning every token to claim-absence.
     // `sendMessage` enqueues on EVERY send, so a scope gated on the chapter
     // would take chat sending down entirely for those members.

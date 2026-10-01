@@ -221,9 +221,11 @@ export class ScheduledJobsService {
     try {
       await this.sweepExpiredReports(new Date());
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         'report retention sweep: could not enumerate the reports bucket; skipping this tick',
-        error instanceof Error ? error.stack : String(error),
+        error,
       );
     }
   }

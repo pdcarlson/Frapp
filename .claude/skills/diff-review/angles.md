@@ -58,8 +58,8 @@ These encode invariants the codebase can't enforce for itself.
 
     | Source of truth | Docs that restate it |
     | --- | --- |
-    | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `spec/environments/README.md`, `quality-gates.md`, `docs/README.md`, `docs/hooks/README.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
-    | `.github/workflows/ci.yml` job steps (which workspaces `web-tests` runs) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
+    | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `github-branch-protection-runbook.md`, `spec/environments/README.md`, `quality-gates.md`, `docs/README.md`, `docs/hooks/README.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
+    | `.github/workflows/ci.yml` job steps (which workspaces `web-tests` runs) | `github-branch-protection-runbook.md`, `.claude/skills/testing/SKILL.md` (CI parity checklist) |
     | `CHAT_MESSAGE_KINDS`, declared in three files (`@repo/validation`, `chat.entity.ts`, `@repo/chat-core`) | `spec/behavior/chat/README.md`, `spec/architecture/README.md` |
     | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
     | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds); per-bucket caps differ, and `config.toml` is a different number | `content-validation.md` (the owner), `spec/architecture/README.md` § 7 |

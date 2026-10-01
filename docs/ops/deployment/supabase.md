@@ -6,10 +6,10 @@ You need **two** Supabase projects: one for staging, one for production.
 
 1. Go to https://supabase.com/dashboard → **New Project**.
 2. Create `frapp-staging` (region closest to you).
-3. Create `frapp-prod` — that is the name [`.github/environments.json`](../../../../.github/environments.json)
+3. Create `frapp-prod` — that is the name [`.github/environments.json`](../../../.github/environments.json)
    records, and the one `scripts/run-migration.mjs` prints when an injected ref does not match.
    Region: closest to you — it need not match staging, and the two live projects do
-   differ. [`DB_ROLLBACK_PLAYBOOK.md`](../DB_ROLLBACK_PLAYBOOK.md#backup-reality)
+   differ. [`db-rollback-playbook.md`](../db-rollback-playbook.md#backup-reality)
    § Backup reality records what they actually use.
 
 ### Plan and quotas
@@ -56,7 +56,7 @@ as on Free apply to both projects. Turning the cap off (organization **Billing �
 bills the overage at the rates in the table instead. The cap does not cover add-ons such as
 point-in-time recovery. The organization's **Usage** page shows how close each quota is.
 `supabase-quota.yml` checks two of them daily and pages well before either runs out: each project's disk, and the
-organization's Storage size ([its alert](../ALERT_ROUTING.md#automated-github-issue-alerts)). Egress and
+organization's Storage size ([its alert](../alert-routing.md#automated-github-issue-alerts)). Egress and
 Realtime peak connections have no API, so only the Usage page shows them.
 
 **Set up after the upgrade (2026-09-28):**
@@ -65,11 +65,11 @@ Realtime peak connections have no API, so only the Usage page shows them.
   size limit**, which Free capped at 50 MB. Discord allows 100 MB attachments and the `chat-archive`
   bucket accepts 100 MB, but the lower of the two limits wins. Why a new project needs it set by hand,
   and the upload that proves it took effect:
-  [`DB_PROMOTION_RUNBOOK.md` § 20260823124000_chat_archive_bucket.sql](../DB_PROMOTION_RUNBOOK.md#20260823124000_chat_archive_bucketsql).
+  [`db-promotion-runbook.md` § 20260823124000_chat_archive_bucket.sql](../db-promotion-runbook.md#20260823124000_chat_archive_bucketsql).
 - **`frapp-prod` shows Supabase's daily backups (#1403),** under **Database → Backups**. The nightly offsite dump
   still runs, and it is still the only copy that survives deleting the project, and the only
   backup of Storage files:
-  [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../DB_ROLLBACK_PLAYBOOK.md#backup-reality).
+  [`db-rollback-playbook.md` § Backup reality](../db-rollback-playbook.md#backup-reality).
 
 ### Apply Migrations
 
@@ -85,14 +85,14 @@ npx supabase db push
 
 Follow the internal promotion and rollback runbooks when promoting schema changes:
 
-- `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`
-- `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`
+- `docs/ops/db-promotion-runbook.md`
+- `docs/ops/db-rollback-playbook.md`
 
 ### Edge Functions
 
 The repo has one Supabase Edge Function, `discord-attachment-copy` (`supabase/functions/`). It copies
 a Discord bot import's attachments from Discord's CDN into the `chat-archive` bucket, so the bytes
-never pass through the API on Render ([ADR-26](../../../../spec/architecture/adr/adr-26.md), #2848).
+never pass through the API on Render ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
 The API's `SupabaseArchiveMediaCopier` is its only caller.
 
 **How it deploys.** Only through CI, never by hand. `_deploy.yml` runs
@@ -109,7 +109,7 @@ each function, so Supabase bundles it and the job needs no Docker. Order and gat
 **Its credential.** `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, one per Infisical environment. It is a
 scoped access token for that environment's project alone, with only the **Edge Functions**
 read-write permission. The read-only `SUPABASE_ACCESS_TOKEN` cannot deploy a function.
-[`ENV_REFERENCE.md` § CD Secrets](../../environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only)
+[`ENV_REFERENCE.md` § CD Secrets](../../internal/environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only)
 says how to mint it. When it is missing, the staging and production deploys fail at this step, before
 the API.
 
@@ -151,7 +151,7 @@ For each project, note its URL, `https://<project-ref>.supabase.co` (`SUPABASE_U
 (`SUPABASE_ANON_KEY`) and the service key (`SUPABASE_SERVICE_ROLE_KEY`, API only, never exposed to
 a client). Which key each name takes, and
 which key generation, is in
-[`ENV_REFERENCE.md` § Core App Secrets](../../environment/ENV_REFERENCE.md#core-app-secrets).
+[`ENV_REFERENCE.md` § Core App Secrets](../../internal/environment/ENV_REFERENCE.md#core-app-secrets).
 
 ### Auth settings (hosted, dashboard or Management API)
 
@@ -285,7 +285,7 @@ Migration drift for `20260924190000` if production hasn't deployed by the 07:00 
 more than 24 hours after 2026-09-24 19:00 UTC. *Corrected 2026-09-28: that last alert no
 longer fires. Production is now judged against its latest `v*` tag, not `main`, so a
 migration merged and not yet shipped reads as unreleased
-([`agent-infra.md` § Schema drift detection](../../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
+([`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
 `20260924190000` shipped in v1.3.0, renumbered `v0.5.0` on 2026-09-30 ([#2529](https://github.com/pdcarlson/Frapp/issues/2529)).*
 
 1. **Staging.** Once the merge's staging deploy is live, in `frapp-staging` →
@@ -343,18 +343,18 @@ GoTrue's own provider callback (what you paste into Google Cloud / Apple, **not*
 
 #### Done / Not done
 
-Observation 2026-09-10 for the first two Google rows, **2026-09-13 for the Apple rows** (owner confirmation, **names only**; values not opened — the Apple rows were recorded while the owner drove the consoles). Secrets stay in the Google Cloud / Apple / Supabase dashboards. Dashboard-only: did **not** Deploy. Tracker: #2120.
+Observation 2026-09-10 for the first two Google rows, **2026-09-13 for the Apple rows** (owner confirmation, **names only**; values not opened, except the Web client's ID, read 2026-10-01 and dated in its row — the Apple rows were recorded while the owner drove the consoles). Secrets stay in the Google Cloud / Apple / Supabase dashboards. Dashboard-only: did **not** Deploy. Tracker: #2120.
 
 | Item | State |
 | --- | --- |
-| Google Cloud OAuth 2.0 **Web** client (JS origins `https://app.frapp.live`, `https://app.staging.frapp.live`; redirect URIs the two hosted `/auth/v1/callback` URLs; client id + secret pasted into each project's Google provider) | **Done**. It lives in Cloud project `signet-frapp` and is named "Frapp Web client 1" under Google Auth Platform → Clients, a dashboard label only. *2026-09-24: renamed from "Signet Web client 1" by the owner ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)).* |
+| Google Cloud OAuth 2.0 **Web** client (JS origins `https://app.frapp.live`, `https://app.staging.frapp.live`; redirect URIs the two hosted `/auth/v1/callback` URLs; client id + secret pasted into each project's Google provider) | **Done**. It lives in Cloud project `signet-frapp` and is named "Frapp Web client 1" under Google Auth Platform → Clients, a dashboard label only. Client ID `661618060468-nefnjm72f4at1hfrl48bf4fjb2l18uel.apps.googleusercontent.com` (a client ID is not a secret), and it is the only entry in the **Client IDs** field of the Google provider on both `frapp-staging` and `frapp-prod`. *2026-09-24: renamed from "Signet Web client 1" by the owner ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). 2026-10-01: the client ID and the match on both projects come from the owner's screenshots of the client and of each project's Google provider ([#2960](https://github.com/pdcarlson/Frapp/issues/2960)).* |
 | Google provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** |
-| Google Auth Platform → **Audience** (publishing) | **Published: In production**, user type External, after the brand was verified (next row). Any Google account can now reach the consent screen. Earlier that day the status was **Testing** with **0 test users**, and the OAuth user cap read "0 users … counted over the entire lifetime of the app". **Google had already admitted accounts on both projects before that reading**: Google identities were linked on `frapp-staging` on 2026-09-10 and on `frapp-prod` on 2026-09-15, and a Google sign-in completed on `frapp-prod` on 2026-09-17 (see **Observed sign-ins** below). So either the counter doesn't count these sign-ins, or a project's Google provider isn't using the `signet-frapp` client the first row records. **Unresolved:** which of those holds, and why Testing with no test users didn't stop these sign-ins, if that was the status then. Nobody recorded the publishing status before 2026-09-28. *2026-09-28: the Testing reading, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). In production and External, from the owner's later Audience screenshot the same evening ([#2758](https://github.com/pdcarlson/Frapp/issues/2758)). 2026-09-30: this row said no Google sign-in had been seen to complete, and read the counter as "nobody had ever been admitted". Both projects' `auth.identities` disprove that ([#2945](https://github.com/pdcarlson/Frapp/issues/2945)).* |
+| Google Auth Platform → **Audience** (publishing) | **Published: In production**, user type External, after the brand was verified (next row). Any Google account can now reach the consent screen. Earlier that day the status was **Testing** with **0 test users**, and the OAuth user cap read "0 users … counted over the entire lifetime of the app". **Google had already admitted accounts on both projects before that reading**: Google identities were linked on `frapp-staging` on 2026-09-10 and on `frapp-prod` on 2026-09-15, and a Google sign-in completed on `frapp-prod` on 2026-09-17 (see **Observed sign-ins** below). On 2026-10-01 both projects' Google providers listed only the `signet-frapp` client (first row). Nothing records which client either provider held when these sign-ins happened. Staging fits this client. It was created at 18:05Z on 2026-09-10, an hour before staging's identity was linked, and its **Last used date** reads September 10, 2026. So the counter missed at least the staging sign-in. Prod doesn't fit as well. That Last used date is earlier than the `frapp-prod` sign-ins of 09-15 and 09-17, though Google says it can lag "a day or more". **Unresolved:** whether `frapp-prod`'s provider used another client on 09-15 and 09-17 and was switched to this one later, or Google's usage data misses those sign-ins too; and why Testing with no test users didn't stop these sign-ins, if that was the status then. Nobody recorded the publishing status before 2026-09-28. *2026-09-28: the Testing reading, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669)). In production and External, from the owner's later Audience screenshot the same evening ([#2758](https://github.com/pdcarlson/Frapp/issues/2758)). 2026-09-30: this row said no Google sign-in had been seen to complete, and read the counter as "nobody had ever been admitted". Both projects' `auth.identities` disprove that ([#2945](https://github.com/pdcarlson/Frapp/issues/2945)). 2026-10-01: the "Unresolved" sentence also asked whether a project's provider used a different client. Both use this one now ([#2960](https://github.com/pdcarlson/Frapp/issues/2960)). That settles current config, not what `frapp-prod` used in mid-September.* |
 | Google Auth Platform → **Branding** | App name **Frapp**. Home page `https://www.frapp.live`; privacy and terms `https://frapp.live/privacy` and `https://frapp.live/terms`; authorized domains `frapp.live`, `hnoyzpidbmizhbqaiity.supabase.co` and `unttyvyfezddlyafcydh.supabase.co`; `team@frapp.live` among the developer contacts; a crest logo that looks, by eye, like the more orange pre-#2153 export. Brand verification: **verified**. Google's Verification status reads "Your branding has been verified and is being shown to users." An earlier attempt had been flagged with two issues: the home page wasn't registered to the Cloud project's owner, and the app name didn't match the home page. The banner doesn't report on each issue. We infer both cleared through two fixes: the Search Console record in [`vercel.md` § 4.4](vercel.md#44-dns-records-squarespace-domains), and the Frapp landing (#2770) reaching production in [Deploy production run 36464014731](https://github.com/pdcarlson/Frapp/actions/runs/36464014731) of `0719d521`. *2026-09-24: the owner renamed the app name from Signet, with no verification prompt on save. 2026-09-28: the rest, from the owner's screenshots ([#2669](https://github.com/pdcarlson/Frapp/issues/2669), [#2758](https://github.com/pdcarlson/Frapp/issues/2758)). The verified status comes from a later screenshot the same evening, taken after that deploy ([#2758 comment](https://github.com/pdcarlson/Frapp/issues/2758#issuecomment-5876200553)). It shows app name Frapp, the owner's personal Gmail as user support email, and a gold crest logo, not compared against the current export. It doesn't show the links or domains above, which are the earlier reading. An agent read `www.frapp.live`, `/privacy` and `/terms` through the Vercel MCP and found Frapp on all three and no "Signet".* |
 | Automatic linking | **On** (a later Google/Apple identity can attach to an existing email/password or magic-link user; do not merge `public.users` rows — unique on `supabase_auth_id` only) |
 | Skip nonce (Google provider) | **Off** |
 | Allow users without email — **Google** | **Off** |
-| Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
+| Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
 | Magic Link templates | **Untouched** by the OAuth work: don't change them for a provider. *2026-09-24: ADR-25 step 3 retypes them for the product name; see [§ ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp).* |
 | Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID `live.frapp.mobile.web`; Sign in with Apple key | **Done** (2026-09-13) |
 | Apple provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** (2026-09-13) |
@@ -400,7 +400,7 @@ machine that downloaded it.
    registering a replacement and re-generating the secret for both projects. It must never be committed to this repo. Note the Key ID; the
    Team ID is the **App ID Prefix** shown on any App ID page (kept out of this
    file for the same reason `eas.json` no longer names `appleTeamId` —
-   [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md)).
+   [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)).
 4. **Secret** — generate the JWT with the client-side generator on
    [Supabase's Apple provider guide](https://supabase.com/docs/guides/auth/social-login/auth-apple)
    (Team ID + Services ID + Key ID + `.p8`; the generator does not work in
@@ -419,7 +419,7 @@ machine that downloaded it.
    - `frapp-staging`: the same, plus `host.exp.Exponent`
 
    The Services ID covers web/browser OAuth; the **bundle id** covers native
-   iOS, because [`apps/mobile/lib/apple-auth.ts`](../../../../apps/mobile/lib/apple-auth.ts)
+   iOS, because [`apps/mobile/lib/apple-auth.ts`](../../../apps/mobile/lib/apple-auth.ts)
    calls `signInWithIdToken` and that token's audience is the bundle id. Omit it
    and web sign-in works while native iOS fails. `host.exp.Exponent` is the Expo
    Go app's **shared** bundle id, so it is **staging-only on purpose**: trusting
@@ -440,7 +440,7 @@ machine that downloaded it.
 Services → **Sign in with Apple for Email Communication**. There are **two**, and
 [§ Auth settings](#auth-settings-hosted-dashboard-or-management-api) already names
 both: `mail.frapp.live` (prod Auth SMTP, and the invite sender in
-[`email.module.ts`](../../../../apps/api/src/modules/email/email.module.ts)) and
+[`email.module.ts`](../../../apps/api/src/modules/email/email.module.ts)) and
 `mail.staging.frapp.live` (staging Auth SMTP — the Resend keys are domain-scoped,
 so staging is a genuinely separate registration, not a duplicate). Until a domain
 is registered, Apple's relay refuses mail sent from it to a

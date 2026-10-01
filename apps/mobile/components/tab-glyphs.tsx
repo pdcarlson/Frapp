@@ -12,8 +12,9 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * One deliberate deviation from that markup: Canvas omits `stroke-linecap` on
  * the calendar rules, and §1 specifies rounded caps for the family, so they are
  * rounded here. Colors are token reads rather than Canvas's baked hexes —
- * `#78716A` is `text.muted` and `#F4CB63` is the gold the accent falls back to,
- * so the values agree today but the chapter accent is free to differ.
+ * `#78716A` is `text.muted`, and where Canvas bakes `#F4CB63` (`gold.askText`)
+ * the active stroke is the chapter accent, which is house gold (`gold.house`,
+ * `#EFB63B`) only for a chapter with no served palette.
  *
  * The recipe is `spec/ui/design-system/iconography.md` §1: a 1.6px stroke on a
  * 24px grid with rounded caps and joins, the primary silhouette carrying a
@@ -48,12 +49,10 @@ const INACTIVE_FILL = "rgba(255,255,255,0.06)";
  * Active fill is the stroke hue at 16–18% (iconography.md §1); Canvas draws the
  * tab bar at .18, so that is what we use.
  *
- * The stroke itself is spec'd as "accent text (step 11)". `useChapterBranding`
- * now serves exactly that from `chapters.theme_palette`
- * (`--signet-accent-text`), falling back to the flat accent only for a chapter
- * whose row predates the Signet map. These glyphs are still passed a flat
- * accent by their callers; routing them to the served step-11 value is the
- * remaining step.
+ * The stroke itself is spec'd as "accent text (step 11)", and that is what
+ * the tab layout passes: `useChapterBranding().accent`, read from
+ * `chapters.theme_palette` (`--signet-accent-text`), or house gold for a
+ * palette without the Signet map.
  */
 const ACTIVE_FILL_ALPHA = 0.18;
 

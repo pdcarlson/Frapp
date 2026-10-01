@@ -18,19 +18,68 @@ export function initials(name: string | null | undefined): string {
 
 /**
  * Guard-parse a raw text-input string into a nonnegative-by-default integer:
- * trim, then only commit a finite integer >= `min` (default 0). Anything else
- * (empty, negative, decimal, NaN) returns `undefined` so the caller can leave
- * the previous value in place. The empty check is explicit because
- * `Number("")` is `0`, not `NaN`. Shared by the settings tabs' numeric-field
- * guards (Roles rank, Dues amounts, Workflows threshold, Fields max length)
- * so the identical parse/validate shape lives in one place.
+ * trim, then only commit a safe integer >= `min` (default 0). Anything else
+ * (empty, negative, decimal, NaN, Infinity, or an integer too large to hold
+ * exactly) returns `undefined` so the caller can leave the previous value in
+ * place. The empty check is explicit because `Number("")` is `0`, not `NaN`.
+ *
+ * This is the guard for `apps/web`'s integer inputs (`spec/engineering.md`
+ * § Input handling): `min` on an `<input>` never stops `onChange` from handing
+ * over `-3` or `1.5`. A `type="number"` input reports text it can't parse
+ * (`abc`, `1e999`, a lone `-`) as `""`, so those reach a caller as a cleared
+ * field. A field that takes a decimal, a sign, or a range with its own inline
+ * error checks at submit instead: the invoice amount, the points adjustment
+ * and the founded year do. Don't loosen this one to fit them.
  */
 export function parseGuardedInt(raw: string, min = 0): number | undefined {
   const trimmed = raw.trim();
   if (trimmed === "") return undefined;
   const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed < min) return undefined;
+  if (!Number.isSafeInteger(parsed) || parsed < min) return undefined;
   return parsed;
+}
+
+/**
+ * {@link parseGuardedInt}'s sibling for a field that takes a decimal (service
+ * hours, where `1.5` is 90 minutes as on mobile): a finite number >= `min`,
+ * no larger than `Number.MAX_SAFE_INTEGER`, or `undefined`.
+ */
+export function parseGuardedDecimal(raw: string, min = 0): number | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < min) return undefined;
+  if (parsed > Number.MAX_SAFE_INTEGER) return undefined;
+  return parsed;
+}
+
+function guardDraft(
+  raw: string,
+  parse: (text: string) => number | undefined,
+): string | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "";
+  return parse(trimmed) === undefined ? undefined : trimmed;
+}
+
+/**
+ * The keystroke guard for an integer input whose draft is held as text, so
+ * the field can be cleared and stays cleared: `""` for an empty input, the
+ * trimmed text when {@link parseGuardedInt} accepts it, and `undefined` for
+ * anything else, so the caller keeps the previous draft.
+ *
+ * It has no floor above 0, on purpose. Deleting the 3 of "30" leaves a
+ * transient "0", and a year passes through "2" on the way to "2026", so a
+ * field's own floor is checked at submit, where `parseGuardedInt(draft, min)`
+ * reads the draft.
+ */
+export function guardIntDraft(raw: string): string | undefined {
+  return guardDraft(raw, (text) => parseGuardedInt(text));
+}
+
+/** {@link guardIntDraft} for a decimal field; see {@link parseGuardedDecimal}. */
+export function guardDecimalDraft(raw: string): string | undefined {
+  return guardDraft(raw, (text) => parseGuardedDecimal(text));
 }
 
 /** Human-readable message for caught errors (e.g. toast descriptions). */

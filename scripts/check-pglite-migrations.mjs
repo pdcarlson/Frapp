@@ -792,7 +792,7 @@ const RLS_SMOKE = [
     // DEFAULT PRIVILEGES, and this harness does not replay those defaults. So a
     // drop/recreate that restores anon's grant on hosted (by forgetting the
     // `revoke ... from anon`) still leaves this green. The check in
-    // DB_PROMOTION_RUNBOOK.md covers that case; it is a promotion-time check,
+    // db-promotion-runbook.md covers that case; it is a promotion-time check,
     // not a CI one.
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
                  has_function_privilege('anon', p.oid, 'EXECUTE') as anon_exec

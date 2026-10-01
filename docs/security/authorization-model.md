@@ -282,7 +282,7 @@ not a partial fix — it is the original defect spelled out.
 This is checked, not just conventional: `scripts/check-pglite-migrations.mjs` applies every migration
 and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
 `pg_temp` last. Whether that job blocks a merge is set in
-[the branch protection runbook § Required Status Checks](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+[the branch protection runbook § Required Status Checks](../ops/github-branch-protection-runbook.md#required-status-checks)
 (#2538). Fixed repo-wide in #985 (#983 fixed the first instance).
 
 ### The `chat_messages` read surface — accepted, with the bound named
@@ -533,7 +533,7 @@ it carries a client-reachable `SELECT` policy with no black-box coverage (tracke
 `anon` and `authenticated` access to new tables and functions through `ALTER DEFAULT PRIVILEGES`,
 and the harness does not replay those defaults. So its `anon` EXECUTE assertions catch an explicit
 `grant … to anon`, but not a drop/recreate that forgets its `revoke … from anon`, which on hosted
-hands the grant back. The `has_function_privilege('anon', …)` checks in `DB_PROMOTION_RUNBOOK.md`
+hands the grant back. The `has_function_privilege('anon', …)` checks in `db-promotion-runbook.md`
 cover that at promotion time.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The

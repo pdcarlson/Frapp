@@ -8,6 +8,7 @@ import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { buildOpenApiConfig } from './openapi-config';
 import { configureApp } from './bootstrap';
+import { logThrowable } from './infrastructure/observability/log-throwable';
 
 async function bootstrap() {
   if (sentryReportsWithoutPseudonyms) {
@@ -52,7 +53,7 @@ async function bootstrap() {
  * this block is safe to add. `./instrument` is the first import in this file, so
  * Sentry is live before `bootstrap()` runs, and its default
  * `onUnhandledRejectionIntegration` was what reported a failed boot — routed per
- * `docs/internal/ops/ALERT_ROUTING.md`. Handling the rejection here means that
+ * `docs/ops/alert-routing.md`. Handling the rejection here means that
  * listener never fires. Without the two lines below, this change would trade a
  * paged alert for a prettier deploy log nobody is watching: strictly worse for
  * exactly the incident it was written for.
@@ -62,16 +63,17 @@ async function bootstrap() {
  * configured, and its own failure must not replace the error being reported.
  */
 bootstrap().catch(async (error: unknown) => {
-  const reason =
-    error instanceof Error ? (error.stack ?? error.message) : String(error);
-  Logger.error(`API failed to start: ${reason}`, 'Bootstrap');
+  const bootLogger = new Logger('Bootstrap');
+  logThrowable(bootLogger, 'error', 'API failed to start', error);
   try {
     Sentry.captureException(error, { level: 'fatal' });
     await Sentry.flush(2000);
   } catch (flushError) {
-    Logger.error(
-      `Sentry reporting of the boot failure itself failed: ${String(flushError)}`,
-      'Bootstrap',
+    logThrowable(
+      bootLogger,
+      'error',
+      'Sentry reporting of the boot failure itself failed',
+      flushError,
     );
   }
   process.exit(1);

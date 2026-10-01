@@ -13,7 +13,7 @@ import { AuthModule } from '../auth/auth.module';
  * Push worker (ADR-09). Runs in-process on the API; the
  * `OnApplicationBootstrap` lifecycle on `ChatPushWorkerService` opens the
  * Supabase Realtime subscription on `chat_messages`. Scaling watermark for a
- * standalone split is documented in `docs/internal/ops/deployment/render.md`.
+ * standalone split is documented in `docs/ops/deployment/render.md`.
  *
  * Imports `NotificationModule` to reuse the preference-aware,
  * quiet-hours-aware Expo fanout; `ChapterModule` to access

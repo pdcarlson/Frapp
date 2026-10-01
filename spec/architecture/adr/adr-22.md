@@ -43,7 +43,7 @@ The product rules, identifier table, sampling bounds, and definition of done liv
 HMAC analytics (#431 family), and `x-request-id` middleware that honors inbound ids. Live
 provider state on 2026-09-09 did **not** match that intended split, and this ADR does not
 rewrite the intended split to match the dashboards. Alert-rule observations for that date
-live in [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md) (Sentry issue-alert
+live in [`alert-routing.md`](../../../docs/ops/alert-routing.md) (Sentry issue-alert
 *read* works; metric-alert list still HTTP 410; *create* is human-only; Render unread).
 Product-analytics project state, recorded here because it is the evidence this decision is
 not a description of the current PostHog project:
@@ -54,7 +54,7 @@ not a description of the current PostHog project:
 | PostHog org Signet, project `569878` | `ingested_event: false`; HogQL `count()` on `events` last 90d = **0**. `autocapture_exceptions_opt_in: true`. `session_recording_opt_in: true`, `session_recording_sample_rate: null` (treat as 100%), `maskAllInputs: true`, replay retention `30d`, `anonymize_ips: false`. No workflows, no feature flags. One project only — production project still missing | PostHog MCP; #1173, #709 |
 | Granola / Supermemory / Infisical names / Render | Granola MCP `needsAuth`; Supermemory MCP discovery error; Infisical secrets endpoints 404 with a present service token; Render MCP unauthorized. Last live proof of staging `POSTHOG_API_KEY` remains the 2026-08-21 comment on #1173 | blocked this session |
 
-**Correction (2026-09-09 ~21:32Z):** the PostHog row above is the *then*-current project, not today's. Live settings (and that project-level `session_recording_opt_in` is not production replay) live in [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md); do not copy them back here.
+**Correction (2026-09-09 ~21:32Z):** the PostHog row above is the *then*-current project, not today's. Live settings (and that project-level `session_recording_opt_in` is not production replay) live in [`alert-routing.md`](../../../docs/ops/alert-routing.md); do not copy them back here.
 
 Code-side gaps on the same date (current behavior, not this decision): identity DTO is
 `{ distinct_id, enabled }` with no chapter-group pseudonym; landing has no Sentry/PostHog SDK
@@ -134,7 +134,7 @@ breached the jscpd ratchet; the package is the cutover, not a second copy.
   `autocapture_exceptions_opt_in: true` *(earlier 2026-09-09 observation)* was a bug
   against this decision, not evidence it was wrong. **Correction (2026-09-09 ~21:32Z):**
   that project flag has since been flipped; live settings live in
-  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), not here.
+  [`alert-routing.md`](../../../docs/ops/alert-routing.md), not here.
 - **Sentry Replay.** Two replay products means two consent surfaces and two PII leak paths.
   Session replay stays PostHog-only, production-off until approval.
 - **One PostHog project for staging and production.** A shared dataset aliases staging
@@ -174,7 +174,7 @@ breached the jscpd ratchet; the package is the cutover, not a second copy.
   [`observability.md` § Verification](../../behavior/observability.md#verification-and-definition-of-done).
   This ADR does not close those items.
 - Dated live observations of alert rules belong in
-  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), refreshed when re-checked,
+  [`alert-routing.md`](../../../docs/ops/alert-routing.md), refreshed when re-checked,
   not copied into this ADR on every pass.
 
 **Trigger to revisit:** Paul approves production replay (disclosure, consent, retention) —

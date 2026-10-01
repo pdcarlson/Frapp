@@ -1,13 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ChapterCustomField } from "@repo/validation";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
 // Mock the data hooks so the tab renders without a query client / network.
 const mockUseCustomFields = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
+const mockToast = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -18,7 +23,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
 import { SettingsFieldsTab } from "./settings-fields-tab";
@@ -128,5 +133,76 @@ describe("SettingsFieldsTab", () => {
     expect(
       screen.getByRole("button", { name: /add field/i }),
     ).toBeDisabled();
+  });
+});
+
+describe("SettingsFieldsTab max length guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseCustomFields.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+    });
+    mockCreate.mockResolvedValue({});
+  });
+
+  const maxLength = () => screen.getByLabelText(/max length/i);
+
+  function draftField() {
+    render(<SettingsFieldsTab canManage />);
+    fireEvent.change(screen.getByLabelText("Key"), {
+      target: { value: "graduation_year" },
+    });
+    fireEvent.change(screen.getByLabelText("Label"), {
+      target: { value: "Graduation year" },
+    });
+  }
+
+  const submit = () =>
+    fireEvent.submit(
+      screen.getByRole("button", { name: /add field/i }).closest("form")!,
+    );
+
+  it("keeps the last whole number through a negative or a decimal", () => {
+    draftField();
+    expectRefusedEntriesKeep(maxLength(), "120");
+  });
+
+  it("reads an emptied or unparseable field as no limit", () => {
+    draftField();
+    expectClearingEntriesEmpty(maxLength(), "120");
+  });
+
+  it("keeps the 0 left by deleting a leading digit, then refuses it at save", async () => {
+    draftField();
+    fireEvent.change(maxLength(), { target: { value: "100" } });
+    fireEvent.change(maxLength(), { target: { value: "00" } });
+    expect(maxLength()).toHaveValue(0);
+    submit();
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Max length starts at 1" }),
+      ),
+    );
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("creates with the kept whole number", async () => {
+    draftField();
+    fireEvent.change(maxLength(), { target: { value: "120" } });
+    fireEvent.change(maxLength(), { target: { value: "1.5" } });
+    submit();
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0]![0].options).toEqual({ max_length: 120 });
+  });
+
+  it("creates with no limit when the field is left empty", async () => {
+    draftField();
+    fireEvent.change(maxLength(), { target: { value: "" } });
+    submit();
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0]![0]).not.toHaveProperty("options");
   });
 });

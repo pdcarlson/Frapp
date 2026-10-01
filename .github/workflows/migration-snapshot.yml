@@ -34,14 +34,14 @@ name: Migration snapshot
 # updating this list stops the refresh (`deploy-staging-workflow.test.mjs`
 # asserts the staging half). That is what keeps the snapshot current, because a
 # scheduled run here starts hours late. The 4-hourly schedule is a backstop
-# for applies made outside those workflows (DB_PROMOTION_RUNBOOK repairs).
+# for applies made outside those workflows (`db-promotion-runbook.md` repairs).
 # Off `main`, the required gates wait for a snapshot newer than the latest
 # finished deploy, then refuse the stale one
 # (`.github/actions/download-migration-snapshot`, `on-stale`; its header sets
 # how long they wait), with an age limit of
 # `DEFAULT_MAX_AGE_HOURS` (`scripts/ci/lib/migration-snapshot.mjs`) as backstop.
 # A manual ledger change triggers nothing, so dispatch this after one
-# (DB_PROMOTION_RUNBOOK.md § What catches drift, and what catches bad ordering).
+# (db-promotion-runbook.md § What catches drift, and what catches bad ordering).
 #
 # Semantics: scripts/ci/publish-migration-snapshot.mjs. Unit tests:
 # scripts/ci/__tests__/migration-snapshot.test.mjs (`npm run test:ci-scripts`).
