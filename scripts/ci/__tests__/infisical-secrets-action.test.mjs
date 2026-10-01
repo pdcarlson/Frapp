@@ -80,6 +80,9 @@ const usesLocal = (slug) =>
 
 const USES_INFISICAL = usesLocal("infisical-secrets");
 const USES_SUPABASE = usesLocal("supabase-cli");
+// Any composite action under .github/actions, for the workspace guard below:
+// the trust rule is a property of `uses: ./…`, not of which action it names.
+const USES_ANY_LOCAL = usesLocal("[^\"'\\s#]+");
 
 /** A job key: two-space indent, optionally quoted, optional trailing comment. */
 const JOB_KEY_RE = /^ {2}["']?([A-Za-z0-9_-]+)["']?:\s*(#.*)?$/;
@@ -617,7 +620,7 @@ describe("local actions resolve at every call site", () => {
         state = "untrusted";
         movedAt = i + 1;
       }
-      if (USES_INFISICAL.test(line) || USES_SUPABASE.test(line)) {
+      if (USES_ANY_LOCAL.test(line)) {
         calls.push({ line: i + 1, state, movedAt });
       }
     });
@@ -645,7 +648,10 @@ describe("local actions resolve at every call site", () => {
         );
       }
     }
-    assert.ok(seen >= 14, `expected every Infisical and Supabase call site, saw ${seen}`);
+    // 70 when node-setup landed (#1541), which put a local action in nearly
+    // every job. A collapse well below that means this reader broke, not that
+    // the workflows changed.
+    assert.ok(seen >= 60, `expected every local composite action call site, saw ${seen}`);
   });
 
   // The guard's own teeth, on the one file whose trust changes mid-job.

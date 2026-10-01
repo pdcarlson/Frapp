@@ -209,9 +209,9 @@ jobs:
         run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # Ancestry + CI-green. Both assertions are fatal, and an unreadable checks
       # API is a failure rather than a pass.

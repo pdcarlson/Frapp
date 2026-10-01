@@ -122,9 +122,9 @@ jobs:
         run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # Exports MIGRATION_SNAPSHOT, the downloaded file's path, and
       # MIGRATION_SNAPSHOT_STAGING_DEPLOY. `use`: this job reports and does not
@@ -235,9 +235,9 @@ jobs:
 
       - name: Setup Node
         if: steps.touched.outputs.run == 'true'
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # Production's applied state, because this gate is about the database
       # the migrations are heading for. Not needed for a fixture run, which
@@ -345,9 +345,9 @@ jobs:
         run: git fetch --no-tags origin main:refs/remotes/origin/main
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # What "introduced" is measured against. On a PR it is `main`, so the
       # introduced set is the PR's own migrations. On a push it is the commit

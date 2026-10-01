@@ -12,7 +12,8 @@ action file is not on disk yet when the runner resolves it.
 
 | Action | What it does |
 | --- | --- |
-| [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`) and seven consumers. |
+| [`node-setup`](./node-setup/action.yml) | `actions/setup-node` at the one pinned `node-version`, then the install the required `install:` input names: `ci` (`npm ci`), `omit-dev` (`npm ci --omit=dev`) or `none`. The two installing modes restore the `~/.npm` download cache, never `node_modules`. Every job that sets up Node calls it, except the two exceptions in the rules below (#1541). |
+| [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`) and eight consumers (roster: `CONSUMERS` in its test). |
 | [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. Optional `preserve-nonempty` restores named env vars this injection left empty (production backup `prod` inject only). Call-site roster: `EXPECTED` in `scripts/ci/__tests__/infisical-secrets-action.test.mjs`. |
 | [`db-offsite-backup`](./db-offsite-backup/action.yml) | Dump one Supabase project with the Supabase CLI, upload to the offsite bucket under `<environment>/<label>/`, read it back, prune past retention. Asserts the injected `SUPABASE_PROJECT_REF` against `.github/environments.json` before linking. 2 call sites (staging, production) in `db-backup.yml`. |
 | [`storage-offsite-backup`](./storage-offsite-backup/action.yml) | Mirror one project's Storage objects to a per-environment prefix, or run the restore rehearsal. Asserts the injected `SUPABASE_URL` against `.github/environments.json`. 2 call sites in `db-backup.yml`. |
@@ -25,6 +26,14 @@ action file is not on disk yet when the runner resolves it.
   `turbo-packages-build` that means the `turbo-pkgbuild-` cache key and the
   `packages/*` build command; `scripts/ci/__tests__/turbo-packages-build-action.test.mjs`
   fails if either reappears in a workflow *or* in another composite action.
+- **No workflow or other action hand-writes `actions/setup-node` or the install, except
+  `_deploy.yml` and `release.yml`.** Those two check out another commit before Node is set
+  up (the commit being deployed or tagged), so a local action there would load from that
+  tree (see the workspace rule below), and they keep a hand-written step pinned to
+  `node-setup`'s version. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on any
+  other copy, on an exception whose version differs or that no longer checks out another
+  commit first, on an `install:` value the action doesn't accept, and on a path-gated job
+  that calls the action without `.github/actions/**` in its filter.
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`
@@ -64,7 +73,8 @@ action file is not on disk yet when the runner resolves it.
 - **A local action needs a checkout in the same job — and must not run after the workspace
   moves.** `uses: ./…` resolves against the runner workspace *at step-execution time*, so a
   checkout earlier in the job is necessary but **not sufficient**. Both halves are enforced by
-  `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
+  `scripts/ci/__tests__/infisical-secrets-action.test.mjs`, for every local action's call site
+  in a workflow (since #1541; it used to check only `infisical-secrets` and `supabase-cli`).
 
   The first half: `deploy-api.yml`'s `deploy-staging` job (the staging deploy, now
   `deploy-staging.yml`'s `deploy` job) had no checkout at all — it only fired a deploy hook

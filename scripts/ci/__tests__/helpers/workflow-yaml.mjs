@@ -724,3 +724,16 @@ export function workflowJobs(workflowPath) {
   }
   return jobs;
 }
+
+/**
+ * Whether a step from `workflowSteps` runs the job's lockfile install: the
+ * `./.github/actions/node-setup` step passing `install: ci`, which is where a
+ * job's `npm ci` lives since #1541. For guards that pin a step to run after
+ * the install.
+ */
+export function installsDependencies(step) {
+  return (
+    /^\s*-?\s*uses:\s*["']?\.\/\.github\/actions\/node-setup\/?["']?\s*(#.*)?$/m.test(step.body) &&
+    /^\s*install:\s*["']?ci["']?\s*(#.*)?$/m.test(step.body)
+  );
+}

@@ -174,9 +174,9 @@ jobs:
       # The Node the deploy job runs these scripts on (the prune imports
       # deploy-vercel.mjs). Built-ins only, so no npm ci.
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       - name: Read the provider ids
         id: ids
