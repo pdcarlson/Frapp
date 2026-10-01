@@ -578,6 +578,8 @@ word "subscription"**, which is the chapter's own bill with a different payer
 | Payment captured, unsettled | — (notice) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` |
 | Payment settled | — (notice) | `Paid. Your chapter has it — thanks.` |
 | Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
+| Stripe unavailable (web) | — (disabled CTA reason) | `Paying dues is available in the Frapp mobile app.` |
+| Installed build, Stripe module failed to load | — (disabled CTA reason) | `Card payments couldn't start in this version of the app. Updating the app may fix it. Your treasurer can still take payment another way.` Only while a publishable key is set: a broken module with no key gets the no-key row, because an update can't switch payment on. |
 | No publishable key | — (disabled CTA reason) | `Card payments aren't switched on for this build yet. Ask your treasurer how to pay this invoice.` |
 | Trust footer | — | `Payments run through your chapter's Stripe account.` |
 

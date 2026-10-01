@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { isWebOrExpoGo } from "../expo-go";
+import { isExpoGo, isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireStripe } from "./stripe-module";
 import type { StripeModule } from "./stripe-types";
@@ -89,16 +89,31 @@ export function isStripeAvailable(): boolean {
  * Why payment is unavailable, or `null` when it is available.
  *
  * §5's rule for a disabled control is that it names the blocker — "A disabled
- * control with no explanation is its own dead end." The two causes need
- * different sentences: one is fixed by installing a real build, the other is a
- * chapter/deployment configuration the member cannot do anything about.
+ * control with no explanation is its own dead end." Each cause gets its own
+ * sentence, because each has a different remedy: web by using the phone app,
+ * Expo Go by installing the real build, a module that failed to load in an
+ * installed build is a broken build that an update may fix (the case
+ * `isolated-module.ts` warns about), and a missing key is a deployment setting
+ * the member cannot do anything about. The strings are tabled in
+ * `spec/ui/design-system/writing.md` § Dues.
  */
 export function stripeUnavailableReason(): string | null {
   if (loadStripe() === null) {
     if (Platform.OS === "web") {
       return "Paying dues is available in the Frapp mobile app.";
     }
-    return "Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.";
+    if (isExpoGo()) {
+      return "Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.";
+    }
+    // Both cache `null`, so only the guard tells Expo Go apart from an
+    // installed build whose native module threw; telling that member to
+    // install the build they are running would be false. Without a key an
+    // update could not switch payment on either, and production ships no key
+    // (`apps/mobile/store/README.md` § Review notes), so that member falls
+    // through to the key sentence rather than being promised a fix.
+    if (publishableKey() !== null) {
+      return "Card payments couldn't start in this version of the app. Updating the app may fix it. Your treasurer can still take payment another way.";
+    }
   }
   if (publishableKey() === null) {
     return "Card payments aren't switched on for this build yet. Ask your treasurer how to pay this invoice.";
