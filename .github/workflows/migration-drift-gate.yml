@@ -256,35 +256,13 @@ jobs:
         if: steps.touched.outputs.run == 'true'
         uses: ./.github/actions/supabase-cli
 
-      # Only what the migrations need a real server for. Studio, imgproxy, the
-      # edge runtime, the log pipeline and the pooler contribute nothing to an
-      # apply and cost image pulls on every run.
-      #
-      # ghcr.io rate-limits image pulls (`toomanyrequests`), and once the
-      # CLI's own pull retries run out, `start` fails: it failed this required
-      # check three runs in a row (#2609). The step retries only when that is
-      # the error `start` exits with, judged from the last lines of its output,
-      # since the CLI also prints rate limits it recovered from. A clean stop
-      # runs between attempts, and whole images already pulled stay cached, so
-      # each attempt pulls only what the last one did not finish. Any other
-      # failure fails at once.
+      # Only what the migrations need a real server for, retried when ghcr.io
+      # rate-limits an image pull (#2609). The script owns the exclusion list
+      # and the retry, and _deploy.yml's production rehearsal calls the same
+      # one.
       - name: Start disposable Supabase stack
         if: steps.touched.outputs.run == 'true'
-        run: |
-          set -uo pipefail
-          log="$(mktemp)"
-          for attempt in 1 2 3 4; do
-            if supabase start -x studio,imgproxy,edge-runtime,logflare,vector,pooler,mailpit 2>&1 | tee "$log"; then
-              exit 0
-            fi
-            if ! tail -n 3 "$log" | grep -q 'toomanyrequests' || [ "$attempt" -eq 4 ]; then
-              exit 1
-            fi
-            delay=$((attempt * 60))
-            echo "::warning::ghcr.io rate-limited an image pull (attempt ${attempt}/4); retrying in ${delay}s."
-            supabase stop --no-backup || true
-            sleep "$delay"
-          done
+        run: bash scripts/ci/supabase-start-disposable.sh
 
       # A fixture run exercises the two-phase apply that a live run cannot when
       # production has nothing pending — which is its steady state, so on an
