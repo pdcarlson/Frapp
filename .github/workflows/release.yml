@@ -167,10 +167,8 @@ jobs:
       # Hand-written, not ./.github/actions/node-setup: a local action loads
       # from the tree on disk, which is the deployed commit here, so releasing
       # a commit older than that action would fail. The action ref, the
-      # version and the cache opt-out must match node-setup's
-      # (`node-setup-action.test.mjs`): without `package-manager-cache: false`,
-      # setup-node v5+ restores and saves an npm cache here on its own, because
-      # package.json's `packageManager` names npm.
+      # version and `package-manager-cache: false` must match node-setup's step,
+      # whose comment says why the opt-out is there (`node-setup-action.test.mjs`).
       - name: Setup Node
         uses: actions/setup-node@v7
         with:

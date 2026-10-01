@@ -30,12 +30,14 @@ action file is not on disk yet when the runner resolves it.
   `_deploy.yml` and `release.yml`.** Those two check out another commit before Node is set
   up (the commit being deployed or tagged), so a local action there would load from that
   tree (see the workspace rule below), and they keep a hand-written step pinned to
-  `node-setup`'s version. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on any
-  other copy, on an exception whose version differs or that no longer checks out another
-  commit first, on an `install:` value the action doesn't accept, on any step added to the
-  action or line added to its mode check, and on an installing mode in a job that holds a
-  secret, directly or through a composite action it calls (those jobs run dependency-free
-  scripts, so no `node-setup` call runs `npm ci`'s lifecycle scripts beside a credential).
+  `node-setup`'s: the same `actions/setup-node` ref, Node version and
+  `package-manager-cache: false`. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on
+  any other copy, on an exception whose ref, version or cache opt-out differs or that no
+  longer checks out another commit first, on an `install:` value the action doesn't
+  accept, on any step added to the action or line added to its mode check, and on an
+  installing mode in a job that holds a secret, directly or through a composite action it
+  calls (those jobs run dependency-free scripts, so no `node-setup` call runs `npm ci`'s
+  lifecycle scripts beside a credential).
   `_deploy.yml` is outside that rule: its hand-written `npm ci` runs in a job that already
   holds its environment's secrets, before the Infisical injection, and #2824 tracks
   isolating it.
@@ -67,6 +69,15 @@ action file is not on disk yet when the runner resolves it.
   an annotated tag, the `^{}` line). Enforced by rule D in
   `scripts/ci/__tests__/workflow-secrets-scope.test.mjs`. Jobs holding only the
   per-run `GITHUB_TOKEN` are outside it.
+
+- **Every action runs on a release that runs on Node 24** (#3108), in every workflow and
+  every action here. GitHub forces a `runs.using: node20` action onto Node 24 with a
+  deprecation warning on each run, and is removing Node 20 from its runners.
+  `scripts/ci/__tests__/action-runtime-floor.test.mjs` records each action's oldest
+  release verified on node24 and fails on a ref below it, on an action with no recorded
+  floor, and on a commit pin without its `# vX.Y.Z` comment. Adding an action means reading
+  `runs.using` in its `action.yml` at the tag you pin, not its release notes, and recording
+  the floor there; a forward bump needs no edit.
 
 - **`supabase-cli` takes no inputs on purpose.** A `version:` input would put the pin back
   at every call site. The production apply and the `migration-replay` rehearsal exist to be

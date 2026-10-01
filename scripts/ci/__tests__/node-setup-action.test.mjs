@@ -30,8 +30,8 @@ import {
 //   * The copies stay gone, in workflows and in the other composite actions.
 //   * The two jobs that can't call a local action (they check out another
 //     commit first, so `./.github/actions/node-setup` would load from THAT
-//     tree) stay pinned to the same version, and stay exceptions only while
-//     the reason holds.
+//     tree) stay pinned to the same step (the setup-node ref, Node version and
+//     cache opt-out), and stay exceptions only while the reason holds.
 //   * The action does exactly what its contract says and nothing more. Most
 //     call sites are scheduled or dispatch-only, so a PR never runs them, and
 //     the per-job guards (the cold-build jobs, mobile-validate's bundle order,
@@ -71,9 +71,8 @@ const scalar = (raw) =>
 const SETUP_NODE_RE = /(?:^|[\s{,-])uses:\s*["']?actions\/setup-node@/i;
 const SETUP_NODE_REF_RE = /actions\/setup-node@([^\s"'},]+)/i;
 const NODE_VERSION_RE = /^\s*node-version:\s*(.+)$/;
-// setup-node v5+ restores and saves an npm cache on its own whenever `cache`
-// is empty and package.json's `packageManager` names npm, which the root's
-// does. Every site turns that off, so `cache:` stays the only switch.
+// Every setup-node site opts out of its automatic npm cache, so `cache:` stays
+// the only switch; the comment on node-setup's Setup Node step says why.
 const NO_AUTO_CACHE_RE = /^\s+package-manager-cache:\s*false\s*$/m;
 
 /** Every workflow file, as `{ name, text }`. */
