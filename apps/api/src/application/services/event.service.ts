@@ -24,6 +24,7 @@ import {
   recurrenceChildCount,
   toRRuleLine,
 } from '@repo/validation';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -401,12 +402,12 @@ export class EventService {
       await this.postEventCard(input, parent);
       return true;
     } catch (error) {
-      this.logger.warn('Failed to post event card to chat', {
-        eventId: parent.id,
-        channelId: input.channel_id,
-        chapterId: input.chapter_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to post event card to chat (event ${parent.id}, channel ${input.channel_id}, chapter ${input.chapter_id})`,
+        error,
+      );
       return false;
     }
   }

@@ -35,6 +35,7 @@ import { ChapterServiceConfigService } from './chapter-service-config.service';
 import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const SERVICE_BUCKET = 'service';
 
@@ -424,12 +425,12 @@ export class ServiceEntryService {
       await this.postHoursCard(input, entry);
       return true;
     } catch (error) {
-      this.logger.warn('Failed to post hours card to chat', {
-        entryId: entry.id,
-        channelId: input.channel_id,
-        chapterId: input.chapter_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to post hours card to chat (entry ${entry.id}, channel ${input.channel_id}, chapter ${input.chapter_id})`,
+        error,
+      );
       return false;
     }
   }

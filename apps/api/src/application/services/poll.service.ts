@@ -24,6 +24,7 @@ import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedPoll } from './chat-block-mask';
 import { clampListLimit } from '#domain/constants/list-query-limits';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 10;
@@ -500,9 +501,11 @@ export class PollService {
         return this.groupTotalsByMessage(totals);
       } catch (error) {
         // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
-          error instanceof Error ? error.stack : String(error),
+          error,
         );
         return new Map();
       }
@@ -526,9 +529,11 @@ export class PollService {
         }
         return userVotes;
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${userId}); userVotes omitted`,
-          error instanceof Error ? error.stack : String(error),
+          error,
         );
         return new Map();
       }

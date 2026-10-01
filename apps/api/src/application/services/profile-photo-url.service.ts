@@ -7,6 +7,7 @@ import {
   PROFILES_BUCKET,
   ownProfilePhotoPath,
 } from '#domain/constants/storage';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * Signed-download-URL lifetime for a profile photo, in seconds. One hour, the
@@ -139,10 +140,11 @@ export class ProfilePhotoUrlService {
         PROFILE_PHOTO_URL_TTL_SECONDS,
       );
     } catch (error) {
-      this.logger.warn(
-        `Could not sign ${paths.length} profile photo(s); serving initials: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not sign ${paths.length} profile photo(s); serving initials`,
+        error,
       );
       return null;
     }

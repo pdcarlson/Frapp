@@ -13,6 +13,7 @@ import {
 } from '#domain/adapters/archive-media-copier.interface';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../supabase/database.types';
+import { toReportableError } from '../observability/reportable-error';
 
 /** The Edge Function's name: `supabase/functions/discord-attachment-copy/`. */
 export const ARCHIVE_MEDIA_COPY_FUNCTION = 'discord-attachment-copy';
@@ -194,6 +195,6 @@ async function describeFailure(
   }
   return {
     retryable: false,
-    detail: `failed: ${error instanceof Error ? error.message : String(error)}`,
+    detail: `failed: ${toReportableError(error).message}`,
   };
 }
