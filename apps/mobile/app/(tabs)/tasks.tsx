@@ -28,6 +28,11 @@ import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
+import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 import { nextTapSequence } from "@/lib/tasks/transitions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -115,6 +120,28 @@ export default function TasksScreen() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /**
+   * The member copy for a gate refusal on a status toggle, or `null` (#2710).
+   *
+   * `PATCH /v1/tasks/:id/status` is refused permanently, until an officer
+   * acts, by two gates: the subscription gate (the controller has no
+   * `@FreeTier`, so every brand-new `incomplete` chapter hits it) and the
+   * module gate (`@RequireModule('tasks')` on the whole controller). The
+   * hook's optimistic write reverts either way, so without this the box
+   * filled and emptied with no word of why, and every retap did it again.
+   * While it is set the board says why and offers no toggle. The copy is the
+   * latch, so the sentence and the withdrawn toggles can't disagree.
+   */
+  const [refusal, setRefusal] = useState<string | null>(null);
+  // Cleared when the member comes back, because a tab is never unmounted: an
+  // officer may have sorted the gate out since, and returning is a deliberate
+  // second look rather than a retry in place.
+  useFocusEffect(
+    useCallback(() => {
+      setRefusal(null);
+      return undefined;
+    }, []),
+  );
+  /**
    * Ids with a sequence in flight.
    *
    * A ref rather than the `pendingId` state because two taps in one frame both
@@ -137,10 +164,16 @@ export default function TasksScreen() {
         for (const status of sequence) {
           await updateStatus.mutateAsync({ id: row.id, body: { status } });
         }
-      } catch {
-        // The hook has already reverted its own write and invalidated, so a
-        // rejection here is the ordinary failure path rather than a crash. The
-        // row simply redraws at whatever the server actually holds.
+      } catch (error) {
+        // The hook has already reverted its own write and invalidated, so the
+        // row redraws at whatever the server actually holds. A gate refusal
+        // also says why and withdraws the toggles; anything else, a permission
+        // 403 included, stays the quiet revert it always was, with the retap.
+        if (subscriptionRefusalOf(error)) {
+          setRefusal(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+        } else if (moduleRefusalOf(error)) {
+          setRefusal(MODULE_REFUSAL_COPY.taskStatus);
+        }
       } finally {
         inFlight.current.delete(row.id);
         setPendingId(null);
@@ -155,6 +188,7 @@ export default function TasksScreen() {
         const busy = pendingId === row.id;
         const pressable =
           !busy &&
+          refusal === null &&
           nextTapSequence(row.storedStatus, row.displayStatus).length > 0;
         return (
           <TaskRow
@@ -168,7 +202,7 @@ export default function TasksScreen() {
           />
         );
       }),
-    [now, pendingId, toggle],
+    [now, pendingId, refusal, toggle],
   );
 
   function renderBoard() {
@@ -272,6 +306,7 @@ export default function TasksScreen() {
       <PointsSummaryCard summary={summary} rank={rank} />
 
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
 
       {renderBoard()}
 
@@ -320,6 +355,10 @@ function createStyles(tokens: SignetTokens, accent: string) {
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    refusal: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
     },
   });
 }

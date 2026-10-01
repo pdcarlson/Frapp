@@ -45,6 +45,9 @@ export const MODULE_REFUSAL_COPY = {
     "Check-in is turned off for your chapter right now. An officer can turn events back on.",
   /** `POST /v1/tasks` (s19), under the controller's `@RequireModule('tasks')`. */
   task: "Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.",
+  /** `PATCH /v1/tasks/:id/status`, the s08 board's checkbox (#2710). */
+  taskStatus:
+    "Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.",
   /** `POST /v1/service-entries` (s20), under `@RequireModule('hours')`. */
   serviceHours:
     "Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.",

@@ -367,6 +367,7 @@ every one of them, and both are the point rather than style:
 | Surface | Description |
 |---|---|
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
+| Task status toggle (s08) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board; the toggles stay withdrawn until the member comes back to the screen ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
 | Log service hours (s20) | `Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.` |
 | Study | See the two rows in *Study session (mobile, s10)* below — start and in-session differ, and the difference is load-bearing. |
@@ -386,6 +387,7 @@ module back on ([#2393](https://github.com/pdcarlson/Frapp/issues/2393),
 | Surface | Description |
 |---|---|
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
+| Task status toggle (s08) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board, like the subscription row for the same toggle ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
 | Log service hours (s20) | `Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.` |
 | Poll (chat card, web and mobile) | `Polls are turned off for your chapter right now. An officer can turn them back on.` Replaces the guard's sentence when a poll card's vote, or a `/poll` sent past a stale client gate, is refused ([#2993](https://github.com/pdcarlson/Frapp/issues/2993)). `@repo/chat-core` maps it once (`memberFacingRefusal`), so it reaches every surface that shows the server's message: the web toast, a failed poll row's inline error, and mobile's thread action-error banner. |
