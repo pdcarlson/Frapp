@@ -321,8 +321,9 @@ describe("validateDeploySha", () => {
 // running when this was written — `.github/workflows/` defines 50 job ids and
 // `web-production-build` is not among them. #1374 added that check, so rolling
 // production back to the commit it was already running had become impossible.
-// The recovery `db-rollback-playbook.md` prescribes is "redeploy the API at the
-// pre-<X> revision", which is exactly this operation.
+// A code-only rollback, redeploying the commit production last ran, is exactly
+// this operation (a schema change is undone by forward revert instead:
+// `db-rollback-playbook.md` § 3) Undo one migration).
 
 describe("classifyRequiredChecks — checks the commit could not have produced", () => {
   const runs = [{ name: "api-tests", status: "completed", conclusion: "success" }];
@@ -490,8 +491,8 @@ describe("classifyRequiredChecks — a cancelled check is not a failed one", () 
     // push runs in one group, so the first commit's run is cancelled by the
     // second's. Nothing re-runs it, and the commit becomes permanently
     // undeployable — the same class as the deployable-window bug above, through a
-    // different door, landing on the same operation (rollback = redeploy an older
-    // commit). All four now guard `cancel-in-progress` on the ref (#1378, #1379);
+    // different door, landing on the same operation (a code-only rollback, which
+    // redeploys an older commit). All four now guard `cancel-in-progress` on the ref (#1378, #1379);
     // this classification still covers commits merged before that, plus manual
     // stops and timeouts, which no guard prevents.
     const verdict = classifyRequiredChecks({
