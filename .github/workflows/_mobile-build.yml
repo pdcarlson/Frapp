@@ -172,7 +172,7 @@ jobs:
       # passes `needs.validate.outputs.sha`; `deploy-production-mobile.test.mjs`
       # pins both ends, and that no step here moves the tree.
       - name: Check out the shipped commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
           # Nothing here talks to the remote after checkout, and this job
@@ -180,12 +180,14 @@ jobs:
           persist-credentials: false
 
       # Hand-written, not ./.github/actions/node-setup: a local action loads
-      # from the tree on disk, which is the deployed commit here. The version
-      # must match node-setup's (`node-setup-action.test.mjs`).
+      # from the tree on disk, which is the deployed commit here. The ref,
+      # version and `package-manager-cache: false` must match node-setup's
+      # step (`node-setup-action.test.mjs`).
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
 
       # `eas build` evaluates `apps/mobile/app.config.js` through the
       # project's own `expo` package, so the workspace's dependencies are
@@ -462,7 +464,7 @@ jobs:
       # script judges the build job's output, so it can't come from the tree
       # that was built.
       - name: Checkout (trusted ref)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 

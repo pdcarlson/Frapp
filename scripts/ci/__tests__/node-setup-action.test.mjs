@@ -30,8 +30,9 @@ import {
 //   * The copies stay gone, in workflows and in the other composite actions.
 //   * The jobs that can't call a local action (they check out another commit
 //     first, so `./.github/actions/node-setup` would load from THAT tree; the
-//     three files in EXCEPTIONS) stay pinned to the same version, and stay
-//     exceptions only while the reason holds.
+//     three files in EXCEPTIONS) stay pinned to the same step (the setup-node
+//     ref, Node version and cache opt-out), and stay exceptions only while the
+//     reason holds.
 //   * The action does exactly what its contract says and nothing more. Most
 //     call sites are scheduled or dispatch-only, so a PR never runs them, and
 //     the per-job guards (the cold-build jobs, mobile-validate's bundle order,
@@ -70,7 +71,11 @@ const scalar = (raw) =>
 // with: { node-version: 22 } }`), and any case: GitHub resolves `owner/repo`
 // case-insensitively.
 const SETUP_NODE_RE = /(?:^|[\s{,-])uses:\s*["']?actions\/setup-node@/i;
+const SETUP_NODE_REF_RE = /actions\/setup-node@([^\s"'},]+)/i;
 const NODE_VERSION_RE = /^\s*node-version:\s*(.+)$/;
+// Every setup-node site opts out of its automatic npm cache, so `cache:` stays
+// the only switch; the comment on node-setup's Setup Node step says why.
+const NO_AUTO_CACHE_RE = /^\s+package-manager-cache:\s*false\s*$/m;
 
 /** Every workflow file, as `{ name, text }`. */
 const workflows = () =>
@@ -140,6 +145,19 @@ function actionVersion() {
   return versions[0];
 }
 
+/** The `actions/setup-node` ref on each setup-node line of `text`. */
+const setupNodeRefs = (text) =>
+  codeLines(text)
+    .filter((l) => SETUP_NODE_RE.test(l))
+    .map((l) => l.match(SETUP_NODE_REF_RE)?.[1]);
+
+/** The single `actions/setup-node` ref the action uses. */
+function actionRef() {
+  const refs = setupNodeRefs(actionText());
+  assert.equal(refs.length, 1, "node-setup must use actions/setup-node exactly once");
+  return refs[0];
+}
+
 describe("node-setup composite action", () => {
   it("exists, is composite, and pins one Node version", () => {
     assert.ok(existsSync(ACTION), `${ACTION} is missing`);
@@ -201,6 +219,11 @@ describe("node-setup composite action", () => {
       /^\s+cache:\s*\$\{\{\s*inputs\.install != 'none' && 'npm' \|\| '' \}\}\s*$/m,
       "the npm download cache follows the install: on for ci and omit-dev, off for none",
     );
+    assert.match(
+      codeLines(setup).join("\n"),
+      NO_AUTO_CACHE_RE,
+      "without `package-manager-cache: false`, setup-node caches npm for install: none too",
+    );
 
     for (const [step, mode, command] of [
       [ci, "ci", "npm ci"],
@@ -221,8 +244,9 @@ describe("node-setup call sites", () => {
     assert.deepEqual(offenders, [], "set up Node through ./.github/actions/node-setup");
   });
 
-  it("each exception still checks out another commit first, and pins node-setup's version", () => {
+  it("each exception still checks out another commit first, and pins node-setup's step", () => {
     const version = actionVersion();
+    const ref = actionRef();
     for (const file of EXCEPTIONS) {
       const text = readFileSync(join(WORKFLOW_DIR, file), "utf8");
       const setups = workflowSteps(join(WORKFLOW_DIR, file)).filter((s) =>
@@ -236,6 +260,20 @@ describe("node-setup call sites", () => {
           .map(scalar);
         assert.deepEqual(versions, [version], `${file} (${setup.jobId}) must pin node-version ${version}, node-setup's`);
         assert.doesNotMatch(setup.body, /node-version-file:/, `${file} must pin the version, not read it from a file`);
+        // A runtime bump (#3108) moves all three together, or one copy keeps
+        // running on the deprecated Node the others left.
+        assert.deepEqual(
+          setupNodeRefs(setup.body),
+          [ref],
+          `${file} (${setup.jobId}) must use actions/setup-node@${ref}, node-setup's`,
+        );
+        // Both jobs hold secrets; setup-node's README asks privileged jobs to
+        // turn its automatic cache off.
+        assert.match(
+          codeLines(setup.body).join("\n"),
+          NO_AUTO_CACHE_RE,
+          `${file} (${setup.jobId}) must set package-manager-cache: false, as node-setup does`,
+        );
       }
       // The same workspace reading the local-action guard uses, so the two can't
       // disagree about a job: `untrusted` is the reason this is an exception.

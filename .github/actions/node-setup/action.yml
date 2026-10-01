@@ -14,7 +14,8 @@ description: >
 #     a checkout of another ref it is that commit's copy, or none at all when
 #     the commit predates this file. `_deploy.yml` (checks out `inputs.sha`) and
 #     `release.yml` (checks out the deployed SHA) keep a hand-written
-#     `actions/setup-node` for that reason, pinned to the same version below by
+#     `actions/setup-node` for that reason, pinned to the same action ref,
+#     Node version and `package-manager-cache: false` as below by
 #     `scripts/ci/__tests__/node-setup-action.test.mjs`.
 #   - Reach every job. A job that sets up no Node, but runs `node` itself or
 #     through a composite action that does (`db-offsite-backup`), runs on the
@@ -57,11 +58,16 @@ runs:
             ;;
         esac
 
+    # `package-manager-cache: false` keeps `cache:` the only switch. From v5,
+    # setup-node turns npm caching on by itself whenever `cache` is empty and
+    # the root package.json's `packageManager` names npm, which it does, so
+    # without it `install: none` would restore and save `~/.npm` too.
     - name: Setup Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 24
         cache: ${{ inputs.install != 'none' && 'npm' || '' }}
+        package-manager-cache: false
 
     - name: Install dependencies
       if: inputs.install == 'ci'

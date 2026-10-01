@@ -79,7 +79,7 @@ jobs:
       deployment: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: ./.github/actions/node-setup
@@ -129,7 +129,7 @@ jobs:
         run: node scripts/ci/publish-migration-snapshot.mjs --out "$RUNNER_TEMP/migration-snapshot/migration-snapshot.json"
 
       - name: Upload the snapshot
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: migration-snapshot
           path: ${{ runner.temp }}/migration-snapshot/migration-snapshot.json

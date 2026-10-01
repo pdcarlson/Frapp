@@ -207,10 +207,10 @@ describe("turbo-packages-build composite action", () => {
     assert.match(text, /^ {2}save:$/m, "the `save` input must keep its name");
     assert.match(text, /if:\s*inputs\.save == 'true'/, "the write branch must be gated on it");
     assert.match(text, /if:\s*inputs\.save != 'true'/, "the read branch must be gated on it");
-    assert.match(text, /uses:\s*actions\/cache@v4/, "the producer branch must save the cache");
+    assert.match(text, /uses:\s*actions\/cache@v6/, "the producer branch must save the cache");
     assert.match(
       text,
-      /uses:\s*actions\/cache\/restore@v4/,
+      /uses:\s*actions\/cache\/restore@v6/,
       "consumers must use the restore-only action, which has no post hook to race the producer",
     );
   });

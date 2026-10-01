@@ -123,7 +123,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Inject staging secrets from Infisical
         uses: ./.github/actions/infisical-secrets
@@ -152,7 +152,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Inject staging secrets from Infisical
         uses: ./.github/actions/infisical-secrets
@@ -182,7 +182,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # FIRST: the offsite destination. `BACKUP_S3_*` live only here for now.
       - name: Inject the offsite destination from Infisical staging
@@ -237,7 +237,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Inject the offsite destination from Infisical staging
         uses: ./.github/actions/infisical-secrets

@@ -46,8 +46,9 @@ merging into a branch never named a commit, and Render's auto-deploy-on-commit
 meant a push shipped whatever was at the tip without waiting for CI.
 
 **`Deploy production`.** Actions → _Deploy production_ → Run workflow. Give it
-the commit SHA you want live and type `DEPLOY TO PRODUCTION`. It refuses any SHA
-that is not an ancestor of `main` or whose CI was not green, **rehearses the
+the commit SHA you want live, or leave `sha` empty (below), and type `DEPLOY TO
+PRODUCTION`. It refuses any SHA that is not an ancestor of `main` or whose CI
+was not green, **rehearses the
 migration against production's live applied state**, fences the working tree,
 applies it — and then, depending on `scope`:
 
@@ -58,6 +59,51 @@ applies it — and then, depending on `scope`:
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
 without applying anything, under either scope.
+
+**Two ways to name the commit (#3114):**
+
+| `sha`  | What ships |
+| ------ | ---------- |
+| pasted | Exactly that commit, once it passes the ancestry and CI checks |
+| empty  | The newest commit on `main`, above production's latest release tag, whose required checks passed **and** whose newest **Deploy staging** run verified that staging's API carries it. It then passes the same checks a pasted SHA does |
+
+An empty `sha` titles the run `<scope> (newest green main)`, because the title
+is set at dispatch, before the commit is chosen. The `validate` job's summary
+names the commit it picked, its subject and Deploy staging run, and every newer
+commit it skipped with the reason. That summary exists before GitHub asks for
+the approval, so read it before you approve. What that means for you:
+
+- **It never picks a rollback.** Only commits newer than production's latest
+  release tag (the newest `v*` tag, which must be `vX.Y.Z`, as `release.yml`
+  reads it) are candidates. When none qualifies, or that tag isn't on `main`,
+  the run fails before the approval and you paste a SHA. A live ship whose tag
+  failed is the one gap: production then runs a commit newer than its tag, and
+  `deploy-outcome` and `production-release-pin.yml` both go red.
+- **It refuses while production is rolled back.** Rolling back through Deploy
+  production tags the older commit with a higher version, which leaves an
+  earlier release ahead of it on `main`, and the change you rolled back is on
+  `main` until a revert merges. While any release on `main` is newer than
+  production's, an empty `sha` refuses and you paste the SHA. It clears once a
+  ship past that release is tagged.
+- **Staging counts a commit when the newest Deploy staging run naming it
+  verified staging's API carries it:** the run's `deploy` job succeeded and its
+  "Verify staging serves the commit" step passed. That step checks staging
+  serves, ready, either this commit or the one staging already served with the
+  same API image. A run's own conclusion isn't the test: a `stale` run that
+  verified nothing still concludes `success`, and a run reddened only by
+  `prune-vercel-staging` still counts. The exact rule, including replaced and
+  re-run runs and why run titles carry the SHA: the header of
+  [`resolve-deploy-sha.mjs`](../../../scripts/ci/resolve-deploy-sha.mjs).
+  Runs from before #3114 have no SHA in their title, so their commits never
+  qualify.
+- **Web and landing aren't checked** (#3120). A run can verify the API and
+  skip the frontend upload, when it can't read what a staging host serves,
+  say. The staging run's own summary says whether it uploaded; open it from
+  the `validate` summary when the commit changes web or landing.
+
+`main` can move between a dry run and the real one, and an empty `sha` picks
+again. To ship exactly what you rehearsed, paste the SHA the dry run's summary
+names.
 
 > **`migrations-only` leaves production running the previous code against the new
 > schema.** That is the ordering invariant the whole pipeline rests on —
@@ -186,6 +232,8 @@ touches the database.
 ```text
 Actions → Deploy production → Run workflow
   sha           <full 40-char SHA, already merged to main and CI-green>
+                (or empty: the newest main commit with green CI whose staging
+                deploy was verified; for the real run, paste what the dry run picked)
   confirm       DEPLOY TO PRODUCTION
   dry_run_only  ✔ first pass, ✗ for the real one
   scope         full (or migrations-only — see below)
@@ -239,9 +287,9 @@ example a rollback rehearsal), because the build runs that commit's copy of
 that never shipped, such a dry run is a live suspect. Either way, a green dry-run
 build does not prove the real build's Sentry upload will succeed.
 
-A green dry run means the commit validates, the pending migrations replay cleanly
-against production's applied state, and both bundles compile against the app
-config currently in Infisical `prod` (no Vercel row supplies an app key since #2673, and
+A green dry run means the commit validates, Infisical `prod` passes the config check
+(below), the pending migrations replay cleanly against production's applied state,
+and both bundles compile against the app config currently in Infisical `prod` (no Vercel row supplies an app key since #2673, and
 since #2810 no other Production row reaches the build unless it is named like a Vercel
 system variable; the build log names every row kept, and a `::warning::` names any app key
 Vercel held that Infisical didn't). It is not a promise that the apply or the upload
@@ -255,31 +303,32 @@ the apply: no Render deploy, no Vercel build, no tag. Production is then running
 the previous code against the new schema until you come back with a `full` run,
 so the migration must be forward-compatible with the deployed API.
 
-Before you promote — the API does not boot without these:
+The API does not boot without its required config, and since
+[#3112](https://github.com/pdcarlson/Frapp/issues/3112) the deploy checks it before
+anything is written, on a dry run too. **Check the config before anything is written
+(production)** runs the deployed commit's `validateEnv`
+([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
+on the values in Infisical `prod`, and fails the run, naming the variable and the rule,
+when the API would refuse to boot: a missing or blank required name (`validateEnv`
+rejects an empty string as it does an absent key), a client key or an unresolved
+`${…}` reference in `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL`
+beside the production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
+`MOBILE_UPDATE_URL_*`. The same step requires `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` when the
+run deploys an Edge Function and `API_HEALTHCHECK_URL` on every run. A `migrations-only`
+run deploys no API, so it skips the boot check. Before #3112 each of these failed only
+after the apply, with the schema already moved: a blank required secret crash-looped
+the new container until Render marked the deploy `update_failed`.
 
-- [ ] Every name in `REQUIRED_ENV_VARS`
-      ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
-      is set **and non-empty** in the target environment's Infisical folder:
-      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
-      `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
-- [ ] Those values also have the right shape, because `validateEnv` refuses some
-      non-empty values too: a client key (the publishable key or the legacy
-      `anon` JWT) or an unresolved `${…}` reference in
-      `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL` beside the
-      production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
-      `MOBILE_UPDATE_URL_*`. Each throws at boot with the variable named.
+Before you promote, check what that step can't see:
 
-`validateEnv` rejects an **empty string** exactly as it rejects an absent key
-(`typeof value !== 'string' || value.trim().length === 0`), so a name that is
-present in Infisical with a blank value still throws
-`Missing required environment variables: ...` at boot. Nothing upstream catches
-it: the Infisical sync succeeds, the image builds, and the container then
-crash-loops until Render gives up and marks the deploy `update_failed`.
-
-Check the values rather than the key list. A masked `***` in a workflow log
-means present and non-empty; a name printed with nothing after the colon is the
-blank that fails. The order matters here — migrations apply _before_ the API
-deploys, so a blank secret fails **after** the schema has already moved.
+- [ ] **The Render sync has copied the value.** The step reads Infisical, which is the
+      sync's source. A sync that failed or lags still boots the API on the old value
+      ([`SECRETS_MANAGEMENT.md` § 5](../../internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
+- [ ] **The value is right, not just well-formed.** A secret key from the other Supabase
+      project, or a `price_…` from the retired Stripe account, passes `validateEnv`. The
+      API checks some of these against the provider once it is up (the Stripe price
+      lookup, [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#core-app-secrets)),
+      which is after the apply.
 
 Post-apply production checks:
 
@@ -295,7 +344,10 @@ Post-apply production checks:
   its **Deploy staging** run go green, then deploy that commit to production.
 - Deploy the commit you validated on staging. `Deploy production` takes a SHA
   rather than a branch precisely so "what we tested" and "what shipped" are the
-  same object — `main` may have moved on since.
+  same object — `main` may have moved on since. An empty `sha` picks only a
+  commit whose staging API was verified, as defined above, and names it
+  before the approval. That verification covers the API, not web and landing,
+  so read the summary's staging run when the frontends matter.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `db-rollback-playbook.md`.
 - **Reference data reaches a hosted project only by migration.** `chapter_directory`'s

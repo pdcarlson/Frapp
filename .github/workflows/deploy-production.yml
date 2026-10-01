@@ -1,7 +1,9 @@
 name: Deploy production
 # The Actions list otherwise shows one red row named "Deploy production" when
 # tagging fails after a live ship (run 34155737950, 2026-09-07). Scope + SHA
-# in the run title is what you read before opening the jobs.
+# in the run title is what you read before opening the jobs. A run that left
+# `sha` empty can't carry its SHA there (below), so its row says it picked one,
+# and the SHA is in its summaries.
 #
 # `DRY RUN` leads, and is not merely appended, because the Actions list truncates
 # from the right — a marker at the end is the first thing to disappear at the
@@ -19,11 +21,18 @@ name: Deploy production
 # `"false"`, a bare test would label every live ship `DRY RUN`: the failure is
 # silent, and it points the wrong way. `== true` is false for `"false"` and for
 # `false` alike, so the marker can only ever be missing, never lying.
-run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.scope }} ${{ inputs.sha }}"
+#
+# An empty `sha` reads `(newest green main)`, not a blank. The title is
+# evaluated at dispatch, before `validate` resolves the commit (#3114), so it
+# can't show the SHA. It says the run picks one, and `validate`'s summary
+# names it before the approval. A `sha` of only whitespace fails `validate`
+# rather than resolve, so this title and the run never disagree about which
+# mode it is.
+run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.scope }} ${{ inputs.sha || '(newest green main)' }}"
 
-# The ONLY path to production. A human opens Actions, names a commit, types a
-# confirmation, and approves the `production` environment. Nothing here fires on
-# its own.
+# The ONLY path to production. A human opens Actions, names a commit (or leaves
+# `sha` empty for `validate` to name one, below), types a confirmation, and
+# approves the `production` environment. Nothing here fires on its own.
 #
 # ── What this replaced ──────────────────────────────────────────────────────
 # Until #1340, production was a git branch. Merging `main` -> `production`
@@ -40,6 +49,18 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 #
 # Here the artifact is an input. The same SHA is migrated, deployed to Render,
 # built for Vercel production, and tagged.
+#
+# ── An empty `sha` (#3114) ──────────────────────────────────────────────────
+# Leave `sha` empty and `validate` picks the commit with
+# `scripts/ci/resolve-deploy-sha.mjs`. Which commit it picks is
+# `docs/ops/database/promotion.md` § Production: one path, two scopes. Here,
+# the wiring: that SHA then takes the same "Validate the commit" step a pasted
+# one does and becomes `validate`'s `sha` output, so `deploy`, `release` and
+# `deploy-outcome` can't tell the two modes apart. The commit is still named
+# before anything ships, in `validate`'s summary, ahead of the approval:
+# #1340's rule, kept for a commit nobody pasted. To ship exactly what a dry
+# run rehearsed, paste the SHA its summary names, because `main` may have moved
+# in between.
 #
 # ── Where the old gates went ────────────────────────────────────────────────
 # Branch protection on `production` did two things, and both come back as steps
@@ -127,8 +148,9 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-character commit SHA to deploy (must be on main and CI-green)"
-        required: true
+        description: "Full 40-character commit SHA to deploy (must be on main and CI-green). Empty: the newest main commit with green CI whose staging deploy was verified"
+        required: false
+        default: ""
         type: string
       confirm:
         description: "Type exactly: DEPLOY TO PRODUCTION"
@@ -178,8 +200,18 @@ jobs:
     # No `environment:`. This job is the whole point of the split: it must
     # run (and be allowed to fail) without opening a production deployment
     # review. Do not add `environment: production` here.
+    #
+    # Read-only, and named rather than inherited from the repository being
+    # public: `checks` for the required checks, `actions` for the Deploy
+    # staging runs an empty `sha` resolves against.
+    permissions:
+      contents: read
+      checks: read
+      actions: read
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
+      # `true` when `sha` was empty and this job picked the commit.
+      resolved: ${{ steps.resolve.outcome == 'success' }}
     steps:
       # First step on purpose: a mistyped confirmation must cost nothing. No
       # checkout, no secrets injected, no CLI installed before this passes.
@@ -194,15 +226,29 @@ jobs:
 
       # The Actions text box keeps a trailing space/newline from paste
       # (run 34234768094 died on 40 hex + one space before any production
-      # write). Strip ends only — not internal spaces — then the shipping
-      # call, the release job and the deploy-outcome job use this output.
+      # write). Strip ends only — not internal spaces. Empty stays empty and
+      # resolves below. Two inputs fail here instead, because `run-name` read
+      # each as a pasted SHA and resolving would ship a commit the title never
+      # said it would pick: whitespace and nothing else, and anything with a
+      # line break inside, which could also write a second `sha=` line below
+      # (an API dispatch can send one; the text box can't).
       - name: Trim the SHA
-        id: sha
+        id: trim
         env:
           RAW_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
           SHA="$(printf '%s' "$RAW_SHA" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [ -n "$RAW_SHA" ] && [ -z "$SHA" ]; then
+            echo "::error::The sha input holds only whitespace. Leave it empty to deploy the newest green main commit, or paste a full SHA."
+            exit 1
+          fi
+          case "$SHA" in
+            *$'\n'* | *$'\r'*)
+              echo "::error::The sha input has a line break inside it. Paste one full SHA, or leave it empty."
+              exit 1
+              ;;
+          esac
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       # Checked out at the DISPATCHED ref (main), not at `inputs.sha`. The
@@ -211,7 +257,7 @@ jobs:
       # own copy of the validator proves nothing. The shipping job moves the
       # tree to the SHA after this job passes.
       - name: Checkout (trusted ref)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -223,8 +269,40 @@ jobs:
         with:
           install: none
 
-      # Ancestry + CI-green. Both assertions are fatal, and an unreadable checks
-      # API is a failure rather than a pass.
+      # Only for an empty `sha`. Picks the commit (see the header) and writes
+      # the pick and every newer commit it skipped to this job's summary. The
+      # tags are fetched here rather than trusted to the checkout: without
+      # them production's release is unknown, and the script refuses.
+      - name: Resolve the newest green main commit
+        id: resolve
+        if: ${{ steps.trim.outputs.sha == '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/tags/v*:refs/tags/v*'
+          node scripts/ci/resolve-deploy-sha.mjs
+
+      # The one name for the commit this run ships: the paste, or the pick.
+      # The shipping call, the release job and the deploy-outcome job all read
+      # this step's output, through the job's `sha` output.
+      - name: Name the commit to deploy
+        id: sha
+        env:
+          PASTED_SHA: ${{ steps.trim.outputs.sha }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          SHA="${PASTED_SHA:-$RESOLVED_SHA}"
+          if [ -z "$SHA" ]; then
+            echo "::error::No SHA was pasted and none was resolved."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # Ancestry + CI-green, for a pasted SHA and a resolved one alike. Both
+      # assertions are fatal, and an unreadable checks API is a failure rather
+      # than a pass.
       - name: Validate the commit
         env:
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
@@ -368,7 +446,7 @@ jobs:
       # `production-release-pin.yml`'s P1 alert catches hosts left untagged.
       - name: Checkout
         if: ${{ !cancelled() && !inputs.dry_run_only && (inputs.scope != 'migrations-only' || needs.deploy.result != 'success') }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -419,6 +497,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run_only }}
           SCOPE: ${{ inputs.scope }}
           SHA: ${{ needs.validate.outputs.sha }}
+          RESOLVED: ${{ needs.validate.outputs.resolved }}
           # `not-started` when the alert step found the deploy job ran no step.
           ALERT_OUTCOME: ${{ steps.alert.outputs.outcome }}
         run: |
@@ -434,6 +513,13 @@ jobs:
               echo ""
               echo "> Nothing was applied and nothing was deployed. \`Migrate + deploy: success\`"
               echo "> below means the REHEARSAL succeeded, not that this commit is live."
+              # An empty `sha` on the real run picks again, and `main` may
+              # have moved by then (#3114).
+              if [ "$RESOLVED" = "true" ]; then
+                echo ">"
+                echo "> \`sha\` was empty, so this run picked the commit. To ship exactly what was"
+                echo "> rehearsed, paste \`$SHA\` into \`sha\` on the real run."
+              fi
             else
               echo "### Production deploy — \`$SHA\`"
             fi
@@ -441,6 +527,11 @@ jobs:
             echo "| Phase | Result |"
             echo "| --- | --- |"
             echo "| Dry run | \`$DRY_RUN\` |"
+            if [ "$RESOLVED" = "true" ]; then
+              echo "| SHA | picked: newest green \`main\` (\`validate\`'s summary says why) |"
+            else
+              echo "| SHA | pasted |"
+            fi
             echo "| Scope | \`$SCOPE\` |"
             echo "| Migrate + deploy | \`$DEPLOY_RESULT\` |"
             # "not reported", not "not reached": these come through the called

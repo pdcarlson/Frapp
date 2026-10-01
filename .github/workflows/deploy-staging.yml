@@ -17,6 +17,18 @@ name: Deploy staging
 # starts when CI completes and deploys only a success, and it names the commit
 # CI verified (`workflow_run.head_sha`), never `main`'s moving tip.
 #
+# ── The run title names that commit (`run-name`, #3114) ─────────────────────
+# Nothing else a run returns does. A `workflow_run` run's own `head_sha` is
+# `main`'s tip when it fired: run 36855311019 reports `93ae125` and deployed
+# `9907e7e`, whose CI finished two seconds before it was created, and its jobs
+# and its `staging` deployment record carry `93ae125` too. So the title is the
+# one place the deployed commit can be read back, and
+# `scripts/ci/resolve-deploy-sha.mjs` reads it there to find the newest commit
+# staging took, for a production dispatch that leaves `sha` empty. Every run
+# gets the title, including one whose CI failed or came from a fork's pull
+# request: its jobs all skip, it concludes `skipped`, and the resolver ignores
+# it.
+#
 # ── `secrets: inherit`, and why it is needed ───────────────────────────────
 # `_deploy.yml`'s job names the `staging` environment itself and reads that
 # environment's secrets. Without `secrets: inherit` here every one read empty
@@ -33,7 +45,13 @@ name: Deploy staging
 # `deploy-outcome` job selects `ALERT_CONFIG: deploy-staging` in
 # `scripts/ci/deploy-alert.mjs`, which keys on the job names `deploy` and
 # `deploy-outcome` and on the `plan` output. Renaming any of them breaks those
-# silently.
+# silently. `resolve-deploy-sha.mjs` reads the commit out of the run title, as
+# a 40-hex token standing on its own, and reads the job id `deploy` and
+# `_deploy.yml`'s "Verify staging serves the commit" step to tell whether the
+# run deployed and verified it. Losing any of those fails every production
+# dispatch that leaves `sha` empty (pinned in `resolve-deploy-sha.test.mjs`).
+
+run-name: "staging ${{ github.event.workflow_run.head_sha }}"
 
 on:
   workflow_run:
@@ -107,7 +125,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -167,7 +185,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
