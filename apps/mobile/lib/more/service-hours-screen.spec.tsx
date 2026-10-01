@@ -8,6 +8,7 @@ import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
+import { expectViewerScopedReads } from "@/test/service-entry-reads";
 
 /**
  * The s20 "Log service hours" sheet on a subscription refusal (#2410), the
@@ -73,16 +74,19 @@ const mutate = vi.fn(
     options.onError(failure),
 );
 
+let viewerUserId: string | null = "user-1";
+const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
+  data: [],
+  isPending: false,
+  isError: false,
+  isSuccess: true,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useViewerUserId: () => "user-1",
+  useViewerUserId: () => viewerUserId,
   useCurrentUser: () => ({ isError: false }),
-  useServiceEntries: () => ({
-    data: [],
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-  }),
+  useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useCreateServiceEntry: () => ({ mutate, isPending: false }),
 }));
 
@@ -142,6 +146,7 @@ function submitEntry(tree: ReactTestRenderer) {
 beforeEach(() => {
   mutate.mockClear();
   writeBlockedReason = null;
+  viewerUserId = "user-1";
 });
 
 describe("Service hours on a subscription refusal (#2410)", () => {
@@ -275,6 +280,33 @@ describe("Service hours on a module-off refusal (#2718)", () => {
 
     expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.serviceHours);
     expect(submitButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * `GET /v1/service-entries` is not scoped by the endpoint alone, so this
+ * screen, which lists "Philanthropy work you've logged" and totals it as the
+ * viewer's own, must ask for the viewer's entries. It once didn't, and an
+ * officer saw the chapter's entries, unnamed, totalled as their own.
+ * `profile-screen.spec.tsx` pins the same for s12.
+ */
+describe("Service hours reads only the viewer's entries", () => {
+  beforeEach(() => {
+    useServiceEntries.mockClear();
+  });
+
+  it("asks for the viewer's entries once the viewer is known", () => {
+    viewerUserId = "user-1";
+    const tree = render();
+    expectViewerScopedReads(useServiceEntries.mock.calls, "user-1");
+    act(() => tree.unmount());
+  });
+
+  it("sends nothing while the viewer is still unknown", () => {
+    viewerUserId = null;
+    const tree = render();
+    expectViewerScopedReads(useServiceEntries.mock.calls, null);
     act(() => tree.unmount());
   });
 });
