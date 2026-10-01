@@ -49,8 +49,13 @@ const buttonVariants = cva(
         // the surface at rest and accent-11 on focus: `focus-contrast.spec.ts`.
         default:
           "bg-primary bg-clip-padding font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-pressed",
+        // Hover is `--card-hover`, a lift above the top of the ladder, not
+        // the elevated step: that step is `--popover`, so inside a dialog it
+        // painted the button in the dialog's own colour (#1220). Measured in
+        // `components/shared/elevation-contrast.spec.ts`, and
+        // `app/global-error.tsx` hand-copies this string class for class.
         secondary:
-          "border-input bg-card font-semibold text-foreground hover:bg-accent",
+          "border-input bg-card font-semibold text-foreground hover:bg-card-hover",
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
         ghost: "font-semibold text-accent-text hover:bg-accent-subtle",

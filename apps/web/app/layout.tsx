@@ -21,9 +21,9 @@ const figtree = localFont({
  * One title template, so no route spells the product name itself.
  *
  * Seventeen routes carried `"<Page> — Signet"` as a literal, which is two
- * defects in one string. The em dash breaks the greenfield's no-em-dash lock
- * (`spec/ui/web-greenfield/README.md` §2) on copy a member reads in the tab
- * strip; `·` is the separator the framework board uses throughout its own
+ * defects in one string. The em dash breaks the web surface's no-em-dash lock
+ * (`spec/ui/web-dashboard/README.md` § No em dashes in product copy) on copy a
+ * member reads in the tab strip; `·` is the separator the framework board uses throughout its own
  * chrome ("Start a chapter · 1 of 3", "$3 per member / month · 42 members").
  * And seventeen copies of a brand name is seventeen places for it to drift —
  * `/no-access` shipped a stale product name in its title ("No access — Frapp",
