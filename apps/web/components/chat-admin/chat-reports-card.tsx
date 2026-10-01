@@ -22,6 +22,8 @@ import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EYEBROW } from "@/components/ui/typography";
+import { denseListClassName } from "@/components/shared/table-controls";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   anyReadUncached,
@@ -387,10 +389,22 @@ function ReportList({
 
   return (
     <div className="space-y-3">
+      {/* The rows below are the last good read when a refetch failed. */}
+      {query.isError ? (
+        <StaleReadNotice
+          message={copy.stale}
+          onRetry={() => void query.refetch()}
+        />
+      ) : null}
       {tab.status === "open" ? (
         <p className="text-xs text-muted-foreground">{copy.openHint}</p>
       ) : null}
-      <ul className="space-y-3" aria-label={`${tab.label} reports`}>
+      {/*
+        A flush list, as on every other flushed route: the list's own dividers
+        rather than a bordered box per report, which was the same per-row card
+        /discord-import dropped in the same change (#2500).
+      */}
+      <ul className={denseListClassName} aria-label={`${tab.label} reports`}>
         {rows.map(({ report, author, subject }, index) => (
           <ReportRow
             key={report.id}
@@ -451,7 +465,7 @@ function ReportRow({
 
   return (
     <li
-      className="space-y-3 rounded-lg border border-border p-3"
+      className="min-h-11 space-y-3 py-3"
       aria-busy={busy !== null || undefined}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

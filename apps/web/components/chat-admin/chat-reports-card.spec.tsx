@@ -168,6 +168,14 @@ describe("ChatReportsCard — the section", () => {
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
+
+  // A flush list, not a bordered box per report (#2500).
+  it("draws each report as a flush row", () => {
+    render(<ChatReportsCard />);
+    expect(row(/nobody wants you here/).className).not.toMatch(
+      /\b(rounded|border)/,
+    );
+  });
 });
 
 describe("ChatReportsCard — what a row shows", () => {
@@ -423,9 +431,10 @@ describe("ChatReportsCard — async states", () => {
     reportsByStatus.value = {
       open: { isPending: true, isLoading: true, fetchStatus: "fetching" },
     };
-    render(<ChatReportsCard />);
+    const { container } = render(<ChatReportsCard />);
     expect(screen.getByText("Loading reports...")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /dismiss/i })).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("shows an error with a retry that refetches the slice", async () => {
@@ -456,6 +465,13 @@ describe("ChatReportsCard — async states", () => {
     render(<ChatReportsCard />);
     expect(screen.getByText(/nobody wants you here/)).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load reports")).not.toBeInTheDocument();
+    // And says they are the last that loaded, rather than presenting them as
+    // current.
+    expect(
+      screen.getByText(
+        "Couldn't refresh the reports. These are the last ones that loaded.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows an offline state rather than an empty queue when nothing is cached", () => {

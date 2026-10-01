@@ -19,6 +19,7 @@ const { mockOffline, reads } = vi.hoisted(() => ({
     channels: {} as Record<string, unknown>,
     categories: {} as Record<string, unknown>,
     pins: {} as Record<string, unknown>,
+    catalog: {} as Record<string, unknown>,
   },
 }));
 
@@ -30,14 +31,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useChannels: () => reads.channels,
     useCategories: () => reads.categories,
     usePinnedMessages: () => reads.pins,
-    usePermissionsCatalog: () => ({
-      data: [],
-      isPending: false,
-      isLoading: false,
-      isError: false,
-      fetchStatus: "idle",
-      refetch: vi.fn(),
-    }),
+    usePermissionsCatalog: () => reads.catalog,
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
     useCreateChannel: mutation,
@@ -84,7 +78,12 @@ const channel = (
 const CHANNELS = [
   channel("ch-1", "general", "PUBLIC"),
   channel("ch-2", "exec", "PRIVATE"),
+  {
+    ...channel("ch-3", "officers", "ROLE_GATED"),
+    required_permissions: ["members:view"],
+  },
 ];
+const CATALOG = [{ key: "members:view", permission: "members:view" }];
 const CATEGORIES = [{ id: "cat-1", name: "Chapter", display_order: 0 }];
 
 function settled(data: unknown) {
@@ -112,6 +111,7 @@ beforeEach(() => {
   reads.channels = settled(CHANNELS);
   reads.categories = settled(CATEGORIES);
   reads.pins = settled([]);
+  reads.catalog = settled(CATALOG);
 });
 
 describe("ChatAdminPage — on the page surface (#2500)", () => {
@@ -185,12 +185,40 @@ describe("ChatAdminPage — the create dialog", () => {
 });
 
 describe("ChatAdminPage — the channel structure's states", () => {
-  it("keeps the loaded channels through a failed background read", () => {
+  it("keeps the loaded channels through a failed background read, and says they are the last that loaded", () => {
     reads.channels = { ...settled(CHANNELS), isError: true };
     render(<ChatAdminPage />);
 
     expect(screen.getByText("#general")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
+    expect(
+      screen.getByText(
+        "Couldn't refresh the channels. These are the last ones that loaded.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows its loading state in the nested family", () => {
+    reads.channels = empty({
+      isPending: true,
+      isLoading: true,
+      fetchStatus: "fetching",
+    });
+    const { container } = render(<ChatAdminPage />);
+
+    expect(screen.getByText("Loading channels...")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("keeps a role-gated channel's permission grid through a failed catalog refresh", () => {
+    reads.catalog = { ...settled(CATALOG), isError: true };
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
+
+    expect(
+      screen.queryByText(/Couldn't load the permission catalog/),
+    ).toBeNull();
+    expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 
   it("keeps the loaded categories through a failed background read", () => {
@@ -217,7 +245,8 @@ describe("ChatAdminPage — the channel structure's states", () => {
   it("says the channels are unavailable offline when none are cached", () => {
     mockOffline.value = true;
     reads.channels = empty({ isPending: true, fetchStatus: "paused" });
-    render(<ChatAdminPage />);
+    const { container } = render(<ChatAdminPage />);
+    expect(cardFilledContainers(container)).toEqual([]);
 
     expect(
       screen.getByRole("heading", { name: "Channels unavailable offline" }),
@@ -268,6 +297,11 @@ describe("ChatAdminPage — a channel's pins", () => {
 
     expect(screen.getByText("Dues are due Friday")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load pins")).toBeNull();
+    expect(
+      screen.getByText(
+        "Couldn't refresh the pins. These are the last ones that loaded.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("says nothing is pinned when the read succeeded empty", () => {

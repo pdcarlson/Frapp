@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useDiscordImportProgress } from "@repo/hooks";
 import { NestedError, NestedLoading } from "@/components/shared/nested-states";
-import { Button } from "@/components/ui/button";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -93,18 +93,10 @@ export function ImportWatchPanel({
     <div className="space-y-3 rounded-md border border-border p-3">
       {progress.isError ? (
         // The last good read stays on screen, but it says it is not current.
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-warning">
-          <span>
-            Couldn’t refresh the channels. This is the last update that loaded.
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void progress.refetch()}
-          >
-            Try again
-          </Button>
-        </div>
+        <StaleReadNotice
+          message="Couldn’t refresh the channels. This is the last update that loaded."
+          onRetry={() => void progress.refetch()}
+        />
       ) : null}
       <p className="text-xs text-muted-foreground">
         Channels and threads: {progressSummary(data.counts)}

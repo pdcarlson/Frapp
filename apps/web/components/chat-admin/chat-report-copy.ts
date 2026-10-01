@@ -100,6 +100,8 @@ export const chatReportCopy = {
     "Mark reviewed and Dismiss close a report and leave the message up. Only an open report can remove its message.",
   loading: "Loading reports...",
   errorTitle: "Couldn't load reports",
+  /** Over rows a failed background refetch left on screen. */
+  stale: "Couldn't refresh the reports. These are the last ones that loaded.",
   errorDescription: "Confirm your chapter access and retry.",
   offlineTitle: "Reports unavailable offline",
   offlineDescription: "Reconnect to review reported messages.",

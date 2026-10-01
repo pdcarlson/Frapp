@@ -25,6 +25,11 @@ const { hooks } = vi.hoisted(() => ({
     listError: false,
     listCached: true,
     offline: false,
+    loading: false,
+    // The page's query string, for the `?wizard=bot` resume.
+    search: "",
+    // Records the props each wizard mount receives.
+    wizard: vi.fn(),
     clear: vi.fn(),
     remove: vi.fn(),
     progress: vi.fn(),
@@ -36,15 +41,15 @@ const { hooks } = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(hooks.search),
 }));
 
 vi.mock("@repo/hooks", () => ({
   DISCORD_CONNECT_MESSAGES: {},
   useDiscordImports: () => ({
     data: hooks.listCached ? hooks.rows : undefined,
-    isPending: false,
-    isLoading: false,
+    isPending: hooks.loading,
+    isLoading: hooks.loading,
     isError: hooks.listError,
     fetchStatus: "idle",
     refetch: vi.fn(),
@@ -76,7 +81,16 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 vi.mock("./import-wizard", () => ({
-  ImportWizard: () => <div data-testid="wizard" />,
+  ImportWizard: (props: { onCancel: () => void }) => {
+    hooks.wizard(props);
+    return (
+      <div data-testid="wizard">
+        <button type="button" onClick={props.onCancel}>
+          Close wizard
+        </button>
+      </div>
+    );
+  },
 }));
 
 const { DiscordImportPage } = await import("./discord-import-page");
@@ -105,6 +119,8 @@ beforeEach(() => {
   hooks.listError = false;
   hooks.listCached = true;
   hooks.offline = false;
+  hooks.loading = false;
+  hooks.search = "";
   hooks.clear.mockResolvedValue(undefined);
   hooks.remove.mockResolvedValue(undefined);
   hooks.rows = [
@@ -127,7 +143,8 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
 
   it("explains what an import is when there are none", () => {
     hooks.rows = [];
-    render(<DiscordImportPage />);
+    const { container } = render(<DiscordImportPage />);
+    expect(cardFilledContainers(container)).toEqual([]);
 
     expect(
       screen.getByRole("heading", { name: "No imports yet" }),
@@ -157,11 +174,67 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
   it("says the imports are unavailable offline when none are cached", () => {
     hooks.offline = true;
     hooks.listCached = false;
-    render(<DiscordImportPage />);
+    const { container } = render(<DiscordImportPage />);
+    expect(cardFilledContainers(container)).toEqual([]);
 
     expect(
       screen.getByRole("heading", { name: "Imports unavailable offline" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows its loading state in the nested family", () => {
+    hooks.loading = true;
+    hooks.listCached = false;
+    const { container } = render(<DiscordImportPage />);
+
+    expect(screen.getByText("Loading imports...")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  // §8's row: text plus trailing controls, on the 44px floor, divided by the
+  // list rather than boxed one by one.
+  it("draws each import as a flush row, not a bordered box", () => {
+    render(<DiscordImportPage />);
+    const item = screen
+      .getByText("Imported server")
+      .closest("li") as HTMLElement;
+    expect(item.className).toContain("min-h-11");
+    expect(item.className).not.toMatch(/\b(rounded|border)/);
+  });
+
+  it("says the rows are the last that loaded when a refresh fails", () => {
+    hooks.listError = true;
+    render(<DiscordImportPage />);
+
+    expect(screen.getByText("Imported server")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Couldn't refresh the imports. This is the last list that loaded.",
+    );
+  });
+
+  // A resume is spent once its wizard closes.
+  it("reopens the wizard from the start after a ?wizard=bot resume closes", () => {
+    hooks.search = "wizard=bot&handshake=one-time";
+    render(<DiscordImportPage />);
+    expect(hooks.wizard).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        initialSource: "bot",
+        initialStep: "connect",
+        handshake: "one-time",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close wizard" }));
+    expect(screen.queryByTestId("wizard")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "New import" }));
+    expect(hooks.wizard).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        initialSource: null,
+        initialStep: undefined,
+        handshake: null,
+      }),
+    );
   });
 
   // The wizard holds every choice in its own state, so a branch that unmounts

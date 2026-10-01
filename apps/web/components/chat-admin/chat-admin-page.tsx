@@ -63,6 +63,7 @@ import {
   denseListClassName,
   denseRowControlClassName,
 } from "@/components/shared/table-controls";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -540,7 +541,11 @@ function ChatAdminBody() {
     );
   }
 
-  const catalogUnavailable = catalogQuery.isError;
+  // With no data, as the reads above: a catalog refetch that fails after an
+  // officer has the grid open used to swap the checkboxes for copy suggesting
+  // they lack `members:view`, mid-edit.
+  const catalogUnavailable =
+    catalogQuery.isError && catalogQuery.data === undefined;
   // `isLoading` alone misses the paused case: offline with no cached catalog
   // yet is `isPending && fetchStatus === "paused"`, which is neither loading
   // nor erroring — without this it would silently render an empty checkbox
@@ -553,6 +558,16 @@ function ChatAdminBody() {
   return (
     <div className="space-y-8">
       {confirmDialog}
+      {/*
+        The channels and categories below are the last good read when a
+        refetch failed, so say so rather than present them as current.
+      */}
+      {channelsQuery.isError || categoriesQuery.isError ? (
+        <StaleReadNotice
+          message="Couldn't refresh the channels. These are the last ones that loaded."
+          onRetry={retryQueries}
+        />
+      ) : null}
       {/*
         Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
         description paragraph"). Three `<Card>`s sat here — Channels,
@@ -939,6 +954,12 @@ function ChatAdminBody() {
                       {/* A count only once there is a list to count. */}
                       {pinsQuery.data !== undefined ? ` (${pins.length})` : ""}
                     </h4>
+                    {pinsQuery.isError && pinsQuery.data !== undefined ? (
+                      <StaleReadNotice
+                        message="Couldn't refresh the pins. These are the last ones that loaded."
+                        onRetry={() => void pinsQuery.refetch()}
+                      />
+                    ) : null}
                     {/*
                       A failed or paused read is not an empty list. Both used
                       to fall through to "Nothing pinned", because `pins` is

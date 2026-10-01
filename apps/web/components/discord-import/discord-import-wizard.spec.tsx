@@ -197,6 +197,13 @@ describe("ImportWizard — choosing a path", () => {
     ).toBe(true);
   });
 
+  // The dashboard shell's <main> holds the page; a second would be a second
+  // main landmark in a screen reader's list (#2500).
+  it("draws no main landmark of its own", () => {
+    render(<ImportWizard onStarted={() => {}} onCancel={() => {}} />);
+    expect(screen.queryByRole("main")).toBeNull();
+  });
+
   it("still offers the upload path when the bot is not configured", () => {
     // The export upload is not a fallback that switches on — it is always a
     // supported choice, and an environment with no Discord application must

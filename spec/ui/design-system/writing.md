@@ -499,9 +499,11 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Nothing selected (edit pane) | `No channel selected` | `Pick a channel to edit its details, notifications and pins.` |
 | Loading (pins) | — | `Loading pins...` |
 | Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
+| Stale (pins) | — | `Couldn't refresh the pins. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded pins stay) |
 | Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
 | Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` |
 | Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
 | Permission denied | — | `Managing channels and categories needs the channels:manage permission. Ask your chapter president to grant access.` |
@@ -518,6 +520,7 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
 | Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
 | Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay) |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
 | Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
@@ -550,6 +553,7 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Loading | — | `Loading imports...` |
 | Empty | `No imports yet` | `Bring your chapter's Discord history in as read-only archive messages.` |
 | Error | `Couldn't load imports` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the imports. This is the last list that loaded.` · `Try again` (a background refresh failed; the loaded rows and their meters stay) |
 | Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
 | Permission denied | — | `Importing a Discord archive needs channel management permission.` |

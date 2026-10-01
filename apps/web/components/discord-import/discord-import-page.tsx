@@ -29,6 +29,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import {
   useConfirmDialog,
   type ConfirmRequest,
@@ -107,11 +108,22 @@ export function DiscordImportPage() {
   // it would mount a moment later with both already gone: the admin who just
   // authorized would land on "Choose how", and the one-time token that
   // activates their server would be lost.
-  const [resumingBotWizard] = useState(
+  const [resumingBotWizard, setResumingBotWizard] = useState(
     () => searchParams.get("wizard") === "bot",
   );
-  const [handshake] = useState(() => searchParams.get("handshake"));
+  const [handshake, setHandshake] = useState(() =>
+    searchParams.get("handshake"),
+  );
   const [wizardOpen, setWizardOpen] = useState(resumingBotWizard);
+  // A resume is spent when its wizard closes, whether cancelled or started.
+  // Kept past that, every later New import reopened on the bot's connect step
+  // instead of "Choose how", and its fresh connect step confirmed the one-time
+  // handshake a second time, which the server had already spent.
+  function closeWizard() {
+    setWizardOpen(false);
+    setResumingBotWizard(false);
+    setHandshake(null);
+  }
   // The import whose detail is polled, which keeps its row live, and the one
   // whose channel panel is open. Hiding the panel keeps the row live.
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -192,6 +204,7 @@ export function DiscordImportPage() {
         <DiscordImportBody
           wizardOpen={wizardOpen}
           setWizardOpen={setWizardOpen}
+          closeWizard={closeWizard}
           activeId={activeId}
           setActiveId={setActiveId}
           openId={openId}
@@ -207,6 +220,8 @@ export function DiscordImportPage() {
 type BodyProps = {
   wizardOpen: boolean;
   setWizardOpen: (open: boolean) => void;
+  /** Closes the wizard and spends any `?wizard=bot` resume it opened with. */
+  closeWizard: () => void;
   activeId: string | null;
   setActiveId: (id: string | null) => void;
   openId: string | null;
@@ -237,6 +252,7 @@ function DiscordImportBody(props: BodyProps) {
 function DiscordImportList({
   wizardOpen,
   setWizardOpen,
+  closeWizard,
   activeId,
   setActiveId,
   openId,
@@ -271,9 +287,9 @@ function DiscordImportList({
         initialSource={resumingBotWizard ? ("bot" as ImportSource) : null}
         initialStep={resumingBotWizard ? ("connect" as WizardStep) : undefined}
         handshake={handshake}
-        onCancel={() => setWizardOpen(false)}
+        onCancel={closeWizard}
         onStarted={(id) => {
-          setWizardOpen(false);
+          closeWizard();
           setActiveId(id);
           setOpenId(id);
         }}
@@ -381,6 +397,17 @@ function DiscordImportList({
         </div>
         <Button onClick={() => setWizardOpen(true)}>New import</Button>
       </div>
+      {/*
+        The rows a failed read leaves on screen are its last good ones, so say
+        so: a deletion's meter that stopped moving otherwise reads as stuck
+        rather than stale.
+      */}
+      {imports.isError ? (
+        <StaleReadNotice
+          message="Couldn't refresh the imports. This is the last list that loaded."
+          onRetry={() => void imports.refetch()}
+        />
+      ) : null}
       {rows.length === 0 ? (
         <NestedEmpty
           sole
