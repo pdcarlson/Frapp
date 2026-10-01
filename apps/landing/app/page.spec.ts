@@ -222,6 +222,9 @@ describe("landing page structure", () => {
         );
       }
       expect(thread).not.toMatch(/·\s*read\b/i);
+      // And `RunStart` prints that prop alone, so a date can't come back
+      // inside the component either.
+      expect(thread).toMatch(/<span className="[^"]*\btext-muted-foreground\b[^"]*">\{time\}<\/span>/);
     });
 
     it("labels the viewer's own run \"You\" in the accent text, on the left", () => {
@@ -237,12 +240,31 @@ describe("landing page structure", () => {
       expect(body, "BODY moved").toBeDefined();
       expect(body).not.toMatch(/\b(?:bg|border|rounded|shadow|p[xytrbl]?)-/);
       expect(thread.match(/<p className=\{BODY\}>/g) ?? []).toHaveLength(3);
-      // The radii a compact row may draw: the avatar circle, the card's 14,
-      // the Check in control and the mention chip. A bubble needs another.
-      const radii = new Set(thread.match(/\brounded-[\w[\]-]+/g) ?? []);
-      expect([...radii].sort()).toEqual(
-        ["rounded-[5px]", "rounded-full", "rounded-lg", "rounded-sm"].sort(),
-      );
+      // Every fill, radius and border the thread draws, counted: the avatar's
+      // circle, the event card (fill, hairline, radius 14), the Check in
+      // control and the mention chip, once each. A bubble wrapped round a body,
+      // or a retinted row, adds a fill or a radius the count doesn't allow,
+      // whichever token it borrows.
+      const tally = (pattern: RegExp) =>
+        Object.fromEntries(
+          [...new Set(thread.match(pattern) ?? [])].map((token) => [
+            token,
+            thread.split(token).length - 1,
+          ]),
+        );
+      expect(tally(/\bbg-[\w[\]-]+/g)).toEqual({
+        "bg-popover": 1,
+        "bg-card": 1,
+        "bg-primary": 1,
+        "bg-mention-chip": 1,
+      });
+      expect(tally(/\brounded-[\w[\]-]+/g)).toEqual({
+        "rounded-full": 1,
+        "rounded-lg": 1,
+        "rounded-sm": 1,
+        "rounded-[5px]": 1,
+      });
+      expect(thread.match(/(?<![\w-])border(?![\w-])/g) ?? []).toHaveLength(1);
       expect(thread).not.toMatch(/bubble/i);
     });
 

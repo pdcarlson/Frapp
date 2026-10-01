@@ -329,7 +329,7 @@ export default function Home() {
             thread mid-word, which reads as a rendering bug rather than as a
             composition; the phone board carries no bleeding frame either.
           */}
-          <div className="lg:col-span-6 lg:-mr-20">
+          <div className="min-w-0 lg:col-span-6 lg:-mr-20">
             <div className="flex flex-col gap-3">
               <ChatFrame
                 variant="fold"
@@ -846,9 +846,10 @@ function ChatThread({ animate }: { animate: boolean }) {
   /*
    * Bottom-aligned, like the product's timeline, which opens at its newest
    * row with the composer pinned under it. The thread never shrinks below its
-   * rows: each frame's height is a minimum, so where the rows need more (at
-   * phone widths, and in the railed frame just above `sm`) the frame grows
-   * rather than slicing a row or running one under the composer.
+   * rows: each frame's height is a minimum, so wherever the thread column is
+   * too narrow for them to fit (phone widths, and the railed frame wherever
+   * the rail squeezes it) the frame grows rather than slicing a row or
+   * running one under the composer.
    */
   const thread = "flex flex-1 flex-col justify-end pb-2";
 
@@ -1015,7 +1016,13 @@ function ChatFrame({
           <span className="text-[16px] font-bold text-foreground">
             <span className="text-muted-foreground">#</span>general
           </span>
-          <span className="truncate text-[13px] text-muted-foreground">
+          {/*
+            `min-w-0` so the subtitle truncates: a flex item will not shrink
+            below its text otherwise. The hero's grid item takes `min-w-0` for
+            the same reason; without both, at 320 the subtitle held the fold
+            frame 35px wider than its column, past the hero's clip.
+          */}
+          <span className="min-w-0 truncate text-[13px] text-muted-foreground">
             {isFold ? "Delta Rho · 42 members" : "42 members"}
           </span>
           <span className="ml-auto text-[18px] font-bold tracking-[0.5px] text-muted-foreground">

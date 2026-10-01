@@ -5,7 +5,9 @@ import { expect, test } from "@playwright/test";
  *
  * `spec/ui/landing/reference/canvas/HeroB.dc.html` draws the shipping fold at
  * 1440x900 and `Phone.dc.html` draws the page at 390 (decision D6); those two
- * viewports are what the boards commit to, so they are what this measures.
+ * viewports are what the boards commit to, so they are what checks 1 to 5
+ * measure. Check 6 is about the product frames rather than the fold, and
+ * sweeps the widths in its own loop, 320 to 1440.
  *
  * **This is deliberately not a screenshot test**, and that is the repo's
  * position rather than a shortcut. The advisory snapshot suite that
@@ -45,7 +47,8 @@ import { expect, test } from "@playwright/test";
  *  6. Neither chat frame crops its thread, at any width from a small phone up.
  *     Each frame's height is a minimum that grows when its rows need more, so
  *     every row is whole and the composer sits under the newest one, inside
- *     the frame. Before #2893 a fixed height ran the newest rows under the
+ *     the frame. Below `lg`, where neither frame bleeds on purpose, each also
+ *     fits its viewport's width. Before #2893 a fixed height ran the newest rows under the
  *     composer at phone width, or pushed the composer out of the frame.
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
@@ -307,6 +310,7 @@ test.describe("the landing fold holds the boards' geometry", () => {
                 }),
                 composerBelowThread: c.top - t.bottom,
                 composerInsideFrame: box.bottom - c.bottom,
+                insideViewport: Math.min(box.left, window.innerWidth - box.right),
               };
             }),
         );
@@ -333,6 +337,15 @@ test.describe("the landing fold holds the boards' geometry", () => {
             frame.composerInsideFrame,
             `${name}: the composer runs out of the frame at ${width} wide`,
           ).toBeGreaterThanOrEqual(-0.5);
+          // From `lg` up the fold frame bleeds off the right edge on purpose;
+          // below it, both frames are whole and must fit the viewport, or
+          // their section's `overflow-hidden` cuts the frame's edge off.
+          if (width < 1024) {
+            expect(
+              frame.insideViewport,
+              `${name} is wider than the viewport at ${width} wide, so its edge is clipped`,
+            ).toBeGreaterThanOrEqual(-0.5);
+          }
         }
       } finally {
         await context.close();
