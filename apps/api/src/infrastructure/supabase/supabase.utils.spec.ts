@@ -110,7 +110,8 @@ describe('fetchAllPages', () => {
       { data: null, error: { message: 'connection reset' } },
     ]);
 
-    await expect(fetchAllPages(page, { pageSize: 100 })).rejects.toEqual({
+    await expect(fetchAllPages(page, { pageSize: 100 })).rejects.toMatchObject({
+      name: 'SupabaseQueryError',
       message: 'connection reset',
     });
   });

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 const SEARCH_LIMIT = 20;
 
@@ -33,7 +34,7 @@ export class ChapterDirectoryService {
     const { data, error } = await query;
 
     if (error) {
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     return data ?? [];

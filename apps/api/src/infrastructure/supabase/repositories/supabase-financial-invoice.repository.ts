@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
 import { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepository {
@@ -25,7 +26,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -35,7 +36,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -49,7 +50,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -68,7 +69,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('status', 'OPEN')
       .lt('due_date', cutoff)
       .order('due_date', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -80,7 +81,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -96,7 +97,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('chapter_id', chapterId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -112,7 +113,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       p_payment_intent_id: paymentIntentId,
       p_charge_id: chargeId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
   }
@@ -132,7 +133,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('status', 'OPEN')
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 }
