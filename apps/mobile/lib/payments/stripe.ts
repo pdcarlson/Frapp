@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { isExpoGo, isWebOrExpoGo } from "../expo-go";
+import { isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireStripe } from "./stripe-module";
 import type { StripeModule } from "./stripe-types";
@@ -99,18 +99,19 @@ export function isStripeAvailable(): boolean {
  */
 export function stripeUnavailableReason(): string | null {
   if (loadStripe() === null) {
-    if (Platform.OS === "web") {
-      return "Paying dues is available in the Frapp mobile app.";
-    }
-    if (isExpoGo()) {
+    // Both cache `null`, so only the guard the loader itself used tells Expo
+    // Go apart from an installed build whose native module threw; telling
+    // that member to install the build they are running would be false.
+    if (isWebOrExpoGo()) {
+      if (Platform.OS === "web") {
+        return "Paying dues is available in the Frapp mobile app.";
+      }
       return "Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.";
     }
-    // Both cache `null`, so only the guard tells Expo Go apart from an
-    // installed build whose native module threw; telling that member to
-    // install the build they are running would be false. Without a key an
-    // update could not switch payment on either, and production ships no key
-    // (`apps/mobile/store/README.md` § Review notes), so that member falls
-    // through to the key sentence rather than being promised a fix.
+    // Without a key an update could not switch payment on either, and
+    // production ships no key (`apps/mobile/store/README.md` § Review notes),
+    // so a broken build with no key falls through to the key sentence rather
+    // than being promised a fix.
     if (publishableKey() !== null) {
       return "Card payments couldn't start in this version of the app. Updating the app may fix it. Your treasurer can still take payment another way.";
     }
