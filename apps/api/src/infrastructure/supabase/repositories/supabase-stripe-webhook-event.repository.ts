@@ -5,6 +5,7 @@ import type {
   IStripeWebhookEventRepository,
   StripeWebhookClaim,
 } from '#domain/repositories/stripe-webhook-event.repository.interface';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /** Postgres caps nothing here, but an unbounded provider message is not worth storing. */
 const MAX_ERROR_LENGTH = 1000;
@@ -29,7 +30,7 @@ export class SupabaseStripeWebhookEventRepository implements IStripeWebhookEvent
         p_stale_seconds: staleSeconds,
       },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
 
     const row = (data ?? [])[0];
     if (!row) {
@@ -54,7 +55,7 @@ export class SupabaseStripeWebhookEventRepository implements IStripeWebhookEvent
       .update(patch)
       .eq('event_id', eventId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async markFailed(eventId: string, message: string): Promise<void> {
@@ -67,6 +68,6 @@ export class SupabaseStripeWebhookEventRepository implements IStripeWebhookEvent
       .update(patch)
       .eq('event_id', eventId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

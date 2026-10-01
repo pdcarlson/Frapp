@@ -6,7 +6,10 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 // Aliased: the private method below wraps this one to swallow errors, and the
 // alias keeps which of the two is which readable at the call site.
-import { fetchAllPages as fetchAllPagesOrThrow } from '../../infrastructure/supabase/supabase.utils';
+import {
+  type PagedQueryResult,
+  fetchAllPages as fetchAllPagesOrThrow,
+} from '../../infrastructure/supabase/supabase.utils';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { TaskStatus } from '#domain/entities';
 
@@ -17,6 +20,7 @@ import { TaskStatus } from '#domain/entities';
 export type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * PostgREST caps responses at `max_rows` (1000 — `supabase/config.toml`) and
@@ -307,10 +311,9 @@ export class ScheduledJobsRepository {
           .gte('metadata->>expires_at', expiredAfter.toISOString())
           .lte('metadata->>expires_at', expiredBefore.toISOString())
           .order('id', { ascending: true })
-          .range(from, to) as unknown as PromiseLike<{
-          data: PollCandidateRow[] | null;
-          error: unknown;
-        }>,
+          .range(from, to) as unknown as PromiseLike<
+          PagedQueryResult<PollCandidateRow>
+        >,
     );
 
     return rows
@@ -409,9 +412,9 @@ export class ScheduledJobsRepository {
         ? update.is('branding->colors->>accent', null)
         : update.eq('branding->colors->>accent', row.seed);
     const { data, error } = await guarded.select('id');
-    // Rethrown verbatim for the same reason `fetchAllPages` does: the log
-    // needs the PostgREST error's own `code`/`details`.
-    if (error) throw error;
+    // Thrown, not swallowed: the sweep's handler logs the cause, and a
+    // `SupabaseQueryError` carries its `code` into that line.
+    if (error) throw new SupabaseQueryError(error);
     return (data?.length ?? 0) > 0;
   }
 
@@ -511,10 +514,7 @@ export class ScheduledJobsRepository {
    */
   private async fetchAllPages<T>(
     errorMessage: string,
-    page: (
-      from: number,
-      to: number,
-    ) => PromiseLike<{ data: T[] | null; error: unknown }>,
+    page: (from: number, to: number) => PromiseLike<PagedQueryResult<T>>,
   ): Promise<T[]> {
     try {
       return await fetchAllPagesOrThrow<T>(page, { pageSize: SWEEP_PAGE_SIZE });

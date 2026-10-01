@@ -112,9 +112,10 @@ function extractCode(exception: HttpException): string | undefined {
  *    no scope fork, so a tag set on the current scope would reach other
  *    events.
  *    `@SentryExceptionCaptured` / `SentryGlobalFilter` are deliberately not
- *    used: they would `captureException` the raw value (PostgREST `{code,
- *    message, details}` objects become `[object Object]`) and double-report
- *    every 5xx this filter already sends through `toReportableError`.
+ *    used: they would `captureException` the raw value (a non-Error
+ *    throwable, such as a bare `{ code, message, details }` record, becomes
+ *    `[object Object]`) and double-report every 5xx this filter already sends
+ *    through `toReportableError`.
  *  - **Unmatched 4xx** (no Express `request.route`) → the same sanitized
  *    `request` log the interceptor emits for matched routes. Unmatched
  *    `/v1/…` 404s never enter `LoggingInterceptor`, so without this they would

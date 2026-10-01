@@ -1,20 +1,23 @@
 /**
  * Turning an arbitrary throwable into something an operator can read.
  *
- * Nothing in JavaScript guarantees that a `throw` carries an `Error`, and in
- * this codebase the exceptions are not exotic — they are the norm on the data
- * path. A Supabase repository that destructures `{ data, error }` gets a PLAIN
- * OBJECT back, not a `PostgrestError`: postgrest-js only constructs that class
- * on the `.throwOnError()` path, and everywhere else `error` is `JSON.parse` of
- * the response body. Roughly two hundred repository methods here end in
- * `if (error) throw error`, so each of them throws `{ code, message, details,
- * hint }`.
+ * Nothing in JavaScript guarantees that a `throw` carries an `Error`. A
+ * Supabase query that destructures `{ data, error }` gets a PLAIN OBJECT back,
+ * not a `PostgrestError`: postgrest-js only constructs that class on the
+ * `.throwOnError()` path, and everywhere else `error` is `JSON.parse` of the
+ * response body, `{ code, message, details, hint }`. The query sites wrap that
+ * in a `SupabaseQueryError` before throwing it
+ * (`infrastructure/supabase/supabase-query-error.ts`, #1264), which builds its
+ * message with {@link describeThrownRecord} below. This function is the
+ * backstop for everything else that can still throw a non-`Error`: a Realtime
+ * `err`, a `Promise.allSettled` reason, a vendor SDK, a site the
+ * `supabase-query-error-throws.spec.ts` ledger cannot see.
  *
- * `String()` on one of those is the string `[object Object]`. That is what
- * `AllExceptionsFilter` used to send to Sentry and write to the 5xx log, and it
- * is how FRAPP-API-1 was recorded: a `PGRST205` — the API serving ahead of its
- * own migration, stated plainly in the object — reduced to a shrug in both
- * places at once.
+ * `String()` on one of those objects is the string `[object Object]`. That is
+ * what `AllExceptionsFilter` used to send to Sentry and write to the 5xx log,
+ * and it is how FRAPP-API-1 was recorded: a `PGRST205` — the API serving ahead
+ * of its own migration, stated plainly in the object — reduced to a shrug in
+ * both places at once.
  *
  * ## Why the message carries everything
  *
@@ -43,17 +46,10 @@ export function toReportableError(exception: unknown): Error {
   if (exception instanceof Error) return exception;
 
   if (typeof exception === 'object' && exception !== null) {
-    const record = exception as Record<string, unknown>;
-    // `code` leads, because it is the stable half: PostgREST varies the prose
-    // around a fault but not its code.
-    const code = text(record.code);
-    const described = [code, text(record.message), text(record.hint)].filter(
-      (part): part is string => part !== undefined,
+    const { message, code } = describeThrownRecord(
+      exception as Record<string, unknown>,
     );
-
-    const error = new Error(
-      described.length > 0 ? described.join(': ') : describeOpaque(record),
-    );
+    const error = new Error(message);
     // Says, at a glance, that something threw a bare object: the message is now
     // accurate but the stack still points at the normalizer rather than at the
     // throw site, and this is what explains why.
@@ -67,6 +63,39 @@ export function toReportableError(exception: unknown): Error {
   }
 
   return new Error(String(exception));
+}
+
+/** What {@link describeThrownRecord} reads off a thrown record. */
+export interface DescribedThrownRecord {
+  /** `code: message: hint`, or the capped serialization when none is set. */
+  message: string;
+  code: string | undefined;
+  hint: string | undefined;
+}
+
+/**
+ * The one reading of a thrown `{ code, message, details, hint }` record, shared
+ * by {@link toReportableError} and `SupabaseQueryError` so the text an operator
+ * reads is the same whichever of the two built it.
+ *
+ * `details` is never read, for the reason in this module's header.
+ */
+export function describeThrownRecord(
+  record: Record<string, unknown>,
+): DescribedThrownRecord {
+  // `code` leads, because it is the stable half: PostgREST varies the prose
+  // around a fault but not its code.
+  const code = text(record.code);
+  const hint = text(record.hint);
+  const described = [code, text(record.message), hint].filter(
+    (part): part is string => part !== undefined,
+  );
+  return {
+    message:
+      described.length > 0 ? described.join(': ') : describeOpaque(record),
+    code,
+    hint,
+  };
 }
 
 /** A non-empty scalar field of a thrown object, or nothing. */

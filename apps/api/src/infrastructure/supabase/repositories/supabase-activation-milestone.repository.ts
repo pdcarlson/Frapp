@@ -3,6 +3,7 @@ import type { ActivationMilestone } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IActivationMilestoneRepository } from '#domain/repositories/activation-milestone.repository.interface';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseActivationMilestoneRepository implements IActivationMilestoneRepository {
@@ -37,7 +38,7 @@ export class SupabaseActivationMilestoneRepository implements IActivationMilesto
       })
       .select('id');
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length > 0;
   }
 }
