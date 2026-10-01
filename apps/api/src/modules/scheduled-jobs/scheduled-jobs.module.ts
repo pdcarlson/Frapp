@@ -20,7 +20,7 @@ import { ChatModule } from '../chat/chat.module';
  * comes from the database rather than from the deployment topology: the
  * `scheduled_notification_dispatches` claim for the reminder sweeps, and a
  * compare-and-set write for the stale-palette sweep — see
- * `docs/internal/ops/deployment/render.md` §5.6.
+ * `docs/ops/deployment/render.md` §5.6.
  *
  * Imports `AttendanceModule` to reuse `markAutoAbsent` rather than restate its
  * eligibility rules, `NotificationModule` for the preference- and

@@ -34,7 +34,7 @@
 // That is not theoretical and it is not new. `web-production-build` (#1374) did
 // it, and adding `migration-order` would have done it again. The failure lands
 // on the one operation that matters most when something is wrong:
-// `DB_ROLLBACK_PLAYBOOK.md` recovery is "redeploy the API at the pre-<X>
+// `db-rollback-playbook.md` recovery is "redeploy the API at the pre-<X>
 // revision", i.e. deploying an OLDER commit — the exact thing a growing
 // required-check list makes impossible, and it fails at the moment you can
 // least afford to debug a gate.
@@ -104,7 +104,7 @@ export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
  * "CI is not green" — a red-tests message for a commit whose tests never ran.
  * It is the same "an older commit became undeployable" class the narrowing
  * above fixes, arriving through a different door, and it lands on the same
- * operation: DB_ROLLBACK_PLAYBOOK recovery is redeploying an older commit.
+ * operation: `db-rollback-playbook.md` recovery is redeploying an older commit.
  *
  * Naming it is the fix that generalises. A cancelled run can be re-run from the
  * Actions UI for 30 days, which turns a dead end into one click.

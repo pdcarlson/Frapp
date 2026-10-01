@@ -62,9 +62,9 @@ the ones a later reader would otherwise re-litigate.
   counts have not been re-read, and a promotion may have happened since. No tree-side count is
   quoted here on purpose: every merge moves it, so re-derive with
   `ls supabase/migrations/*.sql | wc -l`. The dated Management-API reads of what each project
-  actually holds live in `DB_PROMOTION_RUNBOOK.md` (latest 2026-09-06), not here — one home, so a
+  actually holds live in `db-promotion-runbook.md` (latest 2026-09-06), not here — one home, so a
   promotion updates one place. #1620 tracks refreshing this and the matching block in
-  `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
+  `docs/ops/db-promotion-runbook.md`.
 - **Staging and production build differently on purpose.** Staging is verified through preview
   deployments; production is built through the API with `target: production`. `web-production-build`
   closes the type-check half of that gap in CI, not the deployment half.
@@ -203,7 +203,7 @@ the ones a later reader would otherwise re-litigate.
   claim that the flag is checked. The point of closing it was the hand comparison: an audit that
   diffs roster against live now finds no difference on any flag and no longer has to re-derive the
   lock-dependence reasoning to conclude the difference did not matter. Canonical page for the
-  current state: [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+  current state: [`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md).
 
 - **Amendment (2026-09-04) — the doc-table checker was deleted; the parse-as-source-text constraint
   on `required-checks.mjs` lapses with it, and the agreement it enforced is now a review
@@ -232,7 +232,7 @@ the ones a later reader would otherwise re-litigate.
 
   **What the deletion costs, named rather than left to be rediscovered as a bug.** The deleted
   checker compared exactly one doc against these arrays:
-  `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, which restates the roster by hand and is
+  `docs/ops/github-branch-protection-runbook.md`, which restates the roster by hand and is
   the one doc deliberately permitted to. Until 2026-09-04 a machine held those two in step. Nothing
   does now — a roster edit that leaves that runbook stale merges green, and the same is true of
   every other doc that describes these arrays in prose. Keeping them in agreement is a reviewer's

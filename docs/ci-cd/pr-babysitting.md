@@ -366,13 +366,13 @@ this compares against a design, not against something that ran.) What makes it s
   `required_pull_request_reviews: null`, measured 2026-09-02) and the verify script exits 0 from
   this sandbox, printing "No changes — live protection already matches this roster." So live `main`
   matches every field that diff compares as of 2026-09-02 — the drift
-  `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records (12 contexts against 17 intended)
+  `docs/ops/github-branch-protection-runbook.md` records (12 contexts against 17 intended)
   was closed by a run on 2026-08-21. Exit 0 is still not "live matches the roster in full":
   `LOCK_DEPENDENT_FLAGS` excludes `allow_fork_syncing` from the diff while `lock_branch` is
   `false`, so a divergence on that one key stays invisible to a green `:verify`
   (#1580 closed the divergence that existed;
   the exclusion remains). Canonical state, including the roster's current context count:
-  [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Step 1 —
+  [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md) § Step 1 —
   read it rather than the dated counts above, and do not add new ones here. What survives is
   that a read is a **dated snapshot**, not a standing guarantee: nothing stops `main` drifting again
   between applies, so re-run the verify rather than trusting this date; (b) `restrictions: null` means the push-restriction
