@@ -509,13 +509,13 @@ before it was fixed:
 - **The readers with no uid come in three shapes**, each stubbing `auth.uid()` *and*
   `auth.role()`, because each binds a different set of policies (#423, #1556, #1557):
   - The chat tiers' "no JWT" reader is a signed-in session with a null `uid`. It is the only one
-    that reaches a null-uid branch inside a `to authenticated` policy, such as
-    `… and (can_read_chat_message(id) or auth.uid() is null)`.
+    that reaches a null-uid branch behind an `auth.role() = 'authenticated'` conjunct, which both
+    chat policies carry, such as `… and (can_read_chat_message(id) or auth.uid() is null)`.
   - The default-deny tier's anonymous reader carries the anon claim through the `authenticated`
     grant. With `auth.role()` pinned to `'authenticated'`, a policy spelled
     `using (auth.role() = 'anon')` would read as default-deny here while being world-readable in
     production.
-  - **Every table is also read as the anon key**: `rls_probe_anon`, a member of `anon` and not of
+  - **Every black-box table is also read as the anon key**: `rls_probe_anon`, a member of `anon` and not of
     `authenticated`. Both readers above hold the `authenticated` grant, so a policy spelled
     `to anon` binds only this one, exactly as it binds the anon key on hosted.
 - **Every probe read runs in its own savepoint** (#1556). A policy that reads a table the probe
@@ -533,8 +533,9 @@ it carries a client-reachable `SELECT` policy with no black-box coverage (tracke
 `anon` and `authenticated` access to new tables and functions through `ALTER DEFAULT PRIVILEGES`,
 and the harness does not replay those defaults. So its `anon` EXECUTE assertions catch an explicit
 `grant … to anon`, but not a drop/recreate that forgets its `revoke … from anon`, which on hosted
-hands the grant back. The `has_function_privilege('anon', …)` checks in `db-promotion-runbook.md`
-cover that at promotion time.
+hands the grant back. Only the per-migration `has_function_privilege('anon', …)` checks in
+`db-promotion-runbook.md` cover that, at promotion time and only for the functions whose entries
+carry one. Replaying the defaults is #3052.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
 own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over
@@ -555,8 +556,8 @@ count green. Two details carry most of the weight:
 
 The membership matrix deliberately runs while the table holds only its own fixtures, which keeps its
 expectations readable but means no assertion in it can see a policy that special-cases *imported*
-rows. So the two readers that must see nothing of another tenant are re-checked after the archive
-row is inserted. That gap was reachable: a policy of the form
+rows. So the readers that must see nothing of another tenant (no JWT, the anon key, and a
+cross-chapter member) are re-checked after the archive row is inserted. That gap was reachable: a policy of the form
 
 ```sql
 using ((auth.role() = 'authenticated' and kind <> 'imported' and can_read_chat_message(id))

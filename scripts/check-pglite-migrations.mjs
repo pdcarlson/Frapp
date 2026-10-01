@@ -791,9 +791,10 @@ const RLS_SMOKE = [
     // LIMITATION: hosted Supabase also grants `anon` EXECUTE through ALTER
     // DEFAULT PRIVILEGES, and this harness does not replay those defaults. So a
     // drop/recreate that restores anon's grant on hosted (by forgetting the
-    // `revoke ... from anon`) still leaves this green. The check in
-    // db-promotion-runbook.md covers that case; it is a promotion-time check,
-    // not a CI one.
+    // `revoke ... from anon`) still leaves this green. For this function the
+    // promotion-time `has_function_privilege('anon', ...)` check in
+    // db-promotion-runbook.md covers that case. Not every function has such an
+    // entry, so in general nothing does (#3052).
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
                  has_function_privilege('anon', p.oid, 'EXECUTE') as anon_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -1562,10 +1563,12 @@ const signedIn = (uid) => ({ uid, jwtRole: "authenticated", dbRole: "rls_probe" 
 
 // A signed-in session with no `sub`. GoTrue never mints one, so hosted never
 // receives this request. It is the chat tiers' "no JWT" reader because it is
-// the only one that reaches a null-uid branch inside a `to authenticated`
-// policy. Both chat policies conjoin `auth.role() = 'authenticated'`, so a
-// predicate spelled `... and (can_read_chat_message(id) or auth.uid() is null)`
-// leaks every row to this reader and to neither of the two below.
+// the only one that reaches a null-uid branch behind an `auth.role() =
+// 'authenticated'` conjunct, which both chat policies carry. So a predicate
+// spelled `... and (can_read_chat_message(id) or auth.uid() is null)` leaks
+// every row to this reader and to neither of the two below. (ANON_CLAIM
+// reaches a null-uid branch too, in a `to authenticated` policy that does not
+// test the role.)
 const NULL_SUB = { uid: null, jwtRole: "authenticated", dbRole: "rls_probe" };
 
 // The anon claim, read through the `authenticated` grant: the deny tier's
@@ -1577,7 +1580,8 @@ const ANON_CLAIM = { uid: null, jwtRole: "anon", dbRole: "rls_probe" };
 // The anon key as hosted runs it (#1557 created the role): no uid, the anon
 // claim, and the read made as a member of `anon` and not of `authenticated`.
 // It is the only reader a policy spelled `to anon` binds, since the two above
-// hold the `authenticated` grant instead. Every tier reads as it.
+// hold the `authenticated` grant instead. Every black-box table is read as it:
+// both chat matrices, the post-archive re-check and the default-deny tier.
 const ANON_KEY = { uid: null, jwtRole: "anon", dbRole: "rls_probe_anon" };
 
 const firstLine = (e) => String(e?.message ?? e).split("\n")[0];
@@ -4402,9 +4406,11 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
 
     // Both client roles exist here, so each is checked directly. That catches
     // a revoke from PUBLIC going missing and an explicit grant to either role.
-    // It cannot catch a forgotten `revoke ... from anon` alone, since hosted's
-    // ALTER DEFAULT PRIVILEGES grant is not replayed here (see the
-    // can_read_chat_message() EXECUTE assertion).
+    // It cannot catch a forgotten `revoke ... from anon` or `from
+    // authenticated`: hosted grants both through ALTER DEFAULT PRIVILEGES,
+    // which is not replayed here (see the can_read_chat_message() EXECUTE
+    // assertion). db-promotion-runbook.md checks `authenticated` for these two
+    // functions at promotion, but not `anon` (#3052).
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as authed,
              has_function_privilege('authenticated', 'public.discord_import_channel_holds_anything(uuid, uuid)', 'execute') as authed_check,
