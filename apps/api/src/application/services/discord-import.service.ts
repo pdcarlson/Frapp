@@ -158,9 +158,14 @@ const PROGRESS_STATUSES: ReadonlySet<DiscordImportStatus> = new Set([
 ]);
 
 /**
- * An import as the API returns it: the row, plus a bot import's progress in
- * channel rows. Null for an upload, whose message counts are its progress, and
- * for a bot import with no progress to show (see `PROGRESS_STATUSES`).
+ * An import as list and detail hand it to the controller: the whole row, plus
+ * a bot import's progress in channel rows. Null for an upload, whose message
+ * counts are its progress, and for a bot import with no progress to show (see
+ * `PROGRESS_STATUSES`).
+ *
+ * Never a response body. The row carries the worker's lease, resume cursor and
+ * storage layout, so every route returns it through `toDiscordImportView`
+ * (`discord-import-view.ts`, #2860), and so must a new one.
  */
 export type DiscordImportWithProgress = DiscordImport & {
   channels_total: number | null;
