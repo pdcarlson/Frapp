@@ -219,14 +219,19 @@ adds a second `realtime` policy, so once it is applied the hosted figure is **10
 count the heading and the PGlite check now carry; re-read the hosted catalog after the deploy that
 carries it and re-stamp this line.
 
-The PGlite CI substrate sees **8**, and all four absences are role- or schema-gated rather than
-drift: `auth_admin_can_read_users` and `auth_admin_can_read_members` are created only inside
+The PGlite CI substrate sees **10**, every `public` one. The two absences are schema-gated rather
+than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
+`auth_admin_can_read_users` and `auth_admin_can_read_members`, created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
-(`20260802120000_active_chapter_jwt_claim.sql:137`), and `realtime.messages` needs a `realtime`
-schema PGlite does not have. `scripts/check-pglite-migrations.mjs` pins the `public` set **by name and command**, so adding or
-dropping one of those 8 — or flipping one from `SELECT` to `ALL` — fails CI. Because a name-and-command
-set still cannot see a policy *rewritten in place*, it additionally rejects any permissive policy whose
-qualifier is a bare tautology — checking **both `qual` and `with_check`**. Reading only `qual` would
+(`20260802120000_active_chapter_jwt_claim.sql:137`), are present since the harness creates that
+role before applying migrations (#1557). `scripts/check-pglite-migrations.mjs` pins the `public`
+set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 10,
+flipping one from `SELECT` to `ALL`, or changing its `TO` clause. The last case is dropping
+`to authenticated` from `chat_messages_select`, which would bind it to `anon` on hosted. Because
+that set still cannot see a policy *rewritten in place*, the check also rejects any permissive
+policy a client can reach whose qualifier is a bare tautology, checking **both `qual` and
+`with_check`**. The two `auth_admin_can_read_*` policies are `using (true)` by design. They are
+exempt because they bind `supabase_auth_admin` alone, which no client request can assume. Reading only `qual` would
 miss the write path entirely: a `FOR INSERT` policy such as `chat_message_actions_insert` has a NULL
 `qual` and carries its whole predicate in `with_check`, and on a `FOR ALL` policy it is `with_check`
 that gates writes. So `using (auth.role() = 'service_role') with check (true)` — name, command and
@@ -237,12 +242,12 @@ rows. That matters most for `member_custom_field_values_service_role`, which is 
 This is a tripwire for the obvious rewrite, not a proof: it catches the literal spellings
 (`true`, `(true)`, `1=1`), and an adversarial `using (id = id)` would still pass.
 
-Note the limit of the guard: the four policies PGlite cannot see are **not** covered, so dropping
-`auth_admin_can_read_users`, `auth_admin_can_read_members`, `realtime_messages_scoped_select` or
-`realtime_messages_scoped_insert` would leave the inventory printing its clean `(8 here, 12 hosted)`
-— and the `12` is derived from the pinned list plus those four, so it would then be reporting a
-hosted figure that is itself wrong. Those four stay doc-only, and changes to them have to be caught
-in review.
+Note the limit of the guard: this inventory does **not** cover the two policies it cannot see.
+Dropping `realtime_messages_scoped_select` or `realtime_messages_scoped_insert` would leave it
+printing its clean `(10 here, 12 hosted)`. The `12` is derived from the pinned list plus those
+two, so it would then be reporting a hosted figure that is itself wrong. Both are exercised
+instead by `apps/web/lib/realtime/change-topics.spec.ts`, which replays the migrations on its own
+PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-never-connected--resolved-2026-08-16-867)).
 
 | Table | Policy | Effect |
 | --- | --- | --- |
@@ -463,8 +468,10 @@ The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests 
 
 ### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
 
-Four tables are covered black-box, by reading them as an unprivileged `rls_probe` role rather than
-by pattern-matching the policy expression. The first two are the ones where **RLS is the only gate**
+Four tables are covered black-box, by reading them as unprivileged probe roles rather than by
+pattern-matching the policy expression: `rls_probe`, a member of `authenticated`, for a signed-in
+client, and `rls_probe_anon`, a member of `anon` and not of `authenticated`, for the anon key. The
+first two tables are the ones where **RLS is the only gate**
 (a browser or mobile Supabase client reads them directly, including over Realtime); the last two are
 read only through the service-role client, and are covered because a policy appearing on them at all
 would be the regression:
@@ -478,8 +485,8 @@ would be the regression:
 
 The last two are the inverse assertion. Neither carries a policy a client role can reach —
 `financial_invoices` has none at all, and `members`' only policy is `to supabase_auth_admin`, a role
-PGlite does not have — so the property under test is that they stay unreadable. Each is guarded
-against passing vacuously: the probe's `SELECT` privilege is asserted, and the fixture rows are
+no client request can assume — so the property under test is that they stay unreadable. Each is
+guarded against passing vacuously: both probes' `SELECT` privilege is asserted, and the fixture rows are
 asserted present as owner, before any zero-row claim is made. The probe read itself is unscoped, so
 a policy leaking some *other* chapter's rows fails too.
 
@@ -489,24 +496,48 @@ policy (`for insert with check (true)` leaves every read assertion green, and Su
 carries a catalog assertion that it holds **no client-reachable policy of any command shape**,
 which covers INSERT/UPDATE/DELETE/ALL without a write probe per command.
 
-Two things make the whole tier meaningful rather than decorative, and both were false-PASS bugs
-before they were fixed:
+Three things make the whole tier meaningful rather than decorative, and each was a false-PASS bug
+before it was fixed:
 
-- **The `authenticated` role is created before migrations apply.** ~18 migrations guard their policy
-  and grant statements behind `if exists (select 1 from pg_roles where rolname = 'authenticated')`.
-  Without the role those blocks are skipped silently, so a `create policy … to authenticated using
-  (true)` written in that idiom — the repo's dominant one — left the entire harness green.
-- **`auth.role()` is varied per scenario**, not pinned to `'authenticated'`. Otherwise the
-  "no JWT" reader is merely a signed-in reader with a null `uid`, and a policy spelled
-  `using (auth.role() = 'anon')` reads as default-deny here while being world-readable in
-  production.
+- **Supabase's roles are created before migrations apply.** Migrations guard their policy, grant
+  and revoke statements behind `if exists (select 1 from pg_roles where rolname = '<role>')`, the
+  repo's dominant idiom. Without the role, those blocks are skipped silently. For `authenticated`
+  (#423), a `create policy … to authenticated using (true)` written that way left the entire harness
+  green. For `anon`, `service_role` and `supabase_auth_admin` (#1557), a `revoke … from anon` that
+  names the wrong function signature passed here and then aborted `supabase db push` on the hosted
+  project.
+- **The readers with no uid come in three shapes**, each stubbing `auth.uid()` *and*
+  `auth.role()`, because each binds a different set of policies (#423, #1556, #1557):
+  - The chat tiers' "no JWT" reader is a signed-in session with a null `uid`. It is the only one
+    that reaches a null-uid branch behind an `auth.role() = 'authenticated'` conjunct, which both
+    chat policies carry, such as `… and (can_read_chat_message(id) or auth.uid() is null)`.
+  - The default-deny tier's anonymous reader carries the anon claim through the `authenticated`
+    grant. With `auth.role()` pinned to `'authenticated'`, a policy spelled
+    `using (auth.role() = 'anon')` would read as default-deny here while being world-readable in
+    production.
+  - **Every black-box table is also read as the anon key**: `rls_probe_anon`, a member of `anon` and not of
+    `authenticated`. Both readers above hold the `authenticated` grant, so a policy spelled
+    `to anon` binds only this one, exactly as it binds the anon key on hosted.
+- **Every probe read runs in its own savepoint** (#1556). A policy that reads a table the probe
+  cannot read raises `permission denied` instead of returning rows, and the error aborts the open
+  transaction. Before, one such policy in the first tier unwound the whole block: the log showed
+  a single `ERR`, and the default-deny tier never ran. Now each affected scenario reports its own
+  `MISS`, and the tiers after it still run.
 
 **This is four tables, not the whole schema.** A permissive policy added to any of the other
 RLS-enabled tables changes no assertion in the harness; the every-public-table invariant covers
 `relrowsecurity` only, not what the policies do. `chat_notification_preferences` is the known gap —
 it carries a client-reachable `SELECT` policy with no black-box coverage (tracked separately).
 
-`rls_probe` is granted `SELECT` only, so this tier proves the **read** path by execution. The
+**Grants that come from hosted's default privileges are not modelled.** Hosted Supabase grants
+`anon` and `authenticated` access to new tables and functions through `ALTER DEFAULT PRIVILEGES`,
+and the harness does not replay those defaults. So its `anon` EXECUTE assertions catch an explicit
+`grant … to anon`, but not a drop/recreate that forgets its `revoke … from anon`, which on hosted
+hands the grant back. Only the per-migration `has_function_privilege('anon', …)` checks in
+`db-promotion-runbook.md` cover that, at promotion time and only for the functions whose entries
+carry one. Replaying the defaults is #3052.
+
+Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
 own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over
 `polqual` / `polwithcheck`, not by attempting a write as a non-owner — a policy whose `with check`
 still mentions `user_id` and `auth.uid()` without restricting them would pass. That gap is real and
@@ -525,8 +556,8 @@ count green. Two details carry most of the weight:
 
 The membership matrix deliberately runs while the table holds only its own fixtures, which keeps its
 expectations readable but means no assertion in it can see a policy that special-cases *imported*
-rows. So the two readers that must see nothing of another tenant are re-checked after the archive
-row is inserted. That gap was reachable: a policy of the form
+rows. So the readers that must see nothing of another tenant (no JWT, the anon key, and a
+cross-chapter member) are re-checked after the archive row is inserted. That gap was reachable: a policy of the form
 
 ```sql
 using ((auth.role() = 'authenticated' and kind <> 'imported' and can_read_chat_message(id))

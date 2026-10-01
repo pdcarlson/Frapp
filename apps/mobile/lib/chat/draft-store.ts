@@ -12,7 +12,7 @@
  *
  * Why not the `KeyValueStore` port: its mirror is documented as sound *only*
  * for reads that may miss, like the `chat:lastSeen:` backfill cursor, where a
- * stale read widens a backfill instead of losing data
+ * stale read costs a re-read instead of losing data
  * (`spec/ui/mobile/patterns.md` § Chat). A draft read that misses loses typing,
  * so it goes straight to AsyncStorage and awaits, rather than borrowing a
  * synchronous mirror whose invariant it would break.

@@ -7,7 +7,10 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
-import { ChatMessageDuplicateError } from '#domain/repositories/chat.repository.interface';
+import {
+  ChatMessageCursorNotFoundError,
+  ChatMessageDuplicateError,
+} from '#domain/repositories/chat.repository.interface';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { ChatMessage } from '#domain/entities/chat.entity';
 import {
@@ -84,10 +87,16 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       query = query.lt('created_at', options.before);
     }
 
-    // `since` is a message UUID: return messages created AFTER that message
-    // (reconnect replay path — client already has the `since` message).
-    // Scope the pivot lookup to this channel so a UUID from another channel
-    // can't shift the window.
+    // `since` is a message UUID: messages created AFTER that message, for the
+    // reconnect and poll backfill (the client already holds the `since`
+    // message). Still newest first under the same limit, so a full page is
+    // the newest `limit` rows after the cursor and may not reach back to it;
+    // the client treats it that way (`mergeSincePage` in chat-core, #2807).
+    //
+    // The pivot lookup is scoped to this channel so a UUID from another
+    // channel can't shift the window, and a cursor that finds nothing is
+    // refused rather than ignored: ignoring it answered with the channel's
+    // newest page, which a client merged as "everything after my cursor".
     if (options?.since) {
       const { data: pivot, error: pivotError } = await this.supabase
         .from('chat_messages')
@@ -96,9 +105,15 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
         .eq('channel_id', channelId)
         .maybeSingle();
       if (pivotError) throw new SupabaseQueryError(pivotError);
-      if (pivot) {
-        query = query.gt('created_at', pivot.created_at);
+      if (!pivot) {
+        throw new ChatMessageCursorNotFoundError(channelId, options.since);
       }
+      // Strictly after the pivot's instant. A row tied with it would be
+      // skipped, but no write path produces one a cursor can sit on: live
+      // rows are single-row inserts, and imported batches never reach a
+      // cursor over Realtime. `gte` was tried and cost more than it guarded
+      // (#3055).
+      query = query.gt('created_at', pivot.created_at);
     }
 
     const { data, error } = await query;

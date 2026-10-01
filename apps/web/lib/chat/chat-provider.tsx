@@ -16,21 +16,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import {
   browserKeyValueStore,
   browserNetworkState,
 } from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
-import { chatRealtime } from "@repo/chat-core/realtime-manager";
+import {
+  chatRealtime,
+  createBackfillFetcher,
+} from "@repo/chat-core/realtime-manager";
 import { flushOutbox } from "@repo/chat-core/chat-client";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { useFirstChunkCache } from "./use-first-chunk-cache";
 import { CachedViewerIdProvider } from "./viewer-id";
 import { CachedBlockFloorContext } from "./use-thread-block-list";
-import type { RawChatMessage } from "@repo/chat-core/types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
@@ -92,19 +93,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       queryClient,
       supabase,
       viewerId: userId ?? null,
-      backfill: async (channelId, since) => {
-        const { data, error } = await apiClient.GET(
-          "/v1/channels/{id}/messages",
-          {
-            params: {
-              path: { id: channelId },
-              query: since ? { since, limit: 100 } : { limit: 50 },
-            },
-          },
-        );
-        if (error) throw error;
-        return asArray<RawChatMessage>(data);
-      },
+      backfill: createBackfillFetcher(apiClient),
     });
   }, [queryClient, supabase, apiClient, userId]);
 

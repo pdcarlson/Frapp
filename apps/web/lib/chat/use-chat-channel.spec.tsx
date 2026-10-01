@@ -20,6 +20,7 @@ import {
   type ChannelCache,
 } from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
+import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import { OLDER_PAGE_LIMIT } from "@repo/chat-core/history";
 import { useChatChannel } from "./use-chat-channel";
 
@@ -758,6 +759,38 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     });
 
     expect(read).toBeNull();
+  });
+
+  it("drops the purged rows it holds and reads the newest page when its newest row is gone (#2807)", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    // A purge deleted msg-131 to msg-150 and the thread missed their Realtime
+    // deletes, so the server knows no message to read after msg-150.
+    mocks.GET.mockResolvedValueOnce({
+      data: undefined,
+      error: {
+        statusCode: 404,
+        code: CHAT_SINCE_NOT_FOUND_CODE,
+        message: "The since message is not in this channel",
+      },
+    });
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 130));
+    let read: number | null | undefined;
+    await act(async () => {
+      read = await result.current.loadNewer();
+    });
+
+    expect(read).toBe(0);
+    expect(mocks.GET.mock.calls[2]![1].params.query).toEqual({
+      limit: OLDER_PAGE_LIMIT,
+    });
+    // Not just msg-150: a thread left holding msg-149 would key the next
+    // forward read on it and fail again, one row per jump.
+    await waitFor(() =>
+      expect(result.current.messages.at(-1)?.id).toBe("msg-130"),
+    );
+    expect(result.current.messages).toHaveLength(30);
   });
 
   it("reads what arrived after the newest row and merges it", async () => {

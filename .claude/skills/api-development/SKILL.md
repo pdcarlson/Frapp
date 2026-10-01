@@ -161,10 +161,10 @@ All live in `interface/decorators/`.
 
 ## Database changes
 
-1. `npx supabase migration new my_change_name` creates
+1. `npm run supabase -- migration new my_change_name` creates
    `supabase/migrations/{14-digit timestamp}_{snake_case}.sql`.
 2. Enable RLS on every new table: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;`.
-3. Apply locally with `npx supabase db push --local`.
+3. Apply locally with `npm run supabase -- db push --local`.
 4. Add an entry for the migration to both
    [`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md) and
    [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), in the entry
