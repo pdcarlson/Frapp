@@ -56,7 +56,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
-import { getErrorMessage, initials } from "@/lib/utils";
+import { getErrorMessage, initials, parseGuardedInt } from "@/lib/utils";
 
 type CurrentUser = {
   id?: string;
@@ -596,14 +596,19 @@ export function ProfilePanel() {
                   min={1900}
                   max={2100}
                   value={profile.graduation_year ?? ""}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    // Cleared means "no year". The 1900–2100 range is the
+                    // API's to refuse: guarding it here would refuse the "2"
+                    // on the way to "2026".
+                    const next =
+                      raw.trim() === "" ? null : parseGuardedInt(raw);
+                    if (next === undefined) return;
                     setProfileDraft((prev) => ({
                       ...prev,
-                      graduation_year: event.target.value
-                        ? Number(event.target.value)
-                        : null,
-                    }))
-                  }
+                      graduation_year: next,
+                    }));
+                  }}
                 />
               </div>
               <div className="grid gap-2">

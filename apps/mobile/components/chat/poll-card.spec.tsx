@@ -10,7 +10,6 @@ import { UNCONFIRMED_NOTE, RECORDED_NOTE } from "@/lib/chat/delivery-status";
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#C49A3A",
-    accentFallbackApplied: false,
     accentPrimary: "#C49A3A",
     accentOnPrimary: "#2B2009",
     logoUrl: null,

@@ -145,7 +145,6 @@ vi.mock("@repo/hooks", async () => {
 const branding = vi.hoisted(() => {
   const unnamed = {
     accent: "#F4CB63",
-    accentFallbackApplied: false,
     accentPrimary: "#EFB63B",
     accentOnPrimary: "#131211",
     logoUrl: null as string | null,
