@@ -1437,7 +1437,7 @@ function SettingsToolsOnly({ tools }: { tools: readonly SettingsTool[] }) {
               <span className="text-sm font-semibold text-foreground">
                 {tool.label}
               </span>
-              <span className="text-[13px] text-muted-foreground">
+              <span className="text-caption text-muted-foreground">
                 {tool.description}
               </span>
             </Link>

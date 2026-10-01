@@ -513,7 +513,7 @@ export function MessageItem({
     edited || pinned ? (
       <span
         data-slot="message-trailing"
-        className="ml-1.5 inline-flex items-center gap-1.5 whitespace-nowrap align-baseline text-[12.5px] text-muted-foreground"
+        className="ml-1.5 inline-flex items-center gap-1.5 whitespace-nowrap align-baseline text-caption text-muted-foreground"
       >
         {edited ? <span>{EDITED_MARKER}</span> : null}
         {pinned ? (
@@ -781,7 +781,7 @@ export function MessageItem({
    */
   const unconfirmedFooter =
     isUnconfirmed && message._replay ? (
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
         {onRetryUnconfirmed ? (
           <button
             type="button"
@@ -869,7 +869,7 @@ export function MessageItem({
                 // the left into the row's 20px padding rather than over the
                 // text; `text-right` alone does not, since an overflowing line
                 // is start-aligned.
-                "flex justify-end whitespace-nowrap text-[12.5px] leading-[25px] text-muted-foreground",
+                "flex justify-end whitespace-nowrap text-caption leading-[25px] text-muted-foreground",
                 "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
                 isTapRevealed && "opacity-100",
               )}
@@ -894,7 +894,7 @@ export function MessageItem({
               </span>
               <time
                 dateTime={message.created_at}
-                className="shrink-0 text-[12.5px] text-muted-foreground"
+                className="shrink-0 text-caption leading-5 text-muted-foreground"
               >
                 {formatTimeOfDay(message.created_at)}
               </time>
@@ -914,24 +914,24 @@ export function MessageItem({
           */}
           <div role="status" aria-live="polite" aria-atomic="true">
             {isPending ? (
-              <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+              <p className="mt-0.5 flex items-center gap-1.5 text-caption text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
                 Sending…
               </p>
             ) : null}
             {isUnconfirmed ? (
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              <p className="mt-0.5 text-caption text-muted-foreground">
                 {message._error ?? "Not confirmed"}
               </p>
             ) : null}
             {isRecorded ? (
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              <p className="mt-0.5 text-caption text-muted-foreground">
                 {message._error ??
                   "Recorded, but the chat card didn't post. Don't run this command again."}
               </p>
             ) : null}
             {isFailed ? (
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12.5px] text-destructive-text">
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
                 <span>{message._error ?? "Send failed"}</span>
                 {onRetry ? (
                   <button

@@ -556,7 +556,7 @@ export function ServiceHoursPage() {
                       }
                       required={receiptRequired}
                     />
-                    <p className="text-[12.5px] text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Photo or PDF, up to {MAX_UPLOAD_LABEL}.
                     </p>
                   </div>
@@ -652,7 +652,7 @@ export function ServiceHoursPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold">{name}</p>
-                        <p className="text-[12.5px] text-muted-foreground">
+                        <p className="text-caption text-muted-foreground">
                           {entry.date} ·{" "}
                           {formatDuration(entry.duration_minutes)}
                         </p>
@@ -665,7 +665,7 @@ export function ServiceHoursPage() {
                           <Button
                             size="sm"
                             variant="link"
-                            className="h-auto px-0 text-[12.5px] pointer-coarse:h-11"
+                            className="h-auto px-0 text-caption pointer-coarse:h-11"
                             onClick={() => void viewProof(entry)}
                             disabled={getProofUrl.isPending}
                           >
@@ -725,7 +725,7 @@ export function ServiceHoursPage() {
                         {showApproveReason ? (
                           <p
                             id={approveReasonId}
-                            className="basis-full text-[12.5px] text-muted-foreground"
+                            className="basis-full text-caption text-muted-foreground"
                           >
                             {approveBlockedReason}
                           </p>
@@ -777,12 +777,12 @@ export function ServiceHoursPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold">{name}</p>
-                      <p className="text-[12.5px] text-muted-foreground">
+                      <p className="text-caption text-muted-foreground">
                         {entry.date} · {formatDuration(entry.duration_minutes)}
                       </p>
                       <p className="text-sm">{entry.description}</p>
                       {entry.review_comment ? (
-                        <p className="text-[12.5px] text-muted-foreground">
+                        <p className="text-caption text-muted-foreground">
                           Reviewer note: {entry.review_comment}
                         </p>
                       ) : null}
@@ -801,7 +801,7 @@ export function ServiceHoursPage() {
             </ul>
           )}
         </CardContent>
-        <CardFooter className="text-[12.5px] text-muted-foreground">
+        <CardFooter className="text-caption text-muted-foreground">
           Approved hours automatically award service points at your
           chapter&apos;s configured rate. A rejected entry stays on your
           history. Submit a fresh one when ready.

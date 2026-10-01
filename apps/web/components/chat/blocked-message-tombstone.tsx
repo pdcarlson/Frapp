@@ -76,7 +76,7 @@ export function BlockedMessageTombstone({
         to borrow, and a line that names no author needs no frame.
       */}
       <div className="flex min-h-[25px] min-w-0 flex-1 items-center gap-3">
-        <p className="min-w-0 text-[12.5px] italic text-muted-foreground">
+        <p className="min-w-0 text-caption italic text-muted-foreground">
           {canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT}
         </p>
         {canUnblock ? (

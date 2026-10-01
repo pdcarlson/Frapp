@@ -177,7 +177,7 @@ function DownloadButton({ id }: { id: string }) {
       variant="ghost"
       onClick={handleDownload}
       disabled={isFetching}
-      className="h-8 gap-1.5 px-2 text-[13px] font-semibold pointer-coarse:h-11"
+      className="h-8 gap-1.5 px-2 text-caption font-semibold pointer-coarse:h-11"
     >
       {isFetching ? (
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1121,7 +1121,7 @@ export function DocumentsPage() {
                 of it — the state below already says what is happening.
               */}
               {listState === "ready" ? (
-                <p className="shrink-0 text-[12.5px] text-muted">
+                <p className="shrink-0 text-caption text-muted">
                   {visible.length} document{visible.length === 1 ? "" : "s"}
                   {deferredSearch ? ` matching "${deferredSearch}"` : ""}
                 </p>
@@ -1270,7 +1270,7 @@ export function DocumentsPage() {
                         free-text field and the right thing to lose to an
                         ellipsis.
                       */}
-                      <p className="truncate text-[12.5px] text-muted">
+                      <p className="truncate text-caption text-muted">
                         {[
                           `Uploaded ${formatLocaleDate(doc.created_at)}`,
                           doc.folder,

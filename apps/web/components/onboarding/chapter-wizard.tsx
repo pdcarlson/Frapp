@@ -816,7 +816,7 @@ function IdentityStep({
               className="h-11 w-14 cursor-pointer rounded-md border border-border bg-background"
               aria-label="Accent color"
             />
-            <span className="font-mono text-[12.5px] text-muted-foreground">
+            <span className="font-mono text-caption text-muted-foreground">
               {identity.colorAccent.toUpperCase()}
             </span>
           </div>
