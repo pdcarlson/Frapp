@@ -9,8 +9,10 @@ const {
   mockFrappUser,
   mockRequestProofUpload,
   mockCreateEntry,
+  mockServiceEntries,
   mockToast,
 } = vi.hoisted(() => ({
+  mockServiceEntries: vi.fn(),
   mockRequestProofUpload: vi.fn(),
   mockCreateEntry: vi.fn(),
   mockToast: vi.fn(),
@@ -50,11 +52,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   putSignedUpload: (await importOriginal<typeof import("@repo/hooks")>())
     .putSignedUpload,
   useCurrentChapter: () => mockCurrentChapter(),
-  useServiceEntries: () => ({
-    data: [PENDING_ENTRY, APPROVED_ENTRY],
-    isPending: false,
-    isError: false,
-  }),
+  useServiceEntries: (...args: unknown[]) => {
+    mockServiceEntries(...args);
+    return {
+      data: [PENDING_ENTRY, APPROVED_ENTRY],
+      isPending: false,
+      isError: false,
+    };
+  },
   useMembers: () => ({ data: [] }),
   useCreateServiceEntry: () => ({ mutateAsync: mockCreateEntry }),
   useReviewServiceEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -325,6 +330,29 @@ describe("ServiceHoursPage withdraw is the submitter's own", () => {
     ).toBeInTheDocument();
     // Still headed as the viewer's card, so the sentence has a subject.
     expect(screen.getByText(/your pending entries/i)).toBeInTheDocument();
+  });
+});
+
+describe("ServiceHoursPage review queue", () => {
+  // The one deliberate unscoped caller of `GET /v1/service-entries`: an
+  // approval queue exists to show every member's entries. Every mobile read is
+  // scoped to the viewer instead (`apps/mobile/test/service-entry-reads.ts`),
+  // and so is this page's own "Your pending entries" card (above). If the queue
+  // ever moves onto the phone, that rule is the one to revisit.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+  });
+
+  it("reads every member's entries, not the viewer's", () => {
+    render(<ServiceHoursPage />);
+
+    expect(mockServiceEntries).toHaveBeenCalled();
+    for (const [userId] of mockServiceEntries.mock.calls) {
+      expect(userId).toBeUndefined();
+    }
+    expect(screen.getByText(/soup kitchen shift/i)).toBeInTheDocument();
   });
 });
 

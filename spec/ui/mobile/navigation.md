@@ -73,7 +73,7 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 - **`frapp://join?token=…` fills s02.** The same query keys web `/join` uses (`token`, then `invite`, then `code`) are accepted on the app scheme and as a pasted URL in the field.
 - **`frapp://event-details` is a contract.** Exported `.ics` files carry it as their deep-link URL, `frapp://event-details?id=<event id>` (`apps/mobile/app/(tabs)/event-details.tsx`), and those files live on in members' device calendars indefinitely. The route filename, the URL and its `id` param MUST never change. The same lock pins the URL and the param, and `apps/mobile/lib/routes.spec.ts` pins the route.
 - **First-officer creation is `(auth)/create-chapter`.** The route is exempt from the authenticated bounce into the tabs so a successful onboard does not yank the officer off the invite step (`spec/behavior/onboarding.md`).
-- **Magic-link auth callback:** sign-in email links redirect to `Linking.createURL("/")` with a trailing `?` (`emailRedirectTo` in `apps/mobile/lib/auth-session.tsx`), which expo-linking resolves **at runtime to whichever scheme owns the running app** — `frapp:///?` in a build that owns the scheme, but `exp://<host>:8081/--/?` under Expo Go. The trailing `?` lets the hosted Magic Link template append `&token_hash={{ .TokenHash }}&type=magiclink` onto `{{ .RedirectTo }}` the same way web's `/auth/callback?next=…` does, so the emailed href never uses `*.supabase.co/auth/v1/verify`. Both forms must be allowlisted in Supabase Auth's redirect URLs for magic-link sign-in to complete. `frapp://**` **is** allowlisted on both hosted projects since 2026-09-06 (`docs/internal/ops/deployment/supabase.md` § Auth settings), so a real build completes; the Expo Go form embeds a per-machine host, so it cannot be allowlisted once and reused across developers. Tracked as issue #765 — allowlisting `frapp://` does not unblock Expo Go. `AuthSessionProvider` accepts implicit tokens, PKCE `code`, and `token_hash` (`verifyOtp`) on that scheme.
+- **Magic-link auth callback:** sign-in email links redirect to `Linking.createURL("/")` with a trailing `?` (`emailRedirectTo` in `apps/mobile/lib/auth-session.tsx`), which expo-linking resolves **at runtime to whichever scheme owns the running app** — `frapp:///?` in a build that owns the scheme, but `exp://<host>:8081/--/?` under Expo Go. The trailing `?` lets the hosted Magic Link template append `&token_hash={{ .TokenHash }}&type=magiclink` onto `{{ .RedirectTo }}` the same way web's `/auth/callback?next=…` does, so the emailed href never uses `*.supabase.co/auth/v1/verify`. Both forms must be allowlisted in Supabase Auth's redirect URLs for magic-link sign-in to complete. `frapp://**` **is** allowlisted on both hosted projects since 2026-09-06 (`docs/ops/deployment/supabase.md` § Auth settings), so a real build completes; the Expo Go form embeds a per-machine host, so it cannot be allowlisted once and reused across developers. Tracked as issue #765 — allowlisting `frapp://` does not unblock Expo Go. `AuthSessionProvider` accepts implicit tokens, PKCE `code`, and `token_hash` (`verifyOtp`) on that scheme.
 - **OAuth auth callback:** Google, and Apple when native SIWA is unavailable, reuse that same `Linking.createURL("/")` + trailing `?` as `signInWithOAuth` `redirectTo` (`skipBrowserRedirect`, then `WebBrowser.openAuthSessionAsync`). Native Sign in with Apple on iOS uses `signInWithIdToken` and never opens a browser. Expo Go's OAuth return has the same per-machine allow-list gap as magic-link (#765).
 
 ## Pre-chapter routing (s02 / s03)
@@ -155,15 +155,17 @@ permission `expo-camera` contributes and wrote `tools:node="remove"` into the ma
 silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
 declining-a-permission half is the reusable lesson: a plugin option that declines a
 permission is not inert, it overrides other plugins, so it can only be set for a
-permission nothing in the app requests. `app.config.spec.ts` pins both halves against
-the resolved config — the Android permission set at the effect level, the declined
-options and iOS purpose strings at the cause level — so re-adding this picker the same
-way fails a test rather than shipping. It is not an airtight fence: an option left
-*omitted* still inherits its plugin's default purpose string, and a vendor option
-spelled something other than `*Permission`/`*UsageDescription` is not scanned. Closing
-those needs the introspected config in CI, filed as #2343. Re-add the
-dependency and its plugin entry in the slice that actually builds a picker surface —
-which is what #1045 should have been.
+permission nothing in the app requests. `scripts/check-mobile-native-declarations.mjs`
+pins both halves in `mobile-validate`. It reads the Info.plist and AndroidManifest that
+`expo config --type introspect` resolves, rather than `app.json`: the exact iOS purpose
+strings, and no `tools:node="remove"` on a permission a screen requests. So re-adding
+this picker the same way fails CI rather than shipping. *Updated 2026-09-30 (#2343):*
+the `app.json`-level assertions in `app.config.spec.ts` that this replaced weren't an
+airtight fence. An option left *omitted* inherits its plugin's default purpose string,
+and a vendor option spelled something other than `*Permission`/`*UsageDescription`
+wasn't scanned. The introspected gate sees both, because it reads what the mods write.
+Re-add the dependency and its plugin entry in the slice that actually builds a picker
+surface — which is what #1045 should have been.
 
 **`expo-image-picker` came back (#2464), with the surface this time** — chat photo
 upload, `apps/mobile/lib/chat/attachment-upload.ts`, which is the importer #1045 never
@@ -203,8 +205,9 @@ key at all**. Each of those three is load-bearing:
   another plugin contributes, because `expo-camera` sets `recordAudioAndroid: false`
   and so never adds RECORD_AUDIO either.
 - `photosPermission` is set explicitly rather than left to the plugin default, per the
-  unread-pin note above, and is now in `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME`
-  list so a future decline of it fails a test.
+  unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
+  in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
+  *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
@@ -213,6 +216,8 @@ surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
 `signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
 prompt floor from two to three with this slice, which is exactly what that file's block on
 the floor going three to two (#2296) and back to three (#2464) said the raise was for.
+*2026-09-30 (#2343):* the floor is gone. The introspected gate pins which prompts exist,
+and the copy lock asserts only that they name Frapp.
 
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated

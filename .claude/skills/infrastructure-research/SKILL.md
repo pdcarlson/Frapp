@@ -137,7 +137,7 @@ matches:
 - It doesn't check rulesets or environments.
 
 Applying protection is a human step. Runbook and current state:
-[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+[`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md).
 
 ## Supabase: Schema and project status
 
@@ -320,9 +320,9 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
      MCP `list_migrations` on the project `list_projects` names as production.
   2. Compare against `supabase/migrations/` on `main`. There's no `production` branch: production
      deploys a named commit on `main` via `.github/workflows/deploy-production.yml`. Gates:
-     [`ci-cd.md` § How Deployments Are Gated](../../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
+     [`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
   3. Check promotion status in
-     [`DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md).
+     [`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md).
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.
   2. Compare them against `ENV_REFERENCE.md`.

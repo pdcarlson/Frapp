@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
-  AccessibilityInfo,
-  BackHandler,
   Keyboard,
   type LayoutChangeEvent,
   Pressable,
@@ -11,6 +9,7 @@ import {
 } from "react-native";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { MuteGlyph } from "./mute-glyph";
 
@@ -119,19 +118,10 @@ export function useNotificationLevelMenu({
   if (blocked && isOpen) setIsOpen(false);
   const visible = isOpen && !blocked;
 
+  const close = useCallback(() => setIsOpen(false), []);
   // The overlay takes every tap on the screen while it is up, so Android's
   // back button has to close it rather than pop the navigator underneath.
-  useEffect(() => {
-    if (!visible) return;
-    const subscription = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        setIsOpen(false);
-        return true;
-      },
-    );
-    return () => subscription.remove();
-  }, [visible]);
+  useBackToClose(visible, close);
 
   const toggle = useCallback(() => {
     if (blocked) return;
@@ -141,7 +131,6 @@ export function useNotificationLevelMenu({
     if (!isOpen) Keyboard.dismiss();
     setIsOpen(!isOpen);
   }, [blocked, isOpen]);
-  const close = useCallback(() => setIsOpen(false), []);
 
   return { level, writeBlockedReason, blocked, visible, toggle, close };
 }
@@ -219,19 +208,8 @@ export function NotificationLevelMenu({
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
 
   // Opening hides the trigger that had a screen reader's focus, which clears
-  // that focus rather than moving it, so put it on the menu. From the next
-  // task, not this effect: on Android the effect runs before this commit's
-  // views are mounted, and a focus event for a view that isn't there yet is
-  // dropped (#2641 tracks confirming it on a device).
-  useEffect(() => {
-    if (!menu.visible) return;
-    const timer = setTimeout(() => {
-      if (titleRef.current) {
-        AccessibilityInfo.sendAccessibilityEvent(titleRef.current, "focus");
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [menu.visible]);
+  // that focus rather than moving it, so put it on the menu.
+  useFocusOnOpen(titleRef, menu.visible);
 
   if (!menu.visible) return null;
 

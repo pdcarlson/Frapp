@@ -49,6 +49,7 @@ import { join } from "node:path";
 
 import { getEnvironment, SUPABASE_PROJECT_REF_PATTERN } from "./ci/lib/environments.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -165,7 +166,7 @@ export function validateInvocation({
         "  It applies migrations that sort before the newest version already applied —\n" +
         "  the failure class `migration-order` and `migration-replay` exist to prevent.\n" +
         "  If a run genuinely needs it, set MIGRATION_ALLOW_INCLUDE_ALL=true deliberately\n" +
-        "  and record why. See docs/internal/ops/DB_PROMOTION_RUNBOOK.md § --include-all.",
+        `  and record why. See ${PROMOTION_LOG} § --include-all.`,
     );
   }
 
@@ -318,7 +319,7 @@ export function runMigrationCli({
     log("  ⚠ --include-all is set. `supabase db push` will apply migrations that sort");
     log("    BEFORE the newest version already applied to this database. Do this only as");
     log("    recovery, and only having read why the ordering is wrong in the first place:");
-    log("    docs/internal/ops/DB_PROMOTION_RUNBOOK.md § --include-all.");
+    log(`    ${PROMOTION_LOG} § --include-all.`);
   }
 
   const migrations = readMigrationFiles(migrationsDir, { readDir });
@@ -352,7 +353,7 @@ export function runMigrationCli({
     error(`  Error: ${thrown.message}`);
     error("\n  The deploy pipeline will be halted.");
     error("  Check the migration output above for details.");
-    error("  Refer to docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md for recovery steps.");
+    error(`  Refer to ${ROLLBACK_PLAYBOOK} for recovery steps.`);
     return EXIT_MIGRATION_FAILED;
   }
 

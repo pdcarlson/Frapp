@@ -8,7 +8,7 @@
 
 ## Docs / Spec impact
 
-- **Docs impact**: (None / Updated / Follow-up) — prefer `docs/` (e.g. `docs/guides/`) or internal runbooks.
+- **Docs impact**: (None / Updated / Follow-up) — prefer `docs/` (e.g. `docs/guides/`, or `docs/ops/` for a runbook).
   - Answering **None** is fine and common — most changes alter no documented fact, and nothing
     requires a doc edit. Never append a note to an unrelated doc to make a change look documented.
 - **Spec impact**: (None / Updated / Follow-up)

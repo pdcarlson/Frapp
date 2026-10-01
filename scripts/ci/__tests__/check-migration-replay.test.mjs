@@ -262,7 +262,7 @@ test("a back-dated pending migration fails the gate", () => {
   assert.ok(warningAt < remedyAt, "the caveat must come before the remedy");
   assert.ok(strandAt < remedyAt, "the stranding warning must come before the remedy");
   // And where to go when renaming is the wrong move.
-  assert.match(outcome.message, /DB_PROMOTION_RUNBOOK\.md/);
+  assert.match(outcome.message, /db-promotion-runbook\.md/);
   // The check that has neither scope limit, so the reader knows where to look.
   assert.match(outcome.message, /migration-order/);
 });

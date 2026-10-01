@@ -39,6 +39,7 @@
 // Semantics: `lib/backup-job-freshness.mjs`. Tests: its own suite, and
 // `scripts/ci/__tests__/production-backup-storage-freshness.test.mjs` for this watch.
 
+import { basename } from "node:path";
 import {
   defineAlert,
   raiseAlert,
@@ -52,6 +53,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { ghGetWithFallback } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
 export const WORKFLOW_FILE = "db-backup.yml";
 export const DEFAULT_BRANCH = "main";
@@ -134,7 +136,7 @@ function buildAlertIssueBody({ verdict, runUrl }) {
     "",
     "Launch bar 2 needs both halves of a restore. Nightly Backup (`db-backup.yml`) `backup-production-storage` is the Storage half for `frapp-prod`. The Postgres freshness watch (1963) does not see this job. The reviewer watch (1956) only sees GitHub environment `production-backup`. The hosted restore leftover stays on its own issue (1861).",
     "",
-    "A failed job may be the job refusing bad content rather than crashing: no manifest under the prefix (BACKUP_S3_BUCKET or the prefix changed), a manifest recording another destination, a listing that would tombstone every object, or objects the manifest lists missing offsite. Read the job's `::error::` first, then [`DB_ROLLBACK_PLAYBOOK.md` § If the backup job fails](https://github.com/pdcarlson/Frapp/blob/main/docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md#if-the-backup-job-fails), which says which re-run input, if any, is the fix.",
+    `A failed job may be the job refusing bad content rather than crashing: no manifest under the prefix (BACKUP_S3_BUCKET or the prefix changed), a manifest recording another destination, a listing that would tombstone every object, or objects the manifest lists missing offsite. Read the job's \`::error::\` first, then [\`${basename(ROLLBACK_PLAYBOOK)}\` § If the backup job fails](https://github.com/pdcarlson/Frapp/blob/main/${ROLLBACK_PLAYBOOK}#if-the-backup-job-fails), which says which re-run input, if any, is the fix.`,
     "",
     "Do not change the dump cron to clear a red run. Inspect the latest `backup-production-storage` job and recover the mirror, then wait for a later freshness run.",
     "",
