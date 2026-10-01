@@ -7,15 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  AccessibilityInfo,
-  BackHandler,
-  Keyboard,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -26,6 +18,7 @@ import Animated, {
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { useMessageAttachments } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   UNZOOMED,
@@ -144,18 +137,7 @@ export function useImageViewer(): ImageViewerState {
 
   // The viewer covers the thread, so Android's back button has to close it
   // rather than pop the navigator underneath.
-  const isOpen = target !== null;
-  useEffect(() => {
-    if (!isOpen) return;
-    const subscription = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        setTarget(null);
-        return true;
-      },
-    );
-    return () => subscription.remove();
-  }, [isOpen]);
+  useBackToClose(target !== null, close);
 
   return { target, open, close, show };
 }
@@ -222,17 +204,9 @@ function ViewerBody({
   );
 
   // Opening hides the image that had a screen reader's focus, which clears
-  // that focus rather than moving it, so put it on the viewer's title. From a
-  // later task, as the mute menu does: on Android an event sent from this
-  // commit's effect arrives before the view exists and is dropped.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (titleRef.current) {
-        AccessibilityInfo.sendAccessibilityEvent(titleRef.current, "focus");
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
+  // that focus rather than moving it, so put it on the viewer's title. Open
+  // for as long as this is mounted: `ImageViewer` draws it only while open.
+  useFocusOnOpen(titleRef, true);
 
   // A refetch that no longer lists the image (the attachment was removed)
   // closes the viewer rather than leaving it open on nothing.

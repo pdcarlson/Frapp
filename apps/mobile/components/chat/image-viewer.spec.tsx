@@ -2,7 +2,7 @@
 import React, { useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { BackHandler, Keyboard } from "react-native";
+import { AccessibilityInfo, BackHandler, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
@@ -99,10 +99,19 @@ function screen() {
   );
 }
 
-function render() {
+/**
+ * `nodes` resolves host refs to a stand-in that remembers its element, so a
+ * spec can tell which node the viewer moved focus to. Off by default: the
+ * stand-in's element points back at its own ref, which `textOf` can't
+ * serialise.
+ */
+function render({ nodes = false }: { nodes?: boolean } = {}) {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(screen());
+    tree = create(
+      screen(),
+      nodes ? { createNodeMock: (element) => ({ element }) } : undefined,
+    );
   });
   return tree;
 }
@@ -161,6 +170,10 @@ describe("opening and closing", () => {
     expect(tree.toJSON()).toBeNull();
   });
 
+  // What a back press does, and when focus is sent, are `lib/overlay.spec.tsx`'s
+  // to pin. These pin that the viewer hands the hooks the right node and the
+  // right open state.
+
   it("closes on Android's back button instead of leaving the thread", () => {
     const tree = render();
     openOn([image(1)], 0);
@@ -171,13 +184,52 @@ describe("opening and closing", () => {
       expect.any(Function),
     );
     const handler = addListener.mock.calls.at(-1)![1];
-    let handled: boolean | null | undefined;
     act(() => {
-      handled = (handler as () => boolean)();
+      (handler as () => boolean)();
     });
 
-    expect(handled).toBe(true);
     expect(tree.toJSON()).toBeNull();
+  });
+
+  it("holds the back button only while an image is open", () => {
+    // Held while closed, it would swallow every back press on the thread.
+    const tree = render();
+    const addListener = vi.mocked(BackHandler.addEventListener);
+    expect(addListener).not.toHaveBeenCalled();
+
+    openOn([image(1)], 0);
+    expect(addListener).toHaveBeenCalledTimes(1);
+    const subscription = addListener.mock.results[0]!.value as {
+      remove: ReturnType<typeof vi.fn>;
+    };
+
+    act(() => button(tree, "Close image").props.onPress());
+    expect(subscription.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves a screen reader's focus onto its title", () => {
+    // Opening hides the image that had focus, which clears it rather than
+    // moving it.
+    vi.useFakeTimers();
+    try {
+      render({ nodes: true });
+      openOn([image(1), image(2)], 1);
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const calls = vi.mocked(AccessibilityInfo.sendAccessibilityEvent).mock
+        .calls as unknown as [
+        { element: { props: { children?: unknown } } },
+        string,
+      ][];
+      expect(calls).toHaveLength(1);
+      expect(calls[0]![1]).toBe("focus");
+      expect(calls[0]![0].element.props.children).toBe("photo-2.png");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("covers the container it is drawn in, and is modal to VoiceOver", () => {
