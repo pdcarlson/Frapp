@@ -897,6 +897,10 @@ describe('SupabaseDiscordImportRepository.deleteEmptyCreatedChannels (#2905)', (
 
     await expect(
       repo.deleteEmptyCreatedChannels(IMPORT_A, CHAPTER_A),
-    ).rejects.toBe(failure);
+    ).rejects.toMatchObject({
+      name: 'SupabaseQueryError',
+      code: 'XX000',
+      message: 'XX000: boom',
+    });
   });
 });

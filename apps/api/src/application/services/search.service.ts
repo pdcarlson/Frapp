@@ -1,12 +1,9 @@
-import {
-  Logger,
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { Logger, Inject, Injectable } from '@nestjs/common';
 import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type { PagedQueryResult } from '../../infrastructure/supabase/supabase.utils';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
@@ -124,6 +121,13 @@ function emptyResult(): SearchResult {
  * `Promise.race` attaches its own handler to `work` immediately, so a late
  * rejection is already accounted for and cannot surface as an unhandled
  * rejection; the `catch` below is for the signal, not for safety.
+ *
+ * The logger keys on `timedOut`, set the moment the timer fires, not on
+ * anything the race's continuation sets: reactions on `work` run in the order
+ * they were attached, so the logger runs before the `await` below resumes and
+ * would read such a flag too early. That was the bug a `settled` flag had: every
+ * rejection inside the budget also logged a false "reported as a timeout" line
+ * beside the 500 it actually became.
  */
 async function withinBudget<T>(
   source: SearchSource,
@@ -133,14 +137,18 @@ async function withinBudget<T>(
   logger: Logger,
 ): Promise<T> {
   const TIMED_OUT = Symbol('search-timeout');
-  let settled = false;
+  let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
-    timer = setTimeout(() => resolve(TIMED_OUT), SEARCH_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve(TIMED_OUT);
+    }, SEARCH_TIMEOUT_MS);
   });
 
   void work.catch((error: unknown) => {
-    if (settled) return;
+    // Inside the budget the rejection propagates to the caller instead.
+    if (!timedOut) return;
     logThrowable(
       logger,
       'error',
@@ -155,11 +163,7 @@ async function withinBudget<T>(
       timedOutSources.push(source);
       return fallback;
     }
-    settled = true;
     return outcome;
-  } catch (error) {
-    settled = true;
-    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -175,20 +179,7 @@ type SourceWrapper = <T>(
   fallback: T,
 ) => Promise<T>;
 
-interface QueryError {
-  message: string;
-}
-
-interface QueryResult<T> {
-  data: T[] | null;
-  error: QueryError | null;
-}
-
-function throwIfError(error: QueryError | null): void {
-  if (error) {
-    throw new InternalServerErrorException(error.message);
-  }
-}
+type QueryResult<T> = PagedQueryResult<T>;
 
 @Injectable()
 export class SearchService {
@@ -336,7 +327,7 @@ export class SearchService {
       .eq('chapter_id', chapterId)
       .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<BackworkResource>;
-    throwIfError(error);
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -359,7 +350,7 @@ export class SearchService {
       .eq('chapter_id', chapterId)
       .textSearch('search_vector', query, TEXT_SEARCH)
       .limit(SEARCH_LIMIT)) as QueryResult<Event>;
-    throwIfError(error);
+    if (error) throw new SupabaseQueryError(error);
     return this.filterVisibleEvents(chapterId, userId, data ?? []);
   }
 
@@ -397,7 +388,7 @@ export class SearchService {
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .limit(1)) as QueryResult<{ role_ids: string[] }>;
-    throwIfError(error);
+    if (error) throw new SupabaseQueryError(error);
     const memberRoleIds = members?.[0]?.role_ids ?? [];
 
     return events.filter((event) =>
@@ -454,7 +445,7 @@ export class SearchService {
         | { id: string; display_name: string; email: string }[]
         | null;
     }>;
-    throwIfError(error);
+    if (error) throw new SupabaseQueryError(error);
     if (!data?.length) return [];
 
     return data.flatMap((row) => {
@@ -548,7 +539,7 @@ export class SearchService {
       .eq('is_deleted', false)
       .limit(SEARCH_LIMIT)
       .order('created_at', { ascending: false })) as QueryResult<ChatMessage>;
-    throwIfError(error);
+    if (error) throw new SupabaseQueryError(error);
 
     // The caller's block list, applied to what search serves — the same rule
     // `ChatService.getMessages` applies, through the same pure function, so the
@@ -596,8 +587,8 @@ export class SearchService {
       .select('id, type, member_ids, required_permissions')
       .eq('chapter_id', chapterId);
     // Only push the id down when it could actually BE one. `chat_channels.id`
-    // is a `uuid` column, so PostgREST rejects a malformed value with 22P02 and
-    // `throwIfError` turns that into a 500 — which would make
+    // is a `uuid` column, so PostgREST rejects a malformed value with 22P02,
+    // thrown below as a `SupabaseQueryError` and so a 500 — which would make
     // `?channelId=general` an error instead of the empty result this method's
     // caller documents and the spec promises. A non-uuid simply skips the
     // narrowing and falls through to the JS intersection, which matches nothing
@@ -612,7 +603,7 @@ export class SearchService {
       member_ids: string[] | null;
       required_permissions: string[] | null;
     }>;
-    throwIfError(chError);
+    if (chError) throw new SupabaseQueryError(chError);
     if (!channels?.length) return [];
 
     const { data: members, error: memError } = (await this.supabase
@@ -621,7 +612,7 @@ export class SearchService {
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .limit(1)) as QueryResult<{ id: string }>;
-    throwIfError(memError);
+    if (memError) throw new SupabaseQueryError(memError);
     const member = members?.[0];
     if (!member) return [];
 

@@ -6,6 +6,7 @@ import type {
   IChatSidebarRepository,
 } from '#domain/repositories/chat-sidebar.repository.interface';
 import type { ChatSidebarPreferences } from '#domain/entities/chat-sidebar.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * A member's own sidebar arrangement (#2877).
@@ -32,7 +33,7 @@ export class SupabaseChatSidebarRepository implements IChatSidebarRepository {
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -60,7 +61,7 @@ export class SupabaseChatSidebarRepository implements IChatSidebarRepository {
       .upsert(payload, { onConflict: 'user_id,chapter_id' })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -79,7 +80,7 @@ export class SupabaseChatSidebarRepository implements IChatSidebarRepository {
         p_collapsed: collapsed,
       },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // The upsert always returns its row, so an empty result means the function
     // did not run as written; saying so beats returning `undefined` as a row.
     const row = data?.[0];
@@ -98,7 +99,7 @@ export class SupabaseChatSidebarRepository implements IChatSidebarRepository {
       .select('channel_id')
       .eq('chapter_id', chapterId)
       .eq('user_id', userId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map((row) => row.channel_id);
   }
 
@@ -118,7 +119,7 @@ export class SupabaseChatSidebarRepository implements IChatSidebarRepository {
         onConflict: 'user_id,channel_id',
         ignoreDuplicates: true,
       });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   /**
@@ -133,6 +134,6 @@ export class SupabaseChatSidebarRepository implements IChatSidebarRepository {
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       .eq('channel_id', channelId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

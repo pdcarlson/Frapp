@@ -8,6 +8,7 @@ import type {
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { fetchAllPages } from '../../infrastructure/supabase/supabase.utils';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * Rows per round trip when reading preferences for a batch of users.
@@ -131,28 +132,25 @@ export class ChatNotificationPreferenceRepository {
    * helper documents, and the shape `scheduled-jobs.repository.ts` already uses.
    *
    * **The `catch` is narrowed on purpose, and the `instanceof` is the whole
-   * point.** A PostgREST failure arrives as a PLAIN OBJECT: `fetchAllPages`
-   * rethrows the `{ code, message, details, hint }` record verbatim, and
-   * postgrest-js only constructs a `PostgrestError` *instance* on the
-   * `.throwOnError()` path, which nothing in this codebase uses. So an `Error`
-   * instance reaching here means something other than the query failed — a
-   * defect in this file, or the helper's runaway-row guard. Swallowing one
-   * would launder "this read is broken" into "these members stored no
-   * preferences", which `decidePush` reads as *not muted* and pushes the whole
-   * chunk anyway; a non-array 200 body is enough to trigger it. Those rethrow
-   * into the worker's outer handler, which reports them, and only a real query
-   * error degrades.
+   * point.** A failed query arrives as a `SupabaseQueryError`: `fetchAllPages`
+   * wraps PostgREST's `{ code, message, details, hint }` record in one (#1264).
+   * Anything else reaching here means something other than the query failed —
+   * a defect in this file, or the helper's runaway-row guard, which throws a
+   * plain `Error`. Swallowing one would launder "this read is broken" into
+   * "these members stored no preferences", which `decidePush` reads as *not
+   * muted* and pushes the whole chunk anyway; a non-array 200 body is enough
+   * to trigger it. Those rethrow into the worker's outer handler, which
+   * reports them, and only a real query error degrades.
    *
-   * `logThrowable` interpolates `toReportableError(error).message` so a
-   * PostgREST `{ code, message, details, hint }` body never reaches Nest's
-   * `util.inspect` (which would print `details` — the field Postgres fills
-   * with row values). See `spec/behavior/observability.md` § Error Tracking
-   * and #1669.
+   * Before #1264 the test was the inverse, `instanceof Error`, because the
+   * query error was the one value that was *not* an `Error`. Wrapping it
+   * flipped that, so the check names the class instead of leaning on the
+   * absence of a prototype.
    *
-   * The opaque fallback used to reintroduce `details` by serializing the whole
-   * record. #1762 closed that: `describeOpaque` strips the key before it
-   * stringifies, so this call site no longer depends on PostgREST always
-   * populating `message`.
+   * `logThrowable` interpolates the error's message rather than handing Nest
+   * the object, the rule `spec/behavior/observability.md` § Error Tracking and
+   * #1669 set for every throwable. `SupabaseQueryError` carries no `details`
+   * (the field Postgres fills with row values) in any case.
    *
    * All-or-nothing per chunk, deliberately, **for a query error**. Failing one
    * chunk that way costs at most `ID_CHUNK_SIZE` members their preferences for
@@ -200,7 +198,7 @@ export class ChatNotificationPreferenceRepository {
         { pageSize: PREFERENCE_PAGE_SIZE },
       );
     } catch (error) {
-      if (error instanceof Error) throw error;
+      if (!(error instanceof SupabaseQueryError)) throw error;
       // Position and scale, NOT member identity — and the distinction is
       // the whole reason this says `chunk i/n` rather than an id.
       //
@@ -287,7 +285,7 @@ export class ChatNotificationPreferenceRepository {
       .eq('scope', 'kind')
       .eq('scope_kind', kind);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   /**
@@ -308,7 +306,7 @@ export class ChatNotificationPreferenceRepository {
       .eq('chapter_id', chapterId)
       .eq('scope', scope);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -351,7 +349,7 @@ export class ChatNotificationPreferenceRepository {
       .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     if (!data) {
       throw new Error(
         'chat-prefs: upsert returned no row for ' +
@@ -409,7 +407,7 @@ export class ChatNotificationPreferenceRepository {
       .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     if (!data) {
       throw new Error(
         'chat-prefs: upsert returned no row for ' +

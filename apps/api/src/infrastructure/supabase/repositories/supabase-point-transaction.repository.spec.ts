@@ -196,7 +196,7 @@ describe('SupabasePointTransactionRepository — dedupe error mapping', () => {
     });
   });
 
-  it('rethrows a non-unique-violation error unchanged', async () => {
+  it('rethrows a non-unique-violation error, wrapped with its code', async () => {
     const original = { code: '23503', message: 'foreign key violation' };
     const repo = new SupabasePointTransactionRepository(
       clientRejecting(original),
@@ -210,7 +210,11 @@ describe('SupabasePointTransactionRepository — dedupe error mapping', () => {
         category: 'MANUAL',
         client_message_id: KEY,
       }),
-    ).rejects.toBe(original);
+    ).rejects.toMatchObject({
+      name: 'SupabaseQueryError',
+      code: '23503',
+      message: '23503: foreign key violation',
+    });
   });
 
   it('rethrows a unique violation carrying no key rather than mislabelling it', async () => {
@@ -229,6 +233,10 @@ describe('SupabasePointTransactionRepository — dedupe error mapping', () => {
         amount: 5,
         category: 'MANUAL',
       }),
-    ).rejects.toBe(original);
+    ).rejects.toMatchObject({
+      name: 'SupabaseQueryError',
+      code: '23505',
+      message: '23505: some other unique index',
+    });
   });
 });

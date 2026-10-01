@@ -5,6 +5,7 @@ import type { IPushTokenRepository } from '#domain/repositories/notification.rep
 import type { PushToken } from '#domain/entities/notification.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { fetchAllPages } from '../supabase.utils';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * Request size for a batched token read. A user can hold several devices, so
@@ -33,7 +34,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -43,7 +44,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       .select('*')
       .eq('user_id', userId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -74,7 +75,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       .eq('id', id)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -85,7 +86,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       .eq('token', token)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -96,7 +97,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       .eq('id', id)
       .eq('user_id', userId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async deleteByToken(token: string): Promise<void> {
@@ -105,6 +106,6 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
       .delete()
       .eq('token', token);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

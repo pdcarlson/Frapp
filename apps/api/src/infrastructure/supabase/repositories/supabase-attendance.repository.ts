@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { EventAttendance } from '#domain/entities/event-attendance.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseAttendanceRepository implements IAttendanceRepository {
@@ -20,7 +21,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .from('event_attendance')
       .select('*')
       .eq('event_id', eventId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -34,7 +35,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .eq('event_id', eventId)
       .eq('user_id', userId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -48,7 +49,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .from('event_attendance')
       .insert(rows)
       .select();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -63,7 +64,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -83,7 +84,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       p_point_value: pointValue,
       p_event_name: eventName,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
   }

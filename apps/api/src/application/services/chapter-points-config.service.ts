@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { CHAPTER_POINTS_CONFIG_DEFAULTS } from '@repo/validation';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * A chapter's points anti-fraud policy, as read and written by the config
@@ -102,7 +103,7 @@ export class ChapterPointsConfigService {
         `chapter_points_config read failed for chapter ${chapterId}; refusing to ` +
           `report or write against a fabricated prior state: ${error.message}`,
       );
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     return this.coerce(data, chapterId);

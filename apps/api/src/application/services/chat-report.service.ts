@@ -1051,7 +1051,7 @@ function pollText(
  * soft delete — and, for a message that is still readable, only as the
  * membership refusal, since a missing message or channel reads back as gone
  * too. A 5xx or a non-HTTP error (a store fault, a lost response) may have come
- * after the write: the repositories throw raw PostgREST errors, never an
+ * after the write: the repositories throw `SupabaseQueryError`, never an
  * `HttpException`.
  */
 function decidedBeforeWrite(error: unknown): boolean {
