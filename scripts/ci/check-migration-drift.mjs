@@ -96,7 +96,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { PROMOTION_LOG } from "./lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING } from "./lib/ops-docs.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -447,7 +447,7 @@ const FOREIGN_GUIDANCE =
   "existed in git (`git log --all --oneline -- 'supabase/migrations/<version>_*'`). If it shipped " +
   "and `main` renamed it since, the SQL already ran: mark the old version reverted and the new one " +
   "applied, and delete nothing. If git never held it, read the row's recorded `statements` before " +
-  `removing it — \`${PROMOTION_LOG}\` § reconciling a foreign migration row. ` +
+  `removing it — \`${DRIFT_AND_ORDERING}\` § Reconciling a foreign migration row. ` +
   "The CLI suggests `migration repair --status reverted`; **do not run it blind**.";
 
 function migrationList(migrations, limit = 10) {

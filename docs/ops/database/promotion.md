@@ -13,8 +13,8 @@ looking for the command to push migrations to staging, there isn't one any more
 | Environment    | How migrations get applied                                                                                                                                                                                                                                       | Who triggers it                           |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | **Local**      | `npx supabase db push --local`                                                                                                                                                                                                                                   | You, while developing                     |
-| **Staging**    | **Automatic.** The migration steps of the shared `deploy` job ([`_deploy.yml`](../../.github/workflows/_deploy.yml), which [`deploy-staging.yml`](../../.github/workflows/deploy-staging.yml) calls) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
-| **Production** | **Manual.** The [`Deploy production`](../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations _without_ shipping code, for recovery and backlogs | A human, deliberately                     |
+| **Staging**    | **Automatic.** The migration steps of the shared `deploy` job ([`_deploy.yml`](../../../.github/workflows/_deploy.yml), which [`deploy-staging.yml`](../../../.github/workflows/deploy-staging.yml) calls) run on every successful CI run on `main`, after the web and landing builds and before the API deploy                          | Nobody — merging to `main` is the trigger |
+| **Production** | **Manual.** The [`Deploy production`](../../../.github/workflows/deploy-production.yml) workflow, which migrates and deploys one named commit together. Its `scope: migrations-only` input applies migrations _without_ shipping code, for recovery and backlogs | A human, deliberately                     |
 
 ### Staging: do not push by hand
 
@@ -29,7 +29,7 @@ path filter computed with `git diff HEAD~1 … || echo ""` — any git failure r
 as "no migrations changed" and the job skipped, green and silent.
 
 **Do not run `supabase db push` against staging from a laptop.** The shared `deploy` job
-([`_deploy.yml`](../../.github/workflows/_deploy.yml), which `deploy-staging.yml` calls) serializes its runs with the
+([`_deploy.yml`](../../../.github/workflows/_deploy.yml), which `deploy-staging.yml` calls) serializes its runs with the
 `db-migrate-staging` concurrency group (`db-migrate-${{ inputs.environment }}` there), and that lock cannot see a run on your machine — nothing in GitHub can. A hand-applied
 migration also becomes a _foreign_ migration the moment its file changes or is
 renamed before merge, and a foreign row makes `supabase db push` refuse to run
@@ -164,18 +164,18 @@ public.users` → 1; `select count(*) from public.chapters` → 0. Management AP
 > for a problem somebody already fixed.
 >
 > If a foreign version ever reappears, the `migration-replay` check
-> ([`migration-drift-gate.yml`](../../.github/workflows/migration-drift-gate.yml))
+> ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml))
 > now fails the PR that would walk into it, instead of the failure surfacing
 > mid-deploy. Do not run `migration repair` to make such an error go away
 > without first reading what the row did — see
-> [`db-rollback-playbook.md`](./db-rollback-playbook.md).
+> [`db-rollback-playbook.md`](../db-rollback-playbook.md).
 
 ## Preflight checklist
 
 - [ ] Migration filenames pass `npm run check:migration-safety`
 - [ ] Lock-safety advisory read: `npm run check:migration-lock-safety -- --all`
       (or the `migration-lock-safety` job's summary on your PR). **Advisory, not
-      blocking** — see [`.squawk.toml`](../../.squawk.toml) for the rules this
+      blocking** — see [`.squawk.toml`](../../../.squawk.toml) for the rules this
       repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`db-rollback-playbook.md`)
 - [ ] PR appends an entry to the promotion log at the bottom of this file
@@ -190,7 +190,7 @@ public.users` → 1; `select count(*) from public.chapters` → 0. Management AP
       and the job is only as real as its last green run). Supabase's own daily backup, which
       the org has on Pro since 2026-09-28, can be up to a day old too, and point-in-time
       recovery is not enabled
-      ([`db-rollback-playbook.md`](db-rollback-playbook.md#backup-reality) § Backup reality),
+      ([`db-rollback-playbook.md`](../db-rollback-playbook.md#backup-reality) § Backup reality),
       so this box cannot be ticked by having read it. This replaced an older item
       that asked you to _confirm_ Supabase backups: there were none to confirm, so
       it could only ever be ticked falsely.
@@ -228,7 +228,7 @@ it applied.
 - [ ] The migration steps of the **Deploy staging** run for your merge commit are green
 - [ ] `GET /health/ready` answers `200`. It probes fresh on every call, while
       `/health`'s fields can be up to 60 s old
-      ([Health Check](../../spec/behavior/observability.md#health-check)).
+      ([Health Check](../../../spec/behavior/observability.md#health-check)).
       A `503` names each dependency in `message`, and an unrelated Storage or
       `billing:` failure can 503 it with the database fully healthy, so read
       the `database:` part specifically for a migration verification
@@ -294,7 +294,7 @@ impossible to rehearse, so do not read the list as a technical limit.
 
 One difference sits _inside_ the build: a real run compiles with
 `SENTRY_AUTH_TOKEN` when Infisical `prod` holds it
-([which environments carry it](../internal/environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
+([which environments carry it](../../internal/environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
 and then uploads source maps and creates a Sentry release. A dry run withholds the
 token from the build and strips it from the file `vercel pull` writes, so it mints
 no release (#2275, since #2673). **Corrected 2026-09-28:** before that, the dry run
@@ -324,7 +324,7 @@ so the migration must be forward-compatible with the deployed API.
 Before you promote — the API does not boot without these:
 
 - [ ] Every name in `REQUIRED_ENV_VARS`
-      ([`apps/api/src/config/env.validation.ts`](../../apps/api/src/config/env.validation.ts))
+      ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
       is set **and non-empty** in the target environment's Infisical folder:
       `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
       `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.

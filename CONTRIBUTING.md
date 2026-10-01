@@ -179,7 +179,7 @@ When you change the database schema:
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npx supabase db push --local`
 4. Test locally.
-5. Add its rollback recipe and its promotion-log entry, each in the entry shape its ledger states: [`db-rollback-playbook.md` § Every migration owes a recipe here](docs/ops/db-rollback-playbook.md#every-migration-owes-a-recipe-here) and [`db-promotion-runbook.md` § Promotion log](docs/ops/db-promotion-runbook.md#promotion-log).
+5. Add its rollback recipe and its promotion-log entry, each in the entry shape its ledger states: [`db-rollback-playbook.md` § Every migration owes a recipe here](docs/ops/db-rollback-playbook.md#every-migration-owes-a-recipe-here) and [`promotion-log.md`](docs/ops/database/promotion-log.md).
 6. Commit the migration file and both entries together.
 
 CI validates migration filenames, and `check:migration-safety` fails a new migration missing either entry. Migrations are applied automatically in the deploy pipeline.

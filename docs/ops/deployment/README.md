@@ -96,4 +96,4 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
 
 Secrets are **not** restated here. Infisical is the store; the sync map and free-tier inventory live in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md). The complete variable list is [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md). The retired `frapp-docs` project is recorded under [Vercel](vercel.md#retired-frapp-docs-and-docsfrapplive).
 
-Promotion and rollback of schema are their own runbooks: [`db-promotion-runbook.md`](../db-promotion-runbook.md) and [`db-rollback-playbook.md`](../db-rollback-playbook.md).
+Promotion and rollback of schema are their own runbooks: [`database/`](../database/README.md) and [`db-rollback-playbook.md`](../db-rollback-playbook.md).

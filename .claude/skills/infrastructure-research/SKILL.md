@@ -322,7 +322,7 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
      deploys a named commit on `main` via `.github/workflows/deploy-production.yml`. Gates:
      [`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
   3. Check promotion status in
-     [`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md).
+     [`promotion-log.md`](../../../docs/ops/database/promotion-log.md).
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.
   2. Compare them against `ENV_REFERENCE.md`.

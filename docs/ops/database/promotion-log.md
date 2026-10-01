@@ -4,7 +4,7 @@ Every migration below records what it does, how it was promoted, and anything a
 promoter must do by hand.
 
 `check:migration-safety` asserts **per-migration** coverage here _and_ in
-[`db-rollback-playbook.md`](db-rollback-playbook.md) — both, not either. It
+[`db-rollback-playbook.md`](../db-rollback-playbook.md) — both, not either. It
 reads the entry **shape**, so a filename mentioned in prose does not count.
 Either of these counts, anywhere in the file:
 
@@ -22,7 +22,7 @@ new entry — but the gate reads the line, not its position. The list marker may
 be `*` or `-`.
 
 Migrations that predate the gate are grandfathered in `UNLEDGERED` in
-[`scripts/check-migration-safety.mjs`](../../scripts/check-migration-safety.mjs).
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).
 That list is **shrink-only** and enforced by a version ceiling: a migration
 created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
@@ -32,7 +32,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ### 20260930231000_chat_dm_one_channel_per_pair.sql
 
-- **Purpose**: Makes the database hold at most one `DM` channel per chapter and member pair. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#direct-messages) § Direct Messages.
+- **Purpose**: Makes the database hold at most one `DM` channel per chapter and member pair. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#direct-messages) § Direct Messages.
   - A guard that raises, and changes nothing, if any `DM` row lacks exactly two members or any pair already has two DMs. Resolving either merges or removes members' conversations, which is the owner's decision.
   - `chat_channels_dm_two_members`, a CHECK that a `DM` row holds exactly two `member_ids`. Other channel types are untouched.
   - `chat_channels_dm_pair_key`, a partial unique index on `(chapter_id, least(member_ids[1], member_ids[2]), greatest(member_ids[1], member_ids[2]))` where `type = 'DM'`. It is keyed on the members, not the name, because `PATCH /v1/channels/:id` can rename a DM.
@@ -41,13 +41,13 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Checks**: Before `db push`, `select count(*) from public.chat_channels where type = 'DM';` gave 0 on both `frapp-staging` and `frapp-prod` on 2026-09-30. After it, `select indexname from pg_indexes where indexname = 'chat_channels_dm_pair_key';` returns one row, and `select conname from pg_constraint where conname = 'chat_channels_dm_two_members';` returns one row.
 - **Promoter notes**: Ship it before, or with, the API that relies on it. A deploy applies migrations first. Against an unmigrated database the newer API behaves as before: two racing opens can still make two DMs. An older API against the migrated database keeps working, but the losing call of a race gets the raw `23505` as a 500 once, and opening the DM again returns the one that won. The CHECK scans `chat_channels` once, and the index build blocks writes to it until the migration commits. The table holds channels, not messages, so both are brief. If the guard raises, the migration stops and nothing is applied: bring the rows it counts to the owner (#2788) rather than deleting any. Re-applying is idempotent (`drop constraint if exists` before the add, and `create unique index if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-one-dm-per-pair-20260930231000) § Rollback one DM per pair.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-one-dm-per-pair-20260930231000) § Rollback one DM per pair.
 
 ## 2026-09-30: A chat report keeps the reported message's attachments until it resolves and releases them (#2481)
 
 ### 20260930191500_chat_report_attachment_evidence.sql
 
-- **Purpose**: Adds two columns to `public.chat_message_reports` and two partial indexes. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#report) § Report.
+- **Purpose**: Adds two columns to `public.chat_message_reports` and two partial indexes. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#report) § Report.
   - `reported_attachments jsonb not null default '[]'`, with a CHECK that it is an array: one `{bucket, storage_path, filename, content_type, byte_size}` per attachment on the message when the report was filed. Until the report's release finishes, the API's message-delete purge and the Discord import purge keep the objects it names; while it is open, the officer queue signs them.
   - `evidence_released_at timestamptz`: when the API finished deleting what a resolved report held. Setting it is what ends the report's hold.
   - `idx_chat_message_reports_evidence_held` on `(chapter_id, id)` where the report is unreleased and holds something: the hold lookup every purge makes.
@@ -58,24 +58,24 @@ date — is welcome; inventing a date to turn the gate green is not.
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'chat_message_reports' and column_name in ('reported_attachments', 'evidence_released_at') order by column_name;` returns two rows: `evidence_released_at | timestamp with time zone | YES | NULL` and `reported_attachments | jsonb | NO | '[]'::jsonb`. `select indexname from pg_indexes where indexname in ('idx_chat_message_reports_evidence_held', 'idx_chat_message_reports_evidence_unreleased');` returns two rows.
 - **Promoter notes**: Ship it before, or with, the API that writes it. A deploy applies migrations first, so the API never sees a database without it. Against an unmigrated database the newer API fails every report filing (its insert names an unknown column), and its purges keep every object, because the hold read fails and the purge fails closed. An older API never writes the columns, but it selects every column, so it hands the officer queue whatever they hold: `'[]'` and `NULL` until the newer API files a report with attachments, and storage locations after that. That is why the rollback scrubs them before a revert goes live. On Postgres 11 and later, adding a column with a constant default rewrites no rows. The CHECK scans the table once to validate it, under a brief lock; the table holds a chapter's reports, so it is small. Re-applying is idempotent (`add column if not exists` skips the column and its CHECK together, and `create index if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-chat-report-attachment-evidence-20260930191500) § Rollback chat report attachment evidence.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-report-attachment-evidence-20260930191500) § Rollback chat report attachment evidence.
 
 ## 2026-09-30: A Discord import's deletion shows how far it has got (#2944)
 
 ### 20260930150000_discord_import_purged_messages.sql
 
-- **Purpose**: Adds `purged_messages integer not null default 0` to `public.discord_imports`: how many imported messages the purge has deleted so far. The purge worker writes it with each lease renewal, and the web's import list shows it as a countdown out of `imported_messages` while an import is `purging`. Every existing row takes 0. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds `purged_messages integer not null default 0` to `public.discord_imports`: how many imported messages the purge has deleted so far. The purge worker writes it with each lease renewal, and the web's import list shows it as a countdown out of `imported_messages` while an import is `purging`. Every existing row takes 0. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'purged_messages';` returns one row: `purged_messages | integer | NO | 0`.
 - **Promoter notes**: Ship it before, or with, the API that writes it. A deploy applies migrations first, so the worker never sees a database without it. Against an unmigrated database the newer worker's lease renewal names an unknown column, so every purge slice fails after its first round and marks the import `failed`; deleting it again once the migration is in finishes it. An older API ignores the column, and an older web client never reads it. On Postgres 11 and later, adding a column with a constant default rewrites no rows, so the table is locked only briefly. An import already mid-purge when this lands counts from 0, so its row shows more messages left than there are until it finishes (on staging, import `0e4c41e5` was mid-purge on 2026-09-30). Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-discord-import-purge-progress-20260930150000) § Rollback Discord import purge progress.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-purge-progress-20260930150000) § Rollback Discord import purge progress.
 
 ## 2026-09-30: A channel a Discord import merged into can be deleted (#2922)
 
 ### 20260930140000_discord_import_merge_target_deletable.sql
 
-- **Purpose**: Deleting any channel a Discord import had merged into (a `use_existing` mapping row) failed. `target_channel_id`'s `on delete set null` broke the `discord_import_channels_target_present` CHECK, so `DELETE /v1/channels/:id` answered 500. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Deleting any channel a Discord import had merged into (a `use_existing` mapping row) failed. `target_channel_id`'s `on delete set null` broke the `discord_import_channels_target_present` CHECK, so `DELETE /v1/channels/:id` answered 500. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
   - **The CHECK** `discord_import_channels_target_present` is dropped. `discord_import_channels_new_name_present` (`mapping_action <> 'create_new' or new_channel_name is not null`) keeps the half the database can hold true for a row's whole life. The API now owns "a merge names its target": the mapping routes, `start`, and the worker, which stops the import with a sentence.
   - **`discord_import_channel_holds_anything`** (`create or replace`): a `use_existing` row keeps its channel only while its import isn't `purging` or `purged`.
   - **`delete_empty_discord_import_channels`** (`create or replace`) also considers each channel a `purging` or `purged` import recorded creating that the purging import merged into. It checks and deletes those under the same lock as its own. `purging` counts because a purge writes `purged` only after its channel and storage steps, so two purges running at once would otherwise each leave the channel to the other.
@@ -94,13 +94,13 @@ date — is welcome; inventing a date to turn the gate green is not.
   - **Locks:** adding the CHECK scans `discord_import_channels` under an `ACCESS EXCLUSIVE` lock. The table is small, so the lock is brief.
   - Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-deletable-import-merge-targets-20260930140000) § Rollback deletable import merge targets.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-deletable-import-merge-targets-20260930140000) § Rollback deletable import merge targets.
 
 ## 2026-09-30: A deleted Discord import takes the channels it left empty (#2905)
 
 ### 20260930030000_discord_import_purge_channels.sql
 
-- **Purpose**: Adds two things; the rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds two things; the rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
   - **The table** `public.discord_import_created_channels` has one row per channel the worker creates for an import, keyed on `(import_id, channel_id)`. Both columns cascade on delete, and RLS is on with no policies.
   - **The function** `public.delete_empty_discord_import_channels(p_import_id uuid, p_chapter_id uuid) returns setof uuid` is service role only and `security invoker`. The purge worker calls it after deleting an import's messages, and it does nothing unless the import is `purging` in that chapter.
     - Its candidates are the channels the table records for the import, plus each `create_new` mapping row's target that is no older than the import (for imports from before the table).
@@ -121,25 +121,25 @@ date — is welcome; inventing a date to turn the gate green is not.
   - **Locks:** building the two indexes briefly blocks writes to `point_transactions` and `discord_import_channels`.
   - Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-emptied-import-channels-20260930030000) § Rollback emptied import channels.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-emptied-import-channels-20260930030000) § Rollback emptied import channels.
 
 ## 2026-09-30: One chat push fan-out per message, whatever the API's instance count (#2846)
 
 ### 20260930020000_chat_push_dispatches.sql
 
-- **Purpose**: Adds `public.chat_push_dispatches`: one row per chat message the push worker fans out, `message_id` the primary key (FK to `chat_messages`, `on delete cascade`), plus `dispatched_at` and its index. RLS is enabled with no policies (service role only). Every API instance receives every `chat_messages` INSERT from Realtime; the primary key lets exactly one of them send. The worker purges rows older than a day hourly. The mechanism is in [`render.md` § 5.5](deployment/render.md#55-in-process-chat-workers-chunk-05).
+- **Purpose**: Adds `public.chat_push_dispatches`: one row per chat message the push worker fans out, `message_id` the primary key (FK to `chat_messages`, `on delete cascade`), plus `dispatched_at` and its index. RLS is enabled with no policies (service role only). Every API instance receives every `chat_messages` INSERT from Realtime; the primary key lets exactly one of them send. The worker purges rows older than a day hourly. The mechanism is in [`render.md` § 5.5](../deployment/render.md#55-in-process-chat-workers-chunk-05).
 - **Checks**: After `db push`,
   `select relrowsecurity from pg_class where relname = 'chat_push_dispatches';` returns `t`, and
   `select count(*) from pg_policies where tablename = 'chat_push_dispatches';` returns `0`.
 - **Promoter notes**: **Ship it before the API that writes it, never after.** The #2846 push worker claims every message before sending and treats a failed claim as "not claimed", so against an unmigrated database every chat push is skipped, and the only signal is a `chat-push: dispatch claim failed` error line per message. The deploy workflows apply migrations before shipping the API, which is the order this needs. An older API ignores the table. No existing row is touched. Re-applying is idempotent (`if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-chat-push-dispatch-claims-20260930020000) § Rollback chat push dispatch claims.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-push-dispatch-claims-20260930020000) § Rollback chat push dispatch claims.
 
 ## 2026-09-29: Members link their Discord history to themselves (#2878)
 
 ### 20260929230000_discord_author_links.sql
 
-- **Purpose**: Adds `public.discord_author_links` (one row per member who linked their Discord account in a chapter; unique on `(chapter_id, discord_user_id)` and `(chapter_id, user_id)`, RLS on with no policies). Adds `purpose text not null default 'connect'` to `discord_oauth_states` with `discord_oauth_states_purpose_check` (`connect`, `author_link`), so the link handshake shares the one registered callback URL. Adds `link_discord_author`, `unlink_discord_author` and their shared `discord_author_detach` (service role only), which set or clear `chat_messages.sender_id` on that author's imported rows in the chapter (linking also sets `chat_message_reports.reported_sender_id` on reports about those rows that named nobody), and the `trg_chat_messages_attach_linked_author` BEFORE INSERT trigger (`when (new.kind = 'imported')`), which attaches imported rows to an existing link as they are written. Redefines `anonymize_user` (on top of the `20260929213000` body, keeping its #2877 sidebar purge) to clear the Discord name, avatar path and id on a deleted member's linked rows, and the Discord name on reports about them, and to delete their links. The rules are in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds `public.discord_author_links` (one row per member who linked their Discord account in a chapter; unique on `(chapter_id, discord_user_id)` and `(chapter_id, user_id)`, RLS on with no policies). Adds `purpose text not null default 'connect'` to `discord_oauth_states` with `discord_oauth_states_purpose_check` (`connect`, `author_link`), so the link handshake shares the one registered callback URL. Adds `link_discord_author`, `unlink_discord_author` and their shared `discord_author_detach` (service role only), which set or clear `chat_messages.sender_id` on that author's imported rows in the chapter (linking also sets `chat_message_reports.reported_sender_id` on reports about those rows that named nobody), and the `trg_chat_messages_attach_linked_author` BEFORE INSERT trigger (`when (new.kind = 'imported')`), which attaches imported rows to an existing link as they are written. Redefines `anonymize_user` (on top of the `20260929213000` body, keeping its #2877 sidebar purge) to clear the Discord name, avatar path and id on a deleted member's linked rows, and the Discord name on reports about them, and to delete their links. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select relrowsecurity from pg_class where relname = 'discord_author_links';` returns `t`;
   `select count(*) from pg_policies where tablename = 'discord_author_links';` returns `0`;
@@ -148,72 +148,72 @@ date — is welcome; inventing a date to turn the gate green is not.
   `select count(*) from discord_oauth_states where purpose <> 'connect';` returns `0` on a database that has not run a link yet.
 - **Promoter notes**: Ship it before, or with, the API that reads it. The newer API writes `purpose` on every handshake and filters on it at every confirm, so against an unmigrated database both the bot connect flow and the link flow fail at their first step. An older API ignores the column (its default keeps its handshakes `connect`) and never calls the functions; the trigger only acts when a link row exists, and none can exist without the newer API. No existing row is rewritten: `sender_id` changes only when a member links. `create table`, the column, the trigger and the functions are idempotent; the `add constraint` is guarded. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-discord-author-links-20260929230000) § Rollback Discord author links.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-author-links-20260929230000) § Rollback Discord author links.
 
 ## 2026-09-29: Each member's chat sidebar arrangement (#2877)
 
 ### 20260929213000_chat_sidebar_preferences.sql
 
-- **Purpose**: Adds two per-member tables, both with RLS enabled and no policies. `public.chat_sidebar_preferences` has one row per (member, chapter) holding `unread_only`, `hide_muted` and `collapsed_sections text[]`. `public.chat_sidebar_pins` has one row per (member, channel), cascading from `chat_channels`. Adds `set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)`, which folds or unfolds one section atomically; EXECUTE is limited to `service_role`. Replaces `anonymize_user` with the 20260915210100 body plus two deletes, one for each new table. No existing row is rewritten, and a member with no row gets every default. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#sidebar-arrangement) § Sidebar arrangement.
+- **Purpose**: Adds two per-member tables, both with RLS enabled and no policies. `public.chat_sidebar_preferences` has one row per (member, chapter) holding `unread_only`, `hide_muted` and `collapsed_sections text[]`. `public.chat_sidebar_pins` has one row per (member, channel), cascading from `chat_channels`. Adds `set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)`, which folds or unfolds one section atomically; EXECUTE is limited to `service_role`. Replaces `anonymize_user` with the 20260915210100 body plus two deletes, one for each new table. No existing row is rewritten, and a member with no row gets every default. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#sidebar-arrangement) § Sidebar arrangement.
 - **Checks**: After `db push`,
   `select relname, relrowsecurity from pg_class where relname in ('chat_sidebar_preferences', 'chat_sidebar_pins');` returns both with `t`,
   `select has_function_privilege('authenticated', 'public.set_chat_sidebar_section_collapsed(uuid, uuid, text, boolean)', 'execute');` returns `f`, and
   `select prosrc like '%chat_sidebar_pins%' from pg_proc where proname = 'anonymize_user';` returns `t`.
 - **Promoter notes**: Ship it before, or with, the API that reads it. Against an unmigrated database the new `/v1/chat-sidebar` routes answer 500, and clients then show the default sidebar (no pins, nothing folded, filters off), so no channel disappears. An older API ignores both tables. Re-applying is idempotent (`create table if not exists`, `create or replace function`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-chat-sidebar-arrangement-20260929213000) § Rollback chat sidebar arrangement.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-sidebar-arrangement-20260929213000) § Rollback chat sidebar arrangement.
 
 ## 2026-09-29: An officer-set default push level per chat channel (#2771)
 
 ### 20260929190000_chat_channels_default_notification_level.sql
 
-- **Purpose**: Adds `default_notification_level text` (nullable, no default) to `public.chat_channels`, with `chat_channels_default_notification_level_check` allowing only `all`, `mentions` or `off`. Officers set it from chat admin; the push worker reads it as a channel's default when a member has set no level of their own. Null keeps the built-in default (`all` for `#general`, the announcements channel and DMs, `off` for `#chapter-audit`, `mentions` for the rest), so no row is written. The rule is in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md#chat-notification-preferences) § Chat notification preferences.
+- **Purpose**: Adds `default_notification_level text` (nullable, no default) to `public.chat_channels`, with `chat_channels_default_notification_level_check` allowing only `all`, `mentions` or `off`. Officers set it from chat admin; the push worker reads it as a channel's default when a member has set no level of their own. Null keeps the built-in default (`all` for `#general`, the announcements channel and DMs, `off` for `#chapter-audit`, `mentions` for the rest), so no row is written. The rule is in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#chat-notification-preferences) § Chat notification preferences.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'chat_channels' and column_name = 'default_notification_level';` returns one row: `default_notification_level | text | YES | null`, and
   `select convalidated from pg_constraint where conname = 'chat_channels_default_notification_level_check';` returns `t`.
 - **Promoter notes**: Ship it before, or with, the API that reads it. Against an unmigrated database the newer code fails twice: the push worker selects the column by name, so every channel lookup fails and no chat push is sent at all, and the new chat-admin page sends `default_notification_level` on every `PATCH /v1/channels/{id}`, so every channel save from chat admin fails with an unknown-column error. An older API ignores the column, and an older web client never sends it. The `add column` is idempotent; the `add constraint` is not, so a partial re-run needs the constraint dropped first. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-chat-channel-default-push-level-20260929190000) § Rollback chat channel default push level.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-channel-default-push-level-20260929190000) § Rollback chat channel default push level.
 
 ## 2026-09-29: An optional date cutoff for Discord bot imports (#2858)
 
 ### 20260929170000_discord_import_messages_after.sql
 
-- **Purpose**: Adds `messages_after timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a bot import is first started with a cutoff, and the worker then imports only messages sent at or after it. Null imports all history, which is what every existing import keeps doing. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds `messages_after timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a bot import is first started with a cutoff, and the worker then imports only messages sent at or after it. Null imports all history, which is what every existing import keeps doing. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'messages_after';` returns one row: `messages_after | timestamp with time zone | YES | null`.
 - **Promoter notes**: Ship it before, or with, the API that reads it. The API writes the column only when an import starts with a cutoff, so a newer API against an unmigrated database fails those starts and no others. An older API ignores the column, and imports all history. Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-discord-import-date-cutoff-20260929170000) § Rollback Discord import date cutoff.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-date-cutoff-20260929170000) § Rollback Discord import date cutoff.
 
 ## 2026-09-28: Discord roles gate the imported private channels (#2818)
 
 ### 20260928203000_discord_import_role_gates.sql
 
-- **Purpose**: Adds two columns to `public.discord_import_channels`: `discord_reader_role_ids text[]` (the scan's record of which Discord roles could read a private channel; null otherwise, and on the upload path) and `new_channel_same_as_discord boolean not null default false` (the admin chose "Same as Discord"). Adds `discord_import_channels_same_as_discord_check`, which allows `new_channel_same_as_discord` only on a `ROLE_GATED` row, so the gate the worker reads is always the non-empty permission list the existing `discord_import_channels_new_channel_type_check` requires. The same release changes the shape the API writes into `discord_imports.role_mapping` (jsonb, no DDL): entries carry `action`, `frapp_role_id`, `new_role_name` and `read_permission` instead of `signet_role_key`, and an entry in the old shape reads as Ignore. Existing rows take null and `false`. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds two columns to `public.discord_import_channels`: `discord_reader_role_ids text[]` (the scan's record of which Discord roles could read a private channel; null otherwise, and on the upload path) and `new_channel_same_as_discord boolean not null default false` (the admin chose "Same as Discord"). Adds `discord_import_channels_same_as_discord_check`, which allows `new_channel_same_as_discord` only on a `ROLE_GATED` row, so the gate the worker reads is always the non-empty permission list the existing `discord_import_channels_new_channel_type_check` requires. The same release changes the shape the API writes into `discord_imports.role_mapping` (jsonb, no DDL): entries carry `action`, `frapp_role_id`, `new_role_name` and `read_permission` instead of `signet_role_key`, and an entry in the old shape reads as Ignore. Existing rows take null and `false`. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('discord_reader_role_ids','new_channel_same_as_discord') order by 1;` returns two rows: `discord_reader_role_ids | ARRAY | YES | null` and `new_channel_same_as_discord | boolean | NO | false`.
   `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_same_as_discord_check';` names `new_channel_same_as_discord` and `ROLE_GATED`.
 - **Promoter notes**: Ship it before, or with, the API that writes the columns. A newer API against an unmigrated database fails every scan and mapping write on the unknown columns. An older API ignores them. Re-applying is idempotent (`add column if not exists`, and the constraint is dropped and re-added). Hosted projects are not applied from a cloud-agent session. **Deploy the web app with the API.** The role route's body changed: the new web sends `action` and the old API's validation pipe (`forbidNonWhitelisted`) rejects it, and the old web sends `signet_role_key`, which the new API rejects the same way. Either mismatch fails the role step with a 400 until both are deployed and the page is reloaded. Nothing mapped before this release changes meaning: its role entries read as Ignore and none of its channels is "Same as Discord", so starting it creates no role and grants nothing. Staging held no live import on 2026-09-28 (two bot imports, both `purged`).
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-discord-import-role-gates-20260928203000) § Rollback Discord import role gates.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-role-gates-20260928203000) § Rollback Discord import role gates.
 
 ## 2026-09-28: Clear a deleted Discord import off the list (#2817)
 
 ### 20260928183000_discord_import_cleared_at.sql
 
-- **Purpose**: Adds `cleared_at timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a chapter clears an import it has already deleted (status `purged`), and the import list leaves those rows out. The job row stays, as the record that the import happened. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds `cleared_at timestamptz` (nullable, no default) to `public.discord_imports`. The API sets it when a chapter clears an import it has already deleted (status `purged`), and the import list leaves those rows out. The job row stays, as the record that the import happened. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_imports' and column_name = 'cleared_at';` returns one row: `cleared_at | timestamp with time zone | YES | null`.
 - **Promoter notes**: Ship it before, or with, the API that reads it. The API's import list filters on the column, so a newer API against an unmigrated database fails the list. An older API ignores it. Every existing import stays listed. Re-applying is idempotent (`add column if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-discord-import-clearing-20260928183000) § Rollback Discord import clearing.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-clearing-20260928183000) § Rollback Discord import clearing.
 
 ## 2026-09-28: Discord import channel visibility and scan readability (#2787)
 
 ### 20260928171600_discord_import_channel_visibility.sql
 
-- **Purpose**: Adds four columns to `public.discord_import_channels`: `readable boolean` and `private_in_discord boolean` (what the bot saw when it scanned; null when unknown, as on the upload path), `new_channel_type text not null default 'PUBLIC'`, and `new_channel_required_permissions text[]`. Adds `discord_import_channels_new_channel_type_check`, which allows `PUBLIC` or `ROLE_GATED` and requires at least one permission for `ROLE_GATED`. Existing rows take `PUBLIC` and nulls, which is what every import created until now, and which leaves a gap for imports mapped before this release (below). The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+- **Purpose**: Adds four columns to `public.discord_import_channels`: `readable boolean` and `private_in_discord boolean` (what the bot saw when it scanned; null when unknown, as on the upload path), `new_channel_type text not null default 'PUBLIC'`, and `new_channel_required_permissions text[]`. Adds `discord_import_channels_new_channel_type_check`, which allows `PUBLIC` or `ROLE_GATED` and requires at least one permission for `ROLE_GATED`. Existing rows take `PUBLIC` and nulls, which is what every import created until now, and which leaves a gap for imports mapped before this release (below). The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
 - **Checks**: After `db push`,
   `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'discord_import_channels' and column_name in ('readable','private_in_discord','new_channel_type','new_channel_required_permissions') order by 1;` returns four rows: `new_channel_required_permissions | ARRAY | YES`, `new_channel_type | text | NO | 'PUBLIC'::text`, `private_in_discord | boolean | YES`, `readable | boolean | YES`.
   `select pg_get_constraintdef(oid) from pg_constraint where conname = 'discord_import_channels_new_channel_type_check';` names both `PUBLIC` and `ROLE_GATED` and `array_length`.
@@ -222,7 +222,7 @@ date — is welcome; inventing a date to turn the gate green is not.
   `select i.id, i.chapter_id, i.source, i.status, count(*) as new_channels from public.discord_import_channels c join public.discord_imports i on i.id = c.import_id where i.status in ('draft', 'ready', 'running', 'failed') and c.mapping_action = 'create_new' and c.target_channel_id is null and c.status not in ('completed', 'skipped') and c.parent_discord_channel_id is null group by i.id, i.chapter_id, i.source, i.status;`
   Cancel each one it lists (Cancel on the chapter's Discord import page, `POST /v1/discord-imports/{id}/cancel`; a running import stops at its next checkpoint). A cancelled import cannot be changed or restarted, so tell the chapter's admin to start a new one, whose mapping step asks who can read each new channel that needs it. Staging had none on 2026-09-28, of either source: its only import was a bot draft with every channel skipped.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-discord-import-channel-visibility-20260928171600) § Rollback Discord import channel visibility.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-channel-visibility-20260928171600) § Rollback Discord import channel visibility.
 
 ## 2026-09-28: Add and remove a PRIVATE channel's members (#1302)
 
@@ -233,38 +233,38 @@ date — is welcome; inventing a date to turn the gate green is not.
   - `remove_private_channel_member(...)` removes them. It refuses (returns no row) when that would take away the last current member of the chapter in the list. Removing an id whose member has left the chapter is always allowed, and removing someone not listed is a no-op that returns the row.
   - `remove_user_from_private_channels(p_chapter_id, p_user_id)` takes a member leaving the chapter off every PRIVATE list in it and returns the ids it changed. `MemberService.remove` calls it before deleting the membership.
 
-  All three match only `PRIVATE` channels in the named chapter, and compute each new array from the row's own column, so concurrent calls serialize on the row lock. No table, column, policy or data changes. The rules are in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#channels) § Channels.
+  All three match only `PRIVATE` channels in the named chapter, and compute each new array from the row's own column, so concurrent calls serialize on the row lock. No table, column, policy or data changes. The rules are in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#channels) § Channels.
 - **Checks**: After `db push`,
   `select proname, prosecdef, proconfig from pg_proc where proname in ('add_private_channel_member', 'remove_private_channel_member', 'remove_user_from_private_channels') order by proname;` returns three rows, each `false | {"search_path=public, pg_temp"}`.
   `select has_function_privilege('anon', 'public.add_private_channel_member(uuid, uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.add_private_channel_member(uuid, uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`, and the same for `public.remove_private_channel_member(uuid, uuid, uuid)` and `public.remove_user_from_private_channels(uuid, uuid)`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
 - **Promoter notes**: Apply before, or with, the API that carries #1302; both the staging merge and a `full` production run migrate before deploying. An API that reaches a database without it answers 500 on the two new routes, and **refuses to remove any member from a chapter** (500), because `MemberService.remove` calls `remove_user_from_private_channels` first. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-private-channel-membership-20260928170000) § Rollback PRIVATE channel membership.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-private-channel-membership-20260928170000) § Rollback PRIVATE channel membership.
 
 ## 2026-09-27: Unread and mention counts skip a blocked sender (#2521)
 
 ### 20260927050000_chat_unread_counts_skip_blocked.sql
 
-- **Purpose**: Re-creates `public.get_channel_unread_counts(p_chapter_id, p_user_id)` with one more predicate on its `chat_messages` join: a message whose sender the caller has blocked in that chapter (`chat_member_blocks`) is neither unread nor a mention. Same signature and return type, still `stable`, `security definer`, `search_path = public, pg_temp`, EXECUTE for `service_role` only. No data changes. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#read-receipts) § Read Receipts.
+- **Purpose**: Re-creates `public.get_channel_unread_counts(p_chapter_id, p_user_id)` with one more predicate on its `chat_messages` join: a message whose sender the caller has blocked in that chapter (`chat_member_blocks`) is neither unread nor a mention. Same signature and return type, still `stable`, `security definer`, `search_path = public, pg_temp`, EXECUTE for `service_role` only. No data changes. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#read-receipts) § Read Receipts.
 - **Checks**: After `db push`,
   `select prosecdef, proconfig, prosrc like '%chat_member_blocks%' as skips_blocked from pg_proc where proname = 'get_channel_unread_counts';` returns `true | {"search_path=public, pg_temp"} | true`.
   `select has_function_privilege('anon', 'public.get_channel_unread_counts(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.get_channel_unread_counts(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
 - **Promoter notes**: Nothing needs to ship with it, and either order with any API or client deploy is safe: the API calls the function the same way and gets fewer counted rows for a member who has blocked someone. Badges drop on the next `GET /v1/channels/unread`. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-skipping-blocked-senders-in-unread-counts-20260927050000) § Rollback skipping blocked senders in unread counts.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-skipping-blocked-senders-in-unread-counts-20260927050000) § Rollback skipping blocked senders in unread counts.
 
 ## 2026-09-25: Hide a 1:1 DM from your own list (#2303)
 
 ### 20260925200000_chat_hide_direct_message.sql
 
-- **Purpose**: Adds the nullable column `channel_read_receipts.hidden_at timestamptz` and two `security invoker` RPCs, both with `search_path = public, pg_temp` and EXECUTE for `service_role` only. `hide_direct_message(p_channel_id, p_chapter_id, p_user_id)` upserts the caller's receipt with `hidden_at` and `last_read_at` at the database's `now()`, and matches only a `DM` in that chapter. `get_hidden_channel_ids(p_chapter_id, p_user_id)` returns the caller's hidden DMs that no newer, non-deleted message from a sender they have not blocked has resurfaced. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#direct-messages) § Direct Messages. No data changes, and RLS on `channel_read_receipts` stays default-deny.
+- **Purpose**: Adds the nullable column `channel_read_receipts.hidden_at timestamptz` and two `security invoker` RPCs, both with `search_path = public, pg_temp` and EXECUTE for `service_role` only. `hide_direct_message(p_channel_id, p_chapter_id, p_user_id)` upserts the caller's receipt with `hidden_at` and `last_read_at` at the database's `now()`, and matches only a `DM` in that chapter. `get_hidden_channel_ids(p_chapter_id, p_user_id)` returns the caller's hidden DMs that no newer, non-deleted message from a sender they have not blocked has resurfaced. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#direct-messages) § Direct Messages. No data changes, and RLS on `channel_read_receipts` stays default-deny.
 - **Checks**: After `db push`,
   `select data_type, is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'channel_read_receipts' and column_name = 'hidden_at';` returns `timestamp with time zone | YES`.
   `select proname, prosecdef, proconfig from pg_proc where proname in ('hide_direct_message', 'get_hidden_channel_ids') order by proname;` returns two rows, each `false | {"search_path=public, pg_temp"}`.
   `select has_function_privilege('anon', 'public.get_hidden_channel_ids(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.get_hidden_channel_ids(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | false`, and the same for `public.hide_direct_message(uuid, uuid, uuid)`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
 - **Promoter notes**: Apply before, or with, the API that carries #2303; both the staging merge and a `full` production run migrate before deploying. An API that reaches a database without it still serves the channel list with nothing hidden, and still opens DMs, because the service fails open on both reads. Only the hide itself errors until the migration lands. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-hiding-a-11-dm-20260925200000) § Rollback hiding a 1:1 DM.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-hiding-a-11-dm-20260925200000) § Rollback hiding a 1:1 DM.
 
 ## 2026-09-24: System actor display_name becomes Frapp System (#2578)
 
@@ -283,27 +283,27 @@ date — is welcome; inventing a date to turn the gate green is not.
   row, no client dependency. Staging applies on merge to `main`. Production
   applies with Deploy production, which the owner dispatches the same day as
   part of ADR-25 step 3's console order
-  ([`supabase.md` § ADR-25 step 3](deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp)).
+  ([`supabase.md` § ADR-25 step 3](../deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp)).
   No agent session dispatches it.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-the-frapp-system-display_name) § Rollback the Frapp System display_name.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-frapp-system-display_name) § Rollback the Frapp System display_name.
 
 ## 2026-09-24: Hide a blocked member's reactions from the member who blocked them (#2494)
 
 ### 20260924170000_chat_message_actions_hide_blocked_reactions.sql
 
-- **Purpose**: Adds `public.chat_viewer_has_blocked(p_actor uuid, p_message_id uuid)`: `security definer`, `stable`, `search_path = public, pg_temp`, no blocker parameter, and false for any message the caller can't read. It re-creates `chat_message_actions_select` with a third conjunct, `not (starts_with(action_type, 'reaction:') and chat_viewer_has_blocked(user_id, message_id))`. After it, a member who blocked someone in a chapter no longer receives that member's reaction rows there, over PostgREST or the Realtime echo. Votes and the blocked member's own reads are unchanged. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#what-a-block-does-and-does-not-hide) § What a block does and does not hide.
+- **Purpose**: Adds `public.chat_viewer_has_blocked(p_actor uuid, p_message_id uuid)`: `security definer`, `stable`, `search_path = public, pg_temp`, no blocker parameter, and false for any message the caller can't read. It re-creates `chat_message_actions_select` with a third conjunct, `not (starts_with(action_type, 'reaction:') and chat_viewer_has_blocked(user_id, message_id))`. After it, a member who blocked someone in a chapter no longer receives that member's reaction rows there, over PostgREST or the Realtime echo. Votes and the blocked member's own reads are unchanged. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#what-a-block-does-and-does-not-hide) § What a block does and does not hide.
 - **Checks**: After `db push`,
   `select polroles::regrole[], pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname = 'chat_message_actions' and p.polpermissive and p.polcmd in ('r','*');` returns **exactly one** row: `{authenticated}`, with an expression containing both `can_read_chat_message(message_id)` and `chat_viewer_has_blocked(user_id, message_id)`. The FRA-38 check further down still holds as written.
   `select has_function_privilege('anon', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | true`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
   `select prosecdef, proconfig from pg_proc where proname = 'chat_viewer_has_blocked';` returns `true | {"search_path=public, pg_temp"}`.
 - **Promoter notes**: Nothing needs to ship with it, and either order with any API or web deploy is safe, because no code calls the helper and clients read the table the same way under both policies. The web dashboard stops showing a blocked member's reaction chips to the blocker on its next reaction read. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-hiding-blocked-members-reactions-20260924170000) § Rollback hiding blocked members' reactions.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-hiding-blocked-members-reactions-20260924170000) § Rollback hiding blocked members' reactions.
 
 ## 2026-09-23: Stamp every chapter palette with its engine, and sweep the stale ones (#1165)
 
-Two migrations, plus a data rewrite that the **API** performs, not SQL. The migrations make it safe; the rewrite is the point. Why it exists: the accent engine's output is cached in `chapters.theme_palette` and nothing regenerated it, so the #2541 fill floor reached no existing chapter, and a dark-accent chapter kept painting a sub-3:1 `accent-primary` (crimson at 1.50:1). Canon: [`accent-engine.md` § 4](../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence).
+Two migrations, plus a data rewrite that the **API** performs, not SQL. The migrations make it safe; the rewrite is the point. Why it exists: the accent engine's output is cached in `chapters.theme_palette` and nothing regenerated it, so the #2541 fill floor reached no existing chapter, and a dark-accent chapter kept painting a sub-3:1 `accent-primary` (crimson at 1.50:1). Canon: [`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence).
 
 ### 20260923170000_chapter_theme_palette_engine_version.sql
 
@@ -324,20 +324,20 @@ Two migrations, plus a data rewrite that the **API** performs, not SQL. The migr
 
 One statement to run, the re-queue below. Within an hour of the API carrying #1165 going live (the top of the next hour), `ScheduledJobsService.sweepStalePalettes` recomputes every chapter whose stamp is `NULL` or behind, through `buildChapterPalette`. That is every chapter, the first time. It replaces each whole map, so the dead pre-cutover legacy keys go too. The same happens automatically after any later deploy that bumps `SIGNET_ENGINE_VERSION`.
 
-- **Re-queue every row once, first on staging and then on production**: `update public.chapters set theme_palette_engine_version = null;`, run a few minutes after that environment's deploy went live, once the old instance is gone. The reason: Render's deploys overlap the old and new instances briefly ([ADR-24](../../spec/architecture/adr/adr-24.md)), and the old, pre-#1165 instance writes palettes without a stamp. A palette write it serves after the row was stamped (by the new instance's sweep, whose cron registers at startup before go-live, or by an accent save on the new instance) leaves a palette from another engine or seed under a current stamp, and no guard catches it. The writes that can do this are an accent save, a config PATCH, and `POST /v1/chapters/:id/theme-palette`. Render's events show when the deploy started and went live, but no event marks the old instance's exit, so don't try to judge whether the window was hit. Re-queueing is harmless: the next tick recomputes every row once more. Any deploy that replaces an API without #1165's code needs it: this first one, and a re-land after the rollback playbook's revert. Otherwise the outgoing instance stamps its own, lower version, and the sweep picks its writes up.
+- **Re-queue every row once, first on staging and then on production**: `update public.chapters set theme_palette_engine_version = null;`, run a few minutes after that environment's deploy went live, once the old instance is gone. The reason: Render's deploys overlap the old and new instances briefly ([ADR-24](../../../spec/architecture/adr/adr-24.md)), and the old, pre-#1165 instance writes palettes without a stamp. A palette write it serves after the row was stamped (by the new instance's sweep, whose cron registers at startup before go-live, or by an accent save on the new instance) leaves a palette from another engine or seed under a current stamp, and no guard catches it. The writes that can do this are an accent save, a config PATCH, and `POST /v1/chapters/:id/theme-palette`. Render's events show when the deploy started and went live, but no event marks the old instance's exit, so don't try to judge whether the window was hit. Re-queueing is harmless: the next tick recomputes every row once more. Any deploy that replaces an API without #1165's code needs it: this first one, and a re-land after the rollback playbook's revert. Otherwise the outgoing instance stamps its own, lower version, and the sweep picks its writes up.
 - **Verify, staging first, then production** (read-only), after the first top-of-hour tick following the re-queue:
   `select count(*) as chapters, count(*) filter (where theme_palette_engine_version is null or theme_palette_engine_version < 1) as stale from public.chapters;` shows `stale = 0`. Replace `1` with the current `SIGNET_ENGINE_VERSION` after a bump.
   Spot-check a dark accent: `select branding -> 'colors' ->> 'accent' as seed, theme_palette ->> '--signet-accent-primary' as fill from public.chapters where theme_palette_engine_version is not null limit 20;`. A dark seed such as `#8B0000` now paints a lifted fill (`#D75748`), not the seed itself.
   The API's Render logs carry `palette sweep: recomputed X/N stale palettes to engine v1` for the tick that did the work.
 - **If `stale` stays above 0**: first check the sweep could read at all. A failing candidate query logs `palette sweep: chapter lookup failed` every tick and emits no summary line, which looks like a sweep that never ran; the error it carries (for example a column PostgREST's schema cache does not know yet) is the thing to fix. Otherwise, the summary line's `failed` suffix counts rows whose write errored. Each one also logs its own error line, `palette sweep: chapter <id> could not be recomputed…`, carrying the id and the database error. Those rows are retried every hour, so fix the cause the error names and wait for the next tick. Don't stamp rows by hand in SQL: that marks a stale fill as current and hides it from the sweep for good. Clearing a stamp (`set theme_palette_engine_version = null`) is the safe direction; it only re-queues the row. There is no operator route to recompute an arbitrary chapter. `POST /v1/chapters/:id/theme-palette` recomputes only the caller's active chapter and needs `chapter-config:manage` there, so it is a remedy for that chapter's officers, not for a promoter.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-the-theme-palette-engine-stamp-20260923170000) § Rollback the theme palette engine stamp, and § Rollback the branding accent mirror repair.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-theme-palette-engine-stamp-20260923170000) § Rollback the theme palette engine stamp, and § Rollback the branding accent mirror repair.
 
 ## 2026-09-23: Per-user Terms acceptance (#2302)
 
 ### 20260923190000_user_legal_acceptance.sql
 
-- **Purpose**: Adds `users.legal_accepted_at timestamptz` and `users.legal_policy_version text` (both nullable), each user's own Terms of Service and Privacy Policy acceptance. It mirrors the chapter columns from `20260604130000_chapter_legal_acceptance.sql`, minus `legal_accepted_by`, since the user is the row. `LegalAcceptanceService` stamps both from the session and the server's `LEGAL_POLICY_VERSION`. The rule is in [`spec/behavior/legal.md`](../../spec/behavior/legal.md#acceptance-record) § Acceptance record.
+- **Purpose**: Adds `users.legal_accepted_at timestamptz` and `users.legal_policy_version text` (both nullable), each user's own Terms of Service and Privacy Policy acceptance. It mirrors the chapter columns from `20260604130000_chapter_legal_acceptance.sql`, minus `legal_accepted_by`, since the user is the row. `LegalAcceptanceService` stamps both from the session and the server's `LEGAL_POLICY_VERSION`. The rule is in [`spec/behavior/legal.md`](../../../spec/behavior/legal.md#acceptance-record) § Acceptance record.
 - **Safety**: `ADD COLUMN IF NOT EXISTS`, nullable with no default, so it's backward-compatible and not lock-heavy. No backfill: null means "never accepted", and the API release that reads these columns also bumps the policy version, so every existing user is asked once anyway. `anonymize_user` leaves both columns alone on purpose. They aren't PII, and they record what a deleted account agreed to.
 - **Checks**: After `db push`, `select column_name from information_schema.columns where table_name='users' and column_name like 'legal_%';` returns 2 rows (`legal_accepted_at`, `legal_policy_version`).
 - **Promoter notes**:
@@ -345,7 +345,7 @@ One statement to run, the re-queue below. Within an hour of the API carrying #11
   - **Deploy web with the API.** A browser tab still running the pre-#2302 bundle sends no checkbox, so its joins are refused with a message it can't act on until the page reloads. A mobile binary built before #2302 would be stuck the same way, with no reload to fix it. None is in users' hands as of 2026-09-23 (ADR-24: no App Store version approved yet), which is why this ships before the first one.
   - Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-per-user-terms-acceptance-20260923190000) § Rollback per-user Terms acceptance.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-per-user-terms-acceptance-20260923190000) § Rollback per-user Terms acceptance.
 
 ## 2026-09-15: Chat report and block (#2257)
 
@@ -358,11 +358,11 @@ One statement to run, the re-queue below. Within an hour of the API carrying #11
   `select count(*) from pg_policies where tablename in ('chat_message_reports','chat_member_blocks');` returns **0** — a non-zero result here is the regression the table comments argue against.
 - **Promoter notes**: Additive only. Ship with the API slice that writes them (the report and block modules land in a later slice of #2257; nothing reads these tables until then). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-chat-report-and-block-20260915210000) § Rollback chat report and block.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-report-and-block-20260915210000) § Rollback chat report and block.
 
 ### 20260915210100_anonymize_user_purge_chat_blocks.sql
 
-- **Purpose**: Function-only. `create or replace function anonymize_user(...)` adding two purges — `chat_member_blocks` on the **blocker side only**, and `rush_candidate_votes` (#494, which had been missing a purge line since it shipped). What is purged and what is deliberately retained is owned by [`spec/behavior/data-retention.md`](../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion; read the reasoning there rather than here, so the two cannot drift.
+- **Purpose**: Function-only. `create or replace function anonymize_user(...)` adding two purges — `chat_member_blocks` on the **blocker side only**, and `rush_candidate_votes` (#494, which had been missing a purge line since it shipped). What is purged and what is deliberately retained is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion; read the reasoning there rather than here, so the two cannot drift.
 - **Checks**: After `db push`, with a throwaway user holding a block in each direction plus a filed report and a rush ballot, `select anonymize_user('<uuid>');` then
   `select count(*) from chat_member_blocks where blocker_user_id = '<uuid>';` returns **0**;
   `select count(*) from chat_member_blocks where blocked_user_id = '<uuid>';` is **unchanged** (this is the safety property, not an oversight);
@@ -372,7 +372,7 @@ One statement to run, the re-queue below. Within an hour of the API carrying #11
   `select position('chat_member_blocks' in regexp_replace(prosrc, '--[^\n]*', '', 'g')) > 0 from pg_proc where proname = 'anonymize_user';`
 - **Promoter notes**: Apply with or after `20260915210000` — the function references `chat_member_blocks`, and plpgsql resolves the table at execution time, so applying it first would not fail at migration time but would fail on the first account deletion. Re-applying is idempotent.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-anonymize_user-chat-block-purge-20260915210100) § Rollback anonymize_user chat block purge.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-anonymize_user-chat-block-purge-20260915210100) § Rollback anonymize_user chat block purge.
 
 ## 2026-09-09: Subscription webhook RPC returns pre-UPDATE status (#1979)
 
@@ -413,7 +413,7 @@ the same run). Hosted projects are not applied from a cloud-agent session.
   `select indexname from pg_indexes where indexname = 'rush_candidates_chapter_name_key';` returns 1 row.
 - **Promoter notes**: Additive only. Ship with the API that writes them (`RushModule`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-rush-candidates-20260910020000) § Rollback rush candidates.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-rush-candidates-20260910020000) § Rollback rush candidates.
 
 ## 2026-09-09: System actor display_name becomes Signet System (#1935)
 
@@ -558,7 +558,7 @@ SELECT`; `select qual from pg_policies where policyname =
   role, so PGlite skips the policy half but applies and exercises the predicate
   half; the PGlite policy inventory's hosted figure moves from 11 to 12 and
   `authorization-model.md` § "The policies that do exist" says why.
-- **Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md) §
+- **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md) §
   Rollback the private presence topics.
 
 ## 2026-09-06: `get_points_leaderboard` RPC
@@ -585,7 +585,7 @@ SELECT`; `select qual from pg_policies where policyname =
   that `20260901173000` had to close for the earlier read RPCs. No dependency
   on `20260906120000`, which merely shares its date; the `+1` suffix only keeps
   the version prefixes unique.
-- **Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md) §
+- **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md) §
   Rollback `get_points_leaderboard` RPC.
 
 ## 2026-09-06: Audit-log action filter index
@@ -604,7 +604,7 @@ SELECT`; `select qual from pg_policies where policyname =
   blocking the officer-action audit inserts for its duration. The table is
   small and append-only, so this is short; still, prefer a low-traffic window
   on production. No backfill, no data change, no API coupling.
-- **Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md) §
+- **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md) §
   Rollback `idx_audit_log_chapter_action_created_at`.
 
 ## 2026-09-05: Ops-setup nudge dismissals (#492)
@@ -747,9 +747,9 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
   - `select column_default from information_schema.columns where table_name='discord_imports' and column_name='source';` → **`'upload'::text`**. Every pre-existing import must still read as an upload with no backfill.
   - `select pg_get_constraintdef(oid) from pg_constraint where conname='discord_imports_source_check';` → `CHECK ((source = ANY (ARRAY['upload'::text, 'bot'::text])))`
   - `select indexdef from pg_indexes where indexname='idx_discord_import_channels_order';` → on `(import_id, position, discord_channel_id)`
-  - Sanity: `GET /v1/discord/availability` answers `200` with `{"available":true}` once the secrets are set, and the Discord card appears as a second option in the import wizard's source step — the DiscordChatExporter upload path must still be offered alongside it, not replaced. **`available: true` does not prove the Message Content Intent**, which is checked separately below; what it does cover (the five variables, and the redirect registration as far as Discord's answer lists it) is in [`integrations.md`](deployment/integrations.md) § 7A under "Verify after setup".
+  - Sanity: `GET /v1/discord/availability` answers `200` with `{"available":true}` once the secrets are set, and the Discord card appears as a second option in the import wizard's source step — the DiscordChatExporter upload path must still be offered alongside it, not replaced. **`available: true` does not prove the Message Content Intent**, which is checked separately below; what it does cover (the five variables, and the redirect registration as far as Discord's answer lists it) is in [`integrations.md`](../deployment/integrations.md) § 7A under "Verify after setup".
 - **Rollback**: see **Rollback the Discord bot connection** in
-  [`db-rollback-playbook.md`](db-rollback-playbook.md). **Read it before
+  [`db-rollback-playbook.md`](../db-rollback-playbook.md). **Read it before
   promoting** — dropping `discord_connections` discards every chapter's guild
   mapping, and there is no way to rebuild one without each chapter's admin
   re-running the OAuth flow by hand.
@@ -786,7 +786,7 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
   - `select indexdef from pg_indexes where indexname='idx_discord_oauth_states_confirm_token';` → `UNIQUE`, with predicate **`WHERE (confirm_token IS NOT NULL)`**. Unique rather than plain because two rows sharing a token would make "the pending connection this token names" ambiguous, and resolving that ambiguity would decide which chapter gets a guild.
   - Sanity: complete a connect against a scratch Discord server, then confirm the callback lands on `…/discord-import?discord=…` and never returns a raw 500. A JSON error body here means the API is answering a top-level browser redirect with an exception — most often this migration pair not being applied at all, which is exactly how it presented on staging.
 - **Rollback**: see **Rollback the Discord connect confirmation** in
-  [`db-rollback-playbook.md`](db-rollback-playbook.md). **Read it before
+  [`db-rollback-playbook.md`](../db-rollback-playbook.md). **Read it before
   promoting** — rolling this back alone re-opens the confused-deputy hole
   described above, so it is a rollback of the pair or neither.
 
@@ -794,7 +794,7 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
   this, and all of it is dashboard-only:
   - The four Discord secrets must exist in Infisical for the environment. Names
     and per-environment values are owned by
-    [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) — do not restate them
+    [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) — do not restate them
     here. `GET /v1/discord/availability` answering `false` after a clean
     promotion means a missing secret or a Discord-side setup mistake, not a
     missing table; the API's log names which (`integrations.md` § 7A).
@@ -813,11 +813,11 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
     `discord_oauth_states` row before the error page, and unconsumed rows with no
     matching `discord_connections` row are the fingerprint until the hourly
     worker deletes them. Both are in
-    [`integrations.md`](deployment/integrations.md) § 7A.
+    [`integrations.md`](../deployment/integrations.md) § 7A.
   - The Message Content Intent must be ON for the app. Without it Discord answers
     `200` with `content: ""` on every message. The importer checks the toggle
     before it writes; what that check proves, and when a green import is not
-    proof, is in [`integrations.md`](deployment/integrations.md) § 7A (setup
+    proof, is in [`integrations.md`](../deployment/integrations.md) § 7A (setup
     step 5, and the caveat under that section's failure table). Confirm the
     toggle in the portal too, as that caveat says.
 
@@ -869,7 +869,7 @@ it depends on (`chat_messages.author_name`, `chat_message_attachments`, and the
   - `select indexdef from pg_indexes where indexname='idx_chat_messages_discord_import';` → predicate is **`WHERE (kind = 'imported')`**. This is load-bearing and the obvious alternative is silently broken: Postgres must prove the query's `WHERE` implies the index predicate, and it cannot derive `metadata ? 'discord_import_id'` from `metadata ->> 'discord_import_id' = $1`. With that predicate the purge does not use the index even with `enable_seqscan = off` — unreachable, not merely unattractive, and indistinguishable from working until an import gets large.
   - Sanity: `POST /v1/discord-imports` without `consent_acknowledged` answers 400.
 - **Rollback**: see **Rollback the Discord importer** in
-  [`db-rollback-playbook.md`](db-rollback-playbook.md). **Read it before
+  [`db-rollback-playbook.md`](../db-rollback-playbook.md). **Read it before
   promoting** — dropping `external_message_id` destroys re-run idempotency for
   any archive already imported, so re-running the importer after that rollback
   duplicates the whole archive.
@@ -923,7 +923,7 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   - Sanity: an existing message still shows its sender in the web client (the
     label now resolves through `resolveAuthorLabel` in `@repo/hooks`).
 - **Rollback**: see **Rollback the chat author fields** in
-  [`db-rollback-playbook.md`](db-rollback-playbook.md). **Coordinated** — re-adding
+  [`db-rollback-playbook.md`](../db-rollback-playbook.md). **Coordinated** — re-adding
   `NOT NULL` fails while any imported row exists.
 
 ### 20260823121000_chat_message_attachments.sql
@@ -1075,7 +1075,7 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   `chapters/{chapter_id}/chat-archive/imports/{import_id}/{export,media}/…` —
   which also gives the per-import purge a single prefix to sweep. Canonical
   definition: `archiveImportPrefix()` in
-  [`apps/api/src/domain/constants/storage.ts`](../../apps/api/src/domain/constants/storage.ts).
+  [`apps/api/src/domain/constants/storage.ts`](../../../apps/api/src/domain/constants/storage.ts).
 - **⚠️ Human action on the hosted projects.** `supabase/config.toml` sets a
   **global** storage `file_size_limit`, raised to `104857600` in this change for
   the local stack. The hosted projects have an equivalent **project-level**
@@ -1145,7 +1145,7 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   - Sanity: no member sees their own messages as unread — pick a chapter's most recent sender and
     confirm the channel they just posted in does not count that message.
 - **Rollback**: see **Rollback the chat unread/mention slice** in
-  [`db-rollback-playbook.md`](db-rollback-playbook.md). Note it is a **coordinated** rollback — the
+  [`db-rollback-playbook.md`](../db-rollback-playbook.md). Note it is a **coordinated** rollback — the
   API must be redeployed to a pre-C1 revision _before_ the function is dropped, or
   `GET /v1/channels/unread` 500s on every poll.
 
@@ -1200,7 +1200,7 @@ Postgres stores the executed SQL, so a migration absent from git is still fully 
 **This class of drift now has a detector.** `.github/workflows/check-migration-drift.yml` runs
 daily (07:00 UTC) and compares `supabase_migrations.schema_migrations` on each deployed database
 against what it should hold. What each is judged against, what it classifies and when it
-tolerates a pending row: [`agent-infra.md` § Schema drift detection](../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs). A failure upserts one `incident` tracking issue and closes it once every
+tolerates a pending row: [`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs). A failure upserts one `incident` tracking issue and closes it once every
 environment is back in sync, so "alert issue open" means "a deployed database is drifting right
 now". Semantics in `scripts/ci/check-migration-drift.mjs`; run it by hand from the Actions tab
 (`workflow_dispatch`, with an adjustable grace window) or via `npm run check:migration-drift`.
@@ -1281,7 +1281,7 @@ something a watchdog should do on its own.
 - **Purpose**: Adds `users.active_chapter_id uuid references chapters(id) on delete set null` and the `public.custom_access_token_hook(event jsonb)` auth hook that stamps it into every issued access token as the top-level `active_chapter_id` claim. This is the authoritative chapter context `ChapterGuard` reconciles against per `spec/behavior/multi-tenancy.md`; before it, the client-supplied `x-chapter-id` header was the only source.
 - **Safety**: Additive — one nullable column (`ADD COLUMN IF NOT EXISTS`, no default, no backfill) plus `create or replace function`. The hook body is wrapped in `exception when others then return event`, so a failure degrades to an unmodified token rather than blocking sign-in. Role grants are guarded on `pg_roles` existence, so the file also applies on bare Postgres / PGlite. Two SELECT policies scoped **to `supabase_auth_admin` only** are added on `users` and `members` (both have RLS enabled with no policies); the API uses the service-role key and bypasses RLS, so no other caller's visibility changes.
 - **⚠️ Required manual step per hosted environment**: applying the migration does **not** enable the hook. Enable it in the Supabase dashboard (**Authentication → Hooks** → Custom Access Token → `public.custom_access_token_hook`), or via the Management API `PATCH /v1/projects/{ref}/config/auth` with `hook_custom_access_token_enabled: true` and `hook_custom_access_token_uri: "pg-functions://postgres/public/custom_access_token_hook"`. Local is already wired through `[auth.hook.custom_access_token]` in `supabase/config.toml`. **Order does not matter**: until the hook is enabled the claim is simply absent and the `x-chapter-id` fallback carries context, so the migration is safe to promote ahead of the toggle.
-- **Status**: enabled on **`frapp-staging`** as of 2026-08-10 (Postgres function, schema `public`, function `custom_access_token_hook`) and verified with a live password-grant sign-in — the decoded access token carried a top-level `active_chapter_id`. **Enabled on `frapp-prod` as of 2026-09-07** (correction; the 2026-08-10 status said it was not). Checked with `GET /v1/projects/unttyvyfezddlyafcydh/config/auth`: `hook_custom_access_token_enabled: true`, URI `pg-functions://postgres/public/custom_access_token_hook`. The function exists; `supabase_auth_admin` has `EXECUTE`; `anon`/`authenticated` do not. Prod still has `chapters=0` / `members=0`, so a correctly-working hook still issues a token with no claim until the first membership exists — that is the runbook check below, not a sign the hook is off. The dashboard toggle that was #805 is done. Live Auth SMTP and send-cap observations live in the dated table in [`supabase.md`](deployment/supabase.md#auth-settings-hosted-dashboard-or-management-api) (Auth settings) — do not restate them here.
+- **Status**: enabled on **`frapp-staging`** as of 2026-08-10 (Postgres function, schema `public`, function `custom_access_token_hook`) and verified with a live password-grant sign-in — the decoded access token carried a top-level `active_chapter_id`. **Enabled on `frapp-prod` as of 2026-09-07** (correction; the 2026-08-10 status said it was not). Checked with `GET /v1/projects/unttyvyfezddlyafcydh/config/auth`: `hook_custom_access_token_enabled: true`, URI `pg-functions://postgres/public/custom_access_token_hook`. The function exists; `supabase_auth_admin` has `EXECUTE`; `anon`/`authenticated` do not. Prod still has `chapters=0` / `members=0`, so a correctly-working hook still issues a token with no claim until the first membership exists — that is the runbook check below, not a sign the hook is off. The dashboard toggle that was #805 is done. Live Auth SMTP and send-cap observations live in the dated table in [`supabase.md`](../deployment/supabase.md#auth-settings-hosted-dashboard-or-management-api) (Auth settings) — do not restate them here.
 - **Checks**: After `db push`, `select proname from pg_proc where proname = 'custom_access_token_hook';` returns 1 row; `select has_function_privilege('supabase_auth_admin', 'public.custom_access_token_hook(jsonb)', 'execute');` returns `true` and the same for `anon`/`authenticated` returns `false`. After enabling the hook, sign in as a single-chapter user and decode the access token — `active_chapter_id` must be present. If sign-in breaks, disable the hook in the dashboard first (instant mitigation, no deploy needed), then investigate.
 
 **Rollback**: See `db-rollback-playbook.md` § Rollback active-chapter JWT claim.

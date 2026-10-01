@@ -80,7 +80,7 @@ import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-d
 import { resilientFetch } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 // Files are moved here, not copied and deleted: a rename inside one filesystem
@@ -239,7 +239,7 @@ export function decideOutcome({ partition, replay }) {
         `both and can tell you.\n\n` +
         `If it is unapplied everywhere — the ordinary case for a migration still in review — ` +
         `rename it to a version after \`${newestApplied}\`, keeping its name. Otherwise read ` +
-        `${PROMOTION_LOG} § \`--include-all\` first.`,
+        `${DRIFT_AND_ORDERING} § \`--include-all\` first.`,
     };
   }
 

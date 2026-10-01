@@ -164,7 +164,7 @@ test("one offending environment fails the whole gate and carries the remedy", ()
   assert.match(outcome.message, /20260829002001_<same_name>\.sql/);
   // The CLI's own words, so the failure is searchable against the real error.
   assert.match(outcome.message, /inserted before the last migration on remote database/);
-  assert.match(outcome.message, /db-promotion-runbook\.md/);
+  assert.match(outcome.message, /drift-and-ordering\.md/);
 });
 
 // ── runOrderGate — end to end, offline ──────────────────────────────────────

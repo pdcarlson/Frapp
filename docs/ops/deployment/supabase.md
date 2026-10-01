@@ -65,7 +65,7 @@ Realtime peak connections have no API, so only the Usage page shows them.
   size limit**, which Free capped at 50 MB. Discord allows 100 MB attachments and the `chat-archive`
   bucket accepts 100 MB, but the lower of the two limits wins. Why a new project needs it set by hand,
   and the upload that proves it took effect:
-  [`db-promotion-runbook.md` § 20260823124000_chat_archive_bucket.sql](../db-promotion-runbook.md#20260823124000_chat_archive_bucketsql).
+  [`promotion-log.md` § 20260823124000_chat_archive_bucket.sql](../database/promotion-log.md#20260823124000_chat_archive_bucketsql).
 - **`frapp-prod` shows Supabase's daily backups (#1403),** under **Database → Backups**. The nightly offsite dump
   still runs, and it is still the only copy that survives deleting the project, and the only
   backup of Storage files:
@@ -85,7 +85,7 @@ npx supabase db push
 
 Follow the internal promotion and rollback runbooks when promoting schema changes:
 
-- `docs/ops/db-promotion-runbook.md`
+- `docs/ops/database/promotion.md`
 - `docs/ops/db-rollback-playbook.md`
 
 ### Edge Functions

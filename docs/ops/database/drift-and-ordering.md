@@ -6,22 +6,22 @@ Three checks, deliberately different shapes:
 
 | Check                                                                                                 | When                                                   | Scope                      | On failure                     |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------- | ------------------------------ |
-| `migration-order` ([`migration-drift-gate.yml`](../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging **and** production | Blocks the merge               |
+| `migration-order` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging **and** production | Blocks the merge               |
 | `migration-drift` (same workflow)                                                                     | Every PR and every push to `main` — **reports only**   | Staging only               | Reports; does not block        |
-| [`check-migration-drift.yml`](../../.github/workflows/check-migration-drift.yml)                   | Daily, 07:00 UTC                                       | Staging **and** production | Files/updates a tracking issue |
+| [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml)                   | Daily, 07:00 UTC                                       | Staging **and** production | Files/updates a tracking issue |
 
 All three are read-only, and none of them ever repairs anything. The daily
 watchdog calls the Supabase Management API's migration-history endpoint itself
 and sends no SQL. The two PR checks, and `migration-replay` in the same
 workflow, hold no credential at all (#2518). They read the snapshot of that same
 endpoint that
-[`migration-snapshot.yml`](../../.github/workflows/migration-snapshot.yml)
+[`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml)
 publishes from `main` after every deploy. Off `main` (a pull request, or a
 dispatch on a branch), when the snapshot predates the latest deploy,
 `migration-order` and `migration-replay` wait for the next publish (the
-budget is set in [`download-migration-snapshot`'s header](../../.github/actions/download-migration-snapshot/action.yml)),
+budget is set in [`download-migration-snapshot`'s header](../../../.github/actions/download-migration-snapshot/action.yml)),
 then fail and name the publisher
-([`agent-infra.md` § GitHub environments and bootstrap secrets](../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
+([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
 `migration-drift` never waits: it judges the newest snapshot as it is, and says
 when a `Deploy staging` run has overtaken that snapshot (below).
 

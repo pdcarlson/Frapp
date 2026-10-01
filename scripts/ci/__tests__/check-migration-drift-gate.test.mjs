@@ -432,7 +432,7 @@ test("the summary names the missing migrations and how to fix them", async () =>
   assert.equal(summaries.length, 1);
   assert.match(summaries[0], /discord_import/);
   assert.match(summaries[0], /discord_bot_connection/);
-  assert.match(summaries[0], /db-promotion-runbook\.md/);
+  assert.match(summaries[0], /docs\/ops\/database\/promotion\.md/);
 });
 
 test("the summary explains a foreign migration blocks db push", () => {

@@ -158,7 +158,7 @@ All live in `interface/decorators/`.
 2. Enable RLS on every new table: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;`.
 3. Apply locally with `npx supabase db push --local`.
 4. Add an entry for the migration to both
-   [`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md) and
+   [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
    [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), in the entry
    shape each one states. `check:migration-safety` fails on a migration missing from either (see
    the [`testing`](../testing/SKILL.md) skill for reading its failures).

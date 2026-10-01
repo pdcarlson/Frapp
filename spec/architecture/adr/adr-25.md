@@ -44,7 +44,7 @@
        - The App Review demo seed's placeholder PDF text in `scripts/demo/seed-demo.mjs`. If the production seed (#2309) runs before this step, re-run its `storage` command after it.
      - *Specs and docs:*
        - the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`;
-       - a new dated entry for the system actor in `db-promotion-runbook.md` and `db-rollback-playbook.md`, which record the 2026-09-09 `Signet System` rename;
+       - a new dated entry for the system actor in `promotion-log.md` and `db-rollback-playbook.md`, which record the 2026-09-09 `Signet System` rename;
        - every email string in `docs/ops/deployment/supabase.md`: the SMTP table, the From addresses, the conformance description, and the Magic Link template's subject and body;
        - the conformance assertions restated in `agent-infra.md` (the staging and production conformance rows) and `alert-routing.md` (the production Auth row);
        - the `RESEND_FROM_EMAIL` default and staging value in `ENV_REFERENCE.md`.
@@ -60,7 +60,7 @@
        - the web half of `writing.md` § 7's Sign in title;
        - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note;
        - the onboarding welcome slide in `spec/ui/design-system/iconography.md`;
-       - the Discord application and bot names and the consent screen in `docs/ops/deployment/integrations.md`, `ENV_REFERENCE.md` (`DISCORD_BOT_TOKEN`), `db-promotion-runbook.md` and `db-rollback-playbook.md`;
+       - the Discord application and bot names and the consent screen in `docs/ops/deployment/integrations.md`, `ENV_REFERENCE.md` (`DISCORD_BOT_TOKEN`), `promotion-log.md` and `db-rollback-playbook.md`;
        - the Services ID Description in `supabase.md` § Auth OAuth providers;
        - the Stripe account name in `ENV_REFERENCE.md`.
      - *Consoles (owner),* so no recovery instruction or consent screen names something the member can't find:

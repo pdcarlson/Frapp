@@ -385,7 +385,7 @@ export class ScheduledJobsRepository {
    * that write lands between this sweep's read and its own: it changes the
    * seed without touching the stamp. One that lands after this write is not
    * caught anywhere. The row keeps that instance's palette under a current
-   * stamp until the next accent save, so `db-promotion-runbook.md` (#1165)
+   * stamp until the next accent save, so `docs/ops/database/promotion-log.md` (#1165)
    * re-queues every row once after that deploy (and after a re-land). Later engine bumps
    * have no such gap: an older instance stamps its own, lower version, and
    * the sweep picks the row up again.

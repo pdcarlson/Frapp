@@ -6,8 +6,21 @@
 // docs out of docs/internal/ops/ and found them copied into a dozen scripts and
 // nine tests.
 
-/** The dated log of what each hosted database was promoted to. */
-export const PROMOTION_LOG = "docs/ops/db-promotion-runbook.md";
+/**
+ * The dated log of what each hosted database was promoted to, and the ledger
+ * `check:migration-safety` reads. Point a reader at procedure through the two
+ * constants below, never through this one.
+ */
+export const PROMOTION_LOG = "docs/ops/database/promotion-log.md";
+
+/** How a migration reaches staging and production, and the checks around it. */
+export const PROMOTION_RUNBOOK = "docs/ops/database/promotion.md";
+
+/**
+ * What `migration-order` and `migration-drift` judge, and the two recoveries a
+ * red one can need: `--include-all`, and reconciling a foreign migration row.
+ */
+export const DRIFT_AND_ORDERING = "docs/ops/database/drift-and-ordering.md";
 
 /** Per-migration rollback recipes, and backup recovery. */
 export const ROLLBACK_PLAYBOOK = "docs/ops/db-rollback-playbook.md";
