@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
 import { useAdjustPoints, type AdjustPointsBody } from "./use-points";
@@ -27,23 +27,41 @@ const BODY: AdjustPointsBody = {
 const ok = () => ({
   data: { id: "txn-1" },
   error: undefined,
-  response: { status: 201 },
+  response: { status: 201, ok: true },
 });
 /** A gateway 502: an HTML body that parses to a string carrying no status. */
 const badGateway = () => ({
   data: undefined,
   error: "<html>502 Bad Gateway</html>",
-  response: { status: 502 },
+  response: { status: 502, ok: false },
+});
+/** An edge's HTML refusal: a definitive 403 whose body carries no status. */
+const edgeForbidden = () => ({
+  data: undefined,
+  error: "<html>403 Forbidden</html>",
+  response: { status: 403, ok: false },
 });
 const refused = (statusCode: number) => ({
   data: undefined,
   error: { statusCode, message: "Refused", error: "Bad Request" },
-  response: { status: statusCode },
+  response: { status: statusCode, ok: false },
+});
+/**
+ * openapi-fetch's shape for an empty error body: `undefined` when the response
+ * says `Content-Length: 0`, `""` otherwise. Both falsy, so only `response.ok`
+ * tells it from a success.
+ */
+const emptyBody = (status: number, error: undefined | "" = undefined) => ({
+  data: undefined,
+  error,
+  response: { status, ok: false },
 });
 
 describe("useAdjustPoints", () => {
   let queryClient: QueryClient;
   let post: ReturnType<typeof vi.fn>;
+  /** The active chapter the provider hands the hook; a test may switch it. */
+  let activeChapter: string;
 
   beforeEach(() => {
     // `retryDelay: 0` so the hook's own retry rule runs without real backoff.
@@ -51,6 +69,7 @@ describe("useAdjustPoints", () => {
       defaultOptions: { mutations: { retryDelay: 0 } },
     });
     post = vi.fn();
+    activeChapter = "chapter-a";
   });
 
   function render() {
@@ -58,7 +77,7 @@ describe("useAdjustPoints", () => {
       typeof createFrappClient
     >;
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider client={client}>
+      <FrappClientProvider client={client} chapterId={activeChapter}>
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
@@ -197,5 +216,119 @@ describe("useAdjustPoints", () => {
     const keys = sentKeys();
     expect(keys.slice(0, 3)).toEqual([keys[0], keys[0], keys[0]]);
     expect(keys[3]).not.toBe(keys[0]);
+  });
+
+  it.each([
+    ["an empty body", emptyBody(504)],
+    ["an empty text body", emptyBody(502, "")],
+  ])("retries a lost response with %s under the same key", async (_l, lost) => {
+    post.mockResolvedValueOnce(lost).mockResolvedValueOnce(ok());
+    const { result } = render();
+
+    await submit(result);
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(new Set(sentKeys()).size).toBe(1);
+  });
+
+  it("reads an edge's status-less HTML 403 as a refusal, not a lost response", async () => {
+    post.mockResolvedValueOnce(edgeForbidden()).mockResolvedValueOnce(ok());
+    const { result } = render();
+
+    await submit(result);
+    await submit(result);
+
+    // No retry of the refusal, and the next submit is a fresh adjustment.
+    const [first, second] = sentKeys();
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(second).not.toBe(first);
+  });
+
+  it.each([
+    ["member", { target_user_id: "22222222-2222-4222-8222-222222222222" }],
+    ["category", { category: "FINE" as const }],
+    ["reason", { reason: "Ran the philanthropy table, corrected" }],
+  ])("mints a fresh key when the %s changes after a failure", async (_l, change) => {
+    post.mockResolvedValue(badGateway());
+    const { result } = render();
+
+    await submit(result);
+    await submit(result, { ...BODY, ...change });
+
+    const keys = sentKeys();
+    expect(keys[3]).not.toBe(keys[0]);
+  });
+
+  it("keeps the key when a retry is refused after an attempt that may have committed", async () => {
+    // A throttler 429 or a guard 403 runs before the server's replay check, so
+    // it says nothing about whether the first attempt landed.
+    post.mockResolvedValueOnce(badGateway()).mockResolvedValue(refused(429));
+    const { result } = render();
+
+    await submit(result);
+    const [uncertainKey] = sentKeys();
+    expect(uncertainKey).toMatch(UUID_V4);
+    post.mockReset();
+    post.mockResolvedValue(ok());
+    await submit(result);
+
+    expect(sentKeys()).toEqual([uncertainKey]);
+  });
+
+  it("drops a key the server says was used for another adjustment", async () => {
+    post.mockResolvedValueOnce(badGateway()).mockResolvedValueOnce(refused(409));
+    const { result } = render();
+
+    await submit(result);
+    const [usedKey] = sentKeys();
+    post.mockReset();
+    post.mockResolvedValue(ok());
+    await submit(result);
+
+    expect(sentKeys()[0]).not.toBe(usedKey);
+  });
+
+  it("mints a fresh key after reset, which the dialog calls on open", async () => {
+    post.mockResolvedValue(badGateway());
+    const { result } = render();
+
+    await submit(result);
+    const [heldKey] = sentKeys();
+    act(() => result.current.reset());
+    post.mockReset();
+    post.mockResolvedValue(ok());
+    await submit(result);
+
+    expect(sentKeys()[0]).not.toBe(heldKey);
+  });
+
+  it("refuses to retry once the active chapter has changed", async () => {
+    let answerFirst!: (value: ReturnType<typeof badGateway>) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+    );
+    post.mockResolvedValue(ok());
+    const { result, rerender } = render();
+
+    let outcome: Promise<unknown> = Promise.resolve();
+    act(() => {
+      outcome = result.current.mutateAsync(BODY).catch((error) => error);
+    });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    // Another tab switches the chapter while the first attempt is in flight.
+    activeChapter = "chapter-b";
+    rerender();
+    await act(async () => {
+      answerFirst(badGateway());
+      await outcome;
+    });
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(await outcome).toMatchObject({
+      name: "AdjustmentChapterChangedError",
+    });
   });
 });
