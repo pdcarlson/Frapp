@@ -65,7 +65,6 @@ import { FOCUS_RING } from "@/components/ui/focus";
  */
 const badgeVariants = cva(
   cn(
-    // 12.5 is the `caption` role from foundations.md §7, not an off-scale size.
     "inline-flex h-7 items-center rounded-xs border px-2.5 text-caption font-semibold transition-colors",
     FOCUS_RING,
   ),

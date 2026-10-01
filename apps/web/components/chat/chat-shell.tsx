@@ -1634,7 +1634,7 @@ export function ChatShell({
               its content. With `shrink-0` a long channel name simply overflows
               and paints under the `⋯` trigger beside it.
             */}
-            <h1 className="flex min-w-0 items-center gap-2 text-[15px] font-bold text-foreground">
+            <h1 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
               {activeChannel ? (
                 <>
                   <ChannelHeaderMark

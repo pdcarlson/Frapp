@@ -134,7 +134,7 @@ export function NotificationLevelPanel({
                     : "text-foreground hover:bg-card",
                 )}
               >
-                <span className="text-[14.5px] font-semibold">
+                <span className="text-label font-semibold">
                   {option.label}
                 </span>
                 <span

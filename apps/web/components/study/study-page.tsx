@@ -603,13 +603,12 @@ export function StudyPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {/*
-              32 is foundations §7's `display` role, spelled the way
-              `ui/badge.tsx` spells `caption` — an arbitrary value that is on
-              the scale, not off it. No mono: §7's own callout retired it for
-              this numeral, and the Canvas reference (s10) draws the running
-              timer in Figtree 700 with tabular-nums in `accent-text`.
+              foundations §7's `display` role. No mono: §7's own callout
+              retired it for this numeral, and the Canvas reference (s10) draws
+              the running timer in Figtree 700 with tabular-nums in
+              `accent-text`.
             */}
-            <div className="text-[32px] font-bold tabular-nums tracking-tight text-accent-text">
+            <div className="text-display font-bold tabular-nums tracking-tight text-accent-text">
               {formatDuration(elapsedSeconds)}
             </div>
             <div className="flex flex-wrap items-center gap-2">

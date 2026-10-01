@@ -73,7 +73,7 @@ export function PageSettingsDrawer({
         className="flex w-full flex-col gap-0 p-0 sm:w-[400px] sm:max-w-[400px]"
       >
         <SheetHeader className="h-12 flex-none space-y-0 border-b border-border px-4">
-          <SheetTitle className="flex h-12 items-center text-[15px] font-bold">
+          <SheetTitle className="flex h-12 items-center text-label font-bold">
             {title}
           </SheetTitle>
         </SheetHeader>

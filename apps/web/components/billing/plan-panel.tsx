@@ -355,7 +355,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             on the 24px *page title* one line up (`:244`, the word
             "Subscription"), and its 22px plan name has no `letter-spacing` at
             all. The title that tracking belongs to is not rendered on this
-            route anyway; `PageHeader` supplies the heading at 15/700.
+            route anyway; `PageHeader` supplies the heading, at `label`/700.
 
             An `<h2>`, not the route's `<h1>`: `PageHeader` owns that, and one
             typographic anchor per screen is its whole contract.

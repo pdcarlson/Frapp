@@ -184,7 +184,7 @@ export function RolesMatrix({
   return (
     <div className="overflow-x-auto">
       <div
-        className="min-w-fit overflow-hidden rounded-[14px] border border-border text-[13.5px]"
+        className="min-w-fit overflow-hidden rounded-[14px] border border-border text-label font-normal"
         role="table"
         aria-label="Roles and permissions"
       >
@@ -243,7 +243,7 @@ export function RolesMatrix({
                 >
                   {role.name}
                 </span>
-                <span className="block text-[11px] text-muted-foreground">
+                <span className="block text-caption text-muted-foreground">
                   {count}
                 </span>
               </div>

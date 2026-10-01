@@ -122,7 +122,7 @@ export function AccountMenu({
                 {name}
               </span>
               {email ? (
-                <span className="block truncate text-[11px] text-muted">
+                <span className="block truncate text-caption text-muted">
                   {email}
                 </span>
               ) : null}

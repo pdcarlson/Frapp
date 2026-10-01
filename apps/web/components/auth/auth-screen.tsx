@@ -90,7 +90,7 @@ export function AuthScreen({
             // s01's wordmark is the display step; s02's screen title is the
             // headline step. The mark's presence is what distinguishes an
             // entry screen from a step within the flow.
-            mark ? "text-[32px] leading-tight" : "text-2xl",
+            mark ? "text-display leading-tight" : "text-2xl",
           )}
         >
           {title}

@@ -162,7 +162,7 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
              * `shared/elevation-contrast.spec.ts`.
              */
             className={cn(
-              "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[13px]",
+              "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-caption",
               index === clampedIndex && "bg-accent-subtle text-accent-text",
             )}
             onMouseEnter={() => setSelectedIndex(index)}

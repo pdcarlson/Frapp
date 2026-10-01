@@ -66,7 +66,7 @@ export const UPLOAD_FIELD_CLASS = "h-11";
  * and the board draws the footer at 15px. Spelling the height here rather than
  * adding a `size` variant keeps the change inside this lane.
  */
-export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-[15px]";
+export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-label";
 
 /**
  * The sheet container.
