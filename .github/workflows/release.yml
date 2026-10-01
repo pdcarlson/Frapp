@@ -164,6 +164,10 @@ jobs:
             scripts/ci/lib
           echo "Overlaid bump classifier from $WORKFLOW_SHA onto live tree $LIVE_SHA."
 
+      # Hand-written, not ./.github/actions/node-setup: a local action loads
+      # from the tree on disk, which is the deployed commit here, so releasing
+      # a commit older than that action would fail. The version must match
+      # node-setup's (`node-setup-action.test.mjs`).
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

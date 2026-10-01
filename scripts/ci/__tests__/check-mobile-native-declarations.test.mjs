@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 // `test:ci-scripts` glob runs it. That job has no `npm ci`, so nothing below
 // runs the Expo CLI: main() takes the CLI runner as a parameter, and the real
 // run is the `mobile-validate` step pinned at the bottom.
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { installsDependencies, workflowSteps } from "./helpers/workflow-yaml.mjs";
 import {
   ANDROID_REMOVED_PERMISSIONS,
   ANDROID_RUNTIME_PERMISSIONS,
@@ -707,7 +707,7 @@ test("main fails when autolinking lists no pods or nothing is declared", () => {
 test("mobile-validate runs the gate, able to fail the job", () => {
   const steps = workflowSteps(".github/workflows/ci.yml").filter((step) => step.jobId === "mobile-validate");
   const at = (re) => steps.findIndex((step) => re.test(step.body));
-  const install = at(/^\s*-?\s*run:\s*npm\s+ci\s*$/m);
+  const install = steps.findIndex(installsDependencies);
   const gate = at(/^\s*-?\s*run:\s*npm\s+run\s+check:mobile-native-declarations\s*$/m);
   assert.ok(gate !== -1, "mobile-validate has no `npm run check:mobile-native-declarations` step");
   const prebuild = at(/\bexpo\s+prebuild\b/);

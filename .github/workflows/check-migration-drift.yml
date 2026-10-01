@@ -72,9 +72,9 @@ jobs:
         run: git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*' || echo "::warning::Could not fetch the v* tags; production will read as not checked."
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # Refs come from Infisical here, and this workflow keeps reading them that
       # way ON PURPOSE. `.github/environments.json` now also records the ref each

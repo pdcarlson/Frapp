@@ -72,6 +72,7 @@ import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
+  postRefusalHint,
   selectPostCapability,
   threadHeaderTitle,
 } from "@/lib/chat/channel-list";
@@ -121,19 +122,21 @@ export default function ChatThreadScreen() {
 
   // Channel-level metadata (#704) — mobile had no read-only/post gating of any
   // kind before this, unlike web's `chat-shell.tsx`. `can_post` already folds
-  // in `is_read_only` for posting; `isReadOnly` is read separately to pick
-  // which of the two disabled hints applies (read-only-without-permission vs.
-  // the alumni restriction — the two cases `spec/ui/design-system/writing.md`
-  // § Chat documents), and it is load-bearing for Reply: `can_post` is true in
+  // in `is_read_only` for posting; `postRefusalHint` picks which disabled hint
+  // applies (an archived Group DM, read-only-without-permission, or the alumni
+  // restriction — the cases `spec/ui/design-system/writing.md` § Chat
+  // documents). `isReadOnly` is also load-bearing for Reply: `can_post` is true in
   // #announcements for an `announcements:post` holder, yet nobody replies
   // there (`channelAllowsReplies`, #2775). `selectPostCapability` parses the payload defensively
   // the same way `selectChannels` does — `GET /v1/channels/{id}` infers as
   // `never` in the generated SDK.
   const channelQuery = useChannel(channelId ?? "");
-  const { isReadOnly: channelIsReadOnly, canPost: channelCanPost } = useMemo(
+  const postCapability = useMemo(
     () => selectPostCapability(channelQuery.data),
     [channelQuery.data],
   );
+  const { isReadOnly: channelIsReadOnly, canPost: channelCanPost } =
+    postCapability;
 
   const {
     messages,
@@ -956,9 +959,7 @@ export default function ChatThreadScreen() {
               (!canSend
                 ? "Connecting to chat…"
                 : !channelCanPost
-                  ? channelIsReadOnly
-                    ? "This channel is read-only. Posting requires the announcements:post permission."
-                    : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages."
+                  ? postRefusalHint(postCapability)
                   : appOffline
                     ? "You're offline — messages send when you reconnect, but photos need a connection."
                     : null)

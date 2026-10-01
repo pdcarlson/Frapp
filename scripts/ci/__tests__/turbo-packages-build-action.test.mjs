@@ -4,6 +4,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { usesLocalAction } from "./helpers/workflow-yaml.mjs";
+
 // Pins the cutover half of stage 4's composite-action extraction (#1382).
 //
 // The `.turbo` cache key from ADR-15 lever (A) used to be written out verbatim in
@@ -26,13 +28,12 @@ const ACTIONS = join(REPO, ".github", "actions");
 const ACTION_DIR = "turbo-packages-build";
 const ACTION = join(ACTIONS, ACTION_DIR, "action.yml");
 
-// Tolerates every legal spelling of the same step: the name-less `- uses:`
-// form, a quoted path, and a trailing comment. A stricter regex here is not
-// "safer" -- it silently fails OPEN on the negative assertions, so a
-// `- uses: ./...` added to `clean-checkout-typecheck` would disarm the
-// cold-build canary with the suite still green.
-const USES_RE =
-  /^\s*(-\s+)?uses:\s*["']?\.\/\.github\/actions\/turbo-packages-build["']?\s*(#.*)?$/;
+// Tolerates every legal spelling of the same step (the shared helper's: the
+// name-less `- uses:` form, quotes, a trailing `/` and a trailing comment). A
+// stricter regex here is not "safer" -- it silently fails OPEN on the negative
+// assertions, so a `- uses: ./...` added to `clean-checkout-typecheck` would
+// disarm the cold-build canary with the suite still green.
+const USES_RE = usesLocalAction("turbo-packages-build");
 
 // `turbo build` is Turborepo's documented shorthand for `turbo run build`, and
 // the flag may be separated by a line continuation inside a `run: |` block, so
@@ -292,36 +293,9 @@ describe("turbo-packages-build composite action", () => {
     }
   });
 
-  // A job gated on `changes.web` that builds packages must have the action in
-  // that filter, or a PR touching only the action skips it -- and both gated
-  // jobs are REQUIRED checks, which report Success when skipped.
-  it("is a path-filter input for the gated jobs that use it", () => {
-    const text = ci();
-    const gated = CONSUMERS.filter((j) => {
-      const block = jobBlock(text, j);
-      return block && block.includes("needs.changes.outputs.web");
-    });
-    assert.ok(gated.length > 0, "expected at least one web-gated consumer");
-    // Sliced to the `web:` filter specifically. Regexing the whole file would
-    // pass just as happily with the entry sitting under `pglite:`, which
-    // restores the exact hole this assertion exists to hold shut.
-    const lines = text.split("\n");
-    const start = lines.findIndex((l) => /^ {12}web:\s*$/.test(l));
-    assert.ok(start !== -1, "ci.yml must still define a `web:` paths-filter");
-    let end = lines.length;
-    for (let i = start + 1; i < lines.length; i++) {
-      if (/^ {12}\S/.test(lines[i])) {
-        end = i;
-        break;
-      }
-    }
-    const webFilter = lines.slice(start, end).join("\n");
-    assert.match(
-      webFilter,
-      /^\s*- ["']?\.github\/actions\/\*\*["']?\s*$/m,
-      `${gated.join(", ")} are gated on changes.web and build through the action, so ` +
-        "'.github/actions/**' must be in the WEB filter or a PR editing only the action " +
-        "skips required checks that report Success when skipped",
-    );
-  });
+  // Path filters: a job gated on `changes.<filter>` that calls ANY local
+  // action needs `.github/actions/**` in that filter. Checked for every local
+  // action at once in infisical-secrets-action.test.mjs § "local actions
+  // resolve at every call site", since node-setup (#1541) put one in nearly
+  // every job.
 });

@@ -82,9 +82,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # From `.github/environments.json`, the one place the ids live (#2806).
       - name: Read staging's provider ids

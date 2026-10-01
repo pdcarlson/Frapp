@@ -27,7 +27,7 @@ import {
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
-import { workflowFiles } from "./helpers/workflow-yaml.mjs";
+import { installsDependenciesIn, workflowFiles } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-release-pin.yml");
@@ -717,7 +717,7 @@ describe("workflow wiring", () => {
 
   it("runs the pin script with no npm ci", () => {
     assert.match(liveYaml, /node scripts\/ci\/production-release-pin\.mjs/);
-    assert.doesNotMatch(liveYaml, /npm ci/);
+    assert.ok(!installsDependenciesIn(liveYaml), "installs dependencies (npm ci, or node-setup `install: ci`)");
   });
 });
 

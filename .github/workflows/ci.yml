@@ -30,7 +30,8 @@ concurrency:
 # non-required parent would be a hole. See scripts/ci/lib/required-checks.mjs.
 #
 # `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
-# and prebuilds nothing, so it alone exercises the bare `npm install` path.
+# and prebuilds nothing, so it alone exercises a clean `npm ci` with no prebuilt
+# packages.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -123,6 +124,10 @@ jobs:
               # Every file the check reads belongs in this list.
               - '.github/workflows/ci.yml'
               - 'package.json'
+              # The job sets up Node and installs through node-setup, so the
+              # same reasoning as `web` applies: a PR editing only the action
+              # must not skip a required check.
+              - '.github/actions/**'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
@@ -131,14 +136,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       # The one job that writes the cache; every other job restores it.
       - name: Build shared packages
@@ -158,14 +159,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
@@ -242,7 +239,8 @@ jobs:
         run: npm run check:edge-functions
 
       # ── Clean-checkout guard (fresh-install path) ───────────────────────────
-  # Reproduces a bare `npm install && npm run check-types` on a cold machine.
+  # Reproduces a clean `npm ci && npm run check-types` on a cold machine: no
+  # prebuilt packages/*/dist.
   # Deliberately has NO `needs: packages-build` and NO
   # `./.github/actions/turbo-packages-build` step (which is what restores the
   # turbo cache and builds `packages/*`) — the eight jobs that DO use it are
@@ -263,16 +261,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      # `cache: npm` above only restores the ~/.npm download cache, never
+      # `install: ci` restores only the ~/.npm download cache, never
       # node_modules or packages/*/dist — the clean-checkout property holds.
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
 
       - name: Type check with no prebuilt packages
         run: npm run check-types
@@ -314,18 +308,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      # `omit-dev` runs `npm ci --omit=dev` rather than Vercel's
+      # `npm install --prefix=../..`: it is lockfile-exact and never writes
+      # package-lock.json, and it reproduces the same tree -- measured at
+      # 1128 packages / 1146 audited against the production build log's
+      # 1126 / 1144.
+      - name: Setup Node and install production dependencies only
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      # `npm ci` rather than Vercel's `npm install --prefix=../..`: it is
-      # lockfile-exact and never writes package-lock.json, and it reproduces
-      # the same tree -- measured at 1128 packages / 1146 audited against the
-      # production build log's 1126 / 1144.
-      - name: Install production dependencies only
-        run: npm ci --omit=dev
+          install: omit-dev
 
       # The prune is this job's entire premise, so assert it rather than assume
       # it. Two probes, one per direction: something dev-only must be gone, and
@@ -421,14 +412,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
@@ -456,14 +443,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
@@ -594,14 +577,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
@@ -676,14 +655,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
@@ -718,14 +693,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Check duplication against the repo-wide threshold
         run: npm run check:duplication
@@ -752,14 +723,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Check migration safety (PR)
         if: github.event_name == 'pull_request'
@@ -808,16 +775,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
       # squawk-cli is a pinned devDependency (exact version, no caret) so a new
       # Squawk release cannot change what CI reports without a lockfile change.
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
 
       - name: Lint changed migrations (PR)
         if: github.event_name == 'pull_request'
@@ -850,9 +813,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       - name: Validate the chapter directory seed
         run: npm run check:chapter-directory-seed
@@ -865,14 +828,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       # An Expo client package's major version is its SDK line, and nothing here
       # compiles Swift, so a package bumped off the line passes every other step
@@ -989,9 +948,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       - name: Run deploy-gate script tests
         # No npm ci needed — these tests have no dependencies beyond node:test.
@@ -1013,9 +972,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       - name: npm audit gate (high/critical block unless allowlisted)
         run: npm run check:npm-audit
@@ -1038,9 +997,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # scan-secrets.mjs fetches the pinned gitleaks binary on first run (no npm ci needed).
       - name: Scan PR commit range for secrets
@@ -1088,14 +1047,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Apply migrations to PGlite + assert schema landmarks
         run: npm run check:pglite-migrations
@@ -1159,14 +1114,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
@@ -1277,14 +1228,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          install: ci
 
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
