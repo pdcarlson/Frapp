@@ -249,6 +249,95 @@ describe("APP_CONFIG_KEYS shape", () => {
   });
 });
 
+// ── The instructions a human follows to fill the store ──────────────────────
+
+const ENV_REFERENCE = "docs/internal/environment/ENV_REFERENCE.md";
+
+/**
+ * ENV_REFERENCE.md § References as `{ name, required }` rows: what someone
+ * adds to Infisical for the web and landing builds. It drifted once already
+ * (#1283): it told people to add five `EXPO_PUBLIC_*` names that no build
+ * reads from Infisical, and it didn't say which names a deploy can't build without.
+ *
+ * Every table line must parse. A row this can't read would otherwise escape
+ * every check below, which is how a guard like this fails open.
+ */
+function referencesTable() {
+  const text = readFileSync(join(REPO, ENV_REFERENCE), "utf8");
+  const section = text.split("\n## References — Framework-Specific Names\n")[1]?.split("\n## ")[0];
+  assert.ok(section, `${ENV_REFERENCE} has no "## References — Framework-Specific Names" section`);
+  const lines = section.split("\n").filter((line) => line.startsWith("|"));
+  assert.ok(lines.length > 2, "§ References has no table");
+  assert.match(lines[1], /^\|[\s|:-]+\|$/, "§ References's second table line is not the header separator");
+  return lines.slice(2).map((line) => {
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    const name = cells[0]?.match(/^`([A-Z][A-Z0-9_]*)`$/)?.[1];
+    const flag = cells.at(-1);
+    assert.ok(
+      name && cells.length === 4 && (flag === "✅" || flag === "❌"),
+      `§ References row doesn't read as | \`NAME\` | value | app | ✅ or ❌ |: ${line}`,
+    );
+    return { name, required: flag === "✅" };
+  });
+}
+
+/**
+ * Keys a build takes from the store that § References deliberately leaves out,
+ * and why. The doc names these three; a new store key belongs in the table or
+ * here, never in neither.
+ */
+const DIRECT_VALUES = new Map([
+  ["NEXT_PUBLIC_LANDING_URL", "set directly; there is no canonical LANDING_URL to reference"],
+  ["NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE", "a literal number with a working default"],
+  ["SENTRY_AUTH_TOKEN", "a build-time credential under its own name, not a NEXT_PUBLIC_ twin"],
+]);
+
+describe(`${ENV_REFERENCE} § References matches APP_CONFIG_KEYS`, () => {
+  // Read inside each test, so a row that doesn't parse fails as a test rather
+  // than as suite setup, which the summary counts as zero failures.
+  const listedNames = () => referencesTable().map((row) => row.name);
+  const required = new Set(Object.values(APP_CONFIG_KEYS).flatMap((entry) => entry.required));
+  const fromStore = new Set(Object.keys(APP_CONFIG_KEYS).flatMap((label) => appConfigKeysFor(label)));
+
+  it("names only keys a Vercel build takes from the store, each once", () => {
+    const listed = listedNames();
+    const unread = listed.filter((name) => !fromStore.has(name));
+    assert.deepEqual(
+      unread,
+      [],
+      `§ References tells people to add ${unread.join(", ")} to Infisical, but no build reads it ` +
+        `from there. Mobile's EXPO_PUBLIC_* names are set in EAS (§ apps/mobile), not Infisical.`,
+    );
+    assert.equal(new Set(listed).size, listed.length, "§ References lists a key twice");
+  });
+
+  it("covers every store key: a row, or a place on DIRECT_VALUES", () => {
+    const listed = listedNames();
+    const unlisted = [...fromStore].filter((name) => !listed.includes(name) && !DIRECT_VALUES.has(name)).sort();
+    assert.deepEqual(
+      unlisted,
+      [],
+      `a build reads ${unlisted.join(", ")} from the store, but § References doesn't tell anyone to ` +
+        `add it. Add its row, or add it to DIRECT_VALUES here with the reason.`,
+    );
+    const hidden = [...DIRECT_VALUES.keys()].filter((name) => required.has(name));
+    assert.deepEqual(hidden, [], `DIRECT_VALUES holds ${hidden.join(", ")}, which a deploy can't build without; give it a ✅ row`);
+    const stale = [...DIRECT_VALUES.keys()].filter((name) => !fromStore.has(name) || listed.includes(name));
+    assert.deepEqual(stale, [], `DIRECT_VALUES names ${stale.join(", ")}, which no build reads or the table already lists`);
+  });
+
+  it("marks each row the way APP_CONFIG_KEYS does", () => {
+    for (const row of referencesTable()) {
+      assert.equal(
+        row.required,
+        required.has(row.name),
+        `§ References marks ${row.name} ${row.required ? "✅" : "❌"}, but APP_CONFIG_KEYS has it ` +
+          `${required.has(row.name) ? "required" : "optional"}`,
+      );
+    }
+  });
+});
+
 // ── The baseline ────────────────────────────────────────────────────────────
 
 describe("env baseline", () => {
