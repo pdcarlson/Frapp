@@ -70,8 +70,11 @@ eas build --profile development --platform ios
 > § 6.3 for `preview` first, or you will pay for a build you cannot sign into.
 
 ```bash
-eas build --profile preview --platform all
-# Generates installable links for iOS (ad-hoc) and Android (APK)
+# One platform per command: `--platform all` starts Android, then stops on an iOS
+# failure and leaves the Android build running unreported (§ 6.6).
+eas build --profile preview --platform ios
+eas build --profile preview --platform android
+# Each prints an installable link: iOS (ad-hoc) and Android (APK)
 ```
 
 ### 6.3 Environment Configuration
@@ -332,8 +335,12 @@ nothing is still building.
   `eas submit … --id` and record it.
 - **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
   other by hand from the latest `v*` tag (below), and record it.
-- **Production shipped another commit while EAS was building:** nothing from this run may upload.
-  The next store build comes with the next ship.
+- **Production shipped another commit before or while EAS was building:** nothing from this run
+  may upload. The next store build comes with the next ship.
+- **A tag check couldn't read the tags** (a GitHub API error, which the summary keeps apart from a
+  moved production): before the builds, nothing started, so re-run once GitHub answers; before
+  the uploads, the builds are done, so confirm the commit is still the latest `v*` tag and upload
+  them by hand with the summary's `eas submit … --id`.
 - **Nothing built:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded and
   don't run again, and the builds get fresh build numbers. The re-run stops if a later ship has
   tagged another commit; dispatch Deploy production for that one instead.
@@ -396,10 +403,13 @@ Plus `EXPO_TOKEN` for the Expo account. `ascAppId` is committed since #3111.
 
 **Source:** read from the eas-cli 24.8.0 source (`IosSubmitCommand`, `AscApiKeySource`,
 `SetUpAscApiKey`, `AppSpecificPasswordSource`, `submit/commons`) and `@expo/eas-json` 24.8.0
-(`resolveSubmitProfile`) on 2026-09-27 (#2379). The CI path's flags, the `--json` build fields
-(`appVersion`, `appBuildVersion`, `gitCommitHash`, `status`), and the exit codes (`eas build --wait`
-exits 1 only for an `ERRORED` build, not a `CANCELED` one; `eas submit --wait` exits 1 unless the
-submission `FINISHED`) were read from the same version's `--help` and source on 2026-10-01 (#3111).
+(`resolveSubmitProfile`) on 2026-09-27 (#2379). The CI path's commands were read from the same
+version's `--help` and source on 2026-10-01 (#3111): `eas build --no-wait --json` prints the
+started builds as a JSON array (`platform` `IOS` or `ANDROID`) and exits; `eas build:view <id>
+--json` prints one build with `status`, `appVersion`, `appBuildVersion` and `gitCommitHash`, and
+eas-cli sets no request timeout on it; `eas submit --wait` exits 1 unless the submission
+`FINISHED`, and `--auto-testflight-setup` defaults to on. On a version bump, re-check those
+shapes too: a changed `build:view` shape reads every build as `UNREAD`.
 CI pins that version; a laptop isn't pinned (see the top of this section), so re-check the table
 against `eas submit --help` when a run disagrees.
 

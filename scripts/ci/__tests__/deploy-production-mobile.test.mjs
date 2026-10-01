@@ -472,10 +472,13 @@ describe("the latest-tag check, before the builds and again before the uploads",
         "esac",
       ].join("\n"),
     );
+    const output = join(dir, "output");
+    writeFileSync(output, "");
     const result = runStep(stepNamed(CALLED, "build", TAG_STEPS.build), {
       cwd: dir,
-      env: { PATH: path, GH_TOKEN: "t", REPO: "o/r", DEPLOY_SHA: sha },
+      env: { PATH: path, GH_TOKEN: "t", REPO: "o/r", DEPLOY_SHA: sha, GITHUB_OUTPUT: output },
     });
+    result.outputs = readOutputs(output);
     rmSync(dir, { recursive: true, force: true });
     return result;
   }
@@ -490,10 +493,12 @@ describe("the latest-tag check, before the builds and again before the uploads",
     }
   });
 
-  it("refuses once a later ship tagged another commit", () => {
+  it("refuses once a later ship tagged another commit, and says so in its output", () => {
     const result = run({ tags: { "v0.9.0": SHA, "v0.10.0": OLD } });
     assert.equal(result.status, 1);
     assert.match(result.stdout, /The latest tag, v0\.10\.0, is on 1{40}, not /);
+    assert.equal(result.outputs.moved, "true", "the record job forbids a hand upload only on this output");
+    assert.equal(run({ tags: { "v0.9.0": SHA } }).outputs.moved, undefined);
   });
 
   it("refuses with no version tag, ignores other v-tags, and fails on an API error rather than calling it untagged", () => {
@@ -504,6 +509,7 @@ describe("the latest-tag check, before the builds and again before the uploads",
     const down = run({ tags: { "v0.9.0": SHA }, failApi: true });
     assert.notEqual(down.status, 0);
     assert.doesNotMatch(down.stdout, /No vX\.Y\.Z tag exists/);
+    assert.equal(down.outputs.moved, undefined, "a failed read is not a moved production");
   });
 });
 
@@ -659,17 +665,54 @@ describe("the eas commands", () => {
     });
   });
 
+  it("waits for every started build, with its deadline under its step's", () => {
+    const wait = stepNamed(CALLED, "build", WAIT);
+    assert.equal(wait.if, "${{ !cancelled() && (steps.start-ios.outputs.id != '' || steps.start-android.outputs.id != '') }}");
+    assert.deepEqual(Object.fromEntries(wait.stepEnv), {
+      EXPO_TOKEN: "${{ secrets.EXPO_TOKEN }}",
+      IDS: "${{ steps.start-ios.outputs.id }} ${{ steps.start-android.outputs.id }}",
+      DEPLOY_SHA: "${{ inputs.sha }}",
+      DEADLINE_MINUTES: "230",
+      POLL_SECONDS: "60",
+      READ_TIMEOUT_SECONDS: "120",
+    });
+    assert.match(scriptOf(wait), /timeout "\$READ_TIMEOUT_SECONDS" eas build:view "\$ID" --json/);
+  });
+
   describe("the wait, against a stand-in eas", () => {
     const ios = (over = {}) => ({ id: "i1", platform: "IOS", status: "FINISHED", appVersion: "0.9.0", appBuildVersion: "12", gitCommitHash: SHA, extra: "dropped", ...over });
     const android = (over = {}) => ({ ...ios(), id: "a1", platform: "ANDROID", appBuildVersion: "7", ...over });
 
-    /** `views` maps a build id to what `eas build:view <id> --json` prints; a missing id fails. */
-    function run({ views, ids = "i1 a1", deadline = "0" }) {
-      const { dir, output, path } = withStub("eas", `f="$RUNNER_TEMP/view-$2.json"; [ -f "$f" ] && cat "$f" || exit 1`);
-      for (const [id, view] of Object.entries(views)) writeFileSync(join(dir, `view-${id}.json`), JSON.stringify(view));
+    /**
+     * `views` maps a build id to what `eas build:view <id> --json` prints, or
+     * to a list of what it prints on each read in turn (the last repeats); a
+     * missing id fails, and `sleep` makes every read stall that many seconds.
+     */
+    function run({ views, ids = "i1 a1", deadline = "0", sleep = 0, readTimeout = "120" }) {
+      const { dir, output, path } = withStub(
+        "eas",
+        [
+          sleep ? `sleep ${sleep}` : "",
+          'n="$RUNNER_TEMP/reads-$2"; c=$(( $(cat "$n" 2>/dev/null || echo 0) + 1 )); echo "$c" > "$n"',
+          'f="$RUNNER_TEMP/view-$2-$c.json"; [ -f "$f" ] || f="$(ls "$RUNNER_TEMP"/view-"$2"-*.json 2>/dev/null | sort -V | tail -n1)"',
+          '[ -n "$f" ] && [ -f "$f" ] && cat "$f" || exit 1',
+        ].join("\n"),
+      );
+      for (const [id, view] of Object.entries(views)) {
+        (Array.isArray(view) ? view : [view]).forEach((v, i) => writeFileSync(join(dir, `view-${id}-${i + 1}.json`), JSON.stringify(v)));
+      }
       const result = runStep(stepNamed(CALLED, "build", WAIT), {
         cwd: dir,
-        env: { PATH: path, RUNNER_TEMP: dir, GITHUB_OUTPUT: output, IDS: ids, DEPLOY_SHA: SHA, DEADLINE_MINUTES: deadline, POLL_SECONDS: "0" },
+        env: {
+          PATH: path,
+          RUNNER_TEMP: dir,
+          GITHUB_OUTPUT: output,
+          IDS: ids,
+          DEPLOY_SHA: SHA,
+          DEADLINE_MINUTES: deadline,
+          POLL_SECONDS: "0",
+          READ_TIMEOUT_SECONDS: readTimeout,
+        },
       });
       const outputs = readOutputs(output);
       rmSync(dir, { recursive: true, force: true });
@@ -701,6 +744,31 @@ describe("the eas commands", () => {
       assert.match(stdout, /did not finish: IOS i1 ERRORED/);
       assert.equal(outputs.ios_id, "");
       assert.equal(outputs.android_id, "a1");
+    });
+
+    // The loop's own exit: every build ended, well before the deadline.
+    it("keeps reading until every build has ended", () => {
+      const { status, outputs } = run({
+        views: { i1: [ios({ status: "IN_QUEUE" }), ios({ status: "IN_PROGRESS" }), ios()], a1: [android({ status: "IN_PROGRESS" }), android()] },
+        deadline: "5",
+      });
+      assert.equal(status, 0);
+      assert.equal(outputs.ios_id, "i1");
+      assert.equal(outputs.android_id, "a1");
+    });
+
+    it("treats a stalled read as unread instead of hanging past its step", () => {
+      const started = Date.now();
+      const { status, stdout } = run({ views: { i1: ios() }, ids: "i1", sleep: 5, readTimeout: "1" });
+      assert.ok(Date.now() - started < 4000, "the read was not cut off");
+      assert.equal(status, 1);
+      assert.match(stdout, /i1 UNREAD/);
+    });
+
+    it("refuses to wait for nothing", () => {
+      const { status, stdout } = run({ views: {}, ids: " " });
+      assert.equal(status, 1);
+      assert.match(stdout, /No build id reached the wait/);
     });
 
     it("stops at its deadline with the list, naming what is still building or unread", () => {
@@ -740,7 +808,9 @@ describe("the record job", () => {
       PLATFORM: "${{ inputs.platform }}",
       IOS_UPLOAD: "${{ needs.build.outputs.ios-upload }}",
       ANDROID_UPLOAD: "${{ needs.build.outputs.android-upload }}",
-      TAG_CHECK: "${{ needs.build.outputs.tag-check }}",
+      TAG_MOVED: "${{ needs.build.outputs.tag-moved }}",
+      TAG_BEFORE_BUILD: "${{ needs.build.outputs.tag-before-build }}",
+      TAG_BEFORE_UPLOAD: "${{ needs.build.outputs.tag-before-upload }}",
       DEPLOY_SHA: "${{ inputs.sha }}",
       GH_TOKEN: "${{ steps.app-token.outputs.token }}",
       RUN_URL: RUN_URL_EXPR,
@@ -756,7 +826,9 @@ describe("the record job", () => {
       "android-started": "${{ steps.start-android.outputs.id }}",
       "ios-upload": "${{ steps.upload-ios.outcome }}",
       "android-upload": "${{ steps.upload-android.outcome }}",
-      "tag-check": "${{ steps.tag-before-upload.outcome }}",
+      "tag-moved": "${{ steps.tag-before-build.outputs.moved || steps.tag-before-upload.outputs.moved }}",
+      "tag-before-build": "${{ steps.tag-before-build.outcome }}",
+      "tag-before-upload": "${{ steps.tag-before-upload.outcome }}",
     });
   });
 });

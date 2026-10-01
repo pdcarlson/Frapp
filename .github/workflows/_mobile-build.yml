@@ -136,7 +136,11 @@ jobs:
       android-started: ${{ steps.start-android.outputs.id }}
       ios-upload: ${{ steps.upload-ios.outcome }}
       android-upload: ${{ steps.upload-android.outcome }}
-      tag-check: ${{ steps.tag-before-upload.outcome }}
+      # `true` when either tag check found production on another commit;
+      # each check's outcome says whether it ran and passed.
+      tag-moved: ${{ steps.tag-before-build.outputs.moved || steps.tag-before-upload.outputs.moved }}
+      tag-before-build: ${{ steps.tag-before-build.outcome }}
+      tag-before-upload: ${{ steps.tag-before-upload.outcome }}
     steps:
       # Before any checkout: an input this job doesn't know, or a token that
       # never arrived, costs nothing. Names only: the check is
@@ -252,6 +256,9 @@ jobs:
             OBJECT="$(gh api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
           fi
           if [ "$OBJECT" != "$DEPLOY_SHA" ]; then
+            # Said apart from a failed read, which also fails this step: the
+            # record job forbids a hand upload only for this.
+            echo "moved=true" >> "$GITHUB_OUTPUT"
             echo "::error::The latest tag, $LATEST, is on $OBJECT, not $DEPLOY_SHA: production has shipped another commit since this run. Store builds are made only from the latest v* tag; dispatch Deploy production for it instead."
             exit 1
           fi
@@ -317,11 +324,13 @@ jobs:
           echo "Started the $PLATFORM build $ID."
 
       # Poll every started build until each one ends or the deadline passes.
-      # `eas build:view --json` is one read; a read that fails is retried on
-      # the next round, and a build still unread at the deadline is reported
-      # by id. The deadline is this script's, under the step's timeout, so the
-      # list always goes out. A build is handed to its upload only when EAS
-      # reports it FINISHED from the shipped commit.
+      # `eas build:view --json` is one read, held to READ_TIMEOUT_SECONDS
+      # because eas-cli's client sets no request timeout of its own; a read
+      # that fails or stalls is retried on the next round, and a build still
+      # unread at the deadline is reported by id. The deadline is this
+      # script's, under the step's timeout with room for a last stalled read,
+      # so the list always goes out. A build is handed to its upload only when
+      # EAS reports it FINISHED from the shipped commit.
       - name: Wait for the EAS builds
         id: wait
         if: ${{ !cancelled() && (steps.start-ios.outputs.id != '' || steps.start-android.outputs.id != '') }}
@@ -333,14 +342,19 @@ jobs:
           DEPLOY_SHA: ${{ inputs.sha }}
           DEADLINE_MINUTES: "230"
           POLL_SECONDS: "60"
+          READ_TIMEOUT_SECONDS: "120"
         run: |
           set -uo pipefail
+          if [ -z "${IDS// /}" ]; then
+            echo "::error::No build id reached the wait, so there is nothing to wait for."
+            exit 1
+          fi
           DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
           TERMINAL='(.status == "FINISHED" or .status == "ERRORED" or .status == "CANCELED")'
           while :; do
             BUILDS='[]'
             for ID in $IDS; do
-              ONE="$(eas build:view "$ID" --json 2>/dev/null \
+              ONE="$(timeout "$READ_TIMEOUT_SECONDS" eas build:view "$ID" --json 2>/dev/null \
                 | jq -c '{id, platform, status, appVersion, appBuildVersion, gitCommitHash}' 2>/dev/null || true)"
               [ -n "$ONE" ] || ONE="$(jq -cn --arg id "$ID" '{id: $id, status: "UNREAD"}')"
               BUILDS="$(jq -c --argjson one "$ONE" '. + [$one]' <<< "$BUILDS")"
@@ -401,6 +415,9 @@ jobs:
             OBJECT="$(gh api "repos/$REPO/git/tags/$OBJECT" --jq '.object.sha')"
           fi
           if [ "$OBJECT" != "$DEPLOY_SHA" ]; then
+            # Said apart from a failed read, which also fails this step: the
+            # record job forbids a hand upload only for this.
+            echo "moved=true" >> "$GITHUB_OUTPUT"
             echo "::error::The latest tag, $LATEST, is on $OBJECT, not $DEPLOY_SHA: production has shipped another commit since this run. Store builds are made only from the latest v* tag; dispatch Deploy production for it instead."
             exit 1
           fi
@@ -482,7 +499,9 @@ jobs:
           PLATFORM: ${{ inputs.platform }}
           IOS_UPLOAD: ${{ needs.build.outputs.ios-upload }}
           ANDROID_UPLOAD: ${{ needs.build.outputs.android-upload }}
-          TAG_CHECK: ${{ needs.build.outputs.tag-check }}
+          TAG_MOVED: ${{ needs.build.outputs.tag-moved }}
+          TAG_BEFORE_BUILD: ${{ needs.build.outputs.tag-before-build }}
+          TAG_BEFORE_UPLOAD: ${{ needs.build.outputs.tag-before-upload }}
           DEPLOY_SHA: ${{ inputs.sha }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

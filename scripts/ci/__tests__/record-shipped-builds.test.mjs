@@ -186,7 +186,9 @@ describe("recordShippedBuilds", () => {
     EAS_BUILDS: JSON.stringify([iosBuild(), androidBuild()]),
     EAS_STARTED_IOS: "ios-build-1",
     EAS_STARTED_ANDROID: "android-build-1",
-    TAG_CHECK: "success",
+    TAG_MOVED: "",
+    TAG_BEFORE_BUILD: "success",
+    TAG_BEFORE_UPLOAD: "success",
     BUILD_RESULT: "success",
     PLATFORM: "all",
     IOS_UPLOAD: "success",
@@ -275,7 +277,7 @@ describe("recordShippedBuilds", () => {
       EAS_STARTED_ANDROID: "",
       IOS_UPLOAD: "",
       ANDROID_UPLOAD: "",
-      TAG_CHECK: "",
+      TAG_BEFORE_UPLOAD: "",
     });
     assert.equal(code, 0);
     assert.equal(calls.length, 0);
@@ -314,8 +316,8 @@ describe("recordShippedBuilds", () => {
     assert.equal(failed.code, 0);
     const put = JSON.parse(failed.calls[3].body);
     assert.deepEqual(parseRegistry(Buffer.from(put.content, "base64").toString("utf8")).builds.map((b) => b.platform), ["ios"]);
-    assert.match(failed.text, /Android didn't build \(`not built`\), while another platform did upload/);
-    assert.match(failed.text, /Don't re-run: that rebuilds and re-uploads the platform that already landed/);
+    assert.match(failed.text, /Android didn't build \(`not built`\), while another platform uploaded, is still building, or waits for its upload/);
+    assert.match(failed.text, /Don't re-run: that builds the other platform again/);
     const green = await run(only);
     assert.equal(green.code, 1, "a green build job that lists no Android build for `all` is a wiring fault");
     assert.match(green.text, /Android was requested, and the build job reported no Android build/);
@@ -343,21 +345,72 @@ describe("recordShippedBuilds", () => {
       ANDROID_UPLOAD: "",
     });
     assert.match(text, /iOS \(`ios-build-1`\) had not finished/);
-    assert.match(text, /eas submit --platform ios --profile production --id ios-build-1/);
+    // The flag CI passes, so a hand upload creates no TestFlight group either.
+    assert.match(text, /eas submit --platform ios --profile production --id ios-build-1 --non-interactive --no-auto-testflight-setup/);
     assert.match(text, /Nothing was uploaded, so nothing was recorded/);
   });
 
-  it("forbids any upload once production has moved on", async () => {
-    const { code, calls, text } = await run({
+  it("forbids any upload once production has moved on, found before or after the builds", async () => {
+    const after = await run({
       BUILD_RESULT: "failure",
       IOS_UPLOAD: "skipped",
       ANDROID_UPLOAD: "skipped",
-      TAG_CHECK: "failure",
+      TAG_MOVED: "true",
+      TAG_BEFORE_UPLOAD: "failure",
     });
-    assert.equal(code, 0);
-    assert.equal(calls.length, 0);
-    assert.match(text, /iOS was not uploaded: production has shipped another commit since this run/);
-    assert.doesNotMatch(text, /eas submit/);
+    assert.equal(after.code, 0);
+    assert.equal(after.calls.length, 0);
+    assert.match(after.text, /iOS was not uploaded: production has shipped another commit since this run/);
+    assert.doesNotMatch(after.text, /eas submit|Re-run/);
+    const before = await run({
+      BUILD_RESULT: "failure",
+      EAS_BUILDS: "",
+      EAS_STARTED_IOS: "",
+      EAS_STARTED_ANDROID: "",
+      IOS_UPLOAD: "",
+      ANDROID_UPLOAD: "",
+      TAG_MOVED: "true",
+      TAG_BEFORE_BUILD: "failure",
+      TAG_BEFORE_UPLOAD: "",
+    });
+    assert.match(before.text, /Android was not uploaded: production has shipped another commit/);
+    assert.doesNotMatch(before.text, /Re-run/, "a re-run would hit the same refusal");
+  });
+
+  it("tells a failed tag read from a moved production", async () => {
+    const upload = await run({
+      BUILD_RESULT: "failure",
+      IOS_UPLOAD: "skipped",
+      ANDROID_UPLOAD: "skipped",
+      TAG_BEFORE_UPLOAD: "failure",
+    });
+    assert.match(upload.text, /iOS built, and was not uploaded because the latest-tag check before uploading couldn't read the tags/);
+    assert.match(upload.text, /eas submit --platform android --profile production --id android-build-1 --non-interactive`/);
+    assert.doesNotMatch(upload.text, /production has shipped another commit/);
+    const build = await run({
+      BUILD_RESULT: "failure",
+      EAS_BUILDS: "",
+      EAS_STARTED_IOS: "",
+      EAS_STARTED_ANDROID: "",
+      IOS_UPLOAD: "",
+      ANDROID_UPLOAD: "",
+      TAG_BEFORE_BUILD: "failure",
+      TAG_BEFORE_UPLOAD: "",
+    });
+    assert.match(build.text, /iOS didn't start: the latest-tag check before building couldn't read the tags/);
+  });
+
+  it("never sends one platform to a re-run while the other is still building or waits for its upload", async () => {
+    for (const android of [androidBuild({ status: "IN_PROGRESS" }), androidBuild()]) {
+      const { text } = await run({
+        BUILD_RESULT: "failure",
+        EAS_BUILDS: JSON.stringify([iosBuild({ status: "ERRORED" }), android]),
+        IOS_UPLOAD: "skipped",
+        ANDROID_UPLOAD: android.status === "FINISHED" ? "failure" : "skipped",
+      });
+      assert.doesNotMatch(text, /Re-run failed jobs/, android.status);
+      assert.match(text, /build and upload iOS by hand from the latest `v\*` tag/, android.status);
+    }
   });
 
   it("sends a run where nothing built to a re-run", async () => {

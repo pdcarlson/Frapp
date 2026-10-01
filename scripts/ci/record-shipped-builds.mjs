@@ -50,8 +50,12 @@
 //   EAS_STARTED_IOS, EAS_STARTED_ANDROID
 //                     — the build id each start step reported, empty when that
 //                       platform never started: names a build the wait didn't
-//   TAG_CHECK         — the before-upload tag check's outcome: `failure` means
-//                       production moved on, so nothing may be uploaded by hand
+//   TAG_MOVED         — `true` when a tag check found production on another
+//                       commit: nothing from this run may be uploaded, by hand
+//                       either
+//   TAG_BEFORE_BUILD, TAG_BEFORE_UPLOAD
+//                     — each tag check's outcome. A `failure` without
+//                       TAG_MOVED is a failed read, not a moved production
 //   BUILD_RESULT      — `needs.build.result`
 //   PLATFORM          — the requested platform: ios, android or all
 //   IOS_UPLOAD        — the iOS upload step's outcome, empty when it didn't run
@@ -271,31 +275,41 @@ const STILL_RUNNING = new Set(["NEW", "IN_QUEUE", "IN_PROGRESS", "PENDING_CANCEL
 
 /**
  * What to do about one row that wasn't recorded, or null when there's nothing
- * to do. `tagMoved`: the before-upload check found production on another
- * commit, so nothing from this SHA may upload, by hand or otherwise.
+ * to do. `tag`: `{ moved, beforeBuild, beforeUpload }` from the two tag
+ * checks. `blockRerun`: another platform uploaded, is still building, or
+ * finished and waits for an upload, so a re-run (which builds every platform
+ * again) would duplicate it.
  */
-export function nextStep(row, { sha, tagMoved, othersUploaded }) {
+export function nextStep(row, { sha, tag = {}, blockRerun = false }) {
   const name = DISPLAY[row.store];
   if (row.recorded || row.refused) return null;
-  if (tagMoved) {
-    return `${name} was not uploaded: production has shipped another commit since this run, so this build must not reach testers. The next store build comes from the next ship.`;
+  if (tag.moved) {
+    return `${name} was not uploaded: production has shipped another commit since this run, so nothing built from \`${sha}\` may reach testers. The next store build comes from the next ship.`;
   }
+  // The same flag CI passes: a hand upload must not create the TestFlight
+  // group CI deliberately doesn't.
   const submit = (id) =>
-    `\`eas submit --platform ${row.store} --profile production --id ${id} --non-interactive\` from \`apps/mobile\``;
+    `\`eas submit --platform ${row.store} --profile production --id ${id} --non-interactive${row.store === "ios" ? " --no-auto-testflight-setup" : ""}\` from \`apps/mobile\``;
   if (row.status === "FINISHED" && row.upload !== "success" && row.buildId) {
+    if (tag.beforeUpload === "failure") {
+      return `${name} built, and was not uploaded because the latest-tag check before uploading couldn't read the tags (its log says why). If \`${sha}\` is still the latest \`v*\` tag, upload it by hand with ${submit(row.buildId)} and record it. Don't re-run: that builds every platform again.`;
+    }
     return `${name} built but did not upload (\`${row.upload}\`). After fixing the cause, upload it by hand with ${submit(row.buildId)}, then record it as \`apps/mobile/store/README.md\` § Shipped builds says. Don't re-run: that builds every platform again.`;
   }
   if (STILL_RUNNING.has(row.status) && row.buildId) {
     return `${name} (\`${row.buildId}\`) had not finished when the job stopped waiting, and may still finish on EAS. Don't start another build: when it finishes, and \`${sha}\` is still the latest \`v*\` tag, upload it with ${submit(row.buildId)} and record it by hand.`;
   }
-  if (othersUploaded) {
-    return `${name} didn't build (\`${row.status}\`), while another platform did upload. Fix the cause, then build and upload ${name} by hand from the latest \`v*\` tag (\`docs/ops/deployment/mobile.md\` § 6.6, By hand) and record it. Don't re-run: that rebuilds and re-uploads the platform that already landed.`;
+  if (tag.beforeBuild === "failure") {
+    return `${name} didn't start: the latest-tag check before building couldn't read the tags (its log says why). Use **Re-run failed jobs** on this run once GitHub answers.`;
+  }
+  if (blockRerun) {
+    return `${name} didn't build (\`${row.status}\`), while another platform uploaded, is still building, or waits for its upload. Fix the cause, then build and upload ${name} by hand from the latest \`v*\` tag (\`docs/ops/deployment/mobile.md\` § 6.6, By hand) and record it. Don't re-run: that builds the other platform again.`;
   }
   return `${name} didn't build (\`${row.status}\`). Once the cause is fixed, use **Re-run failed jobs** on this run; it refuses if production has shipped another commit since.`;
 }
 
 /** The run summary: what was built, uploaded and recorded, and what's left. */
-export function summary({ sha, rows, entries, pr, problems, tagMoved = false }) {
+export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
   const lines = [`### Store builds — \`${sha}\``, ""];
   lines.push("| Platform | EAS build | Status | Version (build) | Upload | Recorded |");
   lines.push("| --- | --- | --- | --- | --- | --- |");
@@ -316,7 +330,13 @@ export function summary({ sha, rows, entries, pr, problems, tagMoved = false }) 
     lines.push("Nothing was uploaded, so nothing was recorded.", "");
   }
   for (const r of rows) {
-    const step = nextStep(r, { sha, tagMoved, othersUploaded: rows.some((o) => o !== r && o.upload === "success") });
+    const blockRerun = rows.some(
+      (o) =>
+        o !== r &&
+        !o.refused &&
+        (o.upload === "success" || (o.status === "FINISHED" && !o.recorded) || STILL_RUNNING.has(o.status)),
+    );
+    const step = nextStep(r, { sha, tag, blockRerun });
     if (step) lines.push(`- ${step}`);
   }
   if (problems.length > 0) {
@@ -377,7 +397,8 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
     }
   }
 
-  writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems, tagMoved: env.TAG_CHECK === "failure" }));
+  const tag = { moved: env.TAG_MOVED === "true", beforeBuild: env.TAG_BEFORE_BUILD, beforeUpload: env.TAG_BEFORE_UPLOAD };
+  writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems, tag }));
   for (const problem of problems) log(`::error::${problem}`);
   if (pr?.outcome === "opened") log(`Opened ${pr.url} from ${pr.branch}.`);
   return problems.length > 0 ? 1 : 0;
