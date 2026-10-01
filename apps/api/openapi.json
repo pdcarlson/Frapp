@@ -487,75 +487,6 @@
         ]
       }
     },
-    "/v1/chapters": {
-      "post": {
-        "description": "Makes the caller its President. The caller must already have accepted the current Terms (`POST /v1/users/me/legal-acceptance`), or this is 403. No client uses this route; the wizard uses `POST /v1/chapters/onboard`, which records the acceptance itself.",
-        "operationId": "ChapterController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateChapterDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a new chapter",
-        "tags": [
-          "Chapters"
-        ]
-      },
-      "get": {
-        "operationId": "ChapterController_listForCurrentUser_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapters for current user",
-        "tags": [
-          "Chapters"
-        ]
-      }
-    },
     "/v1/chapters/onboard": {
       "post": {
         "operationId": "ChapterController_onboard_v1",
@@ -591,6 +522,36 @@
           }
         ],
         "summary": "Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message)",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters": {
+      "get": {
+        "operationId": "ChapterController_listForCurrentUser_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapters for current user",
         "tags": [
           "Chapters"
         ]
@@ -3507,7 +3468,7 @@
             "name": "since",
             "required": false,
             "in": "query",
-            "description": "Message UUID — returns messages created after this message (reconnect replay)",
+            "description": "Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id.",
             "schema": {
               "format": "uuid",
               "type": "string"
@@ -9254,7 +9215,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9282,7 +9250,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordImportWithProgressResponseDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9322,7 +9300,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportWithProgressResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9360,7 +9345,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9693,7 +9685,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9840,7 +9839,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9879,7 +9885,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9919,7 +9932,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordImportResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10656,21 +10676,6 @@
         },
         "required": [
           "success"
-        ]
-      },
-      "CreateChapterDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "university": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "university"
         ]
       },
       "BrandingColorsDto": {
@@ -13380,7 +13385,7 @@
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud."
+            "description": "Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; the dashboard sends it without one. Full contract: `spec/behavior/points.md` § Anti-Fraud."
           }
         },
         "required": [
@@ -13431,7 +13436,7 @@
             "type": "string",
             "format": "uuid",
             "nullable": true,
-            "description": "The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated."
+            "description": "The idempotency key this row was written under, echoed back. `null` for a dashboard adjustment made before the dashboard sent a key; those rows are not deduplicated."
           },
           "channel_id": {
             "type": "string",
@@ -14714,6 +14719,198 @@
         },
         "required": [
           "consent_acknowledged"
+        ]
+      },
+      "DiscordImportResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "purging",
+              "purged"
+            ],
+            "description": "`running` and `purging` are the two states the background worker advances; every other change is an admin action."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "bot"
+            ],
+            "description": "`upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server."
+          },
+          "guild_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Discord server name, for display only."
+          },
+          "total_messages": {
+            "type": "number",
+            "description": "Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads."
+          },
+          "imported_messages": {
+            "type": "number"
+          },
+          "messages_skipped": {
+            "type": "number"
+          },
+          "attachments_imported": {
+            "type": "number"
+          },
+          "warnings": {
+            "description": "The most recent warnings for the admin, at most 50.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why a failed import stopped."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messages_after": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history."
+          },
+          "purged_messages": {
+            "type": "number",
+            "description": "Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "guild_name",
+          "total_messages",
+          "imported_messages",
+          "messages_skipped",
+          "attachments_imported",
+          "warnings",
+          "error",
+          "created_at",
+          "messages_after",
+          "purged_messages"
+        ]
+      },
+      "DiscordImportWithProgressResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "purging",
+              "purged"
+            ],
+            "description": "`running` and `purging` are the two states the background worker advances; every other change is an admin action."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "bot"
+            ],
+            "description": "`upload`: a DiscordChatExporter export the admin uploaded. `bot`: read from the connected Discord server."
+          },
+          "guild_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Discord server name, for display only."
+          },
+          "total_messages": {
+            "type": "number",
+            "description": "Messages found so far. An upload's grows a part at a time, a bot import's with every page it reads."
+          },
+          "imported_messages": {
+            "type": "number"
+          },
+          "messages_skipped": {
+            "type": "number"
+          },
+          "attachments_imported": {
+            "type": "number"
+          },
+          "warnings": {
+            "description": "The most recent warnings for the admin, at most 50.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why a failed import stopped."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messages_after": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history."
+          },
+          "purged_messages": {
+            "type": "number",
+            "description": "Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished."
+          },
+          "channels_total": {
+            "type": "number",
+            "nullable": true,
+            "description": "Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled."
+          },
+          "channels_done": {
+            "type": "number",
+            "nullable": true,
+            "description": "Of those, how many are finished (imported, or skipped because Discord no longer showed them to the bot). Null when `channels_total` is."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "guild_name",
+          "total_messages",
+          "imported_messages",
+          "messages_skipped",
+          "attachments_imported",
+          "warnings",
+          "error",
+          "created_at",
+          "messages_after",
+          "purged_messages",
+          "channels_total",
+          "channels_done"
         ]
       },
       "DiscordImportProgressCountsDto": {

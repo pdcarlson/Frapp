@@ -166,7 +166,7 @@ export function PlanMatrix() {
           to remember. The visible header row stays a visual label.
         */}
         <div
-          className={`grid min-h-9 grid-cols-[1fr_72px_72px] items-center gap-2 bg-surface-1 px-4 text-[12.5px] font-semibold text-muted-foreground sm:grid-cols-[1fr_120px_120px]`}
+          className={`grid min-h-9 grid-cols-[1fr_72px_72px] items-center gap-2 bg-surface-1 px-4 text-caption font-semibold text-muted-foreground sm:grid-cols-[1fr_120px_120px]`}
         >
           <span>Module</span>
           <span className="text-center">Free</span>

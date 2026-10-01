@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createFrappClient } from "@repo/api-sdk";
+import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
+  BACKFILL_PAGE_LIMIT,
   chatRealtime,
+  createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
   POLL_INTERVAL_MS,
   type BackfillFetcher,
@@ -14,7 +18,14 @@ import {
   type ChannelCache,
   type RawChatMessage,
 } from "./types";
-import { emptyCache, upsertOptimistic } from "./cache";
+import { FIRST_PAGE_LIMIT, SinceCursorNotFoundError } from "./history";
+import {
+  emptyCache,
+  mergeServerRows,
+  oldestConfirmed,
+  selectMessages,
+  upsertOptimistic,
+} from "./cache";
 import type { KeyValueStore } from "./adapters";
 import { persistNotice, readNotices } from "./heavy-command-notices";
 import { visibleTypingUsers, type BlockState } from "./blocks";
@@ -207,7 +218,9 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
     ch!.trigger("SUBSCRIBED");
 
     expect(backfill).toHaveBeenCalledTimes(1);
-    expect(backfill).toHaveBeenLastCalledWith("channel-1", null);
+    expect(backfill).toHaveBeenLastCalledWith("channel-1", {
+      limit: FIRST_PAGE_LIMIT,
+    });
   });
 
   test("a subsequent SUBSCRIBED (simulating reconnect) fires backfill again with the advanced cursor", async () => {
@@ -229,7 +242,9 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
 
     ch!.trigger("SUBSCRIBED");
     expect(backfill).toHaveBeenCalledTimes(1);
-    expect(backfill).toHaveBeenLastCalledWith("channel-1", null);
+    expect(backfill).toHaveBeenLastCalledWith("channel-1", {
+      limit: FIRST_PAGE_LIMIT,
+    });
 
     // Let the first backfill resolve and persist its last-seen cursor.
     await vi.waitFor(() =>
@@ -242,7 +257,10 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
     ch!.trigger("SUBSCRIBED");
 
     expect(backfill).toHaveBeenCalledTimes(2);
-    expect(backfill).toHaveBeenLastCalledWith("channel-1", "msg-newest");
+    expect(backfill).toHaveBeenLastCalledWith("channel-1", {
+      since: "msg-newest",
+      limit: BACKFILL_PAGE_LIMIT,
+    });
   });
 });
 
@@ -301,7 +319,9 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience/message-d
     await vi.advanceTimersByTimeAsync(1);
     expect(status).toBe("polling");
     expect(backfill).toHaveBeenCalledTimes(1);
-    expect(backfill).toHaveBeenLastCalledWith("channel-1", null);
+    expect(backfill).toHaveBeenLastCalledWith("channel-1", {
+      limit: FIRST_PAGE_LIMIT,
+    });
 
     // ...then once per interval for as long as Realtime stays down.
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
@@ -433,7 +453,9 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience/message-d
     // A join that genuinely stalls is still caught — by the poll loop.
     await vi.advanceTimersByTimeAsync(1);
     expect(status).toBe("polling");
-    expect(backfill).toHaveBeenCalledWith("channel-1", null);
+    expect(backfill).toHaveBeenCalledWith("channel-1", {
+      limit: FIRST_PAGE_LIMIT,
+    });
   });
 
   test("a poll left hanging at destroy() does not wedge the next session", async () => {
@@ -1174,7 +1196,7 @@ describe("ChatRealtimeManager — configure attaches waiting channels and follow
     expect(ch!.track).toHaveBeenCalledWith(
       expect.objectContaining({ userId: VIEWER }),
     );
-    expect(backfill).toHaveBeenCalledWith("c1", null);
+    expect(backfill).toHaveBeenCalledWith("c1", { limit: FIRST_PAGE_LIMIT });
   });
 
   test("a viewer that resolves after the join is tracked on the joined channel, without a rejoin", async () => {
@@ -1303,5 +1325,362 @@ describe("ChatRealtimeManager — configure attaches waiting channels and follow
     expect(current("c1")!.track).toHaveBeenCalledWith(
       expect.objectContaining({ userId: VIEWER }),
     );
+  });
+});
+
+describe("ChatRealtimeManager — a backfill that missed more than a page (#2807)", () => {
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+
+  /** Row `n` was sent `n` seconds into the day, so a higher number is newer. */
+  function at(n: number): RawChatMessage {
+    return {
+      id: `m${n}`,
+      channel_id: "c1",
+      sender_id: "u1",
+      author_name: null,
+      author_avatar_path: null,
+      author_external_id: null,
+      created_at: new Date(Date.UTC(2026, 8, 28) + n * 1000).toISOString(),
+      client_message_id: `cm${n}`,
+    };
+  }
+
+  /** Rows `from`–`to` newest first, as the API sends a page. */
+  function newestFirst(from: number, to: number): RawChatMessage[] {
+    const out: RawChatMessage[] = [];
+    for (let n = to; n >= from; n -= 1) out.push(at(n));
+    return out;
+  }
+
+  function cache(): ChannelCache | undefined {
+    return queryClient.getQueryData<ChannelCache>(chatMessagesKey("c1"));
+  }
+
+  function cachedIds(): string[] {
+    return selectMessages(cache()).map((message) => message.id);
+  }
+
+  /** The thread held m1–m3, and the cursor is the last row it saw. */
+  function heldThrough(cursor: string): void {
+    queryClient.setQueryData(
+      chatMessagesKey("c1"),
+      mergeServerRows(emptyCache(), newestFirst(1, 3)),
+    );
+    window.localStorage.setItem("chat:lastSeen:c1", cursor);
+  }
+
+  function reconnect(): void {
+    chatRealtime.subscribe("c1");
+    channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    channels = new Map();
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({ queryClient, supabase, backfill });
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+    window.localStorage.clear();
+  });
+
+  test("a full page replaces what it can't reach back to, so paging back reads through the hole", async () => {
+    // 250 messages arrived while the member was away (m4–m253). The read is
+    // the newest page of them, m154–m253, which leaves m4–m153 unread.
+    heldThrough("m3");
+    backfill.mockResolvedValueOnce(newestFirst(154, 253));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m253"),
+    );
+    expect(backfill).toHaveBeenCalledWith("c1", {
+      since: "m3",
+      limit: BACKFILL_PAGE_LIMIT,
+    });
+    // Not m1–m3 with nothing after them until m154: the thread starts at the
+    // page, and the older-history read pages back from there.
+    expect(cachedIds()).toHaveLength(BACKFILL_PAGE_LIMIT);
+    expect(cachedIds()).not.toContain("m3");
+    expect(oldestConfirmed(cache())?.id).toBe("m154");
+  });
+
+  test("a short page holds everything after the cursor, so it merges onto the thread", async () => {
+    heldThrough("m3");
+    backfill.mockResolvedValueOnce(newestFirst(4, 10));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m10"),
+    );
+    expect(cachedIds()).toEqual([
+      "m1",
+      "m2",
+      "m3",
+      "m4",
+      "m5",
+      "m6",
+      "m7",
+      "m8",
+      "m9",
+      "m10",
+    ]);
+  });
+
+  test("a cursor the server no longer holds is dropped, and the newest page read instead", async () => {
+    // Its row was hard-deleted (the Discord import purge). Kept, the cursor
+    // would fail every reconnect and every poll after this one.
+    heldThrough("m-purged");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m-purged"))
+      .mockResolvedValueOnce(newestFirst(4, 6));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m6"),
+    );
+    expect(backfill.mock.calls).toEqual([
+      ["c1", { since: "m-purged", limit: BACKFILL_PAGE_LIMIT }],
+      ["c1", { limit: FIRST_PAGE_LIMIT }],
+    ]);
+    expect(cachedIds()).toContain("m6");
+  });
+
+  test("a purged cursor takes the purged rows the thread held with it", async () => {
+    // m8–m10 were purged and their Realtime deletes missed. The newest page
+    // is m1–m7, which holds every row the server has up to m7.
+    queryClient.setQueryData(
+      chatMessagesKey("c1"),
+      mergeServerRows(emptyCache(), newestFirst(1, 10)),
+    );
+    window.localStorage.setItem("chat:lastSeen:c1", "m10");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m10"))
+      .mockResolvedValueOnce(newestFirst(1, 7));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m7"),
+    );
+    expect(cachedIds()).toEqual(["m1", "m2", "m3", "m4", "m5", "m6", "m7"]);
+  });
+
+  test("when every message was purged, the thread holds none of them", async () => {
+    heldThrough("m3");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m3"))
+      .mockResolvedValueOnce([]);
+
+    reconnect();
+
+    await vi.waitFor(() => expect(cachedIds()).toEqual([]));
+  });
+
+  test("a cursor whose newest page comes back empty is still dropped", async () => {
+    // Every message after it was purged too. The fallback writes no cursor of
+    // its own, so only the drop keeps the next attempt off the 404.
+    heldThrough("m-purged");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m-purged"))
+      .mockResolvedValueOnce([]);
+
+    reconnect();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBeNull(),
+    );
+
+    channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+    expect(backfill).toHaveBeenLastCalledWith("c1", {
+      limit: FIRST_PAGE_LIMIT,
+    });
+  });
+
+  test("a cursor a live row replaced while the 404 was in flight is kept", async () => {
+    heldThrough("m-purged");
+    backfill
+      .mockImplementationOnce(async () => {
+        channels
+          .get("chat:channel:c1")!
+          .emitPostgresChange({ eventType: "INSERT", new: at(300) });
+        throw new SinceCursorNotFoundError("c1", "m-purged");
+      })
+      .mockResolvedValueOnce([]);
+
+    reconnect();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(2));
+
+    expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m300");
+  });
+
+  test("with no cursor the read is the newest page at the channel query's size", async () => {
+    // So it brings no row that page, and the reactions it read, don't cover.
+    heldThrough("m3");
+    window.localStorage.clear();
+    backfill.mockResolvedValueOnce(newestFirst(204, 253));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m253"),
+    );
+    expect(backfill).toHaveBeenCalledWith("c1", { limit: FIRST_PAGE_LIMIT });
+    // A full newest page can't vouch for m1–m3 either.
+    expect(oldestConfirmed(cache())?.id).toBe("m204");
+  });
+
+  test("a store that drops every write still keeps the cursor for this session", async () => {
+    // A browser refusing site storage. Without the session's own copy every
+    // poll would read without a cursor, and a full newest page would trim
+    // the member's scrollback on each pass.
+    chatRealtime.destroy();
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      kv: { get: () => null, set: () => {}, remove: () => {} },
+    });
+    backfill.mockResolvedValueOnce(newestFirst(1, 3));
+
+    reconnect();
+    await vi.waitFor(() => expect(cachedIds()).toContain("m3"));
+    channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+
+    expect(backfill).toHaveBeenLastCalledWith("c1", {
+      since: "m3",
+      limit: BACKFILL_PAGE_LIMIT,
+    });
+  });
+
+  test("any other failure keeps the cursor for the next attempt", async () => {
+    heldThrough("m3");
+    let rejected!: () => void;
+    const settled = new Promise<void>((resolve) => (rejected = resolve));
+    backfill.mockImplementationOnce(async () => {
+      rejected();
+      throw new Error("network down");
+    });
+
+    reconnect();
+    await settled;
+    await Promise.resolve();
+
+    expect(backfill).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m3");
+    expect(cachedIds()).toEqual(["m1", "m2", "m3"]);
+  });
+});
+
+describe("createBackfillFetcher (#2807)", () => {
+  type Client = Parameters<typeof createBackfillFetcher>[0];
+
+  function clientAnswering(answer: { data?: unknown; error?: unknown }) {
+    const GET = vi.fn(async () => answer);
+    return { GET, client: { GET } as unknown as Client };
+  }
+
+  test("reads the channel's messages with the query the manager built", async () => {
+    const row = { id: "m4", channel_id: "c1" } as RawChatMessage;
+    const { GET, client } = clientAnswering({ data: [row] });
+
+    const rows = await createBackfillFetcher(client)("c1", {
+      since: "m3",
+      limit: BACKFILL_PAGE_LIMIT,
+    });
+
+    expect(rows).toEqual([row]);
+    expect(GET).toHaveBeenCalledWith("/v1/channels/{id}/messages", {
+      params: {
+        path: { id: "c1" },
+        query: { since: "m3", limit: BACKFILL_PAGE_LIMIT },
+      },
+    });
+  });
+
+  test("a 404 coded chat.since_not_found is the cursor's", async () => {
+    const { client } = clientAnswering({
+      error: {
+        statusCode: 404,
+        code: CHAT_SINCE_NOT_FOUND_CODE,
+        message: "The since message is not in this channel",
+      },
+    });
+
+    await expect(
+      createBackfillFetcher(client)("c1", { since: "m3", limit: 100 }),
+    ).rejects.toBeInstanceOf(SinceCursorNotFoundError);
+  });
+
+  test("any other 404 is the read's failure, so the cursor stays", async () => {
+    // A channel the viewer can no longer read answers 404 too; a new cursor
+    // would not change that answer.
+    const error = { statusCode: 404, message: "Channel not found" };
+    const { client } = clientAnswering({ error });
+
+    await expect(
+      createBackfillFetcher(client)("c1", { since: "m3", limit: 100 }),
+    ).rejects.toBe(error);
+  });
+
+  test("recognises the cursor's 404 through the real API client both apps build", async () => {
+    // Web and mobile both call `createFrappClient` (@repo/api-sdk). This runs
+    // the read through it and openapi-fetch's own error parsing, so a client
+    // change that moved `code` off the top level of the error would fail here.
+    const body = (status: number, json: unknown) =>
+      new Response(JSON.stringify(json), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    const fetchStub = vi
+      .fn()
+      .mockResolvedValueOnce(
+        body(404, {
+          statusCode: 404,
+          code: CHAT_SINCE_NOT_FOUND_CODE,
+          message: "The since message is not in this channel",
+        }),
+      )
+      .mockResolvedValueOnce(
+        body(404, { statusCode: 404, message: "Channel not found" }),
+      );
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      const read = createBackfillFetcher(
+        createFrappClient({ baseUrl: "http://api.test" }),
+      );
+
+      await expect(
+        read("c1", { since: "m3", limit: BACKFILL_PAGE_LIMIT }),
+      ).rejects.toBeInstanceOf(SinceCursorNotFoundError);
+      await expect(
+        read("c1", { since: "m3", limit: BACKFILL_PAGE_LIMIT }),
+      ).rejects.not.toBeInstanceOf(SinceCursorNotFoundError);
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("a body that isn't a list reads as no rows", async () => {
+    const { client } = clientAnswering({ data: {} });
+
+    await expect(
+      createBackfillFetcher(client)("c1", { limit: 100 }),
+    ).resolves.toEqual([]);
   });
 });

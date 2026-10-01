@@ -183,10 +183,10 @@ Rules for credentials:
   the hosted WebSocket path. Pair this with [`realtime-resilience`](../realtime-resilience/SKILL.md).
 - **RLS with a real GoTrue-minted JWT.** `npm run check:pglite-migrations` already tests policy
   enforcement black-box for `chat_messages`, `chat_message_actions`, `members`, and
-  `financial_invoices`, with `auth.uid()`/`auth.role()` stubbed, so a wrong predicate on those
+  `financial_invoices`, with `auth.uid()`/`auth.role()` stubbed and each table also read as the
+  anon key (a probe that is a member of `anon`), so a wrong predicate or `TO` clause on those
   tables is settled locally. You need staging only for claims beyond `sub`/`role` (including
-  `custom_access_token_hook` output) and for `TO anon` targeting, because PGlite has no `anon`
-  role. Read that job's output before you decide you need staging.
+  `custom_access_token_hook` output). Read that job's output before you decide you need staging.
 - **Whether `custom_access_token_hook` is actually enabled.** This has drifted unnoticed before.
 - **Which commit staging serves.**
   - API: read the `commit` field of `GET https://api-staging.frapp.live/health`.

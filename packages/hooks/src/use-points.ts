@@ -1,6 +1,13 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  isDefinitiveClientError,
+  randomClientId,
+  statusOf,
+  throwUnlessOk,
+} from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 type PointWindow = "all" | "semester" | "month";
@@ -91,42 +98,182 @@ export function usePointsTransactions(options?: {
   });
 }
 
+/** What a treasurer submits. The hook adds the idempotency key. */
+export type AdjustPointsBody = {
+  target_user_id: string;
+  amount: number;
+  category: "MANUAL" | "FINE";
+  reason: string;
+};
+
+type AdjustPointsVariables = AdjustPointsBody & {
+  client_message_id: string;
+  /** The chapter active at submit. Bounds every retry; never sent. */
+  chapter_id: string | null;
+};
+
+/**
+ * A retry refused before it was sent, because the active chapter changed
+ * since the adjustment was submitted (#1906). TanStack runs each retry with
+ * the latest `mutationFn`, whose client now carries the new chapter, so
+ * sending it would write the adjustment into a chapter nobody chose.
+ */
+class AdjustmentChapterChangedError extends Error {
+  constructor() {
+    super(
+      "Your active chapter changed before this adjustment finished, so it wasn't retried. Switch back and check the ledger before submitting it again.",
+    );
+    this.name = "AdjustmentChapterChangedError";
+  }
+}
+
+/**
+ * Whether a failed attempt may have written its ledger row. Only a definitive
+ * refusal proves it didn't: a 5xx, a dropped connection (no status at all) and
+ * the 4xx an intermediary emits after the origin may have committed
+ * (`isDefinitiveClientError`'s carve-out) all leave it open.
+ */
+function mayHaveCommitted(error: unknown): boolean {
+  if (error instanceof AdjustmentChapterChangedError) return false;
+  const status = statusOf(error);
+  return status === undefined || !isDefinitiveClientError(status);
+}
+
+/**
+ * `POST /v1/points/adjust` with an idempotency key (#1906), so a response lost
+ * after the ledger row committed is safe to retry. The server dedupes on
+ * `(chapter_id, client_message_id)` and answers a replay with the original row
+ * (`spec/behavior/points.md` § Anti-Fraud), so a retry heals instead of writing
+ * a second row into the append-only ledger.
+ *
+ * One key per adjustment the treasurer means, bound to its exact body and
+ * chapter:
+ *
+ * - It rides in the mutation's `variables`, which TanStack keeps across its
+ *   automatic retries. Minting inside `mutationFn` would re-mint per attempt.
+ * - Submitting the same body again after a failure reuses it. That is the
+ *   dialog's explicit retry, and if the first attempt landed it replays.
+ * - A success, or a definitive refusal of an adjustment no attempt may have
+ *   committed, releases it, so a deliberate second grant of the same amount is
+ *   a second legitimate row with a fresh key. Once an attempt may have
+ *   committed, a later refusal from a guard that runs before the server's
+ *   replay check (the throttler's 429, a 401 or 403) proves nothing about that
+ *   attempt, so the key is kept; only a 409, which says the key was used for a
+ *   different adjustment, still releases it.
+ * - `reset()` releases it too. The dialog calls it on open, so a fresh draft is
+ *   a new adjustment, as re-typing `/points` is. Not while an adjustment is
+ *   still in flight: TanStack's reset detaches the observer without stopping
+ *   the mutation's retries, so dropping the key then would let a resubmit run
+ *   beside them under a fresh one. The reopened dialog stays on the pending
+ *   adjustment instead.
+ *
+ * Retries go only to failures that may have committed, at most twice (the web
+ * client's `retry: 2` default, made conditional): retrying a definitive 4xx
+ * repeats a refusal.
+ */
 export function useAdjustPoints() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  return useMutation({
-    // No retry. The web client defaults every mutation to `retry: 2`
-    // (`apps/web/lib/providers/query-provider.tsx`), and this path sends no
-    // `client_message_id`, so the server has nothing to deduplicate on: if the
-    // first attempt commits the ledger row and only its response is lost, the
-    // two automatic retries write two MORE rows. The ledger is append-only, so
-    // a +50 grant becomes +150 with no way back through the API — #1719's
-    // double-grant, fired without anyone intending a second grant.
-    //
-    // This is the cheap containment, not the fix. #1733 shipped the
-    // slash-command half (a lost `/points` response parks its row as
-    // `unconfirmed` and Retry replays the original key); this hook was left out
-    // of it because minting a key here needs `randomClientId` — and that lives
-    // in `@repo/chat-core`, which `@repo/hooks` must not depend on: it is an
-    // app-level package carrying the Dexie outbox and a Supabase client, while
-    // this one is a leaf that `apps/mobile` also consumes. Giving the primitive
-    // a shared home is #1906, and the key belongs in the mutation's
-    // `variables` when it lands (they are stable across retries; minting inside
-    // `mutationFn` re-mints per attempt and defeats the point).
-    retry: false,
-    mutationFn: async (body: {
-      target_user_id: string;
-      amount: number;
-      category: "MANUAL" | "FINE";
-      reason: string;
-    }) => {
-      const { data, error } = await client.POST("/v1/points/adjust", { body });
-      if (error) throw error;
-      return data;
+  const pending = useRef<{
+    fingerprint: string;
+    key: string;
+    /** An attempt under this key failed in a way that may have committed. */
+    uncertain: boolean;
+  } | null>(null);
+  /** Adjustments between `onMutate` and `onSettled`, retries included. */
+  const inFlight = useRef(0);
+
+  function keyFor(body: AdjustPointsBody): string {
+    const fingerprint = JSON.stringify([
+      chapterId,
+      body.target_user_id,
+      body.amount,
+      body.category,
+      body.reason,
+    ]);
+    if (pending.current?.fingerprint !== fingerprint) {
+      pending.current = { fingerprint, key: randomClientId(), uncertain: false };
+    }
+    return pending.current.key;
+  }
+
+  function release(key: string) {
+    if (pending.current?.key === key) pending.current = null;
+  }
+
+  const mutation = useMutation({
+    retry: (failureCount, error) => failureCount < 2 && mayHaveCommitted(error),
+    mutationFn: async ({
+      chapter_id: submittedChapterId,
+      ...body
+    }: AdjustPointsVariables) => {
+      // `chapterId` is this render's, since TanStack hands each retry the
+      // latest `mutationFn`.
+      if (submittedChapterId !== chapterId) {
+        throw new AdjustmentChapterChangedError();
+      }
+      try {
+        const result = await client.POST("/v1/points/adjust", { body });
+        // On the status, not `error`: openapi-fetch returns an empty error
+        // body as `undefined` or `""`, which would read as a success.
+        throwUnlessOk(result);
+        return result.data;
+      } catch (failure) {
+        if (
+          mayHaveCommitted(failure) &&
+          pending.current?.key === body.client_message_id
+        ) {
+          pending.current.uncertain = true;
+        }
+        throw failure;
+      }
     },
-    onSuccess: () => {
+    onMutate: () => {
+      inFlight.current += 1;
+    },
+    onSettled: () => {
+      inFlight.current -= 1;
+    },
+    onSuccess: (_data, variables) => {
+      release(variables.client_message_id);
       queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
     },
+    onError: (error, variables) => {
+      const key = variables.client_message_id;
+      const uncertain =
+        pending.current?.key === key && pending.current.uncertain;
+      if (statusOf(error) === 409 || (!mayHaveCommitted(error) && !uncertain)) {
+        release(key);
+      }
+    },
   });
+
+  const { reset: resetMutation } = mutation;
+  const reset = useCallback(() => {
+    if (inFlight.current > 0) return;
+    pending.current = null;
+    resetMutation();
+  }, [resetMutation]);
+
+  return {
+    ...mutation,
+    reset,
+    mutate: (
+      body: AdjustPointsBody,
+      options?: Parameters<typeof mutation.mutate>[1],
+    ) =>
+      mutation.mutate(
+        { ...body, client_message_id: keyFor(body), chapter_id: chapterId },
+        options,
+      ),
+    mutateAsync: (
+      body: AdjustPointsBody,
+      options?: Parameters<typeof mutation.mutateAsync>[1],
+    ) =>
+      mutation.mutateAsync(
+        { ...body, client_message_id: keyFor(body), chapter_id: chapterId },
+        options,
+      ),
+  };
 }

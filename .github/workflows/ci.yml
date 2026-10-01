@@ -1064,15 +1064,18 @@ jobs:
   # and the chat hot-path RLS posture holds (default-deny channels/messages;
   # ownership-scoped reaction policies). Covers what static
   # `check:migration-safety` can't: the SQL actually runs and the schema lands.
-  # It also runs the black-box *enforcement* tier: a non-owner `rls_probe` role
-  # reads four tables for real — exact visibility sets on the two chat tables,
-  # zero rows on `members` / `financial_invoices`, which must stay default-deny.
-  # The `authenticated` role is created before migrations apply, so the ~18
-  # migrations that guard policies behind `rolname = 'authenticated'` actually
-  # run and their `to authenticated` clause binds the probe.
-  # Out of reach: Realtime, Presence, GoTrue with real JWTs, and `to anon`
-  # targeting (no `anon` role here, though `auth.role()` is stubbed to it).
-  # Those live in the NestJS Jest tier (see ADR-11/ADR-12 + agent-infra.md).
+  # It also runs the black-box *enforcement* tier: non-owner probe roles read
+  # four tables for real, as a signed-in client and as the anon key — exact
+  # visibility sets on the two chat tables, zero rows on `members` /
+  # `financial_invoices`, which must stay default-deny. Supabase's four roles
+  # (`authenticated`, `anon`, `service_role`, `supabase_auth_admin`) are created
+  # before migrations apply, so every block guarded behind
+  # `rolname = '<role>'` actually runs and its `TO` clause binds the probes.
+  # Out of reach: Realtime, Presence and GoTrue with real JWTs, which live in
+  # the NestJS Jest tier (see ADR-11/ADR-12 + agent-infra.md), and the `anon`
+  # EXECUTE grant hosted adds through default privileges, which only
+  # docs/ops/database/promotion-log.md's per-migration checks cover, where an entry has
+  # one (#3052).
   pglite-migrations:
     needs: changes
     if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
@@ -1238,7 +1241,9 @@ jobs:
   # to what the reskin boards commit to — the 1440x900 fold on `HeroB.dc.html`
   # and the 390 phone board D6 pins, at 390x844 — plus the two motion
   # properties a still page cannot show: that a scroll which JUMPS past a reveal
-  # still finishes it, and that reduced motion arms nothing.
+  # still finishes it, and that reduced motion arms nothing. It also sweeps both
+  # chat frames from 320 to 1440 wide: no row cropped, the composer inside the
+  # frame, the frame inside its column (#2893).
   #
   # It serves a PRODUCTION build, which the config explains at length and is not
   # a preference: under `next dev` the stylesheet arrives after hydration, every

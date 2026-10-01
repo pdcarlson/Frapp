@@ -80,8 +80,7 @@ export class LegalAcceptanceService {
   }
 
   /**
-   * The gate on every path into a chapter: invite redemption, onboarding and
-   * `POST /v1/chapters`.
+   * The gate on every path into a chapter: invite redemption and onboarding.
    *
    * `accepting` is the request's validated checkbox. When it's true the
    * acceptance is recorded; when it's false the user must already have

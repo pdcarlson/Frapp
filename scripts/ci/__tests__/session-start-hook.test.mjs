@@ -659,7 +659,7 @@ function alive(pid) {
  * machine's real bringup log.
  */
 function realBringup(s) {
-  for (const lib of ["cloud-sandbox-common.sh", "local-postgres-acl.sh", "local-seed-data.sh"]) {
+  for (const lib of ["cloud-sandbox-common.sh", "supabase-cli.sh", "local-postgres-acl.sh", "local-seed-data.sh"]) {
     copyFileSync(path.join(REPO_ROOT, "scripts", "lib", lib), path.join(s.root, "scripts", "lib", lib));
   }
   copyFileSync(BRINGUP, path.join(s.root, "scripts", "cloud-sandbox-up.sh"));

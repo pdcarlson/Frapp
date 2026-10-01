@@ -345,7 +345,8 @@ export function TasksBoard() {
    * return for it: the Confirm gate below fails closed on an unresolved
    * viewer, so an uncached `/v1/users/me` hides Confirm on *every* row with no
    * notice saying why (the cost that comment names, tracked as #1346).
-   * Offline that read is paused, not errored, so nothing else would catch it.
+   * Offline that read may be paused rather than errored (`anyReadUncached`
+   * has the two cases), and nothing else would catch a paused one.
    * `membersQuery` is here for the same reason its assignee labels need it.
    */
   if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
@@ -609,11 +610,11 @@ export function TasksBoard() {
                         >
                           <p className="text-sm font-semibold">{task.title}</p>
                           {task.description ? (
-                            <p className="mt-1 text-[12.5px] text-muted-foreground line-clamp-2">
+                            <p className="mt-1 text-caption text-muted-foreground line-clamp-2">
                               {task.description}
                             </p>
                           ) : null}
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
                             <span>Due {formatDate(task.due_date)}</span>
                             <span aria-hidden="true">·</span>
                             <span>{assigneeName}</span>
@@ -718,7 +719,7 @@ export function TasksBoard() {
                   )}
                 </CardContent>
                 {column.status === "COMPLETED" ? (
-                  <CardFooter className="text-[12.5px] text-muted-foreground">
+                  <CardFooter className="text-caption text-muted-foreground">
                     Confirming a task awards its point reward (when set) to the
                     assignee. You cannot confirm a task assigned to you. Another
                     admin has to.

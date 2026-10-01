@@ -106,7 +106,7 @@ fi
 # produces this project's only restorable backup. It is kept honest by a test
 # instead: scripts/ci/__tests__/infisical-secrets-action.test.mjs asserts this
 # literal equals the action's. Bump both together.
-SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.77.0}"
+SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.117.0}"
 if command -v supabase >/dev/null 2>&1; then
   SUPABASE="supabase"
 else

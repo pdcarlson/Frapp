@@ -2,17 +2,24 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockAdjustMutate } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(),
-  mockAdjustMutate: vi.fn().mockResolvedValue({}),
-}));
+const { mockCurrentChapter, mockAdjustMutate, mockAdjustReset } = vi.hoisted(
+  () => ({
+    mockCurrentChapter: vi.fn(),
+    mockAdjustMutate: vi.fn().mockResolvedValue({}),
+    mockAdjustReset: vi.fn(),
+  }),
+);
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from
 // the wire format to the disabled control.
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
-  useAdjustPoints: () => ({ mutateAsync: mockAdjustMutate, isPending: false }),
+  useAdjustPoints: () => ({
+    mutateAsync: mockAdjustMutate,
+    reset: mockAdjustReset,
+    isPending: false,
+  }),
   useMembers: () => ({
     data: [
       { user_id: "u-1", display_name: "Rush Chair" },
@@ -189,5 +196,30 @@ describe("PointsAdjustmentDialog subscription gating", () => {
     expect(
       screen.getByRole("link", { name: /billing portal/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("PointsAdjustmentDialog idempotency key", () => {
+  beforeEach(() => {
+    chapter.active();
+    mockAdjustReset.mockClear();
+  });
+
+  // Opening is a new adjustment, so the key the hook held for the last one
+  // goes (#1906); otherwise a later identical grant would replay a stale key.
+  it("starts each opening under a fresh key", () => {
+    const view = render(
+      <PointsAdjustmentDialog
+        open={false}
+        onOpenChange={vi.fn()}
+        onAdjusted={vi.fn()}
+      />,
+    );
+    expect(mockAdjustReset).not.toHaveBeenCalled();
+
+    view.rerender(
+      <PointsAdjustmentDialog open onOpenChange={vi.fn()} onAdjusted={vi.fn()} />,
+    );
+    expect(mockAdjustReset).toHaveBeenCalledTimes(1);
   });
 });

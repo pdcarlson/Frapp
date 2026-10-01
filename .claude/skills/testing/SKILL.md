@@ -40,7 +40,7 @@ The root has no `test` script and `turbo.json` has no `test` task, so `npm run l
 | Node only | `npm install` | Lint, type-check, `nest build`, every unit suite, API E2E (mocked Supabase), `check:api-contract`, `check:migration-safety`, `check:pglite-migrations` (Postgres in WASM), `test:ci-scripts`, `check:dep-cruiser` (after `packages/*` are built) |
 | + Chromium | `npx playwright install chromium` | `test:floor -w apps/web`, `test:fold -w apps/landing`. Each starts its own app server with stand-in env |
 | + Docker | A running Docker daemon | `docker build -f apps/api/Dockerfile .` |
-| + local Supabase | Docker, then `npx supabase start` and `npx supabase db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
+| + local Supabase | Docker, then `npm run supabase -- start` and `npm run supabase -- db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
 | Staging | none locally | The [`live-verification`](../live-verification/SKILL.md) skill |
 
 To run the apps, prefer Infisical-injected env: `npm run dev:api` (port 3001) and `npm run dev:web`
@@ -209,9 +209,11 @@ curl -X POST http://127.0.0.1:54321/auth/v1/signup -H "apikey: <ANON_KEY>" \
   -H "Content-Type: application/json" -d '{"email":"test@example.com","password":"Password123!"}'
 curl http://localhost:3001/v1/users/me -H "Authorization: Bearer <token>"   # creates the users row
 
-# Create a chapter. The DTO whitelist rejects any extra key with a 400
-curl -X POST http://localhost:3001/v1/chapters -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" -d '{"name":"Test Chapter","university":"Test University"}'
+# Create a chapter through onboarding, the only create route. accept_terms_privacy must be the
+# JSON true; the DTO whitelist rejects any extra key with a 400
+curl -X POST http://localhost:3001/v1/chapters/onboard -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test Chapter","university":"Test University","accept_terms_privacy":true}'
 
 # Chapter-scoped call
 curl http://localhost:3001/v1/events -H "Authorization: Bearer <token>" -H "x-chapter-id: <chapter_id>"

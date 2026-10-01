@@ -234,7 +234,7 @@ function OpenImageViewer({
                 >
                   <ChevronLeft aria-hidden="true" />
                 </Button>
-                <span className="shrink-0 text-[12.5px] text-muted-foreground">
+                <span className="shrink-0 text-caption text-muted-foreground">
                   {index! + 1} of {total}
                 </span>
                 <Button

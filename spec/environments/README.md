@@ -39,7 +39,7 @@ with green CI. The `production` branch that used to occupy this table was retire
 - Node.js at or above the root `package.json` `engines.node`, which is the one statement of the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major, so whichever release of it they land on (an older install under `nvm use`, the runner's cached toolchain, a cached image layer) can sit below the floor. Check `node -v` against `engines.node`.
 - npm v10+
 - Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
-- Supabase CLI (`npx supabase`)
+- Supabase CLI: none to install. The repo pins one version, the one CI deploys with, and `npm run supabase -- <args>` runs it, installing it into the gitignored `.cache/supabase-cli/` on first use (`scripts/lib/supabase-cli.sh`)
 - Expo Go app on iOS/Android device
 
 ### Setup
@@ -56,7 +56,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, then `supabase start` and `supabase db push --local` on the pinned CLI, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -64,17 +64,17 @@ The script runs `npm install`, `npx supabase start`, `npx supabase db push --loc
 # 1. Install dependencies
 npm install
 
-# 2. Start Supabase local (Postgres, Auth, Storage, Realtime)
-npx supabase start
+# 2. Start Supabase local (Postgres, Auth, Storage, Realtime), on the pinned CLI
+npm run supabase -- start
 
 # 3. Apply database migrations (--local targets the local Supabase instance)
-npx supabase db push --local
+npm run supabase -- db push --local
 
 # 4. Repair the local Postgres default ACLs. The pinned supabase/postgres image ships
 #    schema `public` without DML grants for anon/authenticated/service_role, so skipping
 #    this leaves every API query failing with `42501 permission denied for table ...`.
 #    Not needed if you ran scripts/local-dev-setup.sh above — it does this for you.
-. scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" npx supabase
+bash -c '. scripts/lib/supabase-cli.sh && . scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" frapp_supabase'
 
 # 5. Start apps — default (with Infisical — see docs/internal/environment/LOCAL_DEV.md):
 npm run dev:stack
@@ -83,7 +83,7 @@ npm run dev:stack
 
 ### Environment Variables
 
-If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npx supabase status -o env`.
+If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npm run -s supabase -- status -o env`.
 
 See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 
@@ -441,10 +441,7 @@ Creating and applying a migration locally: [`CONTRIBUTING.md` § Database Migrat
 
 ### Remote (Staging / Production)
 
-Two workflows exist for pushing migrations to remote projects:
-
-- **One-shot (CI/CD):** `npx supabase db push --project-ref <REF>` — no persistent link needed.
-- **Interactive (developer):** `npx supabase link --project-ref <REF>` followed by `npx supabase db push` — link persists in `.supabase/`.
+Remote projects are migrated by `scripts/run-migration.mjs --env <staging|production>`, which links the named project and runs `db push` on the pinned CLI. Every deploy runs it (below). Staging is never pushed by hand, and production goes through **Deploy production**; a by-hand run is a recovery path only ([`promotion.md`](../../docs/ops/database/promotion.md)).
 
 ### Automated Migrations (CI/CD)
 

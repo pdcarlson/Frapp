@@ -1123,8 +1123,9 @@ describe("MessageItem edit and delete", () => {
 
 describe("MessageItem bookmark toggle (#462)", () => {
   it("renders no bookmark control when the surface does not wire one", () => {
-    // A control that silently does nothing is the dead end components.md §5
-    // bans — the pins panel already had to be rescued from exactly that. A
+    // A control that silently does nothing is the dead end
+    // spec/ui/design-system/README.md §5 rule 2 bans — the pins panel already
+    // had to be rescued from exactly that. A
     // surface without `onToggleBookmark` hides the affordance instead.
     renderItemWithProps();
 

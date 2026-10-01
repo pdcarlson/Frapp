@@ -30,7 +30,7 @@ name: Deploy
 # plan (`scripts/ci/plan-staging-deploy.mjs`) and the staging hostnames; its
 # build, verify and upload follow the plan's outputs. Production's: the
 # provider preflight, the migration rehearsal and its fence, the dry-run stop,
-# the `config.toml` assert and `scope: migrations-only`. Where the two differ
+# the post-apply `config.toml` assert and `scope: migrations-only`. Where the two differ
 # in a value (a slug, `DEPLOY_TARGET`), each has its own step with literals,
 # never an `a && 'x' || 'y'` expression. The provider ids are the one
 # exception: a single step reads the named environment's Render service id and
@@ -479,10 +479,11 @@ jobs:
       # that has ever executed that write first. See deploy-production.yml's
       # header for what that costs a migrations-only recovery.
       #
-      # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
-      # `npx --yes supabase` and fetches whatever is latest, while the apply
-      # below uses the pinned CLI on PATH (`.github/actions/supabase-cli`), and
-      # "the same CLI code path" is the entire premise of the rehearsal.
+      # REPLAY_SUPABASE_CLI names the binary the apply below runs: the CLI
+      # `.github/actions/supabase-cli` put on PATH from the trusted ref. "The
+      # same CLI code path" is the entire premise of the rehearsal, so it is
+      # stated here rather than left to `resolveSupabaseCli`'s CI rule
+      # (scripts/ci/lib/supabase-cli-pin.mjs), which picks the same binary today.
       - name: Rehearse the migration against production's applied state
         id: replay
         if: inputs.environment == 'production'
@@ -580,6 +581,24 @@ jobs:
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
         run: node scripts/run-migration.mjs --env "$TARGET_ENVIRONMENT" --dry-run
+
+      # The dry run above has already run `supabase link`, the command that
+      # rewrites config.toml in some CLI lines, so production's check after
+      # the apply can be made here too, before anything is written. A CLI that
+      # rewrites it then fails the production dry run docs/ops/database/promotion.md
+      # starts from, rather than failing after production is migrated and
+      # before its API ships. Both environments, every run: staging deploys
+      # every merge, so a CLI bump that does this fails the bump's own merge
+      # instead of waiting for the next production deploy. Added when the pin
+      # moved off 2.77.0 (#723, #835) to a build whose `link` no CI run had
+      # exercised yet.
+      - name: Assert supabase config was not rewritten by link (before the apply)
+        run: |
+          if ! git diff --quiet HEAD -- supabase/config.toml; then
+            echo "::error::\`supabase link\` rewrote supabase/config.toml during the dry run. Nothing has been applied. Compare the diff below with the CLI pinned in .github/actions/supabase-cli before deploying."
+            git diff HEAD -- supabase/config.toml
+            exit 1
+          fi
 
       # The time this run's builds begin, for the source-map check at the end
       # (#2489): staging and production upload to the same Sentry projects

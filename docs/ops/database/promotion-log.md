@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-10-01: `discord_imports.role_mapping` gets a catalog comment that is true (#2887)
+
+### 20261001024000_discord_import_role_mapping_comment.sql
+
+- **Purpose**: One `comment on column public.discord_imports.role_mapping`. The column's `--` comment in `20260824120000_discord_import.sql` still calls the mapping informational, says nothing reads it, and shows a `signet_role` entry (the key the API actually wrote before #2818 was `signet_role_key`). Since #2818 it gates the channels imported "Same as Discord", and starting the import creates the mapped roles and grants their read permissions. That migration is promoted and isn't edited in place, so the true description goes into the catalog instead. Nothing else changes: no column, index, constraint, policy or row.
+- **Checks**: After `db push`, `select col_description('public.discord_imports'::regclass, (select attnum from pg_attribute where attrelid = 'public.discord_imports'::regclass and attname = 'role_mapping'));` returns the comment, which starts `Discord role -> Frapp role mapping (#2818).`
+- **Promoter notes**: Ship it in any order. No API or web code reads the comment. `COMMENT ON` takes a brief lock on `discord_imports`, a table of one row per import. Re-applying overwrites the comment with the same text. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-role_mapping-comment-20261001024000) § Rollback the role_mapping comment.
+
 ## 2026-09-30: One 1:1 DM per chapter and member pair (#2788)
 
 ### 20260930231000_chat_dm_one_channel_per_pair.sql
@@ -296,7 +306,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Purpose**: Adds `public.chat_viewer_has_blocked(p_actor uuid, p_message_id uuid)`: `security definer`, `stable`, `search_path = public, pg_temp`, no blocker parameter, and false for any message the caller can't read. It re-creates `chat_message_actions_select` with a third conjunct, `not (starts_with(action_type, 'reaction:') and chat_viewer_has_blocked(user_id, message_id))`. After it, a member who blocked someone in a chapter no longer receives that member's reaction rows there, over PostgREST or the Realtime echo. Votes and the blocked member's own reads are unchanged. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#what-a-block-does-and-does-not-hide) § What a block does and does not hide.
 - **Checks**: After `db push`,
   `select polroles::regrole[], pg_get_expr(polqual, polrelid) from pg_policy p join pg_class c on c.oid = p.polrelid where c.relname = 'chat_message_actions' and p.polpermissive and p.polcmd in ('r','*');` returns **exactly one** row: `{authenticated}`, with an expression containing both `can_read_chat_message(message_id)` and `chat_viewer_has_blocked(user_id, message_id)`. The FRA-38 check further down still holds as written.
-  `select has_function_privilege('anon', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | true`. Hosted Supabase grants `anon` directly, which the PGlite gate can't see, so this is the check that covers it.
+  `select has_function_privilege('anon', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as anon, has_function_privilege('authenticated', 'public.chat_viewer_has_blocked(uuid, uuid)', 'EXECUTE') as authenticated;` returns `false | true`. Hosted Supabase grants `anon` EXECUTE through default privileges, which the PGlite gate doesn't replay: it catches an explicit `grant … to anon` but not a forgotten revoke, so this is the check that covers that.
   `select prosecdef, proconfig from pg_proc where proname = 'chat_viewer_has_blocked';` returns `true | {"search_path=public, pg_temp"}`.
 - **Promoter notes**: Nothing needs to ship with it, and either order with any API or web deploy is safe, because no code calls the helper and clients read the table the same way under both policies. The web dashboard stops showing a blocked member's reaction chips to the blocker on its next reaction read. Re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
 
@@ -912,6 +922,13 @@ it depends on (`chat_messages.author_name`, `chat_message_attachments`, and the
 > `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist
 > actually enforces.
 
+> **Comment correction (2026-10-01, #2887).** The `role_mapping` column comment
+> here ("informational only … nothing reads it", with a `signet_role` entry) has
+> been false since #2818. The true description is the column's catalog comment,
+> written by `20261001024000_discord_import_role_mapping_comment.sql`; the
+> entry shape is `DiscordRoleMapping` in
+> `apps/api/src/domain/entities/discord-import.entity.ts`.
+
 - **Purpose**: give the importer its own identity column and the three tables an
   import needs while it runs. `chat_messages.external_message_id` holds the
   Discord message snowflake and is the re-run dedupe key; `discord_imports`,
@@ -1221,9 +1238,10 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   - Sanity: no member sees their own messages as unread — pick a chapter's most recent sender and
     confirm the channel they just posted in does not count that message.
 - **Rollback**: see **Rollback the chat unread/mention slice** in
-  [`db-rollback-playbook.md`](../db-rollback-playbook.md). Note it is a **coordinated** rollback — the
-  API must be redeployed to a pre-C1 revision _before_ the function is dropped, or
-  `GET /v1/channels/unread` 500s on every poll.
+  [`db-rollback-playbook.md`](../db-rollback-playbook.md). Note it is a **coordinated** rollback — a
+  forward revert of C1 must be live _before_ the function is dropped, or
+  `GET /v1/channels/unread` 500s on every poll. A pre-C1 commit can't be deployed instead
+  ([`db-rollback-playbook.md` § 3) Undo one migration](../db-rollback-playbook.md#3-undo-one-migration)).
 
 ## 2026-08-14: Backfill `chapters.accent_color` from branding (#795)
 
@@ -1262,7 +1280,7 @@ On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully ag
 
 Fixing the invalid Infisical credential (#696) was necessary but **not sufficient**. Two further blockers only became visible once injection worked, and both will recur on the first **production** migration:
 
-- **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), pin tracked in #835). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Verified on both as of 2026-08-29: `frapp-prod` is `ACTIVE_HEALTHY`, not paused, and run [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied production migrations successfully — so the production value is exercised, not merely provisioned. (This line previously said the opposite, from a period when `frapp-prod` was paused and no production deploy had run.)
+- **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is an upstream bug in the Management API endpoint the CLI calls ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091)), which a CLI bump alone does not fix ([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) has why). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. Present in the Infisical `development`, `staging`, and `production` environments as of 2026-08-10. Verified on both as of 2026-08-29: `frapp-prod` is `ACTIVE_HEALTHY`, not paused, and run [33275321347](https://github.com/pdcarlson/Frapp/actions/runs/33275321347) applied production migrations successfully — so the production value is exercised, not merely provisioned. (This line previously said the opposite, from a period when `frapp-prod` was paused and no production deploy had run.)
 - **Migration-history reconciliation.** `db push` refused with `Remote migration versions not found in local migrations directory`. Staging's `schema_migrations` carried `20260228000000_enable_rls_on_remaining_tables`, a version that has never existed in this repository on any branch. Its recorded `statements` column showed four `alter table … enable row level security` calls (`users`, `chapters`, `push_tokens`, `user_settings`) — a hand-applied February hotfix. The current `00000000000000_initial_schema.sql` already enables RLS on all four, so the row was redundant and was deleted.
 
 The procedure this used:

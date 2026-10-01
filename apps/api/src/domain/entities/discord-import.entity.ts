@@ -21,8 +21,12 @@
  * names no roles and carries no permissions.
  */
 
-/** Where an import's bytes came from. */
-export type DiscordImportSource = 'upload' | 'bot';
+/**
+ * Where an import's bytes came from. The array is the one list: the type, the
+ * DTOs' `enum` and `@IsIn`, and so the contract, all read it.
+ */
+export const DISCORD_IMPORT_SOURCES = ['upload', 'bot'] as const;
+export type DiscordImportSource = (typeof DISCORD_IMPORT_SOURCES)[number];
 
 /**
  * Where an import is in its life.
@@ -32,15 +36,22 @@ export type DiscordImportSource = 'upload' | 'bot';
  * the API, so a stalled job is always either waiting on a person or holding a
  * lease that will expire.
  */
-export type DiscordImportStatus =
-  | 'draft'
-  | 'ready'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'purging'
-  | 'purged';
+export const DISCORD_IMPORT_STATUSES = [
+  'draft',
+  'ready',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'purging',
+  'purged',
+] as const;
+/**
+ * Derived from the array, so a status added there reaches the response DTO's
+ * `enum` and the generated contract with it (#2860). The database CHECK
+ * (`discord_imports_status_check`) is the other list, kept by its migration.
+ */
+export type DiscordImportStatus = (typeof DISCORD_IMPORT_STATUSES)[number];
 
 /** What the admin chose to do with one Discord channel. */
 export type DiscordChannelMappingAction =

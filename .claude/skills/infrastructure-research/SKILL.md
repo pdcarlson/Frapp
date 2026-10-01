@@ -142,14 +142,14 @@ Applying protection is a human step. Runbook and current state:
 ## Supabase: Schema and project status
 
 ```bash
-npx supabase status                   # local: services, ports, keys
-npx supabase db diff --local          # local: uncommitted schema changes
-npx supabase migration list --local   # local: applied migrations
+npm run supabase -- status                   # local: services, ports, keys
+npm run supabase -- db diff --local          # local: uncommitted schema changes
+npm run supabase -- migration list --local   # local: applied migrations
 
-npx supabase login                    # laptop, once: stores your own personal access token
-npx supabase projects list
-npx supabase migration list --project-ref <ref>
-npx supabase db diff --linked         # local vs remote; needs a linked project
+npm run supabase -- login                    # laptop, once: stores your own personal access token
+npm run supabase -- projects list
+npm run supabase -- migration list --project-ref <ref>
+npm run supabase -- db diff --linked         # local vs remote; needs a linked project
 ```
 
 An exported `SUPABASE_ACCESS_TOKEN` wins over the token `supabase login` stored (checked with CLI
@@ -316,7 +316,7 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
   4. Compare Infisical `staging` key names against
      [`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md).
 - **Did a migration land in production?**
-  1. List applied migrations with `npx supabase migration list --project-ref <prod_ref>`, or with
+  1. List applied migrations with `npm run supabase -- migration list --project-ref <prod_ref>`, or with
      MCP `list_migrations` on the project `list_projects` names as production.
   2. Compare against `supabase/migrations/` on `main`. There's no `production` branch: production
      deploys a named commit on `main` via `.github/workflows/deploy-production.yml`. Gates:

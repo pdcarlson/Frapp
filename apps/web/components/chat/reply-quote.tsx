@@ -65,7 +65,7 @@ export function QuotedMessage({
 
   const shared = cn(
     "flex min-w-0 items-baseline gap-1.5 border-l-2 border-border pl-2",
-    "text-[12.5px] text-muted-foreground",
+    "text-caption text-muted-foreground",
     placeholder !== null && "italic",
     className,
   );

@@ -94,18 +94,19 @@ export function BookmarksPanel({
         Loading and error are distinct states rather than both collapsing to
         the empty copy: "you have no bookmarks" is a claim about the member's
         data, and asserting it while the request is in flight or has failed is
-        the false-empty defect components.md §5 bans.
+        the false empty spec/ui/design-system/README.md §4 rules out by
+        requiring loading, empty and error as separate states.
       */}
       {isLoading ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Loading your bookmarks…
         </p>
       ) : isError ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Couldn’t load your bookmarks. Reopen this panel to try again.
         </p>
       ) : bookmarks.length === 0 ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Nothing saved yet. Save a message to keep it here. Only you can see
           your bookmarks.
         </p>
@@ -158,8 +159,8 @@ export function BookmarksPanel({
                   shell's channel to one absent from the viewer's channel
                   list, which silently resolves to #general and never scrolls
                   — a control that appears to work and quietly does the wrong
-                  thing, which is worse than the dead ends components.md §5
-                  already bans.
+                  thing, which is worse than the dead ends
+                  spec/ui/design-system/README.md §5 rule 2 already bans.
                 */}
                 {available ? (
                   <button
@@ -172,7 +173,7 @@ export function BookmarksPanel({
                       onJump?.(bookmark.message.channel_id, bookmark.message_id)
                     }
                     className={cn(
-                      "block w-full py-3 pl-3 pr-11 text-left text-[12.5px] transition-colors",
+                      "block w-full py-3 pl-3 pr-11 text-left text-caption transition-colors",
                       "hover:bg-accent-subtle hover:text-accent-text",
                       FOCUS_RING,
                     )}
@@ -180,7 +181,7 @@ export function BookmarksPanel({
                     {body}
                   </button>
                 ) : (
-                  <div className="block w-full py-3 pl-3 pr-11 text-left text-[12.5px]">
+                  <div className="block w-full py-3 pl-3 pr-11 text-left text-caption">
                     {body}
                   </div>
                 )}
