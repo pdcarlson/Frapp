@@ -178,7 +178,9 @@ export function DiscordImportPage() {
         }
         // A paused permission read is not a denial (`writing.md` §7,
         // "Permission check offline"). Without this the screen-level gate fell
-        // back to the control-slot chip, a 30px line standing in for the page.
+        // back to the control-slot chip, one line of text standing in for the
+        // page. The card it draws instead is the same screen-level fallback
+        // every flushed route's gate draws (`/reports`, `/geofences`).
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
             description="Reconnect to check whether you can import Discord history."
@@ -214,10 +216,12 @@ type BodyProps = {
 
 /**
  * The confirmation lives above the list's loading, offline and error branches
- * (#2944). The list polls every few seconds while a row is deleting, and one
- * failed poll swaps the list for its error state; a dialog rendered inside the
- * list would unmount with it and settle as a cancel, so the admin's click on
- * Delete import would vanish. Same shape as the Settings pages.
+ * (#2944). The list polls every few seconds while a row is deleting, and a
+ * dialog rendered inside a branch that can swap out would unmount with it and
+ * settle as a cancel, so the admin's click on Delete import would vanish. Same
+ * shape as the Settings pages. A failed poll no longer swaps a loaded list
+ * (the error branch below needs no data at all), but the hoist costs nothing
+ * and keeps the dialog independent of what the list decides to render.
  */
 function DiscordImportBody(props: BodyProps) {
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -252,11 +256,36 @@ function DiscordImportList({
 
   const paused = imports.isPending && imports.fetchStatus === "paused";
 
+  // Above every state branch, and so above anything the list's own read can
+  // do. The wizard reads nothing from the list, but it holds every choice the
+  // admin has made (source, consent, mappings, cutoff) in its own state, so a
+  // branch that unmounts it loses them: a list read that failed, or went
+  // offline, while another import's deletion was being polled used to send
+  // the admin back to the first step with nothing kept. On the page surface,
+  // not in a card: it already holds itself to a centred 672px column with its
+  // own step heading and footer rule.
+  if (wizardOpen) {
+    return (
+      <ImportWizard
+        initialSource={resumingBotWizard ? ("bot" as ImportSource) : null}
+        initialStep={resumingBotWizard ? ("connect" as WizardStep) : undefined}
+        handshake={handshake}
+        onCancel={() => setWizardOpen(false)}
+        onStarted={(id) => {
+          setWizardOpen(false);
+          setActiveId(id);
+          setOpenId(id);
+        }}
+      />
+    );
+  }
+
   // The nested family with `sole`: the whole-screen states paint `--card`,
   // which on this flush route redraws the card the route deleted, and each of
   // these is the page's only async state. The error used to take
   // `ErrorState`'s defaults, "Unable to load data" and "Please retry in a
-  // moment.", which is the vague shape `writing.md` §1 bans by name.
+  // moment.": no reason and no next step, the vague shape `writing.md` §1
+  // bans and §3's three-part pattern rules out.
   if (isOffline && anyReadUncached(imports)) {
     return (
       <NestedOffline
@@ -270,7 +299,13 @@ function DiscordImportList({
   if (imports.isLoading || paused) {
     return <NestedLoading sole message="Loading imports..." />;
   }
-  if (imports.isError) {
+  // `data === undefined`, not `isError` alone: a failed background read keeps
+  // the rows TanStack already holds, and while a deletion is being polled an
+  // admin is watching those rows count down. Swapping them for an error that
+  // blames their chapter access, over a read that will likely succeed on the
+  // next poll, hid the meter and the Stop and Delete controls (the report
+  // queue in Chat Admin draws the same line).
+  if (imports.isError && imports.data === undefined) {
     return (
       <NestedError
         sole
@@ -320,24 +355,6 @@ function DiscordImportList({
         description: getErrorMessage(error, "Could not delete the import."),
       });
     }
-  }
-
-  // On the page surface, not in a card: the wizard already holds itself to a
-  // centred 672px column with its own step heading and footer rule.
-  if (wizardOpen) {
-    return (
-      <ImportWizard
-        initialSource={resumingBotWizard ? ("bot" as ImportSource) : null}
-        initialStep={resumingBotWizard ? ("connect" as WizardStep) : undefined}
-        handshake={handshake}
-        onCancel={() => setWizardOpen(false)}
-        onStarted={(id) => {
-          setWizardOpen(false);
-          setActiveId(id);
-          setOpenId(id);
-        }}
-      />
-    );
   }
 
   return (

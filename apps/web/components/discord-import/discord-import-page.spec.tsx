@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /**
  * The import list's row actions (#2817).
@@ -19,8 +20,11 @@ import {
 const { hooks } = vi.hoisted(() => ({
   hooks: {
     rows: [] as unknown[],
-    // A failed list poll: the page swaps the list for its error state.
+    // A failed list read. With rows cached the page keeps them; with none
+    // (`listCached: false`) it draws the list's error state.
     listError: false,
+    listCached: true,
+    offline: false,
     clear: vi.fn(),
     remove: vi.fn(),
     progress: vi.fn(),
@@ -38,7 +42,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@repo/hooks", () => ({
   DISCORD_CONNECT_MESSAGES: {},
   useDiscordImports: () => ({
-    data: hooks.rows,
+    data: hooks.listCached ? hooks.rows : undefined,
     isPending: false,
     isLoading: false,
     isError: hooks.listError,
@@ -64,7 +68,7 @@ vi.mock("@/components/shared/can", () => ({
 }));
 
 vi.mock("@/lib/providers/network-provider", () => ({
-  useNetwork: () => ({ isOffline: false }),
+  useNetwork: () => ({ isOffline: hooks.offline, probeOnce: vi.fn() }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -99,12 +103,80 @@ const rowOf = (guild: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   hooks.listError = false;
+  hooks.listCached = true;
+  hooks.offline = false;
   hooks.clear.mockResolvedValue(undefined);
   hooks.remove.mockResolvedValue(undefined);
   hooks.rows = [
     row("kept", "completed", "Imported server"),
     row("gone", "purged", "Deleted server"),
   ];
+});
+
+describe("DiscordImportPage — the list on the page surface (#2500)", () => {
+  it("sits flush under its own label, with no wrapper card and no narration", () => {
+    const { container } = render(<DiscordImportPage />);
+
+    const region = screen.getByRole("region", { name: "Imports" });
+    expect(within(region).getByText("Imported server")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(
+      screen.queryByText(/into Frapp as read-only archive messages/),
+    ).toBeNull();
+  });
+
+  it("explains what an import is when there are none", () => {
+    hooks.rows = [];
+    render(<DiscordImportPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "No imports yet" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Bring your chapter's Discord history in as read-only archive messages.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says what failed when the first read fails, not the vague defaults", () => {
+    hooks.listError = true;
+    hooks.listCached = false;
+    const { container } = render(<DiscordImportPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Couldn't load imports" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Confirm your chapter access and retry."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Unable to load data")).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says the imports are unavailable offline when none are cached", () => {
+    hooks.offline = true;
+    hooks.listCached = false;
+    render(<DiscordImportPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Imports unavailable offline" }),
+    ).toBeInTheDocument();
+  });
+
+  // The wizard holds every choice in its own state, so a branch that unmounts
+  // it sends the admin back to the first step with nothing kept.
+  it("keeps an open wizard through a list read that fails with nothing cached", () => {
+    const { rerender } = render(<DiscordImportPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New import" }));
+    expect(screen.getByTestId("wizard")).toBeInTheDocument();
+
+    hooks.listError = true;
+    hooks.listCached = false;
+    rerender(<DiscordImportPage />);
+    expect(screen.getByTestId("wizard")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load imports")).toBeNull();
+  });
 });
 
 describe("DiscordImportPage — row actions", () => {
@@ -185,10 +257,12 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
     );
   });
 
-  // The list polls while a row is deleting, and a failed poll swaps it for the
-  // error state. A dialog inside the list would go with it and settle as a
-  // cancel, dropping the admin's confirmation.
-  it("keeps an open confirmation through a failed list poll", async () => {
+  // The list polls while a row is deleting. A failed poll used to swap it for
+  // the error state, and a dialog inside the list would have gone with it and
+  // settled as a cancel, dropping the admin's confirmation. The failed poll now
+  // keeps the rows it already has (#2500), and the confirmation survives either
+  // way.
+  it("keeps the rows and an open confirmation through a failed list poll", async () => {
     const { rerender } = render(<DiscordImportPage />);
     fireEvent.click(
       rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
@@ -197,7 +271,8 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
 
     hooks.listError = true;
     rerender(<DiscordImportPage />);
-    expect(screen.queryByText("Tau Nu Discord")).toBeNull();
+    expect(screen.getByText("Tau Nu Discord")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load imports")).toBeNull();
 
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));

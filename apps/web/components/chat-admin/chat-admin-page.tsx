@@ -521,7 +521,15 @@ function ChatAdminBody() {
   if (channelsQuery.isLoading || categoriesQuery.isLoading || paused) {
     return <NestedLoading sole message="Loading channels..." />;
   }
-  if (channelsQuery.isError || categoriesQuery.isError) {
+  // `data === undefined`, not `isError` alone: a failed background refetch
+  // keeps the rows TanStack already holds, and an officer part-way through an
+  // edit should not lose the form behind an error that blames their access
+  // over a read that will likely succeed next time. Same line as the report
+  // queue above draws.
+  if (
+    (channelsQuery.isError && channelsQuery.data === undefined) ||
+    (categoriesQuery.isError && categoriesQuery.data === undefined)
+  ) {
     return (
       <NestedError
         sole
@@ -548,8 +556,10 @@ function ChatAdminBody() {
       {/*
         Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
         description paragraph"). Three `<Card>`s sat here — Channels,
-        Categories and the edit pane — and what survives of each is its
-        heading, as the section label the other flush routes use. Also gone:
+        Categories and the edit pane. The two that were sections keep their
+        heading as the section label the other flush routes use; the edit
+        pane, a column inside Channels, keeps a 16/700 heading naming the
+        channel it edits, one level below. Also gone:
         the paragraph that opened the body, "Create, edit, and delete channels;
         organize them into categories; and manage pinned messages", which
         narrated the page to an officer who had just navigated to it.
@@ -590,10 +600,11 @@ function ChatAdminBody() {
               <DialogHeader>
                 <DialogTitle>Create a channel</DialogTitle>
                 {/*
-                  Kept: it is the one place the three types are told apart,
-                  and the type cannot be changed after this. It used to say
-                  private channels are "visible to every member", which is
-                  the opposite of what one is (`spec/behavior/chat/README.md` §
+                  Kept, because it is the one place the three types are told
+                  apart, and the last place to choose one: the update route
+                  takes no `type`, so the edit pane can only show it. It used
+                  to say private channels are "visible to every member", the
+                  opposite of what one is (`spec/behavior/chat/README.md` §
                   Channels): only the ids in `member_ids` read it, and the
                   create route seeds that with its creator alone.
                 */}
@@ -601,7 +612,8 @@ function ChatAdminBody() {
                   Public channels are open to every member. A private channel is
                   readable only by its members, and you are its first. A
                   role-gated channel is readable by members holding at least one
-                  of the selected permissions.
+                  of the selected permissions. A channel&apos;s type can&apos;t
+                  be changed after it&apos;s created.
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -739,11 +751,12 @@ function ChatAdminBody() {
             {/*
               Each row is itself a control (it selects the channel), so it
               takes the Directory's row height: 36 for a pointer, 44 for a
-              finger. The delete beside it is the trailing 32px control.
+              finger, set by the button and with no padding around it. The
+              delete beside it is the trailing 32px control.
             */}
             <ul className={denseListClassName}>
               {channels.map((channel) => (
-                <li key={channel.id} className="flex items-center gap-1 py-1">
+                <li key={channel.id} className="flex items-center gap-1">
                   <button
                     type="button"
                     className={cn(
@@ -790,10 +803,10 @@ function ChatAdminBody() {
             {/*
               The edit pane is a column of the same section, divided from the
               list by a hairline rather than lifted onto a card. Its heading
-              carries the channel's type as a badge: that replaces a
-              description that said "Type is set at creation and can't be
-              changed here", since a value shown beside the title and absent
-              from the form already says it.
+              carries the channel's type as a badge, and the form has no type
+              field. That replaces a description that said "Type is set at
+              creation and can't be changed here"; the create dialog, where
+              the type is chosen, now says it is final.
             */}
             <div className="lg:border-l lg:border-border lg:pl-6">
               {selectedChannel ? (
@@ -922,10 +935,36 @@ function ChatAdminBody() {
 
                   <div className="space-y-2 border-t border-border pt-4">
                     <h4 className={`${EYEBROW} text-muted-foreground`}>
-                      Pinned messages ({pins.length})
+                      Pinned messages
+                      {/* A count only once there is a list to count. */}
+                      {pinsQuery.data !== undefined ? ` (${pins.length})` : ""}
                     </h4>
+                    {/*
+                      A failed or paused read is not an empty list. Both used
+                      to fall through to "Nothing pinned", because `pins` is
+                      `[]` whenever there is no data, so an officer offline or
+                      behind a failed read was told the channel had no pins.
+                    */}
                     {pinsQuery.isLoading ? (
-                      <p className="text-xs text-muted-foreground">Loading…</p>
+                      <p className="text-xs text-muted-foreground">
+                        Loading pins...
+                      </p>
+                    ) : pinsQuery.data === undefined &&
+                      pinsQuery.fetchStatus === "paused" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Pins unavailable offline. Reconnect to load them.
+                      </p>
+                    ) : pinsQuery.isError && pinsQuery.data === undefined ? (
+                      <p className="text-xs text-muted-foreground">
+                        Couldn&apos;t load the pins.{" "}
+                        <button
+                          type="button"
+                          className={`underline ${FOCUS_RING_OFFSET}`}
+                          onClick={() => void pinsQuery.refetch()}
+                        >
+                          Retry
+                        </button>
+                      </p>
                     ) : pins.length === 0 ? (
                       <NestedEmpty
                         title="Nothing pinned"

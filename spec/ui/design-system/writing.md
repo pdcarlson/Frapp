@@ -496,7 +496,10 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Empty (channels) | `No channels yet` | `Create the first channel to get chapter chat structured.` |
 | Empty (categories) | `No categories yet` | `Channels without a category show up as uncategorized.` |
 | Nothing selected (edit pane) | `No channel selected` | `Pick a channel to edit its details, notifications and pins.` |
+| Loading (pins) | — | `Loading pins...` |
 | Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
+| Error (pins) | — | `Couldn't load the pins.` · `Retry` (never `Nothing pinned`: a failed read is not an empty list) |
+| Offline (pins) | — | `Pins unavailable offline. Reconnect to load them.` |
 | Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |

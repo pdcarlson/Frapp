@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { networkMock } from "@/tests/network";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /*
  * The officer report queue. What is pinned here is the contract in
@@ -151,6 +152,22 @@ beforeEach(() => {
   reportsByStatus.value = { open: settled([report()]) };
   mockResolve.mockResolvedValue({});
   mockRemove.mockResolvedValue({});
+});
+
+describe("ChatReportsCard — the section", () => {
+  it("is a labelled section on the page surface, with the two facts a row can't show", () => {
+    const { container } = render(<ChatReportsCard />);
+
+    // Flush on /chat-admin (#2500): no wrapper card, and the heading is the
+    // section's accessible name.
+    const region = screen.getByRole("region", { name: "Reported messages" });
+    expect(
+      within(region).getByText(
+        "Each report shows the message as it read when reported. Who reported it is never shown.",
+      ),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
 });
 
 describe("ChatReportsCard — what a row shows", () => {
@@ -964,6 +981,17 @@ describe("ChatReportsCard — the gate", () => {
     ).toBeInTheDocument();
     expect(requestedStatuses).toEqual([]);
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
+
+  it("labels the denied state the way the queue is labelled, on the page surface", () => {
+    permissions.value = ["channels:manage"];
+    const { container } = render(<ChatReportsCard />);
+
+    const region = screen.getByRole("region", { name: "Reported messages" });
+    expect(
+      within(region).getByText(/needs the members:view and channels:manage/),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("admits the wildcard", () => {

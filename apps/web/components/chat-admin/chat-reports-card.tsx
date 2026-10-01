@@ -21,12 +21,6 @@ import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { EYEBROW } from "@/components/ui/typography";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -101,12 +95,21 @@ export function ChatReportsCard() {
     <Can
       allOf={CHAT_REPORT_QUEUE_PERMISSIONS}
       deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{copy.title}</CardTitle>
-            <CardDescription>{copy.deniedDescription}</CardDescription>
-          </CardHeader>
-        </Card>
+        // Labelled as the queue is when it renders. This sits beside the flush
+        // channel sections on the same page, so a card here would draw the
+        // same title in a second style for an officer who can manage channels
+        // but not review reports.
+        <section aria-labelledby="chat-reports-label" className="space-y-1">
+          <h2
+            id="chat-reports-label"
+            className={`${EYEBROW} text-muted-foreground`}
+          >
+            {copy.title}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {copy.deniedDescription}
+          </p>
+        </section>
       }
       offlineFallback={(retry) => (
         <PermissionsOfflineSurface

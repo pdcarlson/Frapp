@@ -858,19 +858,36 @@ from `1f` pin 2.
 
 | Route | Deleted | Kept, and why |
 | ----- | ------- | ------------- |
-| `/chat-admin` | The narration paragraph, "Create, edit, and delete channels; organize them into categories; and manage pinned messages". Four wrapper cards: the report queue's, Categories, Channels and the edit pane. The edit pane's description, "Type is set at creation and can't be changed here", and the two sentences behind "Pick a channel on the left…" | Each card's heading, as an `EYEBROW` section label. The edit pane shows the type as a badge beside its heading, which says what the sentence said. The report queue's line under its label, trimmed to its two facts (the text is the snapshot taken when reported; the reporter is never named), because a row can show neither |
+| `/chat-admin` | The narration paragraph, "Create, edit, and delete channels; organize them into categories; and manage pinned messages". Four wrapper cards: the report queue's, Categories, Channels and the edit pane. The edit pane's description, "Type is set at creation and can't be changed here", and the two sentences behind "Pick a channel on the left…" | The queue's, Channels' and Categories' headings, as `EYEBROW` section labels. The edit pane is a column inside Channels, not a section, so its heading is a 16/700 `<h3>` naming the channel it edits, with the type as a badge beside it and no type field in the form; the create dialog, where the type is chosen, now says it is final. The report queue's line under its label, trimmed to its two facts (the text is the snapshot taken when reported; the reporter is never named), because a row can show neither. The Open tab's hint, "Mark reviewed and Dismiss close a report and leave the message up. Only an open report can remove its message", because neither button's label says the message stays up, and a resolved report can't come back to remove it |
 | `/discord-import` | The narration paragraph, "Bring your chapter's Discord history into Frapp as read-only archive messages", and the two cards: the list's and the open wizard's | The paragraph's sense, as the empty list's description, where the one admin who needs it is reading. The wizard's consent and legal copy, which is content |
 
-Both routes now use the nested state family with `sole`: the whole-screen states paint `--card`
-and would redraw the deleted card. Lists are on `denseListClassName`: a channel row selects the
-channel, so it takes §9's row-as-control height, and category and import rows take §8's 44px. Three
-defects on the way through were fixed rather than re-decided:
+The data states are the nested family with `sole`: the whole-screen states paint `--card` and would
+redraw the deleted card. The **screen-level gate fallbacks keep theirs**: the permission-denied card
+and `PermissionsOfflineSurface` replace the whole body under `PageHeader`, exactly as on `/reports`
+and `/geofences`, and #2500 left state surfaces their treatment. The report queue's own denied state
+is the exception, because it sits beside the flush channel sections rather than replacing the page:
+it is the queue's section label over the sentence, not a card. Lists are on `denseListClassName`: a
+channel row selects the channel, so it takes §9's row-as-control height (36, 44 on touch, with no
+padding around the button), and category and import rows take §8's 44px.
+
+Defects on the way through, fixed rather than re-decided:
 
 - `/discord-import`'s list error took `ErrorState`'s defaults, "Unable to load data" and "Please
-  retry in a moment.", which `writing.md` §1 bans by name.
+  retry in a moment.": no reason and no next step, the vague shape `writing.md` §1 bans and §3's
+  three-part pattern rules out.
 - Its screen-level `<Can>` had no `offlineFallback`, so a paused permission read showed the
   control-slot chip in place of the page, and `can-fallback.spec.tsx` did not list it.
 - The wizard rendered a second `<main>` inside the shell's.
+- The wizard rendered below the list's state branches, so a list read that failed while another
+  import's deletion was being polled unmounted it and lost every choice the admin had made. It now
+  renders above them.
+- Both routes swapped loaded rows for their error state on a failed *background* read, telling an
+  admin to check their chapter access over a read that would likely succeed on the next try. The
+  error state now needs no data at all, as the report queue's already did.
+- A channel's pins said "Nothing pinned" when their read had failed or was paused offline.
+- The create-channel dialog said private channels are "visible to every member", the opposite of
+  the rule in [`chat/README.md`](../../behavior/chat/README.md) § Channels: only the channel's
+  members read one.
 
 ### Left alone, deliberately
 
