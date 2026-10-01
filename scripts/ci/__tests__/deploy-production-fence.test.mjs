@@ -422,6 +422,7 @@ describe("production's steps run in the order that fails before it writes", () =
     "Assert supabase config was not rewritten by link",
     "Deploy the commit to Render (production)",
     "Verify production serves the commit",
+    "Check the API answers its clients (production)",
     "Deploy the commit to Vercel production (web + landing)",
   ];
 
@@ -461,6 +462,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
     "Assert supabase config was not rewritten by link",
     "Deploy the commit to Render (production)",
     "Verify production serves the commit",
+    "Check the API answers its clients (production)",
     "Deploy the commit to Vercel production (web + landing)",
   ];
 
@@ -664,9 +666,44 @@ describe("installs run before any secret, and the trust split holds", () => {
       }
     };
     visit(join(REPO_ROOT, "scripts", "ci", "verify-served-commit.mjs"));
-    // The source-map check (#2489) runs from the same copy.
+    // The source-map check (#2489) and the client checks (#3113) run from the same copy.
     visit(join(REPO_ROOT, "scripts", "ci", "verify-sentry-sourcemaps.mjs"));
+    visit(join(REPO_ROOT, "scripts", "ci", "smoke-deployed-api.mjs"));
     assert.ok(seen.size > 2);
+  });
+
+  // #3113: CORS, the minimum app version and the copy function, asked of the
+  // live API right after it is verified. Before any upload, so a failure ships
+  // no frontend behind an API its clients can't use; under the verify step's
+  // own condition, so it runs whenever that does.
+  it("checks the API's clients from the trusted copy, right after each served-commit check", () => {
+    const copy = sharedSteps()[at("Keep a trusted copy of the served-commit check")];
+    const checks = sharedSteps().filter((s) => /smoke-deployed-api\.mjs/.test(s.body));
+    assert.deepEqual(
+      checks.map((s) => s.name),
+      ["Check the API answers its clients (staging)", "Check the API answers its clients (production)"],
+    );
+    const verifies = ["Verify staging serves the commit", "Verify production serves the commit"];
+    for (const [i, step] of checks.entries()) {
+      const verify = sharedSteps()[at(verifies[i])];
+      assert.equal(at(step.name), at(verifies[i]) + 1, `"${step.name}" runs right after "${verifies[i]}"`);
+      assert.equal(step.if, verify.if, `"${step.name}" runs whenever "${verifies[i]}" does`);
+      assert.equal(step.env.get("TRUSTED_CI"), copy.env.get("TRUSTED_CI"), `"${step.name}" reads another copy`);
+      assert.match(step.body, /run: node "\$TRUSTED_CI\/smoke-deployed-api\.mjs"/);
+      assert.doesNotMatch(step.body, /node scripts\/ci\/smoke-deployed-api/, `"${step.name}" runs the deployed tree's copy`);
+      // The dashboard origins come from the trusted ref's source, not the deployed tree's.
+      assert.equal(step.env.get("TRUSTED_SHA"), "${{ github.sha }}");
+      // The key it calls the function with is the one the injection already
+      // gave every step; the step names no secret of its own.
+      assert.doesNotMatch(step.body, /secrets\./, `"${step.name}" passes a secret the job didn't already hold`);
+      for (const upload of ["Upload web + landing to staging", "Deploy the commit to Vercel production (web + landing)"]) {
+        assert.ok(at(step.name) < at(upload), `"${step.name}" must run before "${upload}"`);
+      }
+    }
+    assert.equal(checks[0].env.get("TARGET_ENVIRONMENT"), "staging");
+    assert.equal(checks[0].env.get("SERVICE_LABEL"), "frapp-api-staging");
+    assert.equal(checks[1].env.get("TARGET_ENVIRONMENT"), "production");
+    assert.equal(checks[1].env.get("SERVICE_LABEL"), "frapp-api-prod");
   });
 
   it("checks the source maps from the trusted copy, last, on a real full production run only", () => {

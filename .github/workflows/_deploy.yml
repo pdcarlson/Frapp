@@ -17,14 +17,16 @@ name: Deploy
 #   deployed commit →
 #   plan (staging) / rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
-#   the API by commit → verify it serves the commit → UPLOAD web + landing →
-#   point the staging hosts at them → ask Sentry for the source maps (reports,
-#   never fails).
+#   the API by commit → verify it serves the commit → check it answers its
+#   clients (CORS, the minimum app version, the attachment-copy function) →
+#   UPLOAD web + landing → point the staging hosts at them → ask Sentry for
+#   the source maps (reports, never fails).
 # A failure anywhere before the upload ships no frontend: a failed build before
-# anything is applied, a failed migration before the API, a failed API before
-# the frontends that call it. One job, because the built output lives in
-# `$RUNNER_TEMP` between the two Vercel phases, and because every job that
-# names `production` costs its own approval click: this is still one.
+# anything is applied, a failed migration before the API, a failed API (or one
+# its clients can't use) before the frontends that call it. One job, because
+# the built output lives in `$RUNNER_TEMP` between the two Vercel phases, and
+# because every job that names `production` costs its own approval click:
+# this is still one.
 #
 # Each environment's layers are named by `inputs.environment`. Staging's: the
 # plan (`scripts/ci/plan-staging-deploy.mjs`) and the staging hostnames; its
@@ -49,9 +51,9 @@ name: Deploy
 #     'action.yml'" (db-rollback-playbook.md § Deploying an OLDER commit), and
 #     a newer commit's `supabase-cli` pin would silently differ from the one
 #     the rehearsal used.
-#   * The provider preflight and the served-commit check are verdicts on the
-#     deploy, so they run trusted code: the preflight before the detach, the
-#     served-commit check from a copy taken before it.
+#   * The provider preflight, the served-commit check and the client checks
+#     are verdicts on the deploy, so they run trusted code: the preflight
+#     before the detach, the two checks from a copy taken before it.
 #   * The provider ids are read from the trusted ref's
 #     `.github/environments.json`, so a rollback deploys to the services
 #     today's config names, not the ones an older commit named.
@@ -142,9 +144,10 @@ jobs:
     # secrets, after its main-only rule, and its reviewers (see the header).
     environment: ${{ inputs.environment }}
     # The steps' own ceilings: the Render poll 20 minutes, the served-commit
-    # check 5, the Vercel READY poll 30 (`VERCEL_OVERALL_TIMEOUT_MS`), the
-    # source-map check under 3 (a minute of re-asking, two intervals and one
-    # read), on top
+    # check 5, the client checks under 9 (five requests, each at most three
+    # 30-second attempts), the Vercel READY poll 30
+    # (`VERCEL_OVERALL_TIMEOUT_MS`), the source-map check under 3 (a minute of
+    # re-asking, two intervals and one read), on top
     # of installs, two builds, production's rehearsal stack and the
     # migrations. 75 bounds the job past all of them.
     timeout-minutes: 75
@@ -377,10 +380,11 @@ jobs:
       # tree, it would also set a floor on rollbacks: a commit from before the
       # script existed (#2505) could ship its API and then fail here. The script
       # and its `lib/` imports are Node built-ins only, so the copy needs no
-      # install. The source-map check at the end of the job (#2489) runs from
-      # this copy for the same reasons, and so does production's rehearsal
-      # stack start (`supabase-start-disposable.sh`, bash, #2609), which runs on
-      # every production run, migrations-only included. So the copy takes all
+      # install. The client checks after it (#3113) and the source-map check at
+      # the end of the job (#2489) run from this copy for the same reasons, and
+      # so does production's rehearsal stack start
+      # (`supabase-start-disposable.sh`, bash, #2609), which runs on every
+      # production run, migrations-only included. So the copy takes all
       # of `scripts/ci` and has no condition. The step keeps its name, which
       # the deploy tests pin.
       - name: Keep a trusted copy of the served-commit check
@@ -816,6 +820,34 @@ jobs:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/verify-served-commit.mjs"
 
+      # Then ask the API what its clients ask (#3113, #2990), from the runner,
+      # which reaches both environments where agent sandboxes can't reach
+      # production. Fails the job, before any frontend uploads, when:
+      #   * a preflight from this environment's dashboard origin doesn't get it
+      #     back in `Access-Control-Allow-Origin`, or one from the other
+      #     environment's gets the header at all;
+      #   * `GET /v1/client-policy` answers `update_required: true` to the
+      #     `expo.version` in this commit's `apps/mobile/app.json` (staging only
+      #     warns: a minimum above it is how the update gate is tested there);
+      #   * the attachment-copy function refuses the API's own key, or answers
+      #     its probe with anything but a refusal made before any fetch.
+      # Every check runs and names what it saw; the script header has the
+      # reasoning. The origins are read from the trusted ref's source
+      # (`TRUSTED_SHA`), the app version from the deployed tree. The function
+      # call uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, which every
+      # step since the Infisical injection already holds: no new secret
+      # reaches this job.
+      #
+      # Same condition as the served-commit check: whenever anything ships.
+      - name: Check the API answers its clients (staging)
+        if: steps.plan.outputs.verify_sha != ''
+        env:
+          TARGET_ENVIRONMENT: staging
+          SERVICE_LABEL: frapp-api-staging
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: node "$TRUSTED_CI/smoke-deployed-api.mjs"
+
       # Production: this commit, on every real run. NOT scope-gated: a
       # migrations-only run changes the schema under an API that is already
       # running and is not being redeployed, which makes "does production still
@@ -848,6 +880,18 @@ jobs:
             DEPLOY_SHA="$SERVED"
           fi
           DEPLOY_SHA="$DEPLOY_SHA" node "$TRUSTED_CI/verify-served-commit.mjs"
+
+      # The client checks, as on staging (see that step), on every real run.
+      # A migrations-only run included, for the reason above: the schema moved
+      # under a running API, and its clients' answers are what matters.
+      - name: Check the API answers its clients (production)
+        if: ${{ inputs.environment == 'production' && !inputs.dry_run }}
+        env:
+          TARGET_ENVIRONMENT: production
+          SERVICE_LABEL: frapp-api-prod
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+        run: node "$TRUSTED_CI/smoke-deployed-api.mjs"
 
       # UPLOAD the bundles built above, only once the API they call is verified,
       # and only when the plan says so: for `main`'s tip when web or landing
