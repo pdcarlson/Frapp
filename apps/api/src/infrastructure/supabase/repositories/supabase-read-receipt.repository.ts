@@ -6,6 +6,7 @@ import {
   ChannelReadReceipt,
   ChannelUnreadCount,
 } from '#domain/entities/chat.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseReadReceiptRepository implements IChannelReadReceiptRepository {
@@ -29,7 +30,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       .upsert(row, { onConflict: 'channel_id,user_id' })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -41,7 +42,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       'get_channel_unread_counts',
       { p_chapter_id: chapterId, p_user_id: userId },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // `bigint` crosses PostgREST as a JSON number for these magnitudes, but the
     // counts are the whole point of the call, so coerce rather than trust the
     // wire type — a string here would silently render as "12" + "3" concatenated
@@ -63,7 +64,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       p_chapter_id: chapterId,
       p_user_id: userId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data?.[0] ?? null;
   }
 
@@ -74,7 +75,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       .eq('channel_id', channelId)
       .eq('user_id', userId)
       .not('hidden_at', 'is', null);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async findHiddenChannelIds(
@@ -85,7 +86,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       p_chapter_id: chapterId,
       p_user_id: userId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return new Set((data ?? []).map((row) => row.channel_id));
   }
 }

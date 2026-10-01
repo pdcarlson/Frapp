@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type { IStudyGeofenceRepository } from '#domain/repositories/study.repository.interface';
 import type { StudyGeofence } from '#domain/entities/study.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository {
@@ -22,7 +23,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -32,7 +33,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -43,7 +44,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -60,7 +61,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -71,6 +72,6 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .eq('id', id)
       .eq('chapter_id', chapterId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }
