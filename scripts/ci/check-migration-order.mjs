@@ -105,7 +105,7 @@ import { fetchAppliedWithRetry } from "./check-migration-drift-gate.mjs";
 import { ENVIRONMENTS, loadEnvironments, supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { openSnapshot, SNAPSHOT_WORKFLOW } from "./lib/migration-snapshot.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { PROMOTION_LOG } from "./lib/ops-docs.mjs";
+import { DRIFT_AND_ORDERING } from "./lib/ops-docs.mjs";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -329,7 +329,7 @@ export function decideOrderOutcome({ local, results, introduced = [], removed = 
         `and \`supabase db push\` refuses to run against that environment at all from then on.\n\n` +
         `If you are renaming a migration to fix its ordering: that is the right fix only while it ` +
         `is unapplied everywhere, and it is not, so it is the wrong fix here. Land a forward ` +
-        `migration instead, or repair the ledger first — ${PROMOTION_LOG}.`,
+        `migration instead, or repair the ledger first — ${DRIFT_AND_ORDERING} § Reconciling a foreign migration row.`,
     };
   }
 
@@ -364,7 +364,7 @@ export function decideOrderOutcome({ local, results, introduced = [], removed = 
       `REFUSED by the Supabase CLI, which halts rather than reordering:\n\n  ${CLI_REFUSAL}\n\n` +
       lines.join("\n") +
       `\n\nIf a listed migration has already been applied somewhere, renaming it strands that ` +
-      `state and the rename is the wrong move — read ${PROMOTION_LOG} § \`--include-all\` first.`,
+      `state and the rename is the wrong move — read ${DRIFT_AND_ORDERING} § \`--include-all\` first.`,
   };
 }
 

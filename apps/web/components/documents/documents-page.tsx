@@ -54,6 +54,7 @@ import {
 } from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import {
   denseListClassName,
   denseRowControlClassName,
@@ -707,13 +708,13 @@ export function DocumentsPage() {
       ? "offline-search"
       : isOffline && documents.length === 0
         ? "offline"
-      : documentsQuery.isPending
-        ? "loading"
-        : documentsQuery.isError
-          ? "error"
-          : visible.length === 0
-            ? "empty"
-            : "ready";
+        : documentsQuery.isPending
+          ? "loading"
+          : documentsQuery.isError
+            ? "error"
+            : visible.length === 0
+              ? "empty"
+              : "ready";
 
   return (
     <div className="space-y-6">
@@ -1102,31 +1103,27 @@ export function DocumentsPage() {
             surface. `1f` pin 2.
           */}
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex min-w-0 items-baseline gap-2">
-              <h2
-                id="doc-list-label"
-                className={`${EYEBROW} truncate text-muted-foreground`}
-              >
-                {activeFolder === null
-                  ? "All documents"
-                  : activeFolder === ""
-                    ? "Uncategorized documents"
-                    : activeFolder}
-              </h2>
-              {/*
-                Rendered only once there is a count to state. A placeholder
-                character here would put a stray non-breaking space in the
-                accessibility tree, and "0 documents." while the query is still
-                in flight is a claim about the library rather than a description
-                of it — the state below already says what is happening.
-              */}
-              {listState === "ready" ? (
-                <p className="shrink-0 text-caption text-muted">
-                  {visible.length} document{visible.length === 1 ? "" : "s"}
-                  {deferredSearch ? ` matching "${deferredSearch}"` : ""}
-                </p>
-              ) : null}
-            </div>
+            {/*
+              The count renders only once there is one to state. A placeholder
+              character would put a stray non-breaking space in the
+              accessibility tree, and "0 documents." while the query is still
+              in flight is a claim about the library rather than a description
+              of it — the state below already says what is happening.
+            */}
+            <SectionLabel
+              id="doc-list-label"
+              count={
+                listState === "ready"
+                  ? `${visible.length} document${visible.length === 1 ? "" : "s"}${deferredSearch ? ` matching "${deferredSearch}"` : ""}`
+                  : null
+              }
+            >
+              {activeFolder === null
+                ? "All documents"
+                : activeFolder === ""
+                  ? "Uncategorized documents"
+                  : activeFolder}
+            </SectionLabel>
             {/*
               `type="search"`, not `type="text"`: it gets the browser's own
               clear affordance and the correct role, so no hand-rolled X button

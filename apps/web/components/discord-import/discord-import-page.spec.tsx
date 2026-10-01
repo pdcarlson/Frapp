@@ -6,6 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { denseListClassName } from "@/components/shared/table-controls";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /**
  * The import list's row actions (#2817).
@@ -19,30 +21,39 @@ import {
 const { hooks } = vi.hoisted(() => ({
   hooks: {
     rows: [] as unknown[],
-    // A failed list poll: the page swaps the list for its error state.
+    // A failed list read. With rows cached the page keeps them; with none
+    // (`listCached: false`) it draws the list's error state.
     listError: false,
+    listCached: true,
+    // When the list last loaded, against the detail read's own time.
+    listUpdatedAt: 0,
+    offline: false,
+    loading: false,
+    // The page's query string, for the `?wizard=bot` resume.
+    search: "",
+    // Records the props each wizard mount receives.
+    wizard: vi.fn(),
     clear: vi.fn(),
     remove: vi.fn(),
     progress: vi.fn(),
     // Records which import the page polls in detail.
-    detail: vi.fn<(id: string | null) => { data: null }>(() => ({
-      data: null,
-    })),
+    detail: vi.fn<(id: string | null) => Record<string, unknown>>(),
   },
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(hooks.search),
 }));
 
 vi.mock("@repo/hooks", () => ({
   DISCORD_CONNECT_MESSAGES: {},
   useDiscordImports: () => ({
-    data: hooks.rows,
-    isPending: false,
-    isLoading: false,
+    data: hooks.listCached ? hooks.rows : undefined,
+    isPending: hooks.loading,
+    isLoading: hooks.loading,
     isError: hooks.listError,
     fetchStatus: "idle",
+    dataUpdatedAt: hooks.listUpdatedAt,
     refetch: vi.fn(),
   }),
   useDiscordImport: (id: string | null) => hooks.detail(id),
@@ -64,7 +75,7 @@ vi.mock("@/components/shared/can", () => ({
 }));
 
 vi.mock("@/lib/providers/network-provider", () => ({
-  useNetwork: () => ({ isOffline: false }),
+  useNetwork: () => ({ isOffline: hooks.offline, probeOnce: vi.fn() }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -72,7 +83,22 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 vi.mock("./import-wizard", () => ({
-  ImportWizard: () => <div data-testid="wizard" />,
+  ImportWizard: (props: {
+    onCancel: () => void;
+    onStarted: (id: string) => void;
+  }) => {
+    hooks.wizard(props);
+    return (
+      <div data-testid="wizard">
+        <button type="button" onClick={props.onCancel}>
+          Close wizard
+        </button>
+        <button type="button" onClick={() => props.onStarted("started")}>
+          Start import
+        </button>
+      </div>
+    );
+  },
 }));
 
 const { DiscordImportPage } = await import("./discord-import-page");
@@ -93,18 +119,308 @@ const row = (id: string, status: string, guild: string) => ({
   created_at: "2026-09-28T18:06:33Z",
 });
 
+const IMPORTS_STALE =
+  "Couldn't refresh the imports. This is the last update that loaded.";
+
 const rowOf = (guild: string) =>
   within(screen.getByText(guild).closest("li") as HTMLElement);
 
 beforeEach(() => {
   vi.clearAllMocks();
   hooks.listError = false;
+  hooks.listCached = true;
+  hooks.offline = false;
+  hooks.loading = false;
+  hooks.search = "";
+  hooks.detail.mockImplementation(() => ({ data: null }));
+  hooks.listUpdatedAt = 0;
   hooks.clear.mockResolvedValue(undefined);
   hooks.remove.mockResolvedValue(undefined);
   hooks.rows = [
     row("kept", "completed", "Imported server"),
     row("gone", "purged", "Deleted server"),
   ];
+});
+
+describe("DiscordImportPage — the list on the page surface (#2500)", () => {
+  it("sits flush under its own label, with no wrapper card and no narration", () => {
+    const { container } = render(<DiscordImportPage />);
+
+    const region = screen.getByRole("region", { name: "Imports" });
+    expect(within(region).getByText("Imported server")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(
+      screen.queryByText(/into Frapp as read-only archive messages/),
+    ).toBeNull();
+  });
+
+  it("explains what an import is when there are none", () => {
+    hooks.rows = [];
+    const { container } = render(<DiscordImportPage />);
+    expect(cardFilledContainers(container)).toEqual([]);
+
+    expect(
+      screen.getByRole("heading", { name: "No imports yet" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Bring your chapter's Discord history in as read-only archive messages.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says what failed when the first read fails, not the vague defaults", () => {
+    hooks.listError = true;
+    hooks.listCached = false;
+    const { container } = render(<DiscordImportPage />);
+
+    expect(
+      screen.getByRole("heading", { name: "Couldn't load imports" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Confirm your chapter access and retry."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Unable to load data")).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says the imports are unavailable offline when none are cached", () => {
+    hooks.offline = true;
+    hooks.listCached = false;
+    const { container } = render(<DiscordImportPage />);
+    expect(cardFilledContainers(container)).toEqual([]);
+
+    expect(
+      screen.getByRole("heading", { name: "Imports unavailable offline" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows its loading state in the nested family", () => {
+    hooks.loading = true;
+    hooks.listCached = false;
+    const { container } = render(<DiscordImportPage />);
+
+    expect(screen.getByText("Loading imports...")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  // §8's row: text plus trailing controls, on the 44px floor, divided by the
+  // list rather than boxed one by one.
+  it("draws each import as a flush row, not a bordered box", () => {
+    render(<DiscordImportPage />);
+    const item = screen
+      .getByText("Imported server")
+      .closest("li") as HTMLElement;
+    expect(item.className).toContain("min-h-11");
+    expect(item.className).not.toMatch(/\b(rounded|border)/);
+    // The list's own dividers separate the rows instead.
+    expect((item.closest("ul") as HTMLElement).className).toContain(
+      denseListClassName,
+    );
+  });
+
+  it("says the rows are the last that loaded when a refresh fails", () => {
+    hooks.listError = true;
+    render(<DiscordImportPage />);
+
+    expect(screen.getByText("Imported server")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(IMPORTS_STALE);
+  });
+
+  it("has the notice's live region mounted before a refresh fails, so its line is announced", () => {
+    const { container, rerender } = render(<DiscordImportPage />);
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    hooks.listError = true;
+    rerender(<DiscordImportPage />);
+
+    expect(regions).toContain(
+      screen.getByText(IMPORTS_STALE).closest('[role="status"]'),
+    );
+  });
+
+  // The polled import's row reads its own detail query, and the list stops
+  // polling once nothing is deleting, so the list read can stay clean while
+  // that row's meter has stopped moving.
+  it("says the polled import's row is stale when only its own poll fails", () => {
+    const refetch = vi.fn();
+    hooks.rows = [row("moving", "running", "Running server")];
+    hooks.detail.mockImplementation((id) =>
+      id === "moving"
+        ? {
+            data: row("moving", "running", "Running server"),
+            isError: true,
+            refetch,
+          }
+        : { data: null },
+    );
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+    expect(screen.queryByText(IMPORTS_STALE)).toBeNull();
+
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
+    );
+    expect(screen.getByText(IMPORTS_STALE)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  // With no data, the detail read arms no poll, and the row falls back to the
+  // list's copy, which is not polling either.
+  it("says the polled import's row is stale when its first poll fails", () => {
+    hooks.rows = [row("moving", "running", "Running server")];
+    hooks.detail.mockImplementation((id) =>
+      id === "moving"
+        ? { data: undefined, isError: true, refetch: vi.fn() }
+        : { data: null },
+    );
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
+    );
+
+    expect(screen.getByText(IMPORTS_STALE)).toBeInTheDocument();
+  });
+
+  // Both poll during a purge. A detail poll that keeps failing must not hold
+  // the row on its last copy once the list has loaded a fresher one.
+  // The other half: the detail polls faster than the list, so while it is the
+  // freshest (or tied) the row moves with it, not with the list's last copy.
+  it.each([
+    ["after the list", 1_000, 2_000],
+    ["at the same time as the list", 2_000, 2_000],
+  ])(
+    "shows the polled row's detail copy when it loaded %s",
+    (_, listAt, detailAt) => {
+      const counts = (done: number) => ({
+        ...row("moving", "running", "Running server"),
+        channels_total: 10,
+        channels_done: done,
+      });
+      hooks.progress.mockReturnValue({
+        data: undefined,
+        isPending: true,
+        isError: false,
+        refetch: vi.fn(),
+      });
+      hooks.rows = [counts(2)];
+      hooks.listUpdatedAt = listAt;
+      hooks.detail.mockImplementation((id) =>
+        id === "moving"
+          ? { data: counts(7), dataUpdatedAt: detailAt, refetch: vi.fn() }
+          : { data: null },
+      );
+      render(<DiscordImportPage />);
+      const running = rowOf("Running server");
+      expect(running.getByText("20%")).toBeInTheDocument();
+
+      fireEvent.click(running.getByRole("button", { name: "Watch" }));
+      expect(rowOf("Running server").getByText("70%")).toBeInTheDocument();
+    },
+  );
+
+  it("shows the list's copy of the polled row when the list loaded since", () => {
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    hooks.rows = [row("gone", "completed", "Deleted server")];
+    const { rerender } = render(<DiscordImportPage />);
+    // Details makes it the polled import.
+    fireEvent.click(
+      rowOf("Deleted server").getByRole("button", { name: "Details" }),
+    );
+
+    // Deleted since: the list has loaded "purged", while the detail poll
+    // fails and holds its last copy, "purging".
+    hooks.rows = [row("gone", "purged", "Deleted server")];
+    hooks.listUpdatedAt = 2_000;
+    hooks.detail.mockImplementation((id) =>
+      id === "gone"
+        ? {
+            data: row("gone", "purging", "Deleted server"),
+            isError: true,
+            dataUpdatedAt: 1_000,
+            refetch: vi.fn(),
+          }
+        : { data: null },
+    );
+    rerender(<DiscordImportPage />);
+
+    expect(
+      rowOf("Deleted server").getByRole("button", { name: /Clear/ }),
+    ).toBeInTheDocument();
+    // The row is current, so the list doesn't call it the last that loaded.
+    expect(screen.queryByText(IMPORTS_STALE)).toBeNull();
+  });
+
+  // A resume is spent once its wizard closes, whichever way it closes.
+  it.each([
+    ["is cancelled", "Close wizard"],
+    ["starts an import", "Start import"],
+  ])(
+    "reopens the wizard from the start after a ?wizard=bot resume %s",
+    (_, close) => {
+      hooks.search = "wizard=bot&handshake=one-time";
+      render(<DiscordImportPage />);
+      expect(hooks.wizard).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          initialSource: "bot",
+          initialStep: "connect",
+          handshake: "one-time",
+        }),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: close }));
+      expect(screen.queryByTestId("wizard")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "New import" }));
+      expect(hooks.wizard).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          initialSource: null,
+          initialStep: undefined,
+          handshake: null,
+        }),
+      );
+    },
+  );
+
+  // The wizard holds every choice in its own state, so a branch that unmounts
+  // it sends the admin back to the first step with nothing kept.
+  it.each([
+    ["fails with nothing cached", { listError: true }, "Couldn't load imports"],
+    [
+      "goes offline with nothing cached",
+      { offline: true },
+      "Imports unavailable offline",
+    ],
+    ["reloads with nothing cached", { loading: true }, "Loading imports..."],
+  ])("keeps an open wizard through a list read that %s", (_, state, branch) => {
+    const { container, rerender } = render(<DiscordImportPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New import" }));
+    expect(screen.getByTestId("wizard")).toBeInTheDocument();
+    // On the page surface, not in the card it used to sit in.
+    expect(cardFilledContainers(container)).toEqual([]);
+
+    Object.assign(hooks, state, { listCached: false });
+    rerender(<DiscordImportPage />);
+    expect(screen.getByTestId("wizard")).toBeInTheDocument();
+    expect(screen.queryByText(branch)).toBeNull();
+  });
 });
 
 describe("DiscordImportPage — row actions", () => {
@@ -185,10 +501,12 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
     );
   });
 
-  // The list polls while a row is deleting, and a failed poll swaps it for the
-  // error state. A dialog inside the list would go with it and settle as a
-  // cancel, dropping the admin's confirmation.
-  it("keeps an open confirmation through a failed list poll", async () => {
+  // The list polls while a row is deleting. A failed poll used to swap it for
+  // the error state, and a dialog inside the list would have gone with it and
+  // settled as a cancel, dropping the admin's confirmation. The failed poll now
+  // keeps the rows it already has (#2500), and the confirmation survives either
+  // way.
+  it("keeps the rows and an open confirmation through a failed list poll", async () => {
     const { rerender } = render(<DiscordImportPage />);
     fireEvent.click(
       rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
@@ -197,7 +515,31 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
 
     hooks.listError = true;
     rerender(<DiscordImportPage />);
+    expect(screen.getByText("Tau Nu Discord")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load imports")).toBeNull();
+
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));
+    await waitFor(() =>
+      expect(hooks.remove).toHaveBeenCalledWith({ id: "big" }),
+    );
+  });
+
+  // #2944's own guard: the confirmation lives above the list's state branches,
+  // so even a read that leaves the list nothing to show, and swaps it for the
+  // error state, cannot unmount the open dialog and settle it as a cancel.
+  it("keeps an open confirmation when the list is swapped for its error state", async () => {
+    const { rerender } = render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Tau Nu Discord").getByRole("button", { name: "Delete import" }),
+    );
+    await screen.findByRole("dialog");
+
+    hooks.listError = true;
+    hooks.listCached = false;
+    rerender(<DiscordImportPage />);
     expect(screen.queryByText("Tau Nu Discord")).toBeNull();
+    expect(screen.getByText("Couldn't load imports")).toBeInTheDocument();
 
     const dialog = within(screen.getByRole("dialog"));
     fireEvent.click(dialog.getByRole("button", { name: "Delete import" }));
@@ -367,6 +709,75 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(gone.queryByRole("button", { name: "Details" })).toBeNull();
   });
 
+  it("shows its loading state in the nested family", () => {
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container } = render(<DiscordImportPage />);
+    const running = rowOf("Running server");
+    fireEvent.click(running.getByRole("button", { name: "Watch" }));
+    expect(
+      running.getByText("Loading the import’s channels…"),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says it is waiting for the first channel, on the page surface", () => {
+    hooks.progress.mockReturnValue({
+      data: {
+        counts: {
+          pending: 12,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          skipped: 0,
+        },
+        running: [],
+        recent: [],
+        failed: [],
+      },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container } = render(<DiscordImportPage />);
+    const running = rowOf("Running server");
+    fireEvent.click(running.getByRole("button", { name: "Watch" }));
+
+    expect(
+      running.getByText("Waiting for the first channel to start."),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  // Offline, a read either pauses (it read as loading until reconnect) or,
+  // with the API unreachable, fails; both are offline.
+  it.each([
+    ["paused", { data: undefined, isPending: true, fetchStatus: "paused" }],
+    ["failed", { data: undefined, isPending: false, isError: true }],
+  ])(
+    "says the channels are unavailable offline when the read %s",
+    (_, read) => {
+      hooks.offline = true;
+      hooks.progress.mockReturnValue({ ...read, refetch: vi.fn() });
+      const { container } = render(<DiscordImportPage />);
+      const running = rowOf("Running server");
+      fireEvent.click(running.getByRole("button", { name: "Watch" }));
+
+      expect(
+        running.getByText("Channels unavailable offline"),
+      ).toBeInTheDocument();
+      expect(running.queryByText("Loading the import’s channels…")).toBeNull();
+      expect(
+        running.queryByText("Couldn’t load the import’s channels"),
+      ).toBeNull();
+      expect(cardFilledContainers(container)).toEqual([]);
+    },
+  );
+
   it("says when the channels could not be loaded, and retries", () => {
     const refetch = vi.fn();
     hooks.progress.mockReturnValue({
@@ -375,12 +786,13 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
       isError: true,
       refetch,
     });
-    render(<DiscordImportPage />);
+    const { container } = render(<DiscordImportPage />);
     const running = rowOf("Running server");
     fireEvent.click(running.getByRole("button", { name: "Watch" }));
     expect(
       running.getByText("Couldn’t load the import’s channels"),
     ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
     fireEvent.click(running.getByRole("button", { name: /Retry/ }));
     expect(refetch).toHaveBeenCalled();
   });
@@ -399,14 +811,38 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(
       running.queryByText("Couldn’t load the import’s channels"),
     ).toBeNull();
-    // It says the read is not current, and can be retried.
+    // It says the read is not current, in a live region, and can be retried.
     expect(
-      running.getByText(/Couldn’t refresh the channels/),
-    ).toBeInTheDocument();
+      running
+        .getByText(/Couldn’t refresh the channels/)
+        .closest('[role="status"]'),
+    ).not.toBeNull();
     fireEvent.click(running.getByRole("button", { name: "Try again" }));
     expect(
       hooks.progress.mock.results.at(-1)?.value.refetch,
     ).toHaveBeenCalled();
+  });
+
+  it("has the panel notice's live region mounted before a poll fails", () => {
+    const { container, rerender } = render(<DiscordImportPage />);
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
+    );
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    hooks.progress.mockReturnValue({
+      data: progress,
+      isPending: false,
+      isError: true,
+      refetch: vi.fn(),
+    });
+    rerender(<DiscordImportPage />);
+
+    expect(regions).toContain(
+      screen
+        .getByText(/Couldn’t refresh the channels/)
+        .closest('[role="status"]'),
+    );
   });
 
   it("closes a bot import's panel when another row becomes the polled one", () => {

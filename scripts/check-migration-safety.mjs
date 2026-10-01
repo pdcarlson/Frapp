@@ -180,7 +180,7 @@ export function satisfiesPromotionDocs(changedFiles) {
  * entry. A mention is not a promotion record, and a gate that accepts one
  * grades the wrong thing.
  *
- * A doc may record an entry in MORE THAN ONE shape, and the promotion runbook
+ * A doc may record an entry in MORE THAN ONE shape, and the promotion log
  * does. Reading only the first shape is the mistake this list was written with:
  * 21 entries are `### <migration>.sql` headings, but 14 more are real, dated
  * promotion records written the other way — `## 2026-08-09: Activation funnel`
@@ -262,7 +262,7 @@ export const RATCHET_VERSION_CEILING = "20260905010000";
  * doc. A SHRINK-ONLY ratchet: entries may leave, none may be added — enforced
  * by RATCHET_VERSION_CEILING above, not merely asserted here.
  *
- * Why an allowlist and not a backfill. The promotion runbook records what was
+ * Why an allowlist and not a backfill. The promotion log records what was
  * actually promoted to a hosted database and when. These promotions happened
  * before anything required the entry, and the repository does not carry the
  * dates. Inventing plausible ones to turn a gate green would corrupt an
@@ -355,7 +355,7 @@ export function ledgerEntries(doc, text) {
  * Ledgers whose entries are a HISTORICAL record and may outlive the file on
  * disk, so an entry naming an absent migration is correct rather than orphaned.
  *
- * The promotion runbook is a dated log of what was actually promoted to a
+ * The promotion log is a dated record of what was actually promoted to a
  * hosted database. Squash a baseline or revert a bad migration and its file
  * leaves the tree, but the promotion still happened — demanding the entry be
  * deleted to get CI green would destroy the operational record this gate exists

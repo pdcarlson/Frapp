@@ -1,19 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   useBeginDiscordConnect,
   useConfirmDiscordConnect,
   useDiscordAvailability,
   useDiscordConnection,
 } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
 import { Button } from "@/components/ui/button";
-import { ErrorState, LoadingState } from "@/components/shared/async-states";
+import {
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { readIsOffline } from "@/components/shared/async-states";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useToast } from "@/hooks/use-toast";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
 
 /**
@@ -45,6 +53,9 @@ export function ConnectStep({
   accessGiven,
   onAccessGivenChange,
   handshake = null,
+  onHandshakeSpent,
+  confirmError,
+  onConfirmErrorChange,
 }: {
   onConnected: () => void;
   /**
@@ -65,9 +76,28 @@ export function ConnectStep({
    * else's Discord admin cannot attach their server to whoever generated it.
    */
   handshake?: string | null;
+  /**
+   * Whether the wizard should stop passing the token. `true` the moment the
+   * confirm is sent: Back unmounts this step, and a fresh one would post it
+   * again. `false` if the confirm then failed with anything but the API's
+   * 400, so a later visit to this step can send it again rather than make the
+   * admin authorize from the start. A 503 (Discord withdrawn) is refused
+   * before the token is touched. A 5xx from linking the server, or a response
+   * lost on the way back, may follow a spent token; resending one costs only
+   * a refused 400, and a connection that did commit shows as connected.
+   */
+  onHandshakeSpent?: (spent: boolean) => void;
+  /**
+   * Why the last confirm was refused, held by the wizard: Back unmounts this
+   * step, and a refused token is not sent again, so a revisit would otherwise
+   * show the plain "not connected" pitch with the reason gone.
+   */
+  confirmError: string | null;
+  onConfirmErrorChange: (message: string | null) => void;
 }) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
+  const { isOffline } = useNetwork();
   const availability = useDiscordAvailability();
   const beginConnect = useBeginDiscordConnect();
   const confirmConnect = useConfirmDiscordConnect();
@@ -86,23 +116,27 @@ export function ConnectStep({
   // twice, which would leave the second attempt reporting a failure over a
   // connection that succeeded.
   const attempted = useRef(false);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!handshake || attempted.current) return;
     attempted.current = true;
+    onHandshakeSpent?.(true);
     confirmConnect
       .mutateAsync({ handshake })
-      .then(() => setConfirmError(null))
+      .then(() => onConfirmErrorChange(null))
       .catch((error: unknown) => {
-        setConfirmError(
+        // The API answers a spent, expired or other chapter's token with one
+        // 400, which only a fresh authorization gets past. Any other failure
+        // may have left the token unspent (see `onHandshakeSpent`).
+        if (statusOf(error) !== 400) onHandshakeSpent?.(false);
+        onConfirmErrorChange(
           getErrorMessage(
             error,
             "That Discord authorization could not be confirmed for this chapter.",
           ),
         );
       });
-  }, [handshake, confirmConnect]);
+  }, [handshake, confirmConnect, onHandshakeSpent, onConfirmErrorChange]);
 
   async function startConnect() {
     try {
@@ -126,25 +160,67 @@ export function ConnectStep({
     }
   }
 
+  // The nested family: the wizard sits flush on /discord-import, where the
+  // whole-screen states would redraw the card the route deleted. `sole` on
+  // the spinners, which are the screen's only async state and were announced
+  // as `LoadingState`. The error and offline titles stay `<p>`s, under the
+  // step's own heading.
   if (confirmConnect.isPending) {
-    return <LoadingState message="Confirming your Discord server…" />;
+    return <NestedLoading sole message="Confirming your Discord server…" />;
+  }
+
+  // Offline with nothing read, both ways a read goes offline
+  // (`readIsOffline` in async-states.tsx): it pauses, and used to sit on
+  // "Checking…" for as long as the link was down; or, with the API
+  // unreachable, it fails, which read as a failure to check rather than as
+  // being offline.
+  if (readIsOffline(isOffline, connection)) {
+    return (
+      <NestedOffline
+        title="Can't check Discord offline"
+        description="Reconnect to check whether your server is connected."
+        onRetry={() => void connection.refetch()}
+      />
+    );
   }
 
   if (connection.isPending) {
-    return <LoadingState message="Checking whether Discord is connected…" />;
+    return (
+      <NestedLoading sole message="Checking whether Discord is connected…" />
+    );
   }
 
   // `useDiscordConnection` sets `retry: false`, so a 500 or a dropped request
   // ends the query in `isError` rather than `isPending`. Without this branch it
   // fell through to the "not connected" pitch — telling a chapter that IS
   // connected to add the bot again, with no retry and no sign anything failed.
-  if (connection.isError) {
-    return <ErrorState onRetry={() => void connection.refetch()} />;
+  // It used `ErrorState`'s defaults, "Unable to load data", which name nothing.
+  // Only with nothing read: `staleTime: 0` refetches on every mount, and a
+  // refetch that fails keeps the last answer, which the branches below show.
+  if (connection.isError && connection.data === undefined) {
+    return (
+      <NestedError
+        title="Couldn't check the Discord connection"
+        description="Retry to see whether your server is connected."
+        onRetry={() => void connection.refetch()}
+      />
+    );
   }
+
+  // A refetch that failed keeps the last answer above, which may no longer
+  // hold (the bot removed elsewhere since), so say it is the last one.
+  const staleNotice = (
+    <StaleReadNotice
+      stale={connection.isError && connection.data !== undefined}
+      message="Couldn't recheck the Discord connection. This is the last answer that loaded."
+      onRetry={() => void connection.refetch()}
+    />
+  );
 
   if (connected) {
     return (
       <div className="space-y-4">
+        {staleNotice}
         <div className="rounded-lg border border-border p-4">
           <p className="text-sm font-medium">
             Connected to {connection.data?.guild_name ?? "your Discord server"}
@@ -227,6 +303,7 @@ export function ConnectStep({
 
   return (
     <div className="space-y-4">
+      {staleNotice}
       {confirmError ? (
         // Shown rather than toasted: the admin is looking at a step that says
         // "not connected" after having just authorized, and needs the reason

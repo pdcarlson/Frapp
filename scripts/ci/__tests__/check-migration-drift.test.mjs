@@ -21,7 +21,9 @@ import {
   versionToEpochMs,
 } from "../check-migration-drift.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
+import { DRIFT_AND_ORDERING } from "../lib/ops-docs.mjs";
 import { makeFetchMock, quiet } from "./helpers.mjs";
+import { assertCitesSection } from "./helpers/doc-sections.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Modeled on the two real drift modes measured on 2026-08-10 (staging, since
@@ -523,6 +525,7 @@ test("drift creates the alert issue when none exists, and exits 1", async () => 
   assert.match(created.body, /Foreign \(1\)/);
   assert.match(created.body, /Pending \(37\)/);
   assert.match(created.body, /do not run it blind/i);
+  assertCitesSection(created.body, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
 });
 
 test("drift comments on an already-open alert rather than filing a second one", async () => {
@@ -1074,5 +1077,9 @@ test("the alert body tells a renamed foreign version from a never-committed one"
     runUrl: "",
   });
   assert.doesNotMatch(body, /never contained/);
-  assert.match(body, /mark the old version reverted and the new one applied, and delete nothing/);
+  // The steps live in the doc; the alert must still say the two causes need
+  // opposite fixes, and why deleting a renamed row is the dangerous one.
+  assert.match(body, /a version `main` renamed and one git never held need opposite fixes/);
+  assert.match(body, /re-run SQL the database already ran/);
+  assertCitesSection(body, DRIFT_AND_ORDERING, "Reconciling a foreign migration row");
 });

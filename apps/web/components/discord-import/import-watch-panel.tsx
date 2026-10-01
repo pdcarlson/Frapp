@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { useDiscordImportProgress } from "@repo/hooks";
-import { NestedError, NestedLoading } from "@/components/shared/nested-states";
-import { Button } from "@/components/ui/button";
+import { readIsOffline } from "@/components/shared/async-states";
+import {
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
 
 /** One channel or thread, as `GET :id/progress` names it. */
@@ -66,7 +72,20 @@ export function ImportWatchPanel({
   active: boolean;
 }) {
   const progress = useDiscordImportProgress(importId, { active });
+  const { isOffline } = useNetwork();
 
+  // Offline with nothing read, either way a read goes offline
+  // (`readIsOffline` in async-states.tsx): paused, it read as loading until
+  // the link came back; failed (the API unreachable), as a failure.
+  if (readIsOffline(isOffline, progress)) {
+    return (
+      <NestedOffline
+        title="Channels unavailable offline"
+        description="Reconnect to see this import’s channels."
+        onRetry={() => void progress.refetch()}
+      />
+    );
+  }
   // A failed poll keeps the last good read (TanStack Query keeps `data`),
   // flagged as not current below; only a panel with nothing to show falls
   // back to the error.
@@ -91,21 +110,12 @@ export function ImportWatchPanel({
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
-      {progress.isError ? (
-        // The last good read stays on screen, but it says it is not current.
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-warning">
-          <span>
-            Couldn’t refresh the channels. This is the last update that loaded.
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void progress.refetch()}
-          >
-            Try again
-          </Button>
-        </div>
-      ) : null}
+      {/* The last good read stays on screen, but it says it is not current. */}
+      <StaleReadNotice
+        stale={progress.isError}
+        message="Couldn’t refresh the channels. This is the last update that loaded."
+        onRetry={() => void progress.refetch()}
+      />
       <p className="text-xs text-muted-foreground">
         Channels and threads: {progressSummary(data.counts)}
       </p>

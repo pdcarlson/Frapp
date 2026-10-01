@@ -22,7 +22,7 @@ import { test } from "node:test";
  * `production-guardrails.mjs`, not this roster. Excluding the blueprint would
  * leave the exact silent-wrong case the issue named.
  *
- * Docs prose (`docs/guides/docker.md`, `db-promotion-runbook.md`) is out of
+ * Docs prose (`docs/guides/docker.md`, `docs/ops/database/promotion.md`) is out of
  * scope — a parser over English checklists is a second failure mode. Parsed by
  * hand rather than with a YAML library: this directory's other workflow-reading
  * suites do the same, and `yaml` is a transitive override, not a declared

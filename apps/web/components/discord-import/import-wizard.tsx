@@ -123,6 +123,14 @@ export function ImportWizard({
 
   const [source, setSource] = useState<ImportSource | null>(initialSource);
   const [step, setStep] = useState<WizardStep>(initialStep);
+  // One-time: held back once the connect step sends it. That step unmounts on
+  // Back, and the one Continue mounts again would confirm a spent token, which
+  // the API refuses (a "Confirming" flash over a failed request). Handed back
+  // if the confirm failed before the server spent it.
+  const [unspentHandshake, setUnspentHandshake] = useState(handshake);
+  // Why the confirm was refused, kept here with the token: the step unmounts
+  // on Back, and a refused token is not sent again to show it once more.
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [botAccessGiven, setBotAccessGiven] = useState(false);
   const [importId, setImportId] = useState<string | null>(null);
@@ -618,7 +626,12 @@ export function ImportWizard({
         />
       </header>
 
-      <main className="mt-6 flex-1">
+      {/*
+        A `<div>`, not a `<main>`: the dashboard shell's `<main>` already holds
+        this page, and a second one is a second main landmark, which a screen
+        reader's landmark list offers as if it were a separate page region.
+      */}
+      <div className="mt-6 flex-1">
         {step === "source" ? (
           <SourceStep
             value={source}
@@ -629,7 +642,12 @@ export function ImportWizard({
 
         {step === "connect" ? (
           <ConnectStep
-            handshake={handshake}
+            handshake={unspentHandshake}
+            onHandshakeSpent={(spent) =>
+              setUnspentHandshake(spent ? null : handshake)
+            }
+            confirmError={confirmError}
+            onConfirmErrorChange={setConfirmError}
             accessGiven={botAccessGiven}
             onAccessGivenChange={setBotAccessGiven}
             onConnected={() => setStep("consent")}
@@ -718,7 +736,7 @@ export function ImportWizard({
             messagesSinceProblem={cutoff.problem}
           />
         ) : null}
-      </main>
+      </div>
 
       <footer className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-4">
         {step === "source" ? (

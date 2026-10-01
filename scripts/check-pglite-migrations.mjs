@@ -793,7 +793,7 @@ const RLS_SMOKE = [
     // drop/recreate that restores anon's grant on hosted (by forgetting the
     // `revoke ... from anon`) still leaves this green. For this function the
     // promotion-time `has_function_privilege('anon', ...)` check in
-    // db-promotion-runbook.md covers that case. Not every function has such an
+    // docs/ops/database/promotion-log.md covers that case. Not every function has such an
     // entry, so in general nothing does (#3052).
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
                  has_function_privilege('anon', p.oid, 'EXECUTE') as anon_exec
@@ -4409,7 +4409,7 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     // It cannot catch a forgotten `revoke ... from anon` or `from
     // authenticated`: hosted grants both through ALTER DEFAULT PRIVILEGES,
     // which is not replayed here (see the can_read_chat_message() EXECUTE
-    // assertion). db-promotion-runbook.md checks `authenticated` for these two
+    // assertion). docs/ops/database/promotion-log.md checks `authenticated` for these two
     // functions at promotion, but not `anon` (#3052).
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as authed,
