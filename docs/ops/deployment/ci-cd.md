@@ -50,7 +50,7 @@ layers are that job's steps named `inputs.environment == 'production'`:
    on a dry run and under `migrations-only`).
 7. **Render deploy by `commitId`** → **served-commit check** (`verify-served-commit.mjs`: `/health/ready`
    answers 2xx and reports this commit) → **client checks** (`smoke-deployed-api.mjs`: CORS admits
-   the production dashboard and not the staging one, the current app version isn't held at the
+   the production dashboard and not the staging one, the newest shipped build isn't held at the
    update screen, the copy function accepts the API's key; [§ Deploy verification](#deploy-verification)) →
    **Vercel production uploads** (each stash restored and
    shipped with `vercel deploy --prebuilt --prod`) → **source-map check** ([§ Source maps](#source-maps);

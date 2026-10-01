@@ -216,7 +216,7 @@ export function appVersionFrom(text, file = APP_JSON) {
   return version;
 }
 
-/** `a` newer than `b`, both `{ version: "x.y.z", build: "n" }`. */
+/** `a` newer than `b`, both `{ version: "x.y.z", build: "n" }`, compared as numbers. */
 function isNewerBuild(a, b) {
   const av = a.version.split(".").map(Number);
   const bv = b.version.split(".").map(Number);
@@ -226,9 +226,13 @@ function isNewerBuild(a, b) {
 
 /**
  * The newest recorded build per platform in shipped-builds.json's text, or
- * null for a platform with none. Its own CI check (`parseRegistry`,
- * `scripts/check-api-breaking-changes.mjs`) validates every entry on `main`,
- * so an entry this can't read is refused rather than skipped.
+ * null for a platform with none. It accepts exactly the `platform`, `version`
+ * and `build` shapes `parseRegistry` (`scripts/check-api-breaking-changes.mjs`)
+ * accepts, which is what the required `api-contract-check` holds every entry on
+ * `main` to; the test pins the two together. An entry the API's header parser
+ * would refuse (a build past nine digits, a version with a leading zero) is
+ * probed as recorded: the API answers it `update_required: false`, which is
+ * also what the real binary is told, because the gate fails open.
  */
 export function newestShippedBuilds(text, file = SHIPPED_BUILDS) {
   let builds;
@@ -243,9 +247,9 @@ export function newestShippedBuilds(text, file = SHIPPED_BUILDS) {
     const ok =
       PLATFORMS.includes(entry?.platform) &&
       typeof entry.version === "string" &&
-      VERSION.test(entry.version) &&
+      /^\d+\.\d+\.\d+$/.test(entry.version) &&
       typeof entry.build === "string" &&
-      /^[1-9]\d{0,8}$/.test(entry.build);
+      /^[1-9]\d*$/.test(entry.build);
     if (!ok) throw new Error(`${file} builds[${i}] needs a platform, a version like 0.9.0 and a build number.`);
     const current = newest[entry.platform];
     if (current === null || isNewerBuild(entry, current)) newest[entry.platform] = { version: entry.version, build: entry.build };
@@ -256,11 +260,15 @@ export function newestShippedBuilds(text, file = SHIPPED_BUILDS) {
 /**
  * What to send as each platform's `X-Client-Version`: the newest recorded
  * build, or `expo.version` with no build while none is recorded. `source` says
- * which, for the messages.
+ * which, for the messages. One entry per platform, each `{ platform, header,
+ * source }` or `{ platform, error }`, so an unreadable app.json fails only a
+ * platform that needed it. An unreadable registry throws: every platform needs
+ * it to know whether it has a recorded build.
  */
 export function clientProbes(readTrustedFile) {
   const newest = newestShippedBuilds(readTrustedFile(SHIPPED_BUILDS));
   let version = null;
+  let versionError = null;
   return PLATFORMS.map((platform) => {
     const build = newest[platform];
     if (build) {
@@ -270,7 +278,14 @@ export function clientProbes(readTrustedFile) {
         source: `the newest ${platform} build recorded in ${SHIPPED_BUILDS}`,
       };
     }
-    version ??= appVersionFrom(readTrustedFile(APP_JSON));
+    if (version === null && versionError === null) {
+      try {
+        version = appVersionFrom(readTrustedFile(APP_JSON));
+      } catch (error) {
+        versionError = error;
+      }
+    }
+    if (versionError) return { platform, error: versionError };
     return {
       platform,
       header: `${platform}/${version}`,
@@ -449,7 +464,11 @@ export async function runSmokeChecks({
       results.push(fail("client policy", `Could not read which builds to probe: ${error.message.trim()}`));
     }
     for (const probe of probes ?? []) {
-      results.push(await checkClientPolicy({ apiBase, environment, probe, fetchImpl }));
+      if (probe.error) {
+        results.push(fail(`client policy (${probe.platform})`, `Could not read which build to probe: ${probe.error.message.trim()}`));
+      } else {
+        results.push(await checkClientPolicy({ apiBase, environment, probe, fetchImpl }));
+      }
     }
   }
 

@@ -33,6 +33,7 @@ import {
   SHIPPED_BUILDS,
   smokeFetch,
 } from "../smoke-deployed-api.mjs";
+import { parseRegistry } from "../../check-api-breaking-changes.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "smoke-deployed-api.mjs");
@@ -295,9 +296,19 @@ describe("runSmokeChecks: the minimum app version", () => {
 
   it("fails the client-policy checks alone when app.json has no usable version", async () => {
     const { results } = await run({ readTrustedFile: trusted({ [APP_JSON]: appJson("0.9.0-beta.1") }) });
-    assert.deepEqual(verdicts(results).filter((v) => v.startsWith("fail")), ["fail client policy"]);
+    assert.deepEqual(verdicts(results).filter((v) => v.startsWith("fail")), ["fail client policy (ios)", "fail client policy (android)"]);
     assert.match(results.find((r) => r.verdict === "fail").message, /not a version like 0\.9\.0/);
-    assert.equal(results.length, 4);
+    assert.equal(results.length, 5);
+  });
+
+  it("still probes a platform with a recorded build when app.json is unreadable", async () => {
+    const readTrustedFile = trusted({ [APP_JSON]: appJson("0.9.0-beta.1"), [SHIPPED_BUILDS]: registry(["ios", "0.9.0", "14"]) });
+    const { results, calls } = await run({ readTrustedFile });
+    assert.deepEqual(
+      verdicts(results).filter((v) => /client policy/.test(v)),
+      ["pass client policy serves ios/0.9.0+14", "fail client policy (android)"],
+    );
+    assert.deepEqual(calls.filter((c) => c.method === "GET").map((c) => c.headers.get("x-client-version")), ["ios/0.9.0+14"]);
   });
 
   it("probes the newest recorded build once one has shipped, build number included", async () => {
@@ -459,6 +470,11 @@ describe("runSmokeChecks: inputs", () => {
     );
     // Build numbers compare as numbers, not strings.
     assert.deepEqual(newestShippedBuilds(registry(["ios", "0.9.0", "9"], ["ios", "0.9.0", "10"])).ios, { version: "0.9.0", build: "10" });
+    // Every shape the registry's own validator accepts is read, past what the
+    // API's header parser takes (which then answers it as supported).
+    const wide = registry(["android", "0.9.0", "2026100101"], ["ios", "0.09.0", "3"]);
+    assert.doesNotThrow(() => parseRegistry(wide));
+    assert.deepEqual(newestShippedBuilds(wide), { ios: { version: "0.09.0", build: "3" }, android: { version: "0.9.0", build: "2026100101" } });
     assert.throws(() => newestShippedBuilds("{"), /not valid JSON/);
     assert.throws(() => newestShippedBuilds("{}"), /no `builds` array/);
   });
