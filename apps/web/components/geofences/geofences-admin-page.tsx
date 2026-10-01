@@ -53,7 +53,12 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 
 type Geofence = {
   id: string;
@@ -67,6 +72,40 @@ type Geofence = {
   pause_grace_minutes: number;
   created_at: string;
 };
+
+type StudyRules = Pick<
+  Geofence,
+  | "minutes_per_point"
+  | "points_per_interval"
+  | "min_session_minutes"
+  | "pause_grace_minutes"
+>;
+type StudyRuleKey = keyof StudyRules;
+
+/** Each rate's floor, from the API's `@Min` on the study-zone DTOs. */
+const STUDY_RULE_MIN: Record<StudyRuleKey, number> = {
+  minutes_per_point: 1,
+  points_per_interval: 1,
+  min_session_minutes: 0,
+  pause_grace_minutes: 1,
+};
+
+/**
+ * A zone's four rates read from their text drafts, or `null` when one is
+ * empty. The drafts are guarded on every keystroke (`guardIntDraft`), so a
+ * non-empty one is already an integer at or above its floor.
+ */
+function parseStudyRules(
+  draft: Record<StudyRuleKey, string>,
+): StudyRules | null {
+  const rules: Partial<StudyRules> = {};
+  for (const key of Object.keys(STUDY_RULE_MIN) as StudyRuleKey[]) {
+    const value = parseGuardedInt(draft[key], STUDY_RULE_MIN[key]);
+    if (value === undefined) return null;
+    rules[key] = value;
+  }
+  return rules as StudyRules;
+}
 
 /**
  * Parses a textarea of "lat,lng" lines into a polygon ring. Polygons need at
@@ -204,6 +243,29 @@ export function GeofencesAdminPage() {
     editDialog.setOpen(true);
   }
 
+  // A rate draft only ever holds "" or an integer at or above its floor:
+  // anything else typed keeps the previous value.
+  function setCreateRule(key: StudyRuleKey, raw: string) {
+    const next = guardIntDraft(raw, STUDY_RULE_MIN[key]);
+    if (next === undefined) return;
+    setCreateDraft((prev) => ({ ...prev, [key]: next }));
+  }
+
+  function setEditRule(key: StudyRuleKey, raw: string) {
+    const next = guardIntDraft(raw, STUDY_RULE_MIN[key]);
+    if (next === undefined) return;
+    setEditDraft((prev) => ({ ...prev, [key]: next }));
+  }
+
+  function toastMissingRules() {
+    toast({
+      title: "Fill in every study rule",
+      description:
+        "Minutes per point, points per interval, min session and pause grace each need a whole number.",
+      variant: "destructive",
+    });
+  }
+
   async function submitCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsed = parseCoordinates(createDraft.coordinates);
@@ -215,24 +277,17 @@ export function GeofencesAdminPage() {
       });
       return;
     }
+    const rules = parseStudyRules(createDraft);
+    if (!rules) {
+      toastMissingRules();
+      return;
+    }
     try {
       await createGeofence.mutateAsync({
         name: createDraft.name.trim(),
         coordinates: parsed.coordinates,
         is_active: true,
-        minutes_per_point: Math.max(1, Number(createDraft.minutes_per_point)),
-        points_per_interval: Math.max(
-          1,
-          Number(createDraft.points_per_interval),
-        ),
-        min_session_minutes: Math.max(
-          1,
-          Number(createDraft.min_session_minutes),
-        ),
-        pause_grace_minutes: Math.max(
-          1,
-          Number(createDraft.pause_grace_minutes),
-        ),
+        ...rules,
       });
       toast({
         title: "Study zone created",
@@ -271,25 +326,18 @@ export function GeofencesAdminPage() {
       });
       return;
     }
+    const rules = parseStudyRules(editDraft);
+    if (!rules) {
+      toastMissingRules();
+      return;
+    }
     try {
       await updateGeofence.mutateAsync({
         id: editTarget.id,
         body: {
           name: editDraft.name.trim(),
           coordinates: parsed.coordinates,
-          minutes_per_point: Math.max(1, Number(editDraft.minutes_per_point)),
-          points_per_interval: Math.max(
-            1,
-            Number(editDraft.points_per_interval),
-          ),
-          min_session_minutes: Math.max(
-            1,
-            Number(editDraft.min_session_minutes),
-          ),
-          pause_grace_minutes: Math.max(
-            1,
-            Number(editDraft.pause_grace_minutes),
-          ),
+          ...rules,
         },
       });
       toast({
@@ -515,10 +563,10 @@ export function GeofencesAdminPage() {
                           min={1}
                           value={createDraft.minutes_per_point}
                           onChange={(event) =>
-                            setCreateDraft((prev) => ({
-                              ...prev,
-                              minutes_per_point: event.target.value,
-                            }))
+                            setCreateRule(
+                              "minutes_per_point",
+                              event.target.value,
+                            )
                           }
                         />
                       </div>
@@ -532,10 +580,10 @@ export function GeofencesAdminPage() {
                           min={1}
                           value={createDraft.points_per_interval}
                           onChange={(event) =>
-                            setCreateDraft((prev) => ({
-                              ...prev,
-                              points_per_interval: event.target.value,
-                            }))
+                            setCreateRule(
+                              "points_per_interval",
+                              event.target.value,
+                            )
                           }
                         />
                       </div>
@@ -544,13 +592,13 @@ export function GeofencesAdminPage() {
                         <Input
                           id="gf-min-session"
                           type="number"
-                          min={1}
+                          min={0}
                           value={createDraft.min_session_minutes}
                           onChange={(event) =>
-                            setCreateDraft((prev) => ({
-                              ...prev,
-                              min_session_minutes: event.target.value,
-                            }))
+                            setCreateRule(
+                              "min_session_minutes",
+                              event.target.value,
+                            )
                           }
                         />
                       </div>
@@ -562,10 +610,10 @@ export function GeofencesAdminPage() {
                           min={1}
                           value={createDraft.pause_grace_minutes}
                           onChange={(event) =>
-                            setCreateDraft((prev) => ({
-                              ...prev,
-                              pause_grace_minutes: event.target.value,
-                            }))
+                            setCreateRule(
+                              "pause_grace_minutes",
+                              event.target.value,
+                            )
                           }
                         />
                         <p className="text-[12.5px] text-muted-foreground">
@@ -745,10 +793,7 @@ export function GeofencesAdminPage() {
                           min={1}
                           value={editDraft.minutes_per_point}
                           onChange={(event) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              minutes_per_point: event.target.value,
-                            }))
+                            setEditRule("minutes_per_point", event.target.value)
                           }
                         />
                       </div>
@@ -760,10 +805,10 @@ export function GeofencesAdminPage() {
                           min={1}
                           value={editDraft.points_per_interval}
                           onChange={(event) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              points_per_interval: event.target.value,
-                            }))
+                            setEditRule(
+                              "points_per_interval",
+                              event.target.value,
+                            )
                           }
                         />
                       </div>
@@ -772,13 +817,13 @@ export function GeofencesAdminPage() {
                         <Input
                           id="gf-edit-min"
                           type="number"
-                          min={1}
+                          min={0}
                           value={editDraft.min_session_minutes}
                           onChange={(event) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              min_session_minutes: event.target.value,
-                            }))
+                            setEditRule(
+                              "min_session_minutes",
+                              event.target.value,
+                            )
                           }
                         />
                       </div>
@@ -792,10 +837,10 @@ export function GeofencesAdminPage() {
                           min={1}
                           value={editDraft.pause_grace_minutes}
                           onChange={(event) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              pause_grace_minutes: event.target.value,
-                            }))
+                            setEditRule(
+                              "pause_grace_minutes",
+                              event.target.value,
+                            )
                           }
                         />
                       </div>

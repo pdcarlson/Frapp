@@ -42,7 +42,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { normalizeRoleOptions } from "@/lib/roles";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
 
 type EventRecord = Record<string, unknown>;
@@ -308,9 +308,13 @@ export function EventEditorDialog({
   const handlePointValueChange = (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const parsed = Number(event.target.value);
-    if (Number.isNaN(parsed)) return;
-    setPointValue(Math.max(0, parsed));
+    // A cleared field means 0 points, as before. Anything that isn't a
+    // nonnegative integer (a negative, a decimal, `1e999`'s Infinity) keeps the
+    // previous value.
+    const raw = event.target.value;
+    const parsed = raw.trim() === "" ? 0 : parseGuardedInt(raw);
+    if (parsed === undefined) return;
+    setPointValue(parsed);
   };
 
   function handleRequiredRoleChange(roleId: string, isChecked: boolean) {

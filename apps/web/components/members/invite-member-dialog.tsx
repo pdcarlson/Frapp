@@ -29,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -246,9 +246,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   }
 
   function handleInviteCountChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const parsed = Number(event.target.value);
-    if (Number.isNaN(parsed)) return;
-    setInviteCount(Math.min(50, Math.max(1, parsed)));
+    // A cleared field means one invite, as before. Anything that isn't a
+    // positive integer keeps the previous count, and the batch caps at 50.
+    const raw = event.target.value;
+    const parsed = raw.trim() === "" ? 1 : parseGuardedInt(raw, 1);
+    if (parsed === undefined) return;
+    setInviteCount(Math.min(50, parsed));
   }
 
   async function handleGenerateInvites() {

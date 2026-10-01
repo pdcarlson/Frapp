@@ -55,7 +55,12 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
 import {
   ASSIGNMENT_TYPES,
   DOCUMENT_VARIANTS,
@@ -320,16 +325,14 @@ export function BackworkPage() {
         department_code: uploadDraft.department_code.trim() || undefined,
         course_number: uploadDraft.course_number.trim() || undefined,
         professor_name: uploadDraft.professor_name.trim() || undefined,
-        year: uploadDraft.year ? Number(uploadDraft.year) : undefined,
+        year: parseGuardedInt(uploadDraft.year),
         semester: uploadDraft.semester
           ? (uploadDraft.semester as (typeof SEMESTERS)[number])
           : undefined,
         assignment_type: uploadDraft.assignment_type
           ? (uploadDraft.assignment_type as (typeof ASSIGNMENT_TYPES)[number])
           : undefined,
-        assignment_number: uploadDraft.assignment_number
-          ? Number(uploadDraft.assignment_number)
-          : undefined,
+        assignment_number: parseGuardedInt(uploadDraft.assignment_number, 1),
         document_variant: uploadDraft.document_variant
           ? (uploadDraft.document_variant as (typeof DOCUMENT_VARIANTS)[number])
           : undefined,
@@ -522,12 +525,13 @@ export function BackworkPage() {
                           max={2100}
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.year}
-                          onChange={(event) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              year: event.target.value,
-                            }))
-                          }
+                          onChange={(event) => {
+                            // The year's floor is the API's to refuse: a
+                            // guard at 1900 would refuse the "2" of "2026".
+                            const next = guardIntDraft(event.target.value);
+                            if (next === undefined) return;
+                            setUploadDraft((prev) => ({ ...prev, year: next }));
+                          }}
                         />
                       </UploadField>
                       <UploadField id="bw-semester" label="Semester">
@@ -596,15 +600,17 @@ export function BackworkPage() {
                         <Input
                           id="bw-assignment-number"
                           type="number"
-                          min={0}
+                          min={1}
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.assignment_number}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const next = guardIntDraft(event.target.value, 1);
+                            if (next === undefined) return;
                             setUploadDraft((prev) => ({
                               ...prev,
-                              assignment_number: event.target.value,
-                            }))
-                          }
+                              assignment_number: next,
+                            }));
+                          }}
                         />
                       </UploadField>
                       <UploadField id="bw-variant" label="Document variant">
