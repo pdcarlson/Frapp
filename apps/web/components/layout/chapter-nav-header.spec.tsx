@@ -70,7 +70,7 @@ function membership(id: string, name: string, university = "Test University") {
   return { chapter_id: id, chapter: { id, name, university } };
 }
 
-/** The shape `CurrentChapterPayloadSchema` parses, minimal but valid. */
+/** A minimal `GET /v1/chapters/current` payload. */
 function chapterPayload(name: string) {
   return {
     id: "chap-1",
@@ -410,5 +410,30 @@ describe("ChapterNavHeader chapter mark", () => {
   it("still shows Greek letters for a chapter that never touched the setting", () => {
     withBranding({ branding: { greek_letters: "ΣΦΕ" } });
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΣΦΕ");
+  });
+
+  /*
+   * `branding` is jsonb, so a stored row can carry a value no schema would
+   * pass. The row used to run the whole payload through a zod twin of the
+   * contract, and one bad key failed it: the name read "Loading..." for good
+   * and the crest drew "--" (#2844).
+   */
+  it("keeps the name and the mark when a key the mark doesn't read is malformed", () => {
+    withBranding({
+      branding: {
+        short_name: "FIJI",
+        founded_at: 1500,
+        colors: { accent: "gold" },
+      },
+    });
+    expect(
+      screen.getByRole("button", { name: "Chapter menu (currently Tau Nu)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("FIJI");
+  });
+
+  it("falls past a malformed mark key to the next step", () => {
+    withBranding({ branding: { short_name: 7, greek_letters: "ΦΓΔ" } });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΦΓΔ");
   });
 });
