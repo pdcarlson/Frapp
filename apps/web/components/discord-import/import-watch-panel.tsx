@@ -74,9 +74,6 @@ export function ImportWatchPanel({
   const progress = useDiscordImportProgress(importId, { active });
   const { isOffline } = useNetwork();
 
-  // A failed poll keeps the last good read (TanStack Query keeps `data`),
-  // flagged as not current below; only a panel with nothing to show falls
-  // back to the error.
   // Offline with nothing read, either way a read goes offline
   // (`anyReadUncached` in async-states.tsx): paused, it read as loading until
   // the link came back; failed (the API unreachable), as a failure.
@@ -92,6 +89,9 @@ export function ImportWatchPanel({
       />
     );
   }
+  // A failed poll keeps the last good read (TanStack Query keeps `data`),
+  // flagged as not current below; only a panel with nothing to show falls
+  // back to the error.
   if (!progress.data && progress.isPending) {
     return <NestedLoading message="Loading the import’s channels…" lines={2} />;
   }
