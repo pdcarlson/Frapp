@@ -496,7 +496,7 @@ policy (`for insert with check (true)` leaves every read assertion green, and Su
 carries a catalog assertion that it holds **no client-reachable policy of any command shape**,
 which covers INSERT/UPDATE/DELETE/ALL without a write probe per command.
 
-Four things make the whole tier meaningful rather than decorative, and each was a false-PASS bug
+Three things make the whole tier meaningful rather than decorative, and each was a false-PASS bug
 before it was fixed:
 
 - **Supabase's roles are created before migrations apply.** Migrations guard their policy, grant
