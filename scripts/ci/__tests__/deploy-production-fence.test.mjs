@@ -669,6 +669,9 @@ describe("installs run before any secret, and the trust split holds", () => {
     // The source-map check (#2489) and the client checks (#3113) run from the same copy.
     visit(join(REPO_ROOT, "scripts", "ci", "verify-sentry-sourcemaps.mjs"));
     visit(join(REPO_ROOT, "scripts", "ci", "smoke-deployed-api.mjs"));
+    // So does the config check (#3112). It loads the deployed commit's built
+    // API, but only by path, in a child process; its own imports stay here.
+    visit(join(REPO_ROOT, "scripts", "ci", "check-deploy-config.mjs"));
     assert.ok(seen.size > 2);
   });
 

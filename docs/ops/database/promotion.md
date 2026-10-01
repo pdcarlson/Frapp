@@ -239,9 +239,9 @@ example a rollback rehearsal), because the build runs that commit's copy of
 that never shipped, such a dry run is a live suspect. Either way, a green dry-run
 build does not prove the real build's Sentry upload will succeed.
 
-A green dry run means the commit validates, the pending migrations replay cleanly
-against production's applied state, and both bundles compile against the app
-config currently in Infisical `prod` (no Vercel row supplies an app key since #2673, and
+A green dry run means the commit validates, Infisical `prod` passes the config check
+(below), the pending migrations replay cleanly against production's applied state,
+and both bundles compile against the app config currently in Infisical `prod` (no Vercel row supplies an app key since #2673, and
 since #2810 no other Production row reaches the build unless it is named like a Vercel
 system variable; the build log names every row kept, and a `::warning::` names any app key
 Vercel held that Infisical didn't). It is not a promise that the apply or the upload
@@ -255,31 +255,32 @@ the apply: no Render deploy, no Vercel build, no tag. Production is then running
 the previous code against the new schema until you come back with a `full` run,
 so the migration must be forward-compatible with the deployed API.
 
-Before you promote — the API does not boot without these:
+The API does not boot without its required config, and since
+[#3112](https://github.com/pdcarlson/Frapp/issues/3112) the deploy checks it before
+anything is written, on a dry run too. **Check the config before anything is written
+(production)** runs the deployed commit's `validateEnv`
+([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
+on the values in Infisical `prod`, and fails the run, naming the variable and the rule,
+when the API would refuse to boot: a missing or blank required name (`validateEnv`
+rejects an empty string as it does an absent key), a client key or an unresolved
+`${…}` reference in `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL`
+beside the production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
+`MOBILE_UPDATE_URL_*`. The same step requires `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` when the
+run deploys an Edge Function and `API_HEALTHCHECK_URL` on every run. A `migrations-only`
+run deploys no API, so it skips the boot check. Before #3112 each of these failed only
+after the apply, with the schema already moved: a blank required secret crash-looped
+the new container until Render marked the deploy `update_failed`.
 
-- [ ] Every name in `REQUIRED_ENV_VARS`
-      ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
-      is set **and non-empty** in the target environment's Infisical folder:
-      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
-      `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
-- [ ] Those values also have the right shape, because `validateEnv` refuses some
-      non-empty values too: a client key (the publishable key or the legacy
-      `anon` JWT) or an unresolved `${…}` reference in
-      `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL` beside the
-      production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
-      `MOBILE_UPDATE_URL_*`. Each throws at boot with the variable named.
+Before you promote, check what that step can't see:
 
-`validateEnv` rejects an **empty string** exactly as it rejects an absent key
-(`typeof value !== 'string' || value.trim().length === 0`), so a name that is
-present in Infisical with a blank value still throws
-`Missing required environment variables: ...` at boot. Nothing upstream catches
-it: the Infisical sync succeeds, the image builds, and the container then
-crash-loops until Render gives up and marks the deploy `update_failed`.
-
-Check the values rather than the key list. A masked `***` in a workflow log
-means present and non-empty; a name printed with nothing after the colon is the
-blank that fails. The order matters here — migrations apply _before_ the API
-deploys, so a blank secret fails **after** the schema has already moved.
+- [ ] **The Render sync has copied the value.** The step reads Infisical, which is the
+      sync's source. A sync that failed or lags still boots the API on the old value
+      ([`SECRETS_MANAGEMENT.md` § 5](../../internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
+- [ ] **The value is right, not just well-formed.** A secret key from the other Supabase
+      project, or a `price_…` from the retired Stripe account, passes `validateEnv`. The
+      API checks some of these against the provider once it is up (the Stripe price
+      lookup, [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#core-app-secrets)),
+      which is after the apply.
 
 Post-apply production checks:
 

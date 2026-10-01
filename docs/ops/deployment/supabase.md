@@ -106,8 +106,10 @@ each function, so Supabase bundles it and the job needs no Docker. Order and gat
 scoped access token for that environment's project alone, with only the **Edge Functions**
 read-write permission. The read-only `SUPABASE_ACCESS_TOKEN` cannot deploy a function.
 [`ENV_REFERENCE.md` § CD Secrets](../../internal/environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only)
-says how to mint it. When it is missing, the staging and production deploys fail at this step, before
-the API.
+says how to mint it. When it is missing, the deploy refuses the run before anything is written, at
+**Check the config before anything is written**, wherever this step would deploy a function: staging
+unless its plan is `stale`, and every production `full` run, dry runs included
+([#3112](https://github.com/pdcarlson/Frapp/issues/3112)).
 
 **Its settings.**
 
