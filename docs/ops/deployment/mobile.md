@@ -409,7 +409,8 @@ started builds as a JSON array (`platform` `IOS` or `ANDROID`) and exits; `eas b
 --json` prints one build with `status`, `appVersion`, `appBuildVersion` and `gitCommitHash`, and
 eas-cli sets no request timeout on it; `eas submit --wait` exits 1 unless the submission
 `FINISHED`, and `--auto-testflight-setup` defaults to on. On a version bump, re-check those
-shapes too: a changed `build:view` shape reads every build as `UNREAD`.
+shapes too: with a changed `build:view` shape, no build ever reads as finished, and the wait runs
+to its deadline.
 CI pins that version; a laptop isn't pinned (see the top of this section), so re-check the table
 against `eas submit --help` when a run disagrees.
 
