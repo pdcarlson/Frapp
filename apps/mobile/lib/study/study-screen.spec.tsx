@@ -423,6 +423,21 @@ describe("Study when hours is switched off under a cached payload that says on (
     act(() => tree.unmount());
   });
 
+  it("refetches nothing when there is no payload to correct", async () => {
+    // No `active_chapter_id` claim: the query is disabled, `hoursEnabled`
+    // failed open, and a manual refetch would send the read the hook withholds.
+    chapter = undefined;
+    api.heartbeat.mockRejectedValue(MODULE_OFF);
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
+    expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
   it("refetches nothing on a failure that isn't the module gate", async () => {
     api.heartbeat.mockRejectedValue(REFUSED);
     const tree = render();

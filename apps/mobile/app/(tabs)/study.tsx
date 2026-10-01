@@ -285,14 +285,18 @@ export default function StudyScreen() {
    * and a "that didn't save" line for as long as the 5-minute cached payload
    * goes unrefreshed, which on a never-unmounted tab can be indefinitely. The
    * reverse, a write that succeeds under a payload saying off, is
-   * `applyResponse`'s.
+   * `applyResponse`'s. With no payload at all (the query is disabled without
+   * an `active_chapter_id` claim, and `hoursEnabled` failed open) there is
+   * nothing stale to correct, and a manual refetch would send the read the
+   * hook deliberately withholds.
    */
+  const hasChapterPayload = chapterQuery.data !== undefined;
   useEffect(() => {
-    if (!hoursEnabled) return;
+    if (!hoursEnabled || !hasChapterPayload) return;
     if (failure !== MODULE_OFF_COPY.start && failure !== MODULE_OFF_COPY.session)
       return;
     void apiRef.current.refetchChapter();
-  }, [failure, hoursEnabled]);
+  }, [failure, hoursEnabled, hasChapterPayload]);
 
   /** Adopt the live session — on cold start, and after any invalidation. */
   useEffect(() => {
