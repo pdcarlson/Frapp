@@ -1121,7 +1121,7 @@ export function DocumentsPage() {
                 of it — the state below already says what is happening.
               */}
               {listState === "ready" ? (
-                <p className="shrink-0 text-[12.5px] text-muted">
+                <p className="shrink-0 text-caption text-muted">
                   {visible.length} document{visible.length === 1 ? "" : "s"}
                   {deferredSearch ? ` matching "${deferredSearch}"` : ""}
                 </p>
@@ -1270,7 +1270,7 @@ export function DocumentsPage() {
                         free-text field and the right thing to lose to an
                         ellipsis.
                       */}
-                      <p className="truncate text-[12.5px] text-muted">
+                      <p className="truncate text-caption text-muted">
                         {[
                           `Uploaded ${formatLocaleDate(doc.created_at)}`,
                           doc.folder,

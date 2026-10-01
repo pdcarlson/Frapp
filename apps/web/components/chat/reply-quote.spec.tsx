@@ -76,7 +76,7 @@ describe("QuotedMessage", () => {
     const { container: missing } = render(
       <QuotedMessage author={null} preview={null} />,
     );
-    for (const cls of ["border-l-2", "border-border", "pl-2", "text-[12.5px]"]) {
+    for (const cls of ["border-l-2", "border-border", "pl-2", "text-caption"]) {
       expect(loaded.firstElementChild).toHaveClass(cls);
       expect(missing.firstElementChild).toHaveClass(cls);
     }

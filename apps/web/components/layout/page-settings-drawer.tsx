@@ -85,7 +85,7 @@ export function PageSettingsDrawer({
             furniture — without it the drawer reads as a form the member forgot
             to submit.
           */}
-          <p className="mt-auto pt-2 text-[12.5px] text-muted-foreground">
+          <p className="mt-auto pt-2 text-caption text-muted-foreground">
             Saved as you change. Members see the effect immediately.
           </p>
         </div>
@@ -123,7 +123,7 @@ export function PageSettingsSection({
       </h3>
       <div className="flex flex-col gap-1.5">{children}</div>
       {footer ? (
-        <p className="mt-1.5 text-[12.5px] text-muted-foreground">{footer}</p>
+        <p className="mt-1.5 text-caption text-muted-foreground">{footer}</p>
       ) : null}
     </section>
   );

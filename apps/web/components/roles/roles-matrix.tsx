@@ -195,7 +195,7 @@ export function RolesMatrix({
         >
           <span
             role="columnheader"
-            className="text-[12.5px] font-semibold text-muted-foreground"
+            className="text-caption font-semibold text-muted-foreground"
           >
             Permission
           </span>

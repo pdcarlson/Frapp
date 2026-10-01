@@ -97,15 +97,15 @@ export function BookmarksPanel({
         the false-empty defect components.md §5 bans.
       */}
       {isLoading ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Loading your bookmarks…
         </p>
       ) : isError ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Couldn’t load your bookmarks. Reopen this panel to try again.
         </p>
       ) : bookmarks.length === 0 ? (
-        <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
+        <p className="px-3 py-4 text-caption text-muted-foreground">
           Nothing saved yet. Save a message to keep it here. Only you can see
           your bookmarks.
         </p>
@@ -172,7 +172,7 @@ export function BookmarksPanel({
                       onJump?.(bookmark.message.channel_id, bookmark.message_id)
                     }
                     className={cn(
-                      "block w-full py-3 pl-3 pr-11 text-left text-[12.5px] transition-colors",
+                      "block w-full py-3 pl-3 pr-11 text-left text-caption transition-colors",
                       "hover:bg-accent-subtle hover:text-accent-text",
                       FOCUS_RING,
                     )}
@@ -180,7 +180,7 @@ export function BookmarksPanel({
                     {body}
                   </button>
                 ) : (
-                  <div className="block w-full py-3 pl-3 pr-11 text-left text-[12.5px]">
+                  <div className="block w-full py-3 pl-3 pr-11 text-left text-caption">
                     {body}
                   </div>
                 )}

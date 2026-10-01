@@ -45,10 +45,10 @@ export function EmojiPickerPanel({
         placeholder="Search emoji…"
       />
       <Frimousse.Viewport className="relative flex-1 overflow-y-auto px-1 pb-1">
-        <Frimousse.Loading className="p-3 text-[12.5px] text-muted-foreground">
+        <Frimousse.Loading className="p-3 text-caption text-muted-foreground">
           Loading…
         </Frimousse.Loading>
-        <Frimousse.Empty className="p-3 text-[12.5px] text-muted-foreground">
+        <Frimousse.Empty className="p-3 text-caption text-muted-foreground">
           No emoji matches.
         </Frimousse.Empty>
         <Frimousse.List
@@ -67,7 +67,7 @@ function CategoryHeader({ category, ...rest }: EmojiPickerListCategoryHeaderProp
   return (
     <div
       {...rest}
-      className="bg-popover px-2 pb-1 pt-2 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+      className="bg-popover px-2 pb-1 pt-2 text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground"
     >
       {category.label}
     </div>

@@ -634,13 +634,13 @@ export function StudyPage() {
               ) : null}
             </div>
             {isPaused || pageHidden ? (
-              <p className="text-[12.5px] text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Return within {activeGeofence?.pause_grace_minutes ?? 5} min or
                 the session expires.
               </p>
             ) : null}
             {geolocationError ? (
-              <p className="text-[12.5px] text-destructive">
+              <p className="text-caption text-destructive">
                 {geolocationError}
               </p>
             ) : null}
@@ -702,7 +702,7 @@ export function StudyPage() {
                 <div className="grid gap-1">
                   <label
                     htmlFor="study-geofence"
-                    className="text-[12.5px] uppercase tracking-wide text-muted-foreground"
+                    className="text-caption uppercase tracking-wide text-muted-foreground"
                   >
                     Study zone
                   </label>
@@ -740,7 +740,7 @@ export function StudyPage() {
               </div>
             )}
           </CardContent>
-          <CardFooter className="text-[12.5px] text-muted-foreground">
+          <CardFooter className="text-caption text-muted-foreground">
             Closing this tab ends the session. That&apos;s a deliberate web
             adaptation of the mobile foreground rule. Use the mobile app for
             longer sessions or when you expect to switch tabs frequently.
@@ -771,7 +771,7 @@ export function StudyPage() {
                       {session.total_foreground_minutes} minute
                       {session.total_foreground_minutes === 1 ? "" : "s"}
                     </p>
-                    <p className="text-[12.5px] text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Started {formatShortDate(session.start_time)}
                       {session.end_time
                         ? ` · Ended ${formatShortDate(session.end_time)}`

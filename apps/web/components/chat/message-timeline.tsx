@@ -245,7 +245,7 @@ function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
     return (
       <p
         role="status"
-        className="py-3 text-center text-[12.5px] text-muted-foreground"
+        className="py-3 text-center text-caption text-muted-foreground"
       >
         Loading earlier messages...
       </p>
@@ -254,7 +254,7 @@ function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "error") {
     return (
       <div className="flex items-center justify-center gap-2 py-3">
-        <p role="alert" className="text-[12.5px] text-muted-foreground">
+        <p role="alert" className="text-caption text-muted-foreground">
           Couldn&apos;t load earlier messages.
         </p>
         {context.onRetryOlder ? (
@@ -845,7 +845,7 @@ export const MessageTimeline = forwardRef<
                 // centred 12.5 / 600 caption, and the only date in the thread.
                 <div
                   data-slot="day-divider"
-                  className="flex items-center gap-3 px-5 pb-1 pt-4 text-[12.5px] font-semibold text-muted-foreground"
+                  className="flex items-center gap-3 px-5 pb-1 pt-4 text-caption font-semibold text-muted-foreground"
                 >
                   <span aria-hidden="true" className="h-px flex-1 bg-border" />
                   <span>{dayDividerLabel(entry.message.created_at)}</span>

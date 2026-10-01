@@ -368,7 +368,7 @@ export function UploadFileField({
               <p className="truncate text-sm font-semibold text-foreground">
                 {file.name}
               </p>
-              <p className="text-[12.5px] text-muted">
+              <p className="text-caption text-muted">
                 {formatBytes(file.size)}
                 {extension ? ` · ${extension}` : ""}
               </p>
@@ -388,7 +388,7 @@ export function UploadFileField({
             */}
             <p
               id={fieldHintId(id)}
-              className="min-w-0 flex-1 text-[12.5px] text-muted"
+              className="min-w-0 flex-1 text-caption text-muted"
             >
               {hint}
             </p>
@@ -404,7 +404,7 @@ export function UploadFileField({
         <p
           id={fieldErrorId(id)}
           role="alert"
-          className="text-[12.5px] text-destructive-text"
+          className="text-caption text-destructive-text"
         >
           {error}
         </p>

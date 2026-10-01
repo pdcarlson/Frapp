@@ -484,7 +484,7 @@ export function ChannelList({
 
   if (channels.length === 0) {
     return (
-      <p className="rounded-lg border border-border px-3 py-4 text-center text-[12.5px] text-muted-foreground">
+      <p className="rounded-lg border border-border px-3 py-4 text-center text-caption text-muted-foreground">
         All caught up. Start a channel to begin chatting.
       </p>
     );
@@ -515,7 +515,7 @@ export function ChannelList({
                 onClick={() =>
                   sidebar.onSetCollapsed(section.key, !section.collapsed)
                 }
-                className="flex w-full items-center gap-1 px-2 pb-1 text-left text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+                className="flex w-full items-center gap-1 px-2 pb-1 text-left text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
               >
                 {section.collapsed ? (
                   <ChevronRight
@@ -543,7 +543,7 @@ export function ChannelList({
             ) : (
               <p
                 id={headerId}
-                className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                className="px-3 pb-1 text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground"
               >
                 {section.label}
               </p>
@@ -555,7 +555,7 @@ export function ChannelList({
         );
       })}
       {arranged.emptiedByFilters && sidebar ? (
-        <div className="space-y-2 rounded-lg border border-border px-3 py-4 text-center text-[12.5px] text-muted-foreground">
+        <div className="space-y-2 rounded-lg border border-border px-3 py-4 text-center text-caption text-muted-foreground">
           <p>{NO_MATCHING_CHANNELS}</p>
           <button
             type="button"
@@ -573,7 +573,7 @@ export function ChannelList({
             onClick={() => setShowHidden((open) => !open)}
             aria-expanded={showHidden}
             aria-controls="channel-section:hidden"
-            className="w-full px-3 pb-1 text-left text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
+            className="w-full px-3 pb-1 text-left text-caption font-semibold uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground"
           >
             {`${HIDDEN_CONVERSATIONS_LABEL} (${hiddenDms.length})`}
           </button>
@@ -732,7 +732,7 @@ export function ChannelFilters({
             onCheckedChange={(checked) => onChange({ hide_muted: checked })}
           />
         </div>
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-caption text-muted-foreground">
           Pinned channels, the open channel and anything that mentions you
           always show.
         </p>

@@ -55,7 +55,7 @@ export function MessageAttachments({
 
   if (query.isPending) {
     return (
-      <p className="mt-1 text-[12.5px] text-muted-foreground">
+      <p className="mt-1 text-caption text-muted-foreground">
         {count === 1 ? "Loading attachment…" : `Loading ${count} attachments…`}
       </p>
     );
@@ -63,7 +63,7 @@ export function MessageAttachments({
 
   if (query.isError || !query.data) {
     return (
-      <p className="mt-1 text-[12.5px] text-destructive">
+      <p className="mt-1 text-caption text-destructive">
         {count === 1 ? "Attachment" : `${count} attachments`} couldn&apos;t be
         loaded.
       </p>
@@ -74,7 +74,7 @@ export function MessageAttachments({
 
   const rowClass = cn(
     "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
-    "text-[12.5px] hover:bg-accent-subtle hover:text-accent-text",
+    "text-caption hover:bg-accent-subtle hover:text-accent-text",
     FOCUS_RING,
   );
 

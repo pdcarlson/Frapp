@@ -83,11 +83,11 @@ export function StudyZonesSettingsDrawer() {
         </PageSettingsAccessRow>
 
         {rolesQuery.isPending || catalogQuery.isPending ? (
-          <p className="text-[12.5px] text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             Loading who holds what...
           </p>
         ) : rolesQuery.isError || catalogQuery.isError ? (
-          <p className="text-[12.5px] text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             Couldn&apos;t load roles. Open Settings to see who can manage zones.
           </p>
         ) : (
@@ -100,7 +100,7 @@ export function StudyZonesSettingsDrawer() {
             return (
               <PageSettingsAccessRow key={verb.permission} label={verb.label}>
                 {holders.length === 0 ? (
-                  <span className="text-[12.5px] text-muted-foreground">
+                  <span className="text-caption text-muted-foreground">
                     No role holds this yet
                   </span>
                 ) : (

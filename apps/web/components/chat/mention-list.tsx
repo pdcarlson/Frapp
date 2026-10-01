@@ -125,7 +125,7 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
         <div
           role="listbox"
           aria-label="Matching members"
-          className="w-64 rounded-md border border-border bg-popover p-2 text-[12.5px] text-muted-foreground"
+          className="w-64 rounded-md border border-border bg-popover p-2 text-caption text-muted-foreground"
         >
           No matching members.
         </div>

@@ -1671,7 +1671,7 @@ export function ChatShell({
               )}
             </h1>
             {activeChannel?.description ? (
-              <p className="truncate text-[12.5px] text-muted-foreground">
+              <p className="truncate text-caption text-muted-foreground">
                 {activeChannel.description}
               </p>
             ) : null}
@@ -1749,7 +1749,7 @@ export function ChatShell({
             // would assert a failure on channels nobody touched.
             <p
               role="alert"
-              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+              className="border-b border-border px-4 py-1.5 text-caption text-destructive"
             >
               Notification level not saved
             </p>
@@ -1757,7 +1757,7 @@ export function ChatShell({
           {bookmarkWriteFailed ? (
             <p
               role="alert"
-              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+              className="border-b border-border px-4 py-1.5 text-caption text-destructive"
             >
               {/* Covers both directions: the same alert fires for a failed
                   save and a failed removal, and "not saved" would be wrong
@@ -1770,7 +1770,7 @@ export function ChatShell({
               // Dismissible because it reports a past action, not a standing
               // condition of the channel.
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
-                <p className="text-[12.5px] text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   {pendingTargetHeld
                     ? "That message is waiting on your block list. It opens once the list loads."
                     : showUnreachableNotice && unreachableTarget
@@ -2048,7 +2048,7 @@ export function ChatShell({
           strip would push the composer down by a line on every channel.
         */}
         {typingUsers.length > 0 ? (
-          <p className="shrink-0 px-4 pb-1 text-[12.5px] text-muted-foreground">
+          <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
             {typingUsers.length === 1
               ? "Someone is typing…"
               : `${typingUsers.length} people are typing…`}

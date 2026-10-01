@@ -112,8 +112,8 @@ function RoleChecklistItem({
         <p
           className={
             monoSubtitle
-              ? "font-mono text-[12.5px] text-muted-foreground"
-              : "text-[12.5px] text-muted-foreground"
+              ? "font-mono text-caption text-muted-foreground"
+              : "text-caption text-muted-foreground"
           }
         >
           {subtitle}
@@ -453,11 +453,11 @@ export function MemberDetailSheet({
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <div className="rounded-md border border-border p-3">
-            <p className="text-[12.5px] text-muted-foreground">User ID</p>
-            <p className="mt-1 font-mono text-[12.5px]">{userId}</p>
+            <p className="text-caption text-muted-foreground">User ID</p>
+            <p className="mt-1 font-mono text-caption">{userId}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-[12.5px] text-muted-foreground">Onboarding</p>
+            <p className="text-caption text-muted-foreground">Onboarding</p>
             <div className="mt-1">
               <Badge variant={hasCompletedOnboarding ? "success" : "warning"}>
                 {hasCompletedOnboarding ? "Complete" : "Pending"}
@@ -465,15 +465,15 @@ export function MemberDetailSheet({
             </div>
           </div>
           <div className="rounded-md border border-border p-3 sm:col-span-2">
-            <p className="text-[12.5px] text-muted-foreground">Email</p>
+            <p className="text-caption text-muted-foreground">Email</p>
             <p className="mt-1 text-sm">{email}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-[12.5px] text-muted-foreground">Joined chapter</p>
+            <p className="text-caption text-muted-foreground">Joined chapter</p>
             <p className="mt-1 text-sm">{formatDate(resolvedMember?.created_at)}</p>
           </div>
           <div className="rounded-md border border-border p-3">
-            <p className="text-[12.5px] text-muted-foreground">Points</p>
+            <p className="text-caption text-muted-foreground">Points</p>
             <p className="mt-1 text-sm">
               {/* Same rule as `formatCustomValue` above: a word, not a mark. */}
               {typeof points === "number" ? points : "Not recorded"}
@@ -487,7 +487,7 @@ export function MemberDetailSheet({
             <div className="grid gap-3 sm:grid-cols-2">
               {customFields.map((field) => (
                 <div key={field.field_id} className="rounded-md border border-border p-3">
-                  <p className="text-[12.5px] text-muted-foreground">{field.label}</p>
+                  <p className="text-caption text-muted-foreground">{field.label}</p>
                   <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
                 </div>
               ))}
@@ -524,7 +524,7 @@ export function MemberDetailSheet({
               <RolesGlyph className="h-4 w-4 text-muted-foreground" />
               <p className="text-sm font-semibold">Custom roles</p>
             </div>
-            <p className="text-[12.5px] text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Capabilities from assigned custom roles apply on the member&apos;s
               next request, alongside their live-role permissions.
             </p>
