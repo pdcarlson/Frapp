@@ -1364,7 +1364,38 @@ describe("scrubRecordedBreadcrumb (#3104)", () => {
     });
   });
 
-  it("drops the data and unknown fields of any other crumb", () => {
+  it("keeps a navigation crumb's from and to, which native reads for the current screen", () => {
+    // `reactnavigation.js`, registered by the SDK's Expo Router integration,
+    // with the templated path Expo Router hands it as the route name.
+    const routed = record({
+      timestamp: 1_700_000_000,
+      category: "navigation",
+      type: "navigation",
+      message: "Navigation to /members/[id]",
+      data: { from: "/(tabs)/chat", to: "/members/[id]" },
+    });
+    // The browser SDK's history crumb, the one shape that carries a concrete
+    // path, query string included.
+    const concrete = record({
+      timestamp: 1_700_000_000,
+      category: "navigation",
+      data: {
+        from: "/directory",
+        to: `/members/${USER_UUID}?q=Jo%20Smith#notes`,
+      },
+    });
+
+    expect(routed?.data).toEqual({ from: "/(tabs)/chat", to: "/members/[id]" });
+    expect(JSON.stringify(concrete)).not.toContain("Jo");
+    expect(concrete?.data).toEqual({
+      from: "/directory",
+      to: "/members/[redacted:id]",
+    });
+  });
+
+  it("drops any other navigation data and unknown fields", () => {
+    // `expoRouter.js`'s own crumb: `pathname` and `params` are not what
+    // native reads, and `params` holds route values.
     const recorded = record({
       timestamp: 1_700_000_000,
       category: "navigation",

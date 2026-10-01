@@ -48,7 +48,7 @@ import { mobileTracePropagationTargets } from "./trace-targets";
  * add `mobileReplayIntegration`.
  */
 
-const { scrubError, scrubTransaction, scrubBreadcrumb } =
+const { scrubError, scrubTransaction, scrubRecordedBreadcrumb } =
   createNoPseudonymScrubHooks();
 
 /**
@@ -159,8 +159,12 @@ export type MobileSentryReleaseExtras = {
  * no JS hook ever sees. Both are iOS-only:
  *
  *  - `enableNetworkBreadcrumbs: false`: sentry-cocoa's own `http` crumb keeps
- *    the query string as `http.query`. It duplicates the JS request crumb by
- *    design, so nothing is lost.
+ *    the query string as `http.query`. For a request made from JS it only
+ *    duplicates the JS request crumb. A request React Native makes natively
+ *    has no JS crumb, though, so native crash reports lose those: an
+ *    `<Image>` loading a chat attachment, a profile photo or the chapter
+ *    logo. That loss is accepted: a chat attachment's URL is a signed
+ *    storage URL, and its query is the token.
  *  - `reportAccessibilityIdentifier: false`: sentry-cocoa names a tapped
  *    native control by its `accessibilityIdentifier`, which is React Native's
  *    `testID`.
@@ -194,7 +198,8 @@ export function buildMobileSentryOptions(
       : {}),
     beforeSend: (event: ErrorEvent) => scrubError(event),
     beforeSendTransaction: (event: TransactionEvent) => scrubTransaction(event),
-    beforeBreadcrumb: (breadcrumb: Breadcrumb) => scrubBreadcrumb(breadcrumb),
+    beforeBreadcrumb: (breadcrumb: Breadcrumb) =>
+      scrubRecordedBreadcrumb(breadcrumb),
     enableNetworkBreadcrumbs: false,
     reportAccessibilityIdentifier: false,
   };

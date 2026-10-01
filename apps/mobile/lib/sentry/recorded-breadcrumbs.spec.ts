@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import type { ReactNativeOptions } from "@sentry/react-native";
 import { breadcrumbsIntegration } from "@sentry/react-native/dist/js/integrations/breadcrumbs";
 import { enableSyncToNative } from "@sentry/react-native/dist/js/scopeSync";
@@ -12,6 +11,11 @@ import {
   it,
   vi,
 } from "vitest";
+import {
+  nativeRecorder,
+  sdkCore,
+  syncedIsolationScope,
+} from "@/test/sentry-native-sync";
 import { buildMobileSentryOptions } from "./options";
 
 /**
@@ -35,51 +39,24 @@ import { buildMobileSentryOptions } from "./options";
  *
  * Two steps are replayed by hand, as in the touch spec, because the SDK's
  * index cannot load under vitest: `Sentry.init` (`sdk.js`) calling
- * `enableSyncToNative`, and the client's `setupIntegrations` calling the
- * integration's `setup`. Re-check `sdk.js` when bumping
- * `@sentry/react-native`. The rule itself is
- * `packages/observability/src/sentry-scrubbing.spec.ts`'s to cover.
+ * `enableSyncToNative` (`syncedIsolationScope`, `test/sentry-native-sync.ts`),
+ * and the client's `setupIntegrations` calling the integration's `setup`.
+ * Re-check `sdk.js` when bumping `@sentry/react-native`. The integration takes
+ * its iOS and Android options because the suite's `react-native` mock
+ * (`test/react-native-stub.ts`) reports `Platform.OS` as `ios`. The rule
+ * itself is `packages/observability/src/sentry-scrubbing.spec.ts`'s to cover.
  */
 
-type SdkScope = Parameters<typeof enableSyncToNative>[0];
 type SdkClient = Parameters<
   ReturnType<typeof breadcrumbsIntegration>["setup"] & object
 >[0];
 
-/**
- * `@sentry/core` as `@sentry/react-native` resolves it; see
- * `touch-breadcrumbs.spec.ts` for why the spec must not use its own.
- */
-const sdkCore = createRequire(
-  createRequire(import.meta.url).resolve("@sentry/react-native/package.json"),
-)("@sentry/core") as {
-  getIsolationScope(): SdkScope;
-  setCurrentClient(client: unknown): void;
-};
-
-const native = vi.hoisted(() => ({ breadcrumbs: [] as unknown[] }));
-
-// `utils/environment` deep-imports React Native internals that vitest's
-// `react-native-web` alias cannot load.
-vi.mock("@sentry/react-native/dist/js/utils/rnlibraries", () => ({
-  ReactNativeLibraries: {},
-}));
-// Under the `react-native-web` alias `Platform.OS` is `web`, which would give
-// the integration the browser's options. The app runs on iOS and Android.
-vi.mock(
-  "@sentry/react-native/dist/js/utils/environment",
-  async (importOriginal) => ({
-    ...(await importOriginal<object>()),
-    isWeb: () => false,
-  }),
+vi.mock("@sentry/react-native/dist/js/utils/rnlibraries", async () =>
+  (await import("@/test/sentry-native-sync")).rnLibrariesModule(),
 );
-vi.mock("@sentry/react-native/dist/js/wrapper", () => ({
-  NATIVE: {
-    addBreadcrumb: (breadcrumb: unknown) => {
-      native.breadcrumbs.push(structuredClone(breadcrumb));
-    },
-  },
-}));
+vi.mock("@sentry/react-native/dist/js/wrapper", async () =>
+  (await import("@/test/sentry-native-sync")).nativeWrapperModule(),
+);
 
 const DSN = "https://examplepublickey@o0.ingest.sentry.io/0";
 const MEMBER_NAME = "Jo Smith";
@@ -175,17 +152,12 @@ async function record(
   act: () => unknown,
 ): Promise<{ js: Crumb[]; native: Crumb[] }> {
   beforeBreadcrumb = hook;
-  native.breadcrumbs = [];
-  // The SDK patches this scope once; `clear()` empties it without going
-  // through the patched `clearBreadcrumbs`, so native is not asked to.
-  const scope = sdkCore.getIsolationScope();
-  scope.clear();
-  enableSyncToNative(scope);
+  const scope = syncedIsolationScope(enableSyncToNative);
 
   await act();
   return {
     js: scope.getScopeData().breadcrumbs as Crumb[],
-    native: native.breadcrumbs as Crumb[],
+    native: nativeRecorder.breadcrumbs as Crumb[],
   };
 }
 

@@ -1,8 +1,12 @@
-import { createRequire } from "node:module";
 import type { ReactNativeOptions } from "@sentry/react-native";
 import { TouchEventBoundary } from "@sentry/react-native/dist/js/touchevents";
 import { enableSyncToNative } from "@sentry/react-native/dist/js/scopeSync";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  nativeRecorder,
+  sdkCore,
+  syncedIsolationScope,
+} from "@/test/sentry-native-sync";
 import { buildMobileSentryOptions } from "./options";
 
 /**
@@ -23,46 +27,20 @@ import { buildMobileSentryOptions } from "./options";
  * by forwarding to native before the hook runs, fails the native assertions.
  *
  * One step is replayed by hand rather than run: `Sentry.init` (`sdk.js`)
- * calling `enableSyncToNative` on the global and isolation scopes. The SDK's
- * index pulls in native views and the feedback widget, which vitest cannot
- * load, so `tap()` makes that call itself. An upgrade that changes how init
- * wires the native sync would not fail here; re-check `sdk.js` when bumping
- * `@sentry/react-native`. The send-time pass in `scrubBreadcrumb` is
- * `packages/observability/src/sentry-scrubbing.spec.ts`'s to cover.
+ * calling `enableSyncToNative` on the global and isolation scopes, which
+ * `tap()` does through `syncedIsolationScope` (`test/sentry-native-sync.ts`).
+ * An upgrade that changes how init wires the native sync would not fail here;
+ * re-check `sdk.js` when bumping `@sentry/react-native`. The send-time pass in
+ * `scrubBreadcrumb` is `packages/observability/src/sentry-scrubbing.spec.ts`'s
+ * to cover.
  */
 
-type SdkScope = Parameters<typeof enableSyncToNative>[0];
-
-/**
- * `@sentry/core` as `@sentry/react-native` resolves it, not as this workspace
- * would. Core keeps its client and scopes on a global keyed by its own
- * version, so the spec has to drive the version the boundary records
- * through, or the client it sets is one the boundary never sees. Resolving
- * through the SDK keeps the two equal whatever either is bumped to, and
- * leaves this workspace no `@sentry/core` dependency for Dependabot to move
- * on its own.
- */
-const sdkCore = createRequire(
-  createRequire(import.meta.url).resolve("@sentry/react-native/package.json"),
-)("@sentry/core") as {
-  getIsolationScope(): SdkScope;
-  setCurrentClient(client: unknown): void;
-};
-
-const native = vi.hoisted(() => ({ breadcrumbs: [] as unknown[] }));
-
-// Deep-imports React Native internals that vitest's `react-native-web` alias
-// cannot load. Nothing on the touch path calls it.
-vi.mock("@sentry/react-native/dist/js/utils/rnlibraries", () => ({
-  ReactNativeLibraries: {},
-}));
-vi.mock("@sentry/react-native/dist/js/wrapper", () => ({
-  NATIVE: {
-    addBreadcrumb: (breadcrumb: unknown) => {
-      native.breadcrumbs.push(structuredClone(breadcrumb));
-    },
-  },
-}));
+vi.mock("@sentry/react-native/dist/js/utils/rnlibraries", async () =>
+  (await import("@/test/sentry-native-sync")).rnLibrariesModule(),
+);
+vi.mock("@sentry/react-native/dist/js/wrapper", async () =>
+  (await import("@/test/sentry-native-sync")).nativeWrapperModule(),
+);
 
 const DSN = "https://examplepublickey@o0.ingest.sentry.io/0";
 const MEMBER_NAME = "Jo Smith";
@@ -125,12 +103,7 @@ function tap(
     getOptions: () => ({ beforeBreadcrumb, maxBreadcrumbs: 100 }),
     getIntegrationByName: () => undefined,
   });
-  native.breadcrumbs = [];
-  // The SDK patches this scope once; `clear()` empties it without going
-  // through the patched `clearBreadcrumbs`, so native is not asked to.
-  const scope = sdkCore.getIsolationScope();
-  scope.clear();
-  enableSyncToNative(scope);
+  const scope = syncedIsolationScope(enableSyncToNative);
 
   const boundary = new TouchEventBoundary({
     ...TouchEventBoundary.defaultProps,
@@ -140,7 +113,7 @@ function tap(
   }
   return {
     js: scope.getScopeData().breadcrumbs as { category?: string }[],
-    native: native.breadcrumbs as { category?: string }[],
+    native: nativeRecorder.breadcrumbs as { category?: string }[],
   };
 }
 

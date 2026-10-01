@@ -491,8 +491,14 @@ export function reduceTouchBreadcrumb<T extends object>(breadcrumb: T): T {
   return out as T;
 }
 
-/** An HTTP method an `http` breadcrumb's recorded copy may keep (#3104). */
-const HTTP_METHOD_RE = /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)$/i;
+/**
+ * The HTTP methods the scrubber recognizes, as a regex alternation: the
+ * method prefix {@link pathOnlyHttpName} peels off a span name, and the
+ * `method` an `http` breadcrumb's recorded copy may keep (#3104).
+ */
+const HTTP_METHODS = 'CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE';
+const HTTP_METHOD_RE = new RegExp(`^(?:${HTTP_METHODS})$`, 'i');
+const HTTP_NAME_RE = new RegExp(`^(${HTTP_METHODS})(\\s+)(.+)$`, 'i');
 
 /**
  * Origin-form path or an absolute-form URL. Used to decide whether a span
@@ -713,9 +719,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    */
   function pathOnlyHttpName(name: unknown): string | undefined {
     if (typeof name !== 'string' || !name) return undefined;
-    const match = name.match(
-      /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)(\s+)(.+)$/i,
-    );
+    const match = name.match(HTTP_NAME_RE);
     if (match) {
       const method = match[1] ?? '';
       const space = match[2] ?? ' ';
@@ -976,6 +980,27 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   }
 
   /**
+   * The `data` a `navigation` breadcrumb's recorded copy keeps: `from` and
+   * `to`, reduced like a URL's path. React Native's native bridge reads
+   * `data.to` back to set the native scope's current screen
+   * (`RNSentryBreadcrumb.getCurrentScreenFrom`). On mobile the SDK's Expo
+   * Router integration records one per screen change, with the templated
+   * path (`/members/[id]`) there, which is code. The browser SDK's history
+   * crumb puts a concrete path there, query string included, hence the
+   * reduction.
+   */
+  function recordedNavigationData(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    const out: Record<string, unknown> = {};
+    for (const key of ['from', 'to'] as const) {
+      const value = pathOnly(data[key]);
+      if (value) out[key] = value;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
+  /**
    * One breadcrumb as it is recorded, before React Native copies it into the
    * native SDK's scope (#3104). Mobile's `beforeBreadcrumb`.
    *
@@ -991,6 +1016,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    *    {@link recordedHttpData}. Its URL is a search's query otherwise.
    *  - **a touch or rage-tap crumb** keeps the code-only path
    *    {@link reduceTouchBreadcrumb} leaves (#2982).
+   *  - **a `navigation` crumb** keeps {@link recordedNavigationData}.
    *  - **everything else**, a `console` crumb's raw `arguments` among them,
    *    keeps none.
    *
@@ -1012,7 +1038,9 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       ? (reduceTouchBreadcrumb(source) as Record<string, unknown>).data
       : source.type === 'http'
         ? recordedHttpData(data)
-        : undefined;
+        : source.category === 'navigation'
+          ? recordedNavigationData(data)
+          : undefined;
     if (kept !== undefined) out.data = kept;
     return out;
   }
