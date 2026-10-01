@@ -261,19 +261,20 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for one commit, named before a human approves the run: the one the dispatch pasted, or, when it leaves `sha` empty, the one the workflow picks (#3114; the rule is in [`promotion.md` § Production: one path, two scopes](../../docs/ops/database/promotion.md#production-one-path-two-scopes)).
 
 ### Deploy Pipeline (on merge)
 
-Staging deploys on every merge whose CI passes; production deploys a SHA a human dispatches and
+Staging deploys on every merge whose CI passes; production deploys a commit a human dispatches and
 approves. Both run the same job, `_deploy.yml`, in the order
 [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated)
 gives. **Corrected 2026-09-30 (#2489):** this section used to restate that order as a diagram. It
 had drifted twice (it left out the Supabase Edge Functions deploy and, when #2489 added it, the
 source-map check), so the order now lives only in `ci-cd.md`.
 
-Production deployments run only when a human dispatches **Deploy production** with a
-commit SHA, types the confirmation phrase, and approves the `production` environment.
+Production deployments run only when a human dispatches **Deploy production** (with a
+commit SHA, or with `sha` empty for the workflow to pick one and name it before the
+approval), types the confirmation phrase, and approves the `production` environment.
 That environment approval is now the **single** human gate — it replaced the promotion
 PR's required review, and it fires at the moment of deploy rather than before anyone
 knew whether the migration applied. Evidence that the environment gate really does pause
@@ -321,7 +322,7 @@ secrets.
 ### API (Render)
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
-- Production: a human dispatches **Deploy production** with a commit SHA → the workflow calls the Render API with that `commitId` (no deploy hook, and no push involved).
+- Production: a human dispatches **Deploy production** → the workflow calls the Render API with the commit it validated as the `commitId` (no deploy hook, and no push involved).
 - Push to `main` (after CI) → `deploy-staging.yml` first plans from the commit staging serves, then builds web and landing when they will ship and runs the staging migration: when anything the API image is built from changed since the served commit, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise, when anything ships, it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).

@@ -97,6 +97,7 @@ import { requireEnv } from "./lib/env.mjs";
 import { supabaseAccessTokenFor } from "./lib/environments.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { DRIFT_AND_ORDERING } from "./lib/ops-docs.mjs";
+import { latestReleaseTag } from "./lib/release-tag.mjs";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -175,8 +176,6 @@ export function versionToEpochMs(version) {
 
 // ── Release baseline ────────────────────────────────────────────────────────
 
-const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
-
 function defaultGit(args) {
   return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
@@ -204,30 +203,17 @@ export function readMigrationVersionsAtRef({ ref, runGit = defaultGit }) {
 /**
  * The migrations in the latest `v*` tag, as { ok, tag, migrations, error }.
  *
- * "Latest" is `release.yml`'s own rule (`git tag --list 'v*'
- * --sort=-version:refname | head -n1`), so both agree on what production's
- * release is. That tag must be a plain `vX.Y.Z`, which is all `release.yml`
- * mints; anything else is an error rather than a quiet step past it.
+ * "Latest" is `lib/release-tag.mjs`'s rule, which is `release.yml`'s own, so
+ * this, the next release and `resolve-deploy-sha.mjs` agree on what
+ * production's release is.
  *
  * Never throws. A missing tag, an unreadable tree or a tag with no migrations is
  * an error, never an empty list: an empty baseline would pass every database.
  */
 export function readReleaseBaseline({ git = defaultGit } = {}) {
-  let tag;
-  try {
-    tag = git(["tag", "--list", "v*", "--sort=-version:refname"])
-      .split("\n")
-      .map((t) => t.trim())
-      .find(Boolean);
-  } catch (error) {
-    return { ok: false, tag: null, migrations: [], error: `listing the v* tags failed: ${error.message}` };
-  }
-  if (!tag) {
-    return { ok: false, tag: null, migrations: [], error: "the checkout holds no v* tag" };
-  }
-  if (!RELEASE_TAG_PATTERN.test(tag)) {
-    return { ok: false, tag, migrations: [], error: `the latest v* tag, ${tag}, is not a vX.Y.Z release` };
-  }
+  const latest = latestReleaseTag({ git });
+  if (!latest.ok) return { ok: false, tag: latest.tag, migrations: [], error: latest.error };
+  const { tag } = latest;
 
   let migrations;
   try {
