@@ -32,6 +32,7 @@ import {
   validateNewTask,
 } from "@/lib/tasks/create-task";
 import { todayIsoDate } from "@/lib/more/service-hours";
+import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
@@ -122,13 +123,17 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
     /**
-     * A subscription refusal is a different outcome from a failed save, not a
-     * worse one (#2297). It is permanent for as long as the chapter is not
-     * active, so this sheet stops offering "try again" and stops offering the
-     * Create button at all — retrying is the one thing that cannot work.
-     * `submitFailed` keeps its exact old meaning: a save that might succeed.
+     * The member copy for a gate refusal, or `null`. A refusal is a different
+     * outcome from a failed save, not a worse one (#2297). Two gates refuse
+     * `POST /v1/tasks` permanently until an officer acts: the subscription
+     * gate while the chapter is not active, and the module gate while `tasks`
+     * is switched off (`@RequireModule('tasks')`, #2718). Either way this sheet
+     * stops offering "try again" and stops offering the Create button at all,
+     * because retrying is the one thing that cannot work. The copy is the
+     * latch, so the two can't disagree. `submitFailed` keeps its exact old
+     * meaning: a save that might succeed.
      */
-    const [subscriptionRefused, setSubscriptionRefused] = useState(false);
+    const [refusal, setRefusal] = useState<string | null>(null);
 
     const roster = useMemo(
       () => selectRoster(rosterQuery.data),
@@ -165,7 +170,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const body = validateNewTask(draft);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit =
-      body !== null && !createTask.isPending && !subscriptionRefused;
+      body !== null && !createTask.isPending && refusal === null;
 
     const reset = useCallback(() => {
       setTitle("");
@@ -174,7 +179,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setAssigneeId(null);
       setSearch("");
       setSubmitFailed(false);
-      setSubscriptionRefused(false);
+      setRefusal(null);
       setTitleFocused(false);
     }, [at]);
 
@@ -189,9 +194,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     }, [reset, dismiss]);
 
     const submit = useCallback(() => {
-      if (!body) return;
+      // `canSubmit`, not just `body`, as in `service-hours.tsx`: otherwise
+      // only the button's `disabled` stands between a refused sheet (or a
+      // create already in flight) and another POST.
+      if (!body || !canSubmit) return;
       setSubmitFailed(false);
-      setSubscriptionRefused(false);
+      setRefusal(null);
       createTask.mutate(body, {
         onSuccess: () => {
           const wasSelf = body.assignee_id === viewerUserId;
@@ -200,10 +208,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           onCreated?.(assigneeName, wasSelf);
         },
         onError: (error) => {
-          // Ordinary failures keep the retry they have always had; only a
-          // subscription refusal takes it away, because only it cannot win.
+          // Ordinary failures keep the retry they have always had; only a gate
+          // refusal takes it away, because only it cannot win. Never a bare
+          // 403: this route also 403s for permission denials.
           if (subscriptionRefusalOf(error)) {
-            setSubscriptionRefused(true);
+            setRefusal(SUBSCRIPTION_REFUSAL_COPY.task);
+            return;
+          }
+          if (moduleRefusalOf(error)) {
+            setRefusal(MODULE_REFUSAL_COPY.task);
             return;
           }
           setSubmitFailed(true);
@@ -211,6 +224,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       });
     }, [
       body,
+      canSubmit,
       createTask,
       viewerUserId,
       reset,
@@ -317,11 +331,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             </Text>
           ) : null}
 
-          {subscriptionRefused ? (
-            <Text style={styles.error}>
-              {SUBSCRIPTION_REFUSAL_COPY.task}
-            </Text>
-          ) : null}
+          {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
 
           {submitFailed ? (
             <Text style={styles.error}>
@@ -333,9 +343,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             label={createTask.isPending ? "Creating…" : "Create task"}
             onPress={submit}
             disabled={!canSubmit}
-            accessibilityHint={
-              subscriptionRefused ? SUBSCRIPTION_REFUSAL_COPY.task : undefined
-            }
+            accessibilityHint={refusal ?? undefined}
             accent={accent}
             onAccent={tokens.color.gold.onHouse}
           />

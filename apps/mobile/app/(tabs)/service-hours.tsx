@@ -28,6 +28,7 @@ import {
   todayIsoDate,
 } from "@/lib/more/service-hours";
 import { useConnection } from "@/lib/connection/use-connection";
+import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
@@ -96,14 +97,20 @@ export default function ServiceHoursScreen() {
   const [duration, setDuration] = useState("");
   const [submitFailed, setSubmitFailed] = useState(false);
   /**
-   * A subscription refusal is a different outcome from a failed save (#2410,
-   * the shape #2297 set on tasks). A brand-new chapter is `incomplete` until
-   * checkout, and `POST /v1/service-entries` stays refused until an officer
-   * sorts that out, so the sheet explains the state and withdraws Submit
-   * rather than inviting a retry that cannot win. `submitFailed` keeps its
-   * exact old meaning: a save that might succeed.
+   * The member copy for a refusal retrying cannot win, or `null`. A refusal is
+   * a different outcome from a failed save, and two gates refuse
+   * `POST /v1/service-entries` that way until an officer acts:
+   *
+   * - the subscription gate (#2410, the shape #2297 set on tasks): a
+   *   brand-new chapter is `incomplete` until checkout;
+   * - the module gate, `@RequireModule('hours')` (#2718), whose own message
+   *   tells an officer to go to Settings → Modules.
+   *
+   * Either way the sheet explains the state and withdraws Submit. The copy is
+   * the latch, so the two can't disagree. `submitFailed` keeps its exact old
+   * meaning: a save that might succeed.
    */
-  const [subscriptionRefused, setSubscriptionRefused] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   /**
    * s20 has **no outbox**. A submit posted with no network is simply lost, so
@@ -120,11 +127,11 @@ export default function ServiceHoursScreen() {
     durationMinutes !== null &&
     writeBlockedReason === null &&
     !createEntry.isPending &&
-    !subscriptionRefused;
+    refusal === null;
 
   const openSheet = useCallback(() => {
     setSubmitFailed(false);
-    setSubscriptionRefused(false);
+    setRefusal(null);
     sheetRef.current?.present();
   }, []);
 
@@ -149,12 +156,18 @@ export default function ServiceHoursScreen() {
           closeSheet();
         },
         onError: (error) => {
-          // Ordinary failures keep the retry they have always had; a
-          // subscription refusal takes it away, because retrying cannot win.
-          // The module gate (`@RequireModule('hours')`) is the other refusal
-          // that cannot win, and it still gets the retry: #2718.
+          // Ordinary failures keep the retry they have always had; a gate
+          // refusal takes it away, because retrying cannot win. Both asked
+          // before `submitFailed`, and never as a bare 403: this route also
+          // 403s for a permission denial, which an officer's role grant clears
+          // on the next try, and for the `chapter.context.*` family, which
+          // clears itself.
           if (subscriptionRefusalOf(error)) {
-            setSubscriptionRefused(true);
+            setRefusal(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
+            return;
+          }
+          if (moduleRefusalOf(error)) {
+            setRefusal(MODULE_REFUSAL_COPY.serviceHours);
             return;
           }
           setSubmitFailed(true);
@@ -312,11 +325,7 @@ export default function ServiceHoursScreen() {
                   `Logging ${formatMinutesRounded(durationMinutes)}, dated today.`}
           </Text>
 
-          {subscriptionRefused ? (
-            <Text style={styles.sheetError}>
-              {SUBSCRIPTION_REFUSAL_COPY.serviceHours}
-            </Text>
-          ) : null}
+          {refusal ? <Text style={styles.sheetError}>{refusal}</Text> : null}
 
           {submitFailed ? (
             <Text style={styles.sheetError}>
@@ -336,11 +345,7 @@ export default function ServiceHoursScreen() {
             // The refusal outranks the offline reason: reconnecting clears
             // one and not the other, so naming only the offline reason would
             // promise a fix that doesn't come.
-            accessibilityHint={
-              subscriptionRefused
-                ? SUBSCRIPTION_REFUSAL_COPY.serviceHours
-                : (writeBlockedReason ?? undefined)
-            }
+            accessibilityHint={refusal ?? writeBlockedReason ?? undefined}
             disabled={!canSubmit}
             onPress={submit}
             style={[
