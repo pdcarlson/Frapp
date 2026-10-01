@@ -356,35 +356,42 @@ nothing is still building.
   the tag and a later step failed, retry neither, because either would put a second tag on the
   commit (#3126). Build by hand from the tag that landed.
 
-**What a run needs outside the repo.** A non-interactive run stops without each of these. The iOS
-set was put in place on 2026-10-01, so the status says what exists and what renewing it takes.
+**What a run needs outside the repo.** A non-interactive run stops without each of these. Each
+*Status* says what existed when someone last looked, and how they looked.
 
 - **`EXPO_TOKEN`**: an Expo access token, as a secret of the GitHub **`automation`** environment.
   Not Infisical, and never a repository secret (#2518). Without it the `build` job's first step
-  fails, before any checkout. *Status:* the token of the robot user `github-deploy-production`
-  (role Developer) on the `pdcarlson` Expo account, so it isn't tied to a person. To rotate it,
-  create a new token for that robot (Expo → account → Access tokens), replace the secret, then
+  fails, before any checkout. *Status (Expo → account → Access tokens, and the `automation`
+  environment's secrets in GitHub, 2026-10-01):* the token of the robot user
+  `github-deploy-production` (role Developer) on the `pdcarlson` Expo account, so it isn't tied to
+  a person. To rotate it, create a new token for that robot on that page, replace the secret, then
   revoke the old token.
 - **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
   certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
-  One interactive `eas build --platform ios --profile production` creates it. *Status:* the
-  distribution certificate and the App Store provisioning profile for `live.frapp.mobile`, made by
-  the first build by hand, both expire on 2027-09-17. Renew them before then with an interactive
-  build or `eas credentials --platform ios`, or the CI path stops at that step.
+  One interactive `eas build --platform ios --profile production` creates it. *Status
+  (`eas credentials --platform ios`, 2026-10-01):* the distribution certificate and the App Store
+  provisioning profile for `live.frapp.mobile`, made by the first build by hand in September 2026,
+  both expire on 2027-09-17. Renew them before then with an interactive build or
+  `eas credentials --platform ios`. An expired certificate doesn't stop the run at the certificate
+  step: a non-interactive build doesn't validate it, finds the profile expired, and fails trying to
+  make a new profile from the old certificate (read from eas-cli 24.8.0's
+  `SetUpDistributionCertificate` and `SetUpProvisioningProfile`; Apple's error itself hasn't been
+  seen).
 - **An App Store Connect API key, assigned to the app for EAS Submit.** Stored on the account is
   not enough: a non-interactive submit uses only the key assigned to `live.frapp.mobile` for
   submissions (`eas credentials --platform ios` → App Store Connect: Manage your API Key → Use an
-  existing API Key for EAS Submit). The table below gives the error otherwise. *Status:* assigned
-  on 2026-10-01.
+  existing API Key for EAS Submit). The table below gives the error otherwise. *Status
+  (`eas credentials --platform ios`, 2026-10-01):* a key is assigned to `live.frapp.mobile` for EAS
+  Submit.
 - **Android:** the Play service-account key in EAS credentials (#2556, #938). Until it exists,
   choose `ios`: an Android build would finish and then fail its upload. The keystore is no
   obstacle: a non-interactive build generates one when none exists (`CreateKeystore`). A
   production Android build also needs the `GOOGLE_SERVICES_JSON` file variable
   (`apps/mobile/app.config.js` refuses to evaluate without it).
-- **An EAS plan whose build quota covers each ticked ship** (one build per platform). *Status:*
-  the Free plan, with 15 iOS and 15 Android builds a month, on the low-priority queue. A build
-  still queued when the wait's deadline passes is reported by id, and the summary says how to
-  upload it by hand; if that keeps happening, a paid plan is the fix.
+- **An EAS plan whose build quota covers each ticked ship** (one build per platform). *Status
+  (Expo → account → Billing, 2026-10-01):* the Free plan, with 15 iOS and 15 Android builds a
+  month, on the low-priority queue. A queued build can outlast the wait's deadline (When it fails,
+  above, says what to do then); if that keeps happening, a paid plan is the fix.
 
 #### By hand
 
@@ -405,8 +412,9 @@ it lives: [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#appsm
   Apple ID recorded in [`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md)
   § As submitted. Without it, an interactive run signs in to the Apple account and finds the app
   by bundle ID (it would create one if none existed), and a non-interactive run stops.
-- **Credentials.** The upload uses the App Store Connect API key stored in EAS credentials for
-  submissions; with none stored, the interactive run offers to create one. If
+- **Credentials.** The upload uses the App Store Connect API key assigned to the app for EAS
+  Submit; one stored only on the account doesn't count. With none assigned, an interactive run
+  offers to reuse a key already on the account, or creates one when the account has none. If
   `EXPO_APPLE_APP_SPECIFIC_PASSWORD` is set, it is used **instead of** the key, and it needs an
   Apple ID too (`EXPO_APPLE_ID`, or the sign-in).
 
@@ -417,7 +425,7 @@ message shown:
 | --- | --- |
 | An archive flag (`--latest`, `--id`, `--path` or `--url`) | "You need to specify the archive source when running in non-interactive mode" |
 | iOS: `ascAppId` in `submit.production.ios` | "Set ascAppId in the submit profile (eas.json) or re-run this command in interactive mode." |
-| iOS: a submissions App Store Connect API key already stored in EAS | "App Store Connect API Keys cannot be set up in --non-interactive mode." |
+| iOS: an App Store Connect API key assigned to the app for EAS Submit (one only on the account doesn't count) | "App Store Connect API Keys cannot be set up in --non-interactive mode." |
 | iOS, password route: an Apple ID | "Set appleId in the submit profile (eas.json)." |
 
 Plus `EXPO_TOKEN` for the Expo account. `ascAppId` is committed since #3111, and
