@@ -167,6 +167,12 @@ layers are that job's steps named `inputs.environment == 'production'`:
 > And if the narrowing would excuse _every_ required check, the deploy is refused outright: that
 > is a tree whose workflows could not be read, not a commit that predates a gate.
 >
+> The rollback this keeps possible is a code-only one. A commit whose tree lacks a migration
+> production has already applied can't deploy at all: the migration rehearsal fails it as
+> `foreign-migrations`. Taking the API off a schema change is a forward revert that keeps the
+> migration files:
+> [`DB_ROLLBACK_PLAYBOOK.md` § 3) Undo one migration](../DB_ROLLBACK_PLAYBOOK.md#3-undo-one-migration).
+>
 > Full account, including the incident that prompted it:
 > `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` § 1) Fast forward-fix (preferred), under the
 > **Deploying an OLDER commit** callout.
