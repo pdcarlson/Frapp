@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Can } from "@/components/shared/can";
@@ -146,15 +147,25 @@ describe("a paused permission check is never silent", () => {
 
 describe("a check that failed offline is the paused state, reached the other way (#2267)", () => {
   /*
-   * TanStack only pauses a query when its `onlineManager` saw the window's
-   * `offline` event. A document that mounted offline, or a link that is up in
-   * front of an API that is not (`useNetwork()` goes OFFLINE after three
-   * failed `/health` probes), runs the permissions fetch and fails it instead.
-   * Before #2267 that landed on the `isError && !data` branch and hid every
-   * gated control, which is the denial §5 rule 4 reserves for permissions the
-   * member will never hold.
+   * Offline, a query only pauses if TanStack saw the `offline` event
+   * (`anyReadUncached` in `async-states.tsx` has the two cases); otherwise the
+   * permissions fetch runs, retries and fails. Before #2267 that landed on the
+   * `isError && !data` branch and hid every gated control, which is the
+   * denial §5 rule 4 reserves for permissions the member will never hold.
    */
   const FAILED = { data: undefined, isPending: false, isError: true, fetchStatus: "idle" };
+
+  function rerenderGate(
+    rerender: (ui: ReactElement) => void,
+    result: Record<string, unknown>,
+  ) {
+    permissionsResult.value = result;
+    rerender(
+      <Can permission="polls:view_all">
+        <button type="button">Create poll</button>
+      </Can>,
+    );
+  }
 
   it("states the offline check, with the gate's own retry, instead of hiding the control", () => {
     network.isOffline = true;
@@ -171,6 +182,40 @@ describe("a check that failed offline is the paused state, reached the other way
     renderGate(FAILED, { offlineFallback: null });
     expect(screen.queryByText(/can't check your access/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /create poll/i })).toBeNull();
+  });
+
+  it("keeps the chip, not `fallback`, while a retry runs offline", () => {
+    // Retry resets an uncached query to pending + fetching, and nothing pauses
+    // it, so the backoff runs to exhaustion. Falling to `fallback` there would
+    // unmount the Retry the member just pressed and leave the slot blank.
+    network.isOffline = true;
+    renderGate(LOADING, { fallback: <p>Checking your chapter permissions</p> });
+    expect(screen.getByText(/can't check your access/i)).toBeInTheDocument();
+    expect(screen.queryByText(/checking your chapter permissions/i)).toBeNull();
+  });
+
+  it("refetches a failed check when the connection comes back, rather than ending on a denial", () => {
+    // TanStack never went offline, so it has no reconnect to refetch on: left
+    // alone, the gate would fall to `deniedFallback` the moment OFFLINE clears.
+    network.isOffline = true;
+    const { rerender } = renderGate(FAILED);
+    expect(refetch).not.toHaveBeenCalled();
+    network.isOffline = false;
+    rerenderGate(rerender, FAILED);
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(refetch).toHaveBeenCalledWith({ cancelRefetch: false });
+  });
+
+  it("does not refetch on recovery when it holds an answer, or on a failure that was never offline", () => {
+    network.isOffline = true;
+    const cached = { ...FAILED, data: { permissions: ["polls:view_all"] } };
+    const { rerender, unmount } = renderGate(cached);
+    network.isOffline = false;
+    rerenderGate(rerender, cached);
+    unmount();
+
+    renderGate(FAILED);
+    expect(refetch).not.toHaveBeenCalled();
   });
 
   it("still uses a cached answer when the refetch fails offline", () => {

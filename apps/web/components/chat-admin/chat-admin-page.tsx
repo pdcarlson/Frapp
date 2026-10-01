@@ -532,7 +532,9 @@ function ChatAdminBody() {
   // empty checkbox grid with no explanation, the same failure mode
   // `anyReadUncached` in async-states.tsx exists to prevent for the page-level
   // gates above. Offline the other way (a document that mounted offline, or an
-  // unreachable API) the read fails instead, and `catalogUnavailable` takes it.
+  // unreachable API) the read fails instead and arrives as `catalogUnavailable`.
+  // The grid reports either one offline as offline, not as a missing
+  // `members:view` (#2267).
   const catalogLoading =
     catalogQuery.isLoading ||
     (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");

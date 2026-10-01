@@ -604,13 +604,15 @@ function PlanMeta({
  * action itself, and `can.tsx` documents the three branches as three different
  * facts:
  *
- * - `deniedFallback` — **proved** they do not hold it. "Ask an officer" is
- *   exactly right, and is the only branch that has established anything.
+ * - `deniedFallback` — they do not hold it, or the check failed while the
+ *   connection was fine (#3065). "Ask an officer" is right for the first,
+ *   which is the only outcome any branch establishes.
  * - `fallback` — idle, nothing cached. Nothing is established, so it stays
  *   `null` and the slot is briefly empty, as the card this replaces left it.
  *   The alternative told a treasurer holding `billing:manage` to ask an
  *   officer, for the length of their own permission fetch.
- * - `offlineFallback` — paused, cannot check. Omitted so `<Can>` supplies its
+ * - `offlineFallback` — offline, cannot check: paused, or retrying or failed
+ *   while the dashboard is OFFLINE. Omitted so `<Can>` supplies its
  *   default, §10's control-slot `PermissionsOffline`: "Offline, can't check
  *   your access", with a Retry that re-arms. Offline, the denied copy was not
  *   briefly wrong but permanently wrong, and carried no way out.
