@@ -1109,10 +1109,11 @@ describe("assertProductionAskDisabled", () => {
  * fails on a category the array below doesn't declare, so the bundled-SDK side
  * of #2294 is encoded rather than narrated. It can't tell which reason code a
  * use needs, and it can't read native code fetched from elsewhere: podspec
- * dependencies (sentry-cocoa, SDWebImage, ReachabilitySwift, react-native's
- * third-party pods, hermes-engine) and the Stripe iOS SDK, which comes through
- * Swift Package Manager. The audit recorded in the array test below covers
- * sentry-cocoa and SDWebImage; the rest are unaudited (#3030).
+ * dependencies (sentry-cocoa, SDWebImage, ReachabilitySwift, the Stripe iOS
+ * SDK's pods, which stripe-react-native 0.77 takes from CocoaPods,
+ * react-native's third-party pods, hermes-engine). The audit recorded in the
+ * array test below covers sentry-cocoa and SDWebImage; the rest are unaudited
+ * (#3030).
  */
 describe("iOS privacy manifest (#2294)", () => {
   function resolved() {

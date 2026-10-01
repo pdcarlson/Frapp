@@ -27,6 +27,8 @@ import {
   requiredReasonCategories,
   requiredReasonProblems,
   scanPod,
+  swiftPackageFiles,
+  swiftPackageProblems,
   withoutComments,
 } from "../../check-mobile-native-declarations.mjs";
 
@@ -490,6 +492,44 @@ test("scanPod reads native sources only, skips Android and nested packages, and 
   }
 });
 
+test("swiftPackageFiles finds spm_dependency in a podspec or a Ruby file beside it, not in comments or nested files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "native-pod-"));
+  try {
+    const put = (rel, text) => {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), text);
+    };
+    // stripe-react-native 0.77: Stripe's SDK from CocoaPods.
+    put("stripe-react-native.podspec", "Pod::Spec.new do |s|\n  # spm_dependency(s, ...) is the 0.78 path\n  s.dependency 'Stripe', v\nend\n");
+    put("ios/Nested.podspec", "spm_dependency(s, url: u, requirement: r, products: p)");
+    assert.deepEqual(swiftPackageFiles(dir), []);
+
+    // stripe-react-native 0.78: the podspec requires stripe_spm.rb, which makes the call.
+    put("stripe_spm.rb", "def stripe_spm_activate!(spec, version:)\n  spm_dependency(\n    spec,\n  )\nend\n");
+    assert.deepEqual(swiftPackageFiles(dir), ["stripe_spm.rb"]);
+    put("Other.podspec", "  spm_dependency(s, url: u, requirement: r, products: p)");
+    assert.deepEqual(swiftPackageFiles(dir), ["Other.podspec", "stripe_spm.rb"]);
+    assert.deepEqual(swiftPackageFiles(join(dir, "missing")), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("swiftPackageProblems fails a Swift package unless pods link as dynamic frameworks", () => {
+  const pods = [
+    { packageName: "@stripe/stripe-react-native", swiftPackageFiles: ["stripe_spm.rb"] },
+    { packageName: "expo-camera", swiftPackageFiles: [] },
+  ];
+  for (const podfileProperties of [undefined, {}, { "ios.useFrameworks": "static" }]) {
+    const problems = swiftPackageProblems(pods, podfileProperties);
+    assert.equal(problems.length, 1, JSON.stringify(podfileProperties));
+    assert.match(problems[0], /^@stripe\/stripe-react-native declares a Swift package \(spm_dependency in stripe_spm\.rb\)/);
+    assert.match(problems[0], podfileProperties?.["ios.useFrameworks"] ? /links its pods as static frameworks/ : /links its pods statically/);
+  }
+  assert.deepEqual(swiftPackageProblems(pods, { "ios.useFrameworks": "dynamic" }), []);
+  assert.deepEqual(swiftPackageProblems([pods[1]], undefined), []);
+});
+
 test("linkedIosPods takes Expo modules, community modules and react-native itself", () => {
   const pods = linkedIosPods({
     expoModules: {
@@ -548,6 +588,7 @@ function fixture({
   reactNativeSource = "[[NSUserDefaults standardUserDefaults] boolForKey:k]; mach_absolute_time();",
   aggregation = AGGREGATION_RB,
   reactNativePath = true,
+  podfileProperties,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "native-declarations-"));
   const put = (rel, text) => {
@@ -567,7 +608,7 @@ function fixture({
   const outputs = {
     config: {
       ios: { privacyManifests: { NSPrivacyAccessedAPITypes: declared.map((c) => ({ NSPrivacyAccessedAPIType: c })) } },
-      _internal: { modResults: { ios: { infoPlist }, android: { manifest } } },
+      _internal: { modResults: { ios: { infoPlist, ...(podfileProperties ? { podfileProperties } : {}) }, android: { manifest } } },
     },
     resolve: modules ?? {
       modules: Object.entries(podDirs).map(([packageName, podspecDir]) => ({ packageName, pods: [{ podName: packageName, podspecDir }] })),
@@ -580,7 +621,7 @@ function fixture({
     if (bin === "cli") return outputs.config;
     return args[0] === "resolve" ? outputs.resolve : outputs.rnConfig;
   };
-  return { root, run, calls, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  return { root, run, calls, put, podDirs, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 test("main passes a coherent project, and asks the CLI for iOS introspection and both pod lists", () => {
@@ -652,6 +693,27 @@ test("main fails when autolinking stops naming react-native's root", () => {
     const { violations } = main(f.root, f.run);
     assert.equal(violations.length, 1);
     assert.match(violations[0], /names no reactNativePath, so react-native's own pods went unscanned/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main fails a linked pod that declares a Swift package while pods link statically, and passes it when they are dynamic", () => {
+  const [name] = MANIFESTLESS_REQUIRED_REASON_USERS.keys();
+  const spm = "def activate!(spec)\n  spm_dependency(spec, url: u, requirement: r, products: p)\nend\n";
+  let f = fixture();
+  try {
+    f.put(`node_modules/${name}/ios/vendor_spm.rb`, spm);
+    const { violations } = main(f.root, f.run);
+    assert.equal(violations.length, 1, violations.join("\n"));
+    assert.match(violations[0], new RegExp(`^${name.replace(/[/.]/g, "\\$&")} declares a Swift package \\(spm_dependency in vendor_spm\\.rb\\), and the app links its pods statically`));
+  } finally {
+    f.cleanup();
+  }
+  f = fixture({ podfileProperties: { "ios.useFrameworks": "dynamic" } });
+  try {
+    f.put(`node_modules/${name}/ios/vendor_spm.rb`, spm);
+    assert.deepEqual(main(f.root, f.run).violations, []);
   } finally {
     f.cleanup();
   }

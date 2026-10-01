@@ -35,7 +35,7 @@
 // `frapp-mobile-permissions.test.mjs` pins only that the prompt copy names
 // Frapp (ADR-25); neither keeps a list of which permissions exist.
 //
-// Four checks, all read from the resolved config:
+// Five checks, all read from the resolved config:
 //
 // 1. iOS. The shipped `*UsageDescription*` keys are exactly
 //    IOS_PURPOSE_STRINGS, each with its exact text, and each entry's
@@ -60,6 +60,13 @@
 //    pods get theirs from its `pod install` aggregation, which merges a
 //    hard-coded core list into the app's manifest, so the categories they use
 //    must stay inside that list.
+// 5. Swift packages. No linked iOS pod declares a Swift package
+//    (`spm_dependency`) unless the Podfile properties link pods as dynamic
+//    frameworks (`ios.useFrameworks`). React Native warns of linker errors
+//    otherwise, and stripe-react-native 0.78 stops `pod install` outright, so
+//    the first build to see it is the EAS store build, after the ship (#3130,
+//    docs/ci-cd/dependency-updates.md § `@stripe/stripe-react-native` 0.78 is
+//    held on Stripe's Swift Package path).
 //
 // What a green run does NOT prove:
 //   - Library manifests merge into the Android manifest at Gradle build time,
@@ -72,9 +79,9 @@
 //     change one without the other, and nothing here compares them.
 //   - The scan reads pod sources in node_modules. Native code the build fetches
 //     from elsewhere isn't there: pods a podspec depends on (sentry-cocoa,
-//     SDWebImage, ReachabilitySwift, react-native's third-party pods and
-//     hermes-engine) and Swift packages (the Stripe iOS SDK, which
-//     stripe-react-native takes through Swift Package Manager). The hand audit
+//     SDWebImage, ReachabilitySwift, the Stripe iOS SDK's pods, which
+//     stripe-react-native 0.77 takes from CocoaPods, react-native's
+//     third-party pods and hermes-engine) and any Swift package. The hand audit
 //     beside the declared array in `app.config.spec.ts` covers sentry-cocoa and
 //     SDWebImage. The rest rely on their own privacy manifests, which nothing
 //     here checks yet (#3030).
@@ -545,6 +552,42 @@ export function requiredReasonProblems(
   return problems;
 }
 
+/** React Native's helper for a pod that resolves a Swift package (`scripts/cocoapods/spm.rb`). */
+const SWIFT_PACKAGE_CALL = /\bspm_dependency\s*\(/;
+
+/**
+ * The files in a pod directory that declare a Swift package: its podspecs, and
+ * the Ruby files beside them that a podspec can `require_relative`
+ * (stripe-react-native 0.78 makes the call from `stripe_spm.rb`). Full-line
+ * Ruby comments don't count.
+ */
+export function swiftPackageFiles(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(podspec|rb)$/.test(entry.name))
+    .filter((entry) => SWIFT_PACKAGE_CALL.test(readFileSync(join(dir, entry.name), "utf8").replace(/^\s*#.*$/gm, "")))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/**
+ * Problems with Swift packages, given each linked pod
+ * (`{ packageName, swiftPackageFiles }`) and the Podfile properties
+ * introspection resolved. The Podfile turns `ios.useFrameworks` into
+ * `use_frameworks!`; without it pods link statically.
+ */
+export function swiftPackageProblems(pods, podfileProperties) {
+  const linkage = podfileProperties?.["ios.useFrameworks"];
+  if (linkage === "dynamic") return [];
+  const linked = linkage ? `as ${linkage} frameworks` : "statically";
+  return pods
+    .filter((pod) => pod.swiftPackageFiles.length > 0)
+    .map(
+      (pod) =>
+        `${pod.packageName} declares a Swift package (spm_dependency in ${pod.swiftPackageFiles.join(", ")}), and the app links its pods ${linked}. React Native links a Swift package reliably only into a dynamic framework, stripe-react-native 0.78 stops \`pod install\` without one, and nothing in CI runs \`pod install\`, so the EAS store build would be the first to fail. Pin a release that takes its SDK from CocoaPods, or set \`ios.useFrameworks: "dynamic"\` through expo-build-properties and prove it with an EAS iOS build (#3130)`,
+    );
+}
+
 /** The categories `ios.privacyManifests` declares. */
 export function declaredCategories(config) {
   return (config?.ios?.privacyManifests?.NSPrivacyAccessedAPITypes ?? [])
@@ -623,7 +666,11 @@ export function main(root = process.cwd(), run = expoCli(root)) {
     const path = join(root, file);
     return existsSync(path) ? readFileSync(path, "utf8") : null;
   };
-  const scanned = pods.map((pod) => ({ packageName: pod.packageName, ...scanPod(pod.dir) }));
+  const scanned = pods.map((pod) => ({
+    packageName: pod.packageName,
+    ...scanPod(pod.dir),
+    swiftPackageFiles: swiftPackageFiles(pod.dir),
+  }));
   const aggregation = reactNativeConfig?.reactNativePath
     ? join(reactNativeConfig.reactNativePath, "scripts/cocoapods/privacy_manifest_utils.rb")
     : null;
@@ -639,6 +686,7 @@ export function main(root = process.cwd(), run = expoCli(root)) {
       ...requesterProblems(readSource),
       ...androidPermissionProblems(modResults.android.manifest),
       ...requiredReasonProblems(scanned, declared, { reactNativeCore }),
+      ...swiftPackageProblems(scanned, modResults.ios.podfileProperties),
     ],
   };
 }
@@ -647,7 +695,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const { checked, violations } = main();
   if (violations.length === 0) {
     console.log(
-      `✓ ${checked.purposeStrings} iOS purpose strings and the background modes, the Android manifest's declarations and removals, and ${checked.pods} linked iOS pod directories' required-reason APIs match the roster (${checked.declared.length} categories declared)`,
+      `✓ ${checked.purposeStrings} iOS purpose strings and the background modes, the Android manifest's declarations and removals, and ${checked.pods} linked iOS pod directories' required-reason APIs match the roster (${checked.declared.length} categories declared), and no pod needs a Swift package the linkage can't take`,
     );
     process.exit(0);
   }

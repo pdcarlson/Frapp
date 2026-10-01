@@ -162,8 +162,8 @@ updates:
     # will NOT open a PR automatically. That is the accepted trade — an
     # isolated security bump here breaks the runtime — but it means these
     # families need a human/agent to carry a CVE through the SDK-upgrade path.
-    # `npm run check:npm-audit` still fails CI on such an advisory, so it
-    # surfaces loudly rather than silently.
+    # `npm run check:npm-audit` still fails CI on such an advisory when it is
+    # high or critical, so it surfaces loudly; below that it is silent.
     #
     # The set this gap covers GREW when the Expo client list below was
     # completed to every Expo client package apps/mobile declares: it also
@@ -295,8 +295,8 @@ updates:
       # for postcss. The second is narrower than it sounds — the copy that ships
       # is Next's, and a postcss advisory is cleared by moving `next` or by a
       # root `overrides` entry, neither of which this touches — but
-      # `npm run check:npm-audit` is the thing that would actually catch it, not
-      # Dependabot.
+      # `npm run check:npm-audit` is the thing that would actually catch a high
+      # or critical one, not Dependabot.
       #
       # This reasoning holds only while Next's exact pin still satisfies the
       # range below. If `next` ever pins a postcss outside `^8.5.6`, npm nests a
@@ -417,6 +417,28 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@vitest/coverage-v8"
         update-types: ["version-update:semver-major"]
+
+      # ── The Stripe React Native 0.78 hold ────────────────────────────────
+      # 0.78.0 takes the Stripe iOS SDK from Swift Package Manager, which
+      # needs dynamic frameworks. The app links its pods statically, so
+      # `pod install` fails on EAS. Nothing in CI runs `pod install`, so the
+      # grouped bump (#2739) went green and broke the first CI store build.
+      #
+      # A version range, not `update-types`: 0.77 -> 0.78 is a minor under
+      # 0.x, so a majors-only hold would not have stopped it. 0.77.x patches
+      # still flow. Like every entry here, it also suppresses security PRs
+      # for 0.78 and later; `check:npm-audit` catches a high or critical
+      # advisory there, and below that nothing does.
+      #
+      # This entry stops Dependabot, not a person. For the rest,
+      # `check:mobile-native-declarations` (mobile-validate) fails any linked
+      # pod that declares a Swift package while pods link statically.
+      #
+      # Write-up: docs/ci-cd/dependency-updates.md
+      # § `@stripe/stripe-react-native` 0.78 is held on Stripe's Swift
+      # Package path. Lift it with the linkage decision in #3130.
+      - dependency-name: "@stripe/stripe-react-native"
+        versions: [">=0.78.0"]
 
       # ── TypeScript 7 dual-install ────────────────────────────────────────
       # TypeScript 7 is native tsc with no JS compiler API. The `typescript`
