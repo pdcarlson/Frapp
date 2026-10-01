@@ -1,10 +1,23 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
-const { mockCurrentChapter, mockOrgConfig, mockRoles, mockToast } = vi.hoisted(() => ({
+const {
+  mockCurrentChapter,
+  mockOrgConfig,
+  mockRoles,
+  mockToast,
+  mockBatchCreate,
+  mockCreateInvite,
+} = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockBatchCreate: vi.fn(),
+  mockCreateInvite: vi.fn(),
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
   mockToast: vi.fn(),
@@ -22,8 +35,14 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => mockRoles(),
   useOrgConfig: () => mockOrgConfig(),
   useInvites: () => ({ data: [INVITE], isError: false }),
-  useCreateInvite: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useBatchCreateInvites: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateInvite: () => ({
+    mutateAsync: mockCreateInvite,
+    isPending: false,
+  }),
+  useBatchCreateInvites: () => ({
+    mutateAsync: mockBatchCreate,
+    isPending: false,
+  }),
   useRevokeInvite: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
@@ -350,5 +369,59 @@ describe("InviteMemberDialog copy payload", () => {
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Invite link copied" }),
     );
+  });
+});
+
+describe("InviteMemberDialog invite count guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    mockBatchCreate.mockResolvedValue([]);
+    mockCreateInvite.mockResolvedValue([]);
+  });
+
+  const countInput = () => screen.getByLabelText(/invite count/i);
+
+  it("keeps the last whole count through a negative or a decimal", async () => {
+    await openDialog();
+    expectRefusedEntriesKeep(countInput(), "5");
+  });
+
+  it("keeps an emptied count empty, so the next digit isn't appended to a 1", async () => {
+    await openDialog();
+    expectClearingEntriesEmpty(countInput(), "5");
+    // Before #2206 an emptied field snapped to 1, so typing 3 produced 13.
+    fireEvent.change(countInput(), { target: { value: "3" } });
+    expect(countInput()).toHaveValue(3);
+  });
+
+  it("shows a count over the batch limit as the limit of 50", async () => {
+    await openDialog();
+    fireEvent.change(countInput(), { target: { value: "120" } });
+    expect(countInput()).toHaveValue(50);
+  });
+
+  it.each(["", "0"])(
+    "generates one invite for a count of %j, as it always has",
+    async (count) => {
+      await openDialog();
+      fireEvent.change(countInput(), { target: { value: "5" } });
+      fireEvent.change(countInput(), { target: { value: count } });
+      await userEvent.click(generate());
+
+      await waitFor(() => expect(mockCreateInvite).toHaveBeenCalledTimes(1));
+      expect(mockBatchCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("asks for the kept whole count, never a fraction of an invite", async () => {
+    await openDialog();
+    fireEvent.change(countInput(), { target: { value: "5" } });
+    fireEvent.change(countInput(), { target: { value: "2.5" } });
+    await userEvent.click(generate());
+
+    await waitFor(() => expect(mockBatchCreate).toHaveBeenCalledTimes(1));
+    expect(mockBatchCreate.mock.calls[0]![0].count).toBe(5);
   });
 });

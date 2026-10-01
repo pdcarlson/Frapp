@@ -43,6 +43,10 @@ vi.mock("@/hooks/use-toast", () => ({
 
 import { EventEditorDialog } from "./event-editor-dialog";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -522,5 +526,89 @@ describe("EventEditorDialog check-in zone", () => {
         }),
       }),
     );
+  });
+});
+
+describe("EventEditorDialog point value guard (#2206)", () => {
+  beforeEach(() => {
+    mockToast.mockReset();
+    createMutate.mockReset();
+    createMutate.mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  function renderCreate() {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    return screen.getByLabelText("Point value");
+  }
+
+  it("keeps the last whole number through a negative or a decimal", () => {
+    expectRefusedEntriesKeep(renderCreate(), "15");
+  });
+
+  it("keeps an emptied or unparseable field empty while the officer types", () => {
+    const input = renderCreate();
+    expectClearingEntriesEmpty(input, "15");
+    // Before #2206 an emptied field snapped to 0, so the next digit read "05".
+    fireEvent.change(input, { target: { value: "5" } });
+    expect(input).toHaveValue(5);
+  });
+
+  it("saves an emptied field as 0 points, as it always has", async () => {
+    const input = renderCreate();
+    fillRequiredFields();
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].point_value).toBe(0);
+  });
+
+  it("refuses a stored negative on edit rather than saving it as 0", async () => {
+    updateMutate.mockReset();
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e9",
+          name: "Exec Sync",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+          point_value: -5,
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Valid point value required" }),
+      ),
+    );
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  it("sends the kept whole number, never Infinity", async () => {
+    const input = renderCreate();
+    fillRequiredFields();
+    fireEvent.change(input, { target: { value: "15" } });
+    fireEvent.change(input, { target: { value: "1.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].point_value).toBe(15);
   });
 });
