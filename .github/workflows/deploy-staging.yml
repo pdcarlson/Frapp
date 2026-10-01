@@ -46,8 +46,10 @@ name: Deploy staging
 # `scripts/ci/deploy-alert.mjs`, which keys on the job names `deploy` and
 # `deploy-outcome` and on the `plan` output. Renaming any of them breaks those
 # silently. `resolve-deploy-sha.mjs` reads the commit out of the run title, as
-# a 40-hex token standing on its own; a title without it fails every
-# production dispatch that leaves `sha` empty.
+# a 40-hex token standing on its own, and reads the job id `deploy` and
+# `_deploy.yml`'s "Verify staging serves the commit" step to tell whether the
+# run deployed and verified it. Losing any of those fails every production
+# dispatch that leaves `sha` empty (pinned in `resolve-deploy-sha.test.mjs`).
 
 run-name: "staging ${{ github.event.workflow_run.head_sha }}"
 

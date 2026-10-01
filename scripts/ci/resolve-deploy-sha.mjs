@@ -2,7 +2,8 @@
 
 // Choose the commit a production deploy ships when its `sha` input is empty
 // (#3114): the newest commit on `main` whose required checks passed AND whose
-// Deploy staging run succeeded, newer than what production runs now.
+// Deploy staging run deployed and verified it, newer than what production runs
+// now.
 //
 // A pasted SHA never comes through here. This script only picks the commit;
 // `validate-deploy-sha.mjs` then validates the pick exactly as it validates a
@@ -17,17 +18,17 @@
 // anything ships, kept for a commit nobody pasted.
 //
 // ── The floor: never resolve a rollback ─────────────────────────────────────
-// Candidates are the commits newer than the newest `v*` tag, found the way
-// `release.yml` finds it (`git tag --list 'v*' --sort=-version:refname`, not
-// `git describe`: `v0.1.0`–`v0.6.0` sit on history that is not an ancestor of
+// Candidates are the commits newer than production's latest release tag, by
+// `lib/release-tag.mjs`'s rule, which is `release.yml`'s own (not `git
+// describe`: `v0.1.0`–`v0.6.0` sit on history that is not an ancestor of
 // `main`). A tag means "this is what is live", so a commit at or behind it
-// would roll production back, and an empty input must never do that. When the
-// newest tag is not an ancestor of `main`, the range "newer than the tag"
-// means nothing, and when there is no tag at all nothing says what production
-// runs. Both refuse: paste a SHA. One case still gets past the floor, a live
-// ship whose tag failed. Production then runs a commit newer than its newest
-// tag, `deploy-outcome` and `production-release-pin.yml` both go red, and the
-// summary names the floor so the approver can see it.
+// would roll production back, and an empty input must never do that. No tag,
+// a top tag that isn't `vX.Y.Z`, or one that isn't an ancestor of `main` all
+// leave "newer than production" without a meaning, and all refuse: paste a
+// SHA. One case still gets past the floor, a live ship whose tag failed.
+// Production then runs a commit newer than its newest tag, `deploy-outcome`
+// and `production-release-pin.yml` both go red, and the summary names the
+// floor so the approver can see it.
 //
 // ── Matching a Deploy staging run to its commit ─────────────────────────────
 // Deploy staging runs on `workflow_run`, and such a run's `head_sha` is
@@ -41,18 +42,27 @@
 // that only matters until the first deploy after it merged.
 //
 // ── What "staging succeeded" means ──────────────────────────────────────────
-// The newest Deploy staging run naming the commit concluded `success`.
-//   * When GitHub replaces a run's deploy job while it is still queued
-//     (`_deploy.yml`'s concurrency note), the job ends `cancelled` and
-//     `deploy-outcome` reports that as a failure, so the run doesn't succeed
-//     and its commit is skipped, with the run's link. The newer run that
-//     replaced it carries its changes, and the walk, newest first, normally
-//     reaches that newer commit before this one.
-//   * A `stale` or `current` success counts, though a `stale` run deployed no
-//     API for its own commit: the plan verdict is a job output, which the
-//     runs API doesn't return, so this can't tell those runs apart.
-//   * The newest run wins over an older green one, as the newest check run
-//     wins in `classifyRequiredChecks`.
+// In the newest Deploy staging run naming the commit, the `deploy` job
+// succeeded AND its "Verify staging serves the commit" step passed. That step
+// runs whenever the run shipped anything: it checks that staging serves, ready,
+// this commit's API (`deploy`, `forward`), or the commit staging already served
+// when its image carries this one's (`current`, and a `stale` plan that
+// uploads the frontends). The run's conclusion alone would say less:
+//   * A `stale` plan that ships nothing skips the step and still concludes
+//     `success`. That covers a run that couldn't tell what staging serves
+//     (`plan-staging-deploy.mjs`'s `unsure`), which deployed and verified
+//     nothing, so the commit doesn't count.
+//   * `prune-vercel-staging` is a separate housekeeping job whose failure reds
+//     the run without meaning the deploy failed, so it doesn't disqualify.
+//   * When GitHub replaces the deploy job while it is still queued
+//     (`_deploy.yml`'s concurrency note), the job ends `cancelled`, and the
+//     commit is skipped with the run's link. The newer run that replaced it
+//     carries its changes, and the walk, newest first, normally reaches that
+//     newer commit before this one.
+// "Newest" is the run whose latest attempt started last, as the newest check
+// run wins in `classifyRequiredChecks`: a re-run keeps its id, so the id alone
+// would let an older run's failed re-run hide behind a newer green run. The
+// jobs are read for each run's latest attempt.
 //
 // Unit tests: `scripts/ci/__tests__/resolve-deploy-sha.test.mjs`.
 
@@ -63,16 +73,23 @@ import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { latestReleaseTag } from "./lib/release-tag.mjs";
 import { isFullSha, validateDeploySha } from "./validate-deploy-sha.mjs";
 
 /** The workflow file whose runs say which commits reached staging. */
 export const STAGING_WORKFLOW_FILE = "deploy-staging.yml";
 
+/**
+ * `deploy-staging.yml`'s job that calls `_deploy.yml` (the jobs API names it
+ * `deploy / deploy`), and that job's step that checks staging serves the
+ * commit. `resolve-deploy-sha.test.mjs` pins both against the workflows: a
+ * rename would otherwise read as "not verified" on every commit.
+ */
+export const STAGING_DEPLOY_JOB = "deploy";
+export const STAGING_VERIFY_STEP = "Verify staging serves the commit";
+
 /** How many commits above the floor the walk reads before it gives up. */
 export const MAX_CANDIDATES = 50;
-
-/** The tags `release.yml` mints, and nothing else that starts with `v`. */
-const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
 
 // One 40-hex token, standing alone, anywhere in the title. The wording around
 // it can change without breaking this; losing the SHA cannot, because every
@@ -91,16 +108,18 @@ export function stagingRunSha(run) {
   return match ? match[1] : null;
 }
 
+const attemptStarted = (run) => {
+  const parsed = Date.parse(run?.run_started_at ?? run?.created_at ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
 /**
- * The newest Deploy staging run per deployed commit. Run ids only grow, so
- * the highest id is the newest run (a re-run keeps its id and reports its
- * latest attempt).
+ * The newest Deploy staging run per deployed commit: the one whose latest
+ * attempt started last, ties to the higher id.
  *
- * A `skipped` run is left out: its jobs never ran, because the CI run behind
- * it wasn't a successful push to `main`. Either CI failed, which the commit's
- * own required checks report, or it was a fork's pull request from a branch
- * named `main`, which `branches: [main]` lets through and whose title can name
- * any commit. Counted, the fork's run would shadow the real one.
+ * A `skipped` run is left out. Its jobs never ran, because the CI run behind
+ * it didn't succeed on a push to `main`, and the commit's own required checks
+ * already say so.
  */
 export function indexStagingRuns(runs) {
   const byCommit = new Map();
@@ -108,33 +127,70 @@ export function indexStagingRuns(runs) {
     const sha = stagingRunSha(run);
     if (!sha || run.conclusion === "skipped") continue;
     const previous = byCommit.get(sha);
-    if (!previous || Number(run.id) > Number(previous.id)) byCommit.set(sha, run);
+    const newer =
+      !previous ||
+      attemptStarted(run) > attemptStarted(previous) ||
+      (attemptStarted(run) === attemptStarted(previous) && Number(run.id) > Number(previous.id));
+    if (newer) byCommit.set(sha, run);
   }
   return byCommit;
 }
 
-/** Why a commit's staging run disqualifies it, or null when it succeeded. */
-export function stagingVerdict(run) {
-  if (!run) return null;
+/**
+ * Why a commit's staging run doesn't show staging deployed and verified it,
+ * or null when it does. `jobs` is the run's latest-attempt jobs listing.
+ */
+export function stagingVerdict(run, jobs) {
   const where = run.html_url ? ` (${run.html_url})` : "";
-  if (run.status !== "completed") return `its Deploy staging run is still ${run.status}${where}`;
-  if (run.conclusion === "success") return null;
-  const hint = run.conclusion === "cancelled" ? ": someone stopped it, or GitHub replaced it while it was queued" : "";
-  return `its Deploy staging run concluded ${run.conclusion ?? "with no conclusion"}${where}${hint}`;
+  const deployJobs = (Array.isArray(jobs) ? jobs : []).filter(
+    (job) => job?.name === STAGING_DEPLOY_JOB || String(job?.name ?? "").startsWith(`${STAGING_DEPLOY_JOB} / `),
+  );
+  if (deployJobs.length !== 1) {
+    if (run.status !== "completed") return `its Deploy staging run is still ${run.status}${where}`;
+    return `its Deploy staging run lists ${deployJobs.length} \`${STAGING_DEPLOY_JOB}\` jobs, not one${where}`;
+  }
+  const [job] = deployJobs;
+  if (job.status !== "completed") return `its Deploy staging deploy is still ${job.status}${where}`;
+  if (job.conclusion !== "success") {
+    const hint = job.conclusion === "cancelled" ? ": someone stopped it, or GitHub replaced it while it was queued" : "";
+    return `its Deploy staging deploy concluded ${job.conclusion ?? "with no conclusion"}${where}${hint}`;
+  }
+  const verify = (Array.isArray(job.steps) ? job.steps : []).find((step) => step?.name === STAGING_VERIFY_STEP);
+  if (!verify) return `its Deploy staging deploy has no "${STAGING_VERIFY_STEP}" step, so nothing shows staging serves it${where}`;
+  if (verify.conclusion === "skipped") {
+    return (
+      `its Deploy staging run shipped and verified nothing${where}: staging already served a newer ` +
+      "commit, or the run couldn't tell what staging serves (plan `stale`)"
+    );
+  }
+  if (verify.conclusion !== "success") return `its "${STAGING_VERIFY_STEP}" step concluded ${verify.conclusion}${where}`;
+  return null;
 }
 
-/**
- * The newest `v*` release tag and its commit, the way `release.yml` finds the
- * last tag. `{tag: null}` when there is none.
- */
-export function newestReleaseTag({ git = defaultGit }) {
-  const listing = git(["tag", "--list", "v*", "--sort=-version:refname"]);
-  const tag = listing
-    .split("\n")
-    .map((line) => line.trim())
-    .find((name) => RELEASE_TAG.test(name));
-  if (!tag) return { tag: null, sha: null };
-  return { tag, sha: git(["rev-parse", `${tag}^{commit}`]).trim() };
+/** The jobs of a run's latest attempt. An unreadable listing throws. */
+export async function fetchRunJobs({ repo, token, runId, fetchImpl = fetch, retryOptions }) {
+  const result = await ghRequest({
+    token,
+    fetchImpl,
+    path: `/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+    retry: true,
+    retryOptions,
+  });
+  if (!result.ok || !Array.isArray(result.data?.jobs)) {
+    throw new Error(`GitHub Actions API returned HTTP ${result.status} listing the jobs of run ${runId}`);
+  }
+  return result.data.jobs;
+}
+
+/** Production's latest release tag and its commit, or `{error}`. */
+export function releaseFloor({ git = defaultGit }) {
+  const latest = latestReleaseTag({ git });
+  if (!latest.ok) return { tag: latest.tag, sha: null, error: latest.error };
+  try {
+    return { tag: latest.tag, sha: git(["rev-parse", `${latest.tag}^{commit}`]).trim(), error: null };
+  } catch (error) {
+    return { tag: latest.tag, sha: null, error: `${latest.tag} does not name a commit here: ${error.message}` };
+  }
 }
 
 /**
@@ -207,13 +263,13 @@ export async function resolveDeploySha({
   retryOptions,
   validate = validateDeploySha,
 }) {
-  const floor = newestReleaseTag({ git });
-  if (!floor.tag) {
+  const floor = releaseFloor({ git });
+  if (floor.error) {
     return {
       ok: false,
       reason:
-        "No vX.Y.Z tag in this checkout, so nothing says what production runs, and an empty `sha` " +
-        "could resolve to a rollback. Paste the SHA to deploy.",
+        `Production's release tag is unknown (${floor.error}), so an empty \`sha\` could resolve to a ` +
+        "rollback. Paste the SHA to deploy.",
       floor,
       skipped: [],
     };
@@ -263,11 +319,19 @@ export async function resolveDeploySha({
       continue;
     }
     const run = stagingRuns.get(commit.sha);
-    const staging = stagingVerdict(run);
-    // A staging run that exists and isn't green settles it, with no API call.
-    if (staging) {
-      skipped.push({ ...commit, reason: staging });
-      continue;
+    // A staging run that exists and didn't deploy and verify it settles it.
+    if (run) {
+      let jobs;
+      try {
+        jobs = await fetchRunJobs({ repo, token, runId: run.id, fetchImpl, retryOptions });
+      } catch (error) {
+        return { ok: false, reason: `Could not read Deploy staging run ${run.id}: ${error.message}`, floor, skipped };
+      }
+      const staging = stagingVerdict(run, jobs);
+      if (staging) {
+        skipped.push({ ...commit, reason: staging });
+        continue;
+      }
     }
     // With no run at all, CI says more: usually it is still running.
     const ci = await validate({ sha: commit.sha, repo, token, mainRef, required, git, fetchImpl, retryOptions, logger: quiet });
@@ -293,7 +357,7 @@ export async function resolveDeploySha({
   return {
     ok: false,
     reason:
-      `None of ${scope} has both green required checks and a successful Deploy staging run. ` +
+      `None of ${scope} has both green required checks and a Deploy staging run that deployed and verified it. ` +
       `The summary lists why each was skipped. To deploy one anyway, paste its SHA.`,
     floor,
     skipped,
@@ -319,7 +383,7 @@ export function renderSummary(result) {
       "| | |",
       "| --- | --- |",
       `| Commit | \`${result.sha}\` ${cell(result.subject)} |`,
-      `| Deploy staging | [run ${result.stagingRun.id}](${result.stagingRun.html_url}) succeeded |`,
+      `| Deploy staging | [run ${result.stagingRun.id}](${result.stagingRun.html_url}): deployed, and "${STAGING_VERIFY_STEP}" passed |`,
       "| Required checks | green; the next step checks them again, as it does a pasted SHA |",
       `| Production now | \`${result.floor.tag}\` (\`${short(result.floor.sha)}\`); only newer commits were candidates |`,
       "",
@@ -345,28 +409,36 @@ export function renderSummary(result) {
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
-async function main() {
-  const result = await resolveDeploySha({
-    repo: requireEnv("GITHUB_REPOSITORY"),
-    token: requireEnv("GITHUB_TOKEN"),
-    mainRef: process.env.DEPLOY_MAIN_REF ?? "origin/main",
+/**
+ * The step's whole job: resolve, write the summary, and on success write
+ * `sha=` to `GITHUB_OUTPUT`, which `deploy-production.yml` reads as
+ * `steps.resolve.outputs.sha`. Returns the exit code. Everything it touches is
+ * injectable, so the test drives the real wiring offline.
+ */
+export async function runCli({ env = process.env, resolve = resolveDeploySha, append = appendFileSync, out = console } = {}) {
+  const result = await resolve({
+    repo: requireEnv("GITHUB_REPOSITORY", { env }),
+    token: requireEnv("GITHUB_TOKEN", { env }),
+    mainRef: env.DEPLOY_MAIN_REF ?? "origin/main",
   });
 
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (summaryPath) appendFileSync(summaryPath, `${renderSummary(result)}\n`);
+  if (env.GITHUB_STEP_SUMMARY) append(env.GITHUB_STEP_SUMMARY, `${renderSummary(result)}\n`);
 
-  for (const commit of result.skipped) console.log(`⏭️  ${short(commit.sha)} ${commit.subject}: ${commit.reason}`);
+  for (const commit of result.skipped) out.log(`⏭️  ${short(commit.sha)} ${commit.subject}: ${commit.reason}`);
   if (!result.ok) {
-    console.error(`::error::${result.reason}`);
-    process.exit(1);
+    out.error(`::error::${result.reason}`);
+    return 1;
   }
-  console.log(`✅ Resolved ${result.sha} (${result.subject}), Deploy staging run ${result.stagingRun.html_url}.`);
-  appendFileSync(requireEnv("GITHUB_OUTPUT"), `sha=${result.sha}\n`);
+  out.log(`✅ Resolved ${result.sha} (${result.subject}), Deploy staging run ${result.stagingRun.html_url}.`);
+  append(requireEnv("GITHUB_OUTPUT", { env }), `sha=${result.sha}\n`);
+  return 0;
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  main().catch((error) => {
-    console.error(`Unhandled error: ${error.stack ?? error.message}`);
-    process.exit(1);
-  });
+  runCli()
+    .then((code) => process.exit(code))
+    .catch((error) => {
+      console.error(`Unhandled error: ${error.stack ?? error.message}`);
+      process.exit(1);
+    });
 }

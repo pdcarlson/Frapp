@@ -65,31 +65,40 @@ without applying anything, under either scope.
 | `sha`  | What ships |
 | ------ | ---------- |
 | pasted | Exactly that commit, once it passes the ancestry and CI checks |
-| empty  | The newest commit on `main`, above production's newest `vX.Y.Z` tag, whose required checks passed **and** whose **Deploy staging** run succeeded. It then passes the same checks a pasted SHA does |
+| empty  | The newest commit on `main`, above production's latest release tag, whose required checks passed **and** which its **Deploy staging** run deployed and verified. It then passes the same checks a pasted SHA does |
 
 An empty `sha` titles the run `<scope> (newest green main)`, because the title
 is set at dispatch, before the commit is chosen. The `validate` job's summary
 names the commit it picked, its subject and Deploy staging run, and every newer
 commit it skipped with the reason. That summary exists before GitHub asks for
-the approval, so read it before you approve. Two limits, both deliberate:
+the approval, so read it before you approve. The rules
+(`scripts/ci/resolve-deploy-sha.mjs`):
 
-- **It never picks a rollback.** Only commits newer than the newest `v*` tag
-  (what production runs) are candidates. When none qualifies, or that tag
-  isn't on `main`, the run fails before the approval and you paste a SHA. A
-  live ship whose tag failed is the one gap: production then runs a commit
-  newer than its tag, and `deploy-outcome` and `production-release-pin.yml`
-  both go red.
-- **"Staging succeeded" means the newest Deploy staging run for that commit
-  concluded `success`.** When GitHub replaces a run's deploy job while it is
-  still queued, that job ends `cancelled` and the run doesn't succeed
-  (`deploy-outcome` reports it as a failure). That commit is skipped, and the
-  newer commit whose run replaced it is normally picked instead. A successful
-  run counts whatever its plan, including `stale`, which deployed no API for
-  its own commit because staging already served something at or past it. The
-  plan isn't readable from the runs API. Deploy staging titles each run with
-  the commit it deploys, because a `workflow_run` run's own `head_sha` is
-  `main`'s tip when it fired. Runs from before #3114 have no SHA in their
-  title, so their commits never qualify.
+- **It never picks a rollback.** Only commits newer than production's latest
+  release tag (the newest `v*` tag, which must be `vX.Y.Z`, as `release.yml`
+  reads it) are candidates. When none qualifies, or that tag isn't on `main`,
+  the run fails before the approval and you paste a SHA. A live ship whose tag
+  failed is the one gap: production then runs a commit newer than its tag, and
+  `deploy-outcome` and `production-release-pin.yml` both go red.
+- **"Deployed and verified" is read from the newest Deploy staging run naming
+  the commit:** its `deploy` job succeeded, and that job's "Verify staging
+  serves the commit" step passed. That step runs whenever the run shipped
+  anything, and checks that staging serves, ready, either this commit or the
+  one it already served whose API image carries this commit's (a `current`
+  plan, or a `stale` one that uploaded the frontends). Three consequences:
+  - A `stale` run that shipped nothing skips the step and doesn't count, even
+    though it concludes `success`. That includes a run that couldn't tell what
+    staging serves (an unreadable `/health`, say), which verified nothing.
+  - A run reddened only by `prune-vercel-staging`, the housekeeping job beside
+    the deploy, still counts.
+  - When GitHub replaces a queued deploy job with a newer run's, the job ends
+    `cancelled` and that commit is skipped. The newer commit whose run
+    replaced it is normally picked instead.
+
+  "Newest" is the run whose latest attempt started last, so a re-run counts
+  as new. Deploy staging titles each run with the commit it deploys, because a
+  `workflow_run` run's own `head_sha` is `main`'s tip when it fired. Runs from
+  before #3114 have no SHA in their title, so their commits never qualify.
 
 `main` can move between a dry run and the real one, and an empty `sha` picks
 again. To ship exactly what you rehearsed, paste the SHA the dry run's summary
@@ -333,9 +342,11 @@ Post-apply production checks:
   its **Deploy staging** run go green, then deploy that commit to production.
 - Deploy the commit you validated on staging. `Deploy production` takes a SHA
   rather than a branch precisely so "what we tested" and "what shipped" are the
-  same object — `main` may have moved on since. An empty `sha` keeps that
-  property: it picks only a commit whose own Deploy staging run succeeded, and
-  names it before the approval.
+  same object — `main` may have moved on since. An empty `sha` picks only a
+  commit that staging deployed and verified, as defined above, and names it
+  before the approval. Staging may have verified it through the commit it
+  already served, when nothing the API image is built from changed between the
+  two, so read the summary's staging run when that matters.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `db-rollback-playbook.md`.
 - **Reference data reaches a hosted project only by migration.** `chapter_directory`'s

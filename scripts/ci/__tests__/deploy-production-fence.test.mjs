@@ -334,6 +334,19 @@ describe("the SHA-trim step (run 34234768094)", () => {
     }
   });
 
+  // Written to GITHUB_OUTPUT as is, `abc\nsha=` would add a second, empty
+  // `sha=` line, and the empty one would send a run titled as a paste to the
+  // resolver. An API dispatch can send a line break; the text box can't.
+  it("fails an input with a line break inside, before it reaches GITHUB_OUTPUT", () => {
+    for (const raw of [`abc\nsha=`, `${SHA}\r\nsha=`, `${SHA}\n${SHA}`]) {
+      const { code, output } = runTrim(raw);
+      assert.equal(code, 1, JSON.stringify(raw));
+      assert.match(output, /line break inside it/);
+    }
+    // A paste's own trailing CRLF is still only trimmed.
+    assert.match(runTrim(`${SHA}\r\n`).githubOutput, new RegExp(`^sha=${SHA}$`, "m"));
+  });
+
   // Later jobs must consume the trimmed output. Assigning `inputs.sha` again
   // would reintroduce the trailing space that killed 34234768094. Inside
   // `_deploy.yml`, `inputs.sha` IS the trimmed value (its own input), so the
@@ -439,11 +452,26 @@ describe("an empty sha resolves inside validate (#3114)", () => {
     assert.deepEqual(Object.fromEntries(permissions), { contents: "read", checks: "read", actions: "read" });
   });
 
-  // The summary a dry run leaves is what the real run pastes from.
-  it("tells a dry run that picked its SHA to paste it for the real run", () => {
+  // The summary a dry run leaves is what the real run pastes from. Run, not
+  // matched as text: the condition around the hint is what can break.
+  it("tells a dry run that picked its SHA to paste it for the real run, and a pasted one nothing", () => {
     const summary = workflowSteps(CALLER).find((s) => s.jobId === "deploy-outcome" && s.name === "Summarise what actually happened");
     assert.equal(summary.env.get("RESOLVED"), "${{ needs.validate.outputs.resolved }}");
-    assert.match(summary.body, /To ship exactly what was\s*"\s*\n\s*echo "> rehearsed, paste \\`\$SHA\\` into \\`sha\\` on the real run\./);
+    const script = extractStepScript(CALLER, summary.name);
+    const render = (resolved) => {
+      const file = join(workspace, "outcome-summary.md");
+      writeFileSync(file, "");
+      const env = { SHA, SCOPE: "full", DRY_RUN: "true", DEPLOY_RESULT: "success", RELEASE_RESULT: "skipped", ALERT_OUTCOME: "", RESOLVED: resolved };
+      const result = spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH, GITHUB_STEP_SUMMARY: file, ...env }, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      return readFileSync(file, "utf8");
+    };
+    const picked = render("true");
+    assert.ok(picked.includes(`paste \`${SHA}\` into \`sha\` on the real run`), picked);
+    assert.match(picked, /^\| SHA \| picked: newest green `main`/m);
+    const pasted = render("false");
+    assert.doesNotMatch(pasted, /on the real run/);
+    assert.match(pasted, /^\| SHA \| pasted \|$/m);
   });
 });
 

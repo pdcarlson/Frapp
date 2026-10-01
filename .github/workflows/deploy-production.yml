@@ -1,7 +1,9 @@
 name: Deploy production
 # The Actions list otherwise shows one red row named "Deploy production" when
 # tagging fails after a live ship (run 34155737950, 2026-09-07). Scope + SHA
-# in the run title is what you read before opening the jobs.
+# in the run title is what you read before opening the jobs. A run that left
+# `sha` empty can't carry its SHA there (below), so its row says it picked one,
+# and the SHA is in its summaries.
 #
 # `DRY RUN` leads, and is not merely appended, because the Actions list truncates
 # from the right — a marker at the end is the first thing to disappear at the
@@ -50,10 +52,10 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 #
 # ── An empty `sha` (#3114) ──────────────────────────────────────────────────
 # Leave `sha` empty and `validate` picks the commit:
-# `scripts/ci/resolve-deploy-sha.mjs` walks `main` newest first, down to the
-# newest `v*` tag (what production runs, so it never resolves a rollback), and
-# takes the first commit with green required checks AND a successful Deploy
-# staging run. That SHA then takes the same "Validate the commit" step a pasted
+# `scripts/ci/resolve-deploy-sha.mjs` walks `main` newest first, down to
+# production's latest release tag (what production runs, so it never resolves
+# a rollback), and takes the first commit with green required checks AND a
+# Deploy staging run that deployed and verified it. That SHA then takes the same "Validate the commit" step a pasted
 # one does and becomes `validate`'s `sha` output, so `deploy`, `release` and
 # `deploy-outcome` can't tell the two modes apart. The commit is still named
 # before anything ships, in `validate`'s summary, ahead of the approval:
@@ -146,7 +148,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-character commit SHA to deploy (must be on main and CI-green). Empty: the newest main commit with green CI and a green Deploy staging run"
+        description: "Full 40-character commit SHA to deploy (must be on main and CI-green). Empty: the newest main commit with green CI that Deploy staging deployed and verified"
         required: false
         default: ""
         type: string
@@ -216,9 +218,11 @@ jobs:
       # The Actions text box keeps a trailing space/newline from paste
       # (run 34234768094 died on 40 hex + one space before any production
       # write). Strip ends only — not internal spaces. Empty stays empty and
-      # resolves below. Whitespace and nothing else fails: `run-name` read it
-      # as a pasted SHA, so resolving it would ship a commit the title never
-      # said it would pick.
+      # resolves below. Two inputs fail here instead, because `run-name` read
+      # each as a pasted SHA and resolving would ship a commit the title never
+      # said it would pick: whitespace and nothing else, and anything with a
+      # line break inside, which could also write a second `sha=` line below
+      # (an API dispatch can send one; the text box can't).
       - name: Trim the SHA
         id: trim
         env:
@@ -230,6 +234,12 @@ jobs:
             echo "::error::The sha input holds only whitespace. Leave it empty to deploy the newest green main commit, or paste a full SHA."
             exit 1
           fi
+          case "$SHA" in
+            *$'\n'* | *$'\r'*)
+              echo "::error::The sha input has a line break inside it. Paste one full SHA, or leave it empty."
+              exit 1
+              ;;
+          esac
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       # Checked out at the DISPATCHED ref (main), not at `inputs.sha`. The
@@ -251,11 +261,12 @@ jobs:
           install: none
 
       # Only for an empty `sha`. Picks the newest commit on main, above
-      # production's newest `v*` tag, with green required checks and a
-      # successful Deploy staging run, and writes the pick and every newer
-      # commit it skipped to this job's summary. The tags are fetched here
-      # rather than trusted to the checkout: without them the floor is unknown,
-      # and the script refuses. Semantics: `scripts/ci/resolve-deploy-sha.mjs`.
+      # production's latest release tag, with green required checks and a
+      # Deploy staging run that deployed and verified it, and writes the pick
+      # and every newer commit it skipped to this job's summary. The tags are
+      # fetched here rather than trusted to the checkout: without them the
+      # floor is unknown, and the script refuses. Semantics:
+      # `scripts/ci/resolve-deploy-sha.mjs`.
       - name: Resolve the newest green main commit
         id: resolve
         if: ${{ steps.trim.outputs.sha == '' }}
