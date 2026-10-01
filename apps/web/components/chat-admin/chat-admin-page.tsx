@@ -596,7 +596,7 @@ function ChatAdminBody() {
               Channels
             </h2>
             {channels.length > 0 ? (
-              <p className="shrink-0 text-[12.5px] text-muted">
+              <p className="shrink-0 text-caption text-muted">
                 {channels.length} channel{channels.length === 1 ? "" : "s"}
               </p>
             ) : null}
@@ -1082,7 +1082,7 @@ function ChatAdminBody() {
             Categories
           </h2>
           {categories.length > 0 ? (
-            <p className="shrink-0 text-[12.5px] text-muted">
+            <p className="shrink-0 text-caption text-muted">
               {categories.length} categor
               {categories.length === 1 ? "y" : "ies"}
             </p>

@@ -402,7 +402,7 @@ function DiscordImportList({
             Imports
           </h2>
           {rows.length > 0 ? (
-            <p className="shrink-0 text-[12.5px] text-muted">
+            <p className="shrink-0 text-caption text-muted">
               {rows.length} import{rows.length === 1 ? "" : "s"}
             </p>
           ) : null}

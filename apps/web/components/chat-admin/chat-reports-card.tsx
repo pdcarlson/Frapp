@@ -266,7 +266,7 @@ function ChatReportsQueue() {
         >
           {copy.title}
         </h2>
-        <p className="text-[12.5px] text-muted">{copy.description}</p>
+        <p className="text-caption text-muted">{copy.description}</p>
       </div>
       <Tabs
         value={status}
