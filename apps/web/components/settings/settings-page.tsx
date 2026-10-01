@@ -106,9 +106,9 @@ type Branding = {
 // tab is product UI and retints.
 //
 // **`--accent-subtle`/`--accent-text` are that retinting family. Plain
-// `--accent` is not**: it is the neutral hover surface (`signet.css:103`,
-// `#2A2621`), so `bg-accent` would paint the active tab a dead grey on every
-// chapter, gold included.
+// `--accent` is not**: it is a ShadCN alias of `--popover` (`#2A2621`), so
+// `bg-accent` would paint the active tab a dead grey on every chapter, gold
+// included. No surface paints it (`components/shared/elevation-call-sites.spec.ts`).
 //
 // Below `lg` the rail is still a horizontal wrap row, so the chip reads the
 // same either way — there is no underline variant to keep in sync any more.
@@ -1419,11 +1419,18 @@ function SettingsToolsOnly({ tools }: { tools: readonly SettingsTool[] }) {
       <p className={cn(EYEBROW, "text-muted")}>Tools</p>
       <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
         {tools.map((tool) => (
-          <li key={tool.id}>
+          <li key={tool.id} className="group">
             <Link
               href={tool.href}
               className={cn(
-                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent",
+                // A row in a card list hovers like a table row
+                // (`ui/table.tsx`): the accent tint, which moves hue where
+                // `bg-accent`, the elevated step, moved 1.105:1. The end rows
+                // take the list's inner radius (14px less its 1px border) so
+                // the visible tint stays inside its corners; clipping the list
+                // with `overflow-hidden` instead would clip the focus ring too.
+                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent-subtle",
+                "group-first:rounded-t-[13px] group-last:rounded-b-[13px]",
                 FOCUS_RING,
               )}
             >
