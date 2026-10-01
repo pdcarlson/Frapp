@@ -48,8 +48,9 @@ import { expect, test } from "@playwright/test";
  *     Each frame's height is a minimum that grows when its rows need more, so
  *     every row is whole and the composer sits under the newest one, inside
  *     the frame. Below `lg`, where neither frame bleeds on purpose, each also
- *     fits its viewport's width. Before #2893 a fixed height ran the newest rows under the
- *     composer at phone width, or pushed the composer out of the frame.
+ *     fits its viewport's width. Before #2893 a fixed height ran the newest
+ *     rows under the composer at phone width, or pushed the composer out of
+ *     the frame.
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
  * `/#pricing` load never arms an already-painted block — the flash slice 2 fixed
