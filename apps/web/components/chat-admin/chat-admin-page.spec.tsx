@@ -249,16 +249,25 @@ describe("ChatAdminPage — the channel structure's states", () => {
     [
       "has failed with nothing loaded",
       { isError: true },
+      false,
       /Couldn.t load the permission catalog/,
     ],
     [
       "is loading",
       { isPending: true, isLoading: true, fetchStatus: "fetching" },
+      false,
       "Loading permissions…",
+    ],
+    [
+      "can't load offline",
+      { isError: true },
+      true,
+      /Offline — can.t load the permission list/,
     ],
   ])(
     "says so when a role-gated channel's catalog %s, on the page surface",
-    (_, read, text) => {
+    (_, read, offline, text) => {
+      mockOffline.value = offline;
       reads.catalog = empty(read);
       const { container } = render(<ChatAdminPage />);
       fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
