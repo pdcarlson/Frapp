@@ -37,7 +37,8 @@ import {
  * The object is in the bucket the moment this resolves, which is why the
  * return value is a *claim* and not a file. Dropping the chip before sending
  * drops the claim, not the object, and an abandoned composer leaves the object
- * unreferenced for the storage retention pass. Web took this trade
+ * unreferenced. Nothing sweeps the `chat` bucket yet, so it stays there as an
+ * orphan until #2197's sweep exists. Web took this trade
  * deliberately (`composer.tsx`, "Files uploaded and waiting to be claimed by
  * the next send") because the alternative it replaced was worse: the only
  * record of the file was a string the sender could edit out of the body.
@@ -90,17 +91,21 @@ const TYPE_REFUSAL =
 const SIZE_REFUSAL = `Photos can be up to ${MAX_UPLOAD_LABEL}.`;
 
 /**
- * Strip any directory part a picker URI or filename might carry.
+ * The name a member sees on the attachment: the picked file's own basename,
+ * with any query string and directory part a picker URI carries stripped off.
  *
- * The API derives the storage path from this name, so a separator in it would
- * push the object outside the prefix `validateAttachmentInputs` re-checks the
- * claim against — a 400 at send time, long after the bytes were uploaded.
+ * Characters are left alone, so `Café.jpg` is shown as `Café.jpg`, as it is
+ * when web sends the same photo. The storage key is not this client's job: the
+ * API builds the key's last segment with `safeObjectFilename`
+ * (`apps/api/src/domain/constants/storage.ts`), which drops a directory part
+ * and replaces what storage-api would refuse. Before #2697 the server put the
+ * raw basename into the key, and this function's squash to `[A-Za-z0-9._-]` was
+ * what kept a non-ASCII name uploadable (#2783).
  */
 export function safeBasename(value: string, fallback: string): string {
   const withoutQuery = value.split("?")[0] ?? value;
   const last = withoutQuery.split("/").pop() ?? "";
-  const cleaned = last.replace(/[^A-Za-z0-9._-]/g, "_");
-  return cleaned.length > 0 && cleaned !== "." ? cleaned : fallback;
+  return last.length > 0 && last !== "." ? last : fallback;
 }
 
 /**

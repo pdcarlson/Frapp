@@ -53,17 +53,29 @@ beforeEach(() => {
 });
 
 describe("safeBasename", () => {
-  it("strips a directory part so the claim stays inside the minted prefix", () => {
-    // The API derives the storage path from this name and then re-checks the
-    // claimed path against the prefix it minted. A separator here would fail
-    // that check at send time, long after the bytes were uploaded.
+  it("strips a directory part, so a URI fallback shows as a file name", () => {
+    // With no `fileName` the picker URI is all there is, and the attachment's
+    // display name is the file, not where the picker cached it.
     expect(safeBasename("file:///var/tmp/IMG_0001.HEIC", "photo.jpg")).toBe(
       "IMG_0001.HEIC",
     );
   });
 
+  it("strips a query string a provider URI carries", () => {
+    expect(
+      safeBasename("content://media/external/IMG_0002.jpg?w=640", "photo.jpg"),
+    ).toBe("IMG_0002.jpg");
+  });
+
+  it("keeps a non-ASCII name as the member named it (#2783)", () => {
+    // The API squashes the storage key itself (`safeObjectFilename`), so
+    // the client has no reason to show `Caf_.jpg` for `Café.jpg`.
+    expect(safeBasename("Café #2.jpg", "photo.jpg")).toBe("Café #2.jpg");
+  });
+
   it("falls back when there is nothing usable left", () => {
     expect(safeBasename("///", "photo.jpg")).toBe("photo.jpg");
+    expect(safeBasename("file:///tmp/.", "photo.jpg")).toBe("photo.jpg");
   });
 });
 
@@ -108,6 +120,16 @@ describe("resolveUploadable", () => {
     expect(result.contentType).toBe("image/jpeg");
     expect(result.filename).toBe("IMG_0001.jpg");
     expect(result.uri).toBe("file:///out.jpg");
+  });
+
+  it("keeps a non-ASCII name through the HEIC transcode", async () => {
+    const result = await resolveUploadable({
+      uri: "file:///IMG.HEIC",
+      fileName: "Été à Paris.HEIC",
+      mimeType: "image/heic",
+    });
+
+    expect(result.filename).toBe("Été à Paris.jpg");
   });
 
   it("falls back to the extension when the picker reports no usable type", async () => {
@@ -291,6 +313,43 @@ describe("pickAndUploadPhoto", () => {
         filename: "photo.jpg",
         content_type: "image/jpeg",
         size_bytes: 2048,
+      },
+    });
+  });
+
+  it("mints with, and claims, the real non-ASCII name; only the key is squashed (#2783)", async () => {
+    // Web sends `file.name` untouched. Mobile used to squash it client-side,
+    // which was load-bearing until the API built keys with
+    // `safeObjectFilename` (#2697): every reader then saw `Caf_.jpg`.
+    grantedLibrary();
+    picked({
+      uri: "file:///var/tmp/ABC-123.jpg",
+      fileName: "Café.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    const requestUploadUrl = vi.fn().mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/c/chat/ch/m/Caf_.jpg",
+    });
+
+    const result = await pickAndUploadPhoto("channel-1", requestUploadUrl);
+
+    expect(requestUploadUrl).toHaveBeenCalledWith({
+      id: "channel-1",
+      body: {
+        filename: "Café.jpg",
+        content_type: "image/jpeg",
+        size_bytes: 2048,
+      },
+    });
+    expect(result).toEqual({
+      status: "attached",
+      attachment: {
+        storagePath: "chapters/c/chat/ch/m/Caf_.jpg",
+        filename: "Café.jpg",
+        contentType: "image/jpeg",
+        byteSize: 2048,
       },
     });
   });
