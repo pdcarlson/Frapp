@@ -179,6 +179,18 @@ interface FunctionsErrorWithStatus extends Error {
 }
 
 /**
+ * The server's own message, wherever the failure carries it: on the value
+ * itself (a thrown Error, or a body a `@repo/hooks` mutation rethrew) or on the
+ * openapi-fetch envelope's nested `error` body. `null` when neither has one.
+ */
+function serverReasonOf(error: unknown): string | null {
+  return (
+    serverMessageOf(error) ??
+    serverMessageOf((error as { error?: unknown } | null)?.error)
+  );
+}
+
+/**
  * Distinguishes terminal client errors (4xx — bad request / forbidden) from
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
@@ -219,9 +231,7 @@ export function classifyChatError(error: unknown): {
     }
   }
   const message = memberFacingRefusal(
-    serverMessageOf(error) ??
-      serverMessageOf((error as { error?: unknown }).error) ??
-      "Couldn't reach chat server",
+    serverReasonOf(error) ?? "Couldn't reach chat server",
   );
   const terminal =
     typeof status === "number" && isDefinitiveClientError(status);
@@ -248,8 +258,8 @@ export function definitiveRefusalMessage(error: unknown): string | null {
   if (error instanceof Error) return null;
   const { terminal, status } = classifyChatError(error);
   if (!terminal || status === 429) return null;
-  const message = serverMessageOf(error);
-  return message === null ? null : memberFacingRefusal(message);
+  const reason = serverReasonOf(error);
+  return reason === null ? null : memberFacingRefusal(reason);
 }
 
 /**

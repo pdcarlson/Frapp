@@ -1835,6 +1835,15 @@ describe("definitiveRefusalMessage", () => {
     expect(definitiveRefusalMessage(err)).toBeNull();
   });
 
+  it("reads the reason off the openapi-fetch envelope too, as classifyChatError does", () => {
+    expect(
+      definitiveRefusalMessage({
+        error: { statusCode: 400, message: "File type not allowed" },
+        response: { status: 400 },
+      }),
+    ).toBe("File type not allowed");
+  });
+
   it("gives the member the Polls-off sentence, as the send path does", () => {
     expect(
       definitiveRefusalMessage({

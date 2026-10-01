@@ -123,6 +123,13 @@ export interface ChannelPostCapability {
   isReadOnly: boolean;
   /** From `ChatChannel.can_post` — already folds in the read-only gate. */
   canPost: boolean;
+  /**
+   * The channel is archived (#348): a Group DM everyone else left. Nobody can
+   * post in one, President included. Web never sees one, because the channel
+   * list leaves archived channels out, but this screen reads its channel by id
+   * (`GET /v1/channels/{id}`), which still returns it to whoever can read it.
+   */
+  isArchived: boolean;
 }
 
 /**
@@ -134,11 +141,37 @@ export interface ChannelPostCapability {
  * `composer.tsx`.
  */
 export function selectPostCapability(data: unknown): ChannelPostCapability {
-  if (!isRecord(data)) return { isReadOnly: false, canPost: true };
+  if (!isRecord(data)) {
+    return { isReadOnly: false, canPost: true, isArchived: false };
+  }
   return {
     isReadOnly: data.is_read_only === true,
     canPost: typeof data.can_post === "boolean" ? data.can_post : true,
+    isArchived:
+      typeof data.archived_at === "string" && data.archived_at.length > 0,
   };
+}
+
+/**
+ * The composer's hint when the caller may not post here, or `null` when they
+ * may. Copy: `spec/ui/design-system/writing.md` § Chat.
+ *
+ * Archived comes first, as it does in `canAccessChannel`: it refuses every
+ * post, so neither of the other two explains it, and a frozen Group DM shown
+ * the alumni sentence was #2199. Read-only and the alumni rule overlap for an
+ * alumnus who holds `announcements:post`, which `isReadOnly` can't tell apart
+ * (#3074).
+ */
+export function postRefusalHint(
+  capability: ChannelPostCapability,
+): string | null {
+  if (capability.canPost) return null;
+  if (capability.isArchived) {
+    return "This conversation is archived because everyone else left. You can still read it.";
+  }
+  return capability.isReadOnly
+    ? "This channel is read-only. Posting requires the announcements:post permission."
+    : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.";
 }
 
 /**
