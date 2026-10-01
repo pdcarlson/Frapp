@@ -91,7 +91,7 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # reaching the refusal later, mid-run, with less explanation — not reaching a
 # different outcome. Recovery from either is a human act by design (decision 7:
 # `--include-all` is human-run, never set by a workflow) and is documented at
-# `docs/ops/db-promotion-runbook.md` § `--include-all`.
+# `docs/ops/database/drift-and-ordering.md` § `--include-all`.
 #
 # The case that IS a genuine gap: a non-transactional partial apply — say
 # `CREATE INDEX CONCURRENTLY` leaving objects behind with no history row. The

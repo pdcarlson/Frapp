@@ -38,8 +38,8 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   syncs are inventoried in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (in
   the shared `_deploy.yml` job that `deploy-staging.yml` calls; automatic since #1265). Production migrations run inside `deploy-production.yml`,
-  after a replay against production's live applied state —
-  [`db-promotion-runbook.md`](../db-promotion-runbook.md) has the current production state.
+  after a replay against production's live applied state; the procedure is
+  [`database/promotion.md`](../database/promotion.md).
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.
@@ -96,4 +96,4 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
 
 Secrets are **not** restated here. Infisical is the store; the sync map and free-tier inventory live in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md). The complete variable list is [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md). The retired `frapp-docs` project is recorded under [Vercel](vercel.md#retired-frapp-docs-and-docsfrapplive).
 
-Promotion and rollback of schema are their own runbooks: [`db-promotion-runbook.md`](../db-promotion-runbook.md) and [`db-rollback-playbook.md`](../db-rollback-playbook.md).
+Promotion and rollback of schema are their own runbooks: [`database/`](../database/README.md) and [`db-rollback-playbook.md`](../db-rollback-playbook.md).

@@ -235,7 +235,7 @@ confusing failure. If cleanup fails, say so and name what was left behind.
 
 Never run a destructive or schema-changing operation against hosted staging. Migrations are
 validated on PGlite and the local stack. Schema changes reach staging only through
-[`db-promotion-runbook.md`](../../../docs/ops/db-promotion-runbook.md), never from an agent
+[`promotion.md`](../../../docs/ops/database/promotion.md), never from an agent
 session.
 
 ## What this does not cover

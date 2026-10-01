@@ -237,7 +237,7 @@ test("a superseded migration in a parenthetical is NOT credited", () => {
   ]);
 });
 
-test("the promotion runbook's SECOND entry shape counts", () => {
+test("the promotion log's SECOND entry shape counts", () => {
   // The defect this file shipped with: reading only `###` headings scored the
   // runbook at 21/70 and marked 14 migrations as having no recoverable
   // promotion history — while their dated records sat on the page in this
@@ -351,7 +351,7 @@ test("a rollback recipe for a migration not on disk is an orphan", () => {
 });
 
 test("a promotion entry for a migration not on disk is NOT an orphan", () => {
-  // The promotion runbook is a dated record of what was actually promoted. A
+  // The promotion log is a dated record of what was actually promoted. A
   // squash or a revert removes the file but not the fact, and demanding the
   // entry be deleted to get CI green would destroy the operational history this
   // gate exists to protect.
