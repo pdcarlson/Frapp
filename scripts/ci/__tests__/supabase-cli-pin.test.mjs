@@ -156,7 +156,8 @@ function codeOnly(text) {
       continue;
     }
     if (/^\s*#/.test(line)) continue;
-    heredoc = line.match(/<<-?\s*['"]?(\w+)['"]?/)?.[1] ?? null;
+    // `<<EOF`, `<<'EOF'`, `<<-SQL`; never `<<<` (a herestring) or a `$(( a << 2 ))` shift.
+    heredoc = /\$\(\(/.test(line) ? null : (line.match(/(?<!<)<<-?\s*(['"]?)([A-Za-z_]\w*)\1(?!\w)/)?.[2] ?? null);
     kept.push(line.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""'));
   }
   return kept.join("\n");
@@ -201,6 +202,9 @@ test("the bare-CLI scan sees a call and ignores prose", () => {
     assert.doesNotMatch(codeOnly(line), BARE_CLI, line);
   }
   assert.doesNotMatch(codeOnly("cat <<'EOF'\n  --reset  Run supabase stop first\nEOF\nfrapp_supabase start"), BARE_CLI);
+  // Neither a herestring nor a shift starts a heredoc, so the code after them is still scanned.
+  assert.match(codeOnly('grep -q x <<<"$(tail -n 3 "$log")"\nsupabase start'), BARE_CLI);
+  assert.match(codeOnly("n=$((1 << n))\nsupabase start"), BARE_CLI);
 });
 
 test("the JS scripts pick their CLI through resolveSupabaseCli", () => {
