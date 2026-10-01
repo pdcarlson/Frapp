@@ -7420,7 +7420,7 @@ export interface operations {
                 limit?: number;
                 /** @description Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
                 before?: string;
-                /** @description Message UUID — returns messages created after this message (reconnect replay) */
+                /** @description Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id. */
                 since?: string;
             };
             header?: never;
