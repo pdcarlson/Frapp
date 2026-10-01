@@ -42,12 +42,16 @@
 // exits 1.
 //
 // Env inputs:
-//   EAS_BUILDS_IOS, EAS_BUILDS_ANDROID
-//                     — `needs.build.outputs.ios-builds` / `android-builds`:
-//                       each platform's `eas build --json` list, cut to
-//                       `{ id, platform, status, appVersion, appBuildVersion,
-//                       gitCommitHash }`; empty when that build listed nothing
-//                       or didn't run
+//   EAS_BUILDS        — `needs.build.outputs.builds`: the wait step's last read
+//                       of every started build, `{ id, platform, status,
+//                       appVersion, appBuildVersion, gitCommitHash }` each
+//                       (`{ id, status: "UNREAD" }` for one it couldn't read);
+//                       empty when the wait didn't run or report
+//   EAS_STARTED_IOS, EAS_STARTED_ANDROID
+//                     — the build id each start step reported, empty when that
+//                       platform never started: names a build the wait didn't
+//   TAG_CHECK         — the before-upload tag check's outcome: `failure` means
+//                       production moved on, so nothing may be uploaded by hand
 //   BUILD_RESULT      — `needs.build.result`
 //   PLATFORM          — the requested platform: ios, android or all
 //   IOS_UPLOAD        — the iOS upload step's outcome, empty when it didn't run
@@ -77,7 +81,7 @@ const DISPLAY = Object.freeze({ ios: "iOS", android: "Android" });
 const STORE = Object.freeze({ ios: "TestFlight", android: "the Play internal track" });
 
 /**
- * One platform's build list as an array, or null when there is no usable
+ * The wait step's build list as an array, or null when there is no usable
  * list (empty, not JSON, not an array of objects).
  */
 export function parseBuilds(raw) {
@@ -101,7 +105,7 @@ export function parseBuilds(raw) {
  *   `rows` feed the summary, one per requested platform; `entries` are the
  *   `shipped-builds.json` entries to add; `problems` fail the job.
  */
-export function planRecord({ builds, platform, uploads, sha, recorded, buildResult }) {
+export function planRecord({ builds, platform, uploads, sha, recorded, buildResult, started = {} }) {
   const rows = [];
   const entries = [];
   const problems = [];
@@ -111,7 +115,7 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
   }
   if (builds === null && buildResult === "success") {
     problems.push(
-      "The build job succeeded but handed over no build list (`needs.build.outputs.ios-builds` and `android-builds` are empty or not JSON arrays). Nothing can be recorded from them; read the build job's log for the EAS build ids.",
+      "The build job succeeded but handed over no build list (`needs.build.outputs.builds` is empty or not a JSON array). Nothing can be recorded from it; read the build job's log for the EAS build ids.",
     );
   }
 
@@ -127,6 +131,12 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
     }
     const [found] = matches;
     if (!found) {
+      // Started, but the wait never reported it: name it, so nobody starts a
+      // second build while this one may still finish.
+      if (started[store]) {
+        row.buildId = started[store];
+        row.status = "unreported";
+      }
       if (builds !== null && buildResult === "success") {
         problems.push(`${DISPLAY[store]} was requested, and the build job reported no ${DISPLAY[store]} build.`);
       }
@@ -140,8 +150,8 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
 
     // Checked before anything else about a build: a binary from another
     // commit may be newer than production, and recording it would say the
-    // opposite.
-    if (found.gitCommitHash !== sha) {
+    // opposite. An unfinished build may not have reported its commit yet.
+    if (found.gitCommitHash !== sha && (row.status === "FINISHED" || found.gitCommitHash)) {
       row.refused = true;
       problems.push(
         `EAS built ${DISPLAY[store]} (${row.buildId ?? "no id"}) from ${found.gitCommitHash ?? "an unreported commit"}, not the validated ${sha}. Not recorded. Don't let testers install it: it may call routes production doesn't serve.`,
@@ -257,8 +267,35 @@ export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha,
   return { outcome: "opened", url: pr.html_url, branch };
 }
 
+const STILL_RUNNING = new Set(["NEW", "IN_QUEUE", "IN_PROGRESS", "PENDING_CANCEL", "UNREAD", "unreported"]);
+
+/**
+ * What to do about one row that wasn't recorded, or null when there's nothing
+ * to do. `tagMoved`: the before-upload check found production on another
+ * commit, so nothing from this SHA may upload, by hand or otherwise.
+ */
+export function nextStep(row, { sha, tagMoved, othersUploaded }) {
+  const name = DISPLAY[row.store];
+  if (row.recorded || row.refused) return null;
+  if (tagMoved) {
+    return `${name} was not uploaded: production has shipped another commit since this run, so this build must not reach testers. The next store build comes from the next ship.`;
+  }
+  const submit = (id) =>
+    `\`eas submit --platform ${row.store} --profile production --id ${id} --non-interactive\` from \`apps/mobile\``;
+  if (row.status === "FINISHED" && row.upload !== "success" && row.buildId) {
+    return `${name} built but did not upload (\`${row.upload}\`). After fixing the cause, upload it by hand with ${submit(row.buildId)}, then record it as \`apps/mobile/store/README.md\` § Shipped builds says. Don't re-run: that builds every platform again.`;
+  }
+  if (STILL_RUNNING.has(row.status) && row.buildId) {
+    return `${name} (\`${row.buildId}\`) had not finished when the job stopped waiting, and may still finish on EAS. Don't start another build: when it finishes, and \`${sha}\` is still the latest \`v*\` tag, upload it with ${submit(row.buildId)} and record it by hand.`;
+  }
+  if (othersUploaded) {
+    return `${name} didn't build (\`${row.status}\`), while another platform did upload. Fix the cause, then build and upload ${name} by hand from the latest \`v*\` tag (\`docs/ops/deployment/mobile.md\` § 6.6, By hand) and record it. Don't re-run: that rebuilds and re-uploads the platform that already landed.`;
+  }
+  return `${name} didn't build (\`${row.status}\`). Once the cause is fixed, use **Re-run failed jobs** on this run; it refuses if production has shipped another commit since.`;
+}
+
 /** The run summary: what was built, uploaded and recorded, and what's left. */
-export function summary({ sha, rows, entries, pr, problems }) {
+export function summary({ sha, rows, entries, pr, problems, tagMoved = false }) {
   const lines = [`### Store builds — \`${sha}\``, ""];
   lines.push("| Platform | EAS build | Status | Version (build) | Upload | Recorded |");
   lines.push("| --- | --- | --- | --- | --- | --- |");
@@ -269,22 +306,18 @@ export function summary({ sha, rows, entries, pr, problems }) {
     );
   }
   lines.push("");
-  lines.push(
-    "> Production and the version tag don't depend on anything here: a failure leaves both as they are.",
-    "",
-  );
+  lines.push("> Production and the version tag don't depend on anything here: a failure leaves both as they are.", "");
+  const uploaded = rows.some((r) => r.upload === "success");
   if (pr?.outcome === "opened") {
     lines.push(`**Recorded in ${pr.url}.** Merge it before any tester installs these builds.`, "");
   } else if (pr?.outcome === "already-recorded") {
     lines.push(`Every uploaded build is already listed in \`${REGISTRY_PATH}\` on \`main\`; no PR was needed.`, "");
-  } else if (entries.length === 0) {
+  } else if (!uploaded) {
     lines.push("Nothing was uploaded, so nothing was recorded.", "");
   }
   for (const r of rows) {
-    if (r.recorded || r.refused || r.status !== "FINISHED" || r.upload === "success" || !r.buildId) continue;
-    lines.push(
-      `- ${DISPLAY[r.store]} built but did not upload (\`${r.upload}\`). After fixing the cause, upload it by hand with \`eas submit --platform ${r.store} --profile production --id ${r.buildId}\` from \`apps/mobile\`, then record it as \`apps/mobile/store/README.md\` § Shipped builds says.`,
-    );
+    const step = nextStep(r, { sha, tagMoved, othersUploaded: rows.some((o) => o !== r && o.upload === "success") });
+    if (step) lines.push(`- ${step}`);
   }
   if (problems.length > 0) {
     lines.push("", "**Problems:**", ...problems.map((p) => `- ${p}`));
@@ -309,8 +342,7 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
     log(`::error::DEPLOY_SHA must be a full 40-character commit SHA; got '${sha}'.`);
     return 1;
   }
-  const lists = [parseBuilds(env.EAS_BUILDS_IOS), parseBuilds(env.EAS_BUILDS_ANDROID)];
-  const builds = lists.every((l) => l === null) ? null : lists.flatMap((l) => l ?? []);
+  const builds = parseBuilds(env.EAS_BUILDS);
   const plan = planRecord({
     builds,
     platform: env.PLATFORM,
@@ -318,6 +350,7 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
     sha,
     recorded: now.toISOString().slice(0, 10),
     buildResult: env.BUILD_RESULT,
+    started: { ios: env.EAS_STARTED_IOS, android: env.EAS_STARTED_ANDROID },
   });
   const problems = [...plan.problems];
 
@@ -344,7 +377,7 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
     }
   }
 
-  writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems }));
+  writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems, tagMoved: env.TAG_CHECK === "failure" }));
   for (const problem of problems) log(`::error::${problem}`);
   if (pr?.outcome === "opened") log(`Opened ${pr.url} from ${pr.branch}.`);
   return problems.length > 0 ? 1 : 0;

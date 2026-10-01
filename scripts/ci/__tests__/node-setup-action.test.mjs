@@ -28,10 +28,10 @@ import {
 // below:
 //
 //   * The copies stay gone, in workflows and in the other composite actions.
-//   * The two jobs that can't call a local action (they check out another
-//     commit first, so `./.github/actions/node-setup` would load from THAT
-//     tree) stay pinned to the same version, and stay exceptions only while
-//     the reason holds.
+//   * The jobs that can't call a local action (they check out another commit
+//     first, so `./.github/actions/node-setup` would load from THAT tree; the
+//     three files in EXCEPTIONS) stay pinned to the same version, and stay
+//     exceptions only while the reason holds.
 //   * The action does exactly what its contract says and nothing more. Most
 //     call sites are scheduled or dispatch-only, so a PR never runs them, and
 //     the per-job guards (the cold-build jobs, mobile-validate's bundle order,
@@ -334,8 +334,9 @@ describe("node-setup call sites", () => {
   // `npm ci` runs every dependency's lifecycle scripts. The jobs that hold a
   // credential (the production watchdogs, the snapshot publisher, the drift
   // and quota checks) run dependency-free scripts on purpose, so none of them
-  // may switch to an installing mode. `_deploy.yml` installs before its secrets
-  // are injected, and is hand-written, outside this rule.
+  // may switch to an installing mode. `_deploy.yml` and `_mobile-build.yml`
+  // install before any step uses their secrets (the Infisical injection, the
+  // EXPO_TOKEN steps), and are hand-written, outside this rule.
   it("no job holding a secret installs through it", () => {
     const offenders = calls()
       .filter((c) => c.holdsSecrets && c.install !== "none")

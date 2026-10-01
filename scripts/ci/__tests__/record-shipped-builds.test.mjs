@@ -183,8 +183,10 @@ describe("the PR", () => {
 describe("recordShippedBuilds", () => {
   const env = (over = {}) => ({
     DEPLOY_SHA: SHA,
-    EAS_BUILDS_IOS: JSON.stringify([iosBuild()]),
-    EAS_BUILDS_ANDROID: JSON.stringify([androidBuild()]),
+    EAS_BUILDS: JSON.stringify([iosBuild(), androidBuild()]),
+    EAS_STARTED_IOS: "ios-build-1",
+    EAS_STARTED_ANDROID: "android-build-1",
+    TAG_CHECK: "success",
     BUILD_RESULT: "success",
     PLATFORM: "all",
     IOS_UPLOAD: "success",
@@ -268,10 +270,12 @@ describe("recordShippedBuilds", () => {
   it("calls no API and passes when nothing was uploaded", async () => {
     const { code, calls, text } = await run({
       BUILD_RESULT: "failure",
-      EAS_BUILDS_IOS: "",
-      EAS_BUILDS_ANDROID: "",
+      EAS_BUILDS: "",
+      EAS_STARTED_IOS: "",
+      EAS_STARTED_ANDROID: "",
       IOS_UPLOAD: "",
       ANDROID_UPLOAD: "",
+      TAG_CHECK: "",
     });
     assert.equal(code, 0);
     assert.equal(calls.length, 0);
@@ -304,26 +308,83 @@ describe("recordShippedBuilds", () => {
     assert.match(text, /eas submit --platform android --profile production --id android-build-1/);
   });
 
-  it("records one platform when the other's build listed nothing, and says so when it was asked for", async () => {
-    const failed = await run({ BUILD_RESULT: "failure", EAS_BUILDS_ANDROID: "", ANDROID_UPLOAD: "skipped" });
+  it("records one platform when the other never started, and says so when it was asked for", async () => {
+    const only = { EAS_BUILDS: JSON.stringify([iosBuild()]), EAS_STARTED_ANDROID: "", ANDROID_UPLOAD: "skipped" };
+    const failed = await run({ ...only, BUILD_RESULT: "failure" });
     assert.equal(failed.code, 0);
     const put = JSON.parse(failed.calls[3].body);
     assert.deepEqual(parseRegistry(Buffer.from(put.content, "base64").toString("utf8")).builds.map((b) => b.platform), ["ios"]);
-    const green = await run({ EAS_BUILDS_ANDROID: "", ANDROID_UPLOAD: "skipped" });
+    assert.match(failed.text, /Android didn't build \(`not built`\), while another platform did upload/);
+    assert.match(failed.text, /Don't re-run: that rebuilds and re-uploads the platform that already landed/);
+    const green = await run(only);
     assert.equal(green.code, 1, "a green build job that lists no Android build for `all` is a wiring fault");
     assert.match(green.text, /Android was requested, and the build job reported no Android build/);
   });
 
-  it("never tells anyone to upload a build it refused", async () => {
+  it("names a build the wait never reported, and says not to start another", async () => {
     const { code, text } = await run({
-      PLATFORM: "ios",
-      EAS_BUILDS_IOS: JSON.stringify([iosBuild({ gitCommitHash: OTHER })]),
-      EAS_BUILDS_ANDROID: "",
-      IOS_UPLOAD: "failure",
+      BUILD_RESULT: "failure",
+      EAS_BUILDS: JSON.stringify([iosBuild()]),
+      ANDROID_UPLOAD: "skipped",
     });
-    assert.equal(code, 1);
-    assert.match(text, /Don't let testers install it/);
+    assert.equal(code, 0);
+    assert.match(text, /\| Android \| `android-build-1` \| `unreported` \|/);
+    assert.match(text, /Android \(`android-build-1`\) had not finished when the job stopped waiting/);
+    assert.match(text, /Don't start another build/);
+  });
+
+  it("says a still-queued build may finish, with its id, and how to upload it then", async () => {
+    const { text } = await run({
+      BUILD_RESULT: "failure",
+      PLATFORM: "ios",
+      EAS_BUILDS: JSON.stringify([iosBuild({ status: "IN_QUEUE", appVersion: undefined, appBuildVersion: undefined })]),
+      EAS_STARTED_ANDROID: "",
+      IOS_UPLOAD: "skipped",
+      ANDROID_UPLOAD: "",
+    });
+    assert.match(text, /iOS \(`ios-build-1`\) had not finished/);
+    assert.match(text, /eas submit --platform ios --profile production --id ios-build-1/);
+    assert.match(text, /Nothing was uploaded, so nothing was recorded/);
+  });
+
+  it("forbids any upload once production has moved on", async () => {
+    const { code, calls, text } = await run({
+      BUILD_RESULT: "failure",
+      IOS_UPLOAD: "skipped",
+      ANDROID_UPLOAD: "skipped",
+      TAG_CHECK: "failure",
+    });
+    assert.equal(code, 0);
+    assert.equal(calls.length, 0);
+    assert.match(text, /iOS was not uploaded: production has shipped another commit since this run/);
     assert.doesNotMatch(text, /eas submit/);
+  });
+
+  it("sends a run where nothing built to a re-run", async () => {
+    const { text } = await run({
+      BUILD_RESULT: "failure",
+      EAS_BUILDS: JSON.stringify([iosBuild({ status: "ERRORED" }), androidBuild({ status: "CANCELED" })]),
+      IOS_UPLOAD: "skipped",
+      ANDROID_UPLOAD: "skipped",
+    });
+    assert.match(text, /iOS didn't build \(`ERRORED`\)\. Once the cause is fixed, use \*\*Re-run failed jobs\*\*/);
+    assert.match(text, /Android didn't build \(`CANCELED`\)/);
+  });
+
+  it("never tells anyone to upload a build it refused", async () => {
+    for (const IOS_UPLOAD of ["failure", "success"]) {
+      const { code, text } = await run({
+        PLATFORM: "ios",
+        EAS_BUILDS: JSON.stringify([iosBuild({ gitCommitHash: OTHER })]),
+        EAS_STARTED_ANDROID: "",
+        IOS_UPLOAD,
+      });
+      assert.equal(code, 1, IOS_UPLOAD);
+      assert.match(text, /Don't let testers install it/);
+      assert.doesNotMatch(text, /eas submit/);
+      // An upload that did happen is never reported as nothing uploaded.
+      if (IOS_UPLOAD === "success") assert.doesNotMatch(text, /Nothing was uploaded/);
+    }
   });
 
   it("refuses a malformed DEPLOY_SHA before anything else", async () => {

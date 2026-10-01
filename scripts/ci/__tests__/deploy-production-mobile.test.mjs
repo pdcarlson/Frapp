@@ -285,12 +285,18 @@ describe("the migration snapshot is published as the store build starts", () => 
   });
 });
 
-const CONFIRM = "Confirm the tree is exactly the shipped commit, and still the latest tag";
-const BUILD_STEPS = { ios: "Build iOS on EAS", android: "Build Android on EAS" };
+const CONFIRM = "Confirm the tree is exactly the shipped commit";
+const TAG_STEPS = {
+  build: "Check the SHA is still the latest tag, before building",
+  upload: "Check the SHA is still the latest tag, before uploading",
+};
+const START_STEPS = { ios: "Start the iOS build on EAS", android: "Start the Android build on EAS" };
+const WAIT = "Wait for the EAS builds";
 const UPLOAD_STEPS = {
   ios: "Upload iOS to TestFlight (not submitted for review)",
   android: "Upload Android to the Play internal track (not promoted)",
 };
+const RUN_URL_EXPR = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
 
 /** Runs a step's script under the runner's own `bash -eo pipefail`. */
 function runStep(step, { cwd, env }) {
@@ -299,6 +305,28 @@ function runStep(step, { cwd, env }) {
     env: { ...process.env, ...env },
     encoding: "utf8",
   });
+}
+
+/** `key=value` lines from a GITHUB_OUTPUT file. */
+function readOutputs(file) {
+  return Object.fromEntries(
+    readFileSync(file, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+  );
+}
+
+/** A temp dir with `bin/<name>` holding `script`, first on PATH. */
+function withStub(name, script) {
+  const dir = mkdtempSync(join(tmpdir(), `mobile-${name}-`));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${script}\n`);
+  chmodSync(join(bin, name), 0o755);
+  const output = join(dir, "output");
+  writeFileSync(output, "");
+  return { dir, output, path: `${bin}:${process.env.PATH}` };
 }
 
 describe("the build job's first step", () => {
@@ -328,11 +356,10 @@ describe("the build job's first step", () => {
 describe("the build job builds the validated SHA and nothing else", () => {
   const steps = () => stepsOf(CALLED, "build");
 
-  it("checks out inputs.sha once, with its tags, and nothing moves the tree after", () => {
+  it("checks out inputs.sha once, and nothing moves the tree after", () => {
     const checkouts = steps().filter((s) => /uses:\s*actions\/checkout@/.test(s.body));
     assert.equal(checkouts.length, 1);
     assert.match(checkouts[0].body, /^\s+ref: \$\{\{ inputs\.sha \}\}\s*$/m);
-    assert.match(checkouts[0].body, /^\s+fetch-depth: 0\s*$/m);
     assert.match(checkouts[0].body, /^\s+persist-credentials: false\s*$/m);
     for (const step of steps()) {
       assert.doesNotMatch(step.body, WORKSPACE_REWRITE_RE, `"${step.name}" moves the tree`);
@@ -343,22 +370,28 @@ describe("the build job builds the validated SHA and nothing else", () => {
     }
   });
 
-  it("confirms the tree after the installs, and every build waits for it", () => {
+  // The order is the safety argument: installs, then the tree and the tag,
+  // then the builds; the tag again, then the uploads.
+  it("runs its steps in the order that refuses before it builds or uploads", () => {
+    const ids = steps().map((s) => s.body.match(/^\s+id:\s*(\S+)/m)?.[1]).filter(Boolean);
+    assert.deepEqual(ids, ["confirm", "tag-before-build", "start-ios", "start-android", "wait", "tag-before-upload", "upload-ios", "upload-android"]);
     const names = steps().map((s) => s.name);
-    const at = (name) => {
-      const i = names.indexOf(name);
-      assert.notEqual(i, -1, `no step "${name}"`);
-      return i;
-    };
-    const confirm = at(CONFIRM);
-    assert.ok(at("Install dependencies") < confirm);
-    assert.ok(at("Install EAS CLI") < confirm);
-    assert.equal(steps()[confirm].env.get("DEPLOY_SHA"), "${{ inputs.sha }}");
-    assert.match(steps()[confirm].body, /^\s+id: confirm\s*$/m);
-    for (const name of Object.values(BUILD_STEPS)) {
-      assert.ok(confirm < at(name), name);
-      assert.match(stepNamed(CALLED, "build", name).if, /^\$\{\{ !cancelled\(\) && steps\.confirm\.outcome == 'success' && /, name);
+    assert.ok(names.indexOf("Install EAS CLI") < names.indexOf(CONFIRM));
+    for (const store of ["ios", "android"]) {
+      assert.match(
+        stepNamed(CALLED, "build", START_STEPS[store]).if,
+        new RegExp(String.raw`^\$\{\{ !cancelled\(\) && steps\.tag-before-build\.outcome == 'success' && \(inputs\.platform == '${store}' \|\| inputs\.platform == 'all'\) \}\}$`),
+      );
+      assert.equal(
+        stepNamed(CALLED, "build", UPLOAD_STEPS[store]).if,
+        `\${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.${store}_id != '' }}`,
+      );
     }
+    assert.equal(stepNamed(CALLED, "build", TAG_STEPS.build).if, null, "the first tag check runs whenever the steps before it passed");
+    assert.equal(
+      stepNamed(CALLED, "build", TAG_STEPS.upload).if,
+      "${{ !cancelled() && (steps.wait.outputs.ios_id != '' || steps.wait.outputs.android_id != '') }}",
+    );
   });
 
   describe("the confirm step, run", () => {
@@ -373,21 +406,15 @@ describe("the build job builds the validated SHA and nothing else", () => {
       writeFileSync(join(dir, "app.json"), "{}\n");
       git("add", "-A");
       git("commit", "-qm", "seed");
-      // Annotated, as release.yml mints them; v0.9.0 sorts above v0.10.0
-      // only when the sort is lexical, which would pick the wrong tag.
-      git("tag", "-a", "v0.9.0", "-m", "Release v0.9.0", "HEAD");
-      return { dir, git, head: git("rev-parse", "HEAD") };
+      return { dir, head: git("rev-parse", "HEAD") };
     }
     const run = (dir, sha) => runStep(step(), { cwd: dir, env: { DEPLOY_SHA: sha } });
 
-    it("passes on the latest tag's commit, with ignored install output beside it", () => {
-      const { dir, git, head } = repo();
-      git("tag", "-a", "v0.10.0", "-m", "Release v0.10.0", "HEAD");
+    it("passes on the commit, with ignored install output beside it", () => {
+      const { dir, head } = repo();
       mkdirSync(join(dir, "node_modules"));
       writeFileSync(join(dir, "node_modules", "x.js"), "");
-      const result = run(dir, head);
-      assert.equal(result.status, 0, result.stdout);
-      assert.match(result.stdout, /the latest tag \(v0\.10\.0\)/);
+      assert.equal(run(dir, head).status, 0);
       rmSync(dir, { recursive: true, force: true });
     });
 
@@ -403,40 +430,100 @@ describe("the build job builds the validated SHA and nothing else", () => {
       assert.match(added.stdout, /new\.txt/);
       rmSync(dir, { recursive: true, force: true });
     });
+  });
+});
 
-    // A re-run of the store build after a later ship: production has moved,
-    // and the old SHA must not be built.
-    it("fails once a later ship has tagged another commit, or when nothing is tagged", () => {
-      const { dir, git, head } = repo();
-      writeFileSync(join(dir, "app.json"), '{"next":true}\n');
-      git("commit", "-qam", "next");
-      git("tag", "-a", "v0.10.0", "-m", "Release v0.10.0", "HEAD");
-      git("checkout", "-q", "--detach", head);
-      const moved = run(dir, head);
-      assert.equal(moved.status, 1);
-      assert.match(moved.stdout, /The latest tag, v0\.10\.0, is on /);
-      git("tag", "-d", "v0.9.0", "v0.10.0");
-      const untagged = run(dir, head);
-      assert.equal(untagged.status, 1);
-      assert.match(untagged.stdout, /No v\* tag exists/);
-      rmSync(dir, { recursive: true, force: true });
+// Rule 1 at both ends of a build that can take hours: a ship made meanwhile
+// (a rollback) tags another commit, and nothing from this SHA may upload.
+describe("the latest-tag check, before the builds and again before the uploads", () => {
+  const OLD = "1111111111111111111111111111111111111111";
+
+  it("is one script, run twice, reading the API with the job's own token", () => {
+    const [before, after] = [TAG_STEPS.build, TAG_STEPS.upload].map((n) => stepNamed(CALLED, "build", n));
+    assert.equal(scriptOf(before), scriptOf(after));
+    for (const step of [before, after]) {
+      assert.deepEqual(Object.fromEntries(step.stepEnv), {
+        GH_TOKEN: "${{ github.token }}",
+        REPO: "${{ github.repository }}",
+        DEPLOY_SHA: "${{ inputs.sha }}",
+      });
+    }
+  });
+
+  /**
+   * Runs the check against a stand-in `gh`: `tags` maps each tag to the
+   * commit it names; an annotated tag is served as a tag object, the way
+   * release.yml mints them.
+   */
+  function run({ tags, sha = SHA, failApi = false }) {
+    const objects = Object.entries(tags).map(([name, commit]) => `${name} ${commit}`).join("\n");
+    const { dir, path } = withStub(
+      "gh",
+      [
+        failApi ? "echo 'HTTP 502' >&2; exit 1" : "",
+        'path="$2"',
+        'case "$path" in',
+        // In ref order, as the API returns them: lexical, so v0.10.0 comes
+        // before v0.9.0, and only a version sort finds the newest.
+        `  */git/matching-refs/tags/v) printf '%s\\n' ${Object.keys(tags).map((t) => `'${t}'`).join(" ") || "''"} | sed '/^$/d' | LC_ALL=C sort ;;`,
+        `  */git/ref/tags/*) t="\${path##*/}"; printf 'tag obj-%s\\n' "$t" ;;`,
+        `  */git/tags/obj-*) t="\${path##*/obj-}"; printf '%s\\n' "${objects}" | awk -v t="$t" '$1 == t { print $2 }' ;;`,
+        "  *) echo \"unexpected gh api $path\" >&2; exit 2 ;;",
+        "esac",
+      ].join("\n"),
+    );
+    const result = runStep(stepNamed(CALLED, "build", TAG_STEPS.build), {
+      cwd: dir,
+      env: { PATH: path, GH_TOKEN: "t", REPO: "o/r", DEPLOY_SHA: sha },
     });
+    rmSync(dir, { recursive: true, force: true });
+    return result;
+  }
+
+  it("passes when the newest version tag names the SHA, by version and not by text", () => {
+    // Lexically, v0.10.0 < v0.9.0 and v0.9.0 < v1.0.0: a text sort either way
+    // picks v0.9.0 in one of these, which names the older commit.
+    for (const newest of ["v0.10.0", "v1.0.0"]) {
+      const result = run({ tags: { "v0.9.0": OLD, [newest]: SHA } });
+      assert.equal(result.status, 0, `${newest}: ${result.stdout}${result.stderr}`);
+      assert.match(result.stdout, new RegExp(`is the latest tag \\(${newest.replace(/\./g, "\\.")}\\)`));
+    }
+  });
+
+  it("refuses once a later ship tagged another commit", () => {
+    const result = run({ tags: { "v0.9.0": SHA, "v0.10.0": OLD } });
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /The latest tag, v0\.10\.0, is on 1{40}, not /);
+  });
+
+  it("refuses with no version tag, ignores other v-tags, and fails on an API error rather than calling it untagged", () => {
+    const none = run({ tags: {} });
+    assert.equal(none.status, 1);
+    assert.match(none.stdout, /No vX\.Y\.Z tag exists/);
+    assert.equal(run({ tags: { "v0.9.0": SHA, "v2-rc": OLD } }).status, 0);
+    const down = run({ tags: { "v0.9.0": SHA }, failApi: true });
+    assert.notEqual(down.status, 0);
+    assert.doesNotMatch(down.stdout, /No vX\.Y\.Z tag exists/);
   });
 });
 
 describe("EXPO_TOKEN reaches only the steps that run eas", () => {
-  it("is in the env of the two builds and the two uploads, and nowhere else", () => {
+  it("is in the env of the two starts, the wait and the two uploads, and nowhere else", () => {
     const holders = workflowSteps(CALLED)
       .filter((s) => [...s.env.values()].some((v) => /secrets\.EXPO_TOKEN\b/.test(v) && !/!=\s*''/.test(v)))
       .map((s) => `${s.jobId}: ${s.name}`);
     assert.deepEqual(holders, [
-      `build: ${BUILD_STEPS.ios}`,
+      `build: ${START_STEPS.ios}`,
+      `build: ${START_STEPS.android}`,
+      `build: ${WAIT}`,
       `build: ${UPLOAD_STEPS.ios}`,
-      `build: ${BUILD_STEPS.android}`,
       `build: ${UPLOAD_STEPS.android}`,
     ]);
     for (const step of stepsOf(CALLED, "build")) {
-      if (step.env.has("EXPO_TOKEN")) assert.match(scriptOf(step), /(^|\s)eas (build|submit) /, step.name);
+      if (step.env.has("EXPO_TOKEN")) {
+        assert.equal(step.stepEnv.get("EXPO_TOKEN"), "${{ secrets.EXPO_TOKEN }}", step.name);
+        assert.match(scriptOf(step), /(^|[\s(])eas (build|build:view|submit) /, step.name);
+      }
     }
   });
 
@@ -460,34 +547,50 @@ describe("EXPO_TOKEN reaches only the steps that run eas", () => {
 });
 
 describe("the eas commands", () => {
-  it("installs an exact eas-cli, with its dependencies resolved as of a fixed date", () => {
+  // The publish date of each eas-cli version this file has pinned. `--before`
+  // must fall after it (or the version itself is excluded) and not in the
+  // future (or it freezes nothing). Moving the pin means adding its date here.
+  const PUBLISHED = { "24.8.0": "2026-09-24" };
+
+  it("installs an exact eas-cli, with its dependencies held to a past date", () => {
     const install = scriptOf(stepNamed(CALLED, "build", "Install EAS CLI"));
-    assert.match(install, /^npm install --global --before=\d{4}-\d{2}-\d{2} eas-cli@\d+\.\d+\.\d+$/);
+    const m = install.match(/^npm install --global --before=(\d{4}-\d{2}-\d{2}) eas-cli@(\d+\.\d+\.\d+)$/);
+    assert.ok(m, install);
+    const [, before, version] = m;
+    assert.ok(PUBLISHED[version], `add eas-cli ${version}'s publish date to PUBLISHED`);
+    assert.ok(before > PUBLISHED[version], `--before=${before} excludes eas-cli ${version} itself`);
+    assert.ok(new Date(`${before}T00:00:00Z`) <= new Date(), `--before=${before} is in the future, so it freezes nothing`);
   });
 
-  it("builds one platform per step, from one script, on the production profile", () => {
-    const [ios, android] = [BUILD_STEPS.ios, BUILD_STEPS.android].map((n) => stepNamed(CALLED, "build", n));
-    assert.equal(scriptOf(ios), scriptOf(android), "the two build steps must run the same script");
-    assert.equal(ios.env.get("PLATFORM"), "ios");
-    assert.equal(android.env.get("PLATFORM"), "android");
-    assert.match(ios.if, /\(inputs\.platform == 'ios' \|\| inputs\.platform == 'all'\) \}\}$/);
-    assert.match(android.if, /\(inputs\.platform == 'android' \|\| inputs\.platform == 'all'\) \}\}$/);
+  it("starts each platform with one script, on the production profile, without waiting", () => {
+    const [ios, android] = [START_STEPS.ios, START_STEPS.android].map((n) => stepNamed(CALLED, "build", n));
+    assert.equal(scriptOf(ios), scriptOf(android), "the two start steps must run the same script");
+    for (const [step, platform] of [[ios, "ios"], [android, "android"]]) {
+      assert.deepEqual(Object.fromEntries(step.stepEnv), {
+        EXPO_TOKEN: "${{ secrets.EXPO_TOKEN }}",
+        PLATFORM: platform,
+        DEPLOY_SHA: "${{ inputs.sha }}",
+        RUN_URL: RUN_URL_EXPR,
+      });
+      assert.match(step.body, /^\s+working-directory: apps\/mobile\s*$/m);
+    }
     const command = scriptOf(ios)
       .replace(/\\\n\s*/g, " ")
       .split("\n")
       .find((l) => /\beas build\b/.test(l));
-    for (const flag of ['--platform "$PLATFORM"', "--profile production", "--non-interactive", "--wait", "--json"]) {
+    for (const flag of ['--platform "$PLATFORM"', "--profile production", "--non-interactive", "--no-wait", "--json"]) {
       assert.ok(command.includes(flag), `eas build lacks ${flag}`);
     }
-    assert.doesNotMatch(command, /--auto-submit|--local|--no-wait/);
-    for (const step of [ios, android]) assert.match(step.body, /^\s+working-directory: apps\/mobile\s*$/m);
+    assert.doesNotMatch(command, /--auto-submit|--local|\s--wait/);
   });
 
-  it("uploads each finished build by id, after a failed sibling too, and submits nothing for review", () => {
+  it("uploads each finished build by id, and submits nothing for review", () => {
     for (const store of ["ios", "android"]) {
       const step = stepNamed(CALLED, "build", UPLOAD_STEPS[store]);
-      assert.equal(step.if, `\${{ !cancelled() && steps.build-${store}.outputs.id != '' }}`);
-      assert.equal(step.env.get("BUILD_ID"), `\${{ steps.build-${store}.outputs.id }}`);
+      assert.deepEqual(Object.fromEntries(step.stepEnv), {
+        EXPO_TOKEN: "${{ secrets.EXPO_TOKEN }}",
+        BUILD_ID: `\${{ steps.wait.outputs.${store}_id }}`,
+      });
       const command = scriptOf(step);
       assert.match(command, new RegExp(`^eas submit --platform ${store} --profile production --id "\\$BUILD_ID" --non-interactive --wait`));
       if (store === "ios") assert.match(command, /--no-auto-testflight-setup/);
@@ -507,77 +610,105 @@ describe("the eas commands", () => {
     assert.equal(eas.submit?.production?.ios?.ascAppId, recorded);
   });
 
-  describe("the build step's own checks, against a stand-in eas", () => {
-    function run({ builds, exit = 0, platform = "ios" }) {
-      const dir = mkdtempSync(join(tmpdir(), "mobile-eas-"));
-      const bin = join(dir, "bin");
-      mkdirSync(bin);
-      writeFileSync(join(dir, "builds.json"), builds === undefined ? "" : JSON.stringify(builds));
-      writeFileSync(join(bin, "eas"), `#!/usr/bin/env bash\necho "$*" > "${dir}/argv"\ncat "${dir}/builds.json"\nexit ${exit}\n`);
-      chmodSync(join(bin, "eas"), 0o755);
-      const output = join(dir, "output");
-      writeFileSync(output, "");
-      const result = runStep(stepNamed(CALLED, "build", BUILD_STEPS[platform]), {
+  // The job's ceiling has to hold every step's, and the wait has to stop
+  // itself before its step is killed, or it loses the list it exists to hand on.
+  it("fits every step's ceiling under the job's, and the wait's deadline under its own", () => {
+    const job = Number(jobOf(CALLED, "build").keys.get("timeout-minutes"));
+    assert.ok(job <= 360, "a hosted job runs at most 360 minutes");
+    const ceilings = stepsOf(CALLED, "build").map((s) => Number(s.body.match(/^\s+timeout-minutes:\s*(\d+)/m)?.[1] ?? 0));
+    assert.ok(ceilings.reduce((a, b) => a + b, 0) + 20 <= job, "the steps' ceilings, plus the installs, outrun the job's");
+    const wait = stepNamed(CALLED, "build", WAIT);
+    const stepCeiling = Number(wait.body.match(/^\s+timeout-minutes:\s*(\d+)/m)[1]);
+    assert.ok(Number(wait.stepEnv.get("DEADLINE_MINUTES")) < stepCeiling);
+  });
+
+  describe("the start step, against a stand-in eas", () => {
+    function run({ started, exit = 0, platform = "ios" }) {
+      const { dir, output, path } = withStub("eas", `echo "$*" > "$RUNNER_TEMP/argv"\n${started === undefined ? "" : `echo '${JSON.stringify(started)}'`}\nexit ${exit}`);
+      const result = runStep(stepNamed(CALLED, "build", START_STEPS[platform]), {
         cwd: dir,
-        env: {
-          PATH: `${bin}:${process.env.PATH}`,
-          RUNNER_TEMP: dir,
-          GITHUB_OUTPUT: output,
-          PLATFORM: platform,
-          DEPLOY_SHA: SHA,
-          RUN_URL: "https://github.com/x/y/actions/runs/1",
-        },
+        env: { PATH: path, RUNNER_TEMP: dir, GITHUB_OUTPUT: output, PLATFORM: platform, DEPLOY_SHA: SHA, RUN_URL: "https://x/runs/1" },
       });
-      const outputs = Object.fromEntries(
-        readFileSync(output, "utf8")
-          .split("\n")
-          .filter(Boolean)
-          .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
-      );
+      const outputs = readOutputs(output);
       const argv = readFileSync(join(dir, "argv"), "utf8");
       rmSync(dir, { recursive: true, force: true });
       return { status: result.status, stdout: result.stdout, outputs, argv };
     }
+
+    it("hands the started build's id on at once", () => {
+      const { status, outputs, argv } = run({ started: [{ id: "i1", platform: "IOS", status: "NEW" }] });
+      assert.equal(status, 0);
+      assert.equal(outputs.id, "i1");
+      assert.match(argv, /^build --platform ios --profile production --non-interactive --no-wait --json --message /);
+    });
+
+    it("keeps eas's own exit status, and still names a build it started", () => {
+      const { status, stdout, outputs } = run({ started: [{ id: "i1", platform: "IOS", status: "NEW" }], exit: 2 });
+      assert.equal(status, 2);
+      assert.match(stdout, /exited 2 after starting i1/);
+      assert.equal(outputs.id, "i1");
+    });
+
+    it("fails when nothing started, or only another platform did", () => {
+      const nothing = run({ started: undefined });
+      assert.equal(nothing.status, 1);
+      assert.equal(nothing.outputs.id, "");
+      const other = run({ started: [{ id: "a1", platform: "ANDROID", status: "NEW" }] });
+      assert.equal(other.status, 1);
+      assert.match(other.stdout, /reported no started ios build/);
+    });
+  });
+
+  describe("the wait, against a stand-in eas", () => {
     const ios = (over = {}) => ({ id: "i1", platform: "IOS", status: "FINISHED", appVersion: "0.9.0", appBuildVersion: "12", gitCommitHash: SHA, extra: "dropped", ...over });
     const android = (over = {}) => ({ ...ios(), id: "a1", platform: "ANDROID", appBuildVersion: "7", ...over });
 
-    it("hands the id on, keeping only the fields the record job reads", () => {
-      const { status, outputs, argv } = run({ builds: [ios()] });
+    /** `views` maps a build id to what `eas build:view <id> --json` prints; a missing id fails. */
+    function run({ views, ids = "i1 a1", deadline = "0" }) {
+      const { dir, output, path } = withStub("eas", `f="$RUNNER_TEMP/view-$2.json"; [ -f "$f" ] && cat "$f" || exit 1`);
+      for (const [id, view] of Object.entries(views)) writeFileSync(join(dir, `view-${id}.json`), JSON.stringify(view));
+      const result = runStep(stepNamed(CALLED, "build", WAIT), {
+        cwd: dir,
+        env: { PATH: path, RUNNER_TEMP: dir, GITHUB_OUTPUT: output, IDS: ids, DEPLOY_SHA: SHA, DEADLINE_MINUTES: deadline, POLL_SECONDS: "0" },
+      });
+      const outputs = readOutputs(output);
+      rmSync(dir, { recursive: true, force: true });
+      return { status: result.status, stdout: result.stdout, outputs };
+    }
+
+    it("hands each finished build of the SHA to its upload, keeping only the fields the record job reads", () => {
+      const { status, outputs } = run({ views: { i1: ios(), a1: android() } });
       assert.equal(status, 0);
-      assert.equal(outputs.id, "i1");
-      assert.deepEqual(JSON.parse(outputs.builds), [
-        { id: "i1", platform: "IOS", status: "FINISHED", appVersion: "0.9.0", appBuildVersion: "12", gitCommitHash: SHA },
-      ]);
-      assert.match(argv, /^build --platform ios --profile production --non-interactive --wait --json --message /);
-      const other = run({ builds: [android()], platform: "android" });
-      assert.equal(other.status, 0);
-      assert.equal(other.outputs.id, "a1");
-      assert.match(other.argv, /^build --platform android /);
+      assert.equal(outputs.ios_id, "i1");
+      assert.equal(outputs.android_id, "a1");
+      assert.deepEqual(JSON.parse(outputs.builds)[0], {
+        id: "i1", platform: "IOS", status: "FINISHED", appVersion: "0.9.0", appBuildVersion: "12", gitCommitHash: SHA,
+      });
+      assert.equal(run({ views: { i1: ios() }, ids: " i1" }).outputs.android_id, "", "a platform that never started");
     });
 
-    it("fails on a CANCELED build that eas exits 0 for, and hands on no id", () => {
-      const { status, stdout, outputs } = run({ builds: [ios({ status: "CANCELED" })] });
+    it("never hands on a build EAS made from another commit", () => {
+      const { status, stdout, outputs } = run({ views: { i1: ios({ gitCommitHash: "f".repeat(40) }), a1: android() } });
       assert.equal(status, 1);
-      assert.match(stdout, /Not every EAS build finished: IOS i1 CANCELED/);
-      assert.equal(outputs.id, "");
+      assert.match(stdout, /will not be uploaded: IOS i1 from f{40}/);
+      assert.equal(outputs.ios_id, "");
+      assert.equal(outputs.android_id, "a1");
     });
 
-    it("fails with eas's own exit status, even when every listed build finished", () => {
-      const { status, stdout, outputs } = run({ builds: [ios()], exit: 2 });
-      assert.equal(status, 2);
-      assert.match(stdout, /eas build --platform ios exited 2/);
-      assert.equal(outputs.id, "i1", "a finished build is still handed on to its upload");
+    it("fails on an errored or canceled build, and still hands on the one that finished", () => {
+      const { status, stdout, outputs } = run({ views: { i1: ios({ status: "ERRORED" }), a1: android() } });
+      assert.equal(status, 1);
+      assert.match(stdout, /did not finish: IOS i1 ERRORED/);
+      assert.equal(outputs.ios_id, "");
+      assert.equal(outputs.android_id, "a1");
     });
 
-    it("fails when eas printed nothing, or listed no build of its platform", () => {
-      const empty = run({ builds: undefined });
-      assert.equal(empty.status, 1);
-      assert.equal(empty.outputs.builds, "");
-      assert.equal(empty.outputs.id, "");
-      const wrong = run({ builds: [android()] });
-      assert.equal(wrong.status, 1);
-      assert.match(wrong.stdout, /listed no finished ios build/);
-      assert.equal(wrong.outputs.id, "");
+    it("stops at its deadline with the list, naming what is still building or unread", () => {
+      const { status, stdout, outputs } = run({ views: { i1: ios({ status: "IN_QUEUE" }) } });
+      assert.equal(status, 1);
+      assert.match(stdout, /Still not finished after 0 minutes: i1 IN_QUEUE, a1 UNREAD/);
+      assert.deepEqual(JSON.parse(outputs.builds).map((b) => `${b.id} ${b.status}`), ["i1 IN_QUEUE", "a1 UNREAD"]);
+      assert.equal(outputs.ios_id, "");
     });
   });
 });
@@ -602,30 +733,30 @@ describe("the record job", () => {
     assert.equal(step.if, "${{ !cancelled() }}");
     assert.equal(scriptOf(step), "node scripts/ci/record-shipped-builds.mjs");
     const expected = {
-      EAS_BUILDS_IOS: "${{ needs.build.outputs.ios-builds }}",
-      EAS_BUILDS_ANDROID: "${{ needs.build.outputs.android-builds }}",
+      EAS_BUILDS: "${{ needs.build.outputs.builds }}",
+      EAS_STARTED_IOS: "${{ needs.build.outputs.ios-started }}",
+      EAS_STARTED_ANDROID: "${{ needs.build.outputs.android-started }}",
       BUILD_RESULT: "${{ needs.build.result }}",
       PLATFORM: "${{ inputs.platform }}",
       IOS_UPLOAD: "${{ needs.build.outputs.ios-upload }}",
       ANDROID_UPLOAD: "${{ needs.build.outputs.android-upload }}",
+      TAG_CHECK: "${{ needs.build.outputs.tag-check }}",
       DEPLOY_SHA: "${{ inputs.sha }}",
       GH_TOKEN: "${{ steps.app-token.outputs.token }}",
-      RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+      RUN_URL: RUN_URL_EXPR,
       RUN_ID: "${{ github.run_id }}",
       // Each attempt's own branch: a re-run must not collide with the PR an
       // earlier attempt opened.
       RUN_ATTEMPT: "${{ github.run_attempt }}",
     };
-    assert.deepEqual([...step.stepEnv.keys()].sort(), Object.keys(expected).sort());
-    for (const [key, value] of Object.entries(expected)) assert.equal(step.env.get(key), value, key);
-    const outputs = jobOf(CALLED, "build").keys.get("outputs");
-    assert.deepEqual(Object.fromEntries(outputs), {
-      "ios-builds": "${{ steps.build-ios.outputs.builds }}",
-      "android-builds": "${{ steps.build-android.outputs.builds }}",
+    assert.deepEqual(Object.fromEntries(step.stepEnv), expected);
+    assert.deepEqual(Object.fromEntries(jobOf(CALLED, "build").keys.get("outputs")), {
+      builds: "${{ steps.wait.outputs.builds }}",
+      "ios-started": "${{ steps.start-ios.outputs.id }}",
+      "android-started": "${{ steps.start-android.outputs.id }}",
       "ios-upload": "${{ steps.upload-ios.outcome }}",
       "android-upload": "${{ steps.upload-android.outcome }}",
+      "tag-check": "${{ steps.tag-before-upload.outcome }}",
     });
-    const ids = stepsOf(CALLED, "build").map((s) => s.body.match(/^\s+id:\s*(\S+)/m)?.[1]).filter(Boolean);
-    assert.deepEqual(ids, ["confirm", "build-ios", "upload-ios", "build-android", "upload-android"]);
   });
 });

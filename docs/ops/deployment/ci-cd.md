@@ -56,7 +56,9 @@ layers are that job's steps named `inputs.environment == 'production'`:
 8. **Store builds, only when asked** — with `mobile_build` set to `ios`, `android` or `all`, and
    only after a `full` ship and its tag succeed, `_mobile-build.yml` builds the same commit on EAS,
    uploads it without releasing it, and opens the `shipped-builds.json` PR
-   ([`mobile.md` § 6.6](mobile.md#66-store-submission)).
+   ([`mobile.md` § 6.6](mobile.md#66-store-submission)). A failure there leaves production and the
+   tag as they are and opens no alert issue: the *Deploy production failed* alert above covers the
+   ship, not the store build.
 
 > **Corrected 2026-09-28 (#2805):** until #2805 production had its own copy of these steps in
 > `deploy-production.yml`, with three differences that were accidents: `npm ci` and the Vercel CLI

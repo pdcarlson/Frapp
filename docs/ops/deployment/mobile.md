@@ -253,8 +253,9 @@ promoting a Play track stay a human's clicks in the consoles.
 **Which commit.** Build a store binary from the commit production serves, which is the latest `v*`
 tag (`git tag --list 'v*' --sort=-version:refname | head -n1`), and never from `main`'s tip. A
 binary newer than production calls routes production doesn't serve yet (#2526); that is why the
-`v0.7.0` ship had to come before the 0.9.0 binary. The CI path builds only the commit of the latest
-`v*` tag and refuses any other, a re-run included. The manual path keeps the rule by hand.
+`v0.7.0` ship had to come before the 0.9.0 binary. The CI path checks that its commit is still the
+latest `v*` tag before it builds and again before it uploads, and stops otherwise, a re-run
+included. The manual path keeps the rule by hand.
 
 **Record every upload.** Each build uploaded to TestFlight or a Play track gets a
 `shipped-builds.json` entry before any tester installs it, because that list arms the required
@@ -277,16 +278,24 @@ succeed. A dry run or a `migrations-only` run never builds, whatever the input s
 job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
 
 1. **`build`** checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
-   **24.8.0** with `--before=2026-10-01`, which freezes the resolution of eas-cli's own
-   dependencies at that date (it ships no lockfile). Then it refuses to go on unless the tree is
-   exactly that commit with nothing changed (eas-cli uploads uncommitted changes with the
-   build), and unless that commit is still the latest `v*` tag. Each platform is then its own
-   `eas build --platform <p> --profile production --non-interactive --wait --json`, iOS first.
-   `eas build --platform all` would start Android and then die on an iOS failure, leaving the
-   Android build running unreported. A build that finished is uploaded by id with
-   `eas submit --platform <p> --profile production --id <build id> --non-interactive --wait`; iOS
-   also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. One
-   platform's failure doesn't stop the other's build or upload.
+   **24.8.0** with `--before=2026-10-01`, so none of eas-cli's own dependencies can be a version
+   published after that date (it ships no lockfile; the lockfile fix is #3118). It refuses to go
+   on unless the tree is exactly that commit with nothing changed (eas-cli uploads uncommitted
+   changes with the build), and unless that commit is still the latest `v*` tag, read from the
+   API. Then:
+   - Each platform starts on its own:
+     `eas build --platform <p> --profile production --non-interactive --no-wait --json` hands its
+     build id on at once. `eas build --platform all` would start Android and then die on an iOS
+     failure, leaving the Android build running unreported.
+   - One step polls the builds (`eas build:view <id> --json`) until each ends, under a 230-minute
+     deadline of its own. A build still queued at the deadline is reported by id, not lost.
+   - Only a build EAS reports `FINISHED` from the shipped commit goes on.
+   - The latest-tag check runs again: a ship made while EAS was building (a rollback, say) stops
+     every upload.
+   - Then `eas submit --platform <p> --profile production --id <build id> --non-interactive --wait`;
+     iOS also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group.
+
+   One platform's failure doesn't stop the other's build or upload.
 2. **`record`** opens the PR that adds one `shipped-builds.json` entry per uploaded build
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
@@ -310,16 +319,24 @@ laptop build, so anything a hand build needs, this one needs too.
 
 **When it fails.** Production and the tag are already live and stay as they are. The `mobile` job
 goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
-says what finished, what uploaded, and the `eas submit … --id <build id>` that finishes an upload
-by hand. A build that uploaded but couldn't be recorded is listed there as the JSON entries to add.
+lists each platform's EAS id, status and upload, and says which of these applies. A build that
+uploaded but couldn't be recorded is listed there as the JSON entries to add.
 
-- **A build finished but its upload failed:** fix the cause, run that `eas submit` from
-  `apps/mobile`, and record the build by hand. Don't re-run: a re-run builds every platform the
-  run asked for again, so a platform that already uploaded would upload a second build and open
-  a second record PR.
-- **Nothing finished:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded
-  and don't run again, and the builds get fresh build numbers. The re-run refuses to build once a
-  later ship has tagged another commit; dispatch Deploy production for that one instead.
+A re-run builds every platform the run asked for again, so re-run only when nothing uploaded and
+nothing is still building.
+
+- **A build finished but its upload failed:** fix the cause, run the summary's
+  `eas submit … --id <build id>` from `apps/mobile`, and record the build by hand.
+- **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
+  another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
+  `eas submit … --id` and record it.
+- **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
+  other by hand from the latest `v*` tag (below), and record it.
+- **Production shipped another commit while EAS was building:** nothing from this run may upload.
+  The next store build comes with the next ship.
+- **Nothing built:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded and
+  don't run again, and the builds get fresh build numbers. The re-run stops if a later ship has
+  tagged another commit; dispatch Deploy production for that one instead.
 
 **Before the first run.** These exist outside the repo, and a non-interactive run stops without
 each one:
