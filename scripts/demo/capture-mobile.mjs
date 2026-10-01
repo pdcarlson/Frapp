@@ -233,6 +233,31 @@ async function waitFor(page, label, read, timeoutMs = 30_000, arg) {
 const bodyText = () => document.body.innerText;
 
 /**
+ * Chat home's channel list has loaded: the #general row, not a section header.
+ * Which headers draw depends on how the seed files its channels (CHANNELS is
+ * only the unfiled ones, #1684), while every chapter always has #general.
+ * Runs in the page, so it is self-contained; the two waits that combine this
+ * check with others restate the selector inline, because a function handed to
+ * the page can't call this one.
+ */
+const GENERAL_ROW_SHOWN = () =>
+  Boolean(document.querySelector('[aria-label^="#general"]'));
+
+/**
+ * The #general thread has drawn. Two things this must not be phrased as. Not
+ * "the channel list has gone": React Navigation keeps the tab's index screen
+ * mounted under the pushed thread, so the list stays in the DOM throughout.
+ * And not `innerText.includes("Message")` for the composer: a placeholder is an
+ * attribute, so it never appears in `innerText` and the wait could only time
+ * out. The thread's own `#general` heading is drawn by this route alone (the
+ * tab navigator's "Thread" header it used to wait for is gone, #2485).
+ */
+const GENERAL_THREAD_SHOWN = () =>
+  [...document.querySelectorAll('[role="heading"], h1')].some(
+    (heading) => heading.textContent === "#general",
+  ) && Boolean(document.querySelector('[placeholder="Message"]'));
+
+/**
  * The signed-in screens, in capture order.
  *
  * `ready` runs in the page and gates the shot on content the screen only shows
@@ -245,17 +270,16 @@ const APP_SCREENS = [
     slug: "01-home-chat",
     route: "/",
     label: "s04 — Chat home (chapter channels, UP NEXT, ✦ Ask pill)",
-    ready: () => document.body.innerText.includes("CHANNELS"),
+    ready: GENERAL_ROW_SHOWN,
   },
   {
     slug: "02-ask-answer",
     // Deliberately not the `/ask` route. Ask is a sheet hosted by Chat home and
     // Events behind the ✦ pill, never a screen of its own
-    // (`spec/ui/mobile/navigation.md:60`); `app/(tabs)/ask.tsx` exists only to
-    // back a frozen `Tabs.Screen` registration and says so in its own header
-    // comment. Shooting the route photographs a deliberately bare shell with
-    // the tab navigator's "Ask" title stacked above the shell's own — the pill
-    // on s04 is where a member actually opens this.
+    // (`spec/ui/mobile/navigation.md` § Global entries outside the tab bar);
+    // `app/(tabs)/ask.tsx` exists only to back a frozen `Tabs.Screen`
+    // registration and says so in its own header comment. Shooting the route photographs a deliberately bare shell — the
+    // pill on s04 is where a member actually opens this.
     route: "/",
     label: "s17 — Ask sheet over Chat home, answered with citations",
     async act(page) {
@@ -275,15 +299,7 @@ const APP_SCREENS = [
       await page.getByText("general", { exact: true }).first().click();
       await page.waitForTimeout(2000);
     },
-    // Two things this predicate must not be phrased as. Not "CHANNELS has
-    // gone": React Navigation keeps the tab's index screen mounted under the
-    // pushed thread, so the channel list stays in `innerText` throughout. And
-    // not `innerText.includes("Message")` for the composer: a placeholder is an
-    // attribute, so it never appears in `innerText` at all and the wait can
-    // only ever time out. "Thread" is text, and only this route renders it.
-    ready: () =>
-      document.body.innerText.includes("Thread") &&
-      Boolean(document.querySelector('[placeholder="Message"]')),
+    ready: GENERAL_THREAD_SHOWN,
     expectRoute: "/chat-thread",
   },
   {
@@ -324,10 +340,11 @@ const STORE_SCREENS = [
     slug: "01-chat-home",
     route: "/",
     label: "Chat home — chapter channels, unread counts, UP NEXT",
-    // CHANNELS alone is the channels query; UP NEXT and the unread badges come
-    // from separate queries (events/tasks, unread counts), so wait for both.
+    // The #general row alone is the channels query (`GENERAL_ROW_SHOWN` says
+    // why not a section header); UP NEXT and the unread badges come from
+    // separate queries (events/tasks, unread counts), so wait for both.
     ready: () =>
-      document.body.innerText.includes("CHANNELS") &&
+      Boolean(document.querySelector('[aria-label^="#general"]')) &&
       document.body.innerText.includes("UP NEXT") &&
       /\n\d+\n/.test(document.body.innerText),
   },
@@ -339,10 +356,7 @@ const STORE_SCREENS = [
       await page.getByText("general", { exact: true }).first().click();
       await page.waitForTimeout(2000);
     },
-    // Why these two and not something simpler: see `03-chat-thread` above.
-    ready: () =>
-      document.body.innerText.includes("Thread") &&
-      Boolean(document.querySelector('[placeholder="Message"]')),
+    ready: GENERAL_THREAD_SHOWN,
     expectRoute: "/chat-thread",
   },
   {
@@ -391,8 +405,8 @@ const STORE_SCREENS = [
 
 /**
  * Whether any Ask surface is on screen: the ✦ glyph, the pill's accessible
- * name, or a leaf whose whole text is "Ask" (the pill's label, or the tab
- * navigator's title on the `ask` route). Runs in the page.
+ * name, or a leaf whose whole text is "Ask" (the pill's label, or the `ask`
+ * route's own title when the build has Ask). Runs in the page.
  */
 const ASK_ON_SCREEN = () =>
   document.body.innerText.includes("✦") ||
@@ -419,15 +433,15 @@ async function signIn(page) {
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByText("Sign in", { exact: true }).last().click();
 
-  // The chapter name in the header is the first thing that proves the whole
-  // chain worked: session persisted, token mirrored, API accepted the Bearer.
+  // A loaded channel row is the first thing that proves the whole chain
+  // worked: session persisted, token mirrored, API accepted the Bearer.
   // A seeded login has accepted no Terms (#2302), so the auth gate may ask
   // first, on /terms; agree for it and carry on to the home the shots are of.
   await waitFor(
     page,
     "signed-in home or the Terms prompt (is EXPO_PUBLIC_WEB_SECURE_STORE=1 set?)",
     (prompt) =>
-      document.body.innerText.includes("CHANNELS") ||
+      Boolean(document.querySelector('[aria-label^="#general"]')) ||
       document.body.innerText.includes(prompt),
     60_000,
     TERMS_PROMPT_TITLE,
@@ -436,7 +450,7 @@ async function signIn(page) {
   await waitFor(
     page,
     "signed-in home",
-    () => document.body.innerText.includes("CHANNELS"),
+    GENERAL_ROW_SHOWN,
     60_000,
   );
 }

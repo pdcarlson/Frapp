@@ -41,6 +41,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { ChapterMark } from "@/components/chapter-mark";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
@@ -48,6 +49,7 @@ import { ToggleChips } from "@/components/filter-chips";
 import { ChannelRow, UnreadBadge } from "@/components/chat/channel-row";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
   hiddenChannels,
@@ -90,6 +92,9 @@ export default function ChatHomeScreen() {
   // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
   // for s19.
   const askSheetRef = useRef<BottomSheetModal>(null);
+  // Chat home is titled by the chapter, its mark and name, not by the word
+  // "Chat" (`components/chapter-mark.tsx`).
+  const { chapterName } = useChapterBranding();
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
@@ -249,7 +254,8 @@ export default function ChatHomeScreen() {
 
   return (
     <ScreenShell
-      title="Chat"
+      title={chapterName ?? "Frapp"}
+      titleMark={<ChapterMark />}
       subtitle="Your chapter's channels and direct messages."
       headerAction={
         // No pill at all in a build without Ask (#2259): `AskSheet` renders
