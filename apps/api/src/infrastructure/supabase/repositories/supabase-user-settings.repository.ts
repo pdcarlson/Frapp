@@ -5,6 +5,7 @@ import type { IUserSettingsRepository } from '#domain/repositories/notification.
 import type { UserSettings } from '#domain/entities/notification.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { fetchAllPages } from '../supabase.utils';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * Request size for a batched settings read. One row per user, so a 100-id
@@ -27,7 +28,7 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -69,7 +70,7 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return result;
   }
 }

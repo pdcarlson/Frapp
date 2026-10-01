@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type { ChapterDocumentFolder } from '#domain/entities/chapter-document.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseChapterDocumentFolderRepository implements IChapterDocumentFolderRepository {
@@ -22,7 +23,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
       .eq('chapter_id', chapterId)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -36,7 +37,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -50,7 +51,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
       .eq('chapter_id', chapterId)
       .eq('name', name)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -65,7 +66,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
       .insert(row)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -81,7 +82,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
       .eq('chapter_id', chapterId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -91,6 +92,6 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

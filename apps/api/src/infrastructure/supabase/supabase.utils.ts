@@ -1,3 +1,8 @@
+import {
+  type PostgrestErrorRecord,
+  SupabaseQueryError,
+} from './supabase-query-error';
+
 export function escapeFilterValue(value: string): string {
   // PostgREST string quoting: surround with double quotes and escape internal
   // backslashes and double quotes.
@@ -23,7 +28,7 @@ export function escapeLikePattern(value: string): string {
 /** The shape every PostgREST query resolves to, narrowed to what paging needs. */
 export interface PagedQueryResult<T> {
   data: T[] | null;
-  error: unknown;
+  error: PostgrestErrorRecord | null;
 }
 
 /**
@@ -60,9 +65,10 @@ const MAX_PAGED_ROWS = 1_000_000;
  * see.
  *
  * Errors are **thrown**, never swallowed, so partial reads cannot be mistaken
- * for complete ones. A caller that wants a different policy expresses it at its
- * own call site (`scheduled-jobs.repository.ts` catches and returns `[]`;
- * `report.service.ts` translates the error inside its own `page` callback).
+ * for complete ones. A failed page throws a `SupabaseQueryError`. A caller that
+ * wants a different policy expresses it at its own call site
+ * (`scheduled-jobs.repository.ts` catches and returns `[]`;
+ * `chat-notification-preference.repository.ts` degrades one chunk).
  *
  * @param limit Optional ceiling on rows read. Callers that need to distinguish
  * "complete" from "stopped early" pass `limit + 1` and compare the row count
@@ -79,9 +85,9 @@ export async function fetchAllPages<T>(
     // Terminating only on an empty page means a backend that ignored the
     // window would hand back a full page forever, so the loop is bounded too —
     // the same guard, for the same reason, as `listEntries` in
-    // `infrastructure/storage/supabase-storage.service.ts`. Three of the four
-    // callers pass no `limit`, and two of them run inside a cron; failing
-    // loudly at an absurd row count beats hanging a tick.
+    // `infrastructure/storage/supabase-storage.service.ts`. Most callers pass
+    // no `limit`, and the scheduled sweeps among them run inside a cron;
+    // failing loudly at an absurd row count beats hanging a tick.
     if (rows.length > MAX_PAGED_ROWS) {
       throw new Error(
         `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,
@@ -89,13 +95,10 @@ export async function fetchAllPages<T>(
     }
     const to = Math.min(from + pageSize, ceiling) - 1;
     const { data, error } = await page(from, to);
-    // Rethrown verbatim, not wrapped: a PostgREST error is a plain object
-    // carrying `code`/`details`/`hint`, and callers depend on those fields —
-    // `supabase-discord-import.repository.ts` parses the quota violation out of
-    // one. Wrapping it in an Error would satisfy the lint rule by destroying
-    // the information the callers actually read.
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    if (error) throw error;
+    // Wrapped like every other query failure (#1264). The wrapper keeps `code`
+    // and `hint`, which is what a caller branching on the failure reads, and
+    // drops `details`, the row values.
+    if (error) throw new SupabaseQueryError(error);
 
     const batch = data ?? [];
     rows.push(...batch);
