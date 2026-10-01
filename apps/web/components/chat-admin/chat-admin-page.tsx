@@ -32,6 +32,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import {
   Select,
   SelectContent,
@@ -50,6 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   anyReadUncached,
+  readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { PageHeader } from "@/components/layout/page-header";
@@ -588,19 +590,16 @@ function ChatAdminBody() {
       */}
       <section aria-labelledby="ca-channels-label" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h2
-              id="ca-channels-label"
-              className={`${EYEBROW} truncate text-muted-foreground`}
-            >
-              Channels
-            </h2>
-            {channels.length > 0 ? (
-              <p className="shrink-0 text-caption text-muted">
-                {channels.length} channel{channels.length === 1 ? "" : "s"}
-              </p>
-            ) : null}
-          </div>
+          <SectionLabel
+            id="ca-channels-label"
+            count={
+              channels.length > 0
+                ? `${channels.length} channel${channels.length === 1 ? "" : "s"}`
+                : null
+            }
+          >
+            Channels
+          </SectionLabel>
           <Dialog
             open={createDialogOpen}
             onOpenChange={(open) => {
@@ -970,13 +969,11 @@ function ChatAdminBody() {
                       The nested family, so the three states in this slot
                       read as one, and Retry is the family's 44px control.
                       Offline first, and both ways a read goes offline
-                      (`anyReadUncached` in async-states.tsx): it pauses, or,
+                      (`readIsOffline` in async-states.tsx): it pauses, or,
                       with the API unreachable or a page restored offline, it
                       fails, which would otherwise blame chapter access.
                     */}
-                    {(isOffline && anyReadUncached(pinsQuery)) ||
-                    (pinsQuery.data === undefined &&
-                      pinsQuery.fetchStatus === "paused") ? (
+                    {readIsOffline(isOffline, pinsQuery) ? (
                       <NestedOffline
                         title="Pins unavailable offline"
                         description="Reconnect to load this channel's pins."
@@ -1074,20 +1071,16 @@ function ChatAdminBody() {
       </section>
 
       <section aria-labelledby="ca-categories-label" className="space-y-3">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h2
-            id="ca-categories-label"
-            className={`${EYEBROW} truncate text-muted-foreground`}
-          >
-            Categories
-          </h2>
-          {categories.length > 0 ? (
-            <p className="shrink-0 text-caption text-muted">
-              {categories.length} categor
-              {categories.length === 1 ? "y" : "ies"}
-            </p>
-          ) : null}
-        </div>
+        <SectionLabel
+          id="ca-categories-label"
+          count={
+            categories.length > 0
+              ? `${categories.length} categor${categories.length === 1 ? "y" : "ies"}`
+              : null
+          }
+        >
+          Categories
+        </SectionLabel>
         {categories.length === 0 ? (
           <NestedEmpty
             title="No categories yet"

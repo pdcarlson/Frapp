@@ -504,7 +504,7 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
 | Loading (permission grid) | — | `Loading permissions…` |
 | Unavailable (permission grid) | — | `Couldn't load the permission catalog. You may be missing the members:view permission it requires. Existing selections are unaffected; ask your chapter president for access to change them.` (nothing loaded; a failed refresh keeps the loaded grid) |
-| Offline (permission grid) | — | `Offline — can't load the permission list. Existing selections are unaffected; reconnect to change them.` |
+| Offline (permission grid) | — | `Can't load the permission list while offline. Existing selections are unaffected; reconnect to change them.` |
 | Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
 | Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |

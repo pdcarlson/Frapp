@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useDiscordImportProgress } from "@repo/hooks";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { readIsOffline } from "@/components/shared/async-states";
 import {
   NestedError,
   NestedLoading,
@@ -75,12 +75,9 @@ export function ImportWatchPanel({
   const { isOffline } = useNetwork();
 
   // Offline with nothing read, either way a read goes offline
-  // (`anyReadUncached` in async-states.tsx): paused, it read as loading until
+  // (`readIsOffline` in async-states.tsx): paused, it read as loading until
   // the link came back; failed (the API unreachable), as a failure.
-  if (
-    (isOffline && anyReadUncached(progress)) ||
-    (progress.isPending && progress.fetchStatus === "paused")
-  ) {
+  if (readIsOffline(isOffline, progress)) {
     return (
       <NestedOffline
         title="Channels unavailable offline"

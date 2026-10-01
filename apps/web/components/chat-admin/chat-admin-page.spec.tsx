@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 import { networkMock } from "@/tests/network";
 
@@ -171,6 +172,14 @@ describe("ChatAdminPage — row heights", () => {
       .closest("li") as HTMLElement;
     expect(categoryRow.className).toContain("min-h-11");
     expect(categoryRow.className).not.toMatch(/\bpy-/);
+
+    // Neither row has padding or a border of its own, so the lists' dividers
+    // are what separate them.
+    for (const item of [channelRow, categoryRow]) {
+      expect((item.closest("ul") as HTMLElement).className).toContain(
+        denseListClassName,
+      );
+    }
   });
 });
 
@@ -262,13 +271,13 @@ describe("ChatAdminPage — the channel structure's states", () => {
       "can't load offline",
       { isError: true },
       true,
-      /Offline — can.t load the permission list/,
+      /Can.t load the permission list while offline/,
     ],
     [
       "is paused offline",
       { isPending: true, fetchStatus: "paused" },
       true,
-      /Offline — can.t load the permission list/,
+      /Can.t load the permission list while offline/,
     ],
   ])(
     "says so when a role-gated channel's catalog %s, on the page surface",

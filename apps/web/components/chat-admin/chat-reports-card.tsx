@@ -26,7 +26,7 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  anyReadUncached,
+  readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import {
@@ -340,8 +340,7 @@ function ReportListBody({
   const { nameFor } = useMemberDisplayNames();
   const now = useNow();
 
-  const paused = query.isPending && query.fetchStatus === "paused";
-  if ((isOffline && anyReadUncached(query)) || paused) {
+  if (readIsOffline(isOffline, query)) {
     return (
       <NestedOffline
         title={copy.offlineTitle}

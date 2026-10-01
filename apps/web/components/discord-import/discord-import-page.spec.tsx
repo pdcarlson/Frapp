@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /**
@@ -24,6 +25,8 @@ const { hooks } = vi.hoisted(() => ({
     // (`listCached: false`) it draws the list's error state.
     listError: false,
     listCached: true,
+    // When the list last loaded, against the detail read's own time.
+    listUpdatedAt: 0,
     offline: false,
     loading: false,
     // The page's query string, for the `?wizard=bot` resume.
@@ -50,6 +53,7 @@ vi.mock("@repo/hooks", () => ({
     isLoading: hooks.loading,
     isError: hooks.listError,
     fetchStatus: "idle",
+    dataUpdatedAt: hooks.listUpdatedAt,
     refetch: vi.fn(),
   }),
   useDiscordImport: (id: string | null) => hooks.detail(id),
@@ -129,6 +133,7 @@ beforeEach(() => {
   hooks.loading = false;
   hooks.search = "";
   hooks.detail.mockImplementation(() => ({ data: null }));
+  hooks.listUpdatedAt = 0;
   hooks.clear.mockResolvedValue(undefined);
   hooks.remove.mockResolvedValue(undefined);
   hooks.rows = [
@@ -208,6 +213,10 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
       .closest("li") as HTMLElement;
     expect(item.className).toContain("min-h-11");
     expect(item.className).not.toMatch(/\b(rounded|border)/);
+    // The list's own dividers separate the rows instead.
+    expect((item.closest("ul") as HTMLElement).className).toContain(
+      denseListClassName,
+    );
   });
 
   it("says the rows are the last that loaded when a refresh fails", () => {
@@ -285,6 +294,43 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
     expect(screen.getByText(IMPORTS_STALE)).toBeInTheDocument();
   });
 
+  // Both poll during a purge. A detail poll that keeps failing must not hold
+  // the row on its last copy once the list has loaded a fresher one.
+  it("shows the list's copy of the polled row when the list loaded since", () => {
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    hooks.rows = [row("gone", "completed", "Deleted server")];
+    const { rerender } = render(<DiscordImportPage />);
+    // Details makes it the polled import.
+    fireEvent.click(
+      rowOf("Deleted server").getByRole("button", { name: "Details" }),
+    );
+
+    // Deleted since: the list has loaded "purged", while the detail poll
+    // fails and holds its last copy, "purging".
+    hooks.rows = [row("gone", "purged", "Deleted server")];
+    hooks.listUpdatedAt = 2_000;
+    hooks.detail.mockImplementation((id) =>
+      id === "gone"
+        ? {
+            data: row("gone", "purging", "Deleted server"),
+            isError: true,
+            dataUpdatedAt: 1_000,
+            refetch: vi.fn(),
+          }
+        : { data: null },
+    );
+    rerender(<DiscordImportPage />);
+
+    expect(
+      rowOf("Deleted server").getByRole("button", { name: /Clear/ }),
+    ).toBeInTheDocument();
+  });
+
   // A resume is spent once its wizard closes, whichever way it closes.
   it.each([
     ["is cancelled", "Close wizard"],
@@ -318,18 +364,25 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
 
   // The wizard holds every choice in its own state, so a branch that unmounts
   // it sends the admin back to the first step with nothing kept.
-  it("keeps an open wizard through a list read that fails with nothing cached", () => {
+  it.each([
+    ["fails with nothing cached", { listError: true }, "Couldn't load imports"],
+    [
+      "goes offline with nothing cached",
+      { offline: true },
+      "Imports unavailable offline",
+    ],
+    ["reloads with nothing cached", { loading: true }, "Loading imports..."],
+  ])("keeps an open wizard through a list read that %s", (_, state, branch) => {
     const { container, rerender } = render(<DiscordImportPage />);
     fireEvent.click(screen.getByRole("button", { name: "New import" }));
     expect(screen.getByTestId("wizard")).toBeInTheDocument();
     // On the page surface, not in the card it used to sit in.
     expect(cardFilledContainers(container)).toEqual([]);
 
-    hooks.listError = true;
-    hooks.listCached = false;
+    Object.assign(hooks, state, { listCached: false });
     rerender(<DiscordImportPage />);
     expect(screen.getByTestId("wizard")).toBeInTheDocument();
-    expect(screen.queryByText("Couldn't load imports")).toBeNull();
+    expect(screen.queryByText(branch)).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { formatLocaleDateTime } from "@repo/formatting";
 import { networkMock } from "@/tests/network";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 
 /*
@@ -175,8 +176,11 @@ describe("ChatReportsCard — the section", () => {
   // A flush list, not a bordered box per report (#2500).
   it("draws each report as a flush row", () => {
     render(<ChatReportsCard />);
-    expect(row(/nobody wants you here/).className).not.toMatch(
-      /\b(rounded|border)/,
+    const item = row(/nobody wants you here/);
+    expect(item.className).not.toMatch(/\b(rounded|border)/);
+    // The list's own dividers separate the rows instead.
+    expect((item.closest("ul") as HTMLElement).className).toContain(
+      denseListClassName,
     );
   });
 });

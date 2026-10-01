@@ -1759,6 +1759,14 @@ describe("ConnectStep — its async states, on the page surface (#2500)", () => 
     expect(
       screen.queryByText("Couldn't check the Discord connection"),
     ).toBeNull();
+    // And says it is the last answer: the bot may have been removed since.
+    expect(
+      screen
+        .getByText(
+          "Couldn't recheck the Discord connection. This is the last answer that loaded.",
+        )
+        .closest('[role="status"]'),
+    ).not.toBeNull();
   });
 
   it("announces the confirm while it runs", () => {
@@ -1995,6 +2003,8 @@ describe("ConnectStep — confirming what the callback parked", () => {
           onConnected={onConnected}
           accessGiven={accessGiven}
           onAccessGivenChange={setAccessGiven}
+          confirmError={null}
+          onConfirmErrorChange={() => {}}
         />
       );
     }
@@ -2033,6 +2043,37 @@ describe("ConnectStep — confirming what the callback parked", () => {
       ).toBeInTheDocument(),
     );
     expect(confirmConnect).not.toHaveBeenCalled();
+  });
+
+  it("still shows why the confirmation was refused after Back and Continue", async () => {
+    // A refused token is not sent again, so the step that comes back has to
+    // be told the reason rather than learn it from a second refusal.
+    confirmConnect.mockRejectedValueOnce(
+      Object.assign(
+        new Error("That Discord confirmation does not belong to this chapter."),
+        { statusCode: 400 },
+      ),
+    );
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+    expect(
+      await screen.findByText(/does not belong to this chapter/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      await screen.findByText(/does not belong to this chapter/),
+    ).toBeInTheDocument();
+    expect(confirmConnect).toHaveBeenCalledTimes(1);
   });
 
   it("shows the reason in place when the confirmation is refused", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   useBeginDiscordConnect,
   useConfirmDiscordConnect,
@@ -18,7 +18,8 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { readIsOffline } from "@/components/shared/async-states";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useToast } from "@/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
@@ -53,6 +54,8 @@ export function ConnectStep({
   onAccessGivenChange,
   handshake = null,
   onHandshakeSpent,
+  confirmError,
+  onConfirmErrorChange,
 }: {
   onConnected: () => void;
   /**
@@ -84,6 +87,13 @@ export function ConnectStep({
    * a refused 400, and a connection that did commit shows as connected.
    */
   onHandshakeSpent?: (spent: boolean) => void;
+  /**
+   * Why the last confirm was refused, held by the wizard: Back unmounts this
+   * step, and a refused token is not sent again, so a revisit would otherwise
+   * show the plain "not connected" pitch with the reason gone.
+   */
+  confirmError: string | null;
+  onConfirmErrorChange: (message: string | null) => void;
 }) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
@@ -106,7 +116,6 @@ export function ConnectStep({
   // twice, which would leave the second attempt reporting a failure over a
   // connection that succeeded.
   const attempted = useRef(false);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!handshake || attempted.current) return;
@@ -114,20 +123,20 @@ export function ConnectStep({
     onHandshakeSpent?.(true);
     confirmConnect
       .mutateAsync({ handshake })
-      .then(() => setConfirmError(null))
+      .then(() => onConfirmErrorChange(null))
       .catch((error: unknown) => {
         // The API answers a spent, expired or other chapter's token with one
         // 400, which only a fresh authorization gets past. Any other failure
         // may have left the token unspent (see `onHandshakeSpent`).
         if (statusOf(error) !== 400) onHandshakeSpent?.(false);
-        setConfirmError(
+        onConfirmErrorChange(
           getErrorMessage(
             error,
             "That Discord authorization could not be confirmed for this chapter.",
           ),
         );
       });
-  }, [handshake, confirmConnect, onHandshakeSpent]);
+  }, [handshake, confirmConnect, onHandshakeSpent, onConfirmErrorChange]);
 
   async function startConnect() {
     try {
@@ -161,14 +170,11 @@ export function ConnectStep({
   }
 
   // Offline with nothing read, both ways a read goes offline
-  // (`anyReadUncached` in async-states.tsx): it pauses, and used to sit on
+  // (`readIsOffline` in async-states.tsx): it pauses, and used to sit on
   // "Checking…" for as long as the link was down; or, with the API
   // unreachable, it fails, which read as a failure to check rather than as
   // being offline.
-  if (
-    (isOffline && anyReadUncached(connection)) ||
-    (connection.isPending && connection.fetchStatus === "paused")
-  ) {
+  if (readIsOffline(isOffline, connection)) {
     return (
       <NestedOffline
         title="Can't check Discord offline"
@@ -201,9 +207,20 @@ export function ConnectStep({
     );
   }
 
+  // A refetch that failed keeps the last answer above, which may no longer
+  // hold (the bot removed elsewhere since), so say it is the last one.
+  const staleNotice = (
+    <StaleReadNotice
+      stale={connection.isError && connection.data !== undefined}
+      message="Couldn't recheck the Discord connection. This is the last answer that loaded."
+      onRetry={() => void connection.refetch()}
+    />
+  );
+
   if (connected) {
     return (
       <div className="space-y-4">
+        {staleNotice}
         <div className="rounded-lg border border-border p-4">
           <p className="text-sm font-medium">
             Connected to {connection.data?.guild_name ?? "your Discord server"}
@@ -286,6 +303,7 @@ export function ConnectStep({
 
   return (
     <div className="space-y-4">
+      {staleNotice}
       {confirmError ? (
         // Shown rather than toasted: the admin is looking at a step that says
         // "not connected" after having just authorized, and needs the reason

@@ -128,6 +128,9 @@ export function ImportWizard({
   // the API refuses (a "Confirming" flash over a failed request). Handed back
   // if the confirm failed before the server spent it.
   const [unspentHandshake, setUnspentHandshake] = useState(handshake);
+  // Why the confirm was refused, kept here with the token: the step unmounts
+  // on Back, and a refused token is not sent again to show it once more.
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [botAccessGiven, setBotAccessGiven] = useState(false);
   const [importId, setImportId] = useState<string | null>(null);
@@ -643,6 +646,8 @@ export function ImportWizard({
             onHandshakeSpent={(spent) =>
               setUnspentHandshake(spent ? null : handshake)
             }
+            confirmError={confirmError}
+            onConfirmErrorChange={setConfirmError}
             accessGiven={botAccessGiven}
             onAccessGivenChange={setBotAccessGiven}
             onConnected={() => setStep("consent")}

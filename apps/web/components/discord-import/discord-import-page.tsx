@@ -16,7 +16,7 @@ import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { EYEBROW } from "@/components/ui/typography";
+import { SectionLabel } from "@/components/shared/section-label";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   anyReadUncached,
@@ -342,6 +342,12 @@ function DiscordImportList({
   // detail's data: a first fetch that fails leaves no data and arms no poll,
   // and the row then shows the list's last copy, which is just as stale.
   const activeStale = active.isError && rows.some((row) => row.id === activeId);
+  // The polled import's row takes its detail copy, which polls faster than
+  // the list, unless the list loaded since: both poll during a purge, and a
+  // detail poll that keeps failing would otherwise hold the row on its last
+  // copy (still "purging", no Clear) while the list already says "purged".
+  const detailIsFreshest =
+    (active.dataUpdatedAt ?? 0) >= (imports.dataUpdatedAt ?? 0);
 
   function retryReads() {
     void imports.refetch();
@@ -394,19 +400,16 @@ function DiscordImportList({
     // with nothing imported yet is the one reader who needs it.
     <section aria-labelledby="discord-imports-label" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h2
-            id="discord-imports-label"
-            className={`${EYEBROW} truncate text-muted-foreground`}
-          >
-            Imports
-          </h2>
-          {rows.length > 0 ? (
-            <p className="shrink-0 text-caption text-muted">
-              {rows.length} import{rows.length === 1 ? "" : "s"}
-            </p>
-          ) : null}
-        </div>
+        <SectionLabel
+          id="discord-imports-label"
+          count={
+            rows.length > 0
+              ? `${rows.length} import${rows.length === 1 ? "" : "s"}`
+              : null
+          }
+        >
+          Imports
+        </SectionLabel>
         <Button onClick={() => setWizardOpen(true)}>New import</Button>
       </div>
       {/*
@@ -430,7 +433,8 @@ function DiscordImportList({
         // and the list's own dividers rather than a bordered box each.
         <ul className={denseListClassName}>
           {rows.map((row) => {
-            const live = activeRow?.id === row.id ? activeRow : row;
+            const live =
+              activeRow?.id === row.id && detailIsFreshest ? activeRow : row;
             // A deleting row counts its messages down (#2944); the meter
             // then shows how much is gone rather than how much came in.
             const deletion = purgeLine(live);
