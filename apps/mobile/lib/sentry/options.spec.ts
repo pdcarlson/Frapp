@@ -141,6 +141,16 @@ describe("shipped options", () => {
     expect(typeof options.beforeSendTransaction).toBe("function");
   });
 
+  it("turns off the iOS SDK's breadcrumb data no JS hook can reach (#3104)", async () => {
+    // sentry-cocoa's own `http` crumb keeps a search's query as `http.query`,
+    // and its `touch` crumb names a control by its `testID`. Neither passes
+    // `beforeBreadcrumb`, so the native SDK must not record them at all.
+    const { buildMobileSentryOptions } = await loadOptions();
+    const options = buildMobileSentryOptions(DSN);
+    expect(options.enableNetworkBreadcrumbs).toBe(false);
+    expect(options.reportAccessibilityIdentifier).toBe(false);
+  });
+
   it("scrubs a member email out of an error event", async () => {
     const { buildMobileSentryOptions } = await loadOptions();
     const beforeSend = buildMobileSentryOptions(DSN).beforeSend!;

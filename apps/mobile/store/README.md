@@ -585,10 +585,14 @@ Where each answer comes from:
 - **Search History is declared not collected, which turns on a retention question
   nobody has answered.** Two free-text boxes in the binary send the typed query to our
   own API — the directory (`GET /v1/members/search`) and the chapter finder
-  (`GET /v1/chapter-directory/search`). Neither reaches Sentry (the scrubber strips query
-  strings structurally and in free text) or PostHog (no client capture at all), so the
-  only way this becomes "collected" is if the API retains query strings in access logs.
-  Confirm that it does not, or declare the row.
+  (`GET /v1/chapter-directory/search`). Neither reaches PostHog (no client capture at all)
+  or Sentry. A JS event's scrubber strips query strings structurally and in free text. A
+  native crash report never passes that scrubber, so the query is cut before the native
+  SDK sees it: the app's request breadcrumbs lose their query string as they are recorded,
+  and the iOS SDK's own request breadcrumbs, which would keep it, are off (#3104;
+  `spec/behavior/observability.md` § Error Tracking). So the only way this becomes
+  "collected" is if the API retains query strings in access logs. Confirm that it does
+  not, or declare the row.
 - **Purchases is declared not collected** although the Dues tab renders the member's
   invoice ledger and payment history. The answer that engages Apple's definition is that
   what the ledger records are real-world membership dues owed to the member's own
