@@ -122,7 +122,12 @@ describe("purgeProgress (#2944)", () => {
   });
 
   it("is null for an import that is not deleting", () => {
-    for (const status of ["completed", "purged", "failed", "running"] as const) {
+    for (const status of [
+      "completed",
+      "purged",
+      "failed",
+      "running",
+    ] as const) {
       expect(purgeProgress(row({ status, purged_messages: 3 }))).toBeNull();
     }
   });
