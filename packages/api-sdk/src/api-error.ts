@@ -76,6 +76,33 @@ export function codeOf(error: unknown): string | null {
 }
 
 /**
+ * Throws unless the response was a 2xx, with the status on what it throws.
+ *
+ * openapi-fetch 0.17 reports a non-2xx whose body is empty as `error:
+ * undefined` (a `Content-Length: 0` failure) or `error: ""` (an empty text
+ * body), both falsy, so `if (error) throw error` reads that failure as a
+ * success. The status is the truth. What is thrown always carries it where
+ * {@link statusOf} reads it: a body that names none gets `statusCode` from the
+ * response, which also covers an edge's JSON or HTML refusal that isn't Nest's
+ * shape. A non-empty string body is kept as `message`.
+ */
+export function throwUnlessOk(result: {
+  error?: unknown;
+  response: { ok: boolean; status: number };
+}): void {
+  if (result.response.ok) return;
+  const { error } = result;
+  const statusCode = result.response.status;
+  if (error !== null && typeof error === "object") {
+    throw statusOf(error) === undefined ? { ...error, statusCode } : error;
+  }
+  throw {
+    statusCode,
+    message: typeof error === "string" && error.length > 0 ? error : undefined,
+  };
+}
+
+/**
  * Statuses in the 4xx band that an INTERMEDIARY emits after the origin may
  * already have processed the request. They look like refusals and are not: a
  * proxy request timeout is the same "response lost after a possible write" event

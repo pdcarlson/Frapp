@@ -6,6 +6,7 @@ import {
   isDefinitiveClientError,
   randomClientId,
   statusOf,
+  throwUnlessOk,
 } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -139,19 +140,6 @@ function mayHaveCommitted(error: unknown): boolean {
 }
 
 /**
- * The error body with the response status on it. Nest's bodies carry
- * `statusCode` already. A gateway's HTML page parses to a string, and an empty
- * body to `""` or `undefined`, and none of those carries a status: without it
- * `mayHaveCommitted` could not tell an edge's 403 from a dropped connection.
- */
-function withResponseStatus(error: unknown, status: number): unknown {
-  if (statusOf(error) !== undefined) return error;
-  return typeof error === "object" && error !== null
-    ? { ...error, status }
-    : { status };
-}
-
-/**
  * `POST /v1/points/adjust` with an idempotency key (#1906), so a response lost
  * after the ledger row committed is safe to retry. The server dedupes on
  * `(chapter_id, client_message_id)` and answers a replay with the original row
@@ -173,7 +161,11 @@ function withResponseStatus(error: unknown, status: number): unknown {
  *   attempt, so the key is kept; only a 409, which says the key was used for a
  *   different adjustment, still releases it.
  * - `reset()` releases it too. The dialog calls it on open, so a fresh draft is
- *   a new adjustment, as re-typing `/points` is.
+ *   a new adjustment, as re-typing `/points` is. Not while an adjustment is
+ *   still in flight: TanStack's reset detaches the observer without stopping
+ *   the mutation's retries, so dropping the key then would let a resubmit run
+ *   beside them under a fresh one. The reopened dialog stays on the pending
+ *   adjustment instead.
  *
  * Retries go only to failures that may have committed, at most twice (the web
  * client's `retry: 2` default, made conditional): retrying a definitive 4xx
@@ -189,6 +181,8 @@ export function useAdjustPoints() {
     /** An attempt under this key failed in a way that may have committed. */
     uncertain: boolean;
   } | null>(null);
+  /** Adjustments between `onMutate` and `onSettled`, retries included. */
+  const inFlight = useRef(0);
 
   function keyFor(body: AdjustPointsBody): string {
     const fingerprint = JSON.stringify([
@@ -220,14 +214,11 @@ export function useAdjustPoints() {
         throw new AdjustmentChapterChangedError();
       }
       try {
-        const { data, error, response } = await client.POST(
-          "/v1/points/adjust",
-          { body },
-        );
-        // `response.ok`, not `error`: openapi-fetch returns an empty error
+        const result = await client.POST("/v1/points/adjust", { body });
+        // On the status, not `error`: openapi-fetch returns an empty error
         // body as `undefined` or `""`, which would read as a success.
-        if (!response.ok) throw withResponseStatus(error, response.status);
-        return data;
+        throwUnlessOk(result);
+        return result.data;
       } catch (failure) {
         if (
           mayHaveCommitted(failure) &&
@@ -237,6 +228,12 @@ export function useAdjustPoints() {
         }
         throw failure;
       }
+    },
+    onMutate: () => {
+      inFlight.current += 1;
+    },
+    onSettled: () => {
+      inFlight.current -= 1;
     },
     onSuccess: (_data, variables) => {
       release(variables.client_message_id);
@@ -254,6 +251,7 @@ export function useAdjustPoints() {
 
   const { reset: resetMutation } = mutation;
   const reset = useCallback(() => {
+    if (inFlight.current > 0) return;
     pending.current = null;
     resetMutation();
   }, [resetMutation]);

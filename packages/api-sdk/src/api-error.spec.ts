@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { codeOf, serverMessageOf, statusOf } from "./api-error";
+import {
+  codeOf,
+  isDefinitiveClientError,
+  serverMessageOf,
+  statusOf,
+  throwUnlessOk,
+} from "./api-error";
 import type { ApiErrorBody } from "./api-error";
 
 describe("statusOf", () => {
@@ -76,5 +82,66 @@ describe("codeOf", () => {
     expect(codeOf({ code: 403 })).toBeNull();
     expect(codeOf({})).toBeNull();
     expect(codeOf(null)).toBeNull();
+  });
+});
+
+describe("throwUnlessOk", () => {
+  const failed = (status: number) => ({ ok: false, status });
+
+  function thrown(result: Parameters<typeof throwUnlessOk>[0]): unknown {
+    try {
+      throwUnlessOk(result);
+    } catch (error) {
+      return error;
+    }
+    return "did not throw";
+  }
+
+  it("passes a 2xx through, whatever the body", () => {
+    expect(
+      thrown({ error: undefined, response: { ok: true, status: 201 } }),
+    ).toBe("did not throw");
+  });
+
+  // openapi-fetch's two shapes for an empty error body, both falsy.
+  it.each([undefined, ""])("throws an empty error body (%j) with its status", (error) => {
+    expect(statusOf(thrown({ error, response: failed(504) }))).toBe(504);
+  });
+
+  it("keeps a Nest body as it is", () => {
+    const body = { statusCode: 403, message: "Forbidden", error: "Forbidden" };
+    expect(thrown({ error: body, response: failed(403) })).toBe(body);
+  });
+
+  it("stamps the response status on an object body that names none", () => {
+    // An edge's JSON refusal, not Nest's shape.
+    const error = thrown({ error: { message: "Forbidden" }, response: failed(403) });
+    expect(statusOf(error)).toBe(403);
+    expect(serverMessageOf(error)).toBe("Forbidden");
+  });
+
+  it("keeps a string body as the message", () => {
+    const error = thrown({ error: "<html>403</html>", response: failed(403) });
+    expect(statusOf(error)).toBe(403);
+    expect(serverMessageOf(error)).toBe("<html>403</html>");
+  });
+});
+
+describe("isDefinitiveClientError", () => {
+  it("counts an origin's 4xx as definitive", () => {
+    expect(isDefinitiveClientError(400)).toBe(true);
+    expect(isDefinitiveClientError(409)).toBe(true);
+    expect(isDefinitiveClientError(429)).toBe(true);
+  });
+
+  it("leaves out what an intermediary emits after a possible commit", () => {
+    for (const status of [408, 499, 460]) {
+      expect(isDefinitiveClientError(status)).toBe(false);
+    }
+  });
+
+  it("is false outside the 4xx band", () => {
+    expect(isDefinitiveClientError(500)).toBe(false);
+    expect(isDefinitiveClientError(201)).toBe(false);
   });
 });

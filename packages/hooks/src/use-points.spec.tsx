@@ -331,4 +331,79 @@ describe("useAdjustPoints", () => {
       name: "AdjustmentChapterChangedError",
     });
   });
+
+  it("mints a fresh key when the chapter changes after a failure", async () => {
+    post.mockResolvedValue(badGateway());
+    const { result, rerender } = render();
+
+    await submit(result);
+    activeChapter = "chapter-b";
+    rerender();
+    await submit(result);
+
+    const keys = sentKeys();
+    expect(keys[3]).not.toBe(keys[0]);
+  });
+
+  it("keeps the key through a chapter-change refusal, for when the treasurer switches back", async () => {
+    let answerFirst!: (value: ReturnType<typeof badGateway>) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+    );
+    const { result, rerender } = render();
+
+    let outcome: Promise<unknown> = Promise.resolve();
+    act(() => {
+      outcome = result.current.mutateAsync(BODY).catch((error) => error);
+    });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [uncertainKey] = sentKeys();
+    activeChapter = "chapter-b";
+    rerender();
+    await act(async () => {
+      answerFirst(badGateway());
+      await outcome;
+    });
+
+    // Back in chapter A, the same adjustment replays the key the first,
+    // possibly committed, attempt used.
+    activeChapter = "chapter-a";
+    rerender();
+    post.mockReset();
+    post.mockResolvedValue(ok());
+    await submit(result);
+
+    expect(sentKeys()).toEqual([uncertainKey]);
+  });
+
+  it("reuses an in-flight adjustment's key if the same grant is submitted beside it", async () => {
+    let answerFirst!: (value: ReturnType<typeof badGateway>) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+    );
+    post.mockResolvedValue(ok());
+    const { result } = render();
+
+    let outcome: Promise<unknown> = Promise.resolve();
+    act(() => {
+      outcome = result.current.mutateAsync(BODY).catch(() => undefined);
+    });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    // The dialog reopens while the first adjustment is still pending, and the
+    // treasurer enters the same grant again.
+    act(() => result.current.reset());
+    await submit(result);
+    await act(async () => {
+      answerFirst(badGateway());
+      await outcome;
+    });
+
+    expect(new Set(sentKeys()).size).toBe(1);
+  });
 });
