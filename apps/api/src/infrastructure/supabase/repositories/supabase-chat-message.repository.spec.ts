@@ -258,7 +258,6 @@ describe('SupabaseChatMessageRepository — findByChannel since (#2807)', () => 
     created_at: `2026-01-01T00:00:0${n}.000Z`,
   });
   const a = (n: number) => inChannel(SINCE_A, '0a', n).id;
-  const TWIN_OF_2 = '0a000000-0000-4000-8000-000000000189';
 
   let repo: SupabaseChatMessageRepository;
 
@@ -269,15 +268,10 @@ describe('SupabaseChatMessageRepository — findByChannel since (#2807)', () => 
           inA({ id: SINCE_A, name: 'general', type: 'PUBLIC' }),
           inB({ id: SINCE_B, name: 'general', type: 'PUBLIC' }),
         ],
-        chat_messages: [
-          ...[1, 2, 3, 4].flatMap((n) => [
-            inChannel(SINCE_A, '0a', n),
-            inChannel(SINCE_B, '0b', n),
-          ]),
-          // Written in the same instant as message 2, as rows in one imported
-          // batch can be.
-          { ...inChannel(SINCE_A, '0a', 2), id: TWIN_OF_2, content: 'twin' },
-        ],
+        chat_messages: [1, 2, 3, 4].flatMap((n) => [
+          inChannel(SINCE_A, '0a', n),
+          inChannel(SINCE_B, '0b', n),
+        ]),
       },
       untenantedTables: ['chat_messages'],
       parentTenant: {
@@ -298,21 +292,11 @@ describe('SupabaseChatMessageRepository — findByChannel since (#2807)', () => 
 
   it('returns everything after the cursor when it fits the page', async () => {
     const messages = await repo.findByChannel(SINCE_A, {
-      since: a(3),
+      since: a(2),
       limit: 50,
     });
 
-    expect(messages.map((m) => m.id)).toEqual([a(4)]);
-  });
-
-  it("returns a row written in the cursor's own instant, which strictly-after would skip for good", async () => {
-    const messages = await repo.findByChannel(SINCE_A, {
-      since: TWIN_OF_2,
-      limit: 50,
-    });
-
-    // The cursor itself is left out; its twin is in.
-    expect(messages.map((m) => m.id)).toEqual([a(4), a(3), a(2)]);
+    expect(messages.map((m) => m.id)).toEqual([a(4), a(3)]);
   });
 
   it("refuses a cursor from another channel rather than answering with this channel's newest page", async () => {

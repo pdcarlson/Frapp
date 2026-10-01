@@ -1177,7 +1177,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 
 ## Reconnect replay
 
-`GET /v1/channels/{id}/messages?since=<message_uuid>&limit=<n>` returns the **newest** `n` messages created at or after that message's instant, newest first, with the message itself left out. It is not the `n` right after it, so a page of exactly `n` rows may not reach back to the cursor (#2807). A row written in the cursor's own instant is included rather than skipped; rows in one imported batch can share one.
+`GET /v1/channels/{id}/messages?since=<message_uuid>&limit=<n>` returns the **newest** `n` messages created after that message, newest first. It is not the `n` right after it, so a page of exactly `n` rows may not reach back to the cursor (#2807). "After" is strictly later `created_at`; no write path today produces a row tied with one a cursor can sit on (#3055).
 
 When no message in the channel has that id (one hard-deleted since, or another channel's), the answer is a 404 with the code `chat.since_not_found` (`CHAT_SINCE_NOT_FOUND_CODE` in `@repo/validation`), not the channel's newest page. The code is what tells it apart from the route's other 404, a channel the caller can't read.
 

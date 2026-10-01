@@ -1,7 +1,7 @@
 // The chat backfill's `since` read against a real PostgREST (#2807).
 //
 // `supabase-chat-message.repository.spec.ts` pins the same contract on the
-// tenant-scope harness, whose `order()`, `limit()` and `gte()` are a fake's.
+// tenant-scope harness, whose `order()`, `limit()` and `gt()` are a fake's.
 // The contract is entirely about how those three combine, so this file asks
 // the real server: the page is the newest `limit` rows after the cursor,
 // newest first, and a cursor that names no message in the channel is refused
@@ -28,8 +28,6 @@ describeIntegration('Chat since read against live PostgREST', () => {
   /** `messageIds[n]` was sent `n` seconds after the first, so higher is newer. */
   const messageIds = [1, 2, 3, 4, 5].map(() => randomUUID());
   const otherChannelMessageId = randomUUID();
-  /** Sent in the same instant as `messageIds[1]`, as an imported batch can be. */
-  const twinOfOne = randomUUID();
 
   const assertOk = (label: string, error: { message: string } | null) => {
     if (error) throw new Error(`seed ${label}: ${error.message}`);
@@ -93,15 +91,6 @@ describeIntegration('Chat since read against live PostgREST', () => {
             created_at: sentAt(n),
           })),
           {
-            id: twinOfOne,
-            channel_id: channelId,
-            sender_id: userId,
-            content: 'twin of message 1',
-            type: 'TEXT',
-            is_deleted: false,
-            created_at: sentAt(1),
-          },
-          {
             id: otherChannelMessageId,
             channel_id: otherChannelId,
             sender_id: userId,
@@ -122,7 +111,7 @@ describeIntegration('Chat since read against live PostgREST', () => {
     await supabase
       .from('chat_messages')
       .delete()
-      .in('id', [...messageIds, twinOfOne, otherChannelMessageId]);
+      .in('id', [...messageIds, otherChannelMessageId]);
     await supabase
       .from('chat_channels')
       .delete()
@@ -147,20 +136,6 @@ describeIntegration('Chat since read against live PostgREST', () => {
     });
 
     expect(rows.map((row) => row.id)).toEqual([messageIds[4], messageIds[3]]);
-  });
-
-  it("returns a row written in the cursor's own instant, which strictly-after would skip for good", async () => {
-    const rows = await repo.findByChannel(channelId, {
-      since: twinOfOne,
-      limit: 50,
-    });
-
-    expect(rows.map((row) => row.id)).toEqual([
-      messageIds[4],
-      messageIds[3],
-      messageIds[2],
-      messageIds[1],
-    ]);
   });
 
   it("refuses a cursor from another channel rather than answering with this channel's newest page", async () => {

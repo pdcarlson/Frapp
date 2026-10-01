@@ -107,14 +107,12 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       if (!pivot) {
         throw new ChatMessageCursorNotFoundError(channelId, options.since);
       }
-      // At or after the pivot's instant, not strictly after: rows written in
-      // one statement can share it (an imported batch carries Discord's
-      // millisecond timestamps), and `gt` would skip the cursor's unreceived
-      // twin for good. The pivot itself is left out; any other tied row the
-      // client already holds dedupes by id.
-      query = query
-        .gte('created_at', pivot.created_at)
-        .neq('id', options.since);
+      // Strictly after the pivot's instant. A row tied with it would be
+      // skipped, but no write path produces one a cursor can sit on: live
+      // rows are single-row inserts, and imported batches never reach a
+      // cursor over Realtime. `gte` was tried and cost more than it guarded
+      // (#3055).
+      query = query.gt('created_at', pivot.created_at);
     }
 
     const { data, error } = await query;

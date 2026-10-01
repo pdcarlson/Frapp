@@ -761,12 +761,12 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     expect(read).toBeNull();
   });
 
-  it("drops a newest row the server no longer holds and folds in the newest page (#2807)", async () => {
+  it("drops the purged rows it holds and reads the newest page when its newest row is gone (#2807)", async () => {
     mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
     const { result } = await mountChannel();
 
-    // msg-150 was purged and its Realtime delete missed, so the server knows
-    // no message to read after.
+    // A purge deleted msg-131 to msg-150 and the thread missed their Realtime
+    // deletes, so the server knows no message to read after msg-150.
     mocks.GET.mockResolvedValueOnce({
       data: undefined,
       error: {
@@ -775,7 +775,7 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
         message: "The since message is not in this channel",
       },
     });
-    mocks.GET.mockResolvedValueOnce(historyPage(101, 149));
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 130));
     let read: number | null | undefined;
     await act(async () => {
       read = await result.current.loadNewer();
@@ -785,10 +785,12 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     expect(mocks.GET.mock.calls[2]![1].params.query).toEqual({
       limit: OLDER_PAGE_LIMIT,
     });
+    // Not just msg-150: a thread left holding msg-149 would key the next
+    // forward read on it and fail again, one row per jump.
     await waitFor(() =>
-      expect(result.current.messages.map((m) => m.id)).not.toContain("msg-150"),
+      expect(result.current.messages.at(-1)?.id).toBe("msg-130"),
     );
-    expect(result.current.messages.at(-1)?.id).toBe("msg-149");
+    expect(result.current.messages).toHaveLength(30);
   });
 
   it("reads what arrived after the newest row and merges it", async () => {

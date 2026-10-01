@@ -51,7 +51,7 @@ import { getOutboxStore } from "./outbox-store";
  * {@link useChatRuntime} from the live scope — a process-wide instance is
  * exactly the shared-device authorship bug that issue fixes. The key-value
  * mirror stays process-wide because what it serves on mobile is the
- * `chat:lastSeen:` backfill cursor, where a stale read widens a backfill
+ * `chat:lastSeen:` backfill cursor, where a stale read costs a re-read
  * rather than misattributing a message; heavy-command notices also pass
  * through it, but mobile never writes one (`spec/ui/mobile/patterns.md`
  * § Chat).
