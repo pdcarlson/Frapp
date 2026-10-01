@@ -219,7 +219,7 @@ describe("check-deploy-config: the secrets later steps read", () => {
   it("passes when every secret this run reads is set", () => {
     const { problems, passed } = check({ ...STORE, ...flags(false, true, true) });
     assert.deepEqual(problems, []);
-    assert.equal(passed.length, 2);
+    assert.equal(passed.length, 3);
   });
 
   it("refuses a missing SUPABASE_FUNCTIONS_DEPLOY_TOKEN by the Edge Functions deploy's own rule", () => {
@@ -254,6 +254,23 @@ describe("check-deploy-config: the secrets later steps read", () => {
       assert.match(problems[0], /^API_HEALTHCHECK_URL is not set .*verify-served-commit\.mjs/);
     }
     assert.deepEqual(check({ ...STORE, API_HEALTHCHECK_URL: "", ...flags(false, false, false) }).problems, []);
+  });
+
+  it("refuses, when this run verifies the API, what its client checks would fail on after the apply (#3113)", () => {
+    const verify = flags(false, false, true);
+    const notHealth = check({ ...STORE, API_HEALTHCHECK_URL: `https://${CANARY}-0007.example/health/ready`, ...verify });
+    assert.equal(notHealth.problems.length, 1);
+    assert.match(notHealth.problems[0], /^API_HEALTHCHECK_URL is set but is not the API's \/health URL.*smoke-deployed-api\.mjs/);
+    for (const name of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
+      const { problems } = check({ ...STORE, [name]: "", ...verify });
+      assert.equal(problems.length, 1);
+      assert.match(problems[0], new RegExp(`^${name} is not set .*client checks`));
+    }
+    const both = check({ ...STORE, SUPABASE_URL: undefined, SUPABASE_SERVICE_ROLE_KEY: " ", ...verify });
+    assert.match(both.problems[0], /^SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set/);
+    // A run that verifies nothing runs no client check either.
+    assert.deepEqual(check({ ...STORE, SUPABASE_URL: "", API_HEALTHCHECK_URL: "x", ...flags(false, false, false) }).problems, []);
+    for (const { problems } of [notHealth, both]) assert.doesNotMatch(problems.join("\n"), new RegExp(CANARY));
   });
 
   it("fails closed on a flag that is neither true nor false, so a typo can't switch a check off", () => {
@@ -340,7 +357,8 @@ describe("check-deploy-config: as the job runs it", () => {
     assert.equal(status, 0, output);
     assert.match(output, /✓ The API's boot check .* accepts the 8 names Infisical injected/);
     assert.match(output, /✓ SUPABASE_FUNCTIONS_DEPLOY_TOKEN is set, for attachment-copy\./);
-    assert.match(output, /✓ API_HEALTHCHECK_URL is set\./);
+    assert.match(output, /✓ API_HEALTHCHECK_URL is set, as the API's \/health URL\./);
+    assert.match(output, /✓ SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set, for the client checks\./);
     assert.doesNotMatch(output, new RegExp(CANARY), output);
   });
 

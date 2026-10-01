@@ -17,10 +17,10 @@ name: Deploy
 #   back to the deployed commit → plan (staging) → check the config (#3112) →
 #   rehearse (production) → migration dry run → BUILD web +
 #   landing → [production dry run stops here] → apply the migrations → deploy
-#   the API by commit → verify it serves the commit → check it answers its
-#   clients (CORS, the minimum app version, the attachment-copy function) →
-#   UPLOAD web + landing → point the staging hosts at them → ask Sentry for
-#   the source maps (reports, never fails).
+#   the Edge Functions → deploy the API by commit → verify it serves the
+#   commit → check it answers its clients (CORS, the minimum app version, the
+#   attachment-copy function) → UPLOAD web + landing → point the staging hosts
+#   at them → ask Sentry for the source maps (reports, never fails).
 # A failure anywhere before the upload ships no frontend: a failed build before
 # anything is applied, a failed migration before the API, a failed API (or one
 # its clients can't use) before the frontends that call it. One job, because

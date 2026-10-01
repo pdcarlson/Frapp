@@ -15,7 +15,11 @@
 //     after the apply;
 //   * `API_HEALTHCHECK_URL`, read by the served-commit check after the Render
 //     deploy. (Staging's plan already requires it; production has no plan.)
-// A bad value then failed with the schema already moved. Before the v0.7.0
+// A bad value then failed with the schema already moved. The client checks
+// after the served-commit check (`smoke-deployed-api.mjs`, #3113) read the same
+// URL, which they need in its `/health` form, and `SUPABASE_URL` and
+// `SUPABASE_SERVICE_ROLE_KEY`, on every run that verifies the API; on a run
+// that doesn't deploy the API, nothing else checks those two before the apply. Before the v0.7.0
 // ship the first two were checked by hand (#2558).
 //
 // ── What it runs ────────────────────────────────────────────────────────────
@@ -80,6 +84,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { listFunctions, validateInputs } from "./deploy-edge-functions.mjs";
+import { apiBaseFrom } from "./smoke-deployed-api.mjs";
 import { getEnvironment } from "./lib/environments.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { parseEnvBaseline } from "./lib/vercel-build-env.mjs";
@@ -104,6 +109,16 @@ const CHILD_TIMEOUT_MS = 60_000;
 const SELF = fileURLToPath(import.meta.url);
 
 const isBlank = (value) => typeof value !== "string" || value.trim() === "";
+
+/** The client checks' own rule (`apiBaseFrom`); its message quotes the value, so only the verdict is kept. */
+function hasHealthPath(url) {
+  try {
+    apiBaseFrom(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** `env` split by the baseline: what the injection added (less this step's inputs), and what was there before. */
 export function splitByBaseline(env, baselineNames) {
@@ -264,8 +279,22 @@ export function checkDeployConfig({ env, root, baselineNames, functions, runBoot
           `serves after the deploy (verify-served-commit.mjs), which fails without it. ` +
           `See docs/internal/environment/ENV_REFERENCE.md § CD Secrets.`,
       );
+    } else if (!hasHealthPath(env.API_HEALTHCHECK_URL)) {
+      problems.push(
+        `API_HEALTHCHECK_URL is set but is not the API's /health URL, which the client checks after the deploy ` +
+          `(smoke-deployed-api.mjs) read the API's address from. See docs/internal/environment/ENV_REFERENCE.md § CD Secrets.`,
+      );
     } else {
-      passed.push("API_HEALTHCHECK_URL is set.");
+      passed.push("API_HEALTHCHECK_URL is set, as the API's /health URL.");
+    }
+    const missing = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"].filter((name) => isBlank(env[name]));
+    if (missing.length > 0) {
+      problems.push(
+        `${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} not set in this Infisical environment, and this ` +
+          `run's client checks call the attachment-copy function with them after the deploy (smoke-deployed-api.mjs).`,
+      );
+    } else {
+      passed.push("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set, for the client checks.");
     }
   }
 

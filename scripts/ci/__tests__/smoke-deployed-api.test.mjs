@@ -32,6 +32,7 @@ import {
   runSmokeChecks,
   SHIPPED_BUILDS,
   smokeFetch,
+  withoutSecret,
 } from "../smoke-deployed-api.mjs";
 import { parseRegistry } from "../../check-api-breaking-changes.mjs";
 
@@ -125,7 +126,7 @@ function makeFetch(table) {
   const fetchImpl = async (url, init = {}) => {
     const method = (init.method ?? "GET").toUpperCase();
     const headers = new Headers(init.headers);
-    calls.push({ method, url, headers, body: init.body });
+    calls.push({ method, url, headers, body: init.body, redirect: init.redirect });
     const handler = table[`${method} ${url}`];
     if (!handler) throw new Error(`unexpected ${method} ${url}`);
     if (handler instanceof Error) throw handler;
@@ -413,6 +414,26 @@ describe("runSmokeChecks: the attachment-copy function", () => {
     const { calls, byCheck } = await run({ table, envOverrides: { SUPABASE_SERVICE_ROLE_KEY: secret } });
     assert.equal(byCheck(/accepts/)[0].verdict, "pass");
     assert.equal(calls.find((c) => c.method === "POST").headers.has("authorization"), false);
+  });
+
+  it("never prints the key, even when a fetch error echoes it across lines", async () => {
+    // undici quotes a header value it refuses whole, line breaks included, and
+    // the runner's mask can't match a secret split over two log lines.
+    const key = "eyJhbGciOiJIUzI1NiJ9.first-half\nsecond-half-of-the-key";
+    const result = await checkAttachmentCopy({
+      supabaseUrl: SUPABASE,
+      serviceKey: key,
+      fetchImpl: async (url, init) => fetch("http://127.0.0.1:9/", init),
+    });
+    assert.equal(result.verdict, "fail");
+    assert.match(result.message, /Headers\.append: "\*\*\*" is an invalid header value/);
+    for (const piece of key.split("\n")) assert.ok(!result.message.includes(piece), result.message);
+    assert.equal(withoutSecret(`a ${KEY} b`, KEY), "a *** b");
+  });
+
+  it("refuses a redirect, which would carry the apikey header to another origin", async () => {
+    const { calls } = await run();
+    assert.equal(calls.find((c) => c.method === "POST").redirect, "error");
   });
 
   it("names the error when the call gets no answer", async () => {

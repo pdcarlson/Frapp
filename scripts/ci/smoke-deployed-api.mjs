@@ -67,7 +67,11 @@
 // with its default 15 s timeout per attempt: at most about 51 s a request, so
 // the five requests finish in under 5 minutes.
 //
-// No secret is printed: the key goes on two headers and nowhere else.
+// No secret is printed: the key goes on two headers and nowhere else, and
+// everything the copy check reports is scrubbed of it, line by line, since a
+// key with a line break in it is echoed whole by undici's header error and
+// the runner's mask can't match it across lines. The POST refuses a redirect,
+// because undici forwards the custom `apikey` header across origins.
 //
 // Env inputs:
 //   TARGET_ENVIRONMENT        — required; staging or production
@@ -387,8 +391,21 @@ const COPY_STATUS_HINTS = {
   503: "Auth could not confirm the key, after this check's retries.",
 };
 
+/** `text` with `secret`, and each line of it long enough to mean something, replaced by `***`. */
+export function withoutSecret(text, secret) {
+  const pieces = [secret, ...secret.split(/[\r\n\0]+/)].filter((piece) => piece.length >= 8);
+  let out = String(text);
+  for (const piece of pieces.sort((a, b) => b.length - a.length)) out = out.replaceAll(piece, "***");
+  return out;
+}
+
 /** One POST to the copy function with the API's key, refused before any fetch. */
 export async function checkAttachmentCopy({ supabaseUrl, serviceKey, fetchImpl }) {
+  const result = await probeAttachmentCopy({ supabaseUrl, serviceKey, fetchImpl });
+  return { ...result, message: withoutSecret(result.message, serviceKey) };
+}
+
+async function probeAttachmentCopy({ supabaseUrl, serviceKey, fetchImpl }) {
   const check = `${COPY_FUNCTION} accepts the API's key`;
   const url = `${supabaseUrl.trim().replace(/\/+$/, "")}/functions/v1/${COPY_FUNCTION}`;
   let response;
@@ -397,6 +414,7 @@ export async function checkAttachmentCopy({ supabaseUrl, serviceKey, fetchImpl }
       method: "POST",
       headers: { ...functionAuthHeaders(serviceKey), "Content-Type": "application/json" },
       body: JSON.stringify({ items: [COPY_PROBE_ITEM] }),
+      redirect: "error",
     });
   } catch (error) {
     return fail(check, `POST ${url} got no answer: ${describeError(error)}.`);

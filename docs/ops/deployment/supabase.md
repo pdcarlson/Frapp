@@ -139,7 +139,7 @@ to send again. The budgets, and why each is set where it is, are the constants a
 
 **To check it is deployed:** Supabase MCP `list_edge_functions` for the project, or the dashboard's
 **Edge Functions** page. Its logs are there too. Every deploy that ships also calls it once the way
-the API does, with the API's key, and fails when it refuses that key
+the API does, with the key Infisical holds for the API, and fails when it refuses that key
 ([`ci-cd.md` § Deploy verification](ci-cd.md#deploy-verification), #2990). A bot import whose copy service is missing or
 refusing the API fails with *"Could not copy attachments into the archive: the copy service
 answered …"* on the job.
