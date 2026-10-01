@@ -36,16 +36,6 @@ export class ConfirmLogoDto {
   storage_path: string;
 }
 
-export class CreateChapterDto {
-  @ApiProperty()
-  @IsString()
-  name: string;
-
-  @ApiProperty()
-  @IsString()
-  university: string;
-}
-
 export class UpdateChapterDto {
   @ApiPropertyOptional()
   @IsOptional()
