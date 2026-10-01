@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { downloadBlob, downloadCsv, getErrorMessage } from "./utils";
+import {
+  downloadBlob,
+  downloadCsv,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "./utils";
 
 /**
  * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
@@ -92,5 +98,54 @@ describe("downloadCsv", () => {
 
     expect(clickSpy).toHaveBeenCalledTimes(1);
     clickSpy.mockRestore();
+  });
+});
+
+/**
+ * The guard every `apps/web` numeric input goes through (#2206). A
+ * `type="number"` input reports text it can't parse as `""`, but these take
+ * the raw text anyway, so a field that isn't `type="number"` is covered too.
+ */
+describe("parseGuardedInt", () => {
+  it.each([
+    ["", undefined],
+    ["   ", undefined],
+    ["abc", undefined],
+    ["-3", undefined],
+    ["1.5", undefined],
+    ["1e999", undefined],
+    ["NaN", undefined],
+    ["0", 0],
+    [" 42 ", 42],
+  ])("reads %j as %j", (raw, expected) => {
+    expect(parseGuardedInt(raw)).toBe(expected);
+  });
+
+  it("refuses an integer under the floor it is given", () => {
+    expect(parseGuardedInt("0", 1)).toBeUndefined();
+    expect(parseGuardedInt("1", 1)).toBe(1);
+  });
+});
+
+describe("guardIntDraft", () => {
+  it("keeps a cleared field cleared, rather than reading it as 0", () => {
+    expect(guardIntDraft("")).toBe("");
+    expect(guardIntDraft("  ")).toBe("");
+  });
+
+  it.each(["abc", "-3", "1.5", "1e999"])(
+    "refuses %j, so the caller keeps its previous draft",
+    (raw) => {
+      expect(guardIntDraft(raw)).toBeUndefined();
+    },
+  );
+
+  it("commits an accepted integer as its trimmed text", () => {
+    expect(guardIntDraft(" 12 ")).toBe("12");
+  });
+
+  it("applies the floor it is given", () => {
+    expect(guardIntDraft("0", 1)).toBeUndefined();
+    expect(guardIntDraft("3", 1)).toBe("3");
   });
 });

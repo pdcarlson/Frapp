@@ -1,15 +1,25 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import {
+  expectClearingEntriesShow,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
-const { mockCurrentChapter, mockUpdateMutate, mockDeleteMutate } = vi.hoisted(
-  () => ({
-    mockCurrentChapter: vi.fn(),
-    mockUpdateMutate: vi.fn().mockResolvedValue({}),
-    mockDeleteMutate: vi.fn().mockResolvedValue({}),
-  }),
-);
+const {
+  mockCurrentChapter,
+  mockCreateMutate,
+  mockUpdateMutate,
+  mockDeleteMutate,
+  mockToast,
+} = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  mockCreateMutate: vi.fn().mockResolvedValue({}),
+  mockUpdateMutate: vi.fn().mockResolvedValue({}),
+  mockDeleteMutate: vi.fn().mockResolvedValue({}),
+  mockToast: vi.fn(),
+}));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
@@ -51,7 +61,10 @@ vi.mock("@repo/hooks", () => ({
     isError: false,
     refetch: vi.fn(),
   }),
-  useCreateGeofence: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateGeofence: () => ({
+    mutateAsync: mockCreateMutate,
+    isPending: false,
+  }),
   useUpdateGeofence: () => ({
     mutateAsync: mockUpdateMutate,
     isPending: false,
@@ -71,7 +84,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
 
 const { GeofencesAdminPage } = await import("./geofences-admin-page");
 
@@ -213,5 +228,93 @@ describe("GeofencesAdminPage subscription gating", () => {
     await userEvent.click(editButton());
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save changes/i })).toBeEnabled();
+  });
+});
+
+describe("GeofencesAdminPage study-rule guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  async function openCreate() {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(createTrigger());
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Science library" },
+    });
+    fireEvent.change(screen.getByLabelText(/vertices/i), {
+      target: { value: "30.286,-97.74\n30.287,-97.74\n30.287,-97.739" },
+    });
+  }
+
+  const rate = (label: RegExp) => screen.getByLabelText(label);
+  const submitCreate = () =>
+    fireEvent.submit(document.getElementById("geofence-create-form")!);
+
+  it("keeps each rate's last whole number through a negative or a decimal", async () => {
+    await openCreate();
+    expectRefusedEntriesKeep(rate(/minutes per point/i), "30");
+    expectRefusedEntriesKeep(rate(/points per interval/i), "2");
+    expectRefusedEntriesKeep(rate(/min session/i), "15");
+    expectRefusedEntriesKeep(rate(/pause grace/i), "5");
+  });
+
+  it("reads an emptied or unparseable rate as blank", async () => {
+    await openCreate();
+    expectClearingEntriesShow(rate(/minutes per point/i), "30", null);
+    expectClearingEntriesShow(rate(/pause grace/i), "5", null);
+  });
+
+  it("holds each rate to the API's floor: 0 only for the minimum session", async () => {
+    await openCreate();
+    for (const label of [
+      /minutes per point/i,
+      /points per interval/i,
+      /pause grace/i,
+    ]) {
+      fireEvent.change(rate(label), { target: { value: "0" } });
+      expect(rate(label)).not.toHaveValue(0);
+    }
+    fireEvent.change(rate(/min session/i), { target: { value: "0" } });
+    expect(rate(/min session/i)).toHaveValue(0);
+  });
+
+  it("creates with the kept whole numbers, never NaN or Infinity", async () => {
+    await openCreate();
+    fireEvent.change(rate(/minutes per point/i), { target: { value: "45" } });
+    fireEvent.change(rate(/minutes per point/i), { target: { value: "1.5" } });
+    submitCreate();
+
+    await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
+    expect(mockCreateMutate.mock.calls[0]![0]).toMatchObject({
+      minutes_per_point: 45,
+      points_per_interval: 1,
+      min_session_minutes: 15,
+      pause_grace_minutes: 5,
+    });
+  });
+
+  it("refuses an emptied rate rather than sending 1 in its place", async () => {
+    await openCreate();
+    fireEvent.change(rate(/minutes per point/i), { target: { value: "" } });
+    submitCreate();
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Fill in every study rule" }),
+      ),
+    );
+    expect(mockCreateMutate).not.toHaveBeenCalled();
+  });
+
+  it("saves a 0-minute minimum session as 0, not rewritten to 1", async () => {
+    render(<GeofencesAdminPage />);
+    await userEvent.click(editButton());
+    fireEvent.change(rate(/min session/i), { target: { value: "0" } });
+    fireEvent.submit(document.getElementById("geofence-edit-form")!);
+
+    await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
+    expect(mockUpdateMutate.mock.calls[0]![0].body.min_session_minutes).toBe(0);
   });
 });

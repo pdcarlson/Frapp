@@ -1,7 +1,17 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { networkMock } from "@/tests/network";
+import {
+  expectClearingEntriesShow,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
 /**
  * The first tests this file has ever had.
@@ -414,5 +424,45 @@ describe("the orphan-president claim banner", () => {
       within(dialog).getByRole("button", { name: /claim presidency/i }),
     );
     await waitFor(() => expect(claimPresidency.mutateAsync).toHaveBeenCalled());
+  });
+});
+
+describe("display order guard (#2206)", () => {
+  async function selectRole() {
+    const user = userEvent.setup();
+    render(<RolesAndPermissionsPage />);
+    await user.click(screen.getByRole("button", { name: /president/i }));
+    return { user, input: screen.getByLabelText(/display order/i) };
+  }
+
+  it("keeps the last whole number through a negative or a decimal", async () => {
+    const { input } = await selectRole();
+    expectRefusedEntriesKeep(input, "4");
+  });
+
+  it("reads an emptied or unparseable field as no order", async () => {
+    const { input } = await selectRole();
+    expectClearingEntriesShow(input, "4", null);
+  });
+
+  it("saves the kept whole number, never NaN or Infinity", async () => {
+    const { user, input } = await selectRole();
+    fireEvent.change(input, { target: { value: "4" } });
+    fireEvent.change(input, { target: { value: "-3" } });
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.display_order).toBe(4);
+  });
+
+  it("leaves the order alone when the field is emptied", async () => {
+    const { user, input } = await selectRole();
+    fireEvent.change(input, { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(
+      updateRole.mutateAsync.mock.calls[0]![0].body.display_order,
+    ).toBeUndefined();
   });
 });

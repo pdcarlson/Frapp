@@ -43,6 +43,10 @@ vi.mock("@/hooks/use-toast", () => ({
 
 import { EventEditorDialog } from "./event-editor-dialog";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import {
+  expectClearingEntriesShow,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -522,5 +526,46 @@ describe("EventEditorDialog check-in zone", () => {
         }),
       }),
     );
+  });
+});
+
+describe("EventEditorDialog point value guard (#2206)", () => {
+  beforeEach(() => {
+    createMutate.mockReset();
+    createMutate.mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  function renderCreate() {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    return screen.getByLabelText("Point value");
+  }
+
+  it("keeps the last whole number through a negative or a decimal", () => {
+    expectRefusedEntriesKeep(renderCreate(), "15");
+  });
+
+  it("reads an emptied or unparseable field as 0 points, as a cleared field always has", () => {
+    expectClearingEntriesShow(renderCreate(), "15", 0);
+  });
+
+  it("sends the kept whole number, never Infinity", async () => {
+    const input = renderCreate();
+    fillRequiredFields();
+    fireEvent.change(input, { target: { value: "15" } });
+    fireEvent.change(input, { target: { value: "1.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].point_value).toBe(15);
   });
 });

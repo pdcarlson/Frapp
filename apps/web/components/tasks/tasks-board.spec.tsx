@@ -1,16 +1,22 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import {
+  expectClearingEntriesShow,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 
-const { mockCurrentChapter, tasksRef, currentUserRef } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(),
-  // Mutable so a test can swap the rows the board renders.
-  tasksRef: { current: [] as unknown[] },
-  // Mutable so a test can simulate `useCurrentUser` still in flight or errored,
-  // which is when the Confirm gate has to fail closed.
-  currentUserRef: { current: undefined as { id?: string } | undefined },
-}));
+const { mockCurrentChapter, tasksRef, currentUserRef, createTaskMutate } =
+  vi.hoisted(() => ({
+    mockCurrentChapter: vi.fn(),
+    createTaskMutate: vi.fn(),
+    // Mutable so a test can swap the rows the board renders.
+    tasksRef: { current: [] as unknown[] },
+    // Mutable so a test can simulate `useCurrentUser` still in flight or errored,
+    // which is when the Confirm gate has to fail closed.
+    currentUserRef: { current: undefined as { id?: string } | undefined },
+  }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from
@@ -75,7 +81,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useMembers: () => ({ data: [] }),
   useCurrentUser: () => ({ data: currentUserRef.current }),
-  useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateTask: () => ({ mutateAsync: createTaskMutate, isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -416,5 +422,49 @@ describe("TasksBoard assignee label", () => {
 
     expect(screen.getByText(/Member 2f4a1c\b/)).toBeInTheDocument();
     expect(screen.queryByText(/2f4a1c9d-0000/)).toBeNull();
+  });
+});
+
+describe("TasksBoard point reward guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tasksRef.current = TASKS;
+    currentUserRef.current = { id: ME };
+    chapter.active();
+  });
+
+  async function openCreate() {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    return screen.getByLabelText(/point reward/i);
+  }
+
+  it("keeps the last whole number through a negative or a decimal", async () => {
+    const input = await openCreate();
+    expectRefusedEntriesKeep(input, "7");
+  });
+
+  it("reads an emptied or unparseable field as no reward", async () => {
+    const input = await openCreate();
+    expectClearingEntriesShow(input, "7", null);
+  });
+
+  it("sends the kept whole number, never NaN or Infinity", async () => {
+    const input = await openCreate();
+    fireEvent.change(input, { target: { value: "7" } });
+    fireEvent.change(input, { target: { value: "1.5" } });
+    fireEvent.submit(document.getElementById("tasks-create-form")!);
+
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    expect(createTaskMutate.mock.calls[0]![0].point_reward).toBe(7);
+  });
+
+  it("omits the reward when the field is left empty", async () => {
+    const input = await openCreate();
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.submit(document.getElementById("tasks-create-form")!);
+
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    expect(createTaskMutate.mock.calls[0]![0].point_reward).toBeUndefined();
   });
 });

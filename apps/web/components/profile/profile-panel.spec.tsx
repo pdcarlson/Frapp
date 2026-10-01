@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // A successful sign-out (or account deletion, which signs out on success)
@@ -51,6 +57,12 @@ const mocks = vi.hoisted(() => {
       refetch: vi.fn(),
     },
     noopMutation,
+    updateUser: {
+      mutateAsync: vi.fn<(body: Record<string, unknown>) => Promise<unknown>>(
+        () => Promise.resolve({}),
+      ),
+      isPending: false,
+    },
     updateSettings: {
       mutateAsync: () => Promise.resolve({}) as Promise<unknown>,
       isPending: false,
@@ -102,7 +114,7 @@ vi.mock("@/components/profile/profile-photo-control", () => ({
 vi.mock("@repo/hooks", () => ({
   useCurrentUser: () => mocks.userQuery,
   useUserSettings: () => mocks.settingsQuery,
-  useUpdateUser: () => mocks.noopMutation,
+  useUpdateUser: () => mocks.updateUser,
   useUpdateUserSettings: () => mocks.updateSettings,
   useUpdateOnboarding: () => mocks.noopMutation,
   useDeleteAccount: () => mocks.deleteAccount,
@@ -123,6 +135,10 @@ vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { NOTIFICATION_CATEGORIES } from "@repo/validation";
 import { networkMock } from "@/tests/network";
+import {
+  expectClearingEntriesShow,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 import { ProfilePanel } from "./profile-panel";
 
 /** The body the panel would PATCH, or undefined if it never submitted. */
@@ -1063,5 +1079,57 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(
       screen.getByText(/chapter announcements always arrive/i),
     ).toBeTruthy();
+  });
+});
+
+describe("ProfilePanel — graduation year guard (#2206)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    mocks.settingsQuery.data = undefined;
+  });
+
+  const yearInput = () => screen.getByLabelText(/graduation year/i);
+
+  it("keeps the last whole year through a negative or a decimal", () => {
+    render(<ProfilePanel />);
+    expectRefusedEntriesKeep(yearInput(), "2027");
+  });
+
+  it("reads an emptied or unparseable year as no year", () => {
+    render(<ProfilePanel />);
+    expectClearingEntriesShow(yearInput(), "2027", null);
+  });
+
+  it("saves the kept whole year, never NaN or Infinity", async () => {
+    render(<ProfilePanel />);
+    fireEvent.change(yearInput(), { target: { value: "2027" } });
+    fireEvent.change(yearInput(), { target: { value: "1.5" } });
+    await userEvent.click(
+      screen.getByRole("button", { name: /save profile/i }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled(),
+    );
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0].graduation_year).toBe(
+      2027,
+    );
+  });
+
+  it("saves a cleared year as null, so the stored one is removed", async () => {
+    render(<ProfilePanel />);
+    fireEvent.change(yearInput(), { target: { value: "2027" } });
+    fireEvent.change(yearInput(), { target: { value: "" } });
+    await userEvent.click(
+      screen.getByRole("button", { name: /save profile/i }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled(),
+    );
+    expect(
+      mocks.updateUser.mutateAsync.mock.calls[0]![0].graduation_year,
+    ).toBeNull();
   });
 });
