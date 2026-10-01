@@ -121,6 +121,13 @@ function emptyResult(): SearchResult {
  * `Promise.race` attaches its own handler to `work` immediately, so a late
  * rejection is already accounted for and cannot surface as an unhandled
  * rejection; the `catch` below is for the signal, not for safety.
+ *
+ * The logger keys on `timedOut`, set the moment the timer fires, not on
+ * anything the race's continuation sets: reactions on `work` run in the order
+ * they were attached, so the logger runs before the `await` below resumes and
+ * would read such a flag too early. That was the bug a `settled` flag had: every
+ * rejection inside the budget also logged a false "reported as a timeout" line
+ * beside the 500 it actually became.
  */
 async function withinBudget<T>(
   source: SearchSource,
@@ -130,14 +137,18 @@ async function withinBudget<T>(
   logger: Logger,
 ): Promise<T> {
   const TIMED_OUT = Symbol('search-timeout');
-  let settled = false;
+  let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
-    timer = setTimeout(() => resolve(TIMED_OUT), SEARCH_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve(TIMED_OUT);
+    }, SEARCH_TIMEOUT_MS);
   });
 
   void work.catch((error: unknown) => {
-    if (settled) return;
+    // Inside the budget the rejection propagates to the caller instead.
+    if (!timedOut) return;
     logThrowable(
       logger,
       'error',
@@ -152,11 +163,7 @@ async function withinBudget<T>(
       timedOutSources.push(source);
       return fallback;
     }
-    settled = true;
     return outcome;
-  } catch (error) {
-    settled = true;
-    throw error;
   } finally {
     clearTimeout(timer);
   }

@@ -745,13 +745,13 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(repo.upsert).not.toHaveBeenCalled();
   });
 
-  it('LOGS the cause, which a plain PostgREST object all but hides', async () => {
+  it('LOGS the cause, by its code and hint, without the handshake id', async () => {
     // The redirect is only half the fix. If the browser is told nothing and the
     // log is told nothing either, a promoted-schema regression is invisible
     // from both ends — so this asserts the one place the cause survives.
     //
-    // `error instanceof Error ? error.stack : undefined` passes `undefined`
-    // here, and Nest's ConsoleLogger drops a falsy stack silently. `hint` is
+    // Before #1264 the repository threw a plain PostgREST object, whose cause
+    // a hand-rolled `error instanceof Error ? … : …` lost entirely. `hint` is
     // the field that names the actual problem, so it is what the test demands.
     const service = await build();
     repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
@@ -764,12 +764,10 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     expect(logged).toHaveBeenCalledTimes(1);
     // Since #2460 `logThrowable` puts the cause on the message line itself.
     // The repository throws a real `SupabaseQueryError` since #1264, so the
-    // only thing after the line is its stack, in Nest's stack slot; the raw
-    // record never reaches ConsoleLogger to be inspected. The stack's first
-    // line is the same message, so it carries no handshake id either.
+    // only thing after the line is that error's own stack, in Nest's stack
+    // slot, and no raw record reaches ConsoleLogger to be inspected.
     const [message, ...rest] = logged.mock.calls[0] as [string, ...unknown[]];
     expect(rest).toEqual([PGRST_TABLE_MISSING.stack]);
-    expect(String(rest[0])).not.toContain(STATE);
 
     // This assertion was inverted by #1260, deliberately. It previously read
     // `expect(message).toContain(STATE)`. The state id is the CSRF token, and

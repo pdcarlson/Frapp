@@ -41,9 +41,10 @@ const SKIP = new Set(['log-throwable.ts']);
  * The hand-rolled coercion `logThrowable` and `toReportableError` replace
  * (#2460): `x instanceof Error ? x.stack : String(x)`, with `.message` or
  * `(x.stack ?? x.message)` for the true branch, and `String(x)` or the bare
- * `x` (interpolated into a template) for the false one. A repository throws a
- * plain `{ code, message, details, hint }` object, not an `Error`, so the
- * false branch is the one that runs, and either fallback renders it as the
+ * `x` (interpolated into a template) for the false one. Any throwable that is
+ * not an `Error` takes the false branch: a raw PostgREST record (what every
+ * repository threw before #1264 wrapped them in `SupabaseQueryError`), a
+ * Realtime `err`, an `allSettled` reason. Either fallback renders it as the
  * literal `[object Object]`, on exactly the paths where the cause is what an
  * operator needs. `\s` spans newlines, so a Prettier-wrapped ternary matches
  * too. A coercion spelled some other way (a helper, a `typeof` check) is not

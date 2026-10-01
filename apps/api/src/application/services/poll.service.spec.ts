@@ -980,9 +980,11 @@ describe('PollService', () => {
       );
     });
 
-    // #2460. What a repository really throws is postgrest-js's parsed response
-    // body, a plain object rather than an Error, so a hand-rolled
-    // `String(error)` logged this failure as `[object Object]`.
+    // #2460. A raw PostgREST record, which every repository threw before #1264
+    // and which any unwrapped path still could, is not an Error, so a
+    // hand-rolled `String(error)` logged it as `[object Object]`. This pins the
+    // backstop; the repositories now throw `SupabaseQueryError`, whose message
+    // is the same `code: message: hint` text.
     it('names a PostgREST failure by its message, not [object Object]', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
       mockVoteRepo.aggregateOptionTotalsByMessages.mockRejectedValue({
