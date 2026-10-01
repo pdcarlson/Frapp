@@ -757,8 +757,8 @@ export function InvoiceList({ id }: { id?: string }) {
                   className={cn(
                     // Two lines and the row is not itself a control, so this is
                     // lane 4's flat `min-h-11` document row rather than
-                    // `/members`' 36/44 — see `deletion-checklist.md` §9's table
-                    // of the two geometries.
+                    // `/members`' 36/44 — see the table of the two row shapes
+                    // in `spec/ui/web-dashboard/README.md` § Page grammar.
                     "flex min-h-11 flex-col gap-2 py-2 md:flex-row md:items-center",
                     selected && "bg-accent-subtle-hover text-accent-text",
                   )}
