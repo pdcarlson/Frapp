@@ -42,7 +42,7 @@
 // plain value continued on deeper lines reads as its first line. Only `if:`
 // reads those two forms (`conditionAt`), since it is what the fence guards match.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -725,15 +725,166 @@ export function workflowJobs(workflowPath) {
   return jobs;
 }
 
+// ── Local composite actions ─────────────────────────────────────────────────
+// Shared by the guards over `.github/actions/*` (#1541), which had grown three
+// private copies of "every action file", "a call to a local action" and "is the
+// workspace still the trusted commit here". The copies had already disagreed:
+// one read `action.yaml` and one read only `action.yml`, so an action written
+// as the other spelling was empty text to that guard, and its negative
+// assertions passed.
+
+/** The repo's `.github/actions`. */
+export const ACTION_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", ".github", "actions");
+
+/**
+ * `{ name, file, text }` for every composite action definition: `name` is the
+ * action's directory, `file` is `action.yml` or `action.yaml` (Actions accepts
+ * both, so both are read; a directory holding both yields two entries).
+ */
+export function actionFiles(dir = ACTION_DIR) {
+  return readdirSync(dir)
+    .filter((name) => statSync(join(dir, name)).isDirectory())
+    .sort()
+    .flatMap((name) =>
+      ["action.yml", "action.yaml"]
+        .filter((file) => existsSync(join(dir, name, file)))
+        .map((file) => ({ name, file, text: readFileSync(join(dir, name, file), "utf8") })),
+    );
+}
+
+/**
+ * A line calling the local action `slug` (a regex fragment, so a caller can
+ * match any action). Tolerates every legal spelling of the same step: the
+ * name-less `- uses:` form, quotes, a trailing `/`, and a trailing comment.
+ * Stricter is not safer: these drive negative assertions as often as positive
+ * ones, and a regex that is too tight fails open.
+ */
+export function usesLocalAction(slug) {
+  return new RegExp(String.raw`^\s*(-\s+)?uses:\s*["']?\./\.github/actions/${slug}/?["']?\s*(#.*)?$`);
+}
+
+/** Any local composite action, for guards that hold for all of them. */
+export const USES_ANY_LOCAL_ACTION = usesLocalAction(String.raw`[^"'\s#]+?`);
+
+/** A job key: two-space indent, optionally quoted, optional trailing comment. */
+export const JOB_KEY_RE = /^ {2}["']?([A-Za-z0-9_-]+)["']?:\s*(#.*)?$/;
+
+// Anything that repoints the workspace at a different commit. Deliberately
+// broad and it must STAY broad: unlike `usesLocalAction`, a miss here fails
+// OPEN. `git checkout` alone was not enough: `git switch --detach
+// "$DEPLOY_SHA"` is a one-word modernization that silently disarmed the guard
+// in testing.
+export const WORKSPACE_REWRITE_RE = /\bgit\s+(checkout|switch|worktree)\b|\bgit\s+reset\s+--hard\b/;
+
+const TRUSTED_MOVE = /^\s*git checkout --force --detach "\$TRUSTED_SHA"\s*$/;
+const TRUSTED_REF = /^\s*TRUSTED_SHA:\s*\$\{\{\s*github\.sha\s*\}\}\s*$/;
+const STEP_START = /^\s{4,}-\s/;
+
+/**
+ * The workspace each matching line runs in, as a state machine over a
+ * workflow's (or a composite action's) lines:
+ *
+ *   none      — nothing checked out yet;
+ *   trusted   — the workflow's own commit: a first `actions/checkout` with no
+ *               `ref:` (or `ref: ${{ github.sha }}`), or the one sanctioned
+ *               move back to it, `git checkout --force --detach
+ *               "$TRUSTED_SHA"` in a step whose `TRUSTED_SHA` is
+ *               `${{ github.sha }}` (`_deploy.yml`, #2805);
+ *   untrusted — anything else: a checkout with any other `ref:`, a later
+ *               checkout, or any other rewrite of the tree.
+ *
+ * A local action may run only in `trusted`: `uses: ./…` resolves from the
+ * workspace at step-execution time, so after a move to another commit it loads
+ * THAT commit's copy, and deploying anything older than the action fails with
+ * "Can't find 'action.yml'" (the rollback path).
+ *
+ * Returns `{ line, state, movedAt }` for each line `isCall` accepts. A
+ * workflow starts each job at `none`; a composite action has no jobs and
+ * inherits its caller's workspace, so read it with `{ initial: "trusted",
+ * jobs: false }` (the caller's own guard holds the caller to that).
+ */
+export function workspaceTrust(text, isCall, { initial = "none", jobs = true } = {}) {
+  // Comments blanked: a commented-out `# uses: actions/checkout@v4` must not
+  // satisfy the requirement for a real one.
+  const lines = text.split(/\r?\n/).map((l) => (/^\s*#/.test(l) ? "" : l));
+  const calls = [];
+  let state = initial;
+  let movedAt = null;
+  let stepStart = 0;
+  const stepEnd = (i) => {
+    const next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
+    return next === -1 ? lines.length : next;
+  };
+  lines.forEach((line, i) => {
+    // Job boundary. Tolerates a quoted id and a trailing comment: the
+    // stricter `/^ {2}[a-z0-9_-]+:\s*$/` never matched `deploy-prod: # note`
+    // or `"deploy-prod":`, so one job's checkout leaked into the next.
+    if (jobs && JOB_KEY_RE.test(line) && i > 3) {
+      state = "none";
+      movedAt = null;
+    }
+    if (STEP_START.test(line)) stepStart = i;
+    if (/uses:\s*["']?actions\/checkout@/i.test(line)) {
+      // The step's own `ref:`, if any: the whole step, since `with:` may come
+      // before `uses:`, bounded by the next step.
+      const ref = lines
+        .slice(stepStart, stepEnd(i))
+        .map((l) => l.match(/^\s+ref:\s*(.+?)\s*$/)?.[1])
+        .find(Boolean);
+      const own = !ref || /^\$\{\{\s*github\.sha\s*\}\}$/.test(ref);
+      // Only the FIRST checkout can establish trust; a later one moves the
+      // workspace like `git checkout --detach` does, and must read that way.
+      if (state === "none" && own) state = "trusted";
+      else {
+        state = "untrusted";
+        movedAt = i + 1;
+      }
+    } else if (TRUSTED_MOVE.test(line) && state !== "none") {
+      const step = lines.slice(stepStart, stepEnd(i));
+      // A move under an `if:` leaves the workspace on the deployed commit
+      // whenever the condition is false.
+      if (step.some((l) => TRUSTED_REF.test(l)) && !step.some((l) => /^\s+if:/.test(l))) {
+        state = "trusted";
+        movedAt = null;
+      } else {
+        state = "untrusted";
+        movedAt = i + 1;
+      }
+    } else if (WORKSPACE_REWRITE_RE.test(line) && state !== "none") {
+      state = "untrusted";
+      movedAt = i + 1;
+    }
+    if (isCall(line)) calls.push({ line: i + 1, state, movedAt });
+  });
+  return calls;
+}
+
+// ── node-setup (#1541) ─────────────────────────────────────────────────────
+
+/** A line calling `./.github/actions/node-setup`. */
+export const USES_NODE_SETUP = usesLocalAction("node-setup");
+
+/** The `install:` a node-setup step passes, quotes and comment removed, or null. */
+export function nodeSetupInstall(stepText) {
+  const m = stepText.match(/^\s+install:\s*(.*)$/m);
+  return m ? m[1].replace(/\s+#.*$/, "").trim().replace(/^(["'])(.*)\1$/, "$2") : null;
+}
+
 /**
  * Whether a step from `workflowSteps` runs the job's lockfile install: the
- * `./.github/actions/node-setup` step passing `install: ci`, which is where a
- * job's `npm ci` lives since #1541. For guards that pin a step to run after
- * the install.
+ * node-setup step passing `install: ci`, which is where a job's `npm ci` lives
+ * since #1541. For guards that pin a step to run after the install.
  */
 export function installsDependencies(step) {
-  return (
-    /^\s*-?\s*uses:\s*["']?\.\/\.github\/actions\/node-setup\/?["']?\s*(#.*)?$/m.test(step.body) &&
-    /^\s*install:\s*["']?ci["']?\s*(#.*)?$/m.test(step.body)
-  );
+  return step.body.split("\n").some((l) => USES_NODE_SETUP.test(l)) && nodeSetupInstall(step.body) === "ci";
+}
+
+/**
+ * Whether workflow TEXT installs dependencies anywhere: a hand-written `npm ci`,
+ * or a node-setup `install:` that installs (`ci`, `omit-dev`). For the
+ * watchdog guards that promise "no npm ci", which a text match for `npm ci`
+ * alone stopped keeping once the install moved into the action.
+ */
+export function installsDependenciesIn(text) {
+  return /npm ci/.test(text) || /^\s*install:\s*["']?(ci|omit-dev)["']?\s*(#.*)?$/m.test(text);
 }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { installsDependencies, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { installsDependencies, USES_NODE_SETUP, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 import { CI_CHECKS } from "../lib/required-checks.mjs";
 
 // Pins the mobile Metro bundle step in `mobile-validate` (#2388).
@@ -38,7 +38,7 @@ const EXPORT_RE = /\bexpo\s+export\b/;
 const ALLOWED_BEFORE = [
   /^\s*-?\s*uses:\s*["']?actions\/checkout@/m,
   // Node and `npm ci` (#1541): installs, builds nothing.
-  /^\s*-?\s*uses:\s*["']?\.\/\.github\/actions\/node-setup["']?\s*$/m,
+  new RegExp(USES_NODE_SETUP.source, "m"),
   // Reads package.json, package-lock.json and dependabot.yml; builds nothing.
   /^\s*-?\s*run:\s*npm\s+run\s+check:expo-sdk-line\s*$/m,
 ];

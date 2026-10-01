@@ -1,13 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
-import { workflowFiles } from "./helpers/workflow-yaml.mjs";
+import {
+  actionFiles,
+  JOB_KEY_RE,
+  usesLocalAction,
+  USES_ANY_LOCAL_ACTION,
+  workflowFiles,
+  workflowJobs,
+  workflowSteps,
+  workspaceTrust,
+} from "./helpers/workflow-yaml.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
 // the Infisical preamble+injection (14 call sites across 6 workflows since #2805;
@@ -60,39 +69,14 @@ const workflows = workflowFiles()
   .map((name) => ({ name, text: readFileSync(join(WORKFLOWS, name), "utf8") }));
 
 /** Every composite action's YAML, so a copy cannot hide in a sibling action. */
-const otherActions = readdirSync(ACTIONS, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
-  .map((e) => ({
-    name: e.name,
-    text: existsSync(join(ACTIONS, e.name, "action.yml"))
-      ? readFileSync(join(ACTIONS, e.name, "action.yml"), "utf8")
-      : "",
-  }));
+const otherActions = actionFiles(ACTIONS);
 
-// Tolerates every legal spelling of the same step: the name-less `- uses:` form,
-// a quoted path, and a trailing comment. A stricter regex is not "safer" here --
-// these drive NEGATIVE assertions ("nobody hand-writes this"), and a regex that
-// is too tight fails OPEN, letting the copy it exists to forbid back in with the
-// suite still green. This is the failure the turbo guard shipped with and had to
-// fix in review; it is not repeated here.
-const usesLocal = (slug) =>
-  new RegExp(`^\\s*(-\\s+)?uses:\\s*["']?\\./\\.github/actions/${slug}["']?\\s*(#.*)?$`);
-
-const USES_INFISICAL = usesLocal("infisical-secrets");
-const USES_SUPABASE = usesLocal("supabase-cli");
-// Any composite action under .github/actions, for the workspace guard below:
-// the trust rule is a property of `uses: ./…`, not of which action it names.
-const USES_ANY_LOCAL = usesLocal("[^\"'\\s#]+");
-
-/** A job key: two-space indent, optionally quoted, optional trailing comment. */
-const JOB_KEY_RE = /^ {2}["']?([A-Za-z0-9_-]+)["']?:\s*(#.*)?$/;
-
-// Anything that repoints the workspace at a different commit. Deliberately
-// broad and it must STAY broad: unlike `usesLocal`, a miss here fails OPEN.
-// `git checkout` alone was not enough — `git switch --detach "$DEPLOY_SHA"` is
-// a one-word modernization that silently disarmed the guard in testing.
-const WORKSPACE_REWRITE_RE =
-  /\bgit\s+(checkout|switch|worktree)\b|\bgit\s+reset\s+--hard\b/;
+// `usesLocalAction` tolerates every legal spelling of the same step (see the
+// helper). These drive NEGATIVE assertions ("nobody hand-writes this"), so a
+// regex that is too tight fails OPEN: the failure the turbo guard shipped with
+// and had to fix in review.
+const USES_INFISICAL = usesLocalAction("infisical-secrets");
+const USES_SUPABASE = usesLocalAction("supabase-cli");
 
 const linesOf = (text) => text.split("\n");
 const countMatching = (text, re) => linesOf(text).filter((l) => re.test(l)).length;
@@ -258,15 +242,14 @@ describe("composite action manifests", () => {
     // and it shipped, because describing the expression is the natural way to
     // document the input. CI caught it; nothing local did. Hence this check.
     const OPEN = "$" + "{{";
-    for (const { name, text } of otherActions) {
-      if (!text) continue;
+    for (const { name, file, text } of otherActions) {
       const runsAt = text.search(/^runs:/m);
-      assert.ok(runsAt > 0, `${name}/action.yml has no top-level runs: key`);
+      assert.ok(runsAt > 0, `${name}/${file} has no top-level runs: key`);
       const metadata = text.slice(0, runsAt);
       const line = metadata.slice(0, metadata.indexOf(OPEN)).split("\n").length;
       assert.ok(
         !metadata.includes(OPEN),
-        `${name}/action.yml line ~${line}: a template expression appears in the ` +
+        `${name}/${file} line ~${line}: a template expression appears in the ` +
           `action's metadata (above \`runs:\`). The runner evaluates it there and the ` +
           `manifest will fail to load. Describe it in words, or move it under \`runs:\`.`,
       );
@@ -551,81 +534,13 @@ describe("supabase-cli composite action", () => {
 });
 
 describe("local actions resolve at every call site", () => {
-  // The workspace a job is in, as a state machine over its lines:
-  //
-  //   none      — nothing checked out yet;
-  //   trusted   — the workflow's own commit: a first `actions/checkout` with no
-  //               `ref:` (or `ref: ${{ github.sha }}`), or the one sanctioned
-  //               move back to it, `git checkout --force --detach
-  //               "$TRUSTED_SHA"` in a step whose `TRUSTED_SHA` is
-  //               `${{ github.sha }}` (`_deploy.yml`, #2805);
-  //   untrusted — anything else: a checkout with any other `ref:`, a later
-  //               checkout, or any other rewrite of the tree.
-  //
-  // A local action may run only in `trusted`. `uses: ./…` resolves from the
-  // workspace at step-execution time, so after a move to another commit it
-  // loads THAT commit's copy: deploying anything older than the action fails
-  // with "Can't find 'action.yml'" (the rollback path), and anything newer
-  // silently uses that commit's copy of the CLI pin.
-  const TRUSTED_MOVE = /^\s*git checkout --force --detach "\$TRUSTED_SHA"\s*$/;
-  const TRUSTED_REF = /^\s*TRUSTED_SHA:\s*\$\{\{\s*github\.sha\s*\}\}\s*$/;
-  const STEP_START = /^\s{4,}-\s/;
+  // The workspace states, and why a local action may run only in `trusted`,
+  // are documented at `workspaceTrust` in helpers/workflow-yaml.mjs. It is
+  // shared with node-setup-action.test.mjs, which uses it to hold its two
+  // hand-written exceptions to "the workspace has moved here".
 
-  /** Every local-action call, with the workspace state it runs in. */
-  function localActionCalls(text) {
-    // Comments blanked: a commented-out `# uses: actions/checkout@v4` must not
-    // satisfy the requirement for a real one.
-    const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
-    const calls = [];
-    let state = "none";
-    let movedAt = null;
-    let stepStart = 0;
-    lines.forEach((line, i) => {
-      // Job boundary. Tolerates a quoted id and a trailing comment: the
-      // stricter `/^ {2}[a-z0-9_-]+:\s*$/` never matched `deploy-prod: # note`
-      // or `"deploy-prod":`, so one job's checkout leaked into the next.
-      if (JOB_KEY_RE.test(line) && i > 3) {
-        state = "none";
-        movedAt = null;
-      }
-      if (STEP_START.test(line)) stepStart = i;
-      if (/uses:\s*actions\/checkout@/.test(line)) {
-        // The step's own `ref:`, if any: the whole step, since `with:` may
-        // come before `uses:`, bounded by the next step.
-        let next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
-        if (next === -1) next = lines.length;
-        const ref = lines.slice(stepStart, next).map((l) => l.match(/^\s+ref:\s*(.+?)\s*$/)?.[1]).find(Boolean);
-        const own = !ref || /^\$\{\{\s*github\.sha\s*\}\}$/.test(ref);
-        // Only the FIRST checkout can establish trust; a later one moves the
-        // workspace like `git checkout --detach` does, and must read that way.
-        if (state === "none" && own) state = "trusted";
-        else {
-          state = "untrusted";
-          movedAt = i + 1;
-        }
-      } else if (TRUSTED_MOVE.test(line) && state !== "none") {
-        let next = lines.findIndex((l, j) => j > i && STEP_START.test(l));
-        if (next === -1) next = lines.length;
-        const step = lines.slice(stepStart, next);
-        // A move under an `if:` leaves the workspace on the deployed commit
-        // whenever the condition is false.
-        if (step.some((l) => TRUSTED_REF.test(l)) && !step.some((l) => /^\s+if:/.test(l))) {
-          state = "trusted";
-          movedAt = null;
-        } else {
-          state = "untrusted";
-          movedAt = i + 1;
-        }
-      } else if (WORKSPACE_REWRITE_RE.test(line) && state !== "none") {
-        state = "untrusted";
-        movedAt = i + 1;
-      }
-      if (USES_ANY_LOCAL.test(line)) {
-        calls.push({ line: i + 1, state, movedAt });
-      }
-    });
-    return calls;
-  }
+  /** Every local-action call in a workflow, with the workspace state it runs in. */
+  const localActionCalls = (text) => workspaceTrust(text, (line) => USES_ANY_LOCAL_ACTION.test(line));
 
   it("every job calling a local action runs it from the trusted workspace", () => {
     let seen = 0;
@@ -652,6 +567,70 @@ describe("local actions resolve at every call site", () => {
     // every job. A collapse well below that means this reader broke, not that
     // the workflows changed.
     assert.ok(seen >= 60, `expected every local composite action call site, saw ${seen}`);
+  });
+
+  // A composite action has no checkout of its own to rely on: it runs in its
+  // caller's workspace, which the test above holds to `trusted`. What it can
+  // still do is move that workspace before calling another local action
+  // (storage-offsite-backup calls node-setup), which the workflow-level scan
+  // never reads.
+  it("no composite action moves the workspace before calling another local action", () => {
+    let seen = 0;
+    for (const { name, file, text } of otherActions) {
+      const calls = workspaceTrust(text, (line) => USES_ANY_LOCAL_ACTION.test(line), {
+        initial: "trusted",
+        jobs: false,
+      });
+      for (const call of calls) {
+        seen += 1;
+        assert.equal(
+          call.state,
+          "trusted",
+          `.github/actions/${name}/${file}:${call.line} calls a local composite action after ` +
+            `moving the workspace at line ${call.movedAt}; it would load from that tree.`,
+        );
+      }
+    }
+    assert.ok(seen >= 2, `expected the nested local-action calls (storage-offsite-backup, db-offsite-backup), saw ${seen}`);
+  });
+
+  // A skipped job reports Success, so a REQUIRED job gated on a paths-filter
+  // that lacks `.github/actions/**` passes green on a PR that edits only an
+  // action it calls. Every local action, not one: since node-setup (#1541)
+  // nearly every job calls one.
+  it("every path-gated job that calls a local action re-runs when an action changes", () => {
+    const path = join(WORKFLOWS, "ci.yml");
+    const lines = readFileSync(path, "utf8").split(/\r?\n/);
+    const start = lines.findIndex((l) => /^\s+filters:\s*\|\s*$/.test(l));
+    assert.ok(start !== -1, "ci.yml must still define its paths-filter block");
+    const filters = {};
+    let current = null;
+    for (const line of lines.slice(start + 1)) {
+      if (line.trim() === "" || /^\s*#/.test(line)) continue;
+      if (!/^ {12}/.test(line)) break;
+      const filter = line.match(/^ {12}([\w-]+):\s*$/);
+      if (filter) {
+        current = filter[1];
+        filters[current] = [];
+        continue;
+      }
+      const item = line.match(/^ {14}-\s*["']?([^"'#]+?)["']?\s*(#.*)?$/);
+      if (item && current) filters[current].push(item[1]);
+    }
+    const gated = workflowJobs(path).flatMap((job) =>
+      [...(job.if ?? "").matchAll(/needs\.changes\.outputs\.([\w-]+)/g)].map((m) => ({ job: job.jobId, filter: m[1] })),
+    );
+    assert.ok(gated.length >= 4, `expected ci.yml's path-gated jobs, saw ${gated.length}`);
+    const usesAction = new Set(
+      workflowSteps(path)
+        .filter((step) => step.body.split("\n").some((l) => USES_ANY_LOCAL_ACTION.test(l)))
+        .map((step) => step.jobId),
+    );
+    const missing = gated
+      .filter((g) => usesAction.has(g.job))
+      .filter((g) => !(filters[g.filter] ?? []).includes(".github/actions/**"))
+      .map((g) => `${g.job} (filter \`${g.filter}\`)`);
+    assert.deepEqual(missing, [], "add '.github/actions/**' to each of these jobs' paths-filter");
   });
 
   // The guard's own teeth, on the one file whose trust changes mid-job.

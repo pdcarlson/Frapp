@@ -153,7 +153,9 @@ running perfectly on any modern dev machine — **it did not reproduce locally**
 the runner did.
 
 So before bumping this major, compare its `engines` against `node-version:` in
-[`node-setup`](../../.github/actions/node-setup/action.yml), the one place CI's jobs get it, and against `FROM node:` in
+[`node-setup`](../../.github/actions/node-setup/action.yml), which every CI job that installs
+dependencies gets it from (`_deploy.yml` and `release.yml` keep their own copy, held equal to it by
+`node-setup-action.test.mjs`), and against `FROM node:` in
 [`apps/api/Dockerfile`](../../apps/api/Dockerfile). Those pin only the Node major; the exact floor
 is the root `package.json` `engines.node`, and how the pins relate to it is in
 [`spec/environments/README.md` § Prerequisites](../../spec/environments/README.md#prerequisites).

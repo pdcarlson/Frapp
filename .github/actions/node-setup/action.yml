@@ -1,8 +1,8 @@
 name: Node setup
 description: >
-  The Node runtime every workflow job runs on, and the dependency install that
-  follows it. The one place `node-version` is written for every job that calls
-  it, so a Node bump is one edit here instead of one per job (#1541).
+  Sets up Node, then the dependency install the `install` input names. The one
+  place `node-version` is written for every job that calls it, so a Node bump
+  is one edit here instead of one per job (#1541).
 
 # What this action deliberately does NOT do:
 #
@@ -16,6 +16,15 @@ description: >
 #     `release.yml` (checks out the deployed SHA) keep a hand-written
 #     `actions/setup-node` for that reason, pinned to the same version below by
 #     `scripts/ci/__tests__/node-setup-action.test.mjs`.
+#   - Reach every job. A few dependency-free jobs set up no Node at all and run
+#     on the runner's preinstalled one (`ci-wake.yml`, `pr-base-sync.yml`,
+#     both deploy workflows' `deploy-outcome`, `docs.yml`'s `env-slugs`,
+#     `db-backup.yml`'s `backup-production`), so a bump here doesn't move them.
+#
+# Every step below is pinned by that test, in order: the per-job guards (the
+# cold-build jobs, mobile-validate's bundle order, the watchdogs' "no npm ci")
+# read only the calling job, so a step added here would reach all of them
+# unseen.
 
 inputs:
   install:

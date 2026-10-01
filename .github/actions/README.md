@@ -13,7 +13,7 @@ action file is not on disk yet when the runner resolves it.
 | Action | What it does |
 | --- | --- |
 | [`node-setup`](./node-setup/action.yml) | `actions/setup-node` at the one pinned `node-version`, then the install the required `install:` input names: `ci` (`npm ci`), `omit-dev` (`npm ci --omit=dev`) or `none`. The two installing modes restore the `~/.npm` download cache, never `node_modules`. Every job that sets up Node calls it, except the two exceptions in the rules below (#1541). |
-| [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`) and eight consumers (roster: `CONSUMERS` in its test). |
+| [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`); the consumers are `CONSUMERS` in its test. |
 | [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. Optional `preserve-nonempty` restores named env vars this injection left empty (production backup `prod` inject only). Call-site roster: `EXPECTED` in `scripts/ci/__tests__/infisical-secrets-action.test.mjs`. |
 | [`db-offsite-backup`](./db-offsite-backup/action.yml) | Dump one Supabase project with the Supabase CLI, upload to the offsite bucket under `<environment>/<label>/`, read it back, prune past retention. Asserts the injected `SUPABASE_PROJECT_REF` against `.github/environments.json` before linking. 2 call sites (staging, production) in `db-backup.yml`. |
 | [`storage-offsite-backup`](./storage-offsite-backup/action.yml) | Mirror one project's Storage objects to a per-environment prefix, or run the restore rehearsal. Asserts the injected `SUPABASE_URL` against `.github/environments.json`. 2 call sites in `db-backup.yml`. |
@@ -32,17 +32,21 @@ action file is not on disk yet when the runner resolves it.
   tree (see the workspace rule below), and they keep a hand-written step pinned to
   `node-setup`'s version. `scripts/ci/__tests__/node-setup-action.test.mjs` fails on any
   other copy, on an exception whose version differs or that no longer checks out another
-  commit first, on an `install:` value the action doesn't accept, and on a path-gated job
-  that calls the action without `.github/actions/**` in its filter.
+  commit first, on an `install:` value the action doesn't accept, on any step added to the
+  action beyond its four, and on a job that holds a secret calling it with an installing
+  mode (those jobs run dependency-free scripts, so `npm ci`'s lifecycle scripts never run
+  beside a credential).
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`
   under the pruned `npm ci --omit=dev` shape — and prebuilt `dist/` on disk hides
   exactly that. Same test enforces it.
 - **Gate the filter, not just the workflow.** A job path-gated by `dorny/paths-filter`
-  that builds through an action here needs `.github/actions/**` in *that* filter list.
+  that calls an action here needs `.github/actions/**` in *that* filter list.
   Without it a PR editing only the action skips the job, and a job skipped by a
   job-level `if:` reports **Success** — so a required check passes without running.
+  `scripts/ci/__tests__/infisical-secrets-action.test.mjs` checks it for every local
+  action call in `ci.yml`.
 
 - **`infisical-secrets`'s input must stay named `env-slug`, and call sites must pass a
   quoted literal.** `scripts/check-env-slugs.mjs` finds Infisical environment names by
@@ -74,7 +78,10 @@ action file is not on disk yet when the runner resolves it.
   moves.** `uses: ./…` resolves against the runner workspace *at step-execution time*, so a
   checkout earlier in the job is necessary but **not sufficient**. Both halves are enforced by
   `scripts/ci/__tests__/infisical-secrets-action.test.mjs`, for every local action's call site
-  in a workflow (since #1541; it used to check only `infisical-secrets` and `supabase-cli`).
+  in a workflow, and in a composite action, which must not move its caller's workspace before
+  calling another (since #1541; it used to check only `infisical-secrets` and `supabase-cli`
+  calls in workflows). The state machine is `workspaceTrust` in
+  `scripts/ci/__tests__/helpers/workflow-yaml.mjs`.
 
   The first half: `deploy-api.yml`'s `deploy-staging` job (the staging deploy, now
   `deploy-staging.yml`'s `deploy` job) had no checkout at all — it only fired a deploy hook
