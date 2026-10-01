@@ -12,6 +12,7 @@ import type {
   DocumentVariant,
   Semester,
 } from '#domain/entities/backwork.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseBackworkResourceRepository implements IBackworkResourceRepository {
@@ -30,7 +31,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -87,7 +88,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     const { data, error } = await query.order('created_at', {
       ascending: false,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -101,7 +102,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('chapter_id', chapterId)
       .eq('file_hash', fileHash)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -113,7 +114,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -123,7 +124,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async countByDepartment(
@@ -167,7 +168,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .select('id', { count: 'exact', head: true })
       .eq('chapter_id', chapterId)
       .eq(column, value);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return count ?? 0;
   }
 
@@ -191,7 +192,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('chapter_id', chapterId)
       .eq(column, fromId)
       .select('id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data?.length ?? 0;
   }
 }

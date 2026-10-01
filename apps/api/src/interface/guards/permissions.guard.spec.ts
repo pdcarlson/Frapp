@@ -7,6 +7,7 @@ import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PermissionsGuard } from './permissions.guard';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import {
   PERMISSIONS_ANY_KEY,
   PERMISSIONS_KEY,
@@ -398,9 +399,16 @@ describe('PermissionsGuard', () => {
         custom_role_ids: ['custom-1'],
       });
 
-      await expect(guard.canActivate(ctx)).rejects.toThrow(
-        InternalServerErrorException,
-      );
+      const thrown: unknown = await guard
+        .canActivate(ctx)
+        .catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(InternalServerErrorException);
+      // The query error travels as the cause, so Sentry gets what failed
+      // (#1264); the client body stays the generic 500.
+      expect((thrown as Error).cause).toBeInstanceOf(SupabaseQueryError);
+      expect((thrown as Error).cause).toMatchObject({
+        message: 'connection reset',
+      });
     });
   });
 });

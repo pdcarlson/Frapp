@@ -25,6 +25,7 @@ import type {
   ImportedMessageRow,
 } from '#domain/utils/discord-export';
 import { chunkByEncodedLength, chunkIds } from '#domain/utils/chunk-ids';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and
@@ -116,7 +117,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .insert(row)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -127,7 +128,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -138,7 +139,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .eq('chapter_id', chapterId)
       .is('cleared_at', null)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -156,7 +157,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .in('status', clearable)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -173,7 +174,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .eq('chapter_id', chapterId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -191,7 +192,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .in('status', expectedStatuses)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? null;
   }
 
@@ -212,7 +213,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .from('discord_import_channels')
       .delete()
       .eq('import_id', importId);
-    if (deleteError) throw deleteError;
+    if (deleteError) throw new SupabaseQueryError(deleteError);
 
     if (rows.length === 0) return [];
 
@@ -227,7 +228,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     const { error } = await this.supabase
       .from('discord_import_channels')
       .insert(payload);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return this.findChannels(importId, chapterId);
   }
 
@@ -284,8 +285,8 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       base(),
       base().in('status', ['completed', 'skipped']),
     ]);
-    if (total.error) throw total.error;
-    if (done.error) throw done.error;
+    if (total.error) throw new SupabaseQueryError(total.error);
+    if (done.error) throw new SupabaseQueryError(done.error);
     return { total: total.count ?? 0, done: done.count ?? 0 };
   }
 
@@ -336,7 +337,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .limit(DISCORD_IMPORT_PROGRESS_LIMITS.failed),
     ]);
     for (const result of [...counts, running, recent, failed]) {
-      if (result.error) throw result.error;
+      if (result.error) throw new SupabaseQueryError(result.error);
     }
     const named = (
       data: DiscordImportChannelProgressRow[] | null,
@@ -374,7 +375,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .update(patch)
       .eq('id', id)
       .eq('import_id', importId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   // ── uploaded files ────────────────────────────────────────────────────────
@@ -415,7 +416,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (error) {
       const quota = parseArchiveQuotaError(error);
       if (quota) throw quota;
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     // An empty result for a non-empty batch means the function returned no
@@ -486,7 +487,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .eq('chapter_id', chapterId)
         .in('storage_path', batch)
         .select('id');
-      if (error) throw error;
+      if (error) throw new SupabaseQueryError(error);
       marked += (data ?? []).length;
     }
     return marked;
@@ -505,7 +506,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .in('status', ['ready', 'running', 'purging'])
       .order('created_at', { ascending: true })
       .limit(5);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
 
     const nowIso = now.toISOString();
     for (const candidate of candidates ?? []) {
@@ -538,7 +539,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       )
         .select()
         .maybeSingle();
-      if (claimError) throw claimError;
+      if (claimError) throw new SupabaseQueryError(claimError);
       if (claimed) return { job: claimed, lockToken };
     }
     return null;
@@ -561,7 +562,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .eq('id', id)
       .eq('lock_token', lockToken)
       .select('id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length > 0;
   }
 
@@ -571,7 +572,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .update({ lock_token: null, locked_by: null, lease_expires_at: null })
       .eq('id', id)
       .eq('lock_token', lockToken);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   // ── the import write path ─────────────────────────────────────────────────
@@ -589,7 +590,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .select('id, external_message_id')
         .eq('channel_id', channelId)
         .in('external_message_id', slice);
-      if (error) throw error;
+      if (error) throw new SupabaseQueryError(error);
       for (const row of data ?? []) {
         if (row.external_message_id) found.set(row.external_message_id, row.id);
       }
@@ -631,7 +632,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .from('chat_messages')
       .insert(deduped)
       .select('id, external_message_id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     for (const row of data ?? []) {
       if (row.external_message_id)
         inserted.set(row.external_message_id, row.id);
@@ -654,7 +655,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .eq('id', pair.id)
         .eq('kind', 'imported')
         .select('id');
-      if (error) throw error;
+      if (error) throw new SupabaseQueryError(error);
       // Affected rows, not attempts. The `kind` filter can exclude a row (a
       // moderator hard-deleted the target between the insert and this pass), and
       // a count that says otherwise would make a future caller's retry logic
@@ -678,7 +679,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         ignoreDuplicates: true,
       })
       .select('id');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length;
   }
 
@@ -701,7 +702,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .eq('metadata->>discord_import_id', importId)
       .eq('chat_channels.chapter_id', chapterId)
       .limit(limit);
-    if (selectError) throw selectError;
+    if (selectError) throw new SupabaseQueryError(selectError);
 
     const ids = (candidates ?? []).map((row) => row.id);
     // A purge round reads up to 500 ids: ~19 KB in one `in` list. Hosted
@@ -713,7 +714,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .from('chat_messages')
         .delete()
         .in('id', batch);
-      if (deleteError) throw deleteError;
+      if (deleteError) throw new SupabaseQueryError(deleteError);
     }
     return ids.length;
   }
@@ -731,7 +732,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         { import_id: importId, channel_id: channelId },
         { onConflict: 'import_id,channel_id', ignoreDuplicates: true },
       );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async deleteEmptyCreatedChannels(
@@ -745,7 +746,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       'delete_empty_discord_import_channels',
       { p_import_id: importId, p_chapter_id: chapterId },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 }

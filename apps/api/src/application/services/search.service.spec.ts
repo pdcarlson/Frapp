@@ -9,6 +9,8 @@ import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { HttpException, Logger } from '@nestjs/common';
 
 describe('SearchService', () => {
   let service: SearchService;
@@ -189,6 +191,33 @@ describe('SearchService', () => {
       expect(result.members).toHaveLength(1);
       expect(result.members[0].display_name).toBe('Ann Meeting');
       expect(result.messages).toHaveLength(0);
+    });
+
+    it('a failed query surfaces as a SupabaseQueryError, not a 500 carrying its text', async () => {
+      // Search's own `throwIfError` used to throw
+      // `InternalServerErrorException(error.message)`, which put PostgREST's
+      // text in the response body. A `SupabaseQueryError` is not an
+      // HttpException, so `AllExceptionsFilter` answers it with the generic
+      // 500 body and sends the code and the query's stack to Sentry (#1264).
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'backwork_resources'
+          ? makeChain({
+              data: [],
+              error: {
+                code: '42P01',
+                message: 'relation "backwork_resources" does not exist',
+              },
+            })
+          : makeChain({ data: [], error: null }),
+      );
+
+      const thrown: unknown = await service
+        .search('ch-1', 'user-1', 'meeting')
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(SupabaseQueryError);
+      expect(thrown).not.toBeInstanceOf(HttpException);
+      expect(thrown).toMatchObject({ code: '42P01' });
     });
 
     it('should scope message search to channels the caller can access', async () => {
@@ -460,7 +489,7 @@ describe('SearchService', () => {
         );
 
         // `chat_channels.id` is a uuid column: PostgREST answers a malformed
-        // comparison with 22P02, which `throwIfError` turns into a 500. So
+        // comparison with 22P02, thrown as a `SupabaseQueryError` (a 500). So
         // `?channelId=general` must skip the push-down and fall through to the
         // intersection — "no matches", which is what the contract promises —
         // rather than erroring. The filter is an optimisation and must never
@@ -923,6 +952,37 @@ describe('SearchService', () => {
       return chain;
     };
 
+    /** A query that answers with an error only after `ms`. */
+    const makeLateFailingChain = (ms: number) => {
+      const chain: Record<string, unknown> = {};
+      Object.assign(chain, {
+        select: jest.fn().mockReturnValue(chain),
+        eq: jest.fn().mockReturnValue(chain),
+        in: jest.fn().mockReturnValue(chain),
+        ilike: jest.fn().mockReturnValue(chain),
+        textSearch: jest.fn().mockReturnValue(chain),
+        or: jest.fn().mockReturnValue(chain),
+        limit: jest.fn().mockReturnValue(chain),
+        order: jest.fn().mockReturnValue(chain),
+        then: (resolve: (v: unknown) => void) =>
+          new Promise((settle) =>
+            setTimeout(
+              () =>
+                settle({
+                  data: null,
+                  error: { code: '57014', message: 'canceling statement' },
+                }),
+              ms,
+            ),
+          ).then(resolve),
+      });
+      return chain;
+    };
+
+    const TIMEOUT_LINE = 'reported to the caller as a timeout';
+    const loggedText = (spy: jest.SpyInstance) =>
+      spy.mock.calls.flat().map(String).join('\n');
+
     /** Wires the chapter/membership lookups the message source walks. */
     const wireSources = (overrides: Record<string, unknown> = {}) => {
       const defaults: Record<string, unknown> = {
@@ -997,6 +1057,56 @@ describe('SearchService', () => {
         timedOut: false,
         timedOutSources: [],
       });
+    });
+
+    it('propagates a failure inside the budget without logging it as a timeout', async () => {
+      // The late-failure logger used to read a flag the race's continuation had
+      // not set yet, so every fast failure also logged a false "timeout" line
+      // beside the 500 it actually became.
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        wireSources({
+          backwork_resources: makeChain({
+            data: [],
+            error: { code: '42P01', message: 'relation does not exist' },
+          }),
+        });
+
+        await expect(
+          service.searchWithinBudget('ch-1', 'user-1', 'meeting'),
+        ).rejects.toBeInstanceOf(SupabaseQueryError);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(loggedText(logged)).not.toContain(TIMEOUT_LINE);
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    it('logs a failure that lands after the budget, which the caller only saw as a timeout', async () => {
+      jest.useFakeTimers();
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        wireSources({ backwork_resources: makeLateFailingChain(1_000) });
+
+        const promise = service.searchWithinBudget('ch-1', 'user-1', 'meeting');
+        await jest.advanceTimersByTimeAsync(500);
+        const outcome = await promise;
+        expect(outcome.timedOutSources).toEqual(['backwork']);
+        expect(loggedText(logged)).not.toContain(TIMEOUT_LINE);
+
+        await jest.advanceTimersByTimeAsync(1_000);
+        expect(loggedText(logged)).toContain(
+          `search source "backwork" failed after the 500ms budget; ${TIMEOUT_LINE}`,
+        );
+      } finally {
+        logged.mockRestore();
+        jest.useRealTimers();
+      }
     });
 
     it('degrades ONLY the slow source, and names it', async () => {

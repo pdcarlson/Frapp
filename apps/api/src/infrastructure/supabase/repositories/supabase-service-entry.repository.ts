@@ -11,6 +11,7 @@ import {
   ServiceEntryFilters,
   ServiceLeaderboardRow,
 } from '#domain/entities/service-entry.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
@@ -26,7 +27,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -52,7 +53,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     const { data, error } = await query.order('created_at', {
       ascending: false,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -65,7 +66,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       p_start_date: range.startDate ?? null,
       p_end_date: range.endDate ?? null,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -76,7 +77,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -93,7 +94,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -111,7 +112,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       p_review_comment: reviewComment,
       p_points: points,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
   }
@@ -123,6 +124,6 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

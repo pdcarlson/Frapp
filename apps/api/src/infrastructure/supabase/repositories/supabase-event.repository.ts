@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseEventRepository implements IEventRepository {
@@ -22,7 +23,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -32,7 +33,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -43,7 +44,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('parent_event_id', parentId)
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -54,7 +55,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -71,7 +72,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -91,7 +92,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('chapter_id', chapterId)
       .select();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated || [];
   }
 
@@ -102,7 +103,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async deleteMany(ids: string[], chapterId: string): Promise<void> {
@@ -114,6 +115,6 @@ export class SupabaseEventRepository implements IEventRepository {
       .in('id', ids)
       .eq('chapter_id', chapterId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

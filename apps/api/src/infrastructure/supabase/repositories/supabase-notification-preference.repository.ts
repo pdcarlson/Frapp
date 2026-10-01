@@ -5,6 +5,7 @@ import type { INotificationPreferenceRepository } from '#domain/repositories/not
 import type { NotificationPreference } from '#domain/entities/notification.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { fetchAllPages } from '../supabase.utils';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * Request size for a batched preference read. One row per (user, chapter,
@@ -31,7 +32,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .eq('user_id', userId)
       .eq('chapter_id', chapterId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -48,7 +49,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .eq('category', category)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -97,7 +98,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return result;
   }
 }

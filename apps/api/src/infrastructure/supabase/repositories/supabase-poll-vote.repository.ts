@@ -7,6 +7,7 @@ import type {
   PollVoteOptionTotalRow,
 } from '#domain/repositories/poll-vote.repository.interface';
 import type { PollVote } from '#domain/entities/poll-vote.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * No method here reads whole `poll_votes` rows to count them. Both callers that
@@ -39,7 +40,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       'get_poll_vote_option_totals',
       { p_message_ids: messageIds },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map((row) => ({
       message_id: row.message_id,
       option_index: row.option_index,
@@ -58,7 +59,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       'get_poll_user_votes_for_messages',
       { p_message_ids: messageIds, p_user_id: userId },
     );
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
@@ -71,7 +72,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .select('*')
       .eq('message_id', messageId)
       .eq('user_id', userId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -81,7 +82,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -94,7 +95,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .from('poll_votes')
       .insert(data)
       .select();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created || [];
   }
 
@@ -107,6 +108,6 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .delete()
       .eq('message_id', messageId)
       .eq('user_id', userId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

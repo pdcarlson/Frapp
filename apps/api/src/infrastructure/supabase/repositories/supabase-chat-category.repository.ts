@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type { IChatCategoryRepository } from '#domain/repositories/chat.repository.interface';
 import { ChatChannelCategory } from '#domain/entities/chat.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
@@ -39,7 +40,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .eq('chapter_id', chapterId)
       .order('display_order', { ascending: true })
       .order('created_at', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -51,7 +52,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -65,7 +66,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -81,7 +82,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .eq('chapter_id', chapterId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -91,6 +92,6 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }
