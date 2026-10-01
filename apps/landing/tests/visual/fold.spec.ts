@@ -6,8 +6,9 @@ import { expect, test } from "@playwright/test";
  * `spec/ui/landing/reference/canvas/HeroB.dc.html` draws the shipping fold at
  * 1440x900 and `Phone.dc.html` draws the page at 390 (decision D6); those two
  * viewports are what the boards commit to, so they are what checks 1 to 5
- * measure. Check 6 is about the product frames rather than the fold, and
- * sweeps the widths in its own loop, 320 to 1440.
+ * measure. Check 6 is about the two chat frames rather than the fold, and
+ * sweeps the widths in its own loop, 320 to 1440. The event frame is not in
+ * it: its height is the phone board's, fixed on purpose.
  *
  * **This is deliberately not a screenshot test**, and that is the repo's
  * position rather than a shortcut. The advisory snapshot suite that
@@ -23,7 +24,8 @@ import { expect, test } from "@playwright/test";
  * regeneration ritual when the page legitimately changes.
  *
  * What it covers is the set of fold properties slice 2 verified by hand and
- * nothing then held in place:
+ * nothing then held in place (checks 1 to 5), plus the chat frames' fit, which
+ * #2893 added (check 6):
  *
  *  1. Neither board width opens a horizontal scrollbar. The fold's chat frame
  *     deliberately overruns its column at `lg` and is clipped by the section's
@@ -47,8 +49,9 @@ import { expect, test } from "@playwright/test";
  *  6. Neither chat frame crops its thread, at any width from a small phone up.
  *     Each frame's height is a minimum that grows when its rows need more, so
  *     every row is whole and the composer sits under the newest one, inside
- *     the frame. Below `lg`, where neither frame bleeds on purpose, each also
- *     fits its viewport's width. Before #2893 a fixed height ran the newest
+ *     the frame, and its header row fits without clipping. Each frame also
+ *     fits inside its section's content box, except the fold's from `lg` up,
+ *     which bleeds off the right edge on purpose. Before #2893 a fixed height ran the newest
  *     rows under the composer at phone width, or pushed the composer out of
  *     the frame.
  *
@@ -300,7 +303,8 @@ test.describe("the landing fold holds the boards' geometry", () => {
               const box = frame.getBoundingClientRect();
               const thread = frame.querySelector(".reveal-item")?.parentElement;
               const composer = thread?.nextElementSibling;
-              if (!thread || !composer) return { missing: true as const };
+              const header = thread?.previousElementSibling;
+              if (!thread || !composer || !header) return { missing: true as const };
               const t = thread.getBoundingClientRect();
               const c = composer.getBoundingClientRect();
               return {
@@ -311,7 +315,20 @@ test.describe("the landing fold holds the boards' geometry", () => {
                 }),
                 composerBelowThread: c.top - t.bottom,
                 composerInsideFrame: box.bottom - c.bottom,
-                insideViewport: Math.min(box.left, window.innerWidth - box.right),
+                // Against the section's content box, so a frame running into
+                // the shell's side padding counts as well as one past the
+                // viewport.
+                insideShell: (() => {
+                  const section = frame.closest("section");
+                  if (!section) return Number.NEGATIVE_INFINITY;
+                  const s = section.getBoundingClientRect();
+                  const style = getComputedStyle(section);
+                  return Math.min(
+                    box.left - (s.left + parseFloat(style.paddingLeft)),
+                    s.right - parseFloat(style.paddingRight) - box.right,
+                  );
+                })(),
+                headerOverflow: header.scrollWidth - header.clientWidth,
               };
             }),
         );
@@ -320,7 +337,7 @@ test.describe("the landing fold holds the boards' geometry", () => {
         expect(frames, "the chat frames moved or lost their labels").toHaveLength(2);
         for (const [index, frame] of frames.entries()) {
           const name = index === 0 ? "the fold's chat frame" : "the chat section's frame";
-          expect(frame.missing, `${name} has no thread or composer`).toBe(false);
+          expect(frame.missing, `${name} has no header, thread or composer`).toBe(false);
           if (frame.missing) continue;
           expect(frame.rows.length, `${name} draws no rows`).toBeGreaterThan(0);
           for (const [rowIndex, row] of frame.rows.entries()) {
@@ -338,13 +355,20 @@ test.describe("the landing fold holds the boards' geometry", () => {
             frame.composerInsideFrame,
             `${name}: the composer runs out of the frame at ${width} wide`,
           ).toBeGreaterThanOrEqual(-0.5);
-          // From `lg` up the fold frame bleeds off the right edge on purpose;
-          // below it, both frames are whole and must fit the viewport, or
-          // their section's `overflow-hidden` cuts the frame's edge off.
-          if (width < 1024) {
+          // A header wider than its frame is clipped by the frame's own
+          // `overflow-hidden`: the subtitle has to truncate instead.
+          expect(
+            frame.headerOverflow,
+            `${name}: the header row overflows the frame at ${width} wide`,
+          ).toBeLessThanOrEqual(0.5);
+          // From `lg` up the fold frame bleeds off the right edge on purpose.
+          // Otherwise a frame is whole and must sit inside its section's
+          // content box: past it, the hero's `overflow-hidden` cuts the edge
+          // off, or the page scrolls sideways.
+          if (index === 1 || width < 1024) {
             expect(
-              frame.insideViewport,
-              `${name} is wider than the viewport at ${width} wide, so its edge is clipped`,
+              frame.insideShell,
+              `${name} runs past its section's content edge at ${width} wide`,
             ).toBeGreaterThanOrEqual(-0.5);
           }
         }

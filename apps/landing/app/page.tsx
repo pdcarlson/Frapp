@@ -328,6 +328,11 @@ export default function Home() {
             Bleeding it there would crop a 720 frame to phone width and cut the
             thread mid-word, which reads as a rendering bug rather than as a
             composition; the phone board carries no bleeding frame either.
+
+            `min-w-0` lets this grid item shrink below the frame's min-content,
+            which the header's nowrap subtitle sets. Without it, at 320 the
+            subtitle held the column, and the frame, 35px wider than the shell,
+            and the section's clip cut off the frame's right edge.
           */}
           <div className="min-w-0 lg:col-span-6 lg:-mr-20">
             <div className="flex flex-col gap-3">
@@ -684,15 +689,14 @@ type StaggerStyle = React.CSSProperties & Record<"--i", number>;
  * boards (`web-framework.dc.html` option 1b and `canvas-screens.dc.html` s06 /
  * s07) and are deliberately off the marketing scale and off the radius map.
  * Landing chrome is on the grid; frame internals are not. Do not "correct" them.
- * The chat thread's rows are the exception: those boards draw the bubbles chat
- * retired on 2026-09-29, so the rows follow `components.md` § Chat messages
- * instead (#2893). See the note above `RunStart`.
+ * The chat thread's rows are the exception: `web-framework.dc.html` draws them
+ * as the bubbles chat retired on 2026-09-29, so they follow `components.md`
+ * § Chat messages instead (#2893). See the note above `RunStart`.
  *
- * What they may show is bounded by `spec/behavior/`, not by the boards: the
- * event card carries Check in and nothing else, there is no RSVP control and no
- * attendance count a member could not see, no dues artifact appears in the
- * thread because that renderer is a stub, and there is no Ask pill because the
- * shipped one opens an "isn't ready" notice.
+ * What they may show is bounded by `spec/behavior/`, not by the boards. The
+ * landing README's section inventory lists what that rules out
+ * (`spec/ui/landing/README.md`, "What the frames may draw"); the rows below
+ * note it where it bites.
  */
 
 const threadRows = [
@@ -1016,13 +1020,7 @@ function ChatFrame({
           <span className="text-[16px] font-bold text-foreground">
             <span className="text-muted-foreground">#</span>general
           </span>
-          {/*
-            `min-w-0` so the subtitle truncates: a flex item will not shrink
-            below its text otherwise. The hero's grid item takes `min-w-0` for
-            the same reason; without both, at 320 the subtitle held the fold
-            frame 35px wider than its column, past the hero's clip.
-          */}
-          <span className="min-w-0 truncate text-[13px] text-muted-foreground">
+          <span className="truncate text-[13px] text-muted-foreground">
             {isFold ? "Delta Rho · 42 members" : "42 members"}
           </span>
           <span className="ml-auto text-[18px] font-bold tracking-[0.5px] text-muted-foreground">

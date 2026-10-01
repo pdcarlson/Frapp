@@ -222,9 +222,11 @@ describe("landing page structure", () => {
         );
       }
       expect(thread).not.toMatch(/·\s*read\b/i);
-      // And `RunStart` prints that prop alone, so a date can't come back
-      // inside the component either.
-      expect(thread).toMatch(/<span className="[^"]*\btext-muted-foreground\b[^"]*">\{time\}<\/span>/);
+      // And `RunStart`'s author line is the name then that prop, and nothing
+      // else, so a date can't come back inside the component either.
+      expect(thread).toMatch(
+        /<p className="[^"]*">\s*<span\s+className=\{`[^`]*`\}\s*>\s*\{author\}\s*<\/span>\s*<span className="[^"]*\btext-muted-foreground\b[^"]*">\{time\}<\/span>\s*<\/p>/,
+      );
     });
 
     it("labels the viewer's own run \"You\" in the accent text, on the left", () => {
@@ -240,31 +242,30 @@ describe("landing page structure", () => {
       expect(body, "BODY moved").toBeDefined();
       expect(body).not.toMatch(/\b(?:bg|border|rounded|shadow|p[xytrbl]?)-/);
       expect(thread.match(/<p className=\{BODY\}>/g) ?? []).toHaveLength(3);
-      // Every fill, radius and border the thread draws, counted: the avatar's
-      // circle, the event card (fill, hairline, radius 14), the Check in
-      // control and the mention chip, once each. A bubble wrapped round a body,
-      // or a retinted row, adds a fill or a radius the count doesn't allow,
-      // whichever token it borrows.
-      const tally = (pattern: RegExp) =>
-        Object.fromEntries(
-          [...new Set(thread.match(pattern) ?? [])].map((token) => [
-            token,
-            thread.split(token).length - 1,
-          ]),
-        );
-      expect(tally(/\bbg-[\w[\]-]+/g)).toEqual({
+      // Every fill, border, radius, ring and shadow the thread draws, counted:
+      // the avatar's circle, the event card (fill, hairline, radius 14), the
+      // Check in control and the mention chip, once each. A bubble wrapped
+      // round a body, or a retinted row, adds a token or a count this doesn't
+      // allow, whichever spelling it uses (`rounded`, `border-[1px]`,
+      // `border-l-2`, `ring-1`).
+      const visual = (thread.match(
+        /(?<![\w-])(?:bg|border|rounded|ring|shadow|outline|divide)(?:-[\w[\].%/-]+)?/g,
+      ) ?? []).reduce<Record<string, number>>(
+        (counts, token) => ({ ...counts, [token]: (counts[token] ?? 0) + 1 }),
+        {},
+      );
+      expect(visual).toEqual({
         "bg-popover": 1,
         "bg-card": 1,
         "bg-primary": 1,
         "bg-mention-chip": 1,
-      });
-      expect(tally(/\brounded-[\w[\]-]+/g)).toEqual({
         "rounded-full": 1,
         "rounded-lg": 1,
         "rounded-sm": 1,
         "rounded-[5px]": 1,
+        border: 1,
+        "border-border": 1,
       });
-      expect(thread.match(/(?<![\w-])border(?![\w-])/g) ?? []).toHaveLength(1);
       expect(thread).not.toMatch(/bubble/i);
     });
 
