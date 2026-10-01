@@ -301,9 +301,11 @@ jobs:
       # Render image runs (`apps/api/Dockerfile`). Here, before any secret, for
       # the installs' reason (#2801): no build tool runs with the store in its
       # environment. The output is gitignored, so neither checkout below
-      # touches it. A migrations-only run deploys no API, so it builds none.
+      # touches it. A migrations-only run deploys no API, so it builds none,
+      # and neither does a rollback to a commit with no boot check (before
+      # c7c698fc), which the check then skips with a warning.
       - name: Build the API, for its boot check
-        if: ${{ inputs.scope != 'migrations-only' }}
+        if: ${{ inputs.scope != 'migrations-only' && hashFiles('apps/api/src/config/env.validation.ts') != '' }}
         run: npx --no-install turbo run build --filter=api
 
       # `github.sha` is the commit this file was loaded from: for production the
@@ -480,7 +482,8 @@ jobs:
       # Each environment's flags restate the `if:` of the steps they stand in
       # for, so the check asks for nothing the run won't use. Names only, never
       # values; the boot check runs in a child process with no store in its
-      # environment. The script header has both.
+      # environment. The script header has both. What it checked, and anything
+      # it skipped, goes to the step summary.
       #
       # It proves what Infisical holds, the source the Render sync copies. It
       # can't see a sync that failed or lags (SECRETS_MANAGEMENT.md § 5), or
@@ -493,6 +496,7 @@ jobs:
       - name: Check the config before anything is written (staging)
         if: inputs.environment == 'staging'
         env:
+          TARGET_ENVIRONMENT: staging
           CHECK_API_BOOT: ${{ steps.plan.outputs.deploy }}
           DEPLOYS_FUNCTIONS: ${{ steps.plan.outputs.plan != 'stale' }}
           VERIFIES_API: ${{ steps.plan.outputs.verify_sha != '' }}
@@ -505,6 +509,7 @@ jobs:
       - name: Check the config before anything is written (production)
         if: inputs.environment == 'production'
         env:
+          TARGET_ENVIRONMENT: production
           CHECK_API_BOOT: ${{ inputs.scope != 'migrations-only' }}
           DEPLOYS_FUNCTIONS: ${{ inputs.scope != 'migrations-only' }}
           VERIFIES_API: "true"
@@ -755,10 +760,9 @@ jobs:
             echo "step's log. Named, not \"the previous step\": on a \`full\` run the build steps sit"
             echo "between that step and this summary."
             echo ""
-            echo "The config check passed: the secrets the real run reads after the apply are set in"
-            echo "Infisical \`prod\`, and on a \`full\` run the API's boot check (this commit's"
-            echo "\`validateEnv\`) accepts its values. It can't see whether the Render sync has"
-            echo "copied them."
+            echo "The config check passed. Its section of this summary lists what it checked in"
+            echo "Infisical \`prod\` and anything it skipped. It can't see whether the Render sync"
+            echo "has copied those values."
             if [ "$SCOPE" != "migrations-only" ]; then
               echo ""
               echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"

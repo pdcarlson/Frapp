@@ -54,7 +54,16 @@
 // text never leaves the child: such text can quote a fragment of a value
 // (`JSON.parse` does), which no exact-match mask catches.
 //
+// The functions token goes through `deploy-edge-functions.mjs`'s own
+// `validateInputs`, so the rule (and its project-ref fence) has one home. That
+// is the trusted copy's; the real step runs the deployed commit's, so a commit
+// that changed the rule is checked by today's.
+//
+// What it checked, and anything it skipped, goes to the step summary too, so a
+// dry run's summary can point at it rather than restate it.
+//
 // Env inputs:
+//   TARGET_ENVIRONMENT — staging or production, as the Edge Functions step names it
 //   CHECK_API_BOOT     — `true` when this run deploys the API, else `false`
 //   DEPLOYS_FUNCTIONS  — `true` when this run deploys the Edge Functions
 //   VERIFIES_API       — `true` when this run checks the commit the API serves
@@ -65,12 +74,13 @@
 // Unit tests: `scripts/ci/__tests__/check-deploy-config.test.mjs`.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { listFunctions } from "./deploy-edge-functions.mjs";
+import { listFunctions, validateInputs } from "./deploy-edge-functions.mjs";
+import { getEnvironment } from "./lib/environments.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { parseEnvBaseline } from "./lib/vercel-build-env.mjs";
 
@@ -81,7 +91,7 @@ export const BOOT_CHECK_BUILD = join("apps", "api", "dist", "config", "env.valid
 const FLAGS = ["CHECK_API_BOOT", "DEPLOYS_FUNCTIONS", "VERIFIES_API"];
 
 /** This step's own inputs. Not part of the store, so neither checked nor redacted. */
-export const OWN_INPUTS = Object.freeze([...FLAGS, "ENV_BASELINE", "TRUSTED_CI"]);
+export const OWN_INPUTS = Object.freeze([...FLAGS, "TARGET_ENVIRONMENT", "ENV_BASELINE", "TRUSTED_CI"]);
 
 /** Shorter values are left alone: masking `1` would garble every version number. */
 const MIN_REDACTED_LENGTH = 4;
@@ -237,16 +247,14 @@ export function checkDeployConfig({ env, root, baselineNames, functions, runBoot
   }
 
   if (flags.DEPLOYS_FUNCTIONS && functions.length > 0) {
-    if (isBlank(env.SUPABASE_FUNCTIONS_DEPLOY_TOKEN)) {
-      problems.push(
-        `SUPABASE_FUNCTIONS_DEPLOY_TOKEN is not set in this Infisical environment, and this run deploys ` +
-          `${functions.join(", ")} after the migrations. It is a Supabase access token scoped to this ` +
-          `environment's project with Edge Functions read-write alone; SUPABASE_ACCESS_TOKEN is read-only by ` +
-          `design and can't stand in. How to mint it: docs/internal/environment/ENV_REFERENCE.md § CD Secrets.`,
-      );
-    } else {
-      passed.push(`SUPABASE_FUNCTIONS_DEPLOY_TOKEN is set, for ${functions.join(", ")}.`);
-    }
+    // The deployed tree's environments.json, which the real step's copy reads.
+    const checked = validateInputs({
+      env,
+      hasFunctions: true,
+      lookupEnvironment: (name) => getEnvironment(name, { path: join(root, ".github", "environments.json") }),
+    });
+    if (checked.ok) passed.push(`SUPABASE_FUNCTIONS_DEPLOY_TOKEN is set, for ${functions.join(", ")}.`);
+    else problems.push(`${checked.message.replaceAll(/\s*\n\s*/g, " ")} This run deploys ${functions.join(", ")} after the migrations.`);
   }
 
   if (flags.VERIFIES_API) {
@@ -267,6 +275,18 @@ export function checkDeployConfig({ env, root, baselineNames, functions, runBoot
 /** One `::error::` or `::warning::` line: the runner ends an annotation at a raw newline. */
 const annotation = (level, message) =>
   `::${level}::${message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`;
+
+const NOTHING_TO_CHECK = "Nothing to check: this run deploys no API or function and verifies no API.";
+
+/** The step summary's section: what passed, what was skipped, what failed. Names only. */
+export function formatSummary({ problems, warnings, passed }) {
+  const lines = [
+    ...passed.map((line) => `- ✅ ${line}`),
+    ...warnings.map((line) => `- ⚠️ Not checked: ${line}`),
+    ...problems.map((line) => `- ❌ ${line}`),
+  ];
+  return `### Config check, before anything is written\n\n${lines.length ? lines.join("\n") : NOTHING_TO_CHECK}\n\n`;
+}
 
 function main() {
   let baselineNames;
@@ -290,11 +310,16 @@ function main() {
     baselineNames,
     functions: listFunctions(),
   });
+  // Every line, not only the boot check's: `validateInputs` quotes the project ref.
+  const secretValues = Object.values(splitByBaseline(process.env, baselineNames).injected);
+  const clean = (lines) => lines.map((line) => redact(line, secretValues));
+  const report = { problems: clean(problems), warnings: clean(warnings), passed: clean(passed) };
 
   console.log("Checked before anything is written (names only, never values):");
-  for (const line of passed) console.log(`  ✓ ${line}`);
-  for (const line of warnings) console.log(annotation("warning", line));
-  for (const line of problems) console.error(annotation("error", line));
+  for (const line of report.passed) console.log(`  ✓ ${line}`);
+  for (const line of report.warnings) console.log(annotation("warning", line));
+  for (const line of report.problems) console.error(annotation("error", line));
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, formatSummary(report));
   if (problems.length > 0) {
     console.error(
       `${problems.length} problem(s). Nothing has been applied or deployed. Fix the value in Infisical, never on ` +
@@ -302,9 +327,7 @@ function main() {
     );
     return 1;
   }
-  if (passed.length === 0 && warnings.length === 0) {
-    console.log("  Nothing to check: this run deploys no API or function and verifies no API.");
-  }
+  if (passed.length === 0 && warnings.length === 0) console.log(`  ${NOTHING_TO_CHECK}`);
   return 0;
 }
 

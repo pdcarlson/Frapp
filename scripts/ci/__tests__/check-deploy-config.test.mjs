@@ -12,7 +12,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import {
   BOOT_CHECK_SOURCE,
   OWN_INPUTS,
   checkDeployConfig,
+  formatSummary,
   redact,
   runBootCheck,
   splitByBaseline,
@@ -34,7 +35,11 @@ const SCRIPT = join(REPO, "scripts", "ci", "check-deploy-config.mjs");
 const DEPLOY = join(REPO, ".github", "workflows", "_deploy.yml");
 
 const CANARY = "leak-canary";
+// Staging's real ref (`.github/environments.json`, copied into each tree):
+// `validateInputs` fences the functions deploy to it. A ref is not a secret.
+const STAGING_REF = "hnoyzpidbmizhbqaiity";
 const STORE = Object.freeze({
+  SUPABASE_PROJECT_REF: STAGING_REF,
   SUPABASE_URL: `https://${CANARY}-0001.supabase.co`,
   SUPABASE_SERVICE_ROLE_KEY: `sb_publishable_${CANARY}-0002`,
   STRIPE_SECRET_KEY: `sk_test_${CANARY}-0003`,
@@ -81,10 +86,11 @@ before(() => {
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 let trees = 0;
-/** A deployed tree: the boot check's source marker, its build (if given), and functions. */
+/** A deployed tree: environments.json, the boot check's source marker, its build (if given), and functions. */
 function tree({ boot, source = true, functions = [] } = {}) {
   const root = join(scratch, `tree-${(trees += 1)}`);
-  mkdirSync(root, { recursive: true });
+  mkdirSync(join(root, ".github"), { recursive: true });
+  copyFileSync(join(REPO, ".github", "environments.json"), join(root, ".github", "environments.json"));
   if (source) {
     mkdirSync(dirname(join(root, BOOT_CHECK_SOURCE)), { recursive: true });
     writeFileSync(join(root, BOOT_CHECK_SOURCE), "// stand-in\n");
@@ -106,7 +112,7 @@ describe("check-deploy-config: the boot check, in a child", () => {
   it("passes a config the deployed commit's validateEnv accepts", () => {
     const result = boot("accepts");
     assert.equal(result.status, "ok");
-    assert.match(result.message, /accepts the 7 names Infisical injected/);
+    assert.match(result.message, /accepts the 8 names Infisical injected/);
   });
 
   it("fails on a refusal, naming the variable and the rule", () => {
@@ -164,7 +170,7 @@ describe("check-deploy-config: the boot check, in a child", () => {
 
 describe("check-deploy-config: what counts as injected, and redaction", () => {
   it("hands validateEnv the names the injection added, less this step's own inputs", () => {
-    const env = { PATH: "/usr/bin", HOME: "/home/runner", ...STORE, CHECK_API_BOOT: "true", TRUSTED_CI: "/t" };
+    const env = { PATH: "/usr/bin", HOME: "/home/runner", ...STORE, CHECK_API_BOOT: "true", TRUSTED_CI: "/t", TARGET_ENVIRONMENT: "staging" };
     const { injected, before } = splitByBaseline(env, new Set(["PATH", "HOME"]));
     assert.deepEqual(Object.keys(injected).sort(), Object.keys(STORE).sort());
     assert.deepEqual(before, { PATH: "/usr/bin", HOME: "/home/runner" });
@@ -196,12 +202,19 @@ describe("check-deploy-config: what counts as injected, and redaction", () => {
 
 describe("check-deploy-config: the secrets later steps read", () => {
   const flags = (apiBoot, functions, verify) => ({
+    TARGET_ENVIRONMENT: "staging",
     CHECK_API_BOOT: String(apiBoot),
     DEPLOYS_FUNCTIONS: String(functions),
     VERIFIES_API: String(verify),
   });
   const check = (env, { functions = ["attachment-copy"] } = {}) =>
-    checkDeployConfig({ env, root: scratch, baselineNames: new Set(["PATH"]), functions, runBoot: () => assert.fail("no boot check") });
+    checkDeployConfig({
+      env,
+      root: tree({ source: false }),
+      baselineNames: new Set(["PATH"]),
+      functions,
+      runBoot: () => assert.fail("no boot check"),
+    });
 
   it("passes when every secret this run reads is set", () => {
     const { problems, passed } = check({ ...STORE, ...flags(false, true, true) });
@@ -209,12 +222,23 @@ describe("check-deploy-config: the secrets later steps read", () => {
     assert.equal(passed.length, 2);
   });
 
-  it("refuses a missing or blank SUPABASE_FUNCTIONS_DEPLOY_TOKEN when this run deploys a function", () => {
-    for (const token of [undefined, "", "  \n"]) {
+  it("refuses a missing SUPABASE_FUNCTIONS_DEPLOY_TOKEN by the Edge Functions deploy's own rule", () => {
+    for (const token of [undefined, ""]) {
       const { problems } = check({ ...STORE, SUPABASE_FUNCTIONS_DEPLOY_TOKEN: token, ...flags(false, true, false) });
       assert.equal(problems.length, 1);
-      assert.match(problems[0], /^SUPABASE_FUNCTIONS_DEPLOY_TOKEN is not set .* deploys attachment-copy after the migrations/);
+      // validateInputs' message, on one line, naming the project from environments.json.
+      assert.match(problems[0], /^SUPABASE_FUNCTIONS_DEPLOY_TOKEN is not set in this Infisical environment\. It is a Supabase access token scoped to frapp-staging alone/);
+      assert.match(problems[0], /This run deploys attachment-copy after the migrations\.$/);
+      assert.doesNotMatch(problems[0], /\n/);
     }
+  });
+
+  it("refuses, before anything is written, a project ref the functions deploy would refuse", () => {
+    const { problems } = check({ ...STORE, SUPABASE_PROJECT_REF: "unttyvyfezddlyafcydh", ...flags(false, true, false) });
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /^SUPABASE_PROJECT_REF does not match the 'staging' environment\./);
+    const unnamed = check({ ...STORE, ...flags(false, true, false), TARGET_ENVIRONMENT: undefined });
+    assert.match(unnamed.problems[0], /^TARGET_ENVIRONMENT must be 'staging' or 'production'/);
   });
 
   it("doesn't ask for the token when this run deploys no function, or the tree has none", () => {
@@ -223,12 +247,13 @@ describe("check-deploy-config: the secrets later steps read", () => {
     assert.deepEqual(check({ ...env, ...flags(false, true, false) }, { functions: [] }).problems, []);
   });
 
-  it("refuses a missing API_HEALTHCHECK_URL only when this run checks the served commit", () => {
-    const env = { ...STORE, API_HEALTHCHECK_URL: undefined };
-    const { problems } = check({ ...env, ...flags(false, false, true) });
-    assert.equal(problems.length, 1);
-    assert.match(problems[0], /^API_HEALTHCHECK_URL is not set .*verify-served-commit\.mjs/);
-    assert.deepEqual(check({ ...env, ...flags(false, false, false) }).problems, []);
+  it("refuses a missing or blank API_HEALTHCHECK_URL only when this run checks the served commit", () => {
+    for (const url of [undefined, "", "  "]) {
+      const { problems } = check({ ...STORE, API_HEALTHCHECK_URL: url, ...flags(false, false, true) });
+      assert.equal(problems.length, 1);
+      assert.match(problems[0], /^API_HEALTHCHECK_URL is not set .*verify-served-commit\.mjs/);
+    }
+    assert.deepEqual(check({ ...STORE, API_HEALTHCHECK_URL: "", ...flags(false, false, false) }).problems, []);
   });
 
   it("fails closed on a flag that is neither true nor false, so a typo can't switch a check off", () => {
@@ -249,24 +274,36 @@ describe("check-deploy-config: the secrets later steps read", () => {
     assert.equal(problems.length, 3);
     assert.doesNotMatch(problems.join("\n"), new RegExp(CANARY));
   });
+
+  it("summarises what passed, what it didn't check, and what failed", () => {
+    const summary = formatSummary({ passed: ["A is set."], warnings: ["no boot check here."], problems: ["B is not set."] });
+    assert.equal(summary, "### Config check, before anything is written\n\n- ✅ A is set.\n- ⚠️ Not checked: no boot check here.\n- ❌ B is not set.\n\n");
+    assert.match(formatSummary({ passed: [], warnings: [], problems: [] }), /Nothing to check/);
+  });
 });
 
 describe("check-deploy-config: as the job runs it", () => {
-  /** Run the script from `root` as `_deploy.yml` does: the baseline holds PATH alone, so the rest is "injected". */
+  /**
+   * Run the script from `root` as `_deploy.yml` does. The baseline holds PATH
+   * and GITHUB_STEP_SUMMARY, which every step of a real job has, so the rest
+   * is "injected".
+   */
   function run(root, env) {
     const baseline = join(root, "baseline.json");
-    writeFileSync(baseline, `${JSON.stringify(["PATH"])}\n`);
+    const summary = join(root, "summary.md");
+    writeFileSync(baseline, `${JSON.stringify(["GITHUB_STEP_SUMMARY", "PATH"])}\n`);
+    writeFileSync(summary, "");
     const result = spawnSync(process.execPath, [SCRIPT], {
       cwd: root,
-      env: { PATH: process.env.PATH, ENV_BASELINE: baseline, ...env },
+      env: { PATH: process.env.PATH, ENV_BASELINE: baseline, GITHUB_STEP_SUMMARY: summary, TARGET_ENVIRONMENT: "staging", ...env },
       encoding: "utf8",
     });
-    return { status: result.status, output: `${result.stdout}${result.stderr}` };
+    return { status: result.status, output: `${result.stdout}${result.stderr}`, summary: readFileSync(summary, "utf8") };
   }
 
   it("exits 1 with one annotation per problem, and no value anywhere in its output", () => {
     const root = tree({ boot: BOOT.dumpsEverything.replace("exports.validateEnv = (c) => {", "exports.validateEnv = (c) => { throw new Error('APP_URL is ' + c.SUPABASE_URL);") , functions: ["attachment-copy"] });
-    const { status, output } = run(root, {
+    const { status, output, summary } = run(root, {
       ...STORE,
       SUPABASE_FUNCTIONS_DEPLOY_TOKEN: "",
       API_HEALTHCHECK_URL: "",
@@ -279,22 +316,40 @@ describe("check-deploy-config: as the job runs it", () => {
     assert.match(output, /::error::The API would refuse to boot.*APP_URL is \*\*\*/);
     assert.match(output, /Nothing has been applied or deployed/);
     assert.doesNotMatch(output, new RegExp(CANARY), output);
+    assert.equal(summary.match(/^- ❌ /gm)?.length, 3, summary);
+    assert.doesNotMatch(summary, new RegExp(CANARY), summary);
+  });
+
+  it("redacts every injected value from every line it prints, the project ref included", () => {
+    const root = tree({ functions: ["attachment-copy"] });
+    const { status, output } = run(root, {
+      ...STORE,
+      TARGET_ENVIRONMENT: "production",
+      CHECK_API_BOOT: "false",
+      DEPLOYS_FUNCTIONS: "true",
+      VERIFIES_API: "false",
+    });
+    assert.equal(status, 1, output);
+    assert.match(output, /SUPABASE_PROJECT_REF does not match the 'production' environment\..*Injected \(SUPABASE_PROJECT_REF\): \*\*\*/);
+    assert.doesNotMatch(output, new RegExp(STAGING_REF), output);
   });
 
   it("exits 0 and says what it checked when everything holds", () => {
     const root = tree({ boot: BOOT.dumpsEverything, functions: ["attachment-copy"] });
     const { status, output } = run(root, { ...STORE, CHECK_API_BOOT: "true", DEPLOYS_FUNCTIONS: "true", VERIFIES_API: "true" });
     assert.equal(status, 0, output);
-    assert.match(output, /✓ The API's boot check .* accepts the 7 names Infisical injected/);
+    assert.match(output, /✓ The API's boot check .* accepts the 8 names Infisical injected/);
     assert.match(output, /✓ SUPABASE_FUNCTIONS_DEPLOY_TOKEN is set, for attachment-copy\./);
     assert.match(output, /✓ API_HEALTHCHECK_URL is set\./);
     assert.doesNotMatch(output, new RegExp(CANARY), output);
   });
 
-  it("warns and passes on a rollback to a commit with no boot check", () => {
-    const { status, output } = run(tree({ source: false }), { ...STORE, CHECK_API_BOOT: "true", DEPLOYS_FUNCTIONS: "false", VERIFIES_API: "true" });
+  it("warns and passes on a rollback to a commit with no boot check, and says so in the summary", () => {
+    const { status, output, summary } = run(tree({ source: false }), { ...STORE, CHECK_API_BOOT: "true", DEPLOYS_FUNCTIONS: "false", VERIFIES_API: "true" });
     assert.equal(status, 0, output);
     assert.match(output, /^::warning::This commit has no apps\/api\/src\/config\/env\.validation\.ts/m);
+    assert.match(summary, /^- ⚠️ Not checked: This commit has no apps\/api\/src\/config\/env\.validation\.ts/m);
+    assert.doesNotMatch(summary, /boot check .* accepts/);
   });
 
   it("refuses to check anything without the env baseline", () => {
@@ -321,7 +376,8 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
 
   it("builds the API on the deployed commit before any secret, skipping only a migrations-only run", () => {
     const build = step(BUILD);
-    assert.equal(build.if, "${{ inputs.scope != 'migrations-only' }}");
+    // Skipped where the check would skip: no source, nothing to build.
+    assert.equal(build.if, `\${{ inputs.scope != 'migrations-only' && hashFiles('${BOOT_CHECK_SOURCE}') != '' }}`);
     assert.match(build.body, /run: npx --no-install turbo run build --filter=api$/m);
     assert.doesNotMatch(build.body, /secrets\./);
     assert.ok(at("Install dependencies") < at(BUILD), "it builds before the install");
@@ -350,6 +406,22 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
       assert.ok(at(name) < firstWrite, `${name} runs after a step that writes`);
       assert.doesNotMatch(check.body, /continue-on-error/);
     }
+  });
+
+  it("names each environment as its Edge Functions step does, for the deploy's own token rule", () => {
+    for (const [check, deploy] of [
+      [CHECKS[0], "Deploy the Edge Functions (staging)"],
+      [CHECKS[1], "Deploy the Edge Functions (production)"],
+    ]) {
+      assert.ok(step(deploy).env.get("TARGET_ENVIRONMENT"), deploy);
+      assert.equal(step(check).env.get("TARGET_ENVIRONMENT"), step(deploy).env.get("TARGET_ENVIRONMENT"), check);
+    }
+  });
+
+  it("leaves a dry run's summary to the check's own section rather than restating it", () => {
+    const stop = step("Stop here (dry run only)");
+    assert.match(stop.body, /The config check passed\. Its section of this summary lists what it checked/);
+    assert.doesNotMatch(stop.body, /accepts its values/);
   });
 
   it("runs on every production run, dry runs included, and asks only for what the real run needs", () => {
