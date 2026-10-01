@@ -55,8 +55,8 @@
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
      * favor: `--muted` is muted TEXT (#78716A), not a fill. Subtle
-     * fills use `--secondary` / the surface ladder instead; the web
-     * reskin retargeted every `bg-muted` call site accordingly. */
+     * fills use the surface ladder (`--surface-1`, `--card`) instead;
+     * the web reskin retargeted every `bg-muted` call site accordingly. */
     --foreground: #EDEAE3;
     --muted-foreground: #A9A399;
     --muted: #78716A;

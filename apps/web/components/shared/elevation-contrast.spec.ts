@@ -134,13 +134,12 @@ describe("the amber notices were a light-mode island", () => {
   });
 });
 
-/** The ladder steps a control can sit on, by the names `signet.css` gives them. */
-const STEPS = [
-  ["--background", SURFACE.background],
-  ["--surface-1", SURFACE.surface1],
-  ["--card", SURFACE.card],
-  ["--popover", SURFACE.popover],
-] as const;
+/**
+ * Every ladder step a control can sit on, derived rather than listed, so a step
+ * added to `signetDarkTokens` is measured against `--card-hover` without an edit
+ * here (`focus-contrast.spec.ts` derives its ladder the same way).
+ */
+const STEPS = Object.entries(SURFACE);
 
 describe("a card-filled control hovers above the ladder (#1220)", () => {
   /*

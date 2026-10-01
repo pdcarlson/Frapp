@@ -96,12 +96,15 @@ export default function GlobalError({
               reported. Reloading usually clears it.
             </p>
             {/*
-              `Button variant="secondary" size="sm"`'s recipe, copied class for
-              class because this boundary replaces the root layout and may not
-              import the component tree. A last-resort screen disagreeing with
-              the button everywhere else is the drift the cutover rule forbids,
-              so `components/shared/elevation-call-sites.spec.ts` fails when the
-              two diverge. The hover is the neutral `--card-hover`, never the
+              A hand copy of `Button variant="secondary" size="sm"`, because
+              this boundary replaces the root layout and may not import the
+              component tree. A last-resort screen disagreeing with the button
+              everywhere else is the drift the cutover rule forbids. So
+              `components/shared/elevation-call-sites.spec.ts` holds this copy
+              to every class of that variant and size, and to no hover of its
+              own; `focus-contrast.spec.ts` holds its focus recipe. The base's
+              icon and disabled classes are left out, since this button has
+              neither. The hover is the neutral `--card-hover`, never the
               accent tint: §10 bars the chapter accent from an error surface.
             */}
             <button
