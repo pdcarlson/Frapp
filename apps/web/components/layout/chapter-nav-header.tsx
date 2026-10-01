@@ -9,11 +9,7 @@ import {
   useMyPermissions,
 } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
-import {
-  CurrentChapterPayloadSchema,
-  resolveChapterMark,
-  type ChapterMark,
-} from "@repo/validation";
+import { resolveChapterMark, type ChapterMark } from "@repo/validation";
 import { CrestTile } from "@/components/layout/crest-tile";
 import {
   DropdownMenu,
@@ -109,18 +105,19 @@ export function ChapterNavHeader({
 
   // The crest is the chapter mark, resolved from the logo and the
   // `chapters.branding` jsonb; a chapter that set none of it gets initials.
+  // `branding` goes to `resolveChapterMark` as the contract types it, loose
+  // values in a jsonb object. The resolver skips a malformed value and falls
+  // to the next step, so one bad key costs the mark a step, never the row's
+  // name (#2844).
   const identity = useMemo(() => {
     if (!chapterData) return null;
-    const parsed = CurrentChapterPayloadSchema.safeParse(chapterData);
-    if (!parsed.success) return null;
-    const payload = parsed.data;
     return {
       mark: resolveChapterMark({
         logoUrl: chapterData.logo_url,
-        branding: payload.branding,
-        name: payload.name,
+        branding: chapterData.branding,
+        name: chapterData.name,
       }),
-      name: payload.name,
+      name: chapterData.name,
     };
   }, [chapterData]);
 

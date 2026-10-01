@@ -516,8 +516,9 @@ export function MembersDirectory() {
 
   /*
    * Roles and points are in this gate, not just the member rows, because the
-   * two guards below that would otherwise catch them are dead while offline:
-   * a paused query is neither `isLoading` nor `isError`. Without them the
+   * two guards below that would otherwise catch them are dead for a read that
+   * paused offline: a paused query is neither `isLoading` nor `isError`
+   * (offline it may fail instead — `anyReadUncached` has both). Without them the
    * directory renders every member at 0 points under a raw role UUID, with an
    * empty role filter and meaningless points sorting — which is exactly the
    * "looks healthy while quietly broken" state the comment on those guards

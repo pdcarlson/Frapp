@@ -21,11 +21,7 @@ import {
   type ChapterLogoUpload,
   type SemesterArchive,
 } from "@repo/hooks";
-import {
-  CurrentChapterPayloadSchema,
-  type CurrentChapterPayload,
-  type PatchChapterConfig,
-} from "@repo/validation";
+import { type PatchChapterConfig } from "@repo/validation";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { AA_NORMAL, normalizeHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -348,10 +344,10 @@ function SettingsPageContent() {
   const [promoteNewMembers, setPromoteNewMembers] = useState(false);
 
   useEffect(() => {
-    const parsed = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
-    if (!parsed.success) return;
+    const chapter = chapterQuery.data;
+    if (!chapter) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the accent draft from the chapter query
-    setAccentDraft(parsed.data.accent_color ?? "");
+    setAccentDraft(chapter.accent_color ?? "");
     // A resync (chapter switch, another tab's save, a background refetch) can
     // change the draft out from under a still-displayed warning, which would
     // otherwise describe a colour this render no longer shows (#1183).
@@ -421,18 +417,15 @@ function SettingsPageContent() {
     );
   }
 
-  const parsedChapter = CurrentChapterPayloadSchema.safeParse(
-    chapterQuery.data,
-  );
-  const chapterPayload = parsedChapter.success
-    ? (parsedChapter.data as CurrentChapterPayload & {
-        donation_url?: string | null;
-      })
-    : null;
+  // Read through the contract type, not a second schema: a whole-payload
+  // parse emptied the profile form whenever one field (a malformed `branding`
+  // key) failed it, and a DTO rename typechecked green and blanked a field
+  // (#2844).
+  const chapter = chapterQuery.data;
   const profile = {
-    name: chapterPayload?.name ?? "",
-    university: chapterPayload?.university ?? "",
-    donation_url: chapterPayload?.donation_url ?? "",
+    name: chapter?.name ?? "",
+    university: chapter?.university ?? "",
+    donation_url: chapter?.donation_url ?? "",
   };
 
   const config = orgConfigQuery.data;

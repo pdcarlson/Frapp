@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   canAccessChannel,
-  CurrentChapterPayloadSchema,
   CustomFieldOptionsSchema,
   EmailInviteSchema,
   moduleDisabledMessage,
@@ -18,8 +17,8 @@ const UUID = "11111111-1111-4111-8111-111111111111";
  * Dependabot 3 → 4 bump failed CI on `z.record`'s TypeScript arity
  * (`tsc` on `index.ts`); these cases do not catch that (specs are
  * excluded from the package `tsc`), but they would trip if `.uuid()`,
- * `.email()`, `.default()`, `.passthrough()`, `.strict()`, or record
- * *runtime* parsing stopped matching the v3 shapes callers still send.
+ * `.email()`, `.default()`, `.strict()`, or record *runtime* parsing
+ * stopped matching the v3 shapes callers still send.
  */
 describe("Zod 4 schema smoke", () => {
   describe("z.record(key, value)", () => {
@@ -65,16 +64,6 @@ describe("Zod 4 schema smoke", () => {
       EmailInviteSchema.safeParse({ role: "member", emails: ["not-an-email"] })
         .success,
     ).toBe(false);
-  });
-
-  it("keeps unknown keys on CurrentChapterPayloadSchema", () => {
-    const parsed = CurrentChapterPayloadSchema.parse({
-      name: "Alpha",
-      university: "State",
-      subscription_status: "active",
-      extra_from_api: true,
-    });
-    expect(parsed.extra_from_api).toBe(true);
   });
 
   it("rejects unknown keys on CustomFieldOptionsSchema", () => {

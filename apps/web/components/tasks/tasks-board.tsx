@@ -345,7 +345,8 @@ export function TasksBoard() {
    * return for it: the Confirm gate below fails closed on an unresolved
    * viewer, so an uncached `/v1/users/me` hides Confirm on *every* row with no
    * notice saying why (the cost that comment names, tracked as #1346).
-   * Offline that read is paused, not errored, so nothing else would catch it.
+   * Offline that read may be paused rather than errored (`anyReadUncached`
+   * has the two cases), and nothing else would catch a paused one.
    * `membersQuery` is here for the same reason its assignee labels need it.
    */
   if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
