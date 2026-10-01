@@ -6,6 +6,7 @@ import Stripe from 'stripe';
 import { errorFingerprint } from './error-fingerprint';
 import { toReportableError } from './reportable-error';
 import { StripePriceAccountMismatchError } from '../billing/stripe-price-consistency';
+import { SupabaseQueryError } from '../supabase/supabase-query-error';
 
 function rethrown(cause: unknown): ServiceUnavailableException {
   return new ServiceUnavailableException(
@@ -128,6 +129,33 @@ describe('errorFingerprint (#2131)', () => {
         toReportableError({ code: 'PGRST205', message: 'no table' }),
       ),
     ).toEqual(['{{ default }}', 'NonErrorThrowable:PGRST205']);
+  });
+
+  it('keys a failed query by its code, since one query can fail more than one way (#1264)', () => {
+    // Its stack is the query's own, which separates two queries but not a
+    // statement timeout from a missing column at the same one.
+    expect(
+      errorFingerprint(
+        new SupabaseQueryError({
+          code: '57014',
+          message: 'canceling statement',
+        }),
+      ),
+    ).toEqual(['{{ default }}', 'SupabaseQueryError:57014']);
+    expect(
+      errorFingerprint(new SupabaseQueryError({ message: 'Bad Gateway' })),
+    ).toEqual(['{{ default }}', 'SupabaseQueryError']);
+    expect(
+      errorFingerprint(
+        rethrown(
+          new SupabaseQueryError({ code: '42P01', message: 'no table' }),
+        ),
+      ),
+    ).toEqual([
+      '{{ default }}',
+      'ServiceUnavailableException',
+      'SupabaseQueryError:42P01',
+    ]);
   });
 
   it('leaves an ordinary error, and a chain with a non-Error cause, to default grouping', () => {

@@ -34,9 +34,9 @@ import { ProChip } from "@/components/billing/pro-chip";
  * the free tier is one row, and each paid module is its own.
  *
  * Geometry is `4d`'s: radius 14 on the block, a 36px header, 40px rows,
- * top-border dividers, no zebra and no per-row fill — the table rule
- * [`deletion-checklist.md`](../../../../spec/ui/web-greenfield/deletion-checklist.md)
- * §9 already derived `/members` from.
+ * top-border dividers, no zebra and no per-row fill — the table rule every
+ * flush list on the surface is derived from
+ * ([`README.md`](../../../../spec/ui/web-dashboard/README.md) § Page grammar).
  *
  * A server component: it reads frozen constants and holds no state.
  */

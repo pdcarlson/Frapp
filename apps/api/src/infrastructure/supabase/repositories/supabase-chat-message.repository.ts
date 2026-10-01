@@ -15,6 +15,7 @@ import {
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
 } from '#domain/constants/list-query-limits';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 const DEFAULT_MESSAGE_LIMIT = 50;
 
@@ -64,7 +65,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .select(CHAT_MESSAGE_COLUMNS)
       .eq('id', id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -94,14 +95,14 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
         .eq('id', options.since)
         .eq('channel_id', channelId)
         .maybeSingle();
-      if (pivotError) throw pivotError;
+      if (pivotError) throw new SupabaseQueryError(pivotError);
       if (pivot) {
         query = query.gt('created_at', pivot.created_at);
       }
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -112,7 +113,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .eq('channel_id', channelId)
       .eq('is_pinned', true)
       .order('pinned_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -122,7 +123,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .select('*', { count: 'exact', head: true })
       .eq('channel_id', channelId)
       .eq('is_pinned', true);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return count ?? 0;
   }
 
@@ -175,7 +176,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     query = query.limit(effectivePollListLimit(options?.limit));
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -201,7 +202,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
         : query.eq('sender_id', senderId);
 
     const { data, error } = await scoped.maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -216,7 +217,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .eq('channel_id', channelId)
       .in('id', messageIds)
       .not('author_avatar_path', 'is', null);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return [
       ...new Set(
         (data ?? [])
@@ -262,7 +263,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
           data.client_message_id,
         );
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     return created;
   }
@@ -277,7 +278,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 }

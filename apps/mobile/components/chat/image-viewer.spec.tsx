@@ -241,6 +241,26 @@ describe("opening and closing", () => {
 
     expect(JSON.stringify(root.props.style)).toContain('"position":"absolute"');
   });
+
+  it("keeps its controls out from under the status bar", () => {
+    // The backdrop is absolute, so it ignores the thread's own top inset,
+    // and since #2485 the thread starts at the top of the window. Without an
+    // inset of its own, Close and Share would sit under the clock and notch.
+    const tree = render();
+    openOn([image(1)], 0);
+    const root = tree.root.findAll(
+      (node) => node.props.accessibilityViewIsModal === true,
+    )[0]!;
+    const safe = root.findByType("SafeAreaView" as unknown as React.ElementType);
+
+    expect(safe.props.edges).toContain("top");
+    expect(
+      safe.findAllByProps({ accessibilityLabel: "Close image" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      safe.findAllByProps({ accessibilityLabel: "Share image" }).length,
+    ).toBeGreaterThan(0);
+  });
 });
 
 describe("stepping through a message's images", () => {

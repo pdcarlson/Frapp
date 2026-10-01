@@ -6,6 +6,7 @@ import type {
   ChatMessageBookmarkRef,
   StoredChatMessageBookmark,
 } from '#domain/entities/chat.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 /**
  * The message columns this endpoint serves — deliberately NOT
  * `CHAT_MESSAGE_COLUMNS`.
@@ -77,7 +78,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // Stripped here too, so "every exit from this repository" is literally
     // true. `create`'s row is the caller's own, so this is not a breach — but
     // `BookmarkRefDto` declares the field absent, and a response that quietly
@@ -107,7 +108,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
       .eq('user_id', userId)
       .eq('message_id', messageId)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 
   /**
@@ -143,7 +144,7 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // PostgREST types an embed's rows as `T | GenericStringError`, which it
     // only ever is when `error` is set — already thrown above. The cast is to
     // the raw row shape, not to the entity, so `stripBookmarkRow` still has to

@@ -6,6 +6,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { textHeadings } from "@/test/screen-text";
 
 /**
  * #2303 — the chat home's wiring of Hide conversation, rendered for real.
@@ -141,14 +142,20 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
+const branding = vi.hoisted(() => {
+  const unnamed = {
     accent: "#F4CB63",
     accentPrimary: "#EFB63B",
     accentOnPrimary: "#131211",
-    logoUrl: null,
-    chapterName: null,
-  }),
+    logoUrl: null as string | null,
+    chapterName: null as string | null,
+    textMark: null as string | null,
+  };
+  return { unnamed, current: { ...unnamed } };
+});
+
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => branding.current,
 }));
 
 import ChatHomeScreen from "@/app/(tabs)/index";
@@ -742,5 +749,41 @@ describe("Chat home filters on unknown data (#2877)", () => {
     const tree = render();
 
     expect(rows(tree).map((row) => row.props.name)).toEqual(["social"]);
+  });
+});
+
+describe("Chat home's title (#2485)", () => {
+  beforeEach(() => {
+    branding.current = { ...branding.unnamed };
+  });
+
+  /** The title row's heading Text; ScreenShell draws exactly one. */
+  function heading(tree: ReactTestRenderer) {
+    const headings = textHeadings(tree);
+    expect(headings).toHaveLength(1);
+    return headings[0]!;
+  }
+
+  it("is the chapter's name with its mark beside it, not the word Chat", () => {
+    branding.current = {
+      ...branding.unnamed,
+      chapterName: "Tau Nu",
+      textMark: "TN",
+    };
+    const tree = render();
+
+    const title = heading(tree);
+    expect(title.props.children).toBe("Tau Nu");
+    // The mark shares the title's row, which is the one mobile surface of
+    // the chapter mark (spec/behavior/branding.md § Chapter mark).
+    const row = title.parent!;
+    expect(
+      row.findAllByProps({ testID: "chapter-mark-text" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("falls back to Frapp while the chapter's name is unknown", () => {
+    const tree = render();
+    expect(heading(tree).props.children).toBe("Frapp");
   });
 });

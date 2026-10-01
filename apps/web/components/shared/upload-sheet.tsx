@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 /**
  * The upload sheet chrome, transcribed from framework board option `1j`
  * ("Backwork upload · dialog chrome only"), which is rank 1 in
- * `spec/ui/web-greenfield/README.md` §1 while #2140 is open.
+ * `spec/ui/web-dashboard/README.md` § Sources and precedence.
  *
  * The board's note on that option is the whole specification:
  *

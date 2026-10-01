@@ -344,7 +344,7 @@ function DefaultInviteRoleCard({
         <Label htmlFor="default-invite-role">Role</Label>
         <select
           id="default-invite-role"
-          className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           value={defaultInviteRoleId ?? ""}
           disabled={!canManage || isSaving || rolesQuery.isPending}
           onChange={(event) => {

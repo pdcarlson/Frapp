@@ -24,7 +24,8 @@ type Role = { id: string; name: string; permissions?: string[] };
  * `min_session_minutes`, `pause_grace_minutes`) are columns on each zone, set
  * per zone in its own create and edit forms, and there is no chapter-level
  * geofence config route to hang a Defaults section on. Inventing one would be
- * capability, which `deletion-checklist.md` §8 puts outside this epic; moving
+ * capability, which `spec/ui/web-dashboard/README.md` § Settings records as
+ * not built (the greenfield was chrome, not capability); moving
  * the per-zone fields up here would be worse, since it would make four numbers
  * that differ per polygon look like one setting.
  *

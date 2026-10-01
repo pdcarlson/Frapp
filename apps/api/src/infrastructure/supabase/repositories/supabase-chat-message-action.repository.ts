@@ -9,6 +9,7 @@ import type { IChatMessageActionRepository } from '#domain/repositories/chat.rep
 import { ChatMessageActionDuplicateError } from '#domain/repositories/chat.repository.interface';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { ChatMessageAction } from '#domain/entities/chat.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseChatMessageActionRepository implements IChatMessageActionRepository {
@@ -42,7 +43,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
           data.action_type,
         );
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     return created;
   }
@@ -59,7 +60,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
       .eq('user_id', userId)
       .eq('action_type', actionType)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -81,7 +82,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
       .eq('action_type', actionType)
       .select('*')
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 }
