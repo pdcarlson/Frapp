@@ -6,6 +6,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { textHeadings } from "@/test/screen-text";
 
 /**
  * #2303 — the chat home's wiring of Hide conversation, rendered for real.
@@ -759,11 +760,7 @@ describe("Chat home's title (#2485)", () => {
 
   /** The title row's heading Text; ScreenShell draws exactly one. */
   function heading(tree: ReactTestRenderer) {
-    const headings = tree.root.findAll(
-      (node) =>
-        node.props.accessibilityRole === "header" &&
-        (node.type as unknown) === "Text",
-    );
+    const headings = textHeadings(tree);
     expect(headings).toHaveLength(1);
     return headings[0]!;
   }

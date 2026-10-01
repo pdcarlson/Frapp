@@ -5,12 +5,13 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Text, View } from "react-native";
 import { describe, expect, it } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { textHeadings } from "@/test/screen-text";
 import { ScreenShell } from "./screen-shell";
 
 /**
  * #2485 — the tab layout draws no navigator header, so the shell is the whole
  * top of every screen that uses it. It has to take the status-bar inset the
- * header used to absorb, and its title is the screen's only heading.
+ * header used to absorb, and its title is the only heading it draws.
  *
  * The host-string casts are the ones `lib/onboarding/join-screen.spec.tsx`
  * explains.
@@ -22,14 +23,6 @@ function render(element: React.ReactElement): ReactTestRenderer {
     tree = create(<FrappThemeProvider>{element}</FrappThemeProvider>);
   });
   return tree;
-}
-
-function headings(tree: ReactTestRenderer) {
-  return tree.root.findAll(
-    (node) =>
-      node.props.accessibilityRole === "header" &&
-      (node.type as unknown) === "Text",
-  );
 }
 
 describe("ScreenShell (#2485)", () => {
@@ -48,14 +41,14 @@ describe("ScreenShell (#2485)", () => {
     );
   });
 
-  it("marks the title as the screen's one heading", () => {
+  it("marks the title as the one heading the shell draws", () => {
     const tree = render(
       <ScreenShell title="Tasks" subtitle="Assigned to you.">
         <Text>Body</Text>
       </ScreenShell>,
     );
 
-    expect(headings(tree).map((node) => node.props.children)).toEqual([
+    expect(textHeadings(tree).map((node) => node.props.children)).toEqual([
       "Tasks",
     ]);
   });
@@ -70,7 +63,7 @@ describe("ScreenShell (#2485)", () => {
         <View />
       </ScreenShell>,
     );
-    const [title] = headings(tree);
+    const [title] = textHeadings(tree);
     const row = title!.parent!;
     const children = row.children as ReactTestRenderer["root"][];
 

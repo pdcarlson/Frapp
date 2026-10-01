@@ -233,6 +233,31 @@ async function waitFor(page, label, read, timeoutMs = 30_000, arg) {
 const bodyText = () => document.body.innerText;
 
 /**
+ * Chat home's channel list has loaded: the #general row, not a section header.
+ * Which headers draw depends on how the seed files its channels (CHANNELS is
+ * only the unfiled ones, #1684), while every chapter always has #general.
+ * Runs in the page, so it is self-contained; the two waits that combine this
+ * check with others restate the selector inline, because a function handed to
+ * the page can't call this one.
+ */
+const GENERAL_ROW_SHOWN = () =>
+  Boolean(document.querySelector('[aria-label^="#general"]'));
+
+/**
+ * The #general thread has drawn. Two things this must not be phrased as. Not
+ * "the channel list has gone": React Navigation keeps the tab's index screen
+ * mounted under the pushed thread, so the list stays in the DOM throughout.
+ * And not `innerText.includes("Message")` for the composer: a placeholder is an
+ * attribute, so it never appears in `innerText` and the wait could only time
+ * out. The thread's own `#general` heading is drawn by this route alone (the
+ * tab navigator's "Thread" header it used to wait for is gone, #2485).
+ */
+const GENERAL_THREAD_SHOWN = () =>
+  [...document.querySelectorAll('[role="heading"], h1')].some(
+    (heading) => heading.textContent === "#general",
+  ) && Boolean(document.querySelector('[placeholder="Message"]'));
+
+/**
  * The signed-in screens, in capture order.
  *
  * `ready` runs in the page and gates the shot on content the screen only shows
@@ -245,10 +270,7 @@ const APP_SCREENS = [
     slug: "01-home-chat",
     route: "/",
     label: "s04 — Chat home (chapter channels, UP NEXT, ✦ Ask pill)",
-    // The #general row, not a section header: which headers draw depends on
-    // how the seed files its channels (CHANNELS is only the unfiled ones,
-    // #1684), while every chapter always has #general.
-    ready: () => Boolean(document.querySelector('[aria-label^="#general"]')),
+    ready: GENERAL_ROW_SHOWN,
   },
   {
     slug: "02-ask-answer",
@@ -277,18 +299,7 @@ const APP_SCREENS = [
       await page.getByText("general", { exact: true }).first().click();
       await page.waitForTimeout(2000);
     },
-    // Two things this predicate must not be phrased as. Not "the channel list
-    // has gone": React Navigation keeps the tab's index screen mounted under
-    // the pushed thread, so the list stays in the DOM throughout. And not
-    // `innerText.includes("Message")` for the composer: a placeholder is an
-    // attribute, so it never appears in `innerText` at all and the wait can
-    // only ever time out. The thread's own `#general` heading is drawn by this
-    // route alone (the tab navigator's "Thread" header it used to wait for is
-    // gone, #2485).
-    ready: () =>
-      [...document.querySelectorAll('[role="heading"], h1')].some(
-        (heading) => heading.textContent === "#general",
-      ) && Boolean(document.querySelector('[placeholder="Message"]')),
+    ready: GENERAL_THREAD_SHOWN,
     expectRoute: "/chat-thread",
   },
   {
@@ -329,9 +340,9 @@ const STORE_SCREENS = [
     slug: "01-chat-home",
     route: "/",
     label: "Chat home — chapter channels, unread counts, UP NEXT",
-    // The #general row alone is the channels query (see s04 above for why not
-    // a section header); UP NEXT and the unread badges come from separate
-    // queries (events/tasks, unread counts), so wait for both.
+    // The #general row alone is the channels query (`GENERAL_ROW_SHOWN` says
+    // why not a section header); UP NEXT and the unread badges come from
+    // separate queries (events/tasks, unread counts), so wait for both.
     ready: () =>
       Boolean(document.querySelector('[aria-label^="#general"]')) &&
       document.body.innerText.includes("UP NEXT") &&
@@ -345,11 +356,7 @@ const STORE_SCREENS = [
       await page.getByText("general", { exact: true }).first().click();
       await page.waitForTimeout(2000);
     },
-    // Why these two and not something simpler: see `03-chat-thread` above.
-    ready: () =>
-      [...document.querySelectorAll('[role="heading"], h1')].some(
-        (heading) => heading.textContent === "#general",
-      ) && Boolean(document.querySelector('[placeholder="Message"]')),
+    ready: GENERAL_THREAD_SHOWN,
     expectRoute: "/chat-thread",
   },
   {
@@ -443,7 +450,7 @@ async function signIn(page) {
   await waitFor(
     page,
     "signed-in home",
-    () => Boolean(document.querySelector('[aria-label^="#general"]')),
+    GENERAL_ROW_SHOWN,
     60_000,
   );
 }

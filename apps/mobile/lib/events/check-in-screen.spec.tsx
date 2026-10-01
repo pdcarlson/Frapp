@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -239,11 +239,7 @@ describe("Check-in's title (#2485)", () => {
 
   it("is the screen's heading, now that no navigator header names it", () => {
     const tree = render();
-    const headings = tree.root.findAll(
-      (node) =>
-        node.props.accessibilityRole === "header" &&
-        node.type === ("Text" as never),
-    );
+    const headings = textHeadings(tree);
 
     expect(headings.map((node) => node.props.children)).toEqual(["Check in"]);
   });

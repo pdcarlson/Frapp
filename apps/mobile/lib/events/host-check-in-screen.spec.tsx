@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
+import { textHeadings } from "@/test/screen-text";
 
 /**
  * s22's title (#2485), rendered.
@@ -53,18 +54,8 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-/**
- * The host-string casts are the ones `lib/onboarding/join-screen.spec.tsx`
- * explains.
- */
 function headings(tree: ReactTestRenderer): unknown[] {
-  return tree.root
-    .findAll(
-      (node) =>
-        node.props.accessibilityRole === "header" &&
-        (node.type as unknown) === "Text",
-    )
-    .map((node) => node.props.children);
+  return textHeadings(tree).map((node) => node.props.children);
 }
 
 describe("Host check-in's title (#2485)", () => {

@@ -56,12 +56,33 @@ function hosts(root: Node, name: string): Node[] {
   return root.findAll((node) => (node.type as unknown) === name);
 }
 
+/**
+ * Options as React Navigation resolves them. A registration may pass them as
+ * an object or as a function of the route, and a function-form header would
+ * slip past a check that only reads object keys.
+ */
+function resolved(
+  options: unknown,
+  name = "screen",
+): Record<string, unknown> {
+  if (typeof options === "function") {
+    return (
+      (options as (props: object) => Record<string, unknown> | undefined)({
+        route: { key: name, name },
+        navigation: {},
+        theme: {},
+      }) ?? {}
+    );
+  }
+  return (options as Record<string, unknown> | undefined) ?? {};
+}
+
 describe("tab layout (#2485)", () => {
   it("draws no navigator header over any screen", () => {
     const tree = render();
 
     const [tabs] = hosts(tree.root, "Tabs");
-    expect(tabs.props.screenOptions.headerShown).toBe(false);
+    expect(resolved(tabs.props.screenOptions).headerShown).toBe(false);
   });
 
   it("lets no registration bring a header back for itself", () => {
@@ -72,7 +93,7 @@ describe("tab layout (#2485)", () => {
     // check below vacuously.
     expect(screens.length).toBeGreaterThan(4);
     for (const screen of screens) {
-      const options = screen.props.options ?? {};
+      const options = resolved(screen.props.options, screen.props.name);
       expect(options, screen.props.name).not.toHaveProperty("headerShown");
       expect(options, screen.props.name).not.toHaveProperty("header");
       expect(options, screen.props.name).not.toHaveProperty("headerTitle");

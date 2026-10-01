@@ -27,7 +27,9 @@ import { useFrappTheme } from "@/lib/theme";
  * its own such as the thread's `‹ #name`), so the header only ever said that
  * title again above it.
  * It never supplied a way back either — a tab route's header renders with no
- * `back` — so the pushed routes keep the back controls they draw themselves.
+ * `back` — so a pushed route's way back is whatever it draws itself: s05's `‹`
+ * and the close controls on s18 and s22. The board's `‹ More` and `‹ Events`
+ * rows on s07 and s10–s16 aren't drawn yet (#3022).
  * Chat home's chapter mark, which used to ride in the header, is now its
  * title row (`spec/behavior/branding.md` § Chapter mark). The `title`s below
  * still name each route for the tab labels and the web document title.
@@ -120,7 +122,7 @@ export default function TabLayout() {
         options={{ title: "Notifications", href: null }}
       />
       {/* s16's drawn title is "Settings"; the route filename stays
-          `preferences.tsx` per spec/ui/mobile/screens.md:37. */}
+          `preferences.tsx` per spec/ui/mobile/screens.md § Notes. */}
       <Tabs.Screen
         name="preferences"
         options={{ title: "Settings", href: null }}
