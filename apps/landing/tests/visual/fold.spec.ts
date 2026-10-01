@@ -42,6 +42,11 @@ import { expect, test } from "@playwright/test";
  *     part-way through an entrance. `app/page.spec.ts` asserts the hidden state
  *     SITS INSIDE the no-preference query by reading the stylesheet; this
  *     asserts the browser agrees, which is a different failure surface.
+ *  6. Neither chat frame crops its thread, at any width from a small phone up.
+ *     Each frame's height is a minimum that grows when its rows need more, so
+ *     every row is whole and the composer sits under the newest one, inside
+ *     the frame. Before #2893 a fixed height ran the newest rows under the
+ *     composer at phone width, or pushed the composer out of the frame.
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
  * `/#pricing` load never arms an already-painted block — the flash slice 2 fixed
@@ -268,4 +273,70 @@ test.describe("the landing fold holds the boards' geometry", () => {
       await context.close();
     }
   });
+
+  for (const width of [320, 360, 390, 640, 1024, 1440]) {
+    test(`at ${width} wide, neither chat frame crops a row or loses its composer`, async ({
+      browser,
+    }) => {
+      // Reduced motion so every row is at rest: a reveal part-way through its
+      // rise would be measured a few pixels low.
+      const context = await browser.newContext({
+        reducedMotion: "reduce",
+        viewport: { width, height: 900 },
+      });
+      const page = await context.newPage();
+      try {
+        await page.goto("/");
+        await page.waitForLoadState("networkidle");
+
+        const frames = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>('[role="img"]')]
+            .filter((frame) => frame.getAttribute("aria-label")?.includes("general channel"))
+            .map((frame) => {
+              const box = frame.getBoundingClientRect();
+              const thread = frame.querySelector(".reveal-item")?.parentElement;
+              const composer = thread?.nextElementSibling;
+              if (!thread || !composer) return { missing: true as const };
+              const t = thread.getBoundingClientRect();
+              const c = composer.getBoundingClientRect();
+              return {
+                missing: false as const,
+                rows: [...thread.children].map((row) => {
+                  const r = row.getBoundingClientRect();
+                  return { top: r.top - t.top, bottom: t.bottom - r.bottom };
+                }),
+                composerBelowThread: c.top - t.bottom,
+                composerInsideFrame: box.bottom - c.bottom,
+              };
+            }),
+        );
+
+        // Two frames from one component: the fold's and the chat section's.
+        expect(frames, "the chat frames moved or lost their labels").toHaveLength(2);
+        for (const [index, frame] of frames.entries()) {
+          const name = index === 0 ? "the fold's chat frame" : "the chat section's frame";
+          expect(frame.missing, `${name} has no thread or composer`).toBe(false);
+          if (frame.missing) continue;
+          expect(frame.rows.length, `${name} draws no rows`).toBeGreaterThan(0);
+          for (const [rowIndex, row] of frame.rows.entries()) {
+            expect(
+              Math.min(row.top, row.bottom),
+              `${name}: row ${rowIndex + 1} is cropped by the thread at ${width} wide. The ` +
+                "frame's height is a minimum so that it can grow instead.",
+            ).toBeGreaterThanOrEqual(-0.5);
+          }
+          expect(
+            frame.composerBelowThread,
+            `${name}: the composer overlaps the newest row at ${width} wide`,
+          ).toBeGreaterThanOrEqual(-0.5);
+          expect(
+            frame.composerInsideFrame,
+            `${name}: the composer runs out of the frame at ${width} wide`,
+          ).toBeGreaterThanOrEqual(-0.5);
+        }
+      } finally {
+        await context.close();
+      }
+    });
+  }
 });

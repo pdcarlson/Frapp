@@ -196,24 +196,61 @@ describe("landing page structure", () => {
     }
   });
 
-  it("draws the chat thread in the compact layout, not the retired bubbles", () => {
+  describe("the chat thread draws chat's compact layout, not the retired bubbles", () => {
     // `components.md` § Chat messages (#2873): chat has had no bubbles on web
     // or mobile since 2026-09-29, so the frame that pictures it can't draw any
-    // (#2893). The tell is the bubble's geometry, the locked radius 18 or the
-    // 6px tail corner, wherever the thread's class constants are declared.
+    // (#2893). Each case pins one rule of that section, positively where it
+    // can, because "no radius 18" alone lets a bubble back at any other radius.
     const start = renderedPage.indexOf("const threadRows");
     const end = renderedPage.indexOf("function Composer");
-    expect(start, "the chat thread's row list moved").toBeGreaterThanOrEqual(0);
-    expect(end, "the composer moved").toBeGreaterThan(start);
     const thread = renderedPage.slice(start, end);
-    expect(thread).not.toMatch(/rounded-\[18px\]|rounded-(?:bl|br|tl|tr)-\[6px\]/);
-    expect(thread).not.toMatch(/bubble/i);
-    // The viewer's run reads "You", which is how the product marks it now that
-    // no accent fill does.
-    expect(thread).toMatch(/>\s*You\s*</);
-    // Read receipts are a channel cursor that feeds unread counts
-    // (`spec/behavior/chat/README.md` § Read Receipts). No message is "read".
-    expect(thread).not.toMatch(/·\s*read\b/i);
+
+    it("finds the thread", () => {
+      expect(start, "the chat thread's row list moved").toBeGreaterThanOrEqual(0);
+      expect(end, "the composer moved").toBeGreaterThan(start);
+    });
+
+    it("starts every row as a run, under an author line that carries the time only", () => {
+      const rowCount = (thread.match(/\{ key: "[^"]+", kind:/g) ?? []).length;
+      const runs = thread.match(/<RunStart\b[^>]*>/g) ?? [];
+      expect(rowCount).toBeGreaterThan(0);
+      expect(runs).toHaveLength(rowCount);
+      for (const run of runs) {
+        // `formatTimeOfDay`'s shape: never a date, never a "read" marker.
+        expect(run, "an author line carries something besides the time").toMatch(
+          /\btime="\d{1,2}:\d{2} [AP]M"/,
+        );
+      }
+      expect(thread).not.toMatch(/·\s*read\b/i);
+    });
+
+    it("labels the viewer's own run \"You\" in the accent text, on the left", () => {
+      expect(thread.match(/<RunStart\b[^>]*\bauthor="You"[^>]*\bself\b/g) ?? []).toHaveLength(1);
+      expect(thread).toMatch(/self \? "text-accent-text" : "text-foreground"/);
+      // Own messages sit on the left like everyone else's: nothing pushes a
+      // row, or its body, to the right edge.
+      expect(thread).not.toMatch(/\b(?:ml-auto|self-end|items-end|flex-row-reverse|text-right)\b/);
+    });
+
+    it("draws message text with no fill, border or padding", () => {
+      const body = /const BODY =\s*"([^"]+)"/.exec(thread)?.[1];
+      expect(body, "BODY moved").toBeDefined();
+      expect(body).not.toMatch(/\b(?:bg|border|rounded|shadow|p[xytrbl]?)-/);
+      expect(thread.match(/<p className=\{BODY\}>/g) ?? []).toHaveLength(3);
+      // The radii a compact row may draw: the avatar circle, the card's 14,
+      // the Check in control and the mention chip. A bubble needs another.
+      const radii = new Set(thread.match(/\brounded-[\w[\]-]+/g) ?? []);
+      expect([...radii].sort()).toEqual(
+        ["rounded-[5px]", "rounded-full", "rounded-lg", "rounded-sm"].sort(),
+      );
+      expect(thread).not.toMatch(/bubble/i);
+    });
+
+    it("puts the in-body mention chip on the handle alone", () => {
+      expect(thread).toMatch(
+        /className="[^"]*\bbg-mention-chip\b[^"]*\btext-mention-chip-text\b[^"]*"\s*>\s*@\w+\s*</,
+      );
+    });
   });
 
   it("routes every tracked control through the auth URL builders", () => {

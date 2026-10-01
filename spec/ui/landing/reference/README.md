@@ -70,6 +70,9 @@ Two things to know before reading values off them:
   [`web-framework.dc.html`](../../web-greenfield/reference/web-framework.dc.html), re-pitched onto the
   current ladder in [`../../design-system/foundations.md`](../../design-system/foundations.md) §2.
   Landing chrome is on the scale and the grid; frame internals are not, on purpose.
+  The chat thread's rows are the exception: they follow
+  [`components.md` § Chat messages](../../design-system/components.md#chat-messages-compact-layout),
+  not these boards' bubbles (the sixth standing exception above).
 
 ## What is decided and what is not
 

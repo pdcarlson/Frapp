@@ -684,6 +684,9 @@ type StaggerStyle = React.CSSProperties & Record<"--i", number>;
  * boards (`web-framework.dc.html` option 1b and `canvas-screens.dc.html` s06 /
  * s07) and are deliberately off the marketing scale and off the radius map.
  * Landing chrome is on the grid; frame internals are not. Do not "correct" them.
+ * The chat thread's rows are the exception: those boards draw the bubbles chat
+ * retired on 2026-09-29, so the rows follow `components.md` § Chat messages
+ * instead (#2893). See the note above `RunStart`.
  *
  * What they may show is bounded by `spec/behavior/`, not by the boards: the
  * event card carries Check in and nothing else, there is no RSVP control and no
@@ -701,20 +704,60 @@ const threadRows = [
 
 /*
  * Chat's compact, bubble-free layout, as web and mobile have drawn it since
- * 2026-09-29 (`components.md` §11 § Chat messages, #2873). Every row here
- * starts a run: no two neighbours share an author, and the event card is a
- * card, which always starts one. So each row draws the 32px avatar and an
- * author line of name then time, never a date. The body has no fill, border
- * or padding; rows are told apart by the author line and the 16px run gap.
- * Values are transcribed from §11, not imported from `apps/web`.
+ * 2026-09-29 (`components.md` § Chat messages, #2873). Values are transcribed
+ * from that section, not imported from `apps/web`.
+ *
+ * Every row here starts a run, for the reasons §11's grouping gives: the first
+ * row always does; the event card is a card, which starts one even straight
+ * after its author's own message; and the last two each change author. So
+ * every row is a `RunStart`. A follow-on (same author within five minutes, no
+ * card either side) would draw neither the avatar nor the author line.
+ *
+ * The body has no fill, border or padding; rows are told apart by the author
+ * line and the 16px gap a run start takes.
  */
-const ROW = "flex gap-3 px-5 pb-0.5 pt-4";
 const AVATAR =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-popover text-[12.5px] font-bold text-muted-foreground";
-const AUTHOR_LINE = "flex items-baseline gap-2 leading-5";
-const AUTHOR = "text-[14px] font-semibold text-foreground";
-const TIME = "text-[12.5px] text-muted-foreground";
 const BODY = "text-[16px] leading-[25px] text-foreground";
+
+/**
+ * A run's first row: the 32px avatar, then an author line of name and time
+ * (time only, never a date) over the body. The viewer's own run sits on the
+ * left like everyone else's and reads "You" in `--accent-text`, which is how a
+ * member spots it now that no accent fill marks it.
+ */
+function RunStart({
+  initials,
+  author,
+  self = false,
+  time,
+  children,
+}: {
+  initials: string;
+  author: string;
+  self?: boolean;
+  time: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-3 px-5 pb-0.5 pt-4">
+      <span className={AVATAR}>{initials}</span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <p className="flex items-baseline gap-2 leading-5">
+          <span
+            className={`text-[14px] font-semibold ${
+              self ? "text-accent-text" : "text-foreground"
+            }`}
+          >
+            {author}
+          </span>
+          <span className="text-[12.5px] text-muted-foreground">{time}</span>
+        </p>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function ChatThread({ animate }: { animate: boolean }) {
   const rows = threadRows.map((row, index) => (
@@ -724,125 +767,90 @@ function ChatThread({ animate }: { animate: boolean }) {
       style={{ "--i": index } as StaggerStyle}
     >
       {row.kind === "them" && (
-        <div className={ROW}>
-          <span className={AVATAR}>JE</span>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <p className={AUTHOR_LINE}>
-              <span className={AUTHOR}>Jordan Ellis</span>
-              <span className={TIME}>4:02 PM</span>
-            </p>
-            <p className={BODY}>
-              Chapter is 6:30 tonight. Dues forms in by then if yours is not.
-            </p>
-          </div>
-        </div>
+        <RunStart initials="JE" author="Jordan Ellis" time="4:02 PM">
+          <p className={BODY}>
+            Chapter is 6:30 tonight. Dues forms in by then if yours is not.
+          </p>
+        </RunStart>
       )}
 
       {row.kind === "event" && (
-        <div className={ROW}>
-          <span className={AVATAR}>JE</span>
-          <div className="flex min-w-0 flex-1 flex-col">
-            {/*
-              The card starts its own run under the author line of whoever
-              ran `/event`, even straight after their own message: a card is
-              a thing posted into the channel, so it keeps its frame (`--card`,
-              hairline, radius 14) where a message has none.
-            */}
-            <p className={AUTHOR_LINE}>
-              <span className={AUTHOR}>Jordan Ellis</span>
-              <span className={TIME}>4:03 PM</span>
+        <RunStart initials="JE" author="Jordan Ellis" time="4:03 PM">
+          {/*
+            A card is a thing posted into the channel, so it keeps its frame
+            (`--card`, hairline, radius 14) where a message has none.
+          */}
+          <div className="mt-1 w-fit max-w-full rounded-lg border border-border bg-card px-4 py-3.5">
+            <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              Event
             </p>
-            <div className="mt-1 w-fit max-w-full rounded-lg border border-border bg-card px-4 py-3.5">
-              <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-                Event
-              </p>
-              <p className="mt-1 text-[16px] font-bold text-foreground">
-                Chapter meeting
-              </p>
-              <p className="text-[14px] text-muted-foreground">
-                Tonight · 6:30 PM · Chapter room · 10 pts
-              </p>
-              {/*
-                Check in, and only Check in. `spec/behavior/events.md` records
-                pre-event RSVP intent as not modelled, so there is no Going or
-                Can't-make-it control to draw. The live count is drawn because
-                the viewer is an officer, which the caption states: it shows
-                only to `events:update` holders.
-              */}
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <span className="inline-flex h-[34px] items-center rounded-sm bg-primary px-3.5 text-[14px] font-bold text-primary-foreground">
-                  Check in
-                </span>
-                <span className="text-[12.5px] text-muted-foreground">
-                  closes 6:45
-                </span>
-                <span className="text-[12.5px] text-muted-foreground">
-                  31 checked in
-                </span>
-              </div>
+            <p className="mt-1 text-[16px] font-bold text-foreground">
+              Chapter meeting
+            </p>
+            <p className="text-[14px] text-muted-foreground">
+              Tonight · 6:30 PM · Chapter room · 10 pts
+            </p>
+            {/*
+              Check in, and only Check in. `spec/behavior/events.md` records
+              pre-event RSVP intent as not modelled, so there is no Going or
+              Can't-make-it control to draw. The live count is drawn because
+              the viewer is an officer, which the caption states: it shows
+              only to `events:update` holders.
+            */}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <span className="inline-flex h-[34px] items-center rounded-sm bg-primary px-3.5 text-[14px] font-bold text-primary-foreground">
+                Check in
+              </span>
+              <span className="text-[12.5px] text-muted-foreground">
+                closes 6:45
+              </span>
+              <span className="text-[12.5px] text-muted-foreground">
+                31 checked in
+              </span>
             </div>
           </div>
-        </div>
+        </RunStart>
       )}
 
       {row.kind === "self" && (
-        <div className={ROW}>
-          <span className={AVATAR}>AK</span>
-          <div className="flex min-w-0 flex-1 flex-col">
-            {/*
-              The viewer's own run sits on the left like everyone else's and
-              reads "You" in `--accent-text`, which is how a member spots it
-              now that no accent fill marks it. The author line carries the
-              time and nothing else: read receipts are a channel cursor that
-              feeds unread counts (`spec/behavior/chat/README.md` § Read
-              Receipts), so no message is ever marked "read".
-            */}
-            <p className={AUTHOR_LINE}>
-              <span className="text-[14px] font-semibold text-accent-text">
-                You
-              </span>
-              <span className={TIME}>4:05 PM</span>
-            </p>
-            <p className={BODY}>On it. Roster is pulled, 42 for food.</p>
-          </div>
-        </div>
+        /*
+          The time and nothing else: read receipts are a channel cursor that
+          feeds unread counts (`spec/behavior/chat/README.md` § Read
+          Receipts), so no message is ever marked "read".
+        */
+        <RunStart initials="AK" author="You" self time="4:05 PM">
+          <p className={BODY}>On it. Roster is pulled, 42 for food.</p>
+        </RunStart>
       )}
 
       {row.kind === "mention" && (
-        <div className={ROW}>
-          <span className={AVATAR}>MC</span>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <p className={AUTHOR_LINE}>
-              <span className={AUTHOR}>Maya Chen</span>
-              <span className={TIME}>4:06 PM</span>
-            </p>
-            <p className={BODY}>
-              {/*
-                The in-body mention chip, on the handle alone: the row around
-                it is never retinted, because a message that mentions you is
-                still the sender's. It is not the mention red, which is a badge
-                fill and has no lifted tone to render as text (`foundations.md`
-                §5); this opaque amber pair is what §5 carves out to.
-              */}
-              <span className="rounded-[5px] bg-mention-chip px-1 font-semibold text-mention-chip-text">
-                @Jordan
-              </span>{" "}
-              can you pin the parking map before people leave?
-            </p>
-          </div>
-        </div>
+        <RunStart initials="MC" author="Maya Chen" time="4:06 PM">
+          <p className={BODY}>
+            {/*
+              The in-body mention chip, on the handle alone: the row around
+              it is never retinted, because a message that mentions you is
+              still the sender's. It is not the mention red, which is a badge
+              fill and has no lifted tone to render as text (`foundations.md`
+              §5); this opaque amber pair is what §5 carves out to.
+            */}
+            <span className="rounded-[5px] bg-mention-chip px-1 font-semibold text-mention-chip-text">
+              @Jordan
+            </span>{" "}
+            can you pin the parking map before people leave?
+          </p>
+        </RunStart>
       )}
     </div>
   ));
 
   /*
-   * Bottom-aligned and clipped, like the product's timeline, which opens at
-   * its newest row with the composer pinned under it. Where the frame is too
-   * short for every row, as both frames are at phone width, the oldest row
-   * crops under the header the way a scrolled chat does, instead of the
-   * newest running under the composer.
+   * Bottom-aligned, like the product's timeline, which opens at its newest
+   * row with the composer pinned under it. The thread never shrinks below its
+   * rows: each frame's height is a minimum, so where the rows need more (at
+   * phone widths, and in the railed frame just above `sm`) the frame grows
+   * rather than slicing a row or running one under the composer.
    */
-  const thread = "flex min-h-0 flex-1 flex-col justify-end overflow-hidden pb-2";
+  const thread = "flex flex-1 flex-col justify-end pb-2";
 
   if (!animate) {
     return <div className={thread}>{rows}</div>;
@@ -950,8 +958,8 @@ function ChatFrame({
       aria-label={label}
       className={
         isFold
-          ? "flex h-[536px] w-full flex-col overflow-hidden rounded-xl border border-input bg-background lg:w-[720px] lg:max-w-none lg:rounded-r-none lg:border-r-0"
-          : "flex h-[600px] w-full overflow-hidden rounded-xl border border-border bg-background"
+          ? "flex min-h-[536px] w-full flex-col overflow-hidden rounded-xl border border-input bg-background lg:w-[720px] lg:max-w-none lg:rounded-r-none lg:border-r-0"
+          : "flex min-h-[600px] w-full overflow-hidden rounded-xl border border-border bg-background"
       }
     >
       {!isFold && (
@@ -997,7 +1005,7 @@ function ChatFrame({
         </div>
       )}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <div className="flex min-w-0 flex-1 flex-col bg-background">
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border bg-surface-1 px-4">
           {isFold && (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border border-accent-border bg-accent-subtle text-[11px] font-bold text-accent-text">
