@@ -10,10 +10,11 @@ const { getSentryExpoConfig } = require("@sentry/react-native/metro");
  *
  * `annotateReactComponents` stays off (the default). It would add each
  * component's name and source file to its elements (`data-sentry-component`,
- * `data-sentry-element`, `data-sentry-source-file`), which are code, not
- * member copy. Member copy reaches touch breadcrumbs through
- * `accessibilityLabel` and visible text, which `beforeBreadcrumb` in
- * `lib/sentry/options.ts` removes either way (#2982).
+ * `data-sentry-element`, `data-sentry-source-file`), and by default
+ * (`autoInjectSentryLabel`) a `sentry-label` built from each root element's
+ * static text, which the touch boundary prefers over `accessibilityLabel`.
+ * Touch breadcrumbs carry no label of any kind either way: `beforeBreadcrumb`
+ * in `lib/sentry/options.ts` names the element by component alone (#2982).
  */
 module.exports = getSentryExpoConfig(__dirname, {
   annotateReactComponents: false,

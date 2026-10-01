@@ -1,5 +1,4 @@
-import { getIsolationScope, setCurrentClient } from "@sentry/core";
-import type { Client } from "@sentry/core";
+import { createRequire } from "node:module";
 import type { ReactNativeOptions } from "@sentry/react-native";
 import { TouchEventBoundary } from "@sentry/react-native/dist/js/touchevents";
 import { enableSyncToNative } from "@sentry/react-native/dist/js/scopeSync";
@@ -16,17 +15,39 @@ import { buildMobileSentryOptions } from "./options";
  * without passing any JS hook. So a fix in `beforeSend` alone would not reach
  * it.
  *
- * This spec runs the SDK's own code end to end rather than a copy of its
- * shapes: the real boundary builds the crumb, `@sentry/core`'s
+ * This spec runs the SDK's own code rather than a copy of its shapes: the
+ * real boundary and rage-tap detector build the crumb, `@sentry/core`'s
  * `addBreadcrumb` applies the shipped `beforeBreadcrumb`, and the real
  * `scopeSync` patch forwards the result to native. Only the native module is
- * replaced, by a recorder. If an SDK upgrade moves the native copy ahead of
- * `beforeBreadcrumb`, the native assertions fail.
+ * replaced, by a recorder. So an upgrade that changes any of those four, say
+ * by forwarding to native before the hook runs, fails the native assertions.
  *
- * `@sentry/core` is pinned in `apps/mobile`'s devDependencies to the exact
- * version `@sentry/react-native` depends on. A second copy would hold its own
- * client, the boundary would record nothing, and the controls below fail.
+ * One step is replayed by hand rather than run: `Sentry.init` (`sdk.js`)
+ * calling `enableSyncToNative` on the global and isolation scopes. The SDK's
+ * index pulls in native views and the feedback widget, which vitest cannot
+ * load, so `tap()` makes that call itself. An upgrade that changes how init
+ * wires the native sync would not fail here; re-check `sdk.js` when bumping
+ * `@sentry/react-native`. The send-time pass in `scrubBreadcrumb` is
+ * `packages/observability/src/sentry-scrubbing.spec.ts`'s to cover.
  */
+
+type SdkScope = Parameters<typeof enableSyncToNative>[0];
+
+/**
+ * `@sentry/core` as `@sentry/react-native` resolves it, not as this workspace
+ * would. Core keeps its client and scopes on a global keyed by its own
+ * version, so the spec has to drive the version the boundary records
+ * through, or the client it sets is one the boundary never sees. Resolving
+ * through the SDK keeps the two equal whatever either is bumped to, and
+ * leaves this workspace no `@sentry/core` dependency for Dependabot to move
+ * on its own.
+ */
+const sdkCore = createRequire(
+  createRequire(import.meta.url).resolve("@sentry/react-native/package.json"),
+)("@sentry/core") as {
+  getIsolationScope(): SdkScope;
+  setCurrentClient(client: unknown): void;
+};
 
 const native = vi.hoisted(() => ({ breadcrumbs: [] as unknown[] }));
 
@@ -100,14 +121,14 @@ function tap(
   beforeBreadcrumb: ReactNativeOptions["beforeBreadcrumb"],
   times = 1,
 ) {
-  setCurrentClient({
+  sdkCore.setCurrentClient({
     getOptions: () => ({ beforeBreadcrumb, maxBreadcrumbs: 100 }),
     getIntegrationByName: () => undefined,
-  } as unknown as Client);
+  });
   native.breadcrumbs = [];
   // The SDK patches this scope once; `clear()` empties it without going
   // through the patched `clearBreadcrumbs`, so native is not asked to.
-  const scope = getIsolationScope();
+  const scope = sdkCore.getIsolationScope();
   scope.clear();
   enableSyncToNative(scope);
 
@@ -128,8 +149,8 @@ function shippedBeforeBreadcrumb() {
 }
 
 afterEach(() => {
-  setCurrentClient(undefined as unknown as Client);
-  getIsolationScope().clear();
+  sdkCore.setCurrentClient(undefined);
+  sdkCore.getIsolationScope().clear();
 });
 
 describe("touch breadcrumbs through the real SDK (#2982)", () => {

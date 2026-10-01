@@ -71,7 +71,6 @@
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
-    "@sentry/core": "10.75.2",
     "@testing-library/react": "^16.3.3",
     "@types/react": "~19.2.0",
     "eslint": "^9.39.5",

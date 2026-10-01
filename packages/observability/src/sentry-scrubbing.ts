@@ -1,16 +1,19 @@
 /**
  * PII scrubbing for everything leaving a Frapp process for Sentry (#481, #896,
- * #865, #2736).
+ * #865, #2736, #2982).
  *
  * `spec/behavior/observability.md` § Error Tracking splits identifiers into two
  * classes, and this module is the single enforcement point for both — across
- * **both event classes**, and now across **both apps**. The SDK routes those
+ * **both event classes**, and across every app that reports. The SDK routes those
  * classes to two different hooks, so {@link createSentryScrubber} returns two
  * entry points: `scrubSentryEvent` for `beforeSend` (error events) and
  * `scrubSentryTransaction` for `beforeSendTransaction` (tracing events). A
  * third, `scrubSentryEnvelope`, runs in the browser's `beforeEnvelope` for what
  * the SDK sends without an event at all: a standalone span, which is how INP
- * leaves (#2736).
+ * leaves (#2736). A fourth, {@link reduceTouchBreadcrumb}, is mobile's
+ * `beforeBreadcrumb`: it rewrites a touch breadcrumb before React Native copies
+ * it to the native SDK, whose crash reports pass none of the other three
+ * (#2982).
  *
  * ## DOM selectors (#2736)
  *
@@ -380,12 +383,6 @@ export function reduceSelector(selector: string): string | undefined {
     : undefined;
 }
 
-/**
- * The breadcrumbs React Native's touch boundary records (#2982): `touch` for
- * every tap (`touchevents.js`) and `ui.multiClick` for a rage tap
- * (`ragetap.js`).
- */
-const TOUCH_BREADCRUMB_CATEGORIES = new Set(['touch', 'ui.multiClick']);
 /** The prefix `@sentry/react-native` gives a `touch` breadcrumb's message. */
 const TOUCH_MESSAGE_PREFIX = 'Touch event within element: ';
 /** What a touched element with no component name is called instead. */
@@ -420,8 +417,30 @@ function reduceTouchPathEntry(
 }
 
 /**
+ * Whether a breadcrumb is one React Native's touch boundary recorded (#2982):
+ * `touch` for every tap (`touchevents.js`), `ui.multiClick` for a rage tap
+ * (`ragetap.js`). A rage tap always is. A `touch` crumb is when it carries the boundary's `data.path` or message
+ * prefix. The iOS SDK records UIControl actions (a `Switch`'s `onChange:`) as
+ * `touch` crumbs too, named by the action's selector, which is code; those
+ * stay with the free-text sweep.
+ */
+function isTouchBoundaryCrumb(
+  source: Record<string, unknown>,
+  data: Record<string, unknown>,
+): boolean {
+  if (source.category === 'ui.multiClick') return true;
+  return (
+    source.category === 'touch' &&
+    (Array.isArray(data.path) ||
+      (typeof source.message === 'string' &&
+        source.message.startsWith(TOUCH_MESSAGE_PREFIX)))
+  );
+}
+
+/**
  * A React Native touch or rage-tap breadcrumb that names the touched element
- * by code alone (#2982). Any other breadcrumb is returned as it came.
+ * by code alone (#2982). Any other breadcrumb, the iOS SDK's own `touch`
+ * crumbs included, is returned as it came.
  *
  * The SDK names the element by the first label it finds walking up from the
  * touch: a `sentry-label` prop, then `accessibilityLabel`, `aria-label` and
@@ -442,16 +461,11 @@ function reduceTouchPathEntry(
  */
 export function reduceTouchBreadcrumb<T extends object>(breadcrumb: T): T {
   const source = breadcrumb as Record<string, unknown>;
-  if (
-    typeof source.category !== 'string' ||
-    !TOUCH_BREADCRUMB_CATEGORIES.has(source.category)
-  ) {
-    return breadcrumb;
-  }
   const data =
     source.data && typeof source.data === 'object'
       ? (source.data as Record<string, unknown>)
       : {};
+  if (!isTouchBoundaryCrumb(source, data)) return breadcrumb;
   const path = Array.isArray(data.path)
     ? data.path
         .map(reduceTouchPathEntry)

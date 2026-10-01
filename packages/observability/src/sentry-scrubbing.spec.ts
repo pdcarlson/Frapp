@@ -1083,7 +1083,7 @@ describe("reduceTouchBreadcrumb (#2982)", () => {
     expect(reduced).not.toHaveProperty("data");
   });
 
-  it("does not trust a touch crumb that arrives without a path", () => {
+  it("does not trust a boundary message that arrives without a path", () => {
     // Nothing to rebuild from, so the message is not kept: it may be a label.
     const reduced = reduceTouchBreadcrumb({
       category: "touch",
@@ -1094,6 +1094,32 @@ describe("reduceTouchBreadcrumb (#2982)", () => {
       category: "touch",
       message: "Touch event within element: [redacted:label]",
     });
+  });
+
+  it("leaves the iOS SDK's own touch crumbs to the free-text sweep", () => {
+    // sentry-cocoa records UIControl actions as `touch`, named by selector
+    // (`SentryBreadcrumbTracker.swift`); `deviceContextIntegration` merges
+    // them into JS events. A selector is code, so it is kept.
+    const cocoaSwitch = {
+      timestamp: 1_700_000_000,
+      category: "touch",
+      type: "user",
+      level: "info",
+      message: "onChange:",
+      data: { view: "<RCTSwitch: 0x1>", accessibilityIdentifier: "x" },
+    };
+
+    expect(reduceTouchBreadcrumb(cocoaSwitch)).toBe(cocoaSwitch);
+    expect(browser.scrubSentryEvent({ breadcrumbs: [cocoaSwitch] })?.breadcrumbs)
+      .toEqual([
+        {
+          timestamp: 1_700_000_000,
+          category: "touch",
+          type: "user",
+          level: "info",
+          message: "onChange:",
+        },
+      ]);
   });
 
   it("rebuilds a rage tap without its label, node or route", () => {
@@ -1199,7 +1225,7 @@ describe("DOM selectors in breadcrumbs and names (#2736)", () => {
 
   it("leaves other breadcrumb messages to the free-text sweep", () => {
     // React Native's `touch` and `ui.multiClick` crumbs carry a label, not a
-    // selector; their rule is `reduceTouchBreadcrumb` (#2982), below.
+    // selector; their rule is `reduceTouchBreadcrumb` (#2982), above.
     const scrubbed = browser.scrubSentryEvent({
       breadcrumbs: [{ category: "console", message: 'lookup [status="404"]' }],
     });
