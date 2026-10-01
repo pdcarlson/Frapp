@@ -479,10 +479,11 @@ jobs:
       # that has ever executed that write first. See deploy-production.yml's
       # header for what that costs a migrations-only recovery.
       #
-      # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
-      # `npx --yes supabase` and fetches whatever is latest, while the apply
-      # below uses the pinned CLI on PATH (`.github/actions/supabase-cli`), and
-      # "the same CLI code path" is the entire premise of the rehearsal.
+      # REPLAY_SUPABASE_CLI names the binary the apply below runs: the CLI
+      # `.github/actions/supabase-cli` put on PATH from the trusted ref. "The
+      # same CLI code path" is the entire premise of the rehearsal, so it is
+      # stated here rather than left to `resolveSupabaseCli`'s CI rule
+      # (scripts/ci/lib/supabase-cli-pin.mjs), which picks the same binary today.
       - name: Rehearse the migration against production's applied state
         id: replay
         if: inputs.environment == 'production'

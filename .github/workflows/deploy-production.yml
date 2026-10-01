@@ -224,7 +224,7 @@ jobs:
   # The shipping work is `_deploy.yml`'s one job, the job staging runs too,
   # with production's layers switched on by `environment: production`: the
   # provider preflight, the migration rehearsal and its fence, the dry-run
-  # stop, the `config.toml` assert and `scope: migrations-only` (#2805). That
+  # stop, the post-apply `config.toml` assert and `scope: migrations-only` (#2805). That
   # job names the environment itself, so it gets production's reviewers and
   # holds `db-migrate-production`. It gets production's secrets only because
   # this call passes `secrets: inherit` (as staging's does; run 36479856561

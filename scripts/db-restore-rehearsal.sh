@@ -90,11 +90,16 @@ select 'grant:public.'||table_name||':'||grantee||'='||string_agg(privilege_type
 order by 1;"
 managed() { psql "$DB_URL" -tAc "$MANAGED_SQL" 2>/dev/null | sed '/^$/d'; }
 
-# Resolve the Supabase CLI the same way db-backup.sh does: a `supabase` already
-# on PATH, else the pinned version through npx (never bare `latest`). The pin is
-# held equal to .github/actions/supabase-cli's by infisical-secrets-action.test.mjs.
-SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.117.0}"
-if command -v supabase >/dev/null 2>&1; then SUPABASE="supabase"; else SUPABASE="npx --yes supabase@${SUPABASE_CLI_VERSION}"; fi
+# Pass B's `db push --local` runs the repo's pinned CLI, the build CI backs up
+# and deploys with, through the resolver the sandbox and laptop bootstraps share
+# (scripts/lib/supabase-cli.sh, #723): it reuses the copy bringup installed into
+# .cache/supabase-cli/. Never a `supabase` that merely happens to be on PATH: a
+# global install of another version would rehearse a code path the backup never
+# used. FRAPP_SUPABASE_CLI_VERSION overrides the version, as it does there.
+FRAPP_SUPABASE_CLI_LOG_PREFIX='[restore-rehearsal]'
+# shellcheck source=scripts/lib/supabase-cli.sh
+. "$ROOT/scripts/lib/supabase-cli.sh"
+SUPABASE=frapp_supabase
 
 destroy() {
   # This is the simulated disaster, and it is also the closest local equivalent of
@@ -165,7 +170,7 @@ destroy() {
 
 psql "$DB_URL" -tAc "select 1" >/dev/null 2>&1 || {
   echo "Error: local Supabase database is not reachable at 127.0.0.1:54322." >&2
-  echo "Bring the stack up first: scripts/cloud-sandbox-up.sh (or 'npx supabase start')." >&2
+  echo "Bring the stack up first: scripts/cloud-sandbox-up.sh (or scripts/local-dev-setup.sh)." >&2
   exit 1
 }
 

@@ -48,7 +48,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { getEnvironment, SUPABASE_PROJECT_REF_PATTERN } from "./ci/lib/environments.mjs";
-import { chooseSupabaseCli, readSupabaseCliPin } from "./ci/lib/supabase-cli-pin.mjs";
+import { resolveSupabaseCli } from "./ci/lib/supabase-cli-pin.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
@@ -192,23 +192,15 @@ function quoteArg(arg) {
 let cachedSupabaseCommand = null;
 
 /**
- * Always the pinned CLI (#723): the one on PATH when it is the pin (CI, where
- * `.github/actions/supabase-cli` installed it), otherwise the pin through npx.
- * This used to fall back to bare `npx supabase`, so a laptop with no CLI on
- * PATH applied production DDL with whatever `latest` was that day.
+ * Never an unpinned CLI (#723). In CI, the one `.github/actions/supabase-cli`
+ * put on PATH from the trusted ref, which the production rehearsal also runs;
+ * elsewhere, the pin. `resolveSupabaseCli` has the rules. This used to fall
+ * back to bare `npx supabase`, so a laptop with no CLI on PATH applied
+ * production DDL with whatever `latest` was that day.
  */
-function getSupabaseCommand(log) {
+function getSupabaseCommand(log, env) {
   if (cachedSupabaseCommand) return cachedSupabaseCommand;
-  let pathVersionOutput = null;
-  try {
-    pathVersionOutput = execFileSync("supabase", ["--version"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch {
-    pathVersionOutput = null;
-  }
-  const { command, prefixArgs, note } = chooseSupabaseCli({ pin: readSupabaseCliPin(), pathVersionOutput });
+  const { command, prefixArgs, note } = resolveSupabaseCli({ env });
   log(`  ${note}`);
   cachedSupabaseCommand = { command, prefixArgs };
   return cachedSupabaseCommand;
@@ -220,9 +212,9 @@ function getSupabaseCommand(log) {
  * claim — a test that only checked the exit code could not tell a refusal from
  * a `link` that ran and then failed.
  */
-export function createSupabaseRunner({ log = console.log } = {}) {
+export function createSupabaseRunner({ log = console.log, env = process.env } = {}) {
   return (args, { capture = false } = {}) => {
-    const { command, prefixArgs } = getSupabaseCommand(log);
+    const { command, prefixArgs } = getSupabaseCommand(log, env);
     const full = [command, ...prefixArgs, ...args];
     log(`  $ ${full.map(quoteArg).join(" ")}`);
     return execFileSync(command, [...prefixArgs, ...args], {
@@ -316,7 +308,7 @@ export function runMigrationCli({
   }
 
   const { target } = validated;
-  const runner = supabase ?? createSupabaseRunner({ log });
+  const runner = supabase ?? createSupabaseRunner({ log, env });
 
   log("══════════════════════════════════════════════════════════");
   log("  Database Migration Runner");

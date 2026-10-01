@@ -522,9 +522,9 @@ describe("supabase-cli composite action", () => {
   //   scripts/db-backup.sh          teaching the backup script to parse YAML would add a failure
   //                                 mode to the one script that produces this project's only
   //                                 offsite backup;
-  //   scripts/db-restore-rehearsal.sh  resolves the CLI "the same way db-backup.sh does";
-  //   scripts/lib/supabase-cli.sh   the sandbox and laptop bootstraps' resolver, where an empty
-  //                                 parse would install `latest` silently (#723).
+  //   scripts/lib/supabase-cli.sh   the resolver the sandbox and laptop bootstraps and
+  //                                 db-restore-rehearsal.sh share, where an empty parse would
+  //                                 install `latest` silently (#723).
   //
   // But an UNCHECKED second copy is how they silently diverge, and the divergence that matters
   // is real: #1421's restore rehearsal is run by hand, usually with no CLI on PATH, so a stale
@@ -542,14 +542,11 @@ describe("supabase-cli composite action", () => {
       used: /SUPABASE="npx --yes supabase@\$\{SUPABASE_CLI_VERSION\}"/,
     },
     {
-      file: "scripts/db-restore-rehearsal.sh",
-      declared: /SUPABASE_CLI_VERSION="\$\{SUPABASE_CLI_VERSION:-([^}]+)\}"/,
-      used: /SUPABASE="npx --yes supabase@\$\{SUPABASE_CLI_VERSION\}"/,
-    },
-    {
       file: "scripts/lib/supabase-cli.sh",
       declared: /^FRAPP_SUPABASE_CLI_PIN="([^"]+)"$/m,
-      used: /spec="\$\{FRAPP_SUPABASE_CLI_VERSION:-\$FRAPP_SUPABASE_CLI_PIN\}"/,
+      // The spec the pin feeds AND the install it feeds: either alone would pass with the
+      // other pointing at `latest`.
+      used: /spec="\$\{FRAPP_SUPABASE_CLI_VERSION:-\$FRAPP_SUPABASE_CLI_PIN\}"[\s\S]*npm install --prefix "\$cache" "supabase@\$\{spec\}"/,
     },
   ]) {
     it(`agrees with ${file}'s copy of the pin`, () => {

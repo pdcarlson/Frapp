@@ -9,6 +9,7 @@ import {
   describePartition,
   guessFailedFile,
   partitionMigrations,
+  rehearseNewestSource,
   replaySource,
   runCli,
   runReplayGate,
@@ -405,5 +406,69 @@ test("the CLI hands runReplayGate the live source untouched: resilientFetch and 
     runGate,
   });
   assert.equal(conflict, 2);
+  assert.equal(seen, undefined);
+});
+
+// ── --rehearse-newest (#723) ────────────────────────────────────────────────
+// A CLI bump usually finds nothing pending against production, so without this the
+// gate goes green having run neither phase on the new build.
+
+function migrationsDir(t, versions) {
+  const dir = mkdtempSync(join(tmpdir(), "rehearse-newest-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const v of versions) writeFileSync(join(dir, `${v}_m${v.slice(-2)}.sql`), "select 1;\n");
+  return dir;
+}
+
+test("--rehearse-newest leaves exactly the newest n migrations pending", async (t) => {
+  const dir = migrationsDir(t, ["20260101000000", "20260102000000", "20260103000000", "20260104000000"]);
+  const source = rehearseNewestSource(2, { migrationsDir: dir });
+  assert.equal(source.accessToken, "offline");
+  const body = JSON.parse(await (await source.fetchImpl()).text());
+  assert.deepEqual(
+    body.migrations.map((m) => m.version),
+    ["20260101000000", "20260102000000"],
+  );
+  const partition = partitionMigrations({ local: readLocalMigrations(dir), applied: body.migrations });
+  assert.deepEqual(
+    partition.pending.map((m) => m.version),
+    ["20260103000000", "20260104000000"],
+  );
+  assert.equal(partition.backDated.length, 0);
+});
+
+test("--rehearse-newest refuses a count that leaves nothing to rebuild or nothing pending", (t) => {
+  const dir = migrationsDir(t, ["20260101000000", "20260102000000"]);
+  for (const n of [0, 2, 3, 1.5, Number.NaN]) {
+    assert.throws(() => rehearseNewestSource(n, { migrationsDir: dir }), /from 1 to 1/, String(n));
+  }
+});
+
+test("the CLI wires --rehearse-newest to the gate, and refuses it beside another source", async () => {
+  let seen;
+  const runGate = async (options) => {
+    seen = options;
+    return 0;
+  };
+  assert.equal(
+    await runCli({ argv: ["node", "check-migration-replay.mjs", "--rehearse-newest", "2"], env: {}, runGate }),
+    0,
+  );
+  assert.equal(seen.projectRef, "offline");
+  assert.match(seen.label, /newest 2/);
+
+  seen = undefined;
+  for (const extra of [["--snapshot", "b.json"], ["--applied-from", "a.json"]]) {
+    const code = await runCli({
+      argv: ["node", "check-migration-replay.mjs", "--rehearse-newest", "2", ...extra],
+      env: {},
+      runGate,
+    });
+    assert.equal(code, 2);
+  }
+  assert.equal(
+    await runCli({ argv: ["node", "check-migration-replay.mjs", "--rehearse-newest", "two"], env: {}, runGate }),
+    2,
+  );
   assert.equal(seen, undefined);
 });

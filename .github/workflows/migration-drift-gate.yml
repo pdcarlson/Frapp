@@ -226,12 +226,18 @@ jobs:
           fi
 
           # The migrations, and what applies them: the pinned CLI and the two
-          # scripts that start the stack and replay onto it. A CLI bump changes
-          # what this rehearses as surely as a new migration does (#723), and
-          # the replay's only other runs are a production deploy and `main`.
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(supabase/migrations/|\.github/actions/supabase-cli/|scripts/ci/supabase-start-disposable\.sh$|scripts/ci/check-migration-replay\.mjs$)' "$CHANGED"; then
+          # scripts that start the stack and replay onto it (#723). A change to
+          # those is `cli=true`, and the replay step then also rehearses the
+          # repo's newest migrations, because against production's real state
+          # a CLI change usually finds nothing pending and would exercise
+          # neither `db reset` nor `migration up` on the new build.
+          CLI_PATHS='^(\.github/actions/supabase-cli/|scripts/ci/supabase-start-disposable\.sh$|scripts/ci/check-migration-replay\.mjs$)'
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE "$CLI_PATHS" "$CHANGED"; then
+            echo "cli=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^supabase/migrations/' "$CHANGED" || grep -qE "$CLI_PATHS" "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Migrations or the replay's CLI touched (or the diff was unreadable) — running the replay."
+            echo "Migrations or the CLI that applies them touched (or the diff was unreadable) — running the replay."
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No migration, CLI pin or replay script changed — nothing to replay."
@@ -271,8 +277,9 @@ jobs:
       # A fixture run exercises the two-phase apply that a live run cannot when
       # production has nothing pending — which is its steady state, so on an
       # ordinary day the live path reports "nothing to replay" in about a second
-      # and never touches phase 1 or phase 2. The fixture is the only way to
-      # prove that body works in CI without waiting for a real migration PR.
+      # and never touches phase 1 or phase 2. The fixture proves that body works
+      # in CI without waiting for a real migration PR; a change to the CLI or
+      # the replay proves it too, through `--rehearse-newest` (#723).
       - name: Replay pending migrations against production's applied state
         if: steps.touched.outputs.run == 'true'
         env:
@@ -280,6 +287,7 @@ jobs:
           # state from the snapshot downloaded above.
           REPLAY_SUPABASE_CLI: supabase
           REPLAY_FIXTURE: ${{ inputs.replay_fixture }}
+          CLI_TOUCHED: ${{ steps.touched.outputs.cli }}
         run: |
           set -euo pipefail
 
@@ -294,6 +302,13 @@ jobs:
           fi
 
           node scripts/ci/check-migration-replay.mjs --snapshot "$MIGRATION_SNAPSHOT"
+
+          # The CLI or the replay changed: run both phases on it whatever
+          # production has pending (see the touched step).
+          if [ "${CLI_TOUCHED:-}" = "true" ]; then
+            echo "The CLI or the replay changed: also replaying the repo's newest 2 migrations onto the rest with it."
+            node scripts/ci/check-migration-replay.mjs --rehearse-newest 2
+          fi
 
       - name: No migrations touched
         if: steps.touched.outputs.run != 'true'

@@ -79,7 +79,7 @@ import { join } from "node:path";
 import { fetchAppliedMigrations, readLocalMigrations } from "./check-migration-drift.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { openSnapshot } from "./lib/migration-snapshot.mjs";
-import { readSupabaseCliPin } from "./lib/supabase-cli-pin.mjs";
+import { resolveSupabaseCli } from "./lib/supabase-cli-pin.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
@@ -353,15 +353,15 @@ function restoreParked() {
 export function replayAgainstDisposable({
   pending,
   // In CI the Supabase CLI is installed on PATH by `.github/actions/supabase-cli`,
-  // which pins the version, and the workflow names it in REPLAY_SUPABASE_CLI.
-  // Reading it from the environment keeps the pinned CI binary from being
-  // silently replaced by whatever `npx` decides to fetch. The local-developer
-  // fallback runs that same pin through npx (#723); it used to be bare
-  // `npx supabase`, i.e. `latest`, which rehearsed a CLI nothing deploys with.
-  supabaseBin = process.env.REPLAY_SUPABASE_CLI ? process.env.REPLAY_SUPABASE_CLI : "npx",
-  supabaseArgs = process.env.REPLAY_SUPABASE_CLI ? [] : ["--yes", `supabase@${readSupabaseCliPin()}`],
+  // and the workflow names it in REPLAY_SUPABASE_CLI, so the rehearsal runs the
+  // very binary the apply after it runs. Elsewhere `resolveSupabaseCli` picks the
+  // pin (#723); this used to fall back to bare `npx supabase`, i.e. `latest`,
+  // which rehearsed a CLI nothing deploys with.
+  supabase = process.env.REPLAY_SUPABASE_CLI
+    ? { command: process.env.REPLAY_SUPABASE_CLI, prefixArgs: [] }
+    : resolveSupabaseCli(),
 }) {
-  const cli = (args, opts) => run(supabaseBin, [...supabaseArgs, ...args], opts);
+  const cli = (args, opts) => run(supabase.command, [...supabase.prefixArgs, ...args], opts);
 
   let parked = [];
   try {
@@ -528,12 +528,39 @@ function getArg(name, argv = process.argv) {
  */
 function fetchFromFile(path) {
   const rows = JSON.parse(readFileSync(path, "utf8"));
-  const migrations = Array.isArray(rows) ? rows : rows.migrations;
+  return fetchFromRows(Array.isArray(rows) ? rows : rows.migrations);
+}
+
+function fetchFromRows(migrations) {
   return async () => ({
     ok: true,
     status: 200,
     text: async () => JSON.stringify({ migrations }),
   });
+}
+
+/**
+ * `--rehearse-newest <n>` treats every repo migration but the newest `n` as
+ * applied, so the newest `n` are pending: phase 1 rebuilds the rest with
+ * `db reset`, phase 2 applies the `n` with `migration up`.
+ *
+ * It exists for a change to the CLI itself (#723). Against production's real
+ * state a CLI bump usually finds nothing pending, so the gate would report
+ * `nothing-pending` having run neither phase on the new build: green, and
+ * proving nothing about the apply it is meant to rehearse. Replaying the
+ * repo's own newest migrations runs both phases on every such change, with no
+ * credentials and no snapshot.
+ */
+export function rehearseNewestSource(n, { migrationsDir = MIGRATIONS_DIR } = {}) {
+  const local = readLocalMigrations(migrationsDir);
+  if (!Number.isInteger(n) || n < 1 || n >= local.length) {
+    throw new Error(
+      `--rehearse-newest needs a whole number from 1 to ${local.length - 1} (one less than the ` +
+        `${local.length} migrations in the repo, so a baseline is left to rebuild); got ${n}.`,
+    );
+  }
+  const applied = local.slice(0, -n).map(({ version, name }) => ({ version, name }));
+  return { fetchImpl: fetchFromRows(applied), accessToken: "offline", projectRef: "offline" };
 }
 
 /**
@@ -583,9 +610,25 @@ export function replaySource({ appliedFrom, snapshotPath, env = process.env } = 
 export async function runCli({ argv = process.argv, env = process.env, runGate = runReplayGate } = {}) {
   const appliedFrom = getArg("--applied-from", argv);
   const snapshotPath = getArg("--snapshot", argv);
-  if (appliedFrom && snapshotPath) {
-    console.error("Error: --applied-from and --snapshot are two sources for one answer; pass one.");
+  const rehearseNewest = getArg("--rehearse-newest", argv);
+  if ([appliedFrom, snapshotPath, rehearseNewest].filter((v) => v !== undefined).length > 1) {
+    console.error(
+      "Error: --applied-from, --snapshot and --rehearse-newest are each a source for one answer; pass one.",
+    );
     return 2;
+  }
+  if (rehearseNewest !== undefined) {
+    let source;
+    try {
+      source = rehearseNewestSource(/^\d+$/.test(rehearseNewest) ? Number(rehearseNewest) : NaN);
+    } catch (thrown) {
+      console.error(`Error: ${thrown.message}`);
+      return 2;
+    }
+    return runGate({
+      ...source,
+      label: getArg("--label", argv) ?? `the repo minus its newest ${rehearseNewest} migration(s)`,
+    });
   }
   return runGate({
     ...replaySource({ appliedFrom, snapshotPath, env }),
