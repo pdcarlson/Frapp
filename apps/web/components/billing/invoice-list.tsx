@@ -395,16 +395,17 @@ export function InvoiceList({ id }: { id?: string }) {
       */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         {/*
-            Only once the read has answered. `openCount` and `paidCount` come
-            from `invoices`, which is `[]` while `GET /v1/invoices` is in
-            flight — so rendering this unconditionally put "0 open · 0 paid"
-            above the spinner for the length of the round trip, which is the
-            confidently-wrong signal #707 exists to stop, on two more numbers.
-            The page this replaces could not reach that state because it gated
-            its whole body on a page-level `isLoading`; this list has no such
-            gate, so the guard moves here. Same shape the alumni list uses for
-            its own count.
-          */}
+          The count shows only once the read has answered. `openCount` and
+          `paidCount` come from `invoices`, which is `[]` while
+          `GET /v1/invoices` is in flight — so rendering this unconditionally
+          put "0 open · 0 paid" above the spinner for the length of the round
+          trip, which is the confidently-wrong signal #707 exists to stop, on
+          two more numbers.
+          The page this replaces could not reach that state because it gated
+          its whole body on a page-level `isLoading`; this list has no such
+          gate, so the guard moves here. Same shape the alumni list uses for
+          its own count.
+        */}
         <SectionLabel
           id="invoice-list-heading"
           count={

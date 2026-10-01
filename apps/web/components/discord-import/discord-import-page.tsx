@@ -335,18 +335,18 @@ function DiscordImportList({
 
   const rows: ImportRow[] = imports.data ?? [];
   const activeRow: ImportRow | null = active.data ?? null;
-  // The polled import's row reads its own detail query, not the list, and the
-  // list stops polling once nothing is deleting. So a detail poll that keeps
-  // failing (the API down, say) froze that row's meter with nothing on screen
-  // to say so, while the list read stayed clean. Keyed on the id, not the
-  // detail's data: a first fetch that fails leaves no data and arms no poll,
-  // and the row then shows the list's last copy, which is just as stale.
   // The polled import's row takes its detail copy, which polls faster than
   // the list, unless the list loaded since: both poll during a purge, and a
   // detail poll that keeps failing would otherwise hold the row on its last
   // copy (still "purging", no Clear) while the list already says "purged".
   const detailIsFreshest =
     (active.dataUpdatedAt ?? 0) >= (imports.dataUpdatedAt ?? 0);
+  // The polled import's row reads its own detail query, not the list, and the
+  // list stops polling once nothing is deleting. So a detail poll that keeps
+  // failing (the API down, say) froze that row's meter with nothing on screen
+  // to say so, while the list read stayed clean. Keyed on the id, not the
+  // detail's data: a first fetch that fails leaves no data and arms no poll,
+  // and the row then shows the list's last copy, which is just as stale.
   // So the failure leaves the row stale only while the row shows that copy,
   // or has no detail copy at all; once the list's fresher copy took over,
   // saying "the last update that loaded" over it would be false.
