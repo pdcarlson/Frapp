@@ -1087,39 +1087,32 @@ describe("assertProductionAskDisabled", () => {
 });
 
 /**
- * App Store compliance: the iOS privacy manifest (#2294) and the native
- * permission declarations (#2296).
+ * App Store compliance: the iOS privacy manifest (#2294), and the media-picker
+ * dependencies #2296 removed and #2464 brought back.
  *
  * `getConfig` is the real resolution path — it loads `app.json`, hands it to
- * `app.config.js`, and evaluates the `plugins` list. Both halves of the #2296
- * defect are visible in its output, because `withPermissions` and
- * `withBlockedPermissions` (`@expo/config-plugins/build/android/Permissions.js`)
- * mutate `config.android.permissions` *synchronously* before returning their mod;
- * only the `tools:node="remove"` attribute is prebuild-only. So the Android
- * permission set is asserted at the effect level here, hermetically, with no
- * native toolchain — and at the cause level too, because the eager filter is
- * plugin-order sensitive: a blocker listed before `expo-camera` would be undone
- * by it and slip past an effect-level check alone.
+ * `app.config.js`, and evaluates the `plugins` list. `ios.privacyManifests` is
+ * a *static* key the dynamic layer must not drop: `applyMobileConfig` spreads
+ * `config` and overrides only `extra` and `android`, and these tests pin that
+ * it keeps doing so.
  *
- * `ios.privacyManifests` is likewise a *static* key the dynamic layer must not
- * drop: `applyMobileConfig` spreads `config` and overrides only `extra` and
- * `android`, and these tests pin that it keeps doing so.
- *
- * WHAT IS NOT COVERED, stated so a green run is not read for more than it earns.
- * The iOS purpose strings that actually ship are written by
- * `IOSConfig.Permissions.applyPermissions`, which runs in the Xcode *mods*, and
- * it deletes a key only when the option is strictly `false`. An option left
- * **omitted** inherits the plugin's own default string (e.g. "Allow
- * $(PRODUCT_NAME) to access your microphone") and still ships. No assertion over
- * `app.json` can see that, here or in
- * `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs`, which also reads the
- * file rather than the built binary. Nor is the *bundled-SDK* side of #2294
- * encoded: the audit behind the declared categories was run by hand (#2294,
- * then again for #2526 with expo-updates), so a
- * future native dependency that uses a required-reason API without shipping its
- * own manifest would be an ITMS-91053 rejection with every test green. Both gaps
- * want the introspected config in CI, and both are filed as #2343 — which also
- * owns collapsing this roster and the permission copy lock's into one home.
+ * WHAT MOVED (#2343). The permission roster isn't here any more: which iOS
+ * purpose strings ship, their exact text, the Android permissions a screen
+ * requests and the app manifest's removals. It lives in
+ * `scripts/check-mobile-native-declarations.mjs`, which `mobile-validate` runs
+ * over `expo config --type introspect`. That reads the Info.plist and
+ * AndroidManifest the plugins' mods produce, so it sees what an assertion here
+ * couldn't: an **omitted** option shipping its plugin's default purpose string
+ * (`IOSConfig.Permissions.applyPermissions` deletes a key only for a strict
+ * `false`), and a vendor option not spelled `*Permission`. The same gate
+ * scans every linked iOS pod in node_modules for required-reason APIs and
+ * fails on a category the array below doesn't declare, so the bundled-SDK side
+ * of #2294 is encoded rather than narrated. It can't tell which reason code a
+ * use needs, and it can't read native code fetched from elsewhere: podspec
+ * dependencies (sentry-cocoa, SDWebImage, ReachabilitySwift, react-native's
+ * third-party pods, hermes-engine) and the Stripe iOS SDK, which comes through
+ * Swift Package Manager. The audit recorded in the array test below covers
+ * sentry-cocoa and SDWebImage; the rest are unaudited (#3030).
  */
 describe("iOS privacy manifest (#2294)", () => {
   function resolved() {
@@ -1133,7 +1126,6 @@ describe("iOS privacy manifest (#2294)", () => {
       ) => {
         exp: {
           ios?: { privacyManifests?: Record<string, unknown> };
-          android?: { permissions?: string[]; blockedPermissions?: string[] };
         };
       };
     };
@@ -1242,164 +1234,9 @@ describe("iOS privacy manifest (#2294)", () => {
       ],
     );
   });
-
-  it("resolves the camera permission the QR scanner requests (#2296, effect level)", () => {
-    // The acceptance criterion for #2296, asserted rather than only pasted into
-    // the PR: whatever the plugin list does, the resolved set must contain
-    // CAMERA. `app/(tabs)/check-in.tsx` calls `useCameraPermissions()`.
-    const android = resolved().android;
-    expect(android?.permissions ?? []).toContain("android.permission.CAMERA");
-    // The other route to the same defect, and the one a plugin cannot undo.
-    expect(android?.blockedPermissions ?? []).not.toContain(
-      "android.permission.CAMERA",
-    );
-  });
 });
 
-describe("native permission declarations (#2296)", () => {
-  function appJson(): {
-    expo: {
-      plugins: (string | [string, Record<string, unknown>?])[];
-      ios?: { infoPlist?: Record<string, unknown> };
-    };
-  } {
-    return requireConfig("./app.json");
-  }
-
-  function pluginEntries(): [string, Record<string, unknown>][] {
-    return appJson().expo.plugins.map((plugin) =>
-      Array.isArray(plugin)
-        ? [plugin[0], plugin[1] ?? {}]
-        : [plugin, {} as Record<string, unknown>],
-    );
-  }
-
-  /** Every option that resolves to an iOS purpose string, declared or declined. */
-  function permissionOptions(): [string, unknown][] {
-    return pluginEntries()
-      .flatMap(([name, opts]) =>
-        Object.entries(opts)
-          .filter(([key]) => /(?:Permission|UsageDescription)$/.test(key))
-          .map(
-            ([key, value]) => [`${name}:${key}`, value] as [string, unknown],
-          ),
-      )
-      .sort(([a], [b]) => a.localeCompare(b));
-  }
-
-  /**
-   * Options this app must never decline, because a screen requests the
-   * underlying permission at runtime. Declining is not inert, but be precise
-   * about what it costs, because it differs per plugin:
-   *
-   * - For all three plugins registered today, `false` reaches only
-   *   `IOSConfig.Permissions.createPermissionsPlugin`, which *deletes* the iOS
-   *   purpose-string key. iOS requires that string to be present when a screen
-   *   requests the permission, so the cost is a failed or crashing request and a
-   *   Guideline 5.1.1(i) problem — not an Android strip. `expo-camera` and
-   *   `expo-location` add their Android permissions via `withPermissions`
-   *   *unconditionally*, whatever these options say.
-   * - A plugin *can* also call `AndroidConfig.Permissions.withBlockedPermissions`
-   *   off such an option, which strips what another plugin contributed and can
-   *   never be granted on Android. That is what `expo-image-picker` did to
-   *   CAMERA, and it is why QR check-in was broken. **One plugin in `app.json`
-   *   still behaves that way**: `expo-image-picker`'s `microphonePermission:
-   *   false` reaches `withBlockedPermissions(['android.permission.RECORD_AUDIO'])`.
-   *   That is deliberate and currently harmless — nothing requests the
-   *   microphone, and `expo-camera` sets `recordAudioAndroid: false` so nothing
-   *   contributes RECORD_AUDIO for the block to strip. It stops being harmless
-   *   the moment a slice turns `recordAudioAndroid` back on or adds a
-   *   microphone surface: the block would silently remove the permission on
-   *   every Android build, which is the #2296 defect in a new permission. The
-   *   resolved-permission test above pins CAMERA only, so nothing would go red
-   *   — decline this option's twin, or widen that test, in the same slice.
-   *   `expo-camera` and `expo-location` add their Android permissions via
-   *   `withPermissions` unconditionally and block nothing.
-   *
-   * Every other declined option below is safe precisely because no source file
-   * asks for it (no microphone, FaceID, motion or background-location use); add
-   * the option here in the same slice that introduces such a use.
-   */
-  const REQUESTED_AT_RUNTIME = [
-    // app/(tabs)/check-in.tsx → useCameraPermissions()
-    "cameraPermission",
-    // study zones, and the check-in location confirm
-    "locationWhenInUsePermission",
-    // lib/chat/attachment-upload.ts → requestMediaLibraryPermissionsAsync(),
-    // reached from a chat photo and from lib/more/profile-photo.ts (s15)
-    "photosPermission",
-  ];
-
-  it("lets no plugin decline a permission a screen requests at runtime", () => {
-    const decliners = permissionOptions()
-      .filter(
-        ([key, value]) =>
-          value === false &&
-          REQUESTED_AT_RUNTIME.some((option) => key.endsWith(`:${option}`)),
-      )
-      .map(([key]) => key);
-    expect(decliners).toEqual([]);
-  });
-
-  it("ships iOS purpose strings only for features that exist", () => {
-    // A purpose string for an unbuilt feature is a Guideline 5.1.1(i)/2.1
-    // rejection — that is what expo-image-picker's photosPermission was. The
-    // full option set is pinned, values included, so neither a new string nor a
-    // flipped decline slips through.
-    expect(permissionOptions()).toEqual([
-      [
-        "expo-camera:cameraPermission",
-        "Frapp uses the camera to scan the check-in code at chapter events.",
-      ],
-      ["expo-camera:microphonePermission", false],
-      // `expo-image-picker` carries NO `cameraPermission` key, deliberately, and
-      // that is not the omitted-option hazard the block above warns about.
-      // `IOSConfig.Permissions.applyPermissions` resolves each key as
-      // `permissions[key] || infoPlist[key] || default`, so an undefined option
-      // falls through to whatever a plugin already wrote before reaching the
-      // vendor default — and `expo-camera` above always writes
-      // NSCameraUsageDescription explicitly, in either plugin order. Setting it
-      // to `false` is what must never happen: that is the #2296 defect, because
-      // image-picker compiles a declined `cameraPermission` into
-      // `withBlockedPermissions(['android.permission.CAMERA'])` and strips the
-      // permission QR check-in requests. The resolved-permission test above is
-      // the tripwire for exactly that.
-      //
-      // `microphonePermission: false` IS set, and must stay set. Omitting it is
-      // not inert here: `withAndroidImagePickerPermissions` adds
-      // `android.permission.RECORD_AUDIO` whenever the option is anything other
-      // than `false`, and the iOS half would write the vendor's default
-      // microphone purpose string for a feature this app does not have — a
-      // Guideline 5.1.1(i) finding of the same shape `photosPermission` used to
-      // be. Declining is safe because nothing requests the microphone, and it
-      // strips nothing another plugin contributes: `expo-camera` above sets
-      // `recordAudioAndroid: false`, so it never adds RECORD_AUDIO either.
-      ["expo-image-picker:microphonePermission", false],
-      [
-        "expo-image-picker:photosPermission",
-        "Frapp uses your photo library so you can set your profile photo and send photos in chapter chat.",
-      ],
-      ["expo-location:locationAlwaysAndWhenInUsePermission", false],
-      ["expo-location:locationAlwaysPermission", false],
-      [
-        "expo-location:locationWhenInUsePermission",
-        "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
-      ],
-      ["expo-location:motionUsagePermission", false],
-      ["expo-secure-store:faceIDPermission", false],
-    ]);
-  });
-
-  it("hand-writes no purpose string under ios.infoPlist", () => {
-    // The plugin roster above is not the only way in: a key written straight
-    // into `ios.infoPlist` bypasses plugins entirely and prebuild copies it
-    // verbatim into Info.plist — the route ITSAppUsesNonExemptEncryption uses.
-    const infoPlist = appJson().expo.ios?.infoPlist ?? {};
-    expect(
-      Object.keys(infoPlist).filter((key) => /UsageDescription$/.test(key)),
-    ).toEqual([]);
-  });
-
+describe("media picker dependencies (#2296, #2464)", () => {
   it("depends on a media picker only where a surface imports one", () => {
     const pkg = requireConfig("./package.json") as {
       dependencies: Record<string, string>;
