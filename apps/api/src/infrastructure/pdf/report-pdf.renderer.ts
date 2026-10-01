@@ -12,6 +12,7 @@ import type {
   ReportPdfColumn,
   ReportPdfDocument,
 } from '#domain/adapters/pdf.interface';
+import { logThrowable } from '../observability/log-throwable';
 
 /** Landscape US Letter — 5-column reports (attendance, service) need the width. */
 const PAGE_WIDTH = 792;
@@ -306,10 +307,11 @@ export class ReportPdfRenderer implements IReportPdfRenderer {
       );
       return null;
     } catch (error) {
-      this.logger.warn(
-        `Chapter logo could not be embedded, rendering report without it: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Chapter logo could not be embedded, rendering report without it`,
+        error,
       );
       return null;
     }

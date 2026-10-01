@@ -979,6 +979,30 @@ describe('PollService', () => {
         expect.stringContaining('postgrest timeout'),
       );
     });
+
+    // #2460. What a repository really throws is postgrest-js's parsed response
+    // body, a plain object rather than an Error, so a hand-rolled
+    // `String(error)` logged this failure as `[object Object]`.
+    it('names a PostgREST failure by its message, not [object Object]', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockRejectedValue({
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "poll_votes_pkey"',
+        details: 'Key (message_id)=(msg-1) already exists.',
+        hint: null,
+      });
+
+      await service.listPolls('chapter-xyz');
+
+      const logged = loggerErrorSpy.mock.calls
+        .map((args: unknown[]) => args.map(String).join(' '))
+        .find((line: string) => line.includes('vote tallies omitted'));
+      expect(logged).toContain('duplicate key');
+      expect(logged).not.toContain('[object Object]');
+      // `details` carries row values; the owner drops it on every path.
+      expect(logged).not.toContain('already exists');
+    });
   });
 
   // #2495. A poll is a message its creator authored, so a poll from a member

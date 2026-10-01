@@ -56,6 +56,7 @@ import {
 } from '#domain/utils/discord-mention-backfill';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import { asRecord, asString } from '#domain/utils/json-guards';
+import { toReportableError } from './infrastructure/observability/reportable-error';
 
 /** Rows read per round trip. */
 const PAGE_SIZE = 500;
@@ -206,6 +207,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(toReportableError(error).message);
   process.exit(1);
 });

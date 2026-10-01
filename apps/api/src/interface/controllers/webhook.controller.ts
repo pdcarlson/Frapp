@@ -18,6 +18,7 @@ import {
   type IBillingProvider,
 } from '#domain/adapters/billing.interface';
 import type { WebhookRequest } from '../types/request-context.types';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 // Webhooks carry no bearer token, so the global throttler keys them by IP —
 // and Stripe delivers bursts from a small shared IP pool, which 429s real
@@ -59,8 +60,11 @@ export class WebhookController {
     try {
       event = this.billingProvider.constructWebhookEvent(rawBody, signature);
     } catch (error) {
-      this.logger.warn(
-        `Stripe webhook signature verification failed: ${error instanceof Error ? error.message : error}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        'Stripe webhook signature verification failed',
+        error,
       );
       throw new UnauthorizedException('Invalid Stripe webhook signature');
     }

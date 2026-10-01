@@ -9,6 +9,7 @@ import {
   REPORTS_ROOT_PREFIX,
   reportsFolderPrefix,
 } from '#domain/constants/storage';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * How long a generated report survives after it is written.
@@ -122,9 +123,11 @@ export class ReportRetentionService {
         );
       } catch (error) {
         failed += 1;
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `report retention sweep: chapter ${chapterId} failed`,
-          error instanceof Error ? error.stack : String(error),
+          error,
         );
       }
     }
@@ -177,9 +180,11 @@ export class ReportRetentionService {
         await this.purgeChapterReports(chapterId);
       } catch (error) {
         failures.push(chapterId);
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `report purge: chapter ${chapterId} failed`,
-          error instanceof Error ? error.stack : String(error),
+          error,
         );
       }
     }
