@@ -28,8 +28,10 @@ import { useFrappClient, useViewerUserId } from "@repo/hooks";
 import type { OutboxStore } from "@repo/chat-core/adapters";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
 import { flushOutbox } from "@repo/chat-core/chat-client";
-import { chatRealtime } from "@repo/chat-core/realtime-manager";
-import type { RawChatMessage } from "@repo/chat-core/types";
+import {
+  chatRealtime,
+  createBackfillFetcher,
+} from "@repo/chat-core/realtime-manager";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
 import { useChatScope } from "./chat-scope";
@@ -49,7 +51,7 @@ import { getOutboxStore } from "./outbox-store";
  * {@link useChatRuntime} from the live scope — a process-wide instance is
  * exactly the shared-device authorship bug that issue fixes. The key-value
  * mirror stays process-wide because what it serves on mobile is the
- * `chat:lastSeen:` backfill cursor, where a stale read widens a backfill
+ * `chat:lastSeen:` backfill cursor, where a stale read costs a re-read
  * rather than misattributing a message; heavy-command notices also pass
  * through it, but mobile never writes one (`spec/ui/mobile/patterns.md`
  * § Chat).
@@ -141,19 +143,7 @@ export function useChatRuntime(): ChatRuntime {
         viewerId,
         kv: chatKeyValueStore,
         net: chatNetworkState,
-        backfill: async (channelId, since) => {
-          const { data, error } = await apiClient.GET(
-            "/v1/channels/{id}/messages",
-            {
-              params: {
-                path: { id: channelId },
-                query: since ? { since, limit: 100 } : { limit: 50 },
-              },
-            },
-          );
-          if (error) throw error;
-          return Array.isArray(data) ? (data as RawChatMessage[]) : [];
-        },
+        backfill: createBackfillFetcher(apiClient),
       });
     });
 
