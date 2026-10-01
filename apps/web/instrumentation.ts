@@ -12,8 +12,10 @@ import { buildServerSentryOptions, webSentryDsn } from "@/lib/sentry/options";
  * per `apps/web/AGENTS.md` — this Next version's conventions differ from older
  * `sentry.server.config.ts` layouts the Sentry wizard still emits.
  *
- * **No DSN means no initialization at all**, which is what keeps local dev,
- * `vitest`, and CI reporting nowhere. Same rule as the API's `main.ts`.
+ * **No DSN means no initialization at all**, which is what keeps `vitest` and
+ * CI reporting nowhere. Same rule as the API's `main.ts`. A local
+ * `npm run dev:web` injects Infisical `dev`, which carries the DSN, so it does
+ * report, tagged `development` (ENV_REFERENCE.md § apps/web).
  */
 export function register(): void {
   const dsn = webSentryDsn();
@@ -30,9 +32,7 @@ export function register(): void {
  * The error payload goes through `beforeSend` exactly like any other event, so
  * the scrubbing rules apply here without anything extra.
  */
-export const onRequestError: typeof Sentry.captureRequestError = (
-  ...args
-) => {
+export const onRequestError: typeof Sentry.captureRequestError = (...args) => {
   if (!webSentryDsn()) return;
   return Sentry.captureRequestError(...args);
 };
