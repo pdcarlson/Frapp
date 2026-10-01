@@ -33,8 +33,12 @@ Without the two Supabase values the sign-in card renders
 build, so sign-in is unavailable." and every auth row in the smoke checklist
 fails by construction.
 
-Alternatively, `npm run dev:mobile` from the repo root injects the same variables
-through Infisical instead of a local file.
+`npm run dev:mobile` from the repo root runs the same Expo under Infisical `dev`,
+which holds no `EXPO_PUBLIC_*` name
+([`ENV_REFERENCE.md` § References](../internal/environment/ENV_REFERENCE.md#references--framework-specific-names)
+says why), so it needs this file too. `127.0.0.1` or `localhost` in these URLs
+means the device the app runs on, so a phone needs an address that reaches your
+machine.
 
 ### 2. Start Metro
 
