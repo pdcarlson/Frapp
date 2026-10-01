@@ -731,3 +731,16 @@ describe("chat thread row placement (components.md §11 § Grouping)", () => {
     act(() => tree.unmount());
   });
 });
+
+describe("chat thread frame (#2485)", () => {
+  it("takes the top safe-area inset itself, since no navigator header does", () => {
+    // The `‹ #name` bar is the top of the screen now, so without this it would
+    // sit under the status bar and notch. `findByType` stops at the screen's
+    // own SafeAreaView; it doesn't descend into the image viewer's.
+    const tree = render();
+    const frame = tree.root.findByType("SafeAreaView" as never);
+
+    expect(frame.props.edges).toContain("top");
+    act(() => tree.unmount());
+  });
+});

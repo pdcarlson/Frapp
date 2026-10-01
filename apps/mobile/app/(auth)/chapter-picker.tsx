@@ -17,8 +17,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Chapter picker — the supporting route with no drawn Canvas screen
- * (spec/ui/mobile/screens.md:46), so it reuses s02's visual language, which in
- * turn is the existing `(auth)` card language from s01.
+ * (spec/ui/mobile/screens.md § Inventory), so it reuses s02's visual language,
+ * which in turn is the existing `(auth)` card language from s01.
  *
  * Reached deliberately, from the More hub — **not** forced on members whose
  * token lacks an `active_chapter_id` claim. `lib/auth-gate.ts` explains why
