@@ -11,6 +11,7 @@ import {
   applyReactionInsert,
   emptyCache,
   markFailed,
+  mergeSincePage,
   mergeUnheldRows,
   mergeServerRows,
   oldestConfirmed,
@@ -193,6 +194,55 @@ describe("trimOlderThan", () => {
   test("returns the cache untouched when nothing is older", () => {
     const cache = page(3, 4);
     expect(trimOlderThan(cache, Date.parse(row(1).created_at))).toBe(cache);
+  });
+});
+
+describe("mergeSincePage (#2807)", () => {
+  // A `since=` read is the newest `limit` rows after the cursor, newest first.
+
+  test("a short page holds everything after the cursor, so it merges onto what the thread had", () => {
+    const next = mergeSincePage(page(1, 3), rows(4, 6).reverse(), 5);
+
+    expect(ids(next)).toEqual(["m1", "m2", "m3", "m4", "m5", "m6"]);
+  });
+
+  test("a full page may not reach back to the cursor, so the rows older than it go", () => {
+    // The thread held m1–m3 with the cursor at m3; m4–m19 were missed and the
+    // page is m20–m24. Kept, m3 would sit against m20 with nothing between.
+    const next = mergeSincePage(page(1, 3), rows(20, 24).reverse(), 5);
+
+    expect(ids(next)).toEqual(["m20", "m21", "m22", "m23", "m24"]);
+    // Paging back reads from here, so it runs through the hole.
+    expect(oldestConfirmed(next)?.id).toBe("m20");
+  });
+
+  test("a full page keeps unsent rows and rows newer than it", () => {
+    // m30 is a Realtime arrival that landed after the reconnect, before the
+    // page did: subscribe-then-backfill orders them that way.
+    let current = mergeServerRows(page(1, 3), [row(30)]);
+    current = upsertOptimistic(current, queued("q1"));
+
+    const next = mergeSincePage(current, rows(20, 24).reverse(), 5);
+
+    expect(ids(next)).toEqual(["m20", "m21", "m22", "m23", "m24", "m30", "q1"]);
+  });
+
+  test("a full page keeps the reactions of a row it already held, since it carries none", () => {
+    const current = applyReactionInsert(page(18, 22), reaction("a1", "m20"));
+
+    const next = mergeSincePage(current, rows(20, 24).reverse(), 5);
+
+    expect(next.byId.m20?.reactions["reaction:👍"]).toEqual(["u2"]);
+    expect(ids(next)).toEqual(["m20", "m21", "m22", "m23", "m24"]);
+  });
+
+  test("a full page drops the older rows even when it happens to overlap them", () => {
+    // A full page can't tell "exactly `limit` rows were missed" from "more
+    // were", so it is conservative. The rows that go load again, fresh, when
+    // the member scrolls back to them.
+    const next = mergeSincePage(page(1, 5), rows(4, 8).reverse(), 5);
+
+    expect(ids(next)).toEqual(["m4", "m5", "m6", "m7", "m8"]);
   });
 });
 
