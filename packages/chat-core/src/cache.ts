@@ -159,7 +159,7 @@ export function holdsServerRow(
 /** Merges many rows (backfill / initial load). */
 export function mergeServerRows(
   cache: ChannelCache,
-  rows: RawChatMessage[],
+  rows: readonly RawChatMessage[],
 ): ChannelCache {
   return rows.reduce((acc, row) => mergeServerRow(acc, row), cache);
 }
@@ -585,10 +585,38 @@ export function reconcileNewestPage(
  * when the member next scrolls to them.
  */
 export function trimOlderThan(cache: ChannelCache, time: number): ChannelCache {
+  return dropConfirmed(cache, (message) => timeOf(message) < time);
+}
+
+/**
+ * Drops the confirmed rows a newest-page read proves gone (#2807): those at or
+ * before `through` (epoch ms) that `rows` doesn't carry. For a read the server
+ * answered as the channel's newest page, which holds every row it has up to
+ * its newest one, or up to `through` when the caller knows a later instant it
+ * has none before (a purged cursor's). Rows in the page keep their reactions,
+ * and optimistic rows stay.
+ */
+export function dropUnreadThrough(
+  cache: ChannelCache,
+  rows: readonly RawChatMessage[],
+  through: number,
+): ChannelCache {
+  const read = new Set(rows.map((row) => row.id));
+  return dropConfirmed(
+    cache,
+    (message) => !read.has(message.id) && timeOf(message) <= through,
+  );
+}
+
+/** Drops the confirmed rows `matches` picks, with their reactions. */
+function dropConfirmed(
+  cache: ChannelCache,
+  matches: (message: ChatMessage) => boolean,
+): ChannelCache {
   const drop = new Set(
     cache.order.filter((key) => {
       const message = cache.byId[key];
-      return message?._status === "confirmed" && timeOf(message) < time;
+      return message?._status === "confirmed" && matches(message);
     }),
   );
   if (drop.size === 0) return cache;
@@ -604,6 +632,34 @@ export function trimOlderThan(cache: ChannelCache, time: number): ChannelCache {
     order: cache.order.filter((key) => !drop.has(key)),
     actionIndex,
   };
+}
+
+/**
+ * Merges what a `since=` read returned: the newest `limit` rows created after
+ * a cursor, which is how the reconnect and poll backfill reads what it missed
+ * (`realtime-manager.ts`, #2807).
+ *
+ * A page shorter than `limit` holds every row after the cursor, so it merges
+ * as it is. A full page may not reach back that far: rows between the cursor
+ * and the page's oldest row can be missing, and merged as is the thread would
+ * draw that hole as silence. So the confirmed rows older than the page go,
+ * as a rebuild from the newest page drops them (`reconcileNewestPage`), and
+ * reading back from the page's oldest row (`history.ts`) runs through the hole.
+ * Optimistic rows stay, and so does a row in the page's oldest millisecond,
+ * for the reasons `reconcileNewestPage` keeps them.
+ *
+ * Rows merge through `mergeServerRow`, so a row the cache holds keeps its
+ * reactions: a `since=` page carries none.
+ */
+export function mergeSincePage(
+  cache: ChannelCache,
+  rows: readonly RawChatMessage[],
+  limit: number,
+): ChannelCache {
+  const merged = mergeServerRows(cache, rows);
+  if (rows.length < limit) return merged;
+  const oldest = Math.min(...rows.map((row) => Date.parse(row.created_at)));
+  return Number.isNaN(oldest) ? merged : trimOlderThan(merged, oldest);
 }
 
 /**
