@@ -93,12 +93,13 @@ function readString(
  *
  * ## A palette without the Signet map paints house gold
  *
- * The API's stale-palette sweep recomputes every row an older engine wrote
- * within the hour (#1165), and production has run it, so the only palette
- * that lacks the map is a row inserted without one since the sweep's last
+ * The API's hourly stale-palette sweep recomputes every row an older engine
+ * wrote (#1165), and production has run it, so the only palette that lacks
+ * the map is a row inserted without one since the sweep's last successful
  * tick: a demo seed (`scripts/demo/demo-seed.sql`) or `POST /v1/chapters`.
- * Such a row shows the house tokens for that hour; web applies nothing to it
- * either (`use-chapter-theme.ts`'s all-or-nothing gate). The legacy branch
+ * Such a row shows the house tokens until the next successful tick, normally
+ * within the hour; web applies nothing to it either (`use-chapter-theme.ts`'s
+ * all-or-nothing gate). The legacy branch
  * that re-validated the raw `accent_color` for those rows
  * (`resolveChapterAccentColor`) was deleted in #2595.
  *

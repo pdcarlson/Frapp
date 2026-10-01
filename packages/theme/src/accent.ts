@@ -11,7 +11,7 @@ import { frappTokens } from "./tokens";
 
 const MIN_ACCENT_CONTRAST = 4.5;
 
-/** The background assumed when a caller does not name one (web light mode). */
+/** The background assumed when a caller does not name one (a light surface). */
 const DEFAULT_BACKGROUND = "#FFFFFF";
 
 /**
@@ -45,9 +45,10 @@ export type AccentValidationResult = {
 
 export type ResolveChapterAccentOptions = {
   /**
-   * Surface the accent is drawn on. Defaults to white, which is what the web
-   * dashboard assumes; native dark mode must pass its own dark surface or a
-   * legible-on-white accent would be waved through onto near-black.
+   * Surface the accent is drawn on. Defaults to white, which no caller relies
+   * on today: the one caller, the web Settings accent preview, passes the dark
+   * card. A dark surface must be passed, or a legible-on-white accent would be
+   * waved through onto near-black.
    */
   background?: string;
   /**
@@ -69,9 +70,10 @@ export type ResolveChapterAccentOptions = {
  *
  * The rounding is deliberate and long-standing: it is what this resolver has
  * always compared against 4.5, and it is what `contrastOnBackground` reports.
- * Roughly 9,000 hex colors score in `[4.495, 4.5)` and pass only because of it,
- * so tightening to exact comparison would flip the Settings preview's verdict
- * on accents chapters already use. The shared math in `@repo/color` is exact;
+ * Against the dark card the Settings preview passes (`#211E1A`), 9,686 hex
+ * colors score in `[4.495, 4.5)` and pass only because of it, so tightening to
+ * exact comparison would flip the preview's verdict on accents chapters
+ * already use. The shared math in `@repo/color` is exact;
  * the rounding lives here, with the caller whose behavior depends on it.
  */
 function ratioOn(color: Rgb, background: Rgb): number {
