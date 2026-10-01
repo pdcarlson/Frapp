@@ -19,6 +19,7 @@ import {
 } from '#domain/constants/report-columns';
 import { REPORTS_BUCKET, reportsFolderPrefix } from '#domain/constants/storage';
 import { REPORT_MAX_ROWS } from './report.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * Private bucket holding generated report artifacts (see the reports_bucket
@@ -162,10 +163,11 @@ export class ReportExportService {
       }
       return { bytes };
     } catch (error) {
-      this.logger.warn(
-        `Could not load chapter logo "${logoPath}" for report export: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not load chapter logo "${logoPath}" for report export`,
+        error,
       );
       return null;
     }

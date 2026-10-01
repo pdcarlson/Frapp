@@ -762,7 +762,11 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     await service.handleCallback({ code: 'c', state: STATE });
 
     expect(logged).toHaveBeenCalledTimes(1);
-    const [message, cause] = logged.mock.calls[0] as [string, string];
+    // One string since #2460: `logThrowable` puts the cause on the message
+    // line itself, and a plain object never reaches ConsoleLogger as a second
+    // argument, so there is nothing after the line.
+    const [message, ...rest] = logged.mock.calls[0] as [string, ...unknown[]];
+    expect(rest).toEqual([]);
 
     // This assertion was inverted by #1260, deliberately. It previously read
     // `expect(message).toContain(STATE)`. The state id is the CSRF token, and
@@ -776,8 +780,8 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     // the service's own comment notes this branch is a function of store health
     // alone and fires identically for every state id.
     expect(message).not.toContain(STATE);
-    expect(cause).toContain('PGRST205');
-    expect(cause).toContain('public.discord_oauth_states');
+    expect(message).toContain('PGRST205');
+    expect(message).toContain('public.discord_oauth_states');
     logged.mockRestore();
   });
 

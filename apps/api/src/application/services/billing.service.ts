@@ -420,15 +420,16 @@ export class BillingService {
     event: WebhookEvent,
     error: unknown,
   ): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toReportableError(error).message;
     try {
       await this.webhookEventRepo.markFailed(event.id, message);
     } catch (markError) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Failed to record webhook failure for ${event.id}; the claim will be ` +
-          `retried after its lease expires: ${
-            markError instanceof Error ? markError.message : String(markError)
-          }`,
+          `retried after its lease expires`,
+        markError,
       );
     }
   }
