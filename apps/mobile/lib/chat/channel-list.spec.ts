@@ -5,7 +5,9 @@ import {
   listedChannels,
   selectCategories,
   selectChannels,
+  postRefusalHint,
   selectPostCapability,
+  type ChannelPostCapability,
   THREAD_HEADER_FALLBACK,
   threadHeaderTitle,
 } from "./channel-list";
@@ -332,16 +334,31 @@ describe("selectPostCapability", () => {
   it("reads can_post and is_read_only off the row", () => {
     expect(
       selectPostCapability({ can_post: false, is_read_only: true }),
-    ).toEqual({ canPost: false, isReadOnly: true });
+    ).toEqual({ canPost: false, isReadOnly: true, isArchived: false });
     expect(
       selectPostCapability({ can_post: true, is_read_only: false }),
-    ).toEqual({ canPost: true, isReadOnly: false });
+    ).toEqual({ canPost: true, isReadOnly: false, isArchived: false });
   });
 
   it("distinguishes the alumni case (can_post false, not read-only) from read-only", () => {
     expect(
       selectPostCapability({ can_post: false, is_read_only: false }),
-    ).toEqual({ canPost: false, isReadOnly: false });
+    ).toEqual({ canPost: false, isReadOnly: false, isArchived: false });
+  });
+
+  // `GET /v1/channels/{id}` still returns an archived Group DM to whoever can
+  // read it, with can_post false and is_read_only false (#2199).
+  it("reads archived_at, so an archived Group DM isn't mistaken for the alumni case", () => {
+    expect(
+      selectPostCapability({
+        can_post: false,
+        is_read_only: false,
+        archived_at: "2026-09-30T12:00:00.000Z",
+      }),
+    ).toEqual({ canPost: false, isReadOnly: false, isArchived: true });
+    expect(
+      selectPostCapability({ can_post: true, is_read_only: false, archived_at: null }),
+    ).toEqual({ canPost: true, isReadOnly: false, isArchived: false });
   });
 
   it("defaults to postable, not-read-only while the payload hasn't loaded", () => {
@@ -350,17 +367,55 @@ describe("selectPostCapability", () => {
     expect(selectPostCapability(undefined)).toEqual({
       canPost: true,
       isReadOnly: false,
+      isArchived: false,
     });
     expect(selectPostCapability(null)).toEqual({
       canPost: true,
       isReadOnly: false,
+      isArchived: false,
     });
   });
 
   it("defaults can_post to true on a malformed value rather than locking the composer", () => {
     expect(
       selectPostCapability({ can_post: "no", is_read_only: true }),
-    ).toEqual({ canPost: true, isReadOnly: true });
+    ).toEqual({ canPost: true, isReadOnly: true, isArchived: false });
+  });
+});
+
+describe("postRefusalHint", () => {
+  const capability = (over: Partial<ChannelPostCapability>) => ({
+    canPost: false,
+    isReadOnly: false,
+    isArchived: false,
+    ...over,
+  });
+
+  it("says nothing when the caller may post", () => {
+    expect(postRefusalHint(capability({ canPost: true }))).toBeNull();
+  });
+
+  it("explains an archived Group DM as archived, not as the alumni rule (#2199)", () => {
+    expect(postRefusalHint(capability({ isArchived: true }))).toBe(
+      "This conversation is archived because everyone else left. You can still read it.",
+    );
+  });
+
+  it("puts archived ahead of read-only, as canAccessChannel does", () => {
+    expect(
+      postRefusalHint(capability({ isArchived: true, isReadOnly: true })),
+    ).toBe(
+      "This conversation is archived because everyone else left. You can still read it.",
+    );
+  });
+
+  it("keeps the read-only and alumni sentences", () => {
+    expect(postRefusalHint(capability({ isReadOnly: true }))).toBe(
+      "This channel is read-only. Posting requires the announcements:post permission.",
+    );
+    expect(postRefusalHint(capability({}))).toBe(
+      "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.",
+    );
   });
 });
 

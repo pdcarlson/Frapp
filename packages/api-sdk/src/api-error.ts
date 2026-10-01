@@ -118,7 +118,7 @@ const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
  * the request and rejected it, so nothing was written and repeating it
  * unchanged is pointless.
  *
- * One definition, deliberately shared by chat-core's `classify` (the
+ * One definition, deliberately shared by chat-core's `classifyChatError` (the
  * outbox/send path) and `dispatch.ts` (heavy commands) and by `@repo/hooks`'
  * `useAdjustPoints`, because "4xx means do not retry" is one policy and copies
  * of it drift. The carve-out above is why that matters: a proxy 408 treated as

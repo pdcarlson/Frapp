@@ -21,7 +21,7 @@ import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
 import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
-import { workflowFiles, workflowJobs } from "./helpers/workflow-yaml.mjs";
+import { installsDependenciesIn, workflowFiles, workflowJobs } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-backup-freshness.yml");
@@ -678,7 +678,7 @@ export function watchdogWorkflowProblems(yaml) {
   if (/environment:\s*production-backup/.test(live)) {
     problems.push("must not name environment: production-backup");
   }
-  if (/npm ci/.test(live)) {
+  if (installsDependenciesIn(live)) {
     problems.push("must not npm ci");
   }
   if (/pull_request:/.test(yaml)) {
@@ -786,7 +786,7 @@ describe("workflow wiring", () => {
     // The script still honours GITHUB_PAT for a local run.
     assert.doesNotMatch(liveYaml, /secrets\.GITHUB_PAT/);
     assert.match(liveYaml, /node scripts\/ci\/production-backup-freshness\.mjs/);
-    assert.doesNotMatch(liveYaml, /npm ci/);
+    assert.ok(!installsDependenciesIn(liveYaml), "installs dependencies (npm ci, or node-setup `install: ci`)");
   });
 
   it("scopes issues: write to the job, not the workflow", () => {
@@ -857,6 +857,16 @@ describe("watchdog mutations", () => {
 
   it("adding npm ci fails", () => {
     const problems = watchdogWorkflowProblems(`${workflow}\n      - run: npm ci\n`);
+    assert.ok(
+      problems.some((problem) => problem.includes("npm ci")),
+      problems.join("; "),
+    );
+  });
+
+  it("switching node-setup to an installing mode fails", () => {
+    const mutated = workflow.replace(/install: none/, "install: ci");
+    assert.notEqual(mutated, workflow);
+    const problems = watchdogWorkflowProblems(mutated);
     assert.ok(
       problems.some((problem) => problem.includes("npm ci")),
       problems.join("; "),

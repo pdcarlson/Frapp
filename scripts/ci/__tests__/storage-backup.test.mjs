@@ -967,10 +967,10 @@ test("the GHA action uses the same assertStorageBackupTarget fence as the CLI", 
   const yml = readFileSync(".github/actions/storage-offsite-backup/action.yml", "utf8");
   assert.match(yml, /assertStorageBackupTarget/);
   assert.doesNotMatch(yml, /REF="\$\{HOST%%\.\*\}"/);
-  const setup = yml.indexOf("actions/setup-node@v4");
+  const setup = yml.indexOf("./.github/actions/node-setup");
   const fence = yml.indexOf("assertStorageBackupTarget");
   assert.ok(setup !== -1 && fence !== -1 && setup < fence, "Setup Node must run before the fence import");
-  assert.equal((yml.match(/actions\/setup-node@v4/g) || []).length, 1, "one Setup Node step, not a leftover duplicate");
+  assert.equal((yml.match(/\.\/\.github\/actions\/node-setup/g) || []).length, 1, "one Setup Node step, not a leftover duplicate");
 });
 
 // -- Throughput and the budget (#2916) ---------------------------------------

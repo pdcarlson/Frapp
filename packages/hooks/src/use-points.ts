@@ -156,10 +156,11 @@ function mayHaveCommitted(error: unknown): boolean {
  * - A success, or a definitive refusal of an adjustment no attempt may have
  *   committed, releases it, so a deliberate second grant of the same amount is
  *   a second legitimate row with a fresh key. Once an attempt may have
- *   committed, a later refusal from a guard that runs before the server's
- *   replay check (the throttler's 429, a 401 or 403) proves nothing about that
- *   attempt, so the key is kept; only a 409, which says the key was used for a
- *   different adjustment, still releases it.
+ *   committed, a later refusal that runs before the server's replay check (the
+ *   throttler's 429, a 401 or 403, or the 404 for a target no longer in the
+ *   chapter) proves nothing about that attempt, so the key is kept; only a
+ *   409, which says the key was used for a different adjustment, still
+ *   releases it.
  * - `reset()` releases it too. The dialog calls it on open, so a fresh draft is
  *   a new adjustment, as re-typing `/points` is. Not while an adjustment is
  *   still in flight: TanStack's reset detaches the observer without stopping
