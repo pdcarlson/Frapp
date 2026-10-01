@@ -239,15 +239,17 @@ export class ChapterService {
 
   async create(
     userId: string,
-    data: { name: string; university: string; config?: Partial<Chapter> },
+    data: { name: string; university: string; config: Partial<Chapter> },
   ): Promise<Chapter> {
     const { name, university, config } = data;
-    // `config` carries the Chunk 02 customization columns (archetype, branding,
-    // enabled_modules, …) set by the onboarding flow. Legacy callers omit it.
+    // `config` carries the customization columns (archetype, branding, palette,
+    // enabled_modules, …) the onboarding flow sets. Onboarding is the only way
+    // to create a chapter since the config-less `POST /v1/chapters` was deleted
+    // (#2608), so a chapter is never stored without them.
     const chapter = await this.chapterRepo.create({
       name,
       university,
-      ...(config ?? {}),
+      ...config,
     });
 
     const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
