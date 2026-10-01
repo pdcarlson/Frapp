@@ -17,6 +17,7 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-11: Agent dev stack — chat hot path moves to in-process NestJS; PGlite for local DB validation (#401) | [adr-11.md](adr-11.md) |
 | ADR-12: Agent hot-path verification — PGlite+NestJS default, Supabase branch opt-in (#401) | [adr-12.md](adr-12.md) |
 | ADR-13: Repository visibility — public → private on GitHub Pro (2026-05-31) | [adr-13.md](adr-13.md) |
+| ADR-14: Code review in CI (CodeRabbit, then a Claude Action, then the advisory `codex review` CLI) — **retired 2026-09-21; the number is never reused.** Deleted with the codex reviewer in [#2449](https://github.com/pdcarlson/Frapp/pull/2449); its text is in git history | — |
 | ADR-15: CI cost — Actions-cache build dedup, Playwright/Docker caches, path-gating (2026-06-01) | [adr-15.md](adr-15.md) |
 | ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01) | [adr-16.md](adr-16.md) |
 | ADR-17: Secret scanning — gitleaks pre-commit + CI gate (2026-06-03) | [adr-17.md](adr-17.md) |
