@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 // check-expo-sdk-line.mjs is a general-purpose gate under scripts/ (a peer of
 // the other check-*.mjs gates); its test lives here so the `test:ci-scripts`
 // glob runs it — hence the ../../ reach up.
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { installsDependencies, workflowSteps } from "./helpers/workflow-yaml.mjs";
 import {
   blocksMajor,
   declaredPackages,
@@ -523,7 +523,8 @@ test("mobile-validate runs the gate right after npm ci, before expo export, unco
     (step) => step.jobId === "mobile-validate",
   );
   const at = (re) => steps.findIndex((step) => re.test(step.body));
-  const install = at(/^\s*-?\s*run:\s*npm\s+ci\s*$/m);
+  const install = steps.findIndex(installsDependencies);
+  assert.ok(install !== -1, "mobile-validate installs through node-setup with `install: ci`");
   const gate = at(/^\s*-?\s*run:\s*npm\s+run\s+check:expo-sdk-line\s*$/m);
   const bundle = at(/\bexpo\s+export\b/);
   assert.ok(gate !== -1, "mobile-validate has no `npm run check:expo-sdk-line` step");

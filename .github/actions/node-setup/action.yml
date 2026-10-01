@@ -1,0 +1,74 @@
+name: Node setup
+description: >
+  Sets up Node, then the dependency install the `install` input names. The one
+  place `node-version` is written for every job that calls it, so a Node bump
+  is one edit here instead of one per job (#1541).
+
+# What this action deliberately does NOT do:
+#
+#   - Check out the repo. A local `uses: ./…` action is read from the
+#     workspace, so the caller's `actions/checkout` has to run first, and any
+#     `fetch-depth` stays on that call-site step.
+#   - Serve a job whose workspace is not the workflow's own commit. A local
+#     action loads from whatever tree is on disk when its step starts, so after
+#     a checkout of another ref it is that commit's copy, or none at all when
+#     the commit predates this file. `_deploy.yml` (checks out `inputs.sha`) and
+#     `release.yml` (checks out the deployed SHA) keep a hand-written
+#     `actions/setup-node` for that reason, pinned to the same version below by
+#     `scripts/ci/__tests__/node-setup-action.test.mjs`.
+#   - Reach every job. A job that sets up no Node, but runs `node` itself or
+#     through a composite action that does (`db-offsite-backup`), runs on the
+#     runner's preinstalled Node, so a bump here doesn't move it (#3081 lists
+#     them).
+#
+# Every step below is pinned by that test, in order: the per-job guards (the
+# cold-build jobs, mobile-validate's bundle order, the watchdogs' "no npm ci")
+# read only the calling job, so a step added here would reach all of them
+# unseen.
+
+inputs:
+  install:
+    description: >
+      Required; there is no default, so every call site says what it installs.
+      `ci`: `npm ci`. `omit-dev`: `npm ci --omit=dev`, the production-pruned
+      tree Vercel builds from (`web-production-build`). `none`: Node only, for
+      a job that runs repo scripts with no dependencies. Both installing modes
+      restore the `~/.npm` download cache, which holds tarballs only, never
+      `node_modules` or a package's `dist/`, so a cold-tree job stays cold.
+      `none` restores no cache.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The runner does not enforce `required: true` on a composite action's
+    # input, and a misspelt value would otherwise match no `if:` below and skip
+    # the install with the step green.
+    - name: Check the install mode
+      shell: bash
+      env:
+        INSTALL: ${{ inputs.install }}
+      run: |
+        case "$INSTALL" in
+          ci | omit-dev | none) ;;
+          *)
+            echo "::error::node-setup: install must be ci, omit-dev or none (got '$INSTALL')"
+            exit 1
+            ;;
+        esac
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: ${{ inputs.install != 'none' && 'npm' || '' }}
+
+    - name: Install dependencies
+      if: inputs.install == 'ci'
+      shell: bash
+      run: npm ci
+
+    - name: Install production dependencies only
+      if: inputs.install == 'omit-dev'
+      shell: bash
+      run: npm ci --omit=dev

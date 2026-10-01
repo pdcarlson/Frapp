@@ -90,9 +90,9 @@ runs:
         fi
 
     - name: Setup Node
-      uses: actions/setup-node@v4
+      uses: ./.github/actions/node-setup
       with:
-        node-version: 24
+        install: none
 
     # Same fence as the CLI (`assertStorageBackupTarget`). The service-role key
     # reads whichever project SUPABASE_URL names, and a production job injects

@@ -80,9 +80,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: ./.github/actions/node-setup
         with:
-          node-version: 24
+          install: none
 
       # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
       # matching production-guardrails.yml's deliberately minimal action surface.
