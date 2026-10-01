@@ -4,6 +4,7 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 export interface PermissionCatalogEntry {
   key: string;
@@ -25,6 +26,12 @@ export interface PermissionCatalogEntry {
  * A selected permission missing from `catalog` is listed too: a gate can
  * outlive every role that held it, and an option that is not shown can be
  * neither seen nor unticked.
+ *
+ * Offline, a catalog that is loading or failed is reported as offline, not as
+ * a missing `members:view`: offline the read either pauses (and would show
+ * "Loading" until reconnect) or fails (and would blame a permission nobody
+ * checked), depending on how the dashboard got offline — `anyReadUncached` in
+ * `async-states.tsx` has the two cases (#2267).
  */
 export function PermissionCheckboxGrid({
   catalog,
@@ -41,6 +48,15 @@ export function PermissionCheckboxGrid({
   onToggle: (permission: string) => void;
   holders?: ReadonlyMap<string, readonly string[]>;
 }) {
+  const { isOffline } = useNetwork();
+  if (isOffline && (catalogUnavailable || catalogLoading)) {
+    return (
+      <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
+        Offline — can&apos;t load the permission list. Existing selections are
+        unaffected; reconnect to change them.
+      </p>
+    );
+  }
   if (catalogUnavailable) {
     return (
       <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
