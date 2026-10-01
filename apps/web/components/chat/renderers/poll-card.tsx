@@ -131,12 +131,12 @@ export function PollCard({
         })}
       </ul>
       {total === 0 ? (
-        <p className="mt-3 text-[12.5px] text-muted-foreground">
+        <p className="mt-3 text-caption text-muted-foreground">
           No votes yet
           {canVote ? " · be the first to vote" : ""}.
         </p>
       ) : (
-        <p className="mt-3 text-[12.5px] text-muted-foreground">
+        <p className="mt-3 text-caption text-muted-foreground">
           {total} vote{total === 1 ? "" : "s"}
           {viewerVote ? " · your vote is highlighted" : ""}
         </p>

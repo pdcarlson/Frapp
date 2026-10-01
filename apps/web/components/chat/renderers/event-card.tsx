@@ -199,7 +199,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.name}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span>{formatRange(payload.start_time, payload.end_time)}</span>
         {payload.location ? (
           <>
@@ -215,7 +215,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         ) : null}
       </div>
       {canViewAttendance ? (
-        <p className="mt-2 text-[12.5px] text-muted-foreground">
+        <p className="mt-2 text-caption text-muted-foreground">
           {checkedIn === 1 ? "1 checked in" : `${checkedIn} checked in`}
         </p>
       ) : null}

@@ -160,7 +160,7 @@ export function ProfilePhotoControl({
         </Button>
       ) : null}
       {!chapterId ? (
-        <p className="w-full text-[12.5px] text-muted-foreground">
+        <p className="w-full text-caption text-muted-foreground">
           Choose a chapter to add a photo.
         </p>
       ) : null}

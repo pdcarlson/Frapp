@@ -328,8 +328,13 @@ export default function Home() {
             Bleeding it there would crop a 720 frame to phone width and cut the
             thread mid-word, which reads as a rendering bug rather than as a
             composition; the phone board carries no bleeding frame either.
+
+            `min-w-0` lets this grid item shrink below the frame's min-content,
+            which the header's nowrap subtitle sets. Without it, at 320 the
+            subtitle held the column, and the frame, 35px wider than the shell,
+            and the section's clip cut off the frame's right edge.
           */}
-          <div className="lg:col-span-6 lg:-mr-20">
+          <div className="min-w-0 lg:col-span-6 lg:-mr-20">
             <div className="flex flex-col gap-3">
               <ChatFrame
                 variant="fold"
@@ -684,12 +689,14 @@ type StaggerStyle = React.CSSProperties & Record<"--i", number>;
  * boards (`web-framework.dc.html` option 1b and `canvas-screens.dc.html` s06 /
  * s07) and are deliberately off the marketing scale and off the radius map.
  * Landing chrome is on the grid; frame internals are not. Do not "correct" them.
+ * The chat thread's rows are the exception: `web-framework.dc.html` draws them
+ * as the bubbles chat retired on 2026-09-29, so they follow `components.md`
+ * § Chat messages instead (#2893). See the note above `RunStart`.
  *
- * What they may show is bounded by `spec/behavior/`, not by the boards: the
- * event card carries Check in and nothing else, there is no RSVP control and no
- * attendance count a member could not see, no dues artifact appears in the
- * thread because that renderer is a stub, and there is no Ask pill because the
- * shipped one opens an "isn't ready" notice.
+ * What they may show is bounded by `spec/behavior/`, not by the boards. The
+ * landing README's section inventory lists what that rules out
+ * (`spec/ui/landing/README.md`, "What the frames may draw"); the rows below
+ * note it where it bites.
  */
 
 const threadRows = [
@@ -699,11 +706,62 @@ const threadRows = [
   { key: "mention", kind: "mention" as const },
 ];
 
-const BUBBLE_THEM =
-  "rounded-[18px] rounded-bl-[6px] border border-border bg-card px-3.5 py-2.5 text-[16px] leading-6 text-foreground";
+/*
+ * Chat's compact, bubble-free layout, as web and mobile have drawn it since
+ * 2026-09-29 (`components.md` § Chat messages, #2873). Values are transcribed
+ * from that section, not imported from `apps/web`.
+ *
+ * Every row here starts a run, for the reasons §11's grouping gives: the first
+ * row always does; the event card is a card, which starts one even straight
+ * after its author's own message; and the last two each change author. So
+ * every row is a `RunStart`. A follow-on (same author within five minutes, no
+ * card either side) would draw neither the avatar nor the author line.
+ *
+ * The body has no fill, border or padding; rows are told apart by the author
+ * line and the 16px gap a run start takes.
+ */
 const AVATAR =
-  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-popover text-[12px] font-semibold text-foreground";
-const META = "text-[12.5px] text-muted-foreground";
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-popover text-[12.5px] font-bold text-muted-foreground";
+const BODY = "text-[16px] leading-[25px] text-foreground";
+
+/**
+ * A run's first row: the 32px avatar, then an author line of name and time
+ * (time only, never a date) over the body. The viewer's own run sits on the
+ * left like everyone else's and reads "You" in `--accent-text`, which is how a
+ * member spots it now that no accent fill marks it.
+ */
+function RunStart({
+  initials,
+  author,
+  self = false,
+  time,
+  children,
+}: {
+  initials: string;
+  author: string;
+  self?: boolean;
+  time: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-3 px-5 pb-0.5 pt-4">
+      <span className={AVATAR}>{initials}</span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <p className="flex items-baseline gap-2 leading-5">
+          <span
+            className={`text-[14px] font-semibold ${
+              self ? "text-accent-text" : "text-foreground"
+            }`}
+          >
+            {author}
+          </span>
+          <span className="text-[12.5px] text-muted-foreground">{time}</span>
+        </p>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function ChatThread({ animate }: { animate: boolean }) {
   const rows = threadRows.map((row, index) => (
@@ -713,24 +771,20 @@ function ChatThread({ animate }: { animate: boolean }) {
       style={{ "--i": index } as StaggerStyle}
     >
       {row.kind === "them" && (
-        <div className="flex gap-2.5 px-5 pb-0.5 pt-3">
-          <span className={AVATAR}>JE</span>
-          <div className="flex max-w-[76%] flex-col gap-1">
-            <p className={META}>
-              <span className="font-semibold text-foreground">Jordan Ellis</span>{" "}
-              · 4:02 PM
-            </p>
-            <p className={BUBBLE_THEM}>
-              Chapter is 6:30 tonight. Dues forms in by then if yours is not.
-            </p>
-          </div>
-        </div>
+        <RunStart initials="JE" author="Jordan Ellis" time="4:02 PM">
+          <p className={BODY}>
+            Chapter is 6:30 tonight. Dues forms in by then if yours is not.
+          </p>
+        </RunStart>
       )}
 
       {row.kind === "event" && (
-        <div className="flex gap-2.5 px-5 pb-0.5 pt-2">
-          <span className="w-8 shrink-0" />
-          <div className="min-w-0 max-w-[76%] rounded-lg border border-border bg-card px-4 py-3.5">
+        <RunStart initials="JE" author="Jordan Ellis" time="4:03 PM">
+          {/*
+            A card is a thing posted into the channel, so it keeps its frame
+            (`--card`, hairline, radius 14) where a message has none.
+          */}
+          <div className="mt-1 w-fit max-w-full rounded-lg border border-border bg-card px-4 py-3.5">
             <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
               Event
             </p>
@@ -744,8 +798,8 @@ function ChatThread({ animate }: { animate: boolean }) {
               Check in, and only Check in. `spec/behavior/events.md` records
               pre-event RSVP intent as not modelled, so there is no Going or
               Can't-make-it control to draw. The live count is drawn because
-              the viewer is an officer, which the caption states: it shows only
-              to `events:update` holders.
+              the viewer is an officer, which the caption states: it shows
+              only to `events:update` holders.
             */}
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <span className="inline-flex h-[34px] items-center rounded-sm bg-primary px-3.5 text-[14px] font-bold text-primary-foreground">
@@ -759,51 +813,56 @@ function ChatThread({ animate }: { animate: boolean }) {
               </span>
             </div>
           </div>
-        </div>
+        </RunStart>
       )}
 
       {row.kind === "self" && (
-        <div className="flex flex-col items-start gap-1 px-5 pb-0.5 pt-3">
-          <p className="max-w-[76%] rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2.5 text-[16px] leading-6 text-primary-foreground">
-            On it. Roster is pulled, 42 for food.
-          </p>
-          <p className={META}>4:05 PM · read</p>
-        </div>
+        /*
+          The time and nothing else: read receipts are a channel cursor that
+          feeds unread counts (`spec/behavior/chat/README.md` § Read
+          Receipts), so no message is ever marked "read".
+        */
+        <RunStart initials="AK" author="You" self time="4:05 PM">
+          <p className={BODY}>On it. Roster is pulled, 42 for food.</p>
+        </RunStart>
       )}
 
       {row.kind === "mention" && (
-        <div className="flex gap-2.5 px-5 pb-0.5 pt-3">
-          <span className={AVATAR}>MC</span>
-          <div className="flex max-w-[76%] flex-col gap-1">
-            <p className={META}>
-              <span className="font-semibold text-foreground">Maya Chen</span> ·
-              4:06 PM
-            </p>
-            <p className={BUBBLE_THEM}>
-              {/*
-                The in-bubble mention chip, not the mention red. Red as text
-                inside a bubble is the case `foundations.md` §5 carves out, and
-                this pair is what it carves out to.
-              */}
-              <span className="rounded-[5px] bg-mention-chip px-1 font-semibold text-mention-chip-text">
-                @Jordan
-              </span>{" "}
-              can you pin the parking map before people leave?
-            </p>
-          </div>
-        </div>
+        <RunStart initials="MC" author="Maya Chen" time="4:06 PM">
+          <p className={BODY}>
+            {/*
+              The in-body mention chip, on the handle alone: the row around
+              it is never retinted, because a message that mentions you is
+              still the sender's. It is not the mention red, which is a badge
+              fill and has no lifted tone to render as text (`foundations.md`
+              §5); this opaque amber pair is what §5 carves out to.
+            */}
+            <span className="rounded-[5px] bg-mention-chip px-1 font-semibold text-mention-chip-text">
+              @Jordan
+            </span>{" "}
+            can you pin the parking map before people leave?
+          </p>
+        </RunStart>
       )}
     </div>
   ));
 
+  /*
+   * Bottom-aligned, like the product's timeline, which opens at its newest
+   * row with the composer pinned under it. The thread never shrinks below its
+   * rows: each frame's height is a minimum, so wherever the thread column is
+   * too narrow for them to fit (phone widths, and the railed frame wherever
+   * the rail squeezes it) the frame grows rather than slicing a row or
+   * running one under the composer.
+   */
+  const thread = "flex flex-1 flex-col justify-end pb-2";
+
   if (!animate) {
-    return <div className="flex min-h-0 flex-col pb-2">{rows}</div>;
+    return <div className={thread}>{rows}</div>;
   }
 
   return (
-    <RevealOnView className="reveal-thread flex min-h-0 flex-col pb-2">
-      {rows}
-    </RevealOnView>
+    <RevealOnView className={`reveal-thread ${thread}`}>{rows}</RevealOnView>
   );
 }
 
@@ -904,8 +963,8 @@ function ChatFrame({
       aria-label={label}
       className={
         isFold
-          ? "flex h-[536px] w-full flex-col overflow-hidden rounded-xl border border-input bg-background lg:w-[720px] lg:max-w-none lg:rounded-r-none lg:border-r-0"
-          : "flex h-[600px] w-full overflow-hidden rounded-xl border border-border bg-background"
+          ? "flex min-h-[536px] w-full flex-col overflow-hidden rounded-xl border border-input bg-background lg:w-[720px] lg:max-w-none lg:rounded-r-none lg:border-r-0"
+          : "flex min-h-[600px] w-full overflow-hidden rounded-xl border border-border bg-background"
       }
     >
       {!isFold && (
@@ -974,7 +1033,7 @@ function ChatFrame({
           a static layout. Only the below-fold frame plays its thread in.
         */}
         <ChatThread animate={!isFold} />
-        <div className="mt-auto">
+        <div className="shrink-0">
           <Composer />
         </div>
       </div>

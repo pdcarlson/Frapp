@@ -445,7 +445,7 @@ describe("the archetype card, at the call site", () => {
     for (const cap of caps) {
       expect(cap.className).not.toMatch(/\bfont-mono\b/);
     }
-    expect(caps.some((cap) => /text-\[12\.5px\]/.test(cap.className))).toBe(
+    expect(caps.some((cap) => /\btext-caption\b/.test(cap.className))).toBe(
       true,
     );
   });

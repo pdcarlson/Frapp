@@ -12,11 +12,13 @@ import {
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
 import { DiscordImportService } from '../../application/services/discord-import.service';
+import { toDiscordImportView } from '../../application/services/discord-import-view';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -32,6 +34,8 @@ import {
   CreateDiscordImportDto,
   DiscordDiscoveryResponseDto,
   DiscordImportProgressDto,
+  DiscordImportResponseDto,
+  DiscordImportWithProgressResponseDto,
   DiscordUploadTicketDto,
   RequestDiscordUploadUrlsDto,
   SetDiscordChannelMappingDto,
@@ -56,6 +60,10 @@ import {
  * chapter ever sees; what a chapter contributes is a guild id, established by
  * the OAuth flow in `DiscordConnectionController` and read here only through
  * `chapter_id`.
+ *
+ * Every route that returns an import returns it through `toDiscordImportView`,
+ * never the row: the row carries the worker's lease, resume cursor and storage
+ * layout (#2860).
  */
 @ApiTags('Discord Import')
 @ApiBearerAuth()
@@ -75,24 +83,31 @@ export class DiscordImportController {
     description:
       'Requires the consent acknowledgement. Returns the import to upload an export against.',
   })
-  create(
+  @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
     @Body() dto: CreateDiscordImportDto,
-  ) {
-    return this.importService.create(chapterId, user.id, {
-      consent_acknowledged: dto.consent_acknowledged,
-      guild_name: dto.guild_name ?? null,
-      source: dto.source ?? 'upload',
-    });
+  ): Promise<DiscordImportResponseDto> {
+    return toDiscordImportView(
+      await this.importService.create(chapterId, user.id, {
+        consent_acknowledged: dto.consent_acknowledged,
+        guild_name: dto.guild_name ?? null,
+        source: dto.source ?? 'upload',
+      }),
+    );
   }
 
   @Get()
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'List this chapter’s Discord imports' })
-  list(@CurrentChapterId() chapterId: string) {
-    return this.importService.list(chapterId);
+  @ApiOkResponse({ type: [DiscordImportWithProgressResponseDto] })
+  async list(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<DiscordImportWithProgressResponseDto[]> {
+    const rows = await this.importService.list(chapterId);
+    return rows.map((row) => toDiscordImportView(row));
   }
 
   @Get(':id')
@@ -103,11 +118,12 @@ export class DiscordImportController {
     description:
       "Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.",
   })
-  get(
+  @ApiOkResponse({ type: DiscordImportWithProgressResponseDto })
+  async get(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
-  ) {
-    return this.importService.get(id, chapterId);
+  ): Promise<DiscordImportWithProgressResponseDto> {
+    return toDiscordImportView(await this.importService.get(id, chapterId));
   }
 
   @Get(':id/channels')
@@ -205,12 +221,13 @@ export class DiscordImportController {
     description:
       'Each Discord role becomes an existing Frapp role, a new role, or nothing (#2818). The mapping decides who reads the channels imported "Same as Discord"; starting the import creates the new roles and grants each role the read permission of the channels gated on it. It never assigns anyone to a role. Mapping anything other than `ignore` also needs `roles:manage`, since it creates roles and grants permissions.',
   })
+  @ApiOkResponse({ type: DiscordImportResponseDto })
   async setRoleMapping(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SetDiscordRoleMappingDto,
-  ) {
+  ): Promise<DiscordImportResponseDto> {
     // Resolved here rather than with @RequirePermissions: an all-Ignore
     // mapping creates and grants nothing, so it stays open to anyone who can
     // run the import.
@@ -219,11 +236,13 @@ export class DiscordImportController {
       userId,
       [SystemPermissions.ROLES_MANAGE],
     );
-    return this.importService.setRoleMapping(
-      id,
-      chapterId,
-      dto.roles,
-      canManageRoles,
+    return toDiscordImportView(
+      await this.importService.setRoleMapping(
+        id,
+        chapterId,
+        dto.roles,
+        canManageRoles,
+      ),
     );
   }
 
@@ -273,6 +292,7 @@ export class DiscordImportController {
   })
   // Optional: every client before #2858 starts with no body at all.
   @ApiBody({ type: StartDiscordImportDto, required: false })
+  @ApiCreatedResponse({ type: DiscordImportResponseDto })
   async start(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: StartDiscordImportDto,
@@ -287,20 +307,23 @@ export class DiscordImportController {
       userId,
       [SystemPermissions.ROLES_MANAGE],
     );
-    return this.importService.start(id, chapterId, userId, canManageRoles, {
-      messagesAfter: body?.messages_after,
-    });
+    return toDiscordImportView(
+      await this.importService.start(id, chapterId, userId, canManageRoles, {
+        messagesAfter: body?.messages_after,
+      }),
+    );
   }
 
   @Post(':id/cancel')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Stop a queued or running import' })
-  cancel(
+  @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  async cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
-  ) {
-    return this.importService.cancel(id, chapterId);
+  ): Promise<DiscordImportResponseDto> {
+    return toDiscordImportView(await this.importService.cancel(id, chapterId));
   }
 
   @Post(':id/clear')
@@ -311,11 +334,12 @@ export class DiscordImportController {
     description:
       'Hides a purged (deleted) import’s record from the list. 409 for an import in any other status: the list is where an import is deleted from, so one that still holds what it brought in stays listed until it is deleted.',
   })
-  clear(
+  @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  async clear(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
-  ) {
-    return this.importService.clear(id, chapterId);
+  ): Promise<DiscordImportResponseDto> {
+    return toDiscordImportView(await this.importService.clear(id, chapterId));
   }
 
   @Delete(':id')
@@ -326,10 +350,13 @@ export class DiscordImportController {
     description:
       'Removes the imported messages, their attachments, the channels the import created once they hold nothing else, and the uploaded archive objects. The roles it created stay, and the job row survives as the record that it happened.',
   })
-  purge(
+  @ApiOkResponse({ type: DiscordImportResponseDto })
+  async purge(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
-  ) {
-    return this.importService.requestPurge(id, chapterId);
+  ): Promise<DiscordImportResponseDto> {
+    return toDiscordImportView(
+      await this.importService.requestPurge(id, chapterId),
+    );
   }
 }

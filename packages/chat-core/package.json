@@ -7,7 +7,6 @@
     "./adapters": "./src/adapters.ts",
     "./topic-registry": "./src/topic-registry.ts",
     "./types": "./src/types.ts",
-    "./random-id": "./src/random-id.ts",
     "./cache": "./src/cache.ts",
     "./history": "./src/history.ts",
     "./dispatch": "./src/dispatch.ts",

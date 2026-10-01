@@ -35,7 +35,7 @@ export function ReconnectPill({ status }: { status: ConnectionStatus }) {
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-xs border px-2.5 py-1 text-[12.5px] font-semibold ${tone}`}
+      className={`flex items-center gap-1.5 rounded-xs border px-2.5 py-1 text-caption font-semibold ${tone}`}
       role="status"
       aria-live="polite"
     >

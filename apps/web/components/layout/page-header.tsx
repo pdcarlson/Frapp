@@ -51,12 +51,14 @@ export function PageHeader({ title, actions, className }: PageHeaderProps) {
       )}
     >
       {/*
-        15/700 is the board's in-shell title role. It is not the 28/700 "Page
-        title" from the token sheet — every real use of that one is pre-auth or
-        the 404, and reaching for it here rebuilds the header block this lane
-        deletes.
+        The board draws the in-shell title at 15/700, which rounds onto the
+        `label` role (14) at 700: `components.md` rounds a drawn size to the
+        adjacent §7 step and transcribes only the weight (#2842). It is not the
+        28/700 "Page title" from the token sheet — every real use of that one
+        is pre-auth or the 404, and reaching for it here rebuilds the header
+        block this lane deletes.
       */}
-      <h1 className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
+      <h1 className="min-w-0 flex-1 truncate text-label font-bold text-foreground">
         {title}
       </h1>
       {actions ? (

@@ -28,10 +28,9 @@ import {
   removeLocalPlaceholder,
   markLocalRecorded,
   markLocalUnconfirmed,
-  isDefinitiveClientError,
   type ChatActionContext,
 } from "./chat-client";
-import { randomClientId } from "./random-id";
+import { isDefinitiveClientError, randomClientId } from "@repo/api-sdk";
 import type { ReplayRequest } from "./types";
 
 export interface DispatchResult {

@@ -1,5 +1,25 @@
+import { signetDarkTokens } from "@repo/theme/signet";
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/**
+ * tailwind-merge sorts a `text-*` class it does not recognise as a size into
+ * the text-colour group, and it cannot recognise the Signet type keys
+ * (`text-caption`, `text-label`, …): they are names, not lengths or t-shirt
+ * sizes. Unregistered, `cn("text-muted-foreground", "text-caption")` returns
+ * `"text-caption"`, dropping the colour as a "conflict", and the reverse order
+ * drops the size. It shipped that way: the 404/error crest's code label
+ * (`crest-page.tsx`) lost its `text-caption` to `text-primary` and rendered at
+ * 16px (#2842). The keys are the §7 roles, which the shared preset binds one to
+ * one; `utils.spec.ts` holds the two lists together.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "font-size": [{ text: Object.keys(signetDarkTokens.typography.role) }],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

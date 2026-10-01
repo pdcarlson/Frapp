@@ -75,7 +75,7 @@ export class AdjustPointsDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud.',
+      'Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; the dashboard sends it without one. Full contract: `spec/behavior/points.md` § Anti-Fraud.',
   })
   @IsOptional()
   @IsUUID()
@@ -154,7 +154,8 @@ export class AdjustPointsResponseDto implements PointTransaction {
 
   // Echoed back so a caller can match the row it got to the key it sent — which
   // is the whole point of a replay returning the ORIGINAL transaction rather
-  // than a new one (#1719). `null` for dashboard adjustments, which send no key.
+  // than a new one (#1719). `null` for a dashboard adjustment made before the
+  // dashboard sent a key (#1906).
   // `type: String` AND `format: 'uuid'` must BOTH be explicit. With only
   // `format` + `nullable`, Swagger's reflection cannot pick a primitive for
   // `string | null` and publishes `type: "object"`, which openapi-typescript
@@ -168,7 +169,7 @@ export class AdjustPointsResponseDto implements PointTransaction {
     format: 'uuid',
     nullable: true,
     description:
-      'The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.',
+      'The idempotency key this row was written under, echoed back. `null` for a dashboard adjustment made before the dashboard sent a key; those rows are not deduplicated.',
   })
   client_message_id?: string | null;
 

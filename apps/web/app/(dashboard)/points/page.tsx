@@ -464,7 +464,7 @@ export default function PointsPage() {
                         even the unresolved fallback is a `Member …` label — so
                         it is no longer one of them.
                       */}
-                      <TableCell className="text-[12.5px]">
+                      <TableCell className="text-caption">
                         {entry.label}
                       </TableCell>
                       <TableCell className="font-mono font-semibold tabular-nums">
@@ -601,7 +601,7 @@ export default function PointsPage() {
                       </TableCell>
                       <TableCell>{transaction.category}</TableCell>
                       <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-[12.5px] text-muted-foreground">
+                      <TableCell className="text-caption text-muted-foreground">
                         {formatTimestamp(transaction.created_at)}
                       </TableCell>
                     </TableRow>

@@ -333,8 +333,8 @@ function DiscordImportList({
     );
   }
 
-  const rows = (imports.data ?? []) as unknown as ImportRow[];
-  const activeRow = (active.data ?? null) as ImportRow | null;
+  const rows: ImportRow[] = imports.data ?? [];
+  const activeRow: ImportRow | null = active.data ?? null;
   // The polled import's row reads its own detail query, not the list, and the
   // list stops polling once nothing is deleting. So a detail poll that keeps
   // failing (the API down, say) froze that row's meter with nothing on screen

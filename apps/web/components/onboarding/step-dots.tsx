@@ -52,7 +52,7 @@ export function StepDots({
       aria-label={`Step ${step + 1} of ${total}`}
       className={cn("flex items-center gap-3", className)}
     >
-      <span className="shrink-0 text-[12.5px] font-semibold text-muted-foreground">
+      <span className="shrink-0 text-caption font-semibold text-muted-foreground">
         Step {step + 1} of {total}
       </span>
       <span aria-hidden="true" className="flex flex-1 items-center gap-1.5">
