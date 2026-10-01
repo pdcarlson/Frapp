@@ -1206,8 +1206,9 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   Per-channel access is filtered in the service against the same predicate the rest of chat uses,
   rather than duplicated in SQL where it would drift.
 - **Not yet applied.** This lands as a file only; promotion follows the order in
-  [`promotion.md`](promotion.md#how-migrations-reach-each-environment). Nothing was run against a hosted project as part of the change that introduced it. It was
-  applied and exercised against the local stack only.
+  [`promotion.md`](promotion.md#how-migrations-reach-each-environment). Nothing was run
+  against a hosted project as part of the change that introduced it. It was applied and
+  exercised against the local stack only.
 - **Checks** (after promotion):
   - Objects exist — expect one row each:
     `select 1 from information_schema.columns where table_name='chat_messages' and column_name='mentions';`
@@ -1240,7 +1241,8 @@ kind-semantics migration replaces a policy the authors migration leaves alone).
   it matches only rows whose branding holds a well-formed `#RRGGBB` accent differing from the
   column, and uses `is distinct from` so a NULL column is handled rather than skipped.
 - **Not yet applied.** This lands as a file only; promotion follows the order in
-  [`promotion.md`](promotion.md#how-migrations-reach-each-environment). Nothing was run against a hosted project as part of the change that introduced it.
+  [`promotion.md`](promotion.md#how-migrations-reach-each-environment). Nothing was run
+  against a hosted project as part of the change that introduced it.
 - **Checks** (after promotion):
   - Rows still disagreeing — expect 0:
     `select count(*) from public.chapters where branding->'colors'->>'accent' ~ '^#[0-9A-Fa-f]{6}$' and accent_color is distinct from branding->'colors'->>'accent';`

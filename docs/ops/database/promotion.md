@@ -301,11 +301,10 @@ Post-apply production checks:
   rows come from `supabase/seed/chapter_directory.csv`, and until
   `20260907011500_chapter_directory_seed_rows.sql` only the local bootstrap scripts
   loaded them, so both hosted projects had an empty table (#840). That migration loads
-  them everywhere, so a project it has reached returns 50 for
-  `select count(*) from chapter_directory where source = 'seed'`
-  ([promotion log](promotion-log.md#2026-09-07-chapter-directory-reference-rows-reach-every-environment-840)).
+  them everywhere: on a project that started empty,
+  `select count(*) from chapter_directory where source = 'seed'` matches the CSV's row
+  count once it has applied ([promotion log](promotion-log.md#2026-09-07-chapter-directory-reference-rows-reach-every-environment-840)).
   A changed CSV ships as a **new** migration generated with
-  `npm run load:chapter-directory`, never as an edit to that file or a hand load. What
-  the loader guarantees (idempotent, row ids preserved, only `source = 'seed'` rows
-  updated):
+  `npm run load:chapter-directory`, never as an edit to that file. What the loader
+  guarantees (idempotent, row ids preserved, only `source = 'seed'` rows updated):
   [`docs/guides/database.md` § Reference data](../../guides/database.md#reference-data-the-chapter-directory).
