@@ -335,6 +335,19 @@ function DiscordImportList({
 
   const rows = (imports.data ?? []) as unknown as ImportRow[];
   const activeRow = (active.data ?? null) as ImportRow | null;
+  // The polled import's row reads its own detail query, not the list, and the
+  // list stops polling once nothing is deleting. So a detail poll that keeps
+  // failing (the API down, say) froze that row's meter with nothing on screen
+  // to say so, while the list read stayed clean.
+  const activeStale =
+    active.isError &&
+    activeRow !== null &&
+    rows.some((row) => row.id === activeRow.id);
+
+  function retryReads() {
+    void imports.refetch();
+    if (active.isError) void active.refetch();
+  }
 
   async function cancel(id: string) {
     try {
@@ -402,12 +415,11 @@ function DiscordImportList({
         so: a deletion's meter that stopped moving otherwise reads as stuck
         rather than stale.
       */}
-      {imports.isError ? (
-        <StaleReadNotice
-          message="Couldn't refresh the imports. This is the last list that loaded."
-          onRetry={() => void imports.refetch()}
-        />
-      ) : null}
+      <StaleReadNotice
+        stale={imports.isError || activeStale}
+        message="Couldn't refresh the imports. This is the last update that loaded."
+        onRetry={retryReads}
+      />
       {rows.length === 0 ? (
         <NestedEmpty
           sole

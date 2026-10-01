@@ -102,6 +102,9 @@ function empty(overrides: Record<string, unknown>) {
   return { ...settled(undefined), ...overrides };
 }
 
+const CHANNELS_STALE =
+  "Couldn't refresh the channels. These are the last ones that loaded.";
+
 const selectExec = () =>
   fireEvent.click(screen.getByRole("button", { name: /^#exec/ }));
 
@@ -191,11 +194,29 @@ describe("ChatAdminPage — the channel structure's states", () => {
 
     expect(screen.getByText("#general")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
-    expect(
-      screen.getByText(
-        "Couldn't refresh the channels. These are the last ones that loaded.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(CHANNELS_STALE)).toBeInTheDocument();
+  });
+
+  it("has the notice's live region mounted before a read fails, so its line is announced", () => {
+    const { container, rerender } = render(<ChatAdminPage />);
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    reads.channels = { ...settled(CHANNELS), isError: true };
+    rerender(<ChatAdminPage />);
+
+    expect(regions).toContain(
+      screen.getByText(CHANNELS_STALE).closest('[role="status"]'),
+    );
+  });
+
+  it("says a chapter has no channels or categories yet, in the nested family", () => {
+    reads.channels = settled([]);
+    reads.categories = settled([]);
+    const { container } = render(<ChatAdminPage />);
+
+    expect(screen.getByText("No channels yet")).toBeInTheDocument();
+    expect(screen.getByText("No categories yet")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("shows its loading state in the nested family", () => {
@@ -227,6 +248,8 @@ describe("ChatAdminPage — the channel structure's states", () => {
 
     expect(screen.getByText("#general")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
+    // The categories are what went stale, so the notice says so for them too.
+    expect(screen.getByText(CHANNELS_STALE)).toBeInTheDocument();
   });
 
   it("says what failed when the first read fails, in the nested family", () => {
@@ -257,8 +280,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
 describe("ChatAdminPage — a channel's pins", () => {
   it("says a failed read failed, rather than that nothing is pinned", () => {
     reads.pins = empty({ isError: true });
-    render(<ChatAdminPage />);
+    const { container } = render(<ChatAdminPage />);
     selectExec();
+    expect(cardFilledContainers(container)).toEqual([]);
 
     expect(screen.getByText("Couldn't load pins")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
@@ -269,10 +293,25 @@ describe("ChatAdminPage — a channel's pins", () => {
     ).toBeInTheDocument();
   });
 
+  it("says the pins are loading, on the page surface", () => {
+    reads.pins = empty({
+      isPending: true,
+      isLoading: true,
+      fetchStatus: "fetching",
+    });
+    const { container } = render(<ChatAdminPage />);
+    selectExec();
+
+    expect(screen.getByText("Loading pins...")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing pinned")).toBeNull();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
   it("says the pins are unavailable offline when the read is paused", () => {
     reads.pins = empty({ isPending: true, fetchStatus: "paused" });
-    render(<ChatAdminPage />);
+    const { container } = render(<ChatAdminPage />);
     selectExec();
+    expect(cardFilledContainers(container)).toEqual([]);
 
     expect(screen.getByText("Pins unavailable offline")).toBeInTheDocument();
     expect(screen.queryByText("Nothing pinned")).toBeNull();
@@ -305,8 +344,9 @@ describe("ChatAdminPage — a channel's pins", () => {
   });
 
   it("says nothing is pinned when the read succeeded empty", () => {
-    render(<ChatAdminPage />);
+    const { container } = render(<ChatAdminPage />);
     selectExec();
+    expect(cardFilledContainers(container)).toEqual([]);
 
     expect(screen.getByText("Nothing pinned")).toBeInTheDocument();
     expect(

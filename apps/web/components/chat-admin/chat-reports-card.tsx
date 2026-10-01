@@ -304,18 +304,38 @@ function ChatReportsQueue() {
   );
 }
 
-function ReportList({
-  tab,
-  busy,
-  onResolve,
-  onRemove,
-}: {
+interface ReportListProps {
   tab: ChatReportTab;
   busy: Readonly<Record<string, RowAction>>;
   onResolve: (report: ChatReport, next: Resolution) => void;
   onRemove: (report: ChatReport, author: string) => void;
-}) {
-  const query = useChatReports(tab.status);
+}
+
+function ReportList(props: ReportListProps) {
+  const query = useChatReports(props.tab.status);
+  // Above every branch the read can switch between, so the notice's live
+  // region is already mounted when a refetch fails, and an empty tab says it
+  // is stale as plainly as a full one: "No open reports" from a failed read
+  // reads as a queue with nothing waiting.
+  return (
+    <div className="space-y-3">
+      <StaleReadNotice
+        stale={query.isError && query.data !== undefined}
+        message={copy.stale}
+        onRetry={() => void query.refetch()}
+      />
+      <ReportListBody {...props} query={query} />
+    </div>
+  );
+}
+
+function ReportListBody({
+  tab,
+  busy,
+  onResolve,
+  onRemove,
+  query,
+}: ReportListProps & { query: ReturnType<typeof useChatReports> }) {
   const { isOffline } = useNetwork();
   const { nameFor } = useMemberDisplayNames();
   const now = useNow();
@@ -389,13 +409,6 @@ function ReportList({
 
   return (
     <div className="space-y-3">
-      {/* The rows below are the last good read when a refetch failed. */}
-      {query.isError ? (
-        <StaleReadNotice
-          message={copy.stale}
-          onRetry={() => void query.refetch()}
-        />
-      ) : null}
       {tab.status === "open" ? (
         <p className="text-xs text-muted-foreground">{copy.openHint}</p>
       ) : null}

@@ -136,6 +136,9 @@ function settled(rows: ChatReport[]) {
   return { data: rows, isPending: false, isLoading: false, isError: false };
 }
 
+const STALE =
+  "Couldn't refresh the reports. These are the last ones that loaded.";
+
 /** The default report's filing time, as its accessible names read it. */
 const FILED = formatLocaleDateTime("2026-09-22T11:55:00Z");
 
@@ -419,9 +422,10 @@ describe("ChatReportsCard — status tabs", () => {
     async (label, status, title) => {
       const user = userEvent.setup();
       reportsByStatus.value = { [status]: settled([]), open: settled([]) };
-      render(<ChatReportsCard />);
+      const { container } = render(<ChatReportsCard />);
       await user.click(screen.getByRole("tab", { name: label }));
       expect(screen.getByText(title)).toBeInTheDocument();
+      expect(cardFilledContainers(container)).toEqual([]);
     },
   );
 });
@@ -447,9 +451,12 @@ describe("ChatReportsCard — async states", () => {
         error: { statusCode: 500 },
       },
     };
-    render(<ChatReportsCard />);
+    const { container } = render(<ChatReportsCard />);
 
     expect(screen.getByText("Couldn't load reports")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+    // Nothing loaded, so nothing is stale: the error says it all.
+    expect(screen.queryByText(STALE)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
@@ -467,11 +474,44 @@ describe("ChatReportsCard — async states", () => {
     expect(screen.queryByText("Couldn't load reports")).not.toBeInTheDocument();
     // And says they are the last that loaded, rather than presenting them as
     // current.
-    expect(
-      screen.getByText(
-        "Couldn't refresh the reports. These are the last ones that loaded.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(STALE)).toBeInTheDocument();
+  });
+
+  it("says an empty tab is stale too, rather than a queue with nothing waiting", () => {
+    reportsByStatus.value = {
+      open: { ...settled([]), isError: true, error: { statusCode: 500 } },
+    };
+    render(<ChatReportsCard />);
+    expect(screen.getByText("No open reports")).toBeInTheDocument();
+    expect(screen.getByText(STALE)).toBeInTheDocument();
+  });
+
+  it("has the notice's live region mounted before the refresh fails, so its line is announced", () => {
+    reportsByStatus.value = { open: settled([report()]) };
+    const { container, rerender } = render(<ChatReportsCard />);
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    reportsByStatus.value = {
+      open: {
+        ...settled([report()]),
+        isError: true,
+        error: { statusCode: 500 },
+      },
+    };
+    rerender(<ChatReportsCard />);
+
+    expect(regions).toContain(
+      screen.getByText(STALE).closest('[role="status"]'),
+    );
+  });
+
+  it("says no chapter is selected rather than loading for ever", () => {
+    reportsByStatus.value = {
+      open: { data: undefined, isPending: true, fetchStatus: "idle" },
+    };
+    const { container } = render(<ChatReportsCard />);
+    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 
   it("shows an offline state rather than an empty queue when nothing is cached", () => {
@@ -479,9 +519,10 @@ describe("ChatReportsCard — async states", () => {
     reportsByStatus.value = {
       open: { data: undefined, isPending: true, fetchStatus: "paused" },
     };
-    render(<ChatReportsCard />);
+    const { container } = render(<ChatReportsCard />);
     expect(screen.getByText("Reports unavailable offline")).toBeInTheDocument();
     expect(screen.queryByText("No open reports")).not.toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 });
 

@@ -34,9 +34,7 @@ const { hooks } = vi.hoisted(() => ({
     remove: vi.fn(),
     progress: vi.fn(),
     // Records which import the page polls in detail.
-    detail: vi.fn<(id: string | null) => { data: null }>(() => ({
-      data: null,
-    })),
+    detail: vi.fn<(id: string | null) => Record<string, unknown>>(),
   },
 }));
 
@@ -81,12 +79,18 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 vi.mock("./import-wizard", () => ({
-  ImportWizard: (props: { onCancel: () => void }) => {
+  ImportWizard: (props: {
+    onCancel: () => void;
+    onStarted: (id: string) => void;
+  }) => {
     hooks.wizard(props);
     return (
       <div data-testid="wizard">
         <button type="button" onClick={props.onCancel}>
           Close wizard
+        </button>
+        <button type="button" onClick={() => props.onStarted("started")}>
+          Start import
         </button>
       </div>
     );
@@ -111,6 +115,9 @@ const row = (id: string, status: string, guild: string) => ({
   created_at: "2026-09-28T18:06:33Z",
 });
 
+const IMPORTS_STALE =
+  "Couldn't refresh the imports. This is the last update that loaded.";
+
 const rowOf = (guild: string) =>
   within(screen.getByText(guild).closest("li") as HTMLElement);
 
@@ -121,6 +128,7 @@ beforeEach(() => {
   hooks.offline = false;
   hooks.loading = false;
   hooks.search = "";
+  hooks.detail.mockImplementation(() => ({ data: null }));
   hooks.clear.mockResolvedValue(undefined);
   hooks.remove.mockResolvedValue(undefined);
   hooks.rows = [
@@ -207,35 +215,83 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
     render(<DiscordImportPage />);
 
     expect(screen.getByText("Imported server")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Couldn't refresh the imports. This is the last list that loaded.",
+    expect(screen.getByRole("status")).toHaveTextContent(IMPORTS_STALE);
+  });
+
+  it("has the notice's live region mounted before a refresh fails, so its line is announced", () => {
+    const { container, rerender } = render(<DiscordImportPage />);
+    const regions = [...container.querySelectorAll('[role="status"]')];
+
+    hooks.listError = true;
+    rerender(<DiscordImportPage />);
+
+    expect(regions).toContain(
+      screen.getByText(IMPORTS_STALE).closest('[role="status"]'),
     );
   });
 
-  // A resume is spent once its wizard closes.
-  it("reopens the wizard from the start after a ?wizard=bot resume closes", () => {
-    hooks.search = "wizard=bot&handshake=one-time";
+  // The polled import's row reads its own detail query, and the list stops
+  // polling once nothing is deleting, so the list read can stay clean while
+  // that row's meter has stopped moving.
+  it("says the polled import's row is stale when only its own poll fails", () => {
+    const refetch = vi.fn();
+    hooks.rows = [row("moving", "running", "Running server")];
+    hooks.detail.mockImplementation((id) =>
+      id === "moving"
+        ? {
+            data: row("moving", "running", "Running server"),
+            isError: true,
+            refetch,
+          }
+        : { data: null },
+    );
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
     render(<DiscordImportPage />);
-    expect(hooks.wizard).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        initialSource: "bot",
-        initialStep: "connect",
-        handshake: "one-time",
-      }),
-    );
+    expect(screen.queryByText(IMPORTS_STALE)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close wizard" }));
-    expect(screen.queryByTestId("wizard")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "New import" }));
-    expect(hooks.wizard).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        initialSource: null,
-        initialStep: undefined,
-        handshake: null,
-      }),
+    fireEvent.click(
+      rowOf("Running server").getByRole("button", { name: "Watch" }),
     );
+    expect(screen.getByText(IMPORTS_STALE)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalled();
   });
+
+  // A resume is spent once its wizard closes, whichever way it closes.
+  it.each([
+    ["is cancelled", "Close wizard"],
+    ["starts an import", "Start import"],
+  ])(
+    "reopens the wizard from the start after a ?wizard=bot resume %s",
+    (_, close) => {
+      hooks.search = "wizard=bot&handshake=one-time";
+      render(<DiscordImportPage />);
+      expect(hooks.wizard).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          initialSource: "bot",
+          initialStep: "connect",
+          handshake: "one-time",
+        }),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: close }));
+      expect(screen.queryByTestId("wizard")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "New import" }));
+      expect(hooks.wizard).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          initialSource: null,
+          initialStep: undefined,
+          handshake: null,
+        }),
+      );
+    },
+  );
 
   // The wizard holds every choice in its own state, so a branch that unmounts
   // it sends the admin back to the first step with nothing kept.
@@ -540,6 +596,22 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(gone.queryByRole("button", { name: "Details" })).toBeNull();
   });
 
+  it("shows its loading state in the nested family", () => {
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container } = render(<DiscordImportPage />);
+    const running = rowOf("Running server");
+    fireEvent.click(running.getByRole("button", { name: "Watch" }));
+    expect(
+      running.getByText("Loading the import’s channels…"),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
   it("says when the channels could not be loaded, and retries", () => {
     const refetch = vi.fn();
     hooks.progress.mockReturnValue({
@@ -548,12 +620,13 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
       isError: true,
       refetch,
     });
-    render(<DiscordImportPage />);
+    const { container } = render(<DiscordImportPage />);
     const running = rowOf("Running server");
     fireEvent.click(running.getByRole("button", { name: "Watch" }));
     expect(
       running.getByText("Couldn’t load the import’s channels"),
     ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
     fireEvent.click(running.getByRole("button", { name: /Retry/ }));
     expect(refetch).toHaveBeenCalled();
   });
@@ -572,10 +645,12 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(
       running.queryByText("Couldn’t load the import’s channels"),
     ).toBeNull();
-    // It says the read is not current, and can be retried.
+    // It says the read is not current, in a live region, and can be retried.
     expect(
-      running.getByText(/Couldn’t refresh the channels/),
-    ).toBeInTheDocument();
+      running
+        .getByText(/Couldn’t refresh the channels/)
+        .closest('[role="status"]'),
+    ).not.toBeNull();
     fireEvent.click(running.getByRole("button", { name: "Try again" }));
     expect(
       hooks.progress.mock.results.at(-1)?.value.refetch,

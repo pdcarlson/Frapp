@@ -91,13 +91,12 @@ export function ImportWatchPanel({
 
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
-      {progress.isError ? (
-        // The last good read stays on screen, but it says it is not current.
-        <StaleReadNotice
-          message="Couldn’t refresh the channels. This is the last update that loaded."
-          onRetry={() => void progress.refetch()}
-        />
-      ) : null}
+      {/* The last good read stays on screen, but it says it is not current. */}
+      <StaleReadNotice
+        stale={progress.isError}
+        message="Couldn’t refresh the channels. This is the last update that loaded."
+        onRetry={() => void progress.refetch()}
+      />
       <p className="text-xs text-muted-foreground">
         Channels and threads: {progressSummary(data.counts)}
       </p>

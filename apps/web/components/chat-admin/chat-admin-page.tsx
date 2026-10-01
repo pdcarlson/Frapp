@@ -562,12 +562,11 @@ function ChatAdminBody() {
         The channels and categories below are the last good read when a
         refetch failed, so say so rather than present them as current.
       */}
-      {channelsQuery.isError || categoriesQuery.isError ? (
-        <StaleReadNotice
-          message="Couldn't refresh the channels. These are the last ones that loaded."
-          onRetry={retryQueries}
-        />
-      ) : null}
+      <StaleReadNotice
+        stale={channelsQuery.isError || categoriesQuery.isError}
+        message="Couldn't refresh the channels. These are the last ones that loaded."
+        onRetry={retryQueries}
+      />
       {/*
         Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
         description paragraph"). Three `<Card>`s sat here — Channels,
@@ -954,12 +953,11 @@ function ChatAdminBody() {
                       {/* A count only once there is a list to count. */}
                       {pinsQuery.data !== undefined ? ` (${pins.length})` : ""}
                     </h4>
-                    {pinsQuery.isError && pinsQuery.data !== undefined ? (
-                      <StaleReadNotice
-                        message="Couldn't refresh the pins. These are the last ones that loaded."
-                        onRetry={() => void pinsQuery.refetch()}
-                      />
-                    ) : null}
+                    <StaleReadNotice
+                      stale={pinsQuery.isError && pinsQuery.data !== undefined}
+                      message="Couldn't refresh the pins. These are the last ones that loaded."
+                      onRetry={() => void pinsQuery.refetch()}
+                    />
                     {/*
                       A failed or paused read is not an empty list. Both used
                       to fall through to "Nothing pinned", because `pins` is

@@ -21,6 +21,7 @@ const {
   myPermissions,
   rolesFail,
   permissionsFail,
+  catalogStale,
 } = vi.hoisted(() => ({
   createImport: vi.fn(),
   setChannelMapping: vi.fn(),
@@ -38,6 +39,8 @@ const {
   // "error": no permissions ever loaded; "stale": a refetch failed but the
   // last answer is kept, as TanStack Query v5 does.
   permissionsFail: { value: null as null | "error" | "stale" },
+  // A catalog refetch that failed with the last answer kept.
+  catalogStale: { value: false },
   channelsQuery: {
     value: {
       data: [{ id: "ch-1", name: "general", type: "PUBLIC" }] as unknown,
@@ -84,7 +87,7 @@ vi.mock("@repo/hooks", () => ({
       { key: "MEMBERS_VIEW", permission: "members:view" },
     ],
     isPending: false,
-    isError: false,
+    isError: catalogStale.value,
   }),
   useRoles: () =>
     rolesFail.value
@@ -1491,6 +1494,28 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(screen.getByText("cabinet:read")).toBeInTheDocument();
   });
 
+  it("keeps the permission grid through a failed catalog refresh", () => {
+    catalogStale.value = true;
+    try {
+      const choices = {
+        ...defaultChoices(channels),
+        "3": {
+          action: "create_new" as const,
+          newName: "cabinet",
+          visibility: "restricted" as const,
+          requiredPermissions: [],
+        },
+      };
+      renderStep({ choices });
+      expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+      expect(
+        screen.queryByText(/Couldn.t load the permission catalog/),
+      ).toBeNull();
+    } finally {
+      catalogStale.value = false;
+    }
+  });
+
   it("warns on the upload path that an export does not say what was private", () => {
     renderStep({ knowsPrivacy: false, onRescan: undefined });
     expect(
@@ -1705,6 +1730,27 @@ describe("ConnectStep — confirming what the callback parked", () => {
     );
 
     await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not confirm again when Back and Continue bring the step back", async () => {
+    // The step unmounts on Back, and the one Continue mounts is fresh; the
+    // token is one-time, so a second confirm can only be refused.
+    connection.value = { connected: true, guild_name: "Tau Nu" };
+    render(
+      <ImportWizard
+        onStarted={() => {}}
+        onCancel={() => {}}
+        initialSource="bot"
+        initialStep="connect"
+        handshake="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      />,
+    );
+    await waitFor(() => expect(confirmConnect).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByText(/Tau Nu/)).toBeInTheDocument());
+    expect(confirmConnect).toHaveBeenCalledTimes(1);
   });
 
   it("withdraws Add to Server, with a reason, once the API has switched Connect off", async () => {

@@ -123,6 +123,10 @@ export function ImportWizard({
 
   const [source, setSource] = useState<ImportSource | null>(initialSource);
   const [step, setStep] = useState<WizardStep>(initialStep);
+  // One-time: spent once the connect step sends it. That step unmounts on
+  // Back, and the one Continue mounts again would confirm it a second time,
+  // which the API refuses (a "Confirming" flash over a failed request).
+  const [unspentHandshake, setUnspentHandshake] = useState(handshake);
   const [acknowledged, setAcknowledged] = useState(false);
   const [botAccessGiven, setBotAccessGiven] = useState(false);
   const [importId, setImportId] = useState<string | null>(null);
@@ -634,7 +638,8 @@ export function ImportWizard({
 
         {step === "connect" ? (
           <ConnectStep
-            handshake={handshake}
+            handshake={unspentHandshake}
+            onHandshakeSpent={() => setUnspentHandshake(null)}
             accessGiven={botAccessGiven}
             onAccessGivenChange={setBotAccessGiven}
             onConnected={() => setStep("consent")}

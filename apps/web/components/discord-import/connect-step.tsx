@@ -45,6 +45,7 @@ export function ConnectStep({
   accessGiven,
   onAccessGivenChange,
   handshake = null,
+  onHandshakeSpent,
 }: {
   onConnected: () => void;
   /**
@@ -65,6 +66,11 @@ export function ConnectStep({
    * else's Discord admin cannot attach their server to whoever generated it.
    */
   handshake?: string | null;
+  /**
+   * Told the moment the confirm is sent, so the wizard stops passing the
+   * token: Back unmounts this step, and a fresh one would post it again.
+   */
+  onHandshakeSpent?: () => void;
 }) {
   const { toast } = useToast();
   const connection = useDiscordConnection();
@@ -91,6 +97,7 @@ export function ConnectStep({
   useEffect(() => {
     if (!handshake || attempted.current) return;
     attempted.current = true;
+    onHandshakeSpent?.();
     confirmConnect
       .mutateAsync({ handshake })
       .then(() => setConfirmError(null))
@@ -102,7 +109,7 @@ export function ConnectStep({
           ),
         );
       });
-  }, [handshake, confirmConnect]);
+  }, [handshake, confirmConnect, onHandshakeSpent]);
 
   async function startConnect() {
     try {

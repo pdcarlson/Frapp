@@ -520,7 +520,8 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
 | Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
 | Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
-| Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay) |
+| Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay, and so does an empty tab, which says it too) |
+| No chapter | `No chapter selected` | `Pick an active chapter to review its reports.` |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
 | Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
@@ -553,10 +554,13 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Loading | — | `Loading imports...` |
 | Empty | `No imports yet` | `Bring your chapter's Discord history in as read-only archive messages.` |
 | Error | `Couldn't load imports` | `Confirm your chapter access and retry.` |
-| Stale | — | `Couldn't refresh the imports. This is the last list that loaded.` · `Try again` (a background refresh failed; the loaded rows and their meters stay) |
+| Stale | — | `Couldn't refresh the imports. This is the last update that loaded.` · `Try again` (a background refresh of the list, or of the polled import's own row, failed; the loaded rows and their meters stay) |
 | Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
 | Permission denied | — | `Importing a Discord archive needs channel management permission.` |
+| Loading (channel panel) | — | `Loading the import’s channels…` |
+| Error (channel panel) | `Couldn’t load the import’s channels` | `The import itself is unaffected and keeps running. Try again in a moment.` · `Retry` |
+| Stale (channel panel) | — | `Couldn’t refresh the channels. This is the last update that loaded.` · `Try again` (a poll of the panel failed; the channels it last showed stay) |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
 | Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
 | Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
@@ -566,7 +570,9 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 
 The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
-Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
+The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's; match them exactly when editing either.
+
+Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the channel panel's in `apps/web/components/discord-import/import-watch-panel.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
 
 ### Billing (dashboard)
 
