@@ -3,7 +3,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 import { PROMOTION_LOG, ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 
@@ -620,13 +620,16 @@ function validateLedgerCoverage(migrations) {
   for (const { kind, doc, migration } of problems) {
     console.error(`- ${migration} ${describe(kind, doc)}.`);
   }
+  // The template's ledger names come from the constants too, so a moved ledger
+  // cannot leave the hint naming a file the problem lines above no longer do.
+  const ledger = (doc) => `  ${basename(doc).padEnd(26)}`;
   console.error(
     "\nEvery migration owes BOTH a promotion-log entry and a rollback recipe.\n" +
       "Write one of these lines, exactly (the marker may be * or -):\n" +
-      "  db-promotion-runbook.md   ### <migration>.sql\n" +
+      `${ledger(PROMOTION_LOG)}### <migration>.sql\n` +
       "                            (or, under a `## <date>: <what>` heading)\n" +
       "                            * **Migration**: `<migration>.sql`\n" +
-      "  db-rollback-playbook.md   * **Migration**: `<migration>.sql`\n" +
+      `${ledger(ROLLBACK_PLAYBOOK)}* **Migration**: \`<migration>.sql\`\n` +
       "                            (under a `## Rollback <what>` heading)\n" +
       "A filename mentioned in prose does not count — the shape is what is read.",
   );

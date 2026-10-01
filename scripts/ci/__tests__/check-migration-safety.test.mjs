@@ -130,7 +130,8 @@ test("every declared doc is tracked today", () => {
     missing,
     [],
     `MIGRATION_DOCS names ${missing.join(", ")}, which are no longer tracked. ` +
-      "Repoint the list in the same change set as the rename.",
+      "Repoint PROMOTION_LOG / ROLLBACK_PLAYBOOK in scripts/ci/lib/ops-docs.mjs " +
+      "in the same change set as the rename.",
   );
 });
 
@@ -502,10 +503,15 @@ test("the shipped gate exits 1 when a migration has no ledger entry", () => {
   try {
     const { status, out } = runGate();
     assert.equal(status, 1, out);
-    assert.match(out, /29990101000000_ledger_probe\.sql needs an entry/);
-    // Both ledgers, not just one — the whole point of the change.
-    assert.match(out, /db-promotion-runbook\.md/);
-    assert.match(out, /db-rollback-playbook\.md/);
+    // Both ledgers, not just one — the whole point of the change. Read off the
+    // problem lines, not the output at large: the remedy hint under them names
+    // both ledgers on every failure, so a bare filename match proves nothing.
+    for (const doc of [PROMOTION, ROLLBACK]) {
+      assert.ok(
+        out.includes(`- 29990101000000_ledger_probe.sql needs an entry in ${doc}.`),
+        out,
+      );
+    }
   } finally {
     removeProbe();
     exitCleanups.delete(removeProbe);
