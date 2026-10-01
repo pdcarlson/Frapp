@@ -151,12 +151,12 @@ ranges stay updatable even when they look RN-adjacent — `@react-navigation/nat
 
 That `check-types` safety net is the reason JS-only libraries stay updatable, and it **does not
 cover a package that ships native code**: `@sentry/react-native` and `@stripe/stripe-react-native`
-both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and both are
-outside the ignore list — so a bad bump on either fails as a native compile with no CI signal, not
-as a type error. Stripe's 0.78.0 broke the iOS build with no CI signal, one step earlier, at
-`pod install`
-([held on Stripe's Swift Package path](#stripestripe-react-native-078-is-held-on-stripes-swift-package-path)).
-They are also deliberately held *ahead* of the versions the SDK specifies. Whether
+both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and neither is
+on the ignore list as a family — so a bad bump on either fails as a native compile with no CI
+signal, not as a type error. Both are also deliberately held *ahead* of the versions the SDK
+specifies. The one exception so far is Stripe's 0.78 line, which broke the iOS build one step
+earlier, at `pod install`, and is ignored from `0.78.0` up
+([held on Stripe's Swift Package path](#stripestripe-react-native-078-is-held-on-stripes-swift-package-path)). Whether
 that exemption is right, and on what grounds, is #2336; it is an open question, not a decision this
 rule has made.
 
@@ -218,8 +218,9 @@ Two traps for whoever edits that list next:
 - **Ignore conditions also suppress Dependabot _security_ updates.** A CVE in React, React Native or
   an Expo client package will **not** open a PR automatically. This is an accepted trade — an
   isolated security bump in that set breaks the runtime — but it is a real gap, so it is written down
-  rather than left implicit. `check:npm-audit` still fails CI on such an advisory, so it surfaces
-  loudly; carrying the fix means doing an SDK-aligned upgrade, not a one-package bump.
+  rather than left implicit. `check:npm-audit` still fails CI on such an advisory when it is high or
+  critical, so it surfaces loudly; below that it is silent. Carrying the fix means doing an
+  SDK-aligned upgrade, not a one-package bump.
 
   **That gap got wider when the Expo client list was completed to every `expo-*` package
   `apps/mobile` declares** (21 at the time, PR #2338). It now also
@@ -387,8 +388,11 @@ such file and declare `core.dependency 'Stripe'`. That mode requires the pod to 
 framework. The app links its pods statically (`apps/mobile/app.json` has no `expo-build-properties`
 and so no `useFrameworks`), so `pod install` stops with:
 
-> [!] [stripe-react-native] Resolving the Stripe iOS SDK through Swift Package Manager requires
-> dynamic frameworks, but stripe-react-native is building as a static library.
+```text
+[!] [stripe-react-native] Resolving the Stripe iOS SDK through Swift Package
+Manager requires dynamic frameworks, but stripe-react-native is building as
+a static library.
+```
 
 Under 0.x semver, 0.77 → 0.78 is a minor, so it arrived inside the grouped weekly PR (#2739) and
 passed every required check, because nothing in CI runs `pod install` (see
@@ -400,7 +404,16 @@ Production was unaffected, because a store build never rolls back a ship.
 
 The entry is a version range rather than `update-types`, because the break was a minor and a
 majors-only hold would not have stopped it. Like every ignore entry, it also suppresses Dependabot
-security PRs for 0.78 and later, and `check:npm-audit` is the backstop.
+security PRs for 0.78 and later. `check:npm-audit` fails CI on a high or critical advisory there,
+and below that nothing surfaces it.
+
+The ignore stops Dependabot, not a person, so the required `mobile-validate` job now checks the
+same thing: `npm run check:mobile-native-declarations` fails when any linked iOS pod declares a
+Swift package (`spm_dependency`, which 0.78's `stripe_spm.rb` calls) while the introspected Podfile
+properties don't set `ios.useFrameworks` to `dynamic`. That catches a hand bump, a removed ignore
+entry, and any other pod that moves to Swift packages. It reads the pod's Ruby, so it can't see an
+opt-out like `$StripeDisableSPM` that a config plugin writes into the generated Podfile: a fix that
+takes that route has to teach the check about it.
 
 Lifting it means choosing a linkage. `useFrameworks: "dynamic"` through `expo-build-properties` is
 the path Stripe supports, and it changes every pod's linkage. `$StripeDisableSPM = true` in the
