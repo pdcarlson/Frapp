@@ -3,16 +3,17 @@
 The committed **Claude Design web framework**, which [#2140](https://github.com/pdcarlson/Frapp/issues/2140)
 rebuilt this surface from. Rank 1 in
 [`../README.md` § Sources and precedence](../README.md#sources-and-precedence): what lands here beats
-every written doc, including the rest of this directory, except where § What this board settles
-below records that it no longer ships. *Moved here from `spec/ui/web-greenfield/reference/` by
+every written doc, including the rest of this directory, except where this directory records a
+departure from it: the board-wide ones in § What this board settles below, and the per-route ones in
+[`../README.md`](../README.md#surface-decisions). *Moved here from `spec/ui/web-greenfield/reference/` by
 [#2743](https://github.com/pdcarlson/Frapp/issues/2743), 2026-10-01; the board's bytes are unchanged.*
 
 ## Status
 
 **One artifact landed, 2026-09-11:** [`web-framework.dc.html`](web-framework.dc.html), the framework
 board. It is the rank-1 source for anything it covers, and it closes L-01 in
-[`../tokens.md`](../tokens.md). Two things it draws no longer ship, its chat bubbles and its focus
-border; § What this board settles below is where both are recorded.
+[`../tokens.md`](../tokens.md). Where the product departs from it, the departure is recorded with
+its reason: board-wide below, per route in [`../README.md`](../README.md#surface-decisions).
 
 The numbered Design to Code packs, the backlog and the originating brief are still **not here**. A
 change that needs one of those should ask for the artifact rather than invent one.
@@ -102,7 +103,11 @@ Two things the board does **not** settle, recorded so a later change does not ov
   separately, by re-exporting the mark at the spec'd pair; the board's label is now true of the
   pixels for a reason outside the board.
 
-Two things the board draws that deliberately no longer ship:
+Two things the board draws deliberately no longer ship anywhere on the surface. These are the
+board-wide departures only. The per-route ones are recorded with their reasons in
+[`../README.md`](../README.md#surface-decisions): the 404's radius, opacity and buttons, the billing
+fields and settings tabs the board draws for a product this codebase doesn't have, the settings
+drawer's toggles, and the nav's locked rows.
 
 - **The chat bubbles** (recorded 2026-09-30; the owner's decision is 2026-09-29's). The `#general` thread, the
   pending self bubble, the skeleton's "r18 bubbles" and the token sheet's "Bubbles r18 · tail 6" are

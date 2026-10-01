@@ -1372,7 +1372,11 @@ describe("ComposerShell (#2176)", () => {
     const hint = document.getElementById(hintId!);
     // Described from the first render, so a screen reader hears why before
     // trying — and only shown once they have actually tried.
-    expect(hint).toHaveTextContent(/still opening your channels/i);
+    // The exact string, so the writing.md §7 row and the no-em-dash product
+    // copy lock (spec/ui/web-dashboard/README.md) cannot drift from it.
+    expect(hint?.textContent).toBe(
+      "Still opening your channels. You can keep typing.",
+    );
     expect(hint).toHaveClass("sr-only");
 
     await userEvent.type(input, "roster is 41 tonight{Enter}");
