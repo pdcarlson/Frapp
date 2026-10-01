@@ -147,7 +147,7 @@ migration its tree lacks, which is the case the deployable window above covers.
 The revert's SHA also ships everything else on `main` up to it.
 
 **The schema comes off in a later run, as a new forward migration.** Write the
-recipe's SQL as a new migration (`npx supabase migration new rollback_<what>`),
+recipe's SQL as a new migration (`npm run supabase -- migration new rollback_<what>`),
 and give it its own entries here and in
 [`db-promotion-runbook.md`](db-promotion-runbook.md) (`check:migration-safety`
 requires both). Make every statement idempotent, so the migration also applies
