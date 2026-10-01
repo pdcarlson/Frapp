@@ -6,6 +6,7 @@ import {
   type ListChapterAuditLogOptions,
 } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { ChapterAuditLog } from '#domain/entities/chapter-audit-log.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseChapterAuditLogRepository implements IChapterAuditLogRepository {
@@ -21,7 +22,7 @@ export class SupabaseChapterAuditLogRepository implements IChapterAuditLogReposi
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -63,7 +64,7 @@ export class SupabaseChapterAuditLogRepository implements IChapterAuditLogReposi
     const { data, error } = await q
       .order('created_at', { ascending: false })
       .limit(options.limit);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 }

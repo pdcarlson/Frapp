@@ -56,6 +56,7 @@ import {
 } from '#domain/utils/discord-mention-backfill';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import { asRecord, asString } from '#domain/utils/json-guards';
+import { SupabaseQueryError } from './infrastructure/supabase/supabase-query-error';
 import { toReportableError } from './infrastructure/observability/reportable-error';
 
 /** Rows read per round trip. */
@@ -140,7 +141,7 @@ async function main(): Promise<void> {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const name = asString(asRecord(data?.payload)?.author_username);
     userNames.set(discordUserId, name);
     return name;
@@ -164,7 +165,7 @@ async function main(): Promise<void> {
       .limit(PAGE_SIZE);
     if (after) query = query.gt('id', after);
     const { data: rows, error } = await query;
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     if (!rows || rows.length === 0) break;
     after = rows[rows.length - 1].id;
     scanned += rows.length;
@@ -189,7 +190,7 @@ async function main(): Promise<void> {
               .update({ content: update.content })
               .eq('id', update.id)
               .eq('kind', 'imported');
-            if (updateError) throw updateError;
+            if (updateError) throw new SupabaseQueryError(updateError);
           }),
         );
       }

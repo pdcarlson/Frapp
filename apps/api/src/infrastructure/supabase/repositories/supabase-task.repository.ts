@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import { ITaskRepository } from '#domain/repositories/task.repository.interface';
 import { Task } from '#domain/entities/task.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
@@ -22,7 +23,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -32,7 +33,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -43,7 +44,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId)
       .eq('assignee_id', assigneeId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -54,7 +55,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -71,7 +72,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -83,7 +84,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       p_task_id: id,
       p_chapter_id: chapterId,
     });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
   }
@@ -95,6 +96,6 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('id', id)
       .eq('chapter_id', chapterId);
 
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }
