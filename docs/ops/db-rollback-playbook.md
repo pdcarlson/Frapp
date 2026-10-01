@@ -165,8 +165,8 @@ carries the undo.
 Some recipes ship part of the undo in the revert's run, and where one does, its
 order wins over this paragraph. That happens when the reverted code and the
 current schema can't work together at all, as when the change replaced a
-function's signature or return shape (the subscription webhook's
-previous-status return, the `get_points_report` overloads). It also happens when
+function's return shape (the subscription webhook's previous-status return).
+It also happens when
 the gap between two runs would open a hole the recipe names (Discord author
 links, chat report attachment evidence). In one run the migration applies
 first and the reverted API goes live right after, so the window is the
@@ -202,15 +202,22 @@ ran. Until that migration ships, nothing records the change:
   repo's: `check-migration-drift.mjs` compares ledger versions only
   ([#3037](https://github.com/pdcarlson/Frapp/issues/3037) tracks adding one).
 
-Two recipes are exceptions.
-[§ Rollback the `security definer` search_path pin](#rollback-the-security-definer-search_path-pin)
-never ships as a migration, because the gate it would fail guards a security
-invariant.
-[§ Rollback the ping-swallow warning](#rollback-the-ping-swallow-warning) allows a
-temporary rollback by hand that is undone by hand, and a migration only when the
-rollback is meant to be permanent. Each says what follows instead. Data-only SQL (an `update` or `delete` that changes
-no schema) touches nothing the rehearsal rebuilds, so it can run by hand; record
-it in the incident issue.
+Some recipes are exceptions, and each says what follows instead:
+
+- [§ Rollback the `security definer` search_path pin](#rollback-the-security-definer-search_path-pin)
+  never ships as a migration, because the gate it would fail guards a security
+  invariant.
+- [§ Rollback the ping-swallow warning](#rollback-the-ping-swallow-warning) allows
+  a temporary rollback by hand that is undone by hand, and a migration only when
+  the rollback is meant to be permanent.
+- Removing a Storage bucket (the chat-archive, generated-reports and
+  service-proof recipes) goes through the Storage API, never SQL: Storage's
+  `protect_buckets_delete` trigger refuses a raw delete. No migration records the
+  removal, so the ledger keeps the bucket's migration, and a fresh database
+  (local, CI, a restore) still creates the bucket.
+
+Data-only SQL (an `update` or `delete` that changes no schema) touches nothing
+the rehearsal rebuilds, so it can run by hand; record it in the incident issue.
 
 **Don't edit the ledger to match a hand drop.** Deleting the version's row
 (`delete from supabase_migrations.schema_migrations where version = '<version>';`,
@@ -680,7 +687,7 @@ known limitation of a dump-only restore.
 1. Announce incident in engineering channel.
 2. Capture failing SQL/error logs and request IDs.
 3. Identify failing migration file(s) and affected tables/indexes/policies.
-4. Choose recovery strategy (forward-fix vs restore) using matrix above.
+4. Choose recovery strategy using the matrix above: a forward fix, a backup restore, or undoing one migration ([§ 3) Undo one migration](#3-undo-one-migration)).
 
 ## Verification after rollback/recovery
 
@@ -996,7 +1003,7 @@ After any rollback event:
 * **Migration**: `20260905020000_point_transactions_client_message_id.sql`
 * **Action**:
   ```sql
-  ALTER TABLE point_transactions DROP COLUMN client_message_id;
+  ALTER TABLE point_transactions DROP COLUMN IF EXISTS client_message_id;
   ```
   Dropping the column also drops `idx_point_transactions_dedupe`, which is
   defined on it — no separate `DROP INDEX` needed.
@@ -1023,17 +1030,19 @@ After any rollback event:
 * **Action**:
   ```sql
   ALTER TABLE chapter_documents
-    DROP COLUMN content_type,
-    DROP COLUMN byte_size,
-    DROP COLUMN document_type,
-    DROP COLUMN effective_date;
+    DROP COLUMN IF EXISTS content_type,
+    DROP COLUMN IF EXISTS byte_size,
+    DROP COLUMN IF EXISTS document_type,
+    DROP COLUMN IF EXISTS effective_date;
   ```
   Dropping the columns also drops `chapter_documents_byte_size_nonneg`, which is
   defined on `byte_size` — no separate `DROP CONSTRAINT` needed.
-* **Order**: no coordination required — the four columns are purely additive and
-  nullable. Ship the drop as a new migration; no revert has to go first ([§ 3) Undo one migration](#3-undo-one-migration)). A running API build from before this migration selects `*` and simply
-  never reads the new keys; a build from after this migration reverted still reads
-  `null` for them (the service already treats every one of the four as optional).
+* **Order**: **take the API off the columns first**, then ship the drop as a new
+  migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `ChapterDocumentService`
+  writes all four on every upload confirm (`?? null` when the client sent none), so
+  under that API every upload fails once the columns are gone. Reads are not the
+  problem: they select `*` and treat each column as optional. *Corrected
+  2026-10-01 (#2606): this used to say no coordination was required.*
 * **Data caveat**: the four columns are populated only for documents uploaded
   after this migration landed. Rolling back loses that metadata for any document
   uploaded in between — there is no source to re-derive it from (the client
@@ -1768,7 +1777,7 @@ After any rollback event:
   ALTER TABLE members DROP CONSTRAINT IF EXISTS members_id_chapter_id_key;
   ALTER TABLE chapter_custom_fields DROP CONSTRAINT IF EXISTS chapter_custom_fields_id_chapter_id_key;
   ```
-* **Note**: The table holds per-member values for the `chapter_custom_fields` definitions, carrying a `chapter_id` enforced by composite FKs so a row can never pair a member with a field from another chapter. Dropping it loses any stored custom-field values but does not touch the definitions. There is no value-write API yet (deferred to #581), so in most environments the table is empty. Ship the drop as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
+* **Note**: The table holds per-member values for the `chapter_custom_fields` definitions, carrying a `chapter_id` enforced by composite FKs so a row can never pair a member with a field from another chapter. Dropping it loses any stored custom-field values but does not touch the definitions. There is no value-write API yet (deferred to #581), so in most environments the table is empty. Empty is not unused, though: `CustomFieldService` reads the table for member detail and member search and throws on error. So **take the API off it first** (a forward revert of those reads), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)); otherwise member detail and search fail in every chapter with a visible custom-field definition. *Corrected 2026-10-01 (#2606).*
 
 ## Rollback Chunk 07d dues config alignment
 * **Migration**: `20260530193000_chapter_dues_config_align_spec.sql`
@@ -1781,12 +1790,12 @@ After any rollback event:
     ADD CONSTRAINT chapter_dues_config_cadence_check
       CHECK (cadence IN ('semester','monthly','annual'));
   ```
-* **Note**: Safe at any time — `chapter_dues_config` has no write path until the API shipped in this chunk, so the table is empty and there is no data to lose. If rows exist by rollback time, any `per_semester`/`per_quarter` value must be reconciled to the old vocabulary first or the restored CHECK will reject them. Ship the SQL as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
+* **Note**: Not safe at any time any more: the API has shipped its write path. `ChapterConfigService` saves dues in the new vocabulary (`per_semester` is its default; `monthly | per_semester | per_quarter` is the DTO's enum) and reads `installment_count`. So **take the API off it first** (a forward revert of the dues config code), reconcile every `per_semester`/`per_quarter` row to the old vocabulary, and only then ship the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). Otherwise the restored CHECK refuses the existing rows and the migration fails, or later saves fail, and the dues read errors on the missing column. *Corrected 2026-10-01 (#2606): this used to say the table had no write path.*
 
 ## Rollback analytics opt-out flag
 * **Migration**: `20260530180000_chapter_analytics_opt_out.sql`
 * **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
-* **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. The server reads it defensively and treats a missing/false value as "analytics enabled". Ship the drop as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
+* **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. `AnalyticsService` reads it defensively and treats a missing/false value as "analytics enabled", but `ChapterConfigService.getConfig` names the column in its `select` and rethrows, so `GET /v1/chapters/:id/config` would 500 for every chapter. **Take the API off it first** (a forward revert of the config reads and writes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to imply the server read it defensively everywhere.*
 
 ## Rollback default invite role (20260902170002)
 * **Migration**: `20260902170002_chapter_default_invite_role.sql`
@@ -1827,19 +1836,20 @@ After any rollback event:
 ## Rollback `get_points_report` RPC
 * **Migration**: `20260604140000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`
-* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: ship a forward revert to the prior all-time call in the same Deploy production run as one new migration that drops the `timestamptz` overload and re-creates the original `(uuid, uuid, text)` body ([§ 3) Undo one migration](#3-undo-one-migration)). Don't split them across runs: while both overloads exist, a call that names only arguments both accept matches two functions and PostgREST refuses it (`PGRST203`). In one run, points reports fail only between the migration and the reverted API going live.
+* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: ship a forward revert to the prior all-time call, and one new migration that drops the `timestamptz` overload and re-creates the original `(uuid, uuid, text)` body together, so the two never coexist ([§ 3) Undo one migration](#3-undo-one-migration)). Read the reverted `ReportService` call to choose the order. If it names only arguments the current function accepts (`p_chapter_id`, `p_user_id`), revert first and ship the migration in a later run, as the `p_until` entry below does; that order has no failure window. If it names `p_window`, which only the old body has, ship both in one run and accept the minutes between the migration and the reverted API going live. This entry applies only after the `p_until` rollback below, since that one recreates the 3-arg `timestamptz` overload. *Corrected 2026-10-01 (#2606).*
 
 ## Rollback `chat_message_actions` membership-scoped read RLS
 * **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
-* **Action (forward-fix — restore the prior policy first, then drop the helper)**:
-  ```sql
-  DROP POLICY IF EXISTS "chat_message_actions_select" ON public.chat_message_actions;
-  CREATE POLICY "chat_message_actions_select"
-    ON public.chat_message_actions FOR SELECT
-    USING (auth.role() = 'authenticated');
-  DROP FUNCTION IF EXISTS public.can_read_chat_message(uuid);
-  ```
-* **⚠️ Note**: Rolling back **re-opens the cross-chapter / private-DM / role-gated action-read leak this migration closed** (FRA-38 / #279) — any authenticated user could again read every `chat_message_actions` row via the web client's direct query and the global Realtime subscription, so **prefer a roll-forward fix over this rollback**. No data is lost (policy + function only). Drop order matters: the `SELECT` policy references `can_read_chat_message(...)`, so the policy must be dropped/recreated **before** the function. No app-code change is required either way — the web reaction backfill and Realtime subscription work under either policy; the restored policy is simply permissive again. Ship the SQL as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
+* **Action**: re-create `chat_message_actions_select` from its newest definition
+  (`20260924170000_chat_message_actions_hide_blocked_reactions.sql` today) minus
+  only its `public.can_read_chat_message(message_id)` conjunct ([§ 3) Undo one migration](#3-undo-one-migration)).
+  The policy must keep #2494's blocked-reaction conjunct. **Keep the function.**
+  `chat_messages_select` (`20260816140000`, re-created in `20260823123000`) also
+  calls `can_read_chat_message`, so `DROP FUNCTION` fails (`2BP01`), and `CASCADE`
+  would drop chat's Realtime read policy with it. *Corrected 2026-10-01 (#2606):
+  this used to restore the bare `auth.role() = 'authenticated'` policy and drop
+  the function.*
+* **⚠️ Note**: Rolling back **re-opens the cross-chapter / private-DM / role-gated action-read leak this migration closed** (FRA-38 / #279) — any authenticated user could again read every `chat_message_actions` row via the web client's direct query and the global Realtime subscription, so **prefer a roll-forward fix over this rollback**. No data is lost (policy only). No app-code change is required either way — the web reaction backfill and Realtime subscription work under either policy; the restored policy is simply permissive again. Ship the policy change as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
 * **Replica identity**: nothing to revert. The migration deliberately leaves `chat_message_actions` at the default replica identity — see the rationale in the migration header and `docs/security/security-fixes.md`. If you find the table set to `FULL`, that is drift, not this migration.
 
 ## Rollback poll list vote aggregate RPCs
@@ -1876,7 +1886,7 @@ After any rollback event:
 ## Rollback `get_points_report` RPC `p_until` bound
 * **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.
-* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a forward-fix is required: a forward revert to the prior 3-arg call, in the same Deploy production run as one new migration that runs the Action above (drop the 4-arg overload, recreate the 3-arg one and its lock-down) ([§ 3) Undo one migration](#3-undo-one-migration)). Otherwise every points report request fails. Don't split them across runs: while both overloads exist, the reverted call (`p_chapter_id`, `p_user_id`, `p_since`) matches both, because `p_until` has a default, and PostgREST refuses it (`PGRST203`). In one run, points reports fail only between the migration and the reverted API going live. The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
+* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a bare drop breaks every points report request. Ship a forward revert to the prior 3-arg call first, then one new migration that runs the Action above (drop the 4-arg overload, recreate the 3-arg one and its lock-down) in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). That order has no failure window. Until the migration, the reverted call (`p_chapter_id`, `p_user_id`, `p_since`) resolves to the 4-arg function, because `p_until` defaults to null. After it, the call resolves to the 3-arg one. Keep the drop and the recreate in one migration, so the two overloads never coexist. One run would open a window: the migration applies before the reverted API is live, and the current API's `p_until` argument matches no function. *Corrected 2026-10-01 (#2606).* The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
 
 ## Rollback Group DM leave + archive (20260901180000)
 * **Migration**: `20260901180000_chat_channels_archived_at.sql`
@@ -1907,14 +1917,14 @@ After any rollback event:
 
 ## Rollback Chunk 05 migration (20260527120000_chat_notification_preferences.sql)
 
-Migration is additive (one new table with its own indexes, policy, and trigger). Rollback is safe at any time; the only data loss is per-user preference rows. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/modules/chat-push-worker/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.
+Migration is additive (one new table with its own indexes, policy, and trigger). The only data loss on rollback is per-user preference rows, but the live API depends on the table: see the note below for the order. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/modules/chat-push-worker/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.
 
 ```sql
 -- The trigger and indexes drop automatically with the table.
 DROP TABLE IF EXISTS chat_notification_preferences;
 ```
 
-**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md). Ship the drop as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
+**Note:** The push worker needs no change after rollback. Its preference reads tolerate an empty result set and treat it as "no preference set", which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md). The API's preference routes do need a change. `ChatService` reads and writes the table for the channel mute and the per-kind preferences, and those repository calls throw on error, so they 500 for every member once the table is gone. **Take the API off it first** (a forward revert of those routes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to say no NestJS change was required.*
 
 ## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
 
@@ -2279,6 +2289,8 @@ Order between the two does not matter — neither references the other.
 **Take the API off them first**, with a forward revert of the #2257 report and block modules, then ship the drops as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). This step is load-bearing: the routes that read these tables fail while the tables are gone, and the member-facing degradation is whatever that slice specified, which is written in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#report-and-block) § Report and block rather than guessed at here. *Corrected 2026-10-01 (#2606): this used to call the step a no-op, because the tables shipped ahead of the API slice that reads them. That slice has shipped: `chat-report.service.ts` and the block and report repositories read both tables.*
 
 Roll back `20260915210100` **first** if it has been applied, in an earlier run or the same migration: `anonymize_user` references `chat_member_blocks`, and plpgsql resolves the table at execution time, so dropping the table under the newer function leaves account deletion failing at runtime with `relation "chat_member_blocks" does not exist` — with nothing failing at migration time to warn you.
+
+Three more functions read `chat_member_blocks`, and they are SQL functions, whose bodies Postgres doesn't track as dependencies. So `DROP TABLE` succeeds under them, and each one fails at runtime afterwards. Roll each back first, per its own recipe: `chat_viewer_has_blocked` ([§ Rollback hiding blocked members' reactions](#rollback-hiding-blocked-members-reactions-20260924170000); the `chat_message_actions_select` policy calls it for reaction rows), `get_hidden_channel_ids` ([§ Rollback hiding a 1:1 DM](#rollback-hiding-a-11-dm-20260925200000)), and `get_channel_unread_counts` ([§ Rollback skipping blocked senders in unread counts](#rollback-skipping-blocked-senders-in-unread-counts-20260927050000), or `GET /v1/channels/unread` 500s). *Added 2026-10-01 (#2606).*
 
 **This is an App Store compliance regression, not only a feature rollback.** Guideline 1.2 expects a UGC app to ship report and block; once the member-side controls are live, dropping these tables removes the controls a reviewer taps. Do not roll back on a build that is under review or live in the App Store without a replacement in the same deploy.
 
