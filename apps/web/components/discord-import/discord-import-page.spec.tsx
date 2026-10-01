@@ -635,6 +635,34 @@ describe("DiscordImportPage — watching an import (#2857)", () => {
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
+  it("says it is waiting for the first channel, on the page surface", () => {
+    hooks.progress.mockReturnValue({
+      data: {
+        counts: {
+          pending: 12,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          skipped: 0,
+        },
+        running: [],
+        recent: [],
+        failed: [],
+      },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container } = render(<DiscordImportPage />);
+    const running = rowOf("Running server");
+    fireEvent.click(running.getByRole("button", { name: "Watch" }));
+
+    expect(
+      running.getByText("Waiting for the first channel to start."),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
   it("says when the channels could not be loaded, and retries", () => {
     const refetch = vi.fn();
     hooks.progress.mockReturnValue({
