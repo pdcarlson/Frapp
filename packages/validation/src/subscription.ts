@@ -23,9 +23,9 @@
  */
 
 /**
- * Same four values as `CurrentChapterPayload["subscription_status"]` /
- * `subscriptionStatusEnum` in `index.ts`. Derived from this tuple so this
- * file does not import the barrel it is re-exported from.
+ * Same four values as `CurrentChapterResponseDto["subscription_status"]` in
+ * the API contract (`@repo/api-sdk`), stated here so this package does not
+ * depend on the generated SDK.
  */
 const SUBSCRIPTION_STATUSES = [
   "incomplete",
