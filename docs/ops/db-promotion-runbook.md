@@ -582,7 +582,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ### 20260930231000_chat_dm_one_channel_per_pair.sql
 
-- **Purpose**: Makes the database hold at most one `DM` channel per chapter and member pair. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#direct-messages) § Direct Messages.
+- **Purpose**: Makes the database hold at most one `DM` channel per chapter and member pair. The rule is in [`spec/behavior/chat/README.md`](../../spec/behavior/chat/README.md#direct-messages) § Direct Messages.
   - A guard that raises, and changes nothing, if any `DM` row lacks exactly two members or any pair already has two DMs. Resolving either merges or removes members' conversations, which is the owner's decision.
   - `chat_channels_dm_two_members`, a CHECK that a `DM` row holds exactly two `member_ids`. Other channel types are untouched.
   - `chat_channels_dm_pair_key`, a partial unique index on `(chapter_id, least(member_ids[1], member_ids[2]), greatest(member_ids[1], member_ids[2]))` where `type = 'DM'`. It is keyed on the members, not the name, because `PATCH /v1/channels/:id` can rename a DM.
@@ -591,7 +591,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Checks**: Before `db push`, `select count(*) from public.chat_channels where type = 'DM';` gave 0 on both `frapp-staging` and `frapp-prod` on 2026-09-30. After it, `select indexname from pg_indexes where indexname = 'chat_channels_dm_pair_key';` returns one row, and `select conname from pg_constraint where conname = 'chat_channels_dm_two_members';` returns one row.
 - **Promoter notes**: Ship it before, or with, the API that relies on it. A deploy applies migrations first. Against an unmigrated database the newer API behaves as before: two racing opens can still make two DMs. An older API against the migrated database keeps working, but the losing call of a race gets the raw `23505` as a 500 once, and opening the DM again returns the one that won. The CHECK scans `chat_channels` once, and the index build blocks writes to it until the migration commits. The table holds channels, not messages, so both are brief. If the guard raises, the migration stops and nothing is applied: bring the rows it counts to the owner (#2788) rather than deleting any. Re-applying is idempotent (`drop constraint if exists` before the add, and `create unique index if not exists`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-one-dm-per-pair-20260930231000) § Rollback one DM per pair.
+**Rollback**: See [`db-rollback-playbook.md`](db-rollback-playbook.md#rollback-one-dm-per-pair-20260930231000) § Rollback one DM per pair.
 
 ## 2026-09-30: A chat report keeps the reported message's attachments until it resolves and releases them (#2481)
 
