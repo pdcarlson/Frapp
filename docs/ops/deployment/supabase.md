@@ -6,10 +6,10 @@ You need **two** Supabase projects: one for staging, one for production.
 
 1. Go to https://supabase.com/dashboard → **New Project**.
 2. Create `frapp-staging` (region closest to you).
-3. Create `frapp-prod` — that is the name [`.github/environments.json`](../../../../.github/environments.json)
+3. Create `frapp-prod` — that is the name [`.github/environments.json`](../../../.github/environments.json)
    records, and the one `scripts/run-migration.mjs` prints when an injected ref does not match.
    Region: closest to you — it need not match staging, and the two live projects do
-   differ. [`DB_ROLLBACK_PLAYBOOK.md`](../DB_ROLLBACK_PLAYBOOK.md#backup-reality)
+   differ. [`db-rollback-playbook.md`](../db-rollback-playbook.md#backup-reality)
    § Backup reality records what they actually use.
 
 ### Plan and quotas
@@ -56,7 +56,7 @@ as on Free apply to both projects. Turning the cap off (organization **Billing �
 bills the overage at the rates in the table instead. The cap does not cover add-ons such as
 point-in-time recovery. The organization's **Usage** page shows how close each quota is.
 `supabase-quota.yml` checks two of them daily and pages well before either runs out: each project's disk, and the
-organization's Storage size ([its alert](../ALERT_ROUTING.md#automated-github-issue-alerts)). Egress and
+organization's Storage size ([its alert](../alert-routing.md#automated-github-issue-alerts)). Egress and
 Realtime peak connections have no API, so only the Usage page shows them.
 
 **Set up after the upgrade (2026-09-28):**
@@ -65,11 +65,11 @@ Realtime peak connections have no API, so only the Usage page shows them.
   size limit**, which Free capped at 50 MB. Discord allows 100 MB attachments and the `chat-archive`
   bucket accepts 100 MB, but the lower of the two limits wins. Why a new project needs it set by hand,
   and the upload that proves it took effect:
-  [`DB_PROMOTION_RUNBOOK.md` § 20260823124000_chat_archive_bucket.sql](../DB_PROMOTION_RUNBOOK.md#20260823124000_chat_archive_bucketsql).
+  [`db-promotion-runbook.md` § 20260823124000_chat_archive_bucket.sql](../db-promotion-runbook.md#20260823124000_chat_archive_bucketsql).
 - **`frapp-prod` shows Supabase's daily backups (#1403),** under **Database → Backups**. The nightly offsite dump
   still runs, and it is still the only copy that survives deleting the project, and the only
   backup of Storage files:
-  [`DB_ROLLBACK_PLAYBOOK.md` § Backup reality](../DB_ROLLBACK_PLAYBOOK.md#backup-reality).
+  [`db-rollback-playbook.md` § Backup reality](../db-rollback-playbook.md#backup-reality).
 
 ### Apply Migrations
 
@@ -85,14 +85,14 @@ npx supabase db push
 
 Follow the internal promotion and rollback runbooks when promoting schema changes:
 
-- `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`
-- `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`
+- `docs/ops/db-promotion-runbook.md`
+- `docs/ops/db-rollback-playbook.md`
 
 ### Edge Functions
 
 The repo has one Supabase Edge Function, `discord-attachment-copy` (`supabase/functions/`). It copies
 a Discord bot import's attachments from Discord's CDN into the `chat-archive` bucket, so the bytes
-never pass through the API on Render ([ADR-26](../../../../spec/architecture/adr/adr-26.md), #2848).
+never pass through the API on Render ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
 The API's `SupabaseArchiveMediaCopier` is its only caller.
 
 **How it deploys.** Only through CI, never by hand. `_deploy.yml` runs
@@ -109,7 +109,7 @@ each function, so Supabase bundles it and the job needs no Docker. Order and gat
 **Its credential.** `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, one per Infisical environment. It is a
 scoped access token for that environment's project alone, with only the **Edge Functions**
 read-write permission. The read-only `SUPABASE_ACCESS_TOKEN` cannot deploy a function.
-[`ENV_REFERENCE.md` § CD Secrets](../../environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only)
+[`ENV_REFERENCE.md` § CD Secrets](../../internal/environment/ENV_REFERENCE.md#cd-secrets-deploy-workflows-only)
 says how to mint it. When it is missing, the staging and production deploys fail at this step, before
 the API.
 
@@ -151,7 +151,7 @@ For each project, note its URL, `https://<project-ref>.supabase.co` (`SUPABASE_U
 (`SUPABASE_ANON_KEY`) and the service key (`SUPABASE_SERVICE_ROLE_KEY`, API only, never exposed to
 a client). Which key each name takes, and
 which key generation, is in
-[`ENV_REFERENCE.md` § Core App Secrets](../../environment/ENV_REFERENCE.md#core-app-secrets).
+[`ENV_REFERENCE.md` § Core App Secrets](../../internal/environment/ENV_REFERENCE.md#core-app-secrets).
 
 ### Auth settings (hosted, dashboard or Management API)
 
@@ -285,7 +285,7 @@ Migration drift for `20260924190000` if production hasn't deployed by the 07:00 
 more than 24 hours after 2026-09-24 19:00 UTC. *Corrected 2026-09-28: that last alert no
 longer fires. Production is now judged against its latest `v*` tag, not `main`, so a
 migration merged and not yet shipped reads as unreleased
-([`agent-infra.md` § Schema drift detection](../../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
+([`agent-infra.md` § Schema drift detection](../../ci-cd/agent-infra.md#schema-drift-detection-scriptscicheck-migration-driftmjs)).
 `20260924190000` shipped in v1.3.0, renumbered `v0.5.0` on 2026-09-30 ([#2529](https://github.com/pdcarlson/Frapp/issues/2529)).*
 
 1. **Staging.** Once the merge's staging deploy is live, in `frapp-staging` →
@@ -354,7 +354,7 @@ Observation 2026-09-10 for the first two Google rows, **2026-09-13 for the Apple
 | Automatic linking | **On** (a later Google/Apple identity can attach to an existing email/password or magic-link user; do not merge `public.users` rows — unique on `supabase_auth_id` only) |
 | Skip nonce (Google provider) | **Off** |
 | Allow users without email — **Google** | **Off** |
-| Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
+| Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
 | Magic Link templates | **Untouched** by the OAuth work: don't change them for a provider. *2026-09-24: ADR-25 step 3 retypes them for the product name; see [§ ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp).* |
 | Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID `live.frapp.mobile.web`; Sign in with Apple key | **Done** (2026-09-13) |
 | Apple provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** (2026-09-13) |
@@ -400,7 +400,7 @@ machine that downloaded it.
    registering a replacement and re-generating the secret for both projects. It must never be committed to this repo. Note the Key ID; the
    Team ID is the **App ID Prefix** shown on any App ID page (kept out of this
    file for the same reason `eas.json` no longer names `appleTeamId` —
-   [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md)).
+   [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)).
 4. **Secret** — generate the JWT with the client-side generator on
    [Supabase's Apple provider guide](https://supabase.com/docs/guides/auth/social-login/auth-apple)
    (Team ID + Services ID + Key ID + `.p8`; the generator does not work in
@@ -419,7 +419,7 @@ machine that downloaded it.
    - `frapp-staging`: the same, plus `host.exp.Exponent`
 
    The Services ID covers web/browser OAuth; the **bundle id** covers native
-   iOS, because [`apps/mobile/lib/apple-auth.ts`](../../../../apps/mobile/lib/apple-auth.ts)
+   iOS, because [`apps/mobile/lib/apple-auth.ts`](../../../apps/mobile/lib/apple-auth.ts)
    calls `signInWithIdToken` and that token's audience is the bundle id. Omit it
    and web sign-in works while native iOS fails. `host.exp.Exponent` is the Expo
    Go app's **shared** bundle id, so it is **staging-only on purpose**: trusting
@@ -440,7 +440,7 @@ machine that downloaded it.
 Services → **Sign in with Apple for Email Communication**. There are **two**, and
 [§ Auth settings](#auth-settings-hosted-dashboard-or-management-api) already names
 both: `mail.frapp.live` (prod Auth SMTP, and the invite sender in
-[`email.module.ts`](../../../../apps/api/src/modules/email/email.module.ts)) and
+[`email.module.ts`](../../../apps/api/src/modules/email/email.module.ts)) and
 `mail.staging.frapp.live` (staging Auth SMTP — the Resend keys are domain-scoped,
 so staging is a genuinely separate registration, not a duplicate). Until a domain
 is registered, Apple's relay refuses mail sent from it to a

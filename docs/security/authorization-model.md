@@ -277,7 +277,7 @@ not a partial fix — it is the original defect spelled out.
 This is checked, not just conventional: `scripts/check-pglite-migrations.mjs` applies every migration
 and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
 `pg_temp` last. Whether that job blocks a merge is set in
-[the branch protection runbook § Required Status Checks](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+[the branch protection runbook § Required Status Checks](../ops/github-branch-protection-runbook.md#required-status-checks)
 (#2538). Fixed repo-wide in #985 (#983 fixed the first instance).
 
 ### The `chat_messages` read surface — accepted, with the bound named

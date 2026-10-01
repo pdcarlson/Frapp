@@ -31,6 +31,7 @@ import {
   PROFILES_BUCKET,
   profileFolderPrefix,
 } from '#domain/constants/storage';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export interface AlumniFilter {
   graduation_year?: number;
@@ -439,15 +440,11 @@ export class MemberService {
     } catch (error) {
       // The prune has committed, so a member who is still in the chapter is
       // now off these channels. Say which, so an officer can add them back.
-      this.logger.error(
-        'Member row delete failed after their PRIVATE channels were pruned',
-        {
-          chapterId,
-          memberId,
-          userId: member.user_id,
-          prunedChannelIds,
-          error: error instanceof Error ? error.message : String(error),
-        },
+      logThrowable(
+        this.logger,
+        'error',
+        `Member row delete failed after their PRIVATE channels were pruned (chapter ${chapterId}, member ${memberId}, user ${member.user_id}, pruned channels [${prunedChannelIds.join(', ')}])`,
+        error,
       );
       throw error;
     }

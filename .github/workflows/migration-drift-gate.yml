@@ -96,7 +96,7 @@ concurrency:
   # nothing re-runs them, and `validate-deploy-sha.mjs` then refuses to deploy
   # that commit: a cancelled check asserted nothing, and `jobIdsAtRef` cannot
   # excuse it because the run exists. The commit is undeployable, which lands on
-  # exactly the operation that needs it — DB_ROLLBACK_PLAYBOOK recovery is
+  # exactly the operation that needs it — `db-rollback-playbook.md` recovery is
   # redeploying an older commit.
   #
   # Cancelling a PR run costs a re-push. Cancelling a main push run costs a

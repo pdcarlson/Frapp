@@ -16,6 +16,7 @@ import type {
   RushCandidateView,
 } from '#domain/entities/rush-candidate.entity';
 import { ChatService } from './chat.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export interface CreateRushCandidateInput {
   chapter_id: string;
@@ -167,12 +168,12 @@ export class RushService {
       await this.postRushCard(input, candidate);
       return true;
     } catch (error) {
-      this.logger.warn('Failed to post rush card to chat', {
-        candidateId: candidate.id,
-        channelId: input.channel_id,
-        chapterId: input.chapter_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to post rush card to chat (candidate ${candidate.id}, channel ${input.channel_id}, chapter ${input.chapter_id})`,
+        error,
+      );
       return false;
     }
   }

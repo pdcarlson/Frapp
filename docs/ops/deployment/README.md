@@ -35,17 +35,17 @@ This folder is the canonical operator runbook for those providers and the CI/CD 
   half (2026-09-02); the earlier note here that it "fails by design" described the window
   before those settings were changed and was stale by 2026-09-06.
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
-  syncs are inventoried in [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md).
+  syncs are inventoried in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (in
   the shared `_deploy.yml` job that `deploy-staging.yml` calls; automatic since #1265). Production migrations run inside `deploy-production.yml`,
   after a replay against production's live applied state —
-  [`DB_PROMOTION_RUNBOOK.md`](../DB_PROMOTION_RUNBOOK.md) has the current production state.
+  [`db-promotion-runbook.md`](../db-promotion-runbook.md) has the current production state.
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.
 For live rollout tracking, see **GitHub Issues** — work status is not a doc
-([`DOCUMENTATION_CONVENTIONS.md`](../../DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives,
-[`github-pm.md`](../../../ci-cd/github-pm.md)).
+([`DOCUMENTATION_CONVENTIONS.md`](../../internal/DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives,
+[`github-pm.md`](../../ci-cd/github-pm.md)).
 
 ---
 
@@ -94,6 +94,6 @@ For live rollout tracking, see **GitHub Issues** — work status is not a doc
 | [CI/CD pipeline](ci-cd.md) | How deployments are gated, required checks, deploy verification. |
 | [Troubleshooting](troubleshooting.md) | Common deploy failures and where to look. |
 
-Secrets are **not** restated here. Infisical is the store; the sync map and free-tier inventory live in [`SECRETS_MANAGEMENT.md`](../../environment/SECRETS_MANAGEMENT.md). The complete variable list is [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md). The retired `frapp-docs` project is recorded under [Vercel](vercel.md#retired-frapp-docs-and-docsfrapplive).
+Secrets are **not** restated here. Infisical is the store; the sync map and free-tier inventory live in [`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md). The complete variable list is [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md). The retired `frapp-docs` project is recorded under [Vercel](vercel.md#retired-frapp-docs-and-docsfrapplive).
 
-Promotion and rollback of schema are their own runbooks: [`DB_PROMOTION_RUNBOOK.md`](../DB_PROMOTION_RUNBOOK.md) and [`DB_ROLLBACK_PLAYBOOK.md`](../DB_ROLLBACK_PLAYBOOK.md).
+Promotion and rollback of schema are their own runbooks: [`db-promotion-runbook.md`](../db-promotion-runbook.md) and [`db-rollback-playbook.md`](../db-rollback-playbook.md).

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING as ALERT_ROUTING_DOC } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 import { getEnvironment } from "../lib/environments.mjs";
@@ -33,7 +34,7 @@ import { workflowFiles } from "./helpers/workflow-yaml.mjs";
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "production-auth-conformance.yml");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "production-auth-conformance.mjs");
-const ALERT_ROUTING = join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md");
+const ALERT_ROUTING = join(REPO_ROOT, ALERT_ROUTING_DOC);
 const REQUIRED_CHECKS = join(REPO_ROOT, "scripts", "ci", "lib", "required-checks.mjs");
 const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
 
@@ -867,10 +868,10 @@ describe("workflow wiring", () => {
     }
   });
 
-  it("ALERT_ROUTING.md lists this alert title so the roster cannot drop it again", () => {
+  it("alert-routing.md lists this alert title so the roster cannot drop it again", () => {
     assert.ok(
       routing.includes(ALERT.title),
-      "ALERT_ROUTING.md must name the new alert; #1674 was this exact miss for guardrails",
+      "alert-routing.md must name the new alert; #1674 was this exact miss for guardrails",
     );
   });
 

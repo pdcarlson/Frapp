@@ -2,6 +2,7 @@ import {
   DiscordApiError,
   type DiscordApplicationInfo,
 } from '#domain/adapters/discord.interface';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * What Discord's own record says about this environment's Discord setup.
@@ -35,7 +36,7 @@ type UnverifiedKind = 'redirects_not_reported' | 'discord_unreachable';
 type MisconfiguredKind =
   'redirect_unregistered' | 'client_id_mismatch' | 'bot_token_rejected';
 
-const SETUP_DOC = 'docs/internal/ops/deployment/integrations.md §7A';
+const SETUP_DOC = 'docs/ops/deployment/integrations.md §7A';
 
 /**
  * Compare Discord's record of the application with this environment's config.
@@ -112,7 +113,7 @@ export function classifyApplicationFetchFailure(
         `Every bot read fails until Infisical carries the current token and the API restarts (${SETUP_DOC}, step 2).`,
     };
   }
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = toReportableError(error).message;
   return {
     status: 'unverified',
     kind: 'discord_unreachable',

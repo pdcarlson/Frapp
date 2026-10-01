@@ -6,6 +6,7 @@ import type {
   SendToUserResult,
 } from '#domain/adapters/notification.interface';
 import { enqueueSanitizedLog } from '../analytics/posthog-runtime';
+import { toReportableError } from '../observability/reportable-error';
 
 /**
  * Running tally for one `sendToUser` call. Every field is a *count* — no token
@@ -186,7 +187,7 @@ export class ExpoPushProvider implements INotificationProvider {
     // message (and any token in it), and during an outage every chunk fails at
     // once — exactly when log volume must stay bounded. The `provider:<name>`
     // code plus this line identify the failure class.
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toReportableError(error).message;
     this.logger.error(
       `push_delivery provider error (${name}): ${redactPushTokens(
         message,
