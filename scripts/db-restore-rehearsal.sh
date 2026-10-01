@@ -12,7 +12,7 @@
 # It is deliberately NOT wired into CI: it needs the Docker-backed Supabase stack
 # from scripts/cloud-sandbox-up.sh, and it is destructive to that stack's data.
 # Run it by hand after touching db-backup.sh or db-restore.sh, and record the
-# result in docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md § Rehearsal log.
+# result in docs/ops/db-rollback-playbook.md § Rehearsal log.
 #
 # Two passes, because there are two restore shapes and the first cannot see what
 # the second exists to fix. Pass A replays the dump alone (roles -> schema ->

@@ -47,7 +47,7 @@ test("only .sql files under supabase/migrations are linted", () => {
     "supabase/seed/chapter_directory.csv",
     "apps/api/src/main.ts",
     "supabase/migrations/README.md",
-    "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
+    "docs/ops/db-promotion-runbook.md",
   ]);
 
   // The existsSync filter drops the migration too (this fixture path is not on

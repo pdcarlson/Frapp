@@ -58,7 +58,7 @@ runs:
             echo "Check that the four secrets still exist in Infisical and that the"
             echo "injection step(s) above authenticated; see"
             echo "docs/internal/environment/SECRETS_MANAGEMENT.md and"
-            echo "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md § Backups: what exists."
+            echo "docs/ops/db-rollback-playbook.md § Backups: what exists."
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error::Offsite backup secrets missing from the job env (missing:$MISSING). Provisioned 2026-08-27 (#1287) — check Infisical, do not re-provision."
           exit 1
@@ -192,5 +192,5 @@ runs:
           echo
           echo "Covers application data only. Storage objects are backed up by the"
           echo "storage job for the same environment in this workflow (#1290); a full"
-          echo "recovery needs both halves. See DB_ROLLBACK_PLAYBOOK.md."
+          echo "recovery needs both halves. See db-rollback-playbook.md."
         } >> "$GITHUB_STEP_SUMMARY"

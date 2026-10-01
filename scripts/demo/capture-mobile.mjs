@@ -32,7 +32,7 @@
  * set looks like — the run deletes the folder and exits non-zero, so a
  * flag-on dev server can never produce a store set. Run it with the flag
  * unset. Procedure and the size's provenance:
- * `docs/internal/ops/deployment/mobile.md` § 6.4.
+ * `docs/ops/deployment/mobile.md` § 6.4.
  *
  * ## Google Play preset (`--google-play`, or `GOOGLE_PLAY=1`)
  *
@@ -42,7 +42,7 @@
  *
  * The App Store size is about 2.17:1, past Play's 2:1 cap on a screenshot's
  * long side, so Play cannot reuse that set. Procedure and the size's
- * provenance: `docs/internal/ops/deployment/mobile.md` § 6.5. Both presets,
+ * provenance: `docs/ops/deployment/mobile.md` § 6.5. Both presets,
  * and the checks each file must pass, live in `store-screenshots.mjs`; any
  * failed check deletes the store folder, like the Ask refusal.
  *

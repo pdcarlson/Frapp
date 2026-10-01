@@ -38,7 +38,7 @@ const ROLLBACK = MIGRATION_DOCS[1];
 
 // Two tests below mutate the REAL worktree — the gate resolves its roots from
 // its own location, so there is no temp tree to point it at. One renames
-// DB_ROLLBACK_PLAYBOOK.md away; the other writes a probe migration. Left behind,
+// db-rollback-playbook.md away; the other writes a probe migration. Left behind,
 // either makes every later `check:migration-safety` in the checkout fail on
 // state no author created, so each is undone in a `finally`.
 //
@@ -110,7 +110,7 @@ test("no declared doc is satisfied by a path prefix, only by exact match", () =>
   // A nested file under the same directory must NOT count: the gate asks for
   // the ledger itself, not for anything filed near it.
   assert.equal(
-    satisfiesPromotionDocs(["docs/internal/ops/incident-response.md"]),
+    satisfiesPromotionDocs(["docs/ops/incident-response.md"]),
     false,
   );
 });
@@ -130,7 +130,8 @@ test("every declared doc is tracked today", () => {
     missing,
     [],
     `MIGRATION_DOCS names ${missing.join(", ")}, which are no longer tracked. ` +
-      "Repoint the list in the same change set as the rename.",
+      "Repoint PROMOTION_LOG / ROLLBACK_PLAYBOOK in scripts/ci/lib/ops-docs.mjs " +
+      "in the same change set as the rename.",
   );
 });
 
@@ -502,10 +503,15 @@ test("the shipped gate exits 1 when a migration has no ledger entry", () => {
   try {
     const { status, out } = runGate();
     assert.equal(status, 1, out);
-    assert.match(out, /29990101000000_ledger_probe\.sql needs an entry/);
-    // Both ledgers, not just one — the whole point of the change.
-    assert.match(out, /DB_PROMOTION_RUNBOOK\.md/);
-    assert.match(out, /DB_ROLLBACK_PLAYBOOK\.md/);
+    // Both ledgers, not just one — the whole point of the change. Read off the
+    // problem lines, not the output at large: the remedy hint under them names
+    // both ledgers on every failure, so a bare filename match proves nothing.
+    for (const doc of [PROMOTION, ROLLBACK]) {
+      assert.ok(
+        out.includes(`- 29990101000000_ledger_probe.sql needs an entry in ${doc}.`),
+        out,
+      );
+    }
   } finally {
     removeProbe();
     exitCleanups.delete(removeProbe);

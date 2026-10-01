@@ -2,7 +2,7 @@
 #
 # Restore a backup produced by scripts/db-backup.sh (#852).
 #
-# This is the executable half of DB_ROLLBACK_PLAYBOOK.md § "Full rollback to
+# This is the executable half of db-rollback-playbook.md § "Full rollback to
 # backup/snapshot". That branch used to say "Restore latest verified
 # backup/snapshot in Supabase", which on the free plan pointed at a snapshot
 # that does not exist. This script is what replaced it.
@@ -85,7 +85,7 @@ Error: refusing to restore into a non-local database without --force.
 
 This command REPLACES the contents of the target database. Restoring staging
 is a real incident-response action: announce it, freeze writes, and follow
-docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md. Re-run with --force once that is
+docs/ops/db-rollback-playbook.md. Re-run with --force once that is
 true. Restoring production additionally requires DB_RESTORE_ALLOW_PRODUCTION=true;
 --force alone is not enough.
 GUARD
@@ -161,7 +161,7 @@ Error: the target database is missing Supabase-managed schema(s): $MISSING_SCHEM
 These dumps are not self-contained — 'supabase db dump' excludes Supabase's
 managed schemas, so schema.sql expects them to already exist. Restore into a
 Supabase-provisioned database (a fresh project, or a reset local stack), not an
-empty 'CREATE DATABASE'. See DB_ROLLBACK_PLAYBOOK.md § Restoring from an offsite dump.
+empty 'CREATE DATABASE'. See db-rollback-playbook.md § Restoring from an offsite dump.
 GUARD
   exit 1
 fi

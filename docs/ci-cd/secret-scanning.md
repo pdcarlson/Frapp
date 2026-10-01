@@ -259,7 +259,7 @@ the intended required set. Whether it is live on a given branch depends on when 
 `GITHUB_PAT=… npm run configure:branch-protection`. That apply is a human step with an admin PAT:
 the bare command is a live `PUT` of the whole protection payload, and an agent session runs
 `npm run configure:branch-protection:verify` (which writes nothing) and nothing else. Read live state
-per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#required-status-checks)
+per [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md#required-status-checks)
 rather than from this page.
 
 ## Bumping the pinned version

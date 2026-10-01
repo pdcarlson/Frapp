@@ -203,7 +203,7 @@ function buildProtectionPayload(branch) {
     enforce_admins: true,
     // No required approving review on `main`, which is unchanged from before
     // #1340 — this repo's human gate is the production deploy approval, not the
-    // merge. See docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md.
+    // merge. See docs/ops/github-branch-protection-runbook.md.
     required_pull_request_reviews: null,
     restrictions: null,
     required_linear_history: true,

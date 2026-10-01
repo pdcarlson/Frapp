@@ -95,7 +95,7 @@ interface WebhookEventRow {
  * at the same store is precisely the "API restarted / second instance"
  * scenario that the old in-process `Set` could not survive. The SQL itself is
  * verified against real Postgres — see the FRA-23 notes in
- * `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
+ * `docs/ops/db-promotion-runbook.md`.
  */
 function createWebhookEventRepo(
   store: Map<string, WebhookEventRow>,
