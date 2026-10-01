@@ -196,6 +196,26 @@ describe("landing page structure", () => {
     }
   });
 
+  it("draws the chat thread in the compact layout, not the retired bubbles", () => {
+    // `components.md` § Chat messages (#2873): chat has had no bubbles on web
+    // or mobile since 2026-09-29, so the frame that pictures it can't draw any
+    // (#2893). The tell is the bubble's geometry, the locked radius 18 or the
+    // 6px tail corner, wherever the thread's class constants are declared.
+    const start = renderedPage.indexOf("const threadRows");
+    const end = renderedPage.indexOf("function Composer");
+    expect(start, "the chat thread's row list moved").toBeGreaterThanOrEqual(0);
+    expect(end, "the composer moved").toBeGreaterThan(start);
+    const thread = renderedPage.slice(start, end);
+    expect(thread).not.toMatch(/rounded-\[18px\]|rounded-(?:bl|br|tl|tr)-\[6px\]/);
+    expect(thread).not.toMatch(/bubble/i);
+    // The viewer's run reads "You", which is how the product marks it now that
+    // no accent fill does.
+    expect(thread).toMatch(/>\s*You\s*</);
+    // Read receipts are a channel cursor that feeds unread counts
+    // (`spec/behavior/chat/README.md` § Read Receipts). No message is "read".
+    expect(thread).not.toMatch(/·\s*read\b/i);
+  });
+
   it("routes every tracked control through the auth URL builders", () => {
     // The Spec sheet's §5 routes contract, one assertion per row.
     for (const [cta, surface] of [

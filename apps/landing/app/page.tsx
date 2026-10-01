@@ -699,11 +699,22 @@ const threadRows = [
   { key: "mention", kind: "mention" as const },
 ];
 
-const BUBBLE_THEM =
-  "rounded-[18px] rounded-bl-[6px] border border-border bg-card px-3.5 py-2.5 text-[16px] leading-6 text-foreground";
+/*
+ * Chat's compact, bubble-free layout, as web and mobile have drawn it since
+ * 2026-09-29 (`components.md` §11 § Chat messages, #2873). Every row here
+ * starts a run: no two neighbours share an author, and the event card is a
+ * card, which always starts one. So each row draws the 32px avatar and an
+ * author line of name then time, never a date. The body has no fill, border
+ * or padding; rows are told apart by the author line and the 16px run gap.
+ * Values are transcribed from §11, not imported from `apps/web`.
+ */
+const ROW = "flex gap-3 px-5 pb-0.5 pt-4";
 const AVATAR =
-  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-popover text-[12px] font-semibold text-foreground";
-const META = "text-[12.5px] text-muted-foreground";
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-popover text-[12.5px] font-bold text-muted-foreground";
+const AUTHOR_LINE = "flex items-baseline gap-2 leading-5";
+const AUTHOR = "text-[14px] font-semibold text-foreground";
+const TIME = "text-[12.5px] text-muted-foreground";
+const BODY = "text-[16px] leading-[25px] text-foreground";
 
 function ChatThread({ animate }: { animate: boolean }) {
   const rows = threadRows.map((row, index) => (
@@ -713,14 +724,14 @@ function ChatThread({ animate }: { animate: boolean }) {
       style={{ "--i": index } as StaggerStyle}
     >
       {row.kind === "them" && (
-        <div className="flex gap-2.5 px-5 pb-0.5 pt-3">
+        <div className={ROW}>
           <span className={AVATAR}>JE</span>
-          <div className="flex max-w-[76%] flex-col gap-1">
-            <p className={META}>
-              <span className="font-semibold text-foreground">Jordan Ellis</span>{" "}
-              · 4:02 PM
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className={AUTHOR_LINE}>
+              <span className={AUTHOR}>Jordan Ellis</span>
+              <span className={TIME}>4:02 PM</span>
             </p>
-            <p className={BUBBLE_THEM}>
+            <p className={BODY}>
               Chapter is 6:30 tonight. Dues forms in by then if yours is not.
             </p>
           </div>
@@ -728,62 +739,90 @@ function ChatThread({ animate }: { animate: boolean }) {
       )}
 
       {row.kind === "event" && (
-        <div className="flex gap-2.5 px-5 pb-0.5 pt-2">
-          <span className="w-8 shrink-0" />
-          <div className="min-w-0 max-w-[76%] rounded-lg border border-border bg-card px-4 py-3.5">
-            <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-              Event
-            </p>
-            <p className="mt-1 text-[16px] font-bold text-foreground">
-              Chapter meeting
-            </p>
-            <p className="text-[14px] text-muted-foreground">
-              Tonight · 6:30 PM · Chapter room · 10 pts
-            </p>
+        <div className={ROW}>
+          <span className={AVATAR}>JE</span>
+          <div className="flex min-w-0 flex-1 flex-col">
             {/*
-              Check in, and only Check in. `spec/behavior/events.md` records
-              pre-event RSVP intent as not modelled, so there is no Going or
-              Can't-make-it control to draw. The live count is drawn because
-              the viewer is an officer, which the caption states: it shows only
-              to `events:update` holders.
+              The card starts its own run under the author line of whoever
+              ran `/event`, even straight after their own message: a card is
+              a thing posted into the channel, so it keeps its frame (`--card`,
+              hairline, radius 14) where a message has none.
             */}
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="inline-flex h-[34px] items-center rounded-sm bg-primary px-3.5 text-[14px] font-bold text-primary-foreground">
-                Check in
-              </span>
-              <span className="text-[12.5px] text-muted-foreground">
-                closes 6:45
-              </span>
-              <span className="text-[12.5px] text-muted-foreground">
-                31 checked in
-              </span>
+            <p className={AUTHOR_LINE}>
+              <span className={AUTHOR}>Jordan Ellis</span>
+              <span className={TIME}>4:03 PM</span>
+            </p>
+            <div className="mt-1 w-fit max-w-full rounded-lg border border-border bg-card px-4 py-3.5">
+              <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                Event
+              </p>
+              <p className="mt-1 text-[16px] font-bold text-foreground">
+                Chapter meeting
+              </p>
+              <p className="text-[14px] text-muted-foreground">
+                Tonight · 6:30 PM · Chapter room · 10 pts
+              </p>
+              {/*
+                Check in, and only Check in. `spec/behavior/events.md` records
+                pre-event RSVP intent as not modelled, so there is no Going or
+                Can't-make-it control to draw. The live count is drawn because
+                the viewer is an officer, which the caption states: it shows
+                only to `events:update` holders.
+              */}
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span className="inline-flex h-[34px] items-center rounded-sm bg-primary px-3.5 text-[14px] font-bold text-primary-foreground">
+                  Check in
+                </span>
+                <span className="text-[12.5px] text-muted-foreground">
+                  closes 6:45
+                </span>
+                <span className="text-[12.5px] text-muted-foreground">
+                  31 checked in
+                </span>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {row.kind === "self" && (
-        <div className="flex flex-col items-start gap-1 px-5 pb-0.5 pt-3">
-          <p className="max-w-[76%] rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2.5 text-[16px] leading-6 text-primary-foreground">
-            On it. Roster is pulled, 42 for food.
-          </p>
-          <p className={META}>4:05 PM · read</p>
+        <div className={ROW}>
+          <span className={AVATAR}>AK</span>
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/*
+              The viewer's own run sits on the left like everyone else's and
+              reads "You" in `--accent-text`, which is how a member spots it
+              now that no accent fill marks it. The author line carries the
+              time and nothing else: read receipts are a channel cursor that
+              feeds unread counts (`spec/behavior/chat/README.md` § Read
+              Receipts), so no message is ever marked "read".
+            */}
+            <p className={AUTHOR_LINE}>
+              <span className="text-[14px] font-semibold text-accent-text">
+                You
+              </span>
+              <span className={TIME}>4:05 PM</span>
+            </p>
+            <p className={BODY}>On it. Roster is pulled, 42 for food.</p>
+          </div>
         </div>
       )}
 
       {row.kind === "mention" && (
-        <div className="flex gap-2.5 px-5 pb-0.5 pt-3">
+        <div className={ROW}>
           <span className={AVATAR}>MC</span>
-          <div className="flex max-w-[76%] flex-col gap-1">
-            <p className={META}>
-              <span className="font-semibold text-foreground">Maya Chen</span> ·
-              4:06 PM
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className={AUTHOR_LINE}>
+              <span className={AUTHOR}>Maya Chen</span>
+              <span className={TIME}>4:06 PM</span>
             </p>
-            <p className={BUBBLE_THEM}>
+            <p className={BODY}>
               {/*
-                The in-bubble mention chip, not the mention red. Red as text
-                inside a bubble is the case `foundations.md` §5 carves out, and
-                this pair is what it carves out to.
+                The in-body mention chip, on the handle alone: the row around
+                it is never retinted, because a message that mentions you is
+                still the sender's. It is not the mention red, which is a badge
+                fill and has no lifted tone to render as text (`foundations.md`
+                §5); this opaque amber pair is what §5 carves out to.
               */}
               <span className="rounded-[5px] bg-mention-chip px-1 font-semibold text-mention-chip-text">
                 @Jordan
@@ -796,14 +835,21 @@ function ChatThread({ animate }: { animate: boolean }) {
     </div>
   ));
 
+  /*
+   * Bottom-aligned and clipped, like the product's timeline, which opens at
+   * its newest row with the composer pinned under it. Where the frame is too
+   * short for every row, as both frames are at phone width, the oldest row
+   * crops under the header the way a scrolled chat does, instead of the
+   * newest running under the composer.
+   */
+  const thread = "flex min-h-0 flex-1 flex-col justify-end overflow-hidden pb-2";
+
   if (!animate) {
-    return <div className="flex min-h-0 flex-col pb-2">{rows}</div>;
+    return <div className={thread}>{rows}</div>;
   }
 
   return (
-    <RevealOnView className="reveal-thread flex min-h-0 flex-col pb-2">
-      {rows}
-    </RevealOnView>
+    <RevealOnView className={`reveal-thread ${thread}`}>{rows}</RevealOnView>
   );
 }
 
@@ -951,7 +997,7 @@ function ChatFrame({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col bg-background">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border bg-surface-1 px-4">
           {isFold && (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border border-accent-border bg-accent-subtle text-[11px] font-bold text-accent-text">
@@ -974,7 +1020,7 @@ function ChatFrame({
           a static layout. Only the below-fold frame plays its thread in.
         */}
         <ChatThread animate={!isFold} />
-        <div className="mt-auto">
+        <div className="shrink-0">
           <Composer />
         </div>
       </div>
