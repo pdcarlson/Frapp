@@ -176,6 +176,10 @@ describe("node-setup composite action", () => {
     const uses = (step) => step.match(/^\s*(-\s+)?uses:\s*(.+)$/m)?.[2];
     const ifOf = (step) => step.match(/^\s*(-\s+)?if:\s*(.+)$/m)?.[2]?.trim() ?? null;
     const runOf = (step) => step.match(/^\s*(-\s+)?run:\s*(.+)$/m)?.[2]?.trim() ?? null;
+    // A custom `shell:` template runs its own command line around the script.
+    for (const step of [check, ci, omitDev]) {
+      assert.equal(step.match(/^\s*(-\s+)?shell:\s*(.+)$/m)?.[2]?.trim(), "bash", "shell steps use plain bash");
+    }
 
     // The runner doesn't enforce `required: true` for a composite action, and a
     // value no `if:` matches would skip the install with the step green. Its
@@ -283,15 +287,15 @@ describe("node-setup call sites", () => {
     // A composite action runs in its caller's job, so it holds whatever the
     // callers hold, through any depth of nesting.
     const actions = actionFiles().filter((a) => a.name !== NAME);
-    const calls = (text, name) => text.split("\n").some((l) => usesLocalAction(name).test(l));
+    const callsAction = (text, name) => text.split("\n").some((l) => usesLocalAction(name).test(l));
     const holding = new Set(
-      actions.filter((a) => secretCallers.some((step) => calls(step.body, a.name))).map((a) => a.name),
+      actions.filter((a) => secretCallers.some((step) => callsAction(step.body, a.name))).map((a) => a.name),
     );
     for (let grew = true; grew; ) {
       grew = false;
       for (const a of actions) {
         if (holding.has(a.name)) continue;
-        if (actions.some((b) => holding.has(b.name) && calls(b.text, a.name))) {
+        if (actions.some((b) => holding.has(b.name) && callsAction(b.text, a.name))) {
           holding.add(a.name);
           grew = true;
         }
@@ -379,6 +383,7 @@ describe("runsInstall", () => {
       "        run: npx npm-check",
       "        run: npm run ci",
       "        run: npm exec -- ci",
+      "        - name: Use npm and ci tooling",
     ]) {
       assert.ok(!runsInstall(line), line);
     }

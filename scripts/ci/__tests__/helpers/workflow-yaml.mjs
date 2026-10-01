@@ -886,8 +886,8 @@ export function installsDependencies(step) {
 }
 
 // npm flags that take their value as the NEXT word, so that word is neither the
-// verb nor a package. Before the verb, an unknown flag's value is skipped
-// anyway unless it happens to spell a command; after an install verb, an
+// verb nor a package. Before the verb, an unknown flag's following word is
+// taken as its value unless it spells a command; after an install verb, an
 // unversioned value reads as "names nothing", which fails closed.
 const VALUE_FLAGS = new Set([
   "--prefix", "-C", "--workspace", "-w", "--omit", "--include", "--install-strategy", "--registry",
@@ -931,11 +931,15 @@ export function runsInstall(line) {
     const words = command.trim().split(/\s+/).filter(Boolean);
     const at = words.findIndex((w) => w === "npm" || w.endsWith("/npm"));
     if (at === -1) continue;
-    // The verb is the first word after `npm` that names a command; a word
-    // that names none is an unknown flag's value.
+    // Only flags, and their values, come between `npm` and the verb.
+    const isVerb = (w) => CI_VERBS.has(w) || INSTALL_VERBS.has(w) || OTHER_VERBS.has(w);
     let i = at + 1;
-    while (i < words.length && !CI_VERBS.has(words[i]) && !INSTALL_VERBS.has(words[i]) && !OTHER_VERBS.has(words[i])) {
-      i += VALUE_FLAGS.has(words[i]) ? 2 : 1;
+    while (i < words.length && words[i].startsWith("-")) {
+      const next = words[i + 1];
+      const value =
+        VALUE_FLAGS.has(words[i]) ||
+        (!words[i].includes("=") && next !== undefined && !next.startsWith("-") && !isVerb(next));
+      i += value ? 2 : 1;
     }
     const verb = words[i];
     if (CI_VERBS.has(verb)) return true;
