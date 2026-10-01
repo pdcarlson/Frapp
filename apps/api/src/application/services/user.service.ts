@@ -28,6 +28,7 @@ import {
   profileFolderPrefix,
 } from '#domain/constants/storage';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * How old an unconfirmed upload in a member's folder must be before a photo
@@ -174,10 +175,11 @@ export class UserService {
       current = (await this.userRepo.findById(userId))?.avatar_url ?? null;
     } catch (error) {
       // Without knowing what is current, deleting anything could delete it.
-      this.logger.warn(
-        `Skipped the profile photo sweep for user ${userId}: could not re-read avatar_url: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Skipped the profile photo sweep for user ${userId}: could not re-read avatar_url`,
+        error,
       );
       return this.withSignedPhoto(user);
     }
@@ -236,10 +238,11 @@ export class UserService {
     try {
       await this.storageProvider.deleteFiles(PROFILES_BUCKET, paths);
     } catch (error) {
-      this.logger.warn(
-        `Could not delete ${paths.length} old profile photo(s) for user ${userId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not delete ${paths.length} old profile photo(s) for user ${userId}`,
+        error,
       );
     }
   }

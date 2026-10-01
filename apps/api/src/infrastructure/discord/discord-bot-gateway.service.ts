@@ -23,6 +23,7 @@ import {
   type DiscordPermissionSubject,
   type DiscordRolePermissions,
 } from '#domain/utils/discord-permissions';
+import { toReportableError } from '../observability/reportable-error';
 
 /**
  * Channel types that hold messages a chapter would want archived.
@@ -795,7 +796,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
   private describe(error: unknown): string {
     const status = statusOf(error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toReportableError(error).message;
     return status ? `${status} ${message}` : message;
   }
 }
